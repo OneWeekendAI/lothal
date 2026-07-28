@@ -1,0 +1,20 @@
+; Engine configuration file.
+; Generated/maintained by hand — safe to let the editor rewrite it.
+
+config_version=5
+
+[application]
+
+config/name="Lothal"
+config/description="Build a drone from real parts. Fly it. Feel the difference."
+run/main_scene="res://src/scenes/main.tscn"
+config/features=PackedStringArray("4.4", "Forward Plus")
+
+[physics]
+
+common/physics_ticks_per_second=120
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
