@@ -15,7 +15,7 @@ manufacturer thrust data. The simulation is the single source of truth.
 
 ## Run locally
 
-Requires [Godot 4.4+](https://godotengine.org/download).
+Requires [Godot 4.7+](https://godotengine.org/download).
 
 ```bash
 git clone https://github.com/OneWeekendAI/lothal.git
@@ -39,7 +39,7 @@ comment at the top of each file.
 
 ## Tech stack
 
-- **Godot 4.4** (GDScript) — engine, UI, rendering
+- **Godot 4.7** (GDScript) — engine, UI, rendering
 - **Custom 1 kHz flight dynamics** — own integrator, not the rigid-body solver
 - **Jolt** — collision queries only
 - **Procedural audio** — motor and blade-pass tones synthesized from live RPM
