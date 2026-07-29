@@ -9,6 +9,8 @@ func _init() -> void:
 	all_results.append_array(TestHover.run())
 	all_results.append_array(TestTorqueSigns.run())
 	all_results.append_array(TestHoverStability.run())
+	all_results.append_array(TestRateStepResponse.run())
+	all_results.append_array(TestRateModeRelease.run())
 
 	var fail_count := 0
 	for result in all_results:
