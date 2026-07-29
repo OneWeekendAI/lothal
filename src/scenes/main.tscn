@@ -41,8 +41,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0778, 0, -0.0778)
 mesh = SubResource("CylinderMesh_motor")
 
 [node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.8660254, 0.5, 0, -0.5, 0.8660254, 0, 1, 2)
 current = true
+near = 0.02
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.8137977, -0.4600171, 0.3536018, 0, 0.6087614, 0.7933533, -0.5809475, -0.6455876, 0.4952422, 0, 3, 0)

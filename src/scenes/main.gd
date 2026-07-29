@@ -15,6 +15,10 @@ const MAX_YAW_RATE_CMD := 1.0
 const MODE_TOGGLE_BUTTON := JOY_BUTTON_A
 
 @onready var drone: Node3D = $Drone
+@onready var camera: Camera3D = $Camera3D
+
+# Behind (+Z, per the coordinate contract's -Z-is-forward) and above the ~15cm frame.
+const CAMERA_OFFSET := Vector3(0, 0.35, 0.7)
 
 var core: DroneCore
 var rate_controller := RateModeController.new()
@@ -43,6 +47,11 @@ func _physics_process(delta: float) -> void:
 
 	drone.position = core.rigid_body.position_m
 	drone.quaternion = core.rigid_body.orientation
+
+	# Chase-cam: always framed on the drone rather than a fixed, hand-baked transform —
+	# robust to the drone drifting (no altitude hold yet) and to the frame's small size.
+	camera.global_position = drone.position + CAMERA_OFFSET
+	camera.look_at(drone.position, Vector3.UP)
 
 func _read_gamepad() -> void:
 	var mode_pressed := Input.is_joy_button_pressed(0, MODE_TOGGLE_BUTTON)
