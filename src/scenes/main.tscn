@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://src/scenes/main.gd" id="1"]
 
@@ -11,10 +11,35 @@ bottom_radius = 0.011
 height = 0.02
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
-size = Vector2(50, 50)
+size = Vector2(400, 400)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
-size = Vector3(50, 0.1, 50)
+size = Vector3(400, 0.1, 400)
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+sky_top_color = Color(0.12, 0.21, 0.42, 1)
+sky_horizon_color = Color(0.45, 0.55, 0.66, 1)
+sky_curve = 0.18
+ground_bottom_color = Color(0.08, 0.09, 0.11, 1)
+ground_horizon_color = Color(0.35, 0.4, 0.46, 1)
+sun_angle_max = 12.0
+sun_curve = 0.08
+
+[sub_resource type="Sky" id="Sky_sky"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_world"]
+background_mode = 2
+sky = SubResource("Sky_sky")
+ambient_light_source = 3
+reflected_light_source = 2
+tonemap_mode = 2
+glow_enabled = true
+glow_intensity = 0.5
+fog_enabled = true
+fog_light_color = Color(0.46, 0.54, 0.63, 1)
+fog_density = 0.0018
+fog_sky_affect = 0.0
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -43,9 +68,14 @@ mesh = SubResource("CylinderMesh_motor")
 [node name="Camera3D" type="Camera3D" parent="."]
 current = true
 near = 0.02
+far = 600.0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_world")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.8137977, -0.4600171, 0.3536018, 0, 0.6087614, 0.7933533, -0.5809475, -0.6455876, 0.4952422, 0, 3, 0)
+light_energy = 1.1
 shadow_enabled = true
 
 [node name="Ground" type="StaticBody3D" parent="."]

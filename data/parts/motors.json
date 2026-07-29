@@ -1,5 +1,5 @@
 {
-  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md §4: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. 'poles' feeds the electrical frequency observable used by procedural audio; a 14-pole motor has 7 pole pairs.",
+  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md §4: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. 'poles' is carried for the electrical-frequency observable (a 14-pole motor has 7 pole pairs); no consumer reads it yet, and it is kept because it is a real spec of a real motor, not because something depends on it.",
   "parts": [
     {
       "part_id": "motor_1404_3800kv",

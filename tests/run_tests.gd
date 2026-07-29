@@ -8,7 +8,8 @@ extends SceneTree
 ## the runner silent.
 
 const SUITES := ["mass properties", "hover", "torque signs", "hover stability",
-	"rate step response", "rate mode release", "translation", "parts system", "build panel"]
+	"rate step response", "rate mode release", "translation", "parts system", "build panel",
+	"gate course", "hud", "keyboard throttle"]
 
 func _init() -> void:
 	var total := 0
@@ -51,5 +52,8 @@ func _run_suite(suite_name: String) -> Array:
 		"translation": return TestTranslation.run()
 		"parts system": return TestPartsSystem.run()
 		"build panel": return TestBuildPanel.run()
+		"gate course": return TestGateCourse.run()
+		"hud": return TestHud.run()
+		"keyboard throttle": return TestKeyboardThrottle.run()
 	push_error("unknown suite: %s" % suite_name)
 	return []
