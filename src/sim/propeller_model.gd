@@ -8,15 +8,35 @@ extends RefCounted
 ## catalog yet), so it uses a documented rule-of-thumb ratio to k_t. Only the sign of
 ## reaction torque is load-bearing this week (week1.md test 7); the magnitude ratio can
 ## be replaced with a fitted value once torque-test tables are authored into the catalog.
-const K_Q_TO_K_T_RATIO := 0.02
+##
+## The ratio is not a constant across prop sizes: T = C_T*rho*n^2*D^4 and
+## Q = C_Q*rho*n^2*D^5, so Q/T scales with diameter. Anchored at 0.02 for a 5" prop.
+const K_Q_TO_K_T_RATIO_AT_5IN := 0.02
+const K_Q_REFERENCE_DIAMETER_M := 0.127   # 5 inches
+
+## Exponents for moving a fitted k_t from the prop it was measured on to another prop.
+## Diameter's D^4 is the dimensional form from physics.md §4 and is exact. Blade count and
+## pitch have no such clean law — more blades add thrust with real diminishing returns from
+## interference, and static thrust rises sub-linearly with pitch — so these two are
+## documented rules of thumb, to be replaced when per-prop thrust tables are authored.
+const BLADE_COUNT_EXPONENT := 0.8
+const PITCH_EXPONENT := 0.5
 
 static func fit_k_t(max_thrust_g: float, max_rpm: float) -> float:
 	var max_thrust_n := (max_thrust_g / 1000.0) * 9.81
 	var max_omega := rpm_to_rad_s(max_rpm)
 	return max_thrust_n / (max_omega * max_omega)
 
-static func fit_k_q(k_t: float) -> float:
-	return k_t * K_Q_TO_K_T_RATIO
+## Moves a k_t fitted on `from_prop` onto `to_prop`. Geometry dictionaries carry
+## diameter_m, pitch_m and blades (see Build._prop_geometry).
+static func scale_k_t_to_prop(k_t_from: float, from_prop: Dictionary, to_prop: Dictionary) -> float:
+	var diameter_ratio: float = to_prop.diameter_m / from_prop.diameter_m
+	var blade_ratio: float = to_prop.blades / from_prop.blades
+	var pitch_ratio: float = to_prop.pitch_m / from_prop.pitch_m
+	return k_t_from * pow(diameter_ratio, 4.0) * pow(blade_ratio, BLADE_COUNT_EXPONENT) * pow(pitch_ratio, PITCH_EXPONENT)
+
+static func fit_k_q(k_t: float, diameter_m: float) -> float:
+	return k_t * K_Q_TO_K_T_RATIO_AT_5IN * (diameter_m / K_Q_REFERENCE_DIAMETER_M)
 
 static func rpm_to_rad_s(rpm: float) -> float:
 	return rpm * TAU / 60.0

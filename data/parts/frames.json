@@ -1,0 +1,53 @@
+{
+  "_schema": "One JSON file per part category (parts.md). Every field here is load-bearing: if a spec does not feed the physics, it does not belong in this file yet. 'arm_mm' is centre-to-motor and is the sleeper spec — it is squared in the parallel axis theorem, so a 7\" frame has roughly 4x the roll inertia of a 3\" from geometry alone. 'max_prop_inches' and 'motor_mount' drive compatibility warnings only; Lothal warns, it never blocks.",
+  "parts": [
+    {
+      "part_id": "frame_3in_toothpick",
+      "name": "3\" Toothpick",
+      "category": "frame",
+      "mass_g": 35.0,
+      "specs": {
+        "arm_mm": 75.0,
+        "max_prop_inches": 3.5,
+        "motor_mount": "12x12"
+      },
+      "source": "representative 3\" toothpick frame spec sheet"
+    },
+    {
+      "part_id": "frame_5in_race",
+      "name": "5\" Race",
+      "category": "frame",
+      "mass_g": 88.0,
+      "specs": {
+        "arm_mm": 108.0,
+        "max_prop_inches": 5.0,
+        "motor_mount": "16x16"
+      },
+      "source": "representative 5\" race frame spec sheet"
+    },
+    {
+      "part_id": "frame_5in_freestyle",
+      "name": "5\" Freestyle",
+      "category": "frame",
+      "mass_g": 110.0,
+      "specs": {
+        "arm_mm": 110.0,
+        "max_prop_inches": 5.1,
+        "motor_mount": "16x16"
+      },
+      "source": "representative 5\" freestyle frame spec sheet; the reference build's frame"
+    },
+    {
+      "part_id": "frame_7in_long_range",
+      "name": "7\" Long Range",
+      "category": "frame",
+      "mass_g": 148.0,
+      "specs": {
+        "arm_mm": 150.0,
+        "max_prop_inches": 7.0,
+        "motor_mount": "16x16"
+      },
+      "source": "representative 7\" long-range frame spec sheet"
+    }
+  ]
+}

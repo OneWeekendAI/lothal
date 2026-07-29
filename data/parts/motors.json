@@ -1,0 +1,105 @@
+{
+  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md §4: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. 'poles' feeds the electrical frequency observable used by procedural audio; a 14-pole motor has 7 pole pairs.",
+  "parts": [
+    {
+      "part_id": "motor_1404_3800kv",
+      "name": "1404 3800KV",
+      "category": "motor",
+      "mass_g": 15.0,
+      "mount_pattern": "12x12",
+      "specs": {
+        "kv": 3800,
+        "stator_diameter_mm": 14,
+        "stator_height_mm": 4,
+        "max_thrust_g": 400.0,
+        "max_amps": 12.0,
+        "poles": 12
+      },
+      "thrust_test": {
+        "prop_id": "prop_3x3x3",
+        "voltage_v": 14.8
+      },
+      "source": "manufacturer thrust table, 3x3x3 on 4S"
+    },
+    {
+      "part_id": "motor_2207_1750kv",
+      "name": "2207 1750KV",
+      "category": "motor",
+      "mass_g": 32.0,
+      "mount_pattern": "16x16",
+      "specs": {
+        "kv": 1750,
+        "stator_diameter_mm": 22,
+        "stator_height_mm": 7,
+        "max_thrust_g": 1850.0,
+        "max_amps": 38.0,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_5x43x3",
+        "voltage_v": 22.2
+      },
+      "source": "manufacturer thrust table, 5x4.3x3 on 6S"
+    },
+    {
+      "part_id": "motor_2207_1960kv",
+      "name": "2207 1960KV",
+      "category": "motor",
+      "mass_g": 32.0,
+      "mount_pattern": "16x16",
+      "specs": {
+        "kv": 1960,
+        "stator_diameter_mm": 22,
+        "stator_height_mm": 7,
+        "max_thrust_g": 1450.0,
+        "max_amps": 32.0,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_5x43x3",
+        "voltage_v": 14.8
+      },
+      "source": "manufacturer thrust table, 5x4.3x3 on 4S; the reference build's motor"
+    },
+    {
+      "part_id": "motor_2207_2400kv",
+      "name": "2207 2400KV",
+      "category": "motor",
+      "mass_g": 32.0,
+      "mount_pattern": "16x16",
+      "specs": {
+        "kv": 2400,
+        "stator_diameter_mm": 22,
+        "stator_height_mm": 7,
+        "max_thrust_g": 1700.0,
+        "max_amps": 45.0,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_5x43x3",
+        "voltage_v": 14.8
+      },
+      "source": "manufacturer thrust table, 5x4.3x3 on 4S"
+    },
+    {
+      "part_id": "motor_2807_1300kv",
+      "name": "2807 1300KV",
+      "category": "motor",
+      "mass_g": 52.0,
+      "mount_pattern": "16x16",
+      "specs": {
+        "kv": 1300,
+        "stator_diameter_mm": 28,
+        "stator_height_mm": 7,
+        "max_thrust_g": 2250.0,
+        "max_amps": 42.0,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_7x4x3",
+        "voltage_v": 22.2
+      },
+      "source": "manufacturer thrust table, 7x4x3 on 6S"
+    }
+  ]
+}

@@ -15,8 +15,13 @@ func integrate(force_n: Vector3, torque_n_m: Vector3, mass_kg: float, inertia: B
 	var angular_accel := inertia_inverse * (torque_n_m - gyroscopic)
 	angular_velocity_rad_s += angular_accel * dt
 
+	# angular_velocity_rad_s is expressed in the BODY frame — that is the frame the torque
+	# and the inertia tensor are in — so the quaternion rate is q_dot = 0.5 * q (x) omega.
+	# The world-frame form (omega (x) q) looks almost identical and agrees while the drone
+	# is near level, which is why it survives a hover test; once rolled it rotates the body
+	# about the wrong axis entirely.
 	var omega_quat := Quaternion(angular_velocity_rad_s.x, angular_velocity_rad_s.y, angular_velocity_rad_s.z, 0.0)
-	var orientation_delta := omega_quat * orientation
+	var orientation_delta := orientation * omega_quat
 	orientation = Quaternion(
 		orientation.x + orientation_delta.x * 0.5 * dt,
 		orientation.y + orientation_delta.y * 0.5 * dt,

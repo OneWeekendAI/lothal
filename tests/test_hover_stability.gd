@@ -16,6 +16,7 @@ static func run() -> Array:
 	var core := ReferenceBuild.build_drone_core()
 	core.rigid_body.orientation = Quaternion(Vector3(0, 0, 1), INITIAL_TILT_RAD)   # start rolled 5 deg
 	var hover_throttle := ReferenceBuild.hover_throttle()
+	core.prime_motors(hover_throttle)   # steady state, not a spin-up transient
 	var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": hover_throttle}
 
 	var steps := int(DURATION_S / DT)

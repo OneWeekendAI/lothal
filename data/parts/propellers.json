@@ -1,0 +1,65 @@
+{
+  "_schema": "Diameter, pitch and blade count set the thrust and torque coefficients (physics.md §4: T = C_T*rho*n^2*D^4, Q = C_Q*rho*n^2*D^5). Thrust goes as D^4, so diameter dominates everything else on this list. Including both a 2-blade and a 3-blade at the same 5x4.3 is deliberate: it is the cleanest A/B in the catalog, because bi-blade is smoother and more efficient while tri-blade has more grip and draws more current.",
+  "parts": [
+    {
+      "part_id": "prop_3x3x3",
+      "name": "3x3x3",
+      "category": "propeller",
+      "mass_g": 1.2,
+      "specs": {
+        "diameter_inches": 3.0,
+        "pitch_inches": 3.0,
+        "blades": 3
+      },
+      "source": "representative 3\" tri-blade spec sheet"
+    },
+    {
+      "part_id": "prop_5x43x2",
+      "name": "5x4.3x2",
+      "category": "propeller",
+      "mass_g": 3.8,
+      "specs": {
+        "diameter_inches": 5.0,
+        "pitch_inches": 4.3,
+        "blades": 2
+      },
+      "source": "representative 5\" bi-blade spec sheet"
+    },
+    {
+      "part_id": "prop_5x43x3",
+      "name": "5x4.3x3",
+      "category": "propeller",
+      "mass_g": 4.5,
+      "specs": {
+        "diameter_inches": 5.0,
+        "pitch_inches": 4.3,
+        "blades": 3
+      },
+      "source": "representative 5\" tri-blade spec sheet; the reference build's prop"
+    },
+    {
+      "part_id": "prop_5x48x3",
+      "name": "5x4.8x3",
+      "category": "propeller",
+      "mass_g": 4.8,
+      "specs": {
+        "diameter_inches": 5.0,
+        "pitch_inches": 4.8,
+        "blades": 3
+      },
+      "source": "representative 5\" high-pitch tri-blade spec sheet"
+    },
+    {
+      "part_id": "prop_7x4x3",
+      "name": "7x4x3",
+      "category": "propeller",
+      "mass_g": 9.0,
+      "specs": {
+        "diameter_inches": 7.0,
+        "pitch_inches": 4.0,
+        "blades": 3
+      },
+      "source": "representative 7\" tri-blade spec sheet"
+    }
+  ]
+}

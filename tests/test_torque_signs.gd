@@ -19,7 +19,7 @@ static func run() -> Array:
 	var thrust_delta_n := PropellerModel.thrust_n(k_t, extra_rpm)
 	var reaction_torque_n_m := PropellerModel.reaction_torque_n_m(k_q, extra_rpm)
 
-	var torque := MotorLayout.torque_from_motor("M1", thrust_delta_n, reaction_torque_n_m, ReferenceBuild.ARM_M)
+	var torque := MotorLayout.torque_from_motor("M1", thrust_delta_n, reaction_torque_n_m, ReferenceBuild.arm_m())
 
 	results.append(TestResult.new(
 		"M1 alone: roll is nonzero and negative (right side rises)",

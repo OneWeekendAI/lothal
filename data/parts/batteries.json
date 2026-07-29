@@ -1,0 +1,83 @@
+{
+  "_schema": "The biggest single mass in most builds, and the only source of voltage sag. 'cells' sets pack voltage, which sets the RPM ceiling (max_RPM = KV * live voltage) — this is most of why a 4S->6S swap feels dramatic rather than cosmetic. 'internal_r_ohm' is what makes that voltage live rather than fixed: punch the throttle, current spikes, voltage drops, RPM ceiling drops, thrust drops. The Li-ion entry exists specifically to expose that mechanism.",
+  "parts": [
+    {
+      "part_id": "battery_2s_450",
+      "name": "2S 450mAh 75C",
+      "category": "battery",
+      "mass_g": 28.0,
+      "specs": {
+        "cells": 2,
+        "nominal_v": 7.4,
+        "mah": 450.0,
+        "internal_r_ohm": 0.014
+      },
+      "source": "representative 2S 75C pack spec sheet"
+    },
+    {
+      "part_id": "battery_4s_1300",
+      "name": "4S 1300mAh 95C",
+      "category": "battery",
+      "mass_g": 155.0,
+      "specs": {
+        "cells": 4,
+        "nominal_v": 14.8,
+        "mah": 1300.0,
+        "internal_r_ohm": 0.011
+      },
+      "source": "representative 4S 95C pack spec sheet"
+    },
+    {
+      "part_id": "battery_4s_1500",
+      "name": "4S 1500mAh 75C",
+      "category": "battery",
+      "mass_g": 185.0,
+      "specs": {
+        "cells": 4,
+        "nominal_v": 14.8,
+        "mah": 1500.0,
+        "internal_r_ohm": 0.015
+      },
+      "source": "representative 4S 75C pack spec sheet; the reference build's pack"
+    },
+    {
+      "part_id": "battery_6s_1100",
+      "name": "6S 1100mAh 120C",
+      "category": "battery",
+      "mass_g": 178.0,
+      "specs": {
+        "cells": 6,
+        "nominal_v": 22.2,
+        "mah": 1100.0,
+        "internal_r_ohm": 0.013
+      },
+      "source": "representative 6S 120C pack spec sheet"
+    },
+    {
+      "part_id": "battery_6s_1300",
+      "name": "6S 1300mAh 100C",
+      "category": "battery",
+      "mass_g": 205.0,
+      "specs": {
+        "cells": 6,
+        "nominal_v": 22.2,
+        "mah": 1300.0,
+        "internal_r_ohm": 0.017
+      },
+      "source": "representative 6S 100C pack spec sheet"
+    },
+    {
+      "part_id": "battery_4s_3000_liion",
+      "name": "4S 3000mAh Li-ion",
+      "category": "battery",
+      "mass_g": 320.0,
+      "specs": {
+        "cells": 4,
+        "nominal_v": 14.4,
+        "mah": 3000.0,
+        "internal_r_ohm": 0.150
+      },
+      "source": "representative 4S Li-ion 18650 pack spec sheet; 10x the internal resistance of a LiPo, deliberately"
+    }
+  ]
+}
