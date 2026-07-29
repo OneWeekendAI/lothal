@@ -31,14 +31,12 @@ const BATTERY_INTERNAL_R_OHM := 0.015
 const ELECTRONICS_MASS_G := 55.0
 const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
 
-const MOTOR_NAMES := ["M1", "M2", "M3", "M4"]   # rear-right, front-right, rear-left, front-left
-
 static func mass_parts() -> Array:
 	var parts: Array = []
 
 	var motor_mass_kg := MOTOR_MASS_G / 1000.0
 	var motor_inertia := InertiaPrimitives.cylinder_y_axis(motor_mass_kg, MOTOR_RADIUS_M, MOTOR_HEIGHT_M)
-	for name in MOTOR_NAMES:
+	for name in MotorLayout.MOTOR_NAMES:
 		var pos := MotorLayout.motor_position(name, ARM_M)
 		parts.append(PartMass.new(motor_mass_kg, pos, motor_inertia))
 
@@ -65,3 +63,21 @@ static func propeller_k_q() -> float:
 
 static func battery_model() -> BatteryModel:
 	return BatteryModel.new(BATTERY_NOMINAL_V, BATTERY_INTERNAL_R_OHM, BATTERY_MAH)
+
+static func build_drone_core() -> DroneCore:
+	var mp := MassProperties.compute(mass_parts())
+	var k_t := propeller_k_t()
+	return DroneCore.new(mp, motor_model(), ARM_M, k_t, propeller_k_q(), battery_model())
+
+## Steady-state hover throttle command (0..1) for this build — the value each motor
+## should sit at, hands-off, once RPM has settled. Used as the sim's starting point so
+## stability tests aren't also measuring spin-up transients.
+static func hover_throttle() -> float:
+	var mp := MassProperties.compute(mass_parts())
+	var weight_n := mp.total_mass_kg * 9.81
+	var k_t := propeller_k_t()
+	var max_rpm := MOTOR_KV * BATTERY_NOMINAL_V
+	var hover_thrust_per_motor_n := weight_n / 4.0
+	var hover_omega := sqrt(hover_thrust_per_motor_n / k_t)
+	var hover_rpm := hover_omega * 60.0 / TAU
+	return hover_rpm / max_rpm

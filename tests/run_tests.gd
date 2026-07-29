@@ -8,6 +8,7 @@ func _init() -> void:
 	all_results.append_array(TestMassProperties.run())
 	all_results.append_array(TestHover.run())
 	all_results.append_array(TestTorqueSigns.run())
+	all_results.append_array(TestHoverStability.run())
 
 	var fail_count := 0
 	for result in all_results:

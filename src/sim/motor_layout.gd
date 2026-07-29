@@ -6,9 +6,18 @@ extends RefCounted
 ##   M3 = rear-left     M4 = front-left
 ## Invariant: diagonal pairs (M1/M4, M2/M3) spin the SAME direction; adjacent pairs oppose.
 
+const MOTOR_NAMES := ["M1", "M2", "M3", "M4"]
+
 const SPIN := {
 	"M1": 1.0, "M4": 1.0,
 	"M2": -1.0, "M3": -1.0,
+}
+
+const IS_FRONT := {
+	"M1": false, "M2": true, "M3": false, "M4": true,
+}
+const IS_RIGHT := {
+	"M1": true, "M2": true, "M3": false, "M4": false,
 }
 
 static func motor_position(name: String, arm_m: float) -> Vector3:
