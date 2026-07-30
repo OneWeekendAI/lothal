@@ -50,6 +50,14 @@ const PAD_THICKNESS_M := 0.003
 ## (the mount pad). Tests assert against this rather than walking get_children().
 var arm_tips: Dictionary = {}
 
+## The top centre plate. Named alongside arm_tips and for the same reason: it is a MOUNTING
+## SURFACE, and anything bolted to it should hang off it rather than be positioned next to it, so a
+## frame rebuild takes its payload with it. The battery is the first such thing.
+var plate_top: MeshInstance3D
+## Side length of the centre plates, in metres. What the pack's overhang is measured against, so
+## the number the fit check uses is the plate that is actually on screen.
+var plate_side_m := 0.0
+
 
 ## Clears any previously generated geometry and rebuilds it from `frame`. Safe to call
 ## repeatedly with different frames; the only state that survives a call is this node
@@ -82,6 +90,16 @@ static func default_plate_gap_m() -> float:
 ## thinner than the parts either side of it and the stack reads as a single slab.
 static func min_plate_gap_m() -> float:
 	return Build.FRAME_PLATE_THICKNESS_M
+
+
+## Height of the top plate's UPPER face above the airframe's origin — the surface anything strapped
+## to the top of the stack rests on. Read off the generated plate rather than recomputed from the
+## gap, so a standoff tweak carries whatever sits on it without the caller knowing there is a
+## standoff at all. Zero before the first rebuild().
+func plate_top_face_m() -> float:
+	if plate_top == null:
+		return 0.0
+	return plate_top.position.y + (plate_top.mesh as BoxMesh).size.y * 0.5
 
 
 static func max_plate_gap_m(arm_m: float) -> float:
@@ -159,6 +177,8 @@ func _build_centre_plates(arm_m: float, material: StandardMaterial3D, plate_gap_
 	if gap < 0.0:
 		gap = default_plate_gap_m()
 
+	plate_side_m = side
+
 	var top := MeshInstance3D.new()
 	top.name = "PlateTop"
 	var top_mesh := BoxMesh.new()
@@ -167,6 +187,7 @@ func _build_centre_plates(arm_m: float, material: StandardMaterial3D, plate_gap_
 	top.material_override = material
 	top.position = Vector3(0, gap * 0.5, 0)
 	add_child(top)
+	plate_top = top
 
 	var bottom := MeshInstance3D.new()
 	bottom.name = "PlateBottom"

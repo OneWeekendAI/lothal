@@ -21,8 +21,142 @@ static func run() -> Array:
 	results.append(_test_props_sit_on_the_motor_shafts(catalog))
 	results.append(_test_prop_choice_changes_the_props(catalog))
 	results.append(_test_an_oversized_prop_overlaps_the_airframe(catalog))
+	results.append(_test_the_pack_sits_on_the_top_plate(catalog))
+	results.append(_test_a_pack_change_changes_the_block(catalog))
+	results.append(_test_a_frame_change_takes_the_pack_with_it(catalog))
 
 	return results
+
+
+## The pack is mounted where a 5" pack goes: on the top centre plate, lying along the aircraft's
+## forward axis. Parented ONTO the plate rather than positioned beside it, for the reason the
+## motors hang off the arm-tip pads — the plate's height is FrameModel's (and the standoff tweak
+## moves it), so an airframe that placed the pack at its own computed height would be a second copy
+## of the plate stack's arithmetic, and it would drift the first time somebody wound the standoffs.
+static func _test_the_pack_sits_on_the_top_plate(catalog: PartsCatalog) -> TestResult:
+	var build := _build(catalog, "frame_5in_freestyle", "motor_2207_1960kv", "prop_5x43x3")
+	var airframe := AirframeModel.new()
+	airframe.rebuild(build)
+
+	var pack := airframe.battery_mesh
+	var problems: Array[String] = []
+
+	if pack == null or not airframe.frame_model.is_ancestor_of(pack):
+		airframe.free()
+		return TestResult.new("the pack is mounted on the frame's top centre plate", false,
+			"there is no pack on the airframe")
+
+	if pack.get_parent() != airframe.frame_model.plate_top:
+		problems.append("the pack is not parented on the top plate")
+
+	# Its underside rests ON the plate's top face, measured through the transform chain rather than
+	# read off a field: a pack floating 2 mm above the plate, or sunk into it, is exactly the class
+	# of error that looks perfect in a screenshot.
+	var pack_y: float = _chain_to(airframe, pack).origin.y
+	var underside := pack_y - pack.size_m.y * 0.5
+	var plate_face: float = airframe.frame_model.plate_top_face_m()
+	if absf(underside - plate_face) > EPS:
+		problems.append("the pack's underside is at %.4f, the plate's face at %.4f" % [
+			underside, plate_face])
+
+	# Along the aircraft, not across it: nose is -Z, and the published length is the long axis.
+	if pack.size_m.z <= pack.size_m.x:
+		problems.append("the pack is not lying fore-and-aft (%s)" % pack.size_m)
+
+	airframe.free()
+
+	return TestResult.new(
+		"the pack is mounted on the frame's top centre plate, lying fore-and-aft",
+		problems.is_empty(),
+		"underside %.4f m on a plate face at %.4f m, %s" % [
+			underside, plate_face, "seated" if problems.is_empty() else str(problems)]
+	)
+
+
+## Change the pack and the block on the aircraft changes size — the acceptance criterion, asserted
+## on the assembled airframe rather than on a BatteryMesh on its own. Frame, motor and prop are
+## held still, so anything that moved came from the pack rail.
+static func _test_a_pack_change_changes_the_block(catalog: PartsCatalog) -> TestResult:
+	var airframe := AirframeModel.new()
+
+	airframe.rebuild(Build.from_ids(catalog, "frame_5in_freestyle", "motor_2207_1960kv",
+		"prop_5x43x3", "battery_2s_450"))
+	var small: Vector3 = airframe.battery_mesh.size_m
+	var small_cells: int = airframe.battery_mesh.cell_count
+	var small_y: float = _chain_to(airframe, airframe.battery_mesh).origin.y
+
+	airframe.rebuild(Build.from_ids(catalog, "frame_5in_freestyle", "motor_2207_1960kv",
+		"prop_5x43x3", "battery_6s_4000_liion"))
+	var large: Vector3 = airframe.battery_mesh.size_m
+	var large_cells: int = airframe.battery_mesh.cell_count
+	var large_y: float = _chain_to(airframe, airframe.battery_mesh).origin.y
+
+	airframe.free()
+
+	# A taller pack has to sit higher, because it is seated on its underside rather than centred:
+	# a pack that grew downward would be inside the plate it is strapped to.
+	var passed := large.x > small.x and large.y > small.y and large.z > small.z \
+		and small_cells == 2 and large_cells == 6 and large_y > small_y
+
+	return TestResult.new(
+		"choosing a different pack changes the block on the aircraft, and re-seats it",
+		passed,
+		"2S 450 %s (%d cells) at y=%.4f -> 6S 4000 Li-ion %s (%d cells) at y=%.4f" % [
+			small, small_cells, small_y, large, large_cells, large_y]
+	)
+
+
+## A frame change replaces the plate the pack is strapped to, so it must take the pack with it and
+## leave nothing of the old one behind. The failure being two packs on one airframe.
+##
+## The second half is the one that proves the pack FOLLOWS the plate rather than sitting at a
+## height that happens to match. A frame change does not move the plate face — the standoff gap is
+## derived from plate thickness, so every frame's top face is at the same 12.5 mm — so a pack
+## nailed to a constant would pass a frame swap and fail nobody. Winding the standoffs to their
+## limit does move it, by a different amount for each frame, and the pack has to rise by exactly
+## that much.
+static func _test_a_frame_change_takes_the_pack_with_it(catalog: PartsCatalog) -> TestResult:
+	var airframe := AirframeModel.new()
+	airframe.rebuild(_build(catalog, "frame_3in_toothpick", "motor_1404_3800kv", "prop_3x3x3"))
+	var old_pack: Node3D = airframe.battery_mesh
+	var small_side: float = airframe.frame_model.plate_side_m
+
+	var large := _build(catalog, "frame_10in_long_range", "motor_2807_1300kv", "prop_5x43x3")
+	airframe.rebuild(large)
+	var old_still_inside := airframe.is_ancestor_of(old_pack)
+	var underside := _pack_underside(airframe)
+	var face: float = airframe.frame_model.plate_top_face_m()
+	var large_side: float = airframe.frame_model.plate_side_m
+	var packs_drawn := 0
+	for node in airframe.frame_model.plate_top.get_children():
+		if node is BatteryMesh:
+			packs_drawn += 1
+
+	# Same build, standoffs wound to the limit this frame allows.
+	var tweaks := AssemblyTweaks.new()
+	tweaks.set_mm(AssemblyTweaks.PLATE_GAP, AssemblyTweaks.limits(large)[AssemblyTweaks.PLATE_GAP]["max"])
+	airframe.rebuild(large, tweaks)
+	var raised_face: float = airframe.frame_model.plate_top_face_m()
+	var raised_underside := _pack_underside(airframe)
+
+	airframe.free()
+
+	var followed := absf(raised_underside - raised_face) < EPS and raised_face > face + EPS
+	var passed := not old_still_inside and packs_drawn == 1 \
+		and absf(underside - face) < EPS and large_side > small_side and followed
+
+	return TestResult.new(
+		"a frame change re-seats the pack, and the pack rides the standoffs up with the plate",
+		passed,
+		"plate side %.4f -> %.4f m, %d packs, old one still inside: %s; standoffs to the limit moved the face %.4f -> %.4f m and the pack's underside %.4f -> %.4f m" % [
+			small_side, large_side, packs_drawn, old_still_inside,
+			face, raised_face, underside, raised_underside]
+	)
+
+
+static func _pack_underside(airframe: AirframeModel) -> float:
+	var pack: BatteryMesh = airframe.battery_mesh
+	return _chain_to(airframe, pack).origin.y - pack.size_m.y * 0.5
 
 
 ## A propeller belongs to its motor, not to the frame. Parented that way, a taller motor lifts

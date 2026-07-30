@@ -25,6 +25,10 @@ var motor_meshes: Dictionary = {}
 ## propeller physically bolts — so a taller motor lifts its prop without anything recomputing
 ## a clearance, and a frame change moves motors and props together in one step.
 var propeller_meshes: Dictionary = {}
+## The pack, strapped to the top centre plate. Parented onto the plate for the same reason the
+## motors hang off the arm-tip pads: the plate's height is FrameModel's, the standoff tweak moves
+## it, and a second copy of that arithmetic here is a second thing to get wrong.
+var battery_mesh: BatteryMesh
 ## Arm length of the build currently drawn, kept so clearance can be reported against the
 ## geometry actually on screen rather than against whatever Build was asked about last.
 var arm_m := 0.0
@@ -51,6 +55,25 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 	motor_meshes.clear()
 	propeller_meshes.clear()
 	arm_m = build.arm_m
+
+	# The pack, strapped to the top centre plate — where a 5" pack goes, and where the standoff
+	# tweak can move it from underneath without anything here being told. Parented onto the plate
+	# rather than positioned beside it, so a frame rebuild takes it with the plate exactly as it
+	# takes the motors with the arm tips; there is no path by which a stale pack survives a frame
+	# change, and no second copy of the plate stack's height.
+	#
+	# It is seated on its UNDERSIDE, not centred: the pack rests on the plate, so a taller pack has
+	# to grow upward. Both terms come from the parts — the plate's own top face and the pack's own
+	# reported height — so this line stays right for a 1S stick and a 6S brick alike.
+	battery_mesh = BatteryMesh.new()
+	battery_mesh.name = "Battery"
+	battery_mesh.rebuild(build.battery)
+	var plate_top: Node3D = frame_model.plate_top
+	battery_mesh.position = Vector3(
+		0,
+		frame_model.plate_top_face_m() - plate_top.position.y + battery_mesh.size_m.y * 0.5,
+		0)
+	plate_top.add_child(battery_mesh)
 
 	for motor_name in MotorLayout.MOTOR_NAMES:
 		var pad: Node3D = frame_model.arm_tips[motor_name]

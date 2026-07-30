@@ -88,7 +88,7 @@ static func _pack_inertia_comes_from_the_catalog(build: Build) -> Array:
 	var actual := _battery_inertia(build)
 	# What the old mass estimate would have said, quoted in the detail so the size of the change
 	# is on the record rather than inferred.
-	var estimated := InertiaPrimitives.box(mass_kg, Vector3(0.070, 0.030, 0.035)
+	var estimated := InertiaPrimitives.box(mass_kg, Vector3(0.035, 0.030, 0.070)
 		* pow(mass_kg / 0.185, 1.0 / 3.0))
 
 	results.append(TestResult.new(

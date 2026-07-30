@@ -164,7 +164,11 @@ static func battery_size_of(pack: Dictionary) -> Vector3:
 	var height: float = float(specs.get("height_mm", 0.0))
 	if length > 0.0 and width > 0.0 and height > 0.0:
 		return Vector3(width, height, length) / 1000.0
-	return Vector3(0.070, 0.030, 0.035) * pow(maxf(mass_kg, 0.001) / 0.185, 1.0 / 3.0)
+	# A 70 x 35 x 30 mm pack at the reference build's mass, scaled by the cube root of this one's —
+	# stated in BODY axes like the branch above, so an undimensioned entry is at least mounted the
+	# right way round. (The estimate it replaces returned this in the catalog's own order, which
+	# laid the pack ACROSS the airframe; no shipped entry reaches this line, so nothing moved.)
+	return Vector3(0.035, 0.030, 0.070) * pow(maxf(mass_kg, 0.001) / 0.185, 1.0 / 3.0)
 
 
 ## How much of the RPM ceiling this motor can reach before its current limit stops it,
