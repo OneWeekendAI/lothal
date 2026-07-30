@@ -129,7 +129,8 @@ func mass_parts() -> Array:
 	parts.append(PartMass.new(frame_mass_kg, Vector3.ZERO, InertiaPrimitives.box(frame_mass_kg, frame_size)))
 
 	var battery_mass_kg := float(battery["mass_g"]) / 1000.0
-	parts.append(PartMass.new(battery_mass_kg, Vector3.ZERO, InertiaPrimitives.box(battery_mass_kg, _battery_size_m(battery_mass_kg))))
+	parts.append(PartMass.new(battery_mass_kg, Vector3.ZERO,
+		InertiaPrimitives.box(battery_mass_kg, battery_size_m())))
 
 	var electronics_mass_kg := ELECTRONICS_MASS_G / 1000.0
 	parts.append(PartMass.new(electronics_mass_kg, Vector3.ZERO, InertiaPrimitives.box(electronics_mass_kg, ELECTRONICS_SIZE_M)))
@@ -137,12 +138,33 @@ func mass_parts() -> Array:
 	return parts
 
 
-## Pack dimensions are not a spec in parts.md's field table, so they are estimated from
-## mass at LiPo pack density rather than authored. Only the pack's own local tensor
-## depends on this, and it sits at the origin where that term is smallest.
-func _battery_size_m(mass_kg: float) -> Vector3:
-	var scale := pow(mass_kg / 0.185, 1.0 / 3.0)
-	return Vector3(0.070, 0.030, 0.035) * scale
+## The fitted pack as a box in BODY axes: width across X, height up Y, length along Z — because
+## nose is -Z (physics.md §1) and a pack is strapped down fore-and-aft. The catalog publishes it in
+## its own frame (length, width, height), so the reordering happens here, once.
+##
+## This is the ONE answer to "how big is the pack". BatteryMesh draws these same three numbers, and
+## the overhang measured on screen is measured off that drawing. The project already learned what
+## two answers to one object's size costs — main.tscn hardcoding 0.0778 while the physics read
+## MotorLayout — and the pack was the last component still carrying a private estimate.
+func battery_size_m() -> Vector3:
+	return battery_size_of(battery)
+
+
+## Static so anything holding a catalog entry can ask its size without assembling a Build. The
+## fallback is for an entry whose contributor has not published dimensions yet: the old estimate
+## from mass at LiPo pack density, which is wrong in a small way rather than absent in a large one.
+## Every entry in data/parts/batteries.json carries real dimensions, so nothing in the shipped
+## catalog reaches it — it exists so a half-finished contribution renders and flies instead of
+## collapsing to a point mass.
+static func battery_size_of(pack: Dictionary) -> Vector3:
+	var specs: Dictionary = pack.get("specs", {})
+	var mass_kg: float = float(pack.get("mass_g", 0.0)) / 1000.0
+	var length: float = float(specs.get("length_mm", 0.0))
+	var width: float = float(specs.get("width_mm", 0.0))
+	var height: float = float(specs.get("height_mm", 0.0))
+	if length > 0.0 and width > 0.0 and height > 0.0:
+		return Vector3(width, height, length) / 1000.0
+	return Vector3(0.070, 0.030, 0.035) * pow(maxf(mass_kg, 0.001) / 0.185, 1.0 / 3.0)
 
 
 ## How much of the RPM ceiling this motor can reach before its current limit stops it,
