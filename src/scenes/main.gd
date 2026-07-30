@@ -157,8 +157,8 @@ func _respawn_after_crash() -> void:
 
 ## Places the drone level, stationary, and pointed at `forward` (yaw only — respawning
 ## already banked would just hand the pilot a second crash).
-func _reset_to(position: Vector3, forward: Vector3) -> void:
-	core.rigid_body.position_m = position
+func _reset_to(p_position: Vector3, forward: Vector3) -> void:
+	core.rigid_body.position_m = p_position
 	core.rigid_body.velocity_mps = Vector3.ZERO
 	core.rigid_body.angular_velocity_rad_s = Vector3.ZERO
 

@@ -108,7 +108,7 @@ func _init() -> void:
 	_banner_label.visible = false
 	add_child(_banner_label)
 
-func _add_readout(parent: Node, alignment: int = HORIZONTAL_ALIGNMENT_LEFT) -> Label:
+func _add_readout(parent: Node, alignment: HorizontalAlignment = HORIZONTAL_ALIGNMENT_LEFT) -> Label:
 	var label := Label.new()
 	label.horizontal_alignment = alignment
 	label.add_theme_color_override("font_color", COLOR_OK)

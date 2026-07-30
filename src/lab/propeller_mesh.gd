@@ -212,8 +212,8 @@ func rebuild(prop: Dictionary) -> void:
 ## normal condition, and drawing blades there would make the render lie about the machine for the
 ## whole of every flight. Above the threshold the swept disc is drawn instead, which is both honest
 ## and what a rotor at speed actually looks like.
-static func max_discrete_rpm(blade_count: int, fps: float) -> float:
-	var blades := maxi(blade_count, 1)
+static func max_discrete_rpm(p_blade_count: int, fps: float) -> float:
+	var blades := maxi(p_blade_count, 1)
 	return 60.0 * fps / (2.0 * float(blades)) * ALIASING_MARGIN
 
 
@@ -339,10 +339,10 @@ func _build_blade_mesh(hub_radius: float, pitch_m: float) -> ArrayMesh:
 ## The blade angle at radius r for a given pitch — the whole propeller model in one line, and
 ## the reason this class exists rather than a scaled stand-in. Static so the relationship is
 ## quotable on its own.
-static func twist_angle_rad(pitch_m: float, radius_m: float) -> float:
-	if radius_m <= 0.0:
+static func twist_angle_rad(pitch_m: float, p_radius_m: float) -> float:
+	if p_radius_m <= 0.0:
 		return 0.0
-	return atan(pitch_m / (TAU * radius_m))
+	return atan(pitch_m / (TAU * p_radius_m))
 
 
 ## Chord at a fractional position along the blade, as a slice of a sine arch: narrow at the

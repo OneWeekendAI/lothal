@@ -49,6 +49,7 @@ func invalidate_lap() -> void:
 static func format(seconds: float) -> String:
 	if seconds <= 0.0:
 		return "--:--.--"
+	@warning_ignore("integer_division")
 	var minutes := int(seconds) / 60
 	var remainder := seconds - float(minutes * 60)
 	return "%d:%05.2f" % [minutes, remainder]

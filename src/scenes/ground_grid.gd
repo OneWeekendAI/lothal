@@ -20,6 +20,7 @@ static func build_texture() -> ImageTexture:
 	var image := Image.create(TEXTURE_SIZE, TEXTURE_SIZE, false, Image.FORMAT_RGBA8)
 	image.fill(BASE_COLOR)
 
+	@warning_ignore("integer_division")
 	var line_width := maxi(1, TEXTURE_SIZE / 128)
 	for i in TEXTURE_SIZE:
 		for w in line_width:

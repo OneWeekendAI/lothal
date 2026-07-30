@@ -103,7 +103,7 @@ func _init(p_sample_rate_hz: float = DEFAULT_SAMPLE_RATE_HZ) -> void:
 ## approaching the listener. It is applied here rather than by pitch-shifting the finished
 ## buffer because we are generating the waveform anyway, and scaling the phase increment is
 ## both exact and free, where resampling a rendered block is neither.
-func render_block(obs: Observables, doppler_scale: float, frame_count: int) -> PackedFloat32Array:
+func render_block(obs: Observables, p_doppler_scale: float, frame_count: int) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	out.resize(frame_count)
 	if frame_count <= 0:
@@ -123,8 +123,8 @@ func render_block(obs: Observables, doppler_scale: float, frame_count: int) -> P
 	for i in MOTOR_COUNT:
 		# Read the PUBLISHED frequencies. Deriving them from obs.rpm here would work today
 		# and would be the bug the observables layer exists to prevent.
-		var blade_hz: float = obs.blade_pass_hz[i] * doppler_scale
-		var elec_hz: float = obs.electrical_hz[i] * doppler_scale
+		var blade_hz: float = obs.blade_pass_hz[i] * p_doppler_scale
+		var elec_hz: float = obs.electrical_hz[i] * p_doppler_scale
 
 		# A fundamental above Nyquist cannot be represented at all; rendering it anyway
 		# folds it back down as a descending phantom tone. Silence is the honest answer.
@@ -260,8 +260,8 @@ func render_block(obs: Observables, doppler_scale: float, frame_count: int) -> P
 ## Mono rendered into the interleaved stereo frames AudioStreamGeneratorPlayback expects.
 ## Deliberately identical in both channels: the source is a point in space, and where it
 ## sits in the stereo field is the 3D player's business, not the synthesiser's.
-func render_stereo(obs: Observables, doppler_scale: float, frame_count: int) -> PackedVector2Array:
-	var mono := render_block(obs, doppler_scale, frame_count)
+func render_stereo(obs: Observables, p_doppler_scale: float, frame_count: int) -> PackedVector2Array:
+	var mono := render_block(obs, p_doppler_scale, frame_count)
 	var frames := PackedVector2Array()
 	frames.resize(frame_count)
 	for n in frame_count:
@@ -300,11 +300,11 @@ static func doppler_scale(source_position: Vector3, source_velocity: Vector3, li
 ## Energy at a single frequency, by the Goertzel algorithm — one bin of a DFT for the cost
 ## of a loop. Used by the tests to assert what was actually rendered rather than trusting
 ## that the parameter went in correctly.
-static func goertzel_energy(samples: PackedFloat32Array, hz: float, sample_rate_hz: float) -> float:
+static func goertzel_energy(samples: PackedFloat32Array, hz: float, p_sample_rate_hz: float) -> float:
 	var count := samples.size()
 	if count == 0 or hz <= 0.0:
 		return 0.0
-	var coeff := 2.0 * cos(TAU * hz / sample_rate_hz)
+	var coeff := 2.0 * cos(TAU * hz / p_sample_rate_hz)
 	var s1 := 0.0
 	var s2 := 0.0
 	for i in count:
