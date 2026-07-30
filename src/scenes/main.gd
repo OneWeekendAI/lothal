@@ -47,6 +47,14 @@ const CRASH_ALTITUDE_M := 0.02
 var core: DroneCore
 var build: Build
 var build_panel: BuildPanel
+## The visible aircraft, generated from `build` rather than authored in main.tscn — see the
+## comment on the Drone node there, and AirframeModel's header.
+var airframe: AirframeModel
+## The parts this scene opens on, as a category -> part_id dictionary. AppShell sets it from
+## Lab's rails before adding the scene to the tree, which is how the build crosses the door
+## (labs-and-sim.md §4). Left empty it falls back to the reference build, so main.tscn still
+## runs on its own — capture_frame.gd and F5-from-the-editor both load it directly.
+var initial_selection: Dictionary = {}
 var hud: Hud
 var course := GateCourse.new()
 var lap_timer := LapTimer.new()
@@ -83,12 +91,10 @@ func _ready() -> void:
 	hud = Hud.new()
 	ui_layer.add_child(hud)
 
-	build_panel = BuildPanel.new(PartsCatalog.load_default(), {
-		"frame": ReferenceBuild.FRAME_ID,
-		"motor": ReferenceBuild.MOTOR_ID,
-		"propeller": ReferenceBuild.PROPELLER_ID,
-		"battery": ReferenceBuild.BATTERY_ID,
-	})
+	airframe = AirframeModel.new()
+	drone.add_child(airframe)
+
+	build_panel = BuildPanel.new(PartsCatalog.load_default(), _opening_selection())
 	build_panel.build_changed.connect(_on_build_changed)
 	ui_layer.add_child(build_panel)   # emits build_changed on _ready, which builds the core
 
@@ -99,23 +105,29 @@ func _on_build_changed(new_build: Build) -> void:
 	build = new_build
 	_hover_throttle = build.hover_throttle()
 	core = build.build_drone_core()
-	_fit_drone_mesh_to_arm(build.arm_m)
+	# One call, and the airframe on screen is the airframe being flown — frame, motors and
+	# props, all from this same Build. There is no second description of the aircraft to keep
+	# in step, which is what the old _fit_drone_mesh_to_arm was: a scale factor applied to a
+	# box, correcting a 110 mm arm that had been baked into the scene file.
+	airframe.rebuild(build)
 	# A lap time belongs to a build. Swapping a part mid-lap starts the attempt over rather
 	# than letting a 6S pack finish a lap a 4S one started.
 	_restart_course()
 
-## The rendered airframe follows arm length, so swapping a 3" frame for a 7" is visible as
-## well as felt. Godot primitives only — no Blender this week (week1.md day 3).
-func _fit_drone_mesh_to_arm(arm_m: float) -> void:
-	var offset := arm_m * cos(deg_to_rad(45.0))
-	for motor_name in MotorLayout.MOTOR_NAMES:
-		var node := drone.get_node_or_null("Motor_%s" % motor_name) as Node3D
-		if node != null:
-			var pos := MotorLayout.motor_position(motor_name, arm_m)
-			node.position = pos
-	var frame_mesh := drone.get_node_or_null("Frame") as MeshInstance3D
-	if frame_mesh != null:
-		frame_mesh.scale = Vector3.ONE * (offset / 0.0778)   # 0.0778 = the .tscn's 110 mm arm
+## The parts to open on: whatever Lab handed over, falling back to the reference build for a
+## direct load of main.tscn. Filled per-category so a partial hand-over still yields a complete
+## selection rather than a missing key deep inside Build.
+func _opening_selection() -> Dictionary:
+	var defaults := {
+		"frame": ReferenceBuild.FRAME_ID,
+		"motor": ReferenceBuild.MOTOR_ID,
+		"propeller": ReferenceBuild.PROPELLER_ID,
+		"battery": ReferenceBuild.BATTERY_ID,
+	}
+	for category in defaults:
+		if initial_selection.has(category):
+			defaults[category] = initial_selection[category]
+	return defaults
 
 ## Back to gate 1 with a fresh clock — a new build gets a clean attempt.
 func _restart_course() -> void:

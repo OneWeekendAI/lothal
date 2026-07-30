@@ -1,14 +1,6 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://src/scenes/main.gd" id="1"]
-
-[sub_resource type="BoxMesh" id="BoxMesh_frame"]
-size = Vector3(0.15, 0.01, 0.15)
-
-[sub_resource type="CylinderMesh" id="CylinderMesh_motor"]
-top_radius = 0.011
-bottom_radius = 0.011
-height = 0.02
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(400, 400)
@@ -44,26 +36,13 @@ fog_sky_affect = 0.0
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
 
+; The airframe under Drone is NOT authored here. It is generated at runtime by
+; AirframeModel from the same Build the physics reads, so the frame, motors and props on
+; screen are the parts that were chosen in Lab (labs-and-sim.md §3). What used to sit here
+; was a BoxMesh plus four cylinders with the 5" arm's motor positions baked in as 0.0778 and
+; no propellers at all, which meant choosing the 7" frame flew a 150 mm arm and drew a 5"
+; prop-less box.
 [node name="Drone" type="Node3D" parent="."]
-
-[node name="Frame" type="MeshInstance3D" parent="Drone"]
-mesh = SubResource("BoxMesh_frame")
-
-[node name="Motor_M1" type="MeshInstance3D" parent="Drone"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0778, 0, 0.0778)
-mesh = SubResource("CylinderMesh_motor")
-
-[node name="Motor_M2" type="MeshInstance3D" parent="Drone"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0778, 0, -0.0778)
-mesh = SubResource("CylinderMesh_motor")
-
-[node name="Motor_M3" type="MeshInstance3D" parent="Drone"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0778, 0, 0.0778)
-mesh = SubResource("CylinderMesh_motor")
-
-[node name="Motor_M4" type="MeshInstance3D" parent="Drone"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0778, 0, -0.0778)
-mesh = SubResource("CylinderMesh_motor")
 
 [node name="Camera3D" type="Camera3D" parent="."]
 current = true

@@ -43,6 +43,21 @@ Press <kbd>F5</kbd> to run. A gamepad is strongly recommended.
 
 Keyboard input is digital, so it is a fallback for testing rather than a way to fly well.
 
+### Lab and Sim
+
+The app opens on **Lab** — the garage. Nothing flies there. You pick a frame, a motor and a
+propeller from the catalog rails, and the airframe in the middle of the screen is generated
+from those parts: arms as long as `arm_mm` says, motor bells the size of the stator, and
+propeller blades twisted to the angle the pitch implies. The five derived stats and every
+compatibility warning move with each change; there is no apply button.
+
+Because the render is built from the real dimensions, it doubles as the fit check. Put 7"
+props on a 3" frame and you can see them intersect each other and the arms — the warning in
+the panel and the picture are the same fact.
+
+**Sim** is the field, reached through its tab. It flies exactly what Lab built, from the
+same numbers: pick the 7" frame in the garage and the airframe in the field is a 7".
+
 Fly through the lit gate. Gates must be taken in order; the eighth completes a lap, and
 your best time is kept in `user://best_lap.json`. Hitting the ground puts you back at the
 last gate you cleared and voids the lap in progress.
@@ -98,10 +113,17 @@ scale, not by describing the physics.
 `max_amps`, `poles`. Plus a `mount_pattern` and a `thrust_test` block naming the
 `prop_id` and `voltage_v` the headline thrust figure was measured with. That block is not
 optional: a thrust number without the prop and pack behind it cannot be turned into a
-coefficient, and a guessed coefficient is the one thing this project will not ship.
+coefficient, and a guessed coefficient is the one thing this project will not ship. The
+`prop_id` must name a propeller that actually exists — the test suite checks it, because a
+typo there does not make the drone slightly wrong, it fits a coefficient against nothing.
+The `catalog` block holds `stator_class` (e.g. `22xx`), `kv_class`, and `intended_use`.
 
 **`propellers.json`** — `diameter_inches`, `pitch_inches`, `blades`. Thrust goes as
-diameter⁴ and shaft torque as diameter⁵, so diameter dominates everything else here.
+diameter⁴ and shaft torque as diameter⁵, so diameter dominates everything else here. Pitch
+also sets the blade angle the generated mesh is twisted to, so it is visible as well as
+felt. The `catalog` block holds `blade_count`, `diameter_class`, `intended_use`, and
+`material` — material is browsing metadata rather than a spec because nothing reads it yet;
+the day the model grows a blade-flex term is the day it moves into `specs`.
 
 **`batteries.json`** — `cells`, `nominal_v`, `mah`, `internal_r_ohm`. Internal resistance
 is what makes a pack feel strong or tired; it is worth finding a real figure rather than

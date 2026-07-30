@@ -24,9 +24,121 @@ static func run() -> Array:
 	results.append_array(_test_filters(catalog))
 	results.append_array(_test_live_reaction(catalog))
 	results.append_array(_test_powertrain_rails(catalog))
+	results.append_array(_test_the_build_crosses_into_sim(catalog))
 	results.append_array(_test_orbit(catalog))
 
 	return results
+
+
+# ---------------------------------------------------------------------------
+# The boundary: Lab decides how the drone looks in the field
+# ---------------------------------------------------------------------------
+
+## labs-and-sim.md §3: "Everything you saw in Lab is what you fly." Before this, main.tscn
+## hardcoded the drone as a box plus four cylinders with the 5" arm's motor positions baked in
+## as 0.0778 and no propellers at all — so choosing the 7" frame put the physics on a 150 mm arm
+## while the visual stayed a 5" prop-less box.
+##
+## The end-to-end claim is checked in three synchronous pieces rather than by booting the flight
+## scene, because Sim builds its airframe in _ready and _ready needs a processed frame, which
+## this runner deliberately does not have (it does all its work from _init so a hung suite names
+## itself). So: the selection crosses the door; the scene file authors no airframe for a stale
+## one to hide in; and AirframeModel renders that selection correctly — the third being what
+## tests/test_airframe_model.gd covers in full. The composed result is then looked at with
+## tests/capture_frame.gd, which does boot the scene.
+static func _test_the_build_crosses_into_sim(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	var shell := AppShell.new()
+
+	shell.lab.picker.select_id("frame_7in_long_range")
+	shell.lab.motor_picker.select_id("motor_2807_1300kv")
+	shell.lab.propeller_picker.select_id("prop_7x35x2")
+	shell.show_sim()
+
+	var handed: Dictionary = shell.sim.initial_selection
+	results.append(TestResult.new(
+		"the parts chosen in Lab are handed to Sim on the way through the door",
+		handed.get("frame", "") == "frame_7in_long_range"
+			and handed.get("motor", "") == "motor_2807_1300kv"
+			and handed.get("propeller", "") == "prop_7x35x2",
+		"Sim was handed %s" % handed
+	))
+
+	# ...and it must be handed over BEFORE the scene is in the tree, or the flight scene spends
+	# its first frame on a different aircraft and then rebuilds.
+	results.append(TestResult.new(
+		"the hand-over lands before Sim is ever in the tree",
+		not shell.sim.is_inside_tree() and not handed.is_empty(),
+		"sim inside tree at hand-over: %s" % shell.sim.is_inside_tree()
+	))
+
+	# Walking back to the garage, choosing a 5" and going out again must hand over the 5".
+	shell.show_lab()
+	shell.lab.picker.select_id("frame_5in_freestyle")
+	shell.lab.propeller_picker.select_id("prop_5x43x3")
+	shell.show_sim()
+	var second: Dictionary = shell.sim.initial_selection
+	results.append(TestResult.new(
+		"a second trip out hands over the build as it stands then, not the first one",
+		second.get("frame", "") == "frame_5in_freestyle"
+			and second.get("propeller", "") == "prop_5x43x3"
+			and second.get("motor", "") == "motor_2807_1300kv",
+		"second trip handed %s" % second
+	))
+	shell.free()
+
+	# The scene file must author NO airframe. This is the structural half of "the visual cannot
+	# disagree with the physics": if there is no box and no cylinders in main.tscn, there is
+	# nothing for a stale 110 mm arm to be baked into. Before this slice, Drone had five
+	# authored children — a frame box and four motor cylinders at +/-0.0778.
+	var scene: Node = load(AppShell.SIM_SCENE).instantiate()
+	var drone: Node = scene.get_node("Drone")
+	var authored_meshes := 0
+	for child in drone.get_children():
+		if child is MeshInstance3D:
+			authored_meshes += 1
+	var authored_children := drone.get_child_count()
+	scene.free()
+
+	results.append(TestResult.new(
+		"main.tscn authors no airframe, so there is nothing for a baked arm to hide in",
+		authored_children == 0 and authored_meshes == 0,
+		"Drone has %d authored children (%d of them meshes); it used to have 5" % [
+			authored_children, authored_meshes]
+	))
+
+	# And the geometry that Sim will generate from that hand-over is the 7" one. Built here from
+	# the ids that crossed, so this fails if the door hands over something the airframe cannot
+	# render as asked.
+	var flown := Build.from_ids(catalog, "frame_7in_long_range", "motor_2807_1300kv",
+		"prop_7x35x2", ReferenceBuild.BATTERY_ID)
+	var airframe := AirframeModel.new()
+	airframe.rebuild(flown)
+	var reach := _airframe_reach(airframe)
+	var prop_radius: float = (airframe.propeller_meshes["M1"] as PropellerMesh).radius_m
+	var prop_count: int = airframe.propeller_meshes.size()
+	airframe.free()
+
+	# The old scene's baked figure, named so a regression to it is recognisable rather than
+	# merely being some number that is wrong.
+	var baked_in := 0.0778 * sqrt(2.0)
+	results.append(TestResult.new(
+		"the handed-over build renders a 7\" airframe with its four propellers",
+		absf(reach - 0.150) < 0.001 and prop_count == 4
+			and absf(prop_radius - 0.0889) < 0.001 and absf(reach - baked_in) > 0.01,
+		"arm %.3f m (baked was %.3f m), %d props of radius %.4f m" % [
+			reach, baked_in, prop_count, prop_radius]
+	))
+
+	return results
+
+
+## Arm length as measured from generated geometry: the horizontal distance from the drone's
+## centre to a motor, read through the transform chain rather than from any field.
+static func _airframe_reach(airframe: AirframeModel) -> float:
+	var motor: Node3D = airframe.motor_meshes["M1"]
+	var origin: Vector3 = TestAirframeModel._chain_to(airframe, motor).origin
+	return Vector2(origin.x, origin.z).length()
 
 
 # ---------------------------------------------------------------------------

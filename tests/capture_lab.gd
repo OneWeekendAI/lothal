@@ -9,7 +9,11 @@ extends SceneTree
 ##
 ##   godot --script res://tests/capture_lab.gd -- <out.png> [settle_frames] [frame_part_id]
 ##                                                 [azimuth_deg] [elevation_deg]
-##                                                 [motor_part_id] [prop_part_id]
+##                                                 [motor_part_id] [prop_part_id] ["sim"]
+##
+## A trailing "sim" makes the selections in Lab and then walks out through the Sim tab before
+## shooting, which is how the project's central claim gets photographed: the airframe in the
+## field is the one chosen in the garage.
 ##
 ## The motor and prop arguments are what let a specific BUILD be photographed rather than a
 ## specific frame — needed the moment prop clearance became something to look at, since "a 7"
@@ -55,6 +59,9 @@ func _init() -> void:
 			print("no such propeller in the visible list: %s" % args[6])
 			quit(1)
 			return
+
+	if args.size() > 7 and args[7] == "sim":
+		shell.show_sim()
 
 	for i in settle:
 		await process_frame

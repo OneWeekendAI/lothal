@@ -101,10 +101,21 @@ func show_lab() -> void:
 	_refresh_tabs()
 
 
-## Out to the field. The existing flight scene, unchanged, instantiated fresh.
+## Out to the field, flying what the garage built. The scene is instantiated fresh, handed
+## Lab's selection, and only THEN added to the tree — the hand-over has to land before _ready
+## runs, or the flight scene would spend a moment on a different aircraft and rebuild.
+##
+## This is the build crossing the boundary (labs-and-sim.md §4), and it is the whole point of
+## the door: pick the 7" frame in the garage and the airframe in the field is a 7", because
+## both rooms generate it from the same Build rather than each drawing their own.
 func show_sim() -> void:
 	if sim == null:
 		sim = load(SIM_SCENE).instantiate()
+		sim.initial_selection = {
+			"frame": lab.picker.selected_part()["part_id"],
+			"motor": lab.motor_picker.selected_part()["part_id"],
+			"propeller": lab.propeller_picker.selected_part()["part_id"],
+		}
 		add_child(sim)
 	_showing_lab = false
 	lab.visible = false
