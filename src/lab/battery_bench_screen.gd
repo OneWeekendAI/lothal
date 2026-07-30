@@ -69,6 +69,10 @@ var propeller_id: String
 var battery_id: String
 
 var powertrain: Powertrain
+## The persistent charge of every pack, or null for a bench that should start on a full one.
+## Injected rather than loaded here, for the reason AssemblyTweaks is: the tests must not depend
+## on, or overwrite, the packs of whoever is running them.
+var pack_charge: PackCharge = null
 var trace: VoltageTrace
 var instruments: BatteryInstruments
 
@@ -87,8 +91,9 @@ var _mode_buttons: Dictionary = {}
 
 
 func _init(p_catalog: PartsCatalog, p_motor_id: String = "", p_propeller_id: String = "",
-		p_battery_id: String = "") -> void:
+		p_battery_id: String = "", p_pack_charge: PackCharge = null) -> void:
 	catalog = p_catalog
+	pack_charge = p_pack_charge
 	motor_id = p_motor_id if p_motor_id != "" else ReferenceBuild.MOTOR_ID
 	propeller_id = p_propeller_id if p_propeller_id != "" else ReferenceBuild.PROPELLER_ID
 	battery_id = p_battery_id if p_battery_id != "" else ReferenceBuild.BATTERY_ID
@@ -170,6 +175,12 @@ func _rebuild() -> void:
 		_build.effective_max_amps, _build.rated_rpm(),
 		_build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5
 	)
+
+	# The pack arrives as it actually is, not as it came off the shelf. This one line is what
+	# makes the second run of the evening different from the first, and it is why a bench run
+	# costs something (labs-and-sim.md §5).
+	if pack_charge != null:
+		pack_charge.apply_to(battery_id, powertrain.battery)
 
 	elapsed_s = 0.0
 	trace.clear()
@@ -266,6 +277,14 @@ func advance(delta: float) -> void:
 func _process(delta: float) -> void:
 	if visible:
 		advance(delta)
+
+
+## Writes what this run did back to the persistent store. Called when the room is left rather
+## than every frame — the store is the record of what happened, and a save per physics tick would
+## be writing a file a thousand times a second to record a number nothing else can see yet.
+func persist_pack_charge() -> void:
+	if pack_charge != null:
+		pack_charge.record_from(battery_id, powertrain.battery)
 
 
 func current_build() -> Build:

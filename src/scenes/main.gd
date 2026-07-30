@@ -60,6 +60,14 @@ var initial_selection: Dictionary = {}
 ## passed through the door would be a second place for the shim height to live. Sim never writes it
 ## — the field authors nothing (labs-and-sim.md §1).
 var tweaks: AssemblyTweaks = AssemblyTweaks.load_from()
+## How much charge each pack has left. AppShell hands its own instance over so both rooms are
+## looking at one set of packs within a session; a direct load of main.tscn reads the file itself.
+##
+## This is the ONE thing Sim writes back (labs-and-sim.md §4). Fly for four minutes on a
+## four-minute pack and you land on an empty battery, and it is still empty when you walk back
+## into the garage. That is not Sim authoring anything — it is Sim reporting what happened, which
+## is what §3 says the field is for.
+var pack_charge: PackCharge = PackCharge.load_from()
 var hud: Hud
 var course := GateCourse.new()
 var lap_timer := LapTimer.new()
@@ -110,6 +118,10 @@ func _on_build_changed(new_build: Build) -> void:
 	build = new_build
 	_hover_throttle = build.hover_throttle()
 	core = build.build_drone_core()
+	# The pack comes out of the bag as it actually is. Seeded here rather than inside Build,
+	# which must stay pure: the reference build's 11.7:1 and 29% are full-pack figures and
+	# cannot become a function of how much flying anyone has done.
+	pack_charge.apply_to(build.battery["part_id"], core.powertrain.battery)
 	# One call, and the airframe on screen is the airframe being flown — frame, motors and
 	# props, all from this same Build. There is no second description of the aircraft to keep
 	# in step, which is what the old _fit_drone_mesh_to_arm was: a scale factor applied to a
@@ -152,6 +164,9 @@ func _restart_course() -> void:
 ## to the start line. Ground contact is a plain altitude test rather than a Jolt query —
 ## the ground is a single flat plane this week, so a shape cast would cost more than it tells us.
 func _respawn_after_crash() -> void:
+	# A crash is a landing, and a landing is when the pack state is written down. Recorded rather
+	# than reset: hitting the ground does not refill a battery.
+	persist_pack_charge()
 	lap_timer.invalidate_lap()
 	_reset_to(course.respawn_position(), course.next_gate()["position"] - course.respawn_position())
 
@@ -189,6 +204,13 @@ func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 	_last_heading = Basis.IDENTITY
 	camera.global_position = position + _drone_heading() * CAMERA_OFFSET
 	camera.look_at(position + Vector3.UP * CAMERA_LOOK_AHEAD_UP, Vector3.UP)
+
+## Writes the pack's state back to the shared store. Called on landing, and by AppShell on the
+## way out of the field — walking back to the garage is the other way a flight ends.
+func persist_pack_charge() -> void:
+	if core != null and build != null:
+		pack_charge.record_from(build.battery["part_id"], core.powertrain.battery)
+
 
 func _physics_process(delta: float) -> void:
 	if core == null:

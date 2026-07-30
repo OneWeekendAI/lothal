@@ -199,11 +199,6 @@ func resolved_m(build: Build) -> Dictionary:
 ## file could not be opened — the caller may report that, but nothing in Lab depends on it, since
 ## an unsaveable tweak is a lost preference and not a broken workbench.
 func save(path: String = SAVE_PATH) -> bool:
-	var handle := FileAccess.open(path, FileAccess.WRITE)
-	if handle == null:
-		push_warning("could not write %s (error %d)" % [path, FileAccess.get_open_error()])
-		return false
-
 	var tweaks := _unknown_tweaks.duplicate(true)
 	for key in _overrides:
 		tweaks[key] = _overrides[key]
@@ -212,9 +207,7 @@ func save(path: String = SAVE_PATH) -> bool:
 	document["schema"] = SCHEMA_VERSION
 	document["tweaks"] = tweaks
 
-	handle.store_string(JSON.stringify(document, "  "))
-	handle.close()
-	return true
+	return JsonStore.write_document(path, document)
 
 
 ## Reads the file, or returns defaults. Every failure mode lands in the same place on purpose:
@@ -224,27 +217,14 @@ func save(path: String = SAVE_PATH) -> bool:
 ## anything not understood is simply not an override.
 static func load_from(path: String = SAVE_PATH) -> AssemblyTweaks:
 	var tweaks := AssemblyTweaks.new()
-	if not FileAccess.file_exists(path):
+
+	# Every file-level failure — missing, unreadable, invalid JSON, JSON that is not an object —
+	# comes back as an empty document from the one place that handles them.
+	var document := JsonStore.read_document(path)
+	if document.is_empty():
 		return tweaks
 
-	# JSON.new().parse rather than JSON.parse_string: the latter prints an engine-level ERROR line
-	# for a malformed document, and a tolerated condition must not look like a failure in the test
-	# runner's output.
-	var reader := JSON.new()
-	if reader.parse(FileAccess.get_file_as_string(path)) != OK:
-		push_warning("%s is not valid JSON (line %d: %s); using defaults" % [
-			path, reader.get_error_line(), reader.get_error_message()])
-		return tweaks
-
-	var parsed: Variant = reader.data
-	if not (parsed is Dictionary):
-		push_warning("%s is not a tweaks document; using defaults" % path)
-		return tweaks
-
-	var document: Dictionary = parsed
-	for key in document:
-		if key != "tweaks" and key != "schema":
-			tweaks._unknown_top[key] = document[key]
+	tweaks._unknown_top = JsonStore.unknown_fields(document, ["tweaks", "schema"])
 
 	var stored: Variant = document.get("tweaks", {})
 	if not (stored is Dictionary):

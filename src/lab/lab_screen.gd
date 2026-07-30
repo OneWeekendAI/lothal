@@ -2,25 +2,25 @@ class_name LabScreen
 extends Control
 ## Lothal Labs — the garage, and the screen the app opens on (labs-and-sim.md §2).
 ##
-## This slice holds frame, motor and propeller selection: three rails on the left, the
-## generated airframe in the middle, the details and derived stats on the right. Nothing here
-## flies. There is no integrator, no flight controller and no audio synthesiser in this file,
-## and that absence is the entire point of the Lab/Sim split — choosing a frame is arithmetic
-## and should not cost a laptop's fans.
+## Four rails on the left — frame, motor, propeller, pack — the generated airframe in the middle,
+## and the details, the derived stats and the charger on the right. Nothing here flies. There is
+## no integrator, no flight controller and no audio synthesiser in this file, and that absence is
+## the entire point of the Lab/Sim split — choosing a frame is arithmetic and should not cost a
+## laptop's fans.
 ##
 ## The 3D content lives in a SubViewport with its OWN World3D. That is not decoration: Sim
 ## is a separate scene with its own cameras and lights, and giving Lab a private world is
 ## what stops the two from rendering into each other. It also means a hidden Lab genuinely
 ## stops drawing (UPDATE_WHEN_VISIBLE) rather than quietly rendering behind the field.
 ##
-## One handler drives everything (_on_selection_changed): geometry, all three details panels,
-## and the stats. There is no apply button and there is no second path — a stat cannot
-## disagree with the airframe on screen because both are rebuilt from the same Build in the
-## same call, whichever rail the change came from.
+## One handler drives everything (_on_selection_changed): geometry, all four details panels, the
+## charger, and the stats. There is no apply button and there is no second path — a stat cannot
+## disagree with the airframe on screen because both are rebuilt from the same Build in the same
+## call, whichever rail the change came from.
 ##
-## The pack is still held at the reference battery. It gets its own bench (a load test, per
-## labs-and-sim.md §2.1) in a later slice; holding it still is also what keeps three-part
-## comparisons honest in the meantime.
+## Time does not pass in Lab, with exactly one exception: the charger. That is the compressed half
+## of labs-and-sim.md §5's asymmetry — draining runs at 1:1 in the benches and in the field, and
+## charging runs at 10:1 here, because there is a charger in the garage and not one in the field.
 const VIEWPORT_SIZE := Vector2i(1280, 720)
 
 ## The camera sits at a FIXED distance, deliberately — and this is the one piece of framing
@@ -89,6 +89,12 @@ var details: FrameDetails
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
 var battery_details: BatteryDetails
+## The charger. Lab's, because charging is a garage activity — there is a charger in the garage
+## and there is not one in the field (labs-and-sim.md §5).
+var charge_panel: PackChargePanel
+## How much charge is in each pack. Injected by AppShell so every room shares one set of packs;
+## tests pass their own, so the suite never depends on or overwrites the packs of whoever runs it.
+var pack_charge: PackCharge
 var assembly_panel: AssemblyPanel
 ## The builder's fit adjustments, loaded from disk on the way in and saved on every change. Lab
 ## owns them because Lab is where the drone is assembled (labs-and-sim.md §1); Sim reads the same
@@ -123,9 +129,11 @@ var _auto_elevation_time := 0.0
 ## `p_tweaks` is the assembly configuration to open with. It defaults to whatever is on disk,
 ## which is the real startup path; tests pass their own so the suite never depends on, or
 ## overwrites, the configuration of the person running it.
-func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null) -> void:
+func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
+		p_pack_charge: PackCharge = null) -> void:
 	catalog = p_catalog
 	tweaks = p_tweaks if p_tweaks != null else AssemblyTweaks.load_from()
+	pack_charge = p_pack_charge if p_pack_charge != null else PackCharge.new()
 
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	anchor_right = 1.0
@@ -195,9 +203,34 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null) -> void:
 	propeller_details.name = "Prop"
 	panels.add_child(propeller_details)
 
+	# The pack tab holds two things: what the battery IS, and what state it is in. They are stacked
+	# in one tab rather than split across two, because "4S 1500, and it is 12% full" is one thought.
+	#
+	# It scrolls, and it is the only panel that needs to. The pack has ten spec rows to the frame's
+	# six, and the charger sits under the five derived stats — which on a laptop-height window put
+	# the charge readout below the bottom of the screen entirely. Vertical only: a details column
+	# that scrolls sideways has a layout bug rather than a scrollbar.
+	var pack_tab := ScrollContainer.new()
+	pack_tab.name = "Pack"
+	pack_tab.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	panels.add_child(pack_tab)
+
+	var pack_column := VBoxContainer.new()
+	pack_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pack_column.add_theme_constant_override("separation", 6)
+	pack_tab.add_child(pack_column)
+
+	# The charger goes ABOVE the spec sheet, which is the opposite of the order the other panels
+	# use and is deliberate. Every other panel is reference material — the numbers on a part do
+	# not change while you look at them. The charge does, it is the only control on the right-hand
+	# column, and it is the reason you opened this tab twice in an evening. Reference belongs
+	# under the thing you act on.
+	charge_panel = PackChargePanel.new(pack_charge)
+	charge_panel.charge_changed.connect(_on_charge_changed)
+	pack_column.add_child(charge_panel)
+
 	battery_details = BatteryDetails.new()
-	battery_details.name = "Pack"
-	panels.add_child(battery_details)
+	pack_column.add_child(battery_details)
 
 	# A fourth panel with no rail behind it, because a fit adjustment is not a part choice: there is
 	# nothing to browse and nothing to filter. It sits with the other panels rather than becoming a
@@ -348,6 +381,7 @@ func _on_selection_changed() -> void:
 	motor_details.render(build.motor, build)
 	propeller_details.render(build.propeller, build)
 	battery_details.render(build.battery, build)
+	charge_panel.render(build)
 	# The fit panel is re-rendered on a PART change too, not only on a fit change: the limits are
 	# derived from the parts, so a smaller motor has to narrow the shim slider then and there.
 	assembly_panel.render(build)
@@ -362,6 +396,12 @@ func _on_selection_changed() -> void:
 func _on_tweaks_changed() -> void:
 	_on_selection_changed()
 	tweaks.save()
+
+
+## The charger was started, stopped, or had its compression changed. Written straight through,
+## for the same reason a tweak is: there is no exit to save on.
+func _on_charge_changed() -> void:
+	pack_charge.save()
 
 
 ## Brings one of the right-hand panels to the front by its tab name ("Frame", "Motor", "Prop",
@@ -451,7 +491,19 @@ func _apply_orbit() -> void:
 		_orbit.rotation = Vector3(-_elevation_rad, _azimuth_rad, 0.0)
 
 
+## The charger, and then the orbit. Charging is the one thing in Lab where time passes at all —
+## and it is the compressed half of labs-and-sim.md §5's asymmetry, the draining half of which
+## happens in the benches and in the field.
+##
+## The file is written on the frames that actually moved something rather than on every frame,
+## and only while the charger is running. That is a few writes a second while a pack fills and
+## none at all the rest of the time, which is the same bargain the assembly tweaks strike: a
+## configuration that only persists when you quit politely is a configuration that does not
+## persist, and Lothal is closed by closing the window.
 func _process(delta: float) -> void:
+	if charge_panel != null and charge_panel.tick(delta):
+		pack_charge.save()
+
 	if _orbit == null or _dragging or not auto_orbit:
 		return
 

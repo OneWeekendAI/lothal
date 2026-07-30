@@ -50,6 +50,11 @@ var propeller_id: String
 var battery_id: String
 
 var powertrain: Powertrain
+## The persistent charge of every pack, or null for a stand that should start on a full one.
+## A run here costs charge exactly as a flight does — a motor on a stand is drawing current
+## (labs-and-sim.md §5) — and injecting it rather than loading it keeps the tests off the packs
+## of whoever is running them.
+var pack_charge: PackCharge = null
 var stand: BenchStand
 var instruments: BenchInstruments
 var drone_audio: DroneAudio
@@ -69,8 +74,9 @@ var _sweep_elapsed := 0.0
 var _applying_sweep := false
 
 
-func _init(p_catalog: PartsCatalog, p_motor_id: String = "", p_propeller_id: String = "", p_battery_id: String = "") -> void:
+func _init(p_catalog: PartsCatalog, p_motor_id: String = "", p_propeller_id: String = "", p_battery_id: String = "", p_pack_charge: PackCharge = null) -> void:
 	catalog = p_catalog
+	pack_charge = p_pack_charge
 	motor_id = p_motor_id if p_motor_id != "" else ReferenceBuild.MOTOR_ID
 	propeller_id = p_propeller_id if p_propeller_id != "" else ReferenceBuild.PROPELLER_ID
 	battery_id = p_battery_id if p_battery_id != "" else ReferenceBuild.BATTERY_ID
@@ -212,6 +218,9 @@ func _rebuild() -> void:
 		_build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5
 	)
 
+	if pack_charge != null:
+		pack_charge.apply_to(battery_id, powertrain.battery)
+
 	stand.rebuild(_build)
 	_frame_camera()
 	instruments.render_build(_build, catalog)
@@ -271,6 +280,13 @@ func audio_viewport() -> SubViewport:
 ## is parented, and in the headless tests it is never parented at all.
 func camera_transform() -> Transform3D:
 	return _camera.transform
+
+
+## Writes what this run took out of the pack back to the persistent store. Called when the room
+## is left rather than every frame — see BatteryBenchScreen.persist_pack_charge.
+func persist_pack_charge() -> void:
+	if pack_charge != null:
+		pack_charge.record_from(battery_id, powertrain.battery)
 
 
 ## The pairing under test, as a Build. Public because the bench is judged against the same

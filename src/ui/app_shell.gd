@@ -43,6 +43,11 @@ var bench: BenchScreen = null
 ## a pack that kept emptying while you were next door choosing propellers would be the worst kind
 ## of bug, since the only evidence would be a number that was wrong later.
 var battery_bench: BatteryBenchScreen = null
+## How much charge is in each pack right now. Loaded once on startup and held here rather than in
+## any one room, because it is the one piece of state every room touches: two benches and the
+## field all drain it, and Lab is where it gets charged back up. It is saved whenever a room that
+## could have changed it is closed.
+var pack_charge := PackCharge.load_from()
 
 var _host: Control
 var _lab_button: Button
@@ -67,7 +72,7 @@ func _init() -> void:
 	_host.offset_top = TAB_BAR_HEIGHT
 	add_child(_host)
 
-	lab = LabScreen.new(catalog_for_lab())
+	lab = LabScreen.new(catalog_for_lab(), null, pack_charge)
 	_host.add_child(lab)
 
 	# The tab bar sits on a high CanvasLayer so it stays reachable over Sim, whose HUD is
@@ -130,7 +135,8 @@ func show_bench() -> void:
 		lab.catalog,
 		selection["motor"],
 		selection["propeller"],
-		selection["battery"]
+		selection["battery"],
+		pack_charge
 	)
 	_host.add_child(bench)
 	_showing_lab = false
@@ -149,7 +155,8 @@ func show_battery_bench() -> void:
 		lab.catalog,
 		selection["motor"],
 		selection["propeller"],
-		selection["battery"]
+		selection["battery"],
+		pack_charge
 	)
 	_host.add_child(battery_bench)
 	_showing_lab = false
@@ -160,19 +167,30 @@ func show_battery_bench() -> void:
 ## Tears down whichever room is currently running. Freed immediately rather than
 ## queue_free()'d, so "the loop has stopped" is true the moment this returns instead of at the
 ## end of the frame — which is also what makes it testable synchronously.
+## Every room that could have drained a pack writes its consequence back on the way out, and the
+## store is saved once. Collected here rather than inside each room because the write-back is a
+## property of LEAVING, and a room that saved on its own could only do it by guessing when it was
+## about to be freed.
 func _close_rooms() -> void:
 	if sim != null:
+		sim.persist_pack_charge()
 		remove_child(sim)
 		sim.free()
 		sim = null
 	if bench != null:
+		bench.persist_pack_charge()
 		_host.remove_child(bench)
 		bench.free()
 		bench = null
 	if battery_bench != null:
+		battery_bench.persist_pack_charge()
 		_host.remove_child(battery_bench)
 		battery_bench.free()
 		battery_bench = null
+	# Only when a room actually changed something. Opening a bench and walking straight back out
+	# must not rewrite the file — see PackCharge._dirty.
+	if pack_charge.has_unsaved_changes():
+		pack_charge.save()
 
 
 ## Out to the field, flying what the garage built. The scene is instantiated fresh, handed
@@ -187,6 +205,9 @@ func show_sim() -> void:
 	if sim == null:
 		sim = load(SIM_SCENE).instantiate()
 		sim.initial_selection = lab.selection()
+		# Handed over rather than loaded by Sim, so both rooms are looking at ONE set of packs
+		# within a session. Sim drains it and writes back on landing; it authors nothing else.
+		sim.pack_charge = pack_charge
 		add_child(sim)
 	_showing_lab = false
 	lab.visible = false
