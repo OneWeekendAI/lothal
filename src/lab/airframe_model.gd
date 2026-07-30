@@ -47,20 +47,28 @@ func rebuild(build: Build) -> void:
 	for motor_name in MotorLayout.MOTOR_NAMES:
 		var pad: Node3D = frame_model.arm_tips[motor_name]
 
+		# The prop is generated FIRST, even though it is mounted last, because the motor needs to
+		# know how tall it is: the nut goes on top of the prop, and the shaft has to be long
+		# enough to reach the nut. Nothing here measures the prop itself — it reports its own
+		# stack height, the same way the motor reports its own seat height.
+		var propeller := PropellerMesh.new()
+		propeller.name = "Propeller_%s" % motor_name
+		propeller.rebuild(build.propeller)
+
 		var motor := MotorMesh.new()
 		motor.name = "Motor_%s" % motor_name
-		motor.rebuild(build.motor)
+		motor.rebuild(build.motor, propeller.stack_height_m)
 		# Sits on top of the pad, not centred in it — MotorMesh measures upward from y = 0.
 		motor.position = Vector3(0, FrameModel.PAD_THICKNESS_M * 0.5, 0)
 		pad.add_child(motor)
 		motor_meshes[motor_name] = motor
 
-		var propeller := PropellerMesh.new()
-		propeller.name = "Propeller_%s" % motor_name
-		propeller.rebuild(build.propeller)
-		# On the shaft, at the height the motor itself reports. Nothing here knows how tall a
-		# 2807 is; asking the motor is what keeps the prop seated for every motor in the catalog.
-		propeller.position = Vector3(0, motor.prop_mount_height_m, 0)
+		# The prop's UNDERSIDE rests on the seat face the motor reports, so the prop's origin sits
+		# half a hub above it. Neither side of that sum is guessed here: the motor knows how high
+		# its adapter is and the prop knows how deep its own hub is, which is what keeps the blade
+		# roots clear of the bell for every pairing in the catalog rather than for the one that
+		# was on screen when the number was chosen.
+		propeller.position = Vector3(0, motor.prop_mount_height_m + propeller.underside_m, 0)
 		motor.add_child(propeller)
 		propeller_meshes[motor_name] = propeller
 

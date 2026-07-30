@@ -58,14 +58,34 @@ const CHORD_FULLNESS := 0.7
 ## own. Real props run 8-12% thickness-to-chord.
 const THICKNESS_TO_CHORD_RATIO := 0.10
 
-## The centre boss, as a fraction of the prop's radius.
+## The centre boss, as a fraction of the prop's radius. A real 5" hub is around 9 mm deep on a
+## 63 mm radius, which is chunkier than it looks in a photograph and is the number this ratio
+## carries — it was 0.055 in the previous slice, which drew a disc rather than a boss.
+##
+## The depth is load-bearing rather than cosmetic. A blade ROOT is steeply feathered (beta is
+## nearly 70 degrees where the blade leaves the hub) so its section stands several millimetres
+## proud of the plane of rotation, above AND below. On a real propeller that section is buried in
+## the hub. If the hub is shallower than the root it carries, the blade emerges below the hub's
+## own underside and the lowest part of the propeller is a blade tucked under the motor — which
+## is what put blade roots inside the bell. So the hub is at least as deep as its root section:
+## see stack_height_m, which is measured from the generated blade rather than assumed.
 const HUB_RADIUS_TO_RADIUS := 0.10
-const HUB_HEIGHT_TO_RADIUS := 0.055
+const HUB_HEIGHT_TO_RADIUS := 0.14
 
 ## Half the prop's published diameter — what the sweep actually occupies, and therefore the
 ## number that decides whether it clears the arms. AirframeModel reads it.
 var radius_m := 0.0
 var blade_count := 0
+## The propeller's full vertical extent: hub depth, deep enough to contain its own blade roots.
+## This is what a motor has to leave room for between its adapter and its nut, and what
+## AirframeModel hands to MotorMesh.rebuild().
+var stack_height_m := 0.0
+## How far the geometry reaches below and above this node's origin. Symmetric, because a blade
+## section is symmetric about the plane of rotation, but named separately because the two are
+## asked different questions: `underside_m` is what rests on the adapter, `topside_m` is what the
+## nut has to clear.
+var underside_m := 0.0
+var topside_m := 0.0
 
 
 ## Clears any previously generated blades and rebuilds from `prop`. The 4-blade-to-2-blade
@@ -85,19 +105,28 @@ func rebuild(prop: Dictionary) -> void:
 	var hub_radius := radius_m * HUB_RADIUS_TO_RADIUS
 	var material := _material_for(prop)
 
+	# Blades first, because the hub has to be deep enough to contain their roots and the only
+	# honest source for how deep that is is the geometry itself.
+	var blade_mesh := _build_blade_mesh(hub_radius, pitch_m)
+	var blade_aabb := blade_mesh.get_aabb()
+	var blade_reach: float = maxf(absf(blade_aabb.position.y), blade_aabb.end.y)
+
+	stack_height_m = maxf(radius_m * HUB_HEIGHT_TO_RADIUS, blade_reach * 2.0)
+	underside_m = stack_height_m * 0.5
+	topside_m = stack_height_m * 0.5
+
 	var hub := MeshInstance3D.new()
 	hub.name = "Hub"
 	var hub_mesh := CylinderMesh.new()
 	hub_mesh.top_radius = hub_radius
 	hub_mesh.bottom_radius = hub_radius
-	hub_mesh.height = radius_m * HUB_HEIGHT_TO_RADIUS
+	hub_mesh.height = stack_height_m
 	hub_mesh.radial_segments = 16
 	hub_mesh.rings = 1
 	hub.mesh = hub_mesh
 	hub.material_override = material
 	add_child(hub)
 
-	var blade_mesh := _build_blade_mesh(hub_radius, pitch_m)
 	for i in blade_count:
 		var blade := MeshInstance3D.new()
 		blade.name = "Blade_%d" % i
