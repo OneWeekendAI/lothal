@@ -110,6 +110,42 @@
       "source": "representative 5\" tri-blade spec sheet; the reference build's prop"
     },
     {
+      "part_id": "prop_5x45x3",
+      "name": "5x4.5x3",
+      "category": "propeller",
+      "mass_g": 4.6,
+      "specs": {
+        "diameter_inches": 5.0,
+        "pitch_inches": 4.5,
+        "blades": 3
+      },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "5\"",
+        "intended_use": "freestyle",
+        "material": "polycarbonate"
+      },
+      "source": "HQProp v1s 5x4.5x3 published dimensions; carried because it is one of the props the held-out validation points in motors.json were measured on"
+    },
+    {
+      "part_id": "prop_5x46x3",
+      "name": "5x4.6x3",
+      "category": "propeller",
+      "mass_g": 4.9,
+      "specs": {
+        "diameter_inches": 5.0,
+        "pitch_inches": 4.6,
+        "blades": 3
+      },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "5\"",
+        "intended_use": "racing",
+        "material": "polycarbonate"
+      },
+      "source": "DAL Cyclone T5046C published dimensions; carried because it is one of the props the held-out validation points in motors.json were measured on"
+    },
+    {
       "part_id": "prop_5x48x3",
       "name": "5x4.8x3",
       "category": "propeller",

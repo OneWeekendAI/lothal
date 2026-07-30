@@ -1,5 +1,5 @@
 {
-  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md §4: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. EVERY motor must carry a thrust_test whose prop_id exists in propellers.json — a typo there does not make the drone slightly wrong, it fits k_t against an empty dictionary; tests/test_parts_system.gd guards this. 'poles' is carried for the electrical-frequency observable (a 14-pole motor has 7 pole pairs); no consumer reads it yet, and it is kept because it is a real spec of a real motor, not because something depends on it. Two tiers, as in frames.json: `specs` is physics-bearing, `catalog` is browsing metadata only, and colour, price and vendor links are banned by name from both. Entries are ordered by stator size then KV, which is what gives the stator filter an ascending order without anything sorting it.",
+  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md §4: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. EVERY motor must carry a thrust_test whose prop_id exists in propellers.json — a typo there does not make the drone slightly wrong, it fits k_t against an empty dictionary; tests/test_parts_system.gd guards this. 'poles' is carried for the electrical-frequency observable (a 14-pole motor has 7 pole pairs); no consumer reads it yet, and it is kept because it is a real spec of a real motor, not because something depends on it. Two tiers, as in frames.json: `specs` is physics-bearing, `catalog` is browsing metadata only, and colour, price and vendor links are banned by name from both. Entries are ordered by stator size then KV, which is what gives the stator filter an ascending order without anything sorting it. 'validation' is OPTIONAL and is what stops the thrust stand from marking its own homework: k_t is FITTED from 'thrust_test', so checking the bench against that same row is a test that cannot fail. Each validation entry is an independently-measured HELD-OUT point — a different prop, or a different voltage, from the one the fit came from — and its 'source' must name the table and the row it was read off. A motor with no validation block displays 'not validated' on the bench, which is the honest reading; a fabricated number here would produce a self-congratulating bench that proves nothing, so no entry may be added without a real, citable measurement. Two consequences of that rule shaped this file. First, a motor carrying validation has its thrust_test read from the SAME test run as its validation points, because mixing two sources measures the difference between the sources rather than measuring this model — so those motors are NAMED PRODUCTS rather than class-typical entries, which is also the direction labs-and-sim.md §7 recommends for the catalog as a whole. Second, the named-product entries were ADDED rather than grafted onto the generic ones: re-sourcing an existing entry moves its physics, and the generic 2207 1750KV in particular is the 6S half of the day-5 '4S -> 6S is different to fly' gate. Most entries here are therefore still unvalidated, including the reference build's motor_2207_1960kv, and the bench says so out loud for each of them.",
   "parts": [
     {
       "part_id": "motor_0802_19000kv",
@@ -200,6 +200,78 @@
         "intended_use": "racing"
       },
       "source": "manufacturer thrust table, 5x4.3x3 on 4S"
+    },
+    {
+      "part_id": "motor_f60proii_2207_1750kv",
+      "name": "F60 Pro II 2207 1750KV",
+      "category": "motor",
+      "mass_g": 32.8,
+      "mount_pattern": "16x16",
+      "specs": {
+        "kv": 1840,
+        "stator_diameter_mm": 22,
+        "stator_height_mm": 7,
+        "max_thrust_g": 1785.0,
+        "max_amps": 35.35,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_5x43x3",
+        "voltage_v": 23.41
+      },
+      "validation": [
+        {
+          "prop_id": "prop_5x45x3",
+          "voltage_v": 23.33,
+          "measured_thrust_g": 1828.0,
+          "source": "Mini Quad Test Bench, T-Motor F60 Pro II 2207 1750kv (motorinfo uid 242), 100% throttle table, row 'HQ v1s 5x4.5x3': Avg Max(g) 1828, Avg Min(V) 23.33"
+        },
+        {
+          "prop_id": "prop_5x46x3",
+          "voltage_v": 23.2,
+          "measured_thrust_g": 1923.0,
+          "source": "Mini Quad Test Bench, T-Motor F60 Pro II 2207 1750kv (motorinfo uid 242), 100% throttle table, row 'DAL Cyclone 5x4.6x3': Avg Max(g) 1923, Avg Min(V) 23.20"
+        }
+      ],
+      "catalog": {
+        "stator_class": "22xx",
+        "kv_class": "1500-2000KV",
+        "intended_use": "freestyle"
+      },
+      "source": "Mini Quad Test Bench, T-Motor F60 Pro II 2207 1750kv (motorinfo uid 242), 100% throttle table, row 'HQ v1s 5x4.3x3PC': Avg Max(g) 1785, Avg Min(V) 23.41. 'kv' is the TESTED 1840kv MQTB measured, not the 1750 nameplate, because a measured figure is what the rest of this entry is. Thrust and current are the Avg Max columns rather than the Max columns: Max is a spike hold and reads 190 A on a motor that actually drew 35 A."
+    },
+    {
+      "part_id": "motor_speedx_gr2306_2450kv",
+      "name": "SpeedX GR2306 2450KV",
+      "category": "motor",
+      "mass_g": 33.9,
+      "mount_pattern": "16x16",
+      "specs": {
+        "kv": 2430,
+        "stator_diameter_mm": 23,
+        "stator_height_mm": 6,
+        "max_thrust_g": 1519.0,
+        "max_amps": 41.9,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_5x43x3",
+        "voltage_v": 15.46
+      },
+      "validation": [
+        {
+          "prop_id": "prop_6x4x2",
+          "voltage_v": 15.26,
+          "measured_thrust_g": 1913.0,
+          "source": "Mini Quad Test Bench, GepRC SpeedX GR2306 2450kv (motorinfo uid 261), 100% throttle table, row 'KingKong 6x4': Avg Max(g) 1913, Avg Min(V) 15.26"
+        }
+      ],
+      "catalog": {
+        "stator_class": "23xx",
+        "kv_class": "2000-2600KV",
+        "intended_use": "racing"
+      },
+      "source": "Mini Quad Test Bench, GepRC SpeedX GR2306 2450kv (motorinfo uid 261), 100% throttle table, row 'HQ v1s 5x4.3x3PC': Avg Max(g) 1519, Avg Min(V) 15.46. This entry carries the catalog's only validation point that crosses a DIAMETER — fitted on a 5\", held out on a 6\" — which is the point that exercises the D^4 law rather than only the pitch interpolation."
     },
     {
       "part_id": "motor_2306_2450kv",
