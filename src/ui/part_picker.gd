@@ -20,10 +20,21 @@ extends PanelContainer
 ## A filter combination that matches nothing SAYS so. An empty list with no explanation is
 ## indistinguishable from a broken catalog load, and Lothal's whole posture on incompatibility
 ## is to explain the consequence rather than present a void (parts.md: warn, never block).
+##
+## A filter entry may name the BLOCK it reads from — `{"key": ..., "label": ..., "block": "specs"}`
+## — and defaults to `catalog`, which is where browsing metadata belongs and where every filter
+## read from until the battery rail arrived. The pack's chemistry is the exception that needed
+## this: it is physics-bearing (it selects BatteryModel's discharge curve, physics.md §5) so it
+## lives in `specs`, and it is also the first question anyone asks about a pack, so it has to be
+## filterable. The two alternatives were both worse — copying it into `catalog` would give one
+## fact two homes that can disagree, and quietly falling back from one block to the other would
+## make "which block is this read from" a thing you have to work out rather than read.
 
 signal part_selected(part: Dictionary)
 
 const ALL := "All"
+## The block a filter entry reads from when it does not say.
+const DEFAULT_BLOCK := "catalog"
 
 var catalog: PartsCatalog
 ## The category this rail lists, e.g. "motor".
@@ -35,6 +46,7 @@ var filter_keys: Array
 
 var _filters: Dictionary = {}        # filter key -> OptionButton
 var _options: Dictionary = {}        # filter key -> Array[String], ALL first
+var _entries: Dictionary = {}        # filter key -> the filter entry dictionary it came from
 var _list: ItemList
 var _empty_hint: Label
 var _visible_parts: Array = []
@@ -68,6 +80,7 @@ func _init(p_catalog: PartsCatalog, p_category: String, p_title: String, p_noun:
 
 	for entry in filter_keys:
 		var key: String = entry["key"]
+		_entries[key] = entry
 
 		var label := Label.new()
 		label.text = entry["label"]
@@ -80,7 +93,7 @@ func _init(p_catalog: PartsCatalog, p_category: String, p_title: String, p_noun:
 		# right-hand edge of the window.
 		selector.clip_text = true
 		selector.custom_minimum_size = Vector2(158, 0)
-		_options[key] = _derive_options(key)
+		_options[key] = _derive_options(entry)
 		for value in _options[key]:
 			selector.add_item(value)
 		selector.select(0)
@@ -110,17 +123,21 @@ func _init(p_catalog: PartsCatalog, p_category: String, p_title: String, p_noun:
 ## The distinct values of one catalog field, in first-appearance order rather than sorted. Each
 ## catalog file is authored smallest-part-first, so first-appearance gives the size filters an
 ## ascending order for free — where an alphabetical sort would put 10" before 3".
-func _derive_options(key: String) -> Array:
+func _derive_options(entry: Dictionary) -> Array:
 	var values: Array = [ALL]
 	for part in catalog.list_category(category):
-		var value := _value_of(part, key)
+		var value := value_of(part, entry)
 		if value != "" and not values.has(value):
 			values.append(value)
 	return values
 
 
-static func _value_of(part: Dictionary, key: String) -> String:
-	return str(part.get("catalog", {}).get(key, ""))
+## One filter entry's value for one part, read from the block that entry names. Public and
+## static because it is the single expression of "where does a filter read from", and the tests
+## assert against the same function rather than against a second copy of the lookup.
+static func value_of(part: Dictionary, entry: Dictionary) -> String:
+	var block: String = entry.get("block", DEFAULT_BLOCK)
+	return str(part.get(block, {}).get(entry["key"], ""))
 
 
 func no_match_text() -> String:
@@ -233,7 +250,7 @@ func _matching_parts() -> Array:
 		for entry in filter_keys:
 			var key: String = entry["key"]
 			var wanted := filter_value(key)
-			if wanted != ALL and _value_of(part, key) != wanted:
+			if wanted != ALL and value_of(part, entry) != wanted:
 				keep = false
 				break
 		if keep:

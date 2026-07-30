@@ -327,9 +327,13 @@ static func _test_filters(catalog: PartsCatalog) -> Array:
 		MotorPicker.FILTER_KEYS, 12))
 	results.append_array(_filter_suite(PropellerPicker.new(catalog), catalog, "propeller",
 		PropellerPicker.FILTER_KEYS, 14))
+	results.append_array(_filter_suite(BatteryPicker.new(catalog), catalog, "battery",
+		BatteryPicker.FILTER_KEYS, 12))
 	return results
 
 
+## Public because the battery rail's own suite runs it too — one set of assertions over every
+## rail is what keeps four rails behaving identically, and a second copy would decay on its own.
 static func _filter_suite(picker: PartPicker, catalog: PartsCatalog, category: String,
 		filter_keys: Array, minimum: int) -> Array:
 	var results: Array = []
@@ -348,7 +352,7 @@ static func _filter_suite(picker: PartPicker, catalog: PartsCatalog, category: S
 	for entry in filter_keys:
 		var key: String = entry["key"]
 		var derived: Array = picker.filter_options(key)
-		var expected := _distinct_values(all_frames, key)
+		var expected := _distinct_values(all_frames, entry)
 		# +1 for the "All" entry the picker puts at the top.
 		if derived.size() != expected.size() + 1 or derived[0] != PartPicker.ALL:
 			option_check = false
@@ -372,7 +376,7 @@ static func _filter_suite(picker: PartPicker, catalog: PartsCatalog, category: S
 		if shown.is_empty() or shown.size() >= all_frames.size():
 			narrowing_ok = false
 		for frame in shown:
-			if _catalog_value(frame, key) != value:
+			if _filter_value(frame, entry) != value:
 				narrowing_ok = false
 		narrowing_detail.append("%s=%s -> %d" % [key, value, shown.size()])
 		picker.set_filter(key, PartPicker.ALL)
@@ -384,16 +388,18 @@ static func _filter_suite(picker: PartPicker, catalog: PartsCatalog, category: S
 
 	# Combining filters must intersect, not replace one another. The two axes are taken from
 	# whatever the rail actually filters on, so this reads the same for every category.
-	var key_a: String = filter_keys[0]["key"]
-	var key_b: String = filter_keys[1]["key"]
-	var pair := _find_pair(all_frames, key_a, key_b, true)
+	var entry_a: Dictionary = filter_keys[0]
+	var entry_b: Dictionary = filter_keys[1]
+	var key_a: String = entry_a["key"]
+	var key_b: String = entry_b["key"]
+	var pair := _find_pair(all_frames, entry_a, entry_b, true)
 	picker.set_filter(key_a, pair["type"])
 	picker.set_filter(key_b, pair["size"])
 	var combined: Array = picker.visible_parts()
 	var combined_ok := not combined.is_empty()
 	for frame in combined:
-		if _catalog_value(frame, key_a) != pair["type"] \
-				or _catalog_value(frame, key_b) != pair["size"]:
+		if _filter_value(frame, entry_a) != pair["type"] \
+				or _filter_value(frame, entry_b) != pair["size"]:
 			combined_ok = false
 	# The intersection must be a strict subset of either filter alone, or the filters are
 	# not really combining.
@@ -407,7 +413,7 @@ static func _filter_suite(picker: PartPicker, catalog: PartsCatalog, category: S
 	))
 
 	# A combination matching nothing must SAY so rather than showing an empty void.
-	var impossible := _find_pair(all_frames, key_a, key_b, false)
+	var impossible := _find_pair(all_frames, entry_a, entry_b, false)
 	picker.set_filter(key_a, impossible["type"])
 	picker.set_filter(key_b, impossible["size"])
 	results.append(TestResult.new(
@@ -635,30 +641,34 @@ static func _furthest_node(node: Node, parent_transform: Transform3D) -> float:
 	return furthest
 
 
-static func _catalog_value(frame: Dictionary, key: String) -> String:
-	return str(frame.get("catalog", {}).get(key, ""))
+## One filter entry's value for one part, through the picker's OWN lookup rather than a second
+## copy of it. That matters since a filter entry may name the block it reads from: the battery
+## rail filters chemistry out of `specs`, and a test that hardcoded `catalog` here would report
+## the rail broken while the rail was right.
+static func _filter_value(part: Dictionary, entry: Dictionary) -> String:
+	return PartPicker.value_of(part, entry)
 
 
-static func _distinct_values(frames: Array, key: String) -> Array:
+static func _distinct_values(parts: Array, entry: Dictionary) -> Array:
 	var out: Array = []
-	for frame in frames:
-		var value := _catalog_value(frame, key)
+	for part in parts:
+		var value := _filter_value(part, entry)
 		if value != "" and not out.has(value):
 			out.append(value)
 	return out
 
 
-## Finds a (frame_type, size_class) pair that either does or does not exist in the catalog,
-## so the "combines" and "matches nothing" tests never hardcode a combination that a later
-## catalog entry could silently make valid.
-static func _find_pair(frames: Array, key_a: String, key_b: String, should_exist: bool) -> Dictionary:
-	var values_a := _distinct_values(frames, key_a)
-	var values_b := _distinct_values(frames, key_b)
+## Finds a pair of filter values that either does or does not exist in the catalog, so the
+## "combines" and "matches nothing" tests never hardcode a combination that a later catalog
+## entry could silently make valid.
+static func _find_pair(parts: Array, entry_a: Dictionary, entry_b: Dictionary, should_exist: bool) -> Dictionary:
+	var values_a := _distinct_values(parts, entry_a)
+	var values_b := _distinct_values(parts, entry_b)
 	for a in values_a:
 		for b in values_b:
 			var found := false
-			for frame in frames:
-				if _catalog_value(frame, key_a) == a and _catalog_value(frame, key_b) == b:
+			for part in parts:
+				if _filter_value(part, entry_a) == a and _filter_value(part, entry_b) == b:
 					found = true
 					break
 			if found == should_exist:

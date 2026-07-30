@@ -118,11 +118,12 @@ func show_lab() -> void:
 ## walked away from mid-run and came back to still spinning would be a machine left unattended.
 func show_bench() -> void:
 	_close_rooms()
+	var selection := lab.selection()
 	bench = BenchScreen.new(
 		lab.catalog,
-		lab.motor_picker.selected_part()["part_id"],
-		lab.propeller_picker.selected_part()["part_id"],
-		ReferenceBuild.BATTERY_ID
+		selection["motor"],
+		selection["propeller"],
+		selection["battery"]
 	)
 	_host.add_child(bench)
 	_showing_lab = false
@@ -155,11 +156,7 @@ func show_sim() -> void:
 	_close_rooms()
 	if sim == null:
 		sim = load(SIM_SCENE).instantiate()
-		sim.initial_selection = {
-			"frame": lab.picker.selected_part()["part_id"],
-			"motor": lab.motor_picker.selected_part()["part_id"],
-			"propeller": lab.propeller_picker.selected_part()["part_id"],
-		}
+		sim.initial_selection = lab.selection()
 		add_child(sim)
 	_showing_lab = false
 	lab.visible = false

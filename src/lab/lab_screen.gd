@@ -84,9 +84,11 @@ var catalog: PartsCatalog
 var picker: FramePicker
 var motor_picker: MotorPicker
 var propeller_picker: PropellerPicker
+var battery_picker: BatteryPicker
 var details: FrameDetails
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
+var battery_details: BatteryDetails
 var assembly_panel: AssemblyPanel
 ## The builder's fit adjustments, loaded from disk on the way in and saved on every change. Lab
 ## owns them because Lab is where the drone is assembled (labs-and-sim.md §1); Sim reads the same
@@ -157,6 +159,10 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null) -> void:
 	propeller_picker.name = "Prop"
 	rails.add_child(propeller_picker)
 
+	battery_picker = BatteryPicker.new(catalog)
+	battery_picker.name = "Pack"
+	rails.add_child(battery_picker)
+
 	var viewport_container := SubViewportContainer.new()
 	viewport_container.stretch = true
 	viewport_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -189,6 +195,10 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null) -> void:
 	propeller_details.name = "Prop"
 	panels.add_child(propeller_details)
 
+	battery_details = BatteryDetails.new()
+	battery_details.name = "Pack"
+	panels.add_child(battery_details)
+
 	# A fourth panel with no rail behind it, because a fit adjustment is not a part choice: there is
 	# nothing to browse and nothing to filter. It sits with the other panels rather than becoming a
 	# fourth column, which would take screen space from the airframe — the thing being judged.
@@ -209,8 +219,9 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null) -> void:
 	picker.select_id(ReferenceBuild.FRAME_ID)
 	motor_picker.select_id(ReferenceBuild.MOTOR_ID)
 	propeller_picker.select_id(ReferenceBuild.PROPELLER_ID)
+	battery_picker.select_id(ReferenceBuild.BATTERY_ID)
 
-	for rail in [picker, motor_picker, propeller_picker]:
+	for rail in [picker, motor_picker, propeller_picker, battery_picker]:
 		rail.part_selected.connect(_on_part_selected)
 
 	_on_selection_changed()
@@ -336,6 +347,7 @@ func _on_selection_changed() -> void:
 	details.render(build.frame, build)
 	motor_details.render(build.motor, build)
 	propeller_details.render(build.propeller, build)
+	battery_details.render(build.battery, build)
 	# The fit panel is re-rendered on a PART change too, not only on a fit change: the limits are
 	# derived from the parts, so a smaller motor has to narrow the shim slider then and there.
 	assembly_panel.render(build)
@@ -362,17 +374,34 @@ func show_panel(panel_name: String) -> bool:
 	return false
 
 
-## The build currently selected across the three rails, on the reference pack. Public because
-## it is what crosses the boundary into Sim (labs-and-sim.md §4) — the field flies exactly the
-## Build the garage assembled, and AppShell hands this one over rather than rebuilding it.
+## The build currently selected across the four rails. Public because it is what crosses the
+## boundary into Sim (labs-and-sim.md §4) — the field flies exactly the Build the garage
+## assembled, and AppShell hands this one over rather than rebuilding it.
+##
+## The pack used to be pinned here to ReferenceBuild.BATTERY_ID, which was honest while there was
+## no battery rail and is the single line this slice existed to delete: every number Lab reported
+## was a number about one particular 4S 1500, and a rail that emitted a selection nobody read
+## would have looked finished from every angle except the stats.
 func current_build() -> Build:
 	return Build.from_ids(
 		catalog,
 		picker.selected_part()["part_id"],
 		motor_picker.selected_part()["part_id"],
 		propeller_picker.selected_part()["part_id"],
-		ReferenceBuild.BATTERY_ID
+		battery_picker.selected_part()["part_id"]
 	)
+
+
+## The whole selection as a category -> part_id dictionary — what crosses the door into the bench
+## and into the field. Assembled here rather than at each door, so a fifth category cannot be
+## added to the rails and forgotten by one of the two things that reads them.
+func selection() -> Dictionary:
+	return {
+		"frame": picker.selected_part()["part_id"],
+		"motor": motor_picker.selected_part()["part_id"],
+		"propeller": propeller_picker.selected_part()["part_id"],
+		"battery": battery_picker.selected_part()["part_id"],
+	}
 
 
 # ---------------------------------------------------------------------------

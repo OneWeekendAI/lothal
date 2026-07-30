@@ -50,6 +50,18 @@ func _load_category(category: String, path: String) -> void:
 		by_category[category].append(entry)
 		by_id[entry["part_id"]] = entry
 
+## The `_schema` prose a category file carries. Nothing in the app reads it — it exists for the
+## next contributor, which is exactly why a test holds it to what it claims. Read off disk rather
+## than kept as parsed state, so it cannot become one more thing to keep in step.
+static func schema_for(category: String) -> String:
+	var path: String = CATEGORY_FILES.get(category, "")
+	if path == "" or not FileAccess.file_exists(path):
+		return ""
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not (parsed is Dictionary):
+		return ""
+	return str((parsed as Dictionary).get("_schema", ""))
+
 func get_part(part_id: String) -> Dictionary:
 	return by_id.get(part_id, {})
 
