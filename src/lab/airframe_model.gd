@@ -78,8 +78,31 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		# roots clear of the bell for every pairing in the catalog rather than for the one that
 		# was on screen when the number was chosen.
 		propeller.position = Vector3(0, motor.prop_mount_height_m + propeller.underside_m, 0)
+		# Direction from MotorLayout, not from anything this file decides: it is the same table the
+		# yaw torque is computed from, so the rotor you can see and the rotor the physics is
+		# integrating cannot disagree about which way they go. Diagonals together, adjacents opposed.
+		propeller.spin = MotorLayout.SPIN[motor_name]
 		motor.add_child(propeller)
 		propeller_meshes[motor_name] = propeller
+
+
+## Hands each propeller the RPM of its own motor, in MotorLayout.MOTOR_NAMES order — which is the
+## order Observables publishes in, so Sim passes `observables.rpm` straight through. This is the only
+## way a rate reaches a propeller in the field, and it starts at the one place that computes RPM.
+func set_rates_rpm(rpm: PackedFloat32Array) -> void:
+	for i in MotorLayout.MOTOR_NAMES.size():
+		if i >= rpm.size():
+			return
+		var motor_name: String = MotorLayout.MOTOR_NAMES[i]
+		(propeller_meshes[motor_name] as PropellerMesh).set_rate_rpm(rpm[i])
+
+
+## One rate for all four, which is what Lab has to offer: there is no powertrain in the garage, so
+## there is nothing to make the four differ. Kept as its own method rather than a four-element array
+## at the call site so Lab is not pretending to know something per motor that it does not.
+func set_all_rates_rpm(rpm: float) -> void:
+	for motor_name in MotorLayout.MOTOR_NAMES:
+		(propeller_meshes[motor_name] as PropellerMesh).set_rate_rpm(rpm)
 
 
 ## Clearance between two adjacent propeller discs, measured from the geometry on screen: the

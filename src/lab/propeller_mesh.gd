@@ -17,13 +17,27 @@ extends Node3D
 ## you cannot read off a spec line at a glance. tests/test_propeller_mesh.gd reads the angle
 ## back out of the generated vertices at every station and converts it to a pitch.
 ##
-## Blades do NOT spin here. Lab is the garage and nothing in it flies (labs-and-sim.md §2);
-## the spinning thrust stand is its own slice.
+## ROTATION: THIS CLASS IS A RENDERER OF A RATE IT IS GIVEN.
+##
+## It holds no speed and derives none. Somebody hands it an RPM (set_rate_rpm) and a direction
+## (`spin`, which the assembler takes from MotorLayout.SPIN), and it turns accordingly. In Sim the
+## RPM comes from the published observables, which architecture.md makes the single source of truth
+## for it. In Lab there is no powertrain yet, so Lab hands in a nominal hand-spin — through this
+## same input, so the thrust stand slice feeds real RPM into a seam that already exists.
+##
+## A propeller that animated itself would be a second source of truth for RPM, and the failure
+## would be invisible: four props spinning convincingly, agreeing with nothing. That is precisely
+## the drift the observables layer exists to prevent. tests/test_prop_rotation.gd checks this file
+## declares no speed at all.
+##
+## Above max_discrete_rpm() the blades stop being drawn and the disc they sweep is drawn instead —
+## see that function for why, which is a correctness problem rather than a polish one.
 ##
 ## Node layout after rebuild():
 ##   Hub        — the centre boss the blades come out of
 ##   Blade_0..N — one MeshInstance3D per blade, all sharing ONE generated mesh, each rotated
 ##                about the vertical by its share of a full turn
+##   BlurDisc   — the swept disc, drawn instead of the blades once they would alias
 ##
 ## The blades share a mesh deliberately: they are the same object bolted on at different
 ## angles, and generating three copies of identical vertices would be three chances for them
@@ -87,6 +101,26 @@ var stack_height_m := 0.0
 var underside_m := 0.0
 var topside_m := 0.0
 
+## Which way this propeller turns, as a sign on rotation about +Y. Set by whoever assembles the
+## aircraft, from MotorLayout.SPIN — the same table the yaw torque is computed from, so the picture
+## and the physics cannot disagree about which way a rotor goes. Not read from anywhere in here.
+var spin := 1.0
+
+## The frame rate the aliasing threshold is designed for. Sixty is a floor rather than a
+## measurement: at a higher frame rate the switch to the blur disc happens earlier than it strictly
+## needs to, which costs a little blade detail; designing for the frame rate we happen to be getting
+## would mean the prop changed representation when the machine got busy, which is worse.
+const DESIGN_FPS := 60.0
+
+## How much of the aliasing bound to actually use. Temporal artefacts — a rotor that judders or
+## seems to hesitate — appear before the bound is reached rather than at it, so the switch happens
+## short of the limit.
+const ALIASING_MARGIN := 0.8
+
+## Angular rate in rad/s, signed, as most recently GIVEN to this node. Zero until somebody says.
+var _rate_rad_s := 0.0
+var _blur: MeshInstance3D
+
 
 ## Clears any previously generated blades and rebuilds from `prop`. The 4-blade-to-2-blade
 ## direction is the one that matters: leftover blades on a larger prop just look like a larger
@@ -134,6 +168,115 @@ func rebuild(prop: Dictionary) -> void:
 		blade.material_override = material
 		blade.rotation = Vector3(0, TAU * float(i) / float(blade_count), 0)
 		add_child(blade)
+
+	# The disc the blades sweep, for when they turn too fast to draw individually. Built now and
+	# hidden, rather than created on the way past the threshold, so crossing that line during a
+	# flight costs a visibility flag and not a mesh build.
+	_blur = MeshInstance3D.new()
+	_blur.name = "BlurDisc"
+	var blur_mesh := CylinderMesh.new()
+	blur_mesh.top_radius = radius_m
+	blur_mesh.bottom_radius = radius_m
+	# As deep as the blades themselves reach, so the disc occupies the volume the rotor actually
+	# sweeps instead of reading as a decal laid over the motor.
+	blur_mesh.height = maxf(blade_reach * 2.0, radius_m * 0.01)
+	blur_mesh.radial_segments = 48
+	blur_mesh.rings = 1
+	_blur.mesh = blur_mesh
+	_blur.material_override = _blur_material(material)
+	add_child(_blur)
+
+	# A rebuild is a new propeller, but it is the same rotor still turning at the same rate: a prop
+	# swap in Lab must not leave the new blades stopped, and re-applying the rate is also what puts
+	# the new blade count's own threshold into effect.
+	_apply_rate()
+
+
+# ---------------------------------------------------------------------------
+# Turning — a rate in, a rotation out
+# ---------------------------------------------------------------------------
+
+## The fastest a propeller with this many blades can be drawn as discrete blades at this frame rate
+## without aliasing.
+##
+## A prop with N blades looks identical to itself every TAU/N radians, so that is the sampling
+## period the eye is up against, not a whole turn. Sampling at `fps` therefore resolves the motion
+## only while one frame advances the prop by less than HALF of TAU/N — the Nyquist limit — which in
+## revolutions per second is fps/(2N), and in RPM:
+##
+##     60 * fps / (2 * N)
+##
+## Past that, what is drawn is not a fast prop: it is a slow prop, or a stopped one, or one turning
+## backwards, and which of those you get depends on the exact ratio. A real prop runs to ~29,000 RPM
+## against a 60 fps bound of 600 RPM for a tri-blade, so in Sim this is not an edge case — it is the
+## normal condition, and drawing blades there would make the render lie about the machine for the
+## whole of every flight. Above the threshold the swept disc is drawn instead, which is both honest
+## and what a rotor at speed actually looks like.
+static func max_discrete_rpm(blade_count: int, fps: float) -> float:
+	var blades := maxi(blade_count, 1)
+	return 60.0 * fps / (2.0 * float(blades)) * ALIASING_MARGIN
+
+
+## The rate this propeller is to turn at, in RPM, unsigned — direction comes from `spin`. This is
+## the whole input: nothing else in this class decides how fast anything goes.
+func set_rate_rpm(rpm: float) -> void:
+	_rate_rad_s = absf(rpm) / 60.0 * TAU * signf(spin)
+	_apply_rate()
+
+
+## The rate in force, signed, rad/s.
+func rate_rad_s() -> float:
+	return _rate_rad_s
+
+
+## Advances the rotation by one step of `delta` seconds. Separate from _process so it can be driven
+## by a test with an exact timestep as well as by the frame loop.
+func advance(delta: float) -> void:
+	if _rate_rad_s == 0.0:
+		return
+	# Wrapped rather than accumulated: a rotor left running at 29,000 RPM adds 3,000 rad a second,
+	# and a float angle that grows without bound loses precision until the rotation visibly steps.
+	rotation.y = fposmod(rotation.y + _rate_rad_s * delta, TAU)
+
+
+func _process(delta: float) -> void:
+	advance(delta)
+
+
+func blades_drawn() -> bool:
+	for child in get_children():
+		if String(child.name).begins_with("Blade_"):
+			return (child as MeshInstance3D).visible
+	return false
+
+
+func blur_drawn() -> bool:
+	return _blur != null and _blur.visible
+
+
+## Chooses which representation is on screen for the rate in force. Called whenever the rate or the
+## propeller changes, so the two are never out of step.
+func _apply_rate() -> void:
+	var rpm: float = absf(_rate_rad_s) / TAU * 60.0
+	var blurred := rpm > max_discrete_rpm(blade_count, DESIGN_FPS)
+
+	for child in get_children():
+		if String(child.name).begins_with("Blade_"):
+			(child as MeshInstance3D).visible = not blurred
+	if _blur != null:
+		_blur.visible = blurred
+
+
+## The swept disc: the prop's own colour, translucent, and unshaded. Unshaded on purpose — a disc
+## made of a blade passing forty times a second has no stable surface for a light to fall on, and
+## lighting it produces a solid drum that reads as a wheel rather than as a rotor.
+func _blur_material(base: StandardMaterial3D) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(base.albedo_color.r, base.albedo_color.g, base.albedo_color.b, 0.3)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return mat
 
 
 ## One blade, as a twisted tapered prism running out along +X from the hub to the tip.

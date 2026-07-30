@@ -230,6 +230,11 @@ func _physics_process(delta: float) -> void:
 
 	_update_camera(delta)
 
+	# The rotors turn at the RPM the physics computed, per motor, from the same published
+	# observables the audio and the HUD read. There is no second place a rotor speed exists: what you
+	# see turning, what you hear, and what is making thrust are one number (architecture.md).
+	airframe.set_rates_rpm(core.observables.rpm)
+
 	# Audio and the HUD are handed the same published observables and nothing else — the
 	# property architecture.md calls the test of the design. Adding this consumer changed
 	# no physics.

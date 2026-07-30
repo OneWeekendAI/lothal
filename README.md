@@ -51,12 +51,25 @@ from those parts: arms as long as `arm_mm` says, motor bells the size of the sta
 propeller blades twisted to the angle the pitch implies. The five derived stats and every
 compatibility warning move with each change; there is no apply button.
 
+The props turn — slowly, the way you flick one with a finger to check it runs true — and each
+motor's rotor turns the way that motor really would, diagonals together and adjacents opposed.
+A **Fit** panel carries the adjustments a builder actually makes to parts rather than choosing
+between them: a shim under the prop, a soft-mount pad under the motor, taller or shorter
+standoffs. Each slider's range comes from the parts fitted, so you can shim by as much spare
+thread as that shaft has and no further, and your configuration is saved to `user://` and is
+still there next time. Those are fit adjustments: they change what clears what, and they
+deliberately do not move any flight number.
+
 Because the render is built from the real dimensions, it doubles as the fit check. Put 7"
 props on a 3" frame and you can see them intersect each other and the arms — the warning in
-the panel and the picture are the same fact.
+the panel and the picture are the same fact. Zoom in on a motor and the prop is on the shaft
+above the bell, on its adapter, under its nut — with daylight you can see.
 
 **Sim** is the field, reached through its tab. It flies exactly what Lab built, from the
-same numbers: pick the 7" frame in the garage and the airframe in the field is a 7".
+same numbers: pick the 7" frame in the garage and the airframe in the field is a 7". The rotors
+turn at the RPM the physics computed, per motor — and above a few hundred RPM they are drawn as
+the disc they sweep rather than as blades, because discrete blades at flight speed alias into a
+prop that appears to crawl, stop, or run backwards.
 
 Fly through the lit gate. Gates must be taken in order; the eighth completes a lap, and
 your best time is kept in `user://best_lap.json`. Hitting the ground puts you back at the

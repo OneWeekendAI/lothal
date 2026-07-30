@@ -1,7 +1,11 @@
 class_name AssemblyTweaks
 extends RefCounted
-## The builder's own adjustments to how the parts fit together, and the first thing in Lothal
-## that survives closing the app.
+## The builder's own adjustments to how the parts fit together, and the first CONFIGURATION in
+## Lothal that survives closing the app. (Not the first write to user:// — LapTimer has kept a best
+## lap there since day 6. That file is one scalar with no schema and no forward compatibility, which
+## is fine for what it holds and not a pattern to grow persistent pack charge on, so the rules below
+## are set out properly here. It does share the one rule that matters most: a corrupt save must not
+## stop the app.)
 ##
 ## Real builders shim. A prop that sits too close to the arm gets a washer under it, a motor that
 ## buzzes gets a soft mount, a stack that will not close gets taller standoffs. None of that is a

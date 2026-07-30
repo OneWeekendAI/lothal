@@ -1,8 +1,8 @@
 class_name TestAssemblyTweaks
 extends RefCounted
 ## The builder's assembly tweaks — shim washers under a prop, a soft-mount pad under a motor,
-## taller or shorter standoffs between the centre plates — and the first persistence in the
-## project.
+## taller or shorter standoffs between the centre plates — and the first persisted CONFIGURATION in
+## the project (LapTimer already keeps a best lap in user://, but it is one scalar with no schema).
 ##
 ## Three things are being pinned here, in ascending order of how expensive they would be to get
 ## wrong.

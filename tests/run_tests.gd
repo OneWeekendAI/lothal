@@ -11,7 +11,7 @@ const SUITES := ["mass properties", "hover", "torque signs", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "build panel",
 	"gate course", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "motor mesh", "propeller mesh", "airframe", "mounting",
-	"assembly tweaks", "lab"]
+	"assembly tweaks", "prop rotation", "lab"]
 
 func _init() -> void:
 	var total := 0
@@ -65,6 +65,7 @@ func _run_suite(suite_name: String) -> Array:
 		"airframe": return TestAirframeModel.run()
 		"mounting": return TestMounting.run()
 		"assembly tweaks": return TestAssemblyTweaks.run()
+		"prop rotation": return TestPropRotation.run()
 		"lab": return TestLab.run()
 	push_error("unknown suite: %s" % suite_name)
 	return []

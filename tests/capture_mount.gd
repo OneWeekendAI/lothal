@@ -3,7 +3,8 @@ extends SceneTree
 ## bell-to-blade gap, and writes a PNG.
 ##
 ##   godot --script res://tests/capture_mount.gd -- <out.png> [motor_id] [prop_id]
-##                                                  [elevation_deg] [spacer_mm] [pad_mm]
+##                                                  [elevation_deg] [spacer_mm] [pad_mm] [rpm]
+##                                                  [settle_frames]
 ##
 ## Lab's own camera is deliberately fixed at a distance chosen by the largest frame in the
 ## catalog and deliberately cannot zoom (lab_screen.gd), which is right for comparing airframes
@@ -29,6 +30,10 @@ func _init() -> void:
 	var elevation_deg: float = float(args[3]) if args.size() > 3 else 6.0
 	var spacer_mm: float = float(args[4]) if args.size() > 4 else 0.0
 	var pad_mm: float = float(args[5]) if args.size() > 5 else 0.0
+	# A rate to turn at, exactly as Lab or Sim would hand one in — which is also how the blur disc
+	# gets photographed, since it is what a rate above the aliasing threshold draws.
+	var rpm: float = float(args[6]) if args.size() > 6 else 0.0
+	var settle: int = int(args[7]) if args.size() > 7 else 8
 
 	var catalog := PartsCatalog.load_default()
 	var motor_part: Dictionary = catalog.get_part(motor_id)
@@ -58,6 +63,8 @@ func _init() -> void:
 	var motor := MotorMesh.new()
 	motor.rebuild(motor_part, propeller.stack_height_m, spacer_mm / 1000.0, pad_mm / 1000.0)
 	propeller.position = Vector3(0, motor.prop_mount_height_m + propeller.underside_m, 0)
+	propeller.spin = MotorLayout.SPIN["M1"]
+	propeller.set_rate_rpm(rpm)
 	motor.add_child(propeller)
 	root.add_child(motor)
 
@@ -76,7 +83,6 @@ func _init() -> void:
 	camera.far = 2.0
 	camera.position = focus + Vector3(0, 0, maxf(propeller.radius_m, motor.total_height_m) * 3.0
 		).rotated(Vector3.RIGHT, -deg_to_rad(elevation_deg))
-	camera.look_at(focus, Vector3.UP)
 	root.add_child(camera)
 
 	var key_light := DirectionalLight3D.new()
@@ -88,12 +94,21 @@ func _init() -> void:
 	fill_light.light_energy = 0.45
 	root.add_child(fill_light)
 
-	for i in 8:
+	# Aimed after a frame has passed, not on the way in. In a SceneTree script, `root` is not itself
+	# inside the tree during _init, so a child added here is not either — and look_at on a node
+	# outside the tree does nothing except push an error, leaving the camera pointed down its own -Z.
+	# That frames the assembly by accident from a low angle and misses it entirely from a high one,
+	# so the symptom is a blank PNG at some elevations and a correct one at others.
+	await process_frame
+	camera.look_at(focus, Vector3.UP)
+
+	for i in settle:
 		await process_frame
 	await RenderingServer.frame_post_draw
 	var image := root.get_texture().get_image()
 	image.save_png(out_path)
-	print("wrote %s (%dx%d) — %s on %s, seat %.4f m, prop stack %.4f m" % [
+	print("wrote %s (%dx%d) — %s on %s, seat %.4f m, stack %.4f m, %.0f RPM, blades drawn: %s, blur: %s, angle %.3f rad" % [
 		out_path, image.get_width(), image.get_height(), motor_id, prop_id,
-		motor.prop_mount_height_m, propeller.stack_height_m])
+		motor.prop_mount_height_m, propeller.stack_height_m, rpm,
+		propeller.blades_drawn(), propeller.blur_drawn(), propeller.rotation.y])
 	quit()

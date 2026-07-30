@@ -69,6 +69,17 @@ const AUTO_ELEVATION_PERIOD_S := 26.0
 ## vertical for elevation.
 const DRAG_DEG_PER_PIXEL := 0.4
 
+## The rate Lab turns the props at: a hand spin, the way you flick a prop with a finger to check it
+## clears the arm and runs true. Lab has no powertrain — that is the thrust stand's slice — so this
+## is the one number on this screen that is a display choice rather than a consequence of a part, and
+## it is here rather than in PropellerMesh for exactly that reason: the propeller renders a rate it is
+## given, and Lab is what gives it one. When the bench lands it feeds real RPM through the same input.
+##
+## Slow, deliberately. It has to stay well under PropellerMesh's aliasing threshold (600 RPM for a
+## tri-blade at 60 fps), because the blade twist is what this viewport exists to show and above that
+## threshold the blades are replaced by a blur disc.
+const HAND_SPIN_RPM := 150.0
+
 var catalog: PartsCatalog
 var picker: FramePicker
 var motor_picker: MotorPicker
@@ -319,6 +330,9 @@ func _on_part_selected(_part: Dictionary) -> void:
 func _on_selection_changed() -> void:
 	var build := current_build()
 	airframe.rebuild(build, tweaks)
+	# A rebuild is new propellers, and they have to be turning: the hand spin is a property of the
+	# room, not of the props that happen to be fitted.
+	airframe.set_all_rates_rpm(HAND_SPIN_RPM)
 	details.render(build.frame, build)
 	motor_details.render(build.motor, build)
 	propeller_details.render(build.propeller, build)
