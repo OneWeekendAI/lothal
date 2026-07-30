@@ -38,10 +38,16 @@ var sim: Node = null
 ## loop and makes noise. Putting it behind its own door keeps that promise literally true
 ## instead of nearly true.
 var bench: BenchScreen = null
+## The battery bench — a load test rather than a stand — or null when it is not the room you are
+## in. Same argument as `bench` and `sim`: it holds a running Powertrain draining a real pack, and
+## a pack that kept emptying while you were next door choosing propellers would be the worst kind
+## of bug, since the only evidence would be a number that was wrong later.
+var battery_bench: BatteryBenchScreen = null
 
 var _host: Control
 var _lab_button: Button
 var _bench_button: Button
+var _pack_bench_button: Button
 var _sim_button: Button
 var _showing_lab := true
 
@@ -76,7 +82,8 @@ func _init() -> void:
 	tab_layer.add_child(bar)
 
 	_lab_button = _add_tab(bar, "Lab", show_lab)
-	_bench_button = _add_tab(bar, "Bench", show_bench)
+	_bench_button = _add_tab(bar, "Thrust", show_bench)
+	_pack_bench_button = _add_tab(bar, "Pack", show_battery_bench)
 	_sim_button = _add_tab(bar, "Sim", show_sim)
 	_refresh_tabs()
 
@@ -131,6 +138,25 @@ func show_bench() -> void:
 	_refresh_tabs()
 
 
+## Onto the battery bench, with the pack currently chosen on Lab's rail and the motors and props
+## that will be pulling on it. Built fresh every time, for the same reason the thrust stand is: a
+## bench you walked away from mid-run and came back to still under load would be a machine left
+## unattended, and here it would have been quietly flattening a battery the whole time.
+func show_battery_bench() -> void:
+	_close_rooms()
+	var selection := lab.selection()
+	battery_bench = BatteryBenchScreen.new(
+		lab.catalog,
+		selection["motor"],
+		selection["propeller"],
+		selection["battery"]
+	)
+	_host.add_child(battery_bench)
+	_showing_lab = false
+	lab.visible = false
+	_refresh_tabs()
+
+
 ## Tears down whichever room is currently running. Freed immediately rather than
 ## queue_free()'d, so "the loop has stopped" is true the moment this returns instead of at the
 ## end of the frame — which is also what makes it testable synchronously.
@@ -143,6 +169,10 @@ func _close_rooms() -> void:
 		_host.remove_child(bench)
 		bench.free()
 		bench = null
+	if battery_bench != null:
+		_host.remove_child(battery_bench)
+		battery_bench.free()
+		battery_bench = null
 
 
 ## Out to the field, flying what the garage built. The scene is instantiated fresh, handed
@@ -166,4 +196,5 @@ func show_sim() -> void:
 func _refresh_tabs() -> void:
 	_lab_button.button_pressed = _showing_lab
 	_bench_button.button_pressed = bench != null
+	_pack_bench_button.button_pressed = battery_bench != null
 	_sim_button.button_pressed = sim != null
