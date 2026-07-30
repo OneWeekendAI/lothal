@@ -31,8 +31,8 @@ static func run() -> Array:
 	var rpm := 29000.0
 	for name in MotorLayout.MOTOR_NAMES:
 		core.motor_rpm[name] = rpm
-	core.pole_pairs = 7.0
-	core.blades = 3.0
+	core.powertrain.pole_pairs = 7.0
+	core.powertrain.blades = 3.0
 	core._publish(Vector3.ZERO)
 
 	var blade_hz: float = core.observables.blade_pass_hz[0]

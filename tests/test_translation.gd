@@ -77,5 +77,5 @@ static func _holds_altitude_at_published_hover_throttle() -> TestResult:
 	return TestResult.new(
 		"10s hands-off at published hover throttle: holds altitude within 1 m",
 		absf(altitude_m) < 1.0,
-		"altitude drift = %.3f m (V_live=%.2f V, I=%.1f A)" % [altitude_m, core.last_voltage_v, core.last_current_total_a]
+		"altitude drift = %.3f m (V_live=%.2f V, I=%.1f A)" % [altitude_m, core.observables.voltage_live_v, core.observables.current_total_a]
 	)
