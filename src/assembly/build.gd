@@ -91,6 +91,14 @@ func _recompute() -> void:
 	mass_properties = MassProperties.compute(mass_parts())
 
 
+## The FITTED prop's geometry in SI. Public because anything assembling a powertrain needs
+## the blade count and radius the audio and the rotor mesh are driven from, and recovering
+## them from the raw catalog dictionary at each call site would be a second copy of the
+## inch-to-metre conversion.
+func prop_geometry() -> Dictionary:
+	return _prop_geometry(propeller)
+
+
 ## Per-prop geometry in SI, since the catalog quotes props in inches like the real world.
 func _prop_geometry(prop: Dictionary) -> Dictionary:
 	return {
