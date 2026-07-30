@@ -3,10 +3,11 @@ extends Control
 ## Throttle, voltage, speed, lap timer and next gate — the fourth consumer of the
 ## observables layer, after vision, controls and the build panel.
 ##
-## Architecture note worth keeping: adding this required no change to src/sim. It reads
-## DroneCore's published state (motor_rpm, last_voltage_v, rigid_body.velocity_mps) and
-## renders it. That "a new consumer touches zero physics code" property is architecture.md's
-## own stated test of the design, and it held.
+## Architecture note worth keeping, with a correction. Adding this required no change to
+## src/sim — but only because it reached into DroneCore's internal fields (motor_rpm,
+## last_voltage_v) directly, which is cheap for the first consumer and a drift hazard for
+## the second. It now reads DroneCore.observables, the same object audio reads, so the two
+## cannot disagree about how fast a motor is turning.
 ##
 ## Built in code, like the build panel — hand-placed UI does not survive version control.
 
@@ -118,15 +119,15 @@ func _add_readout(parent: Node, alignment: int = HORIZONTAL_ALIGNMENT_LEFT) -> L
 ## computed here beyond unit conversion — if a number on the HUD is wrong, it is wrong in
 ## the physics, which is the property that makes the HUD useful for debugging.
 func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, rate_mode: bool) -> void:
-	var throttle_fraction := _average_throttle_fraction(core, build)
+	var obs := core.observables
+	var throttle_fraction := _average_throttle_fraction(obs, build)
 	_throttle_bar.value = throttle_fraction * 100.0
 	_throttle_label.text = "%.0f %%" % (throttle_fraction * 100.0)
 
-	var speed_kmh := core.rigid_body.velocity_mps.length() * 3.6
-	_speed_label.text = "%.0f km/h" % speed_kmh
+	_speed_label.text = "%.0f km/h" % (obs.airspeed_mps * 3.6)
 
-	_voltage_label.text = "%.2f V   %.0f A" % [core.last_voltage_v, core.last_current_total_a]
-	_voltage_label.add_theme_color_override("font_color", _voltage_color(core, build))
+	_voltage_label.text = "%.2f V   %.0f A" % [obs.voltage_live_v, obs.current_total_a]
+	_voltage_label.add_theme_color_override("font_color", _voltage_color(obs, build))
 
 	_mode_label.text = "ACRO" if rate_mode else "ANGLE"
 
@@ -149,21 +150,17 @@ func show_banner(text: String, seconds: float = 2.5) -> void:
 ## pack and prop can reach — not the stick position. In angle mode the controller is
 ## constantly moving individual motors away from the commanded throttle to hold attitude,
 ## and a bar showing the raw stick would sit still while the drone fought for its life.
-func _average_throttle_fraction(core: DroneCore, build: Build) -> float:
-	var total := 0.0
-	for name in MotorLayout.MOTOR_NAMES:
-		total += float(core.motor_rpm[name])
-	var mean_rpm := total / float(MotorLayout.MOTOR_NAMES.size())
+func _average_throttle_fraction(obs: Observables, build: Build) -> float:
 	var ceiling := build.rpm_at_throttle(build.max_throttle_fraction())
 	if ceiling <= 0.0:
 		return 0.0
-	return clampf(mean_rpm / ceiling, 0.0, 1.0)
+	return clampf(obs.mean_rpm() / ceiling, 0.0, 1.0)
 
-func _voltage_color(core: DroneCore, build: Build) -> Color:
+func _voltage_color(obs: Observables, build: Build) -> Color:
 	var nominal: float = float(build.battery["specs"]["nominal_v"])
 	if nominal <= 0.0:
 		return COLOR_OK
-	var fraction := core.last_voltage_v / nominal
+	var fraction := obs.voltage_live_v / nominal
 	if fraction < VOLTAGE_CRITICAL_FRACTION:
 		return COLOR_CRITICAL
 	if fraction < VOLTAGE_WARN_FRACTION:

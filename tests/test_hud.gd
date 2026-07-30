@@ -44,16 +44,22 @@ static func run() -> Array:
 	results.append(TestResult.new(
 		"voltage readout shows live pack voltage and current",
 		hud._voltage_label.text.contains("V") and hud._voltage_label.text.contains("A")
-			and core.last_voltage_v > 0.0,
-		"reads \"%s\" (V_live = %.2f V)" % [hud._voltage_label.text, core.last_voltage_v]
+			and core.observables.voltage_live_v > 0.0,
+		"reads \"%s\" (V_live = %.2f V)" % [hud._voltage_label.text, core.observables.voltage_live_v]
 	))
 
 	# A pack under heavy sag must be shown as such rather than in the calm colour.
+	#
+	# These drive core.observables rather than DroneCore's internals, because observables
+	# is what the HUD actually consumes — a test that writes a field the renderer no longer
+	# reads passes or fails for reasons unrelated to the renderer. That physics fills those
+	# observables correctly in the first place is a separate claim, checked against a real
+	# stepped simulation in test_observables.gd.
 	var nominal: float = float(build.battery["specs"]["nominal_v"])
-	core.last_voltage_v = nominal * 0.70
+	core.observables.voltage_live_v = nominal * 0.70
 	hud.render(core, build, course, timer, false)
 	var sagging_color: Color = hud._voltage_label.get_theme_color("font_color")
-	core.last_voltage_v = nominal
+	core.observables.voltage_live_v = nominal
 	hud.render(core, build, course, timer, false)
 	var healthy_color: Color = hud._voltage_label.get_theme_color("font_color")
 
@@ -64,9 +70,9 @@ static func run() -> Array:
 	))
 
 	results.append(TestResult.new(
-		"speed readout is in km/h and tracks the rigid body",
-		_speed_text_for(hud, build, core, course, timer, Vector3(0, 0, -10.0)) == "36 km/h",
-		"10 m/s reads \"%s\"" % _speed_text_for(hud, build, core, course, timer, Vector3(0, 0, -10.0))
+		"speed readout converts m/s to km/h",
+		_speed_text_for(hud, build, core, course, timer, 10.0) == "36 km/h",
+		"10 m/s reads \"%s\"" % _speed_text_for(hud, build, core, course, timer, 10.0)
 	))
 
 	results.append(TestResult.new(
@@ -91,7 +97,7 @@ static func run() -> Array:
 	return results
 
 static func _speed_text_for(hud: Hud, build: Build, core: DroneCore, course: GateCourse,
-		timer: LapTimer, velocity: Vector3) -> String:
-	core.rigid_body.velocity_mps = velocity
+		timer: LapTimer, airspeed_mps: float) -> String:
+	core.observables.airspeed_mps = airspeed_mps
 	hud.render(core, build, course, timer, false)
 	return hud._speed_label.text

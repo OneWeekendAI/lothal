@@ -8,7 +8,8 @@ extends Node3D
 ##
 ## Keyboard:  Arrows = pitch/roll   A/D = yaw   W/S = throttle trim   Space = mode toggle
 ## Gamepad:   right stick = pitch/roll   left stick = yaw/throttle   button A = mode toggle
-## Tab hides the build panel; parts are picked with the mouse.
+## Tab hides the build panel; parts are picked with the mouse. L swaps the listener between
+## the pilot's position on the ground and the chase camera.
 
 const SUBSTEPS := 8   # 120 Hz physics_process x 8 = 1 kHz dynamics (physics.md §6)
 const STICK_DEADZONE := 0.08
@@ -50,6 +51,8 @@ var hud: Hud
 var course := GateCourse.new()
 var lap_timer := LapTimer.new()
 var course_renderer: CourseRenderer
+var drone_audio: DroneAudio
+var _l_was_pressed := false
 var rate_controller := RateModeController.new()
 var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": 0.0}
 var use_rate_mode := false
@@ -68,6 +71,11 @@ func _ready() -> void:
 
 	course_renderer = CourseRenderer.new(course)
 	add_child(course_renderer)
+
+	# Added before the build panel, because the panel emits build_changed from its own
+	# _ready and that path runs all the way through to placing the listener.
+	drone_audio = DroneAudio.new()
+	add_child(drone_audio)
 
 	var ui_layer := CanvasLayer.new()
 	add_child(ui_layer)
@@ -115,6 +123,11 @@ func _restart_course() -> void:
 	lap_timer.invalidate_lap()
 	if course_renderer != null:
 		course_renderer.highlight_next()
+	if drone_audio != null:
+		# The pilot stands at the start line and stays there. That is the whole point of the
+		# default listener: the drone leaves, comes back, and passes — which is where
+		# distance, air absorption and doppler actually do something.
+		drone_audio.set_listener(drone_audio.listener_mode, course.start_position())
 	_reset_to(course.start_position(), course.start_forward())
 
 ## Day 3's gate (week1.md): "Ground is one static box; hitting it resets to spawn." Day 6
@@ -143,6 +156,11 @@ func _reset_to(position: Vector3, forward: Vector3) -> void:
 	# Spawn with the motors already at hover RPM. Spinning up from dead through the ~30 ms
 	# lag costs ~0.4 m/s of sink, and with no altitude hold this week that never comes back.
 	core.prime_motors(_hover_throttle)
+	# The drone is somewhere else now. Without this the synthesiser ramps from the RPM and
+	# frequency it had at the moment of the crash to the ones it has after the respawn,
+	# which is heard as a swoop across a teleport that never happened.
+	if drone_audio != null:
+		drone_audio.reset()
 	rate_controller.reset()
 	rc.throttle = _hover_throttle
 	_previous_position = position
@@ -162,6 +180,11 @@ func _physics_process(delta: float) -> void:
 		_tab_was_pressed = Input.is_key_pressed(KEY_TAB)
 		if _tab_was_pressed:
 			build_panel.visible = not build_panel.visible
+
+	if Input.is_key_pressed(KEY_L) != _l_was_pressed:
+		_l_was_pressed = Input.is_key_pressed(KEY_L)
+		if _l_was_pressed:
+			_toggle_listener()
 
 	if Input.get_connected_joypads().is_empty():
 		_read_keyboard()
@@ -190,8 +213,23 @@ func _physics_process(delta: float) -> void:
 
 	_update_camera(delta)
 
+	# Audio and the HUD are handed the same published observables and nothing else — the
+	# property architecture.md calls the test of the design. Adding this consumer changed
+	# no physics.
+	drone_audio.update(core.observables, camera.global_position)
+
 	hud.render(core, build, course, lap_timer, use_rate_mode)
 	hud.tick_banner(delta)
+
+## Swaps between hearing the drone from where the pilot stands and hearing it from the
+## chase camera. Ground is the default and the more convincing of the two, but the camera
+## is what the eyes are doing, and some people want those to agree.
+func _toggle_listener() -> void:
+	var next := DroneAudio.Listener.CHASE_CAMERA
+	if drone_audio.listener_mode == DroneAudio.Listener.CHASE_CAMERA:
+		next = DroneAudio.Listener.PILOT_GROUND
+	drone_audio.set_listener(next, course.start_position())
+	hud.show_banner("EARS: %s" % ("PILOT" if next == DroneAudio.Listener.PILOT_GROUND else "CHASE"))
 
 ## Chase cam. The offset is rotated by the drone's HEADING, not left in world space: with a
 ## fixed world offset the camera keeps facing -Z no matter which way the drone is pointed,

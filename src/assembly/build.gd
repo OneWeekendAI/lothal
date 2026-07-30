@@ -159,7 +159,16 @@ func battery_model() -> BatteryModel:
 	)
 
 func build_drone_core() -> DroneCore:
-	return DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(), effective_max_amps, rated_rpm(), drag_coefficient)
+	var geometry := _prop_geometry(propeller)
+	return DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
+		effective_max_amps, rated_rpm(), drag_coefficient,
+		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5)
+
+## Electrical frequency is per POLE PAIR, not per pole — a 14-pole motor turns through
+## seven electrical cycles per revolution, not fourteen. Getting this wrong is a factor of
+## two on the whine, which sounds like a different motor rather than like a bug.
+func pole_pairs() -> float:
+	return float(motor["specs"]["poles"]) * 0.5
 
 
 # ---------------------------------------------------------------------------
