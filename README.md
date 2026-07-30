@@ -57,8 +57,8 @@ last gate you cleared and voids the lap in progress.
 - Pack voltage sags under load and sets the RPM ceiling, so a tired pack flies differently
 - Motors are current-limited, so an oversized prop runs out of amps before it runs out of volts
 
-Run the test suite headless — 67 checks, including the hover-throttle oracle the whole
-model is calibrated against:
+Run the test suite headless — every check must pass, including the hover-throttle oracle
+the whole model is calibrated against:
 
 ```bash
 godot --headless --script res://tests/run_tests.gd
@@ -81,8 +81,18 @@ Every part has:
 
 Then the per-category `specs`:
 
-**`frames.json`** — `arm_mm` (centre to motor, and the sleeper spec: roll inertia goes as
-arm², so it dominates how the build feels), `max_prop_inches`, `motor_mount` (e.g. `16x16`).
+**`frames.json`** — physics-bearing fields live in `specs`: `arm_mm` (centre to motor, and
+the sleeper spec: roll inertia goes as arm², so it dominates how the build feels),
+`max_prop_inches`, `motor_mount` (e.g. `16x16`). Alongside `specs`, a sibling `catalog`
+block holds browsing metadata that does not feed the physics but is needed to navigate a
+growing catalog: `frame_type` (e.g. `freestyle`, `racing`, `cinelifter`), `size_class` (the
+prop class the frame is built around, e.g. `5"`, `65mm`), and `material` (e.g. `carbon
+fibre 3K`).
+
+Every category can grow a `catalog` block the same way: `specs` stays the physics contract
+and is unchanged by this; `catalog` is where a new field goes if it is a real, checkable
+fact about the product and it earns its place by making the catalog easier to browse at
+scale, not by describing the physics.
 
 **`motors.json`** — `kv`, `stator_diameter_mm`, `stator_height_mm`, `max_thrust_g`,
 `max_amps`, `poles`. Plus a `mount_pattern` and a `thrust_test` block naming the
@@ -103,8 +113,10 @@ Two rules for a part PR:
    manufacturer thrust table, a spec sheet, a bench test. Plausible-looking invented
    numbers are worse than a missing part, because they quietly corrupt the comparison
    between two builds, which is the entire point of the tool.
-2. **If a field does not feed the physics, it does not belong in the file yet.** Colour,
-   price, and vendor links are not specs.
+2. **If a field feeds the physics, it goes in `specs`, and that bar is unchanged.** If it
+   is browsing metadata — a real, checkable property of the product needed to navigate the
+   catalog, such as frame type, size class, or material — it goes in `catalog` instead.
+   Colour, price, and vendor links are not admissible in either block.
 
 Incompatible combinations are allowed on purpose. Putting 7" props on a 3" frame warns and
 then shows you what happens, because that answer teaches more than a greyed-out dropdown.
