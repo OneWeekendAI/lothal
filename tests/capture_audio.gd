@@ -4,7 +4,7 @@ extends SceneTree
 ## capture_frame.gd — the way to actually LISTEN to a change without booting the game and
 ## flying it.
 ##
-##   godot --headless --script res://tests/capture_audio.gd -- <out.wav> [sweep|flypast]
+##   godot --headless --script res://tests/capture_audio.gd -- <out.wav> [sweep|flypast|bench]
 ##
 ## Everything here is driven by a genuine simulation: the flight controller is running, the
 ## pack is sagging, and the four motors are at four different RPM because the PID is
@@ -37,6 +37,7 @@ func _init() -> void:
 	var samples := PackedFloat32Array()
 	match mode:
 		"flypast": samples = _render_flypast(build, core, synth)
+		"bench": samples = _render_bench(build, synth)
 		_: samples = _render_sweep(build, core, synth)
 
 	_write_wav(samples, out_path)
@@ -113,6 +114,50 @@ func _render_flypast(build: Build, core: DroneCore, synth: RotorSynth) -> Packed
 			obs.position_m, obs.velocity_mps))
 		elapsed += block_dt
 
+	return out
+
+
+## A motor on the stand: idle, then ramp to 60% across the first half of the take and hold.
+## No DroneCore, no rigid body, no flight controller — the sound of the garage.
+##
+## This is the demonstration that Lothal Labs gets audio for nothing. RotorSynth reads only
+## Observables, and a Powertrain fills every field it reads, so the bench is audible without
+## a single line of audio code changing. Note the signature: no DroneCore parameter, which
+## is the entire claim in one line.
+const BENCH_DURATION_S := 6.0
+const BENCH_PEAK_THROTTLE := 0.6
+const BENCH_DISTANCE_M := 3.0
+
+func _render_bench(build: Build, synth: RotorSynth) -> PackedFloat32Array:
+	var geometry := build.prop_geometry()
+	var pt := Powertrain.new(
+		build.motor_model(), build.k_t, build.k_q, build.battery_model(),
+		build.effective_max_amps, build.rated_rpm(),
+		build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5
+	)
+
+	var out := PackedFloat32Array()
+	var block_dt := float(BLOCK) / SAMPLE_RATE
+	var substep := block_dt / float(PHYSICS_SUBSTEPS)
+	var elapsed := 0.0
+	# The bench stands at a fixed distance in front of the listener; nothing moves, so
+	# there is no doppler and the propagation filter is constant across the take.
+	var bench_position := LISTENER + Vector3(0, 0, BENCH_DISTANCE_M)
+
+	while elapsed < BENCH_DURATION_S:
+		var ramp := clampf(elapsed / (BENCH_DURATION_S * 0.5), 0.0, 1.0)
+		var throttle := BENCH_PEAK_THROTTLE * ramp
+		var cmds := {"M1": throttle, "M2": throttle, "M3": throttle, "M4": throttle}
+		for _i in PHYSICS_SUBSTEPS:
+			pt.step(cmds, substep)
+
+		out.append_array(_propagate(synth.render_block(pt.observables, 1.0, BLOCK),
+			bench_position, Vector3.ZERO))
+		elapsed += block_dt
+
+	print("bench: final %.0f RPM, %.2f V live, %.1f A, %.3f%% of pack used" % [
+		pt.observables.rpm[0], pt.observables.voltage_live_v,
+		pt.observables.current_total_a, pt.observables.capacity_used_fraction * 100.0])
 	return out
 
 
