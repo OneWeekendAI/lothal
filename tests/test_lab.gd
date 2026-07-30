@@ -23,7 +23,132 @@ static func run() -> Array:
 	results.append_array(_test_shell_lifecycle())
 	results.append_array(_test_filters(catalog))
 	results.append_array(_test_live_reaction(catalog))
+	results.append_array(_test_orbit(catalog))
 
+	return results
+
+
+# ---------------------------------------------------------------------------
+# The inspection orbit
+# ---------------------------------------------------------------------------
+
+## Lab has to be able to show the underside of a build, not just spin it about the vertical.
+## A battery tray, a payload mount and the bottom plate all live under the frame, and a
+## yaw-only turntable can never point the camera at any of them.
+##
+## The invariant guarded hardest here is the ORBIT DISTANCE. Lab deliberately never zooms —
+## the camera sits at one distance chosen from the largest frame in the catalog so that a
+## 65 mm whoop looks tiny beside a 10", which is the whole reason the size comparison is
+## trustworthy. An orbit that let the radius drift would quietly destroy that, and it would
+## do it invisibly, because the picture would still look fine.
+static func _test_orbit(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	var lab := LabScreen.new(catalog)
+	var radius := lab.camera_world_transform().origin.length()
+
+	lab.set_orbit(0.0, deg_to_rad(60.0))
+	var above := lab.camera_world_transform().origin
+	lab.set_orbit(0.0, deg_to_rad(-60.0))
+	var below := lab.camera_world_transform().origin
+
+	results.append(TestResult.new(
+		"elevating the orbit looks down at the top plate; dropping it looks up at the underside",
+		above.y > radius * 0.5 and below.y < -radius * 0.5,
+		"camera y at +60 deg = %.3f, at -60 deg = %.3f (radius %.3f)" % [above.y, below.y, radius]
+	))
+
+	lab.set_orbit(deg_to_rad(90.0), 0.0)
+	var side := lab.camera_world_transform().origin
+	results.append(TestResult.new(
+		"swinging the azimuth moves the camera around the airframe",
+		absf(side.x) > radius * 0.9 and absf(side.z) < radius * 0.1,
+		"camera at 90 deg azimuth = (%.3f, %.3f, %.3f)" % [side.x, side.y, side.z]
+	))
+
+	# Past the poles the rig must stop rather than flip over, which is where a naive orbit
+	# turns the airframe upside down and loses which way is up.
+	lab.set_orbit(0.0, deg_to_rad(200.0))
+	var over_the_top := lab.elevation_deg()
+	lab.set_orbit(0.0, deg_to_rad(-200.0))
+	var under_the_bottom := lab.elevation_deg()
+	results.append(TestResult.new(
+		"elevation is clamped short of the poles instead of flipping the airframe over",
+		absf(over_the_top) <= LabScreen.ELEVATION_LIMIT_DEG + 0.01
+			and absf(under_the_bottom) <= LabScreen.ELEVATION_LIMIT_DEG + 0.01
+			and over_the_top > 0.0 and under_the_bottom < 0.0,
+		"asking for +200/-200 deg gave %.1f / %.1f (limit %.1f)" % [
+			over_the_top, under_the_bottom, LabScreen.ELEVATION_LIMIT_DEG]
+	))
+
+	# Sweep the whole rig and require the two things that make the view honest at every angle:
+	# the distance never changes, and the camera never stops pointing at the airframe.
+	var distance_held := true
+	var stays_aimed := true
+	var worst_distance := 0.0
+	var worst_aim := 0.0
+	for azimuth_step in 12:
+		for elevation_step in 9:
+			var azimuth := deg_to_rad(azimuth_step * 30.0)
+			var elevation := deg_to_rad(-80.0 + elevation_step * 20.0)
+			lab.set_orbit(azimuth, elevation)
+			var transform := lab.camera_world_transform()
+
+			worst_distance = maxf(worst_distance, absf(transform.origin.length() - radius))
+			if absf(transform.origin.length() - radius) > 0.0001:
+				distance_held = false
+
+			# The camera's own forward is -Z; from `origin` it must point back at the airframe.
+			var to_origin := (-transform.origin).normalized()
+			var forward := -transform.basis.z.normalized()
+			worst_aim = maxf(worst_aim, forward.angle_to(to_origin))
+			if forward.angle_to(to_origin) > 0.001:
+				stays_aimed = false
+
+	results.append(TestResult.new(
+		"the orbit never zooms, so frames stay comparable at every angle",
+		distance_held,
+		"worst radius drift over 108 angles = %.6f m (radius %.3f)" % [worst_distance, radius]
+	))
+
+	results.append(TestResult.new(
+		"the camera stays aimed at the airframe through the whole orbit",
+		stays_aimed,
+		"worst aim error over 108 angles = %.4f deg" % rad_to_deg(worst_aim)
+	))
+
+	# Taking hold of the view has to stick. The idle orbit originally kept running after a
+	# drag and overwrote the chosen angle on the very next frame, which made it impossible to
+	# sit and look at one thing — the exact job an underside view exists for.
+	lab.orbit_by(deg_to_rad(40.0), deg_to_rad(-50.0))
+	var chosen_azimuth := lab.azimuth_deg()
+	var chosen_elevation := lab.elevation_deg()
+	for _frame in 30:
+		lab._process(1.0 / 60.0)
+	results.append(TestResult.new(
+		"an angle chosen by hand survives the frames that follow it",
+		not lab.auto_orbit
+			and is_equal_approx(lab.azimuth_deg(), chosen_azimuth)
+			and is_equal_approx(lab.elevation_deg(), chosen_elevation),
+		"held %.1f/%.1f deg -> %.1f/%.1f after half a second (auto_orbit=%s)" % [
+			chosen_azimuth, chosen_elevation, lab.azimuth_deg(), lab.elevation_deg(), lab.auto_orbit]
+	))
+
+	# ...while an untouched Lab still drifts, which is what makes the airframe read as solid.
+	var idle := LabScreen.new(catalog)
+	var idle_azimuth := idle.azimuth_deg()
+	var idle_elevation := idle.elevation_deg()
+	for _frame in 30:
+		idle._process(1.0 / 60.0)
+	results.append(TestResult.new(
+		"an untouched Lab keeps drifting on both angles",
+		absf(idle.azimuth_deg() - idle_azimuth) > 0.5
+			and absf(idle.elevation_deg() - idle_elevation) > 0.5,
+		"drifted %.1f deg azimuth and %.1f deg elevation in half a second" % [
+			idle.azimuth_deg() - idle_azimuth, idle.elevation_deg() - idle_elevation]
+	))
+	idle.free()
+
+	lab.free()
 	return results
 
 

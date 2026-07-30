@@ -29,16 +29,36 @@ const VIEWPORT_SIZE := Vector2i(1280, 720)
 ## and then never moves. Derived rather than authored, so adding a 13" frame reframes the room
 ## instead of hanging it off the edge of the viewport (which is exactly what a hand-picked
 ## 0.62 m did to the 10" entry).
-const CAMERA_ELEVATION_DEG := 26.0
 const CAMERA_FOV := 38.0
 ## Fraction of the viewport width the largest airframe should span. Leaves the biggest frame
 ## visibly inside the room rather than touching both edges.
 const LARGEST_FRAME_SCREEN_FRACTION := 0.78
 
-## A slow turntable, so the airframe reads as a three-dimensional object rather than a
-## picture of one. Rotation cannot hide a size difference the way a moving camera could.
+## The camera orbits the airframe on two angles: AZIMUTH around the vertical, and ELEVATION
+## above and below the horizon. Together those reach every point on the sphere, which is what
+## matters as soon as Lab holds more than a frame — a battery tray, a payload mount and the
+## bottom plate are all under the build, and a yaw-only turntable can never look at any of
+## them. There is deliberately no third rotation: roll would not reveal a single surface the
+## other two cannot already reach, it would only change which way is up on screen, and losing
+## which way is up is expensive on a screen whose whole job is judging an airframe.
+##
+## The camera moves and the airframe stays level, rather than tumbling the model. Same
+## pictures, but the build keeps its own sense of up and the lighting stays consistent.
+const ELEVATION_LIMIT_DEG := 85.0
+const START_AZIMUTH_DEG := 0.0
+const START_ELEVATION_DEG := 22.0
+
+## The idle orbit: a continuous turn about the vertical, plus a slow rise and fall through the
+## horizon so the view drifts between looking down on the top plate and up at the underside.
+## The vertical drift is what makes the object read as solid; a pure yaw spin can look like a
+## flat picture on a rotating card.
 const AUTO_ORBIT_DEG_S := 11.0
-## Drag speed when the pilot takes over the turntable by hand.
+const AUTO_ELEVATION_CENTRE_DEG := 14.0
+const AUTO_ELEVATION_SWING_DEG := 32.0
+const AUTO_ELEVATION_PERIOD_S := 26.0
+
+## Drag speed when the builder takes the orbit over by hand — horizontal for azimuth,
+## vertical for elevation.
 const DRAG_DEG_PER_PIXEL := 0.4
 
 var catalog: PartsCatalog
@@ -47,9 +67,20 @@ var details: FrameDetails
 var frame_model: FrameModel
 
 var _viewport: SubViewport
-var _pivot: Node3D
+## The camera boom. Rotating this orbits the camera; the airframe itself never moves.
+var _orbit: Node3D
 var _camera: Camera3D
 var _dragging := false
+
+## The idle orbit runs until somebody takes hold of the view, and then it stops for good. It
+## does NOT resume: an orbit that starts creeping again after you let go carries the angle you
+## just chose away from you, which is precisely wrong when the reason you chose it was to look
+## at one particular thing — a mount, a tray, the underside of a plate.
+var auto_orbit := true
+
+var _azimuth_rad := deg_to_rad(START_AZIMUTH_DEG)
+var _elevation_rad := deg_to_rad(START_ELEVATION_DEG)
+var _auto_elevation_time := 0.0
 
 func _init(p_catalog: PartsCatalog) -> void:
 	catalog = p_catalog
@@ -109,25 +140,29 @@ func _build_world() -> void:
 	world_environment.environment = env
 	_viewport.add_child(world_environment)
 
-	var key_light := DirectionalLight3D.new()
-	key_light.rotation_degrees = Vector3(-52.0, -38.0, 0.0)
-	key_light.light_energy = 1.5
-	key_light.shadow_enabled = true
-	_viewport.add_child(key_light)
+	# The airframe sits still and level at the origin; only the camera moves.
+	frame_model = FrameModel.new()
+	_viewport.add_child(frame_model)
 
-	# A second, dimmer light from the opposite side. Carbon fibre is nearly black and a
-	# single key light turns half the airframe into a silhouette, which hides the arms —
-	# the one thing this screen exists to show.
+	_orbit = Node3D.new()
+	_viewport.add_child(_orbit)
+
+	# A dimmer fill fixed in the world, grazing almost horizontally. Carbon fibre is nearly
+	# black and a single light turns half the airframe into a silhouette, which hides the arms.
+	# Kept near-horizontal rather than steeply overhead so it still does something once the
+	# orbit drops below the airframe.
 	var fill_light := DirectionalLight3D.new()
-	fill_light.rotation_degrees = Vector3(-18.0, 145.0, 0.0)
+	fill_light.rotation_degrees = Vector3(-6.0, 145.0, 0.0)
 	fill_light.light_energy = 0.45
 	_viewport.add_child(fill_light)
 
-	_pivot = Node3D.new()
-	_viewport.add_child(_pivot)
-
-	frame_model = FrameModel.new()
-	_pivot.add_child(frame_model)
+	# A weak bounce from below, standing in for the bench the build is sitting over. Without it
+	# the underside — the view a battery tray or a payload mount is actually judged from — is
+	# the one angle in the whole orbit that is lit only by ambient.
+	var bounce_light := DirectionalLight3D.new()
+	bounce_light.rotation_degrees = Vector3(62.0, 20.0, 0.0)
+	bounce_light.light_energy = 0.32
+	_viewport.add_child(bounce_light)
 
 	_camera = Camera3D.new()
 	# Horizontal FOV, held constant while the column's aspect changes — see _camera_distance_m.
@@ -135,19 +170,24 @@ func _build_world() -> void:
 	_camera.fov = CAMERA_FOV
 	_camera.near = 0.005
 	_camera.far = 20.0
-	var distance := _camera_distance_m()
-	var elevation := deg_to_rad(CAMERA_ELEVATION_DEG)
-	var eye := Vector3(
-		0.0,
-		sin(elevation) * distance,
-		cos(elevation) * distance
-	)
-	# Basis.looking_at rather than Node3D.look_at: look_at requires the node to be inside a
-	# tree, and Lab is constructed before it is parented (and never parented at all in the
-	# headless tests). Basis.looking_at points -Z down the given direction, which is the
-	# camera's own forward, so aiming it at the origin needs no correction term.
-	_camera.transform = Transform3D(Basis.looking_at(-eye.normalized(), Vector3.UP), eye)
-	_viewport.add_child(_camera)
+	# Parked out along the boom's +Z with no rotation of its own. A camera looks down its own
+	# -Z, so from there it already points straight back at the origin — and it keeps pointing
+	# there for every possible boom rotation, with no look_at and no aiming maths that could
+	# drift. Rotating the boom is then the entire orbit, and the distance is structurally
+	# impossible to change by accident, which is what protects the no-zoom guarantee.
+	_camera.transform = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, _camera_distance_m()))
+	_orbit.add_child(_camera)
+
+	# The key light rides the boom, so whichever side of the build you orbit to is the side
+	# that is lit. Underneath a frame is the one view that is otherwise always in shadow, and
+	# it is exactly the view a battery tray or a payload mount needs.
+	var key_light := DirectionalLight3D.new()
+	key_light.rotation_degrees = Vector3(-28.0, -22.0, 0.0)
+	key_light.light_energy = 1.5
+	key_light.shadow_enabled = true
+	_orbit.add_child(key_light)
+
+	_apply_orbit()
 
 
 ## Distance at which the CATALOG'S LARGEST airframe spans LARGEST_FRAME_SCREEN_FRACTION of
@@ -193,13 +233,72 @@ func _build_with(frame: Dictionary) -> Build:
 	)
 
 
+# ---------------------------------------------------------------------------
+# The inspection orbit
+# ---------------------------------------------------------------------------
+
+## Points the camera at the airframe from the given angles. Elevation is clamped short of
+## either pole: straight overhead is where an orbit rig's up-vector becomes undefined, and
+## going past it flips the airframe over, which is disorienting and tells you nothing new.
+func set_orbit(azimuth_rad: float, elevation_rad: float) -> void:
+	var limit := deg_to_rad(ELEVATION_LIMIT_DEG)
+	_azimuth_rad = azimuth_rad
+	_elevation_rad = clampf(elevation_rad, -limit, limit)
+	_apply_orbit()
+
+
+## Nudges the orbit, as a drag does. This is the builder taking the view over, so the idle
+## motion stops and stays stopped.
+func orbit_by(azimuth_delta_rad: float, elevation_delta_rad: float) -> void:
+	auto_orbit = false
+	set_orbit(_azimuth_rad + azimuth_delta_rad, _elevation_rad + elevation_delta_rad)
+
+
+func elevation_deg() -> float:
+	return rad_to_deg(_elevation_rad)
+
+
+func azimuth_deg() -> float:
+	return rad_to_deg(_azimuth_rad)
+
+
+## The camera's transform in Lab's world, composed by hand rather than read from
+## global_transform — Lab is constructed before it is parented, and in the headless tests it
+## is never parented at all.
+func camera_world_transform() -> Transform3D:
+	return _orbit.transform * _camera.transform
+
+
+## Azimuth about the vertical, then elevation in the frame that azimuth already turned. Node3D
+## defaults to YXZ euler order, which composes them in exactly that order, so the two angles
+## behave as an orbit rather than as two independent world-axis spins.
+##
+## The X rotation is negated because a camera parked at +Z swings DOWN under a positive
+## rotation about +X, and a positive elevation should raise it.
+func _apply_orbit() -> void:
+	if _orbit != null:
+		_orbit.rotation = Vector3(-_elevation_rad, _azimuth_rad, 0.0)
+
+
 func _process(delta: float) -> void:
-	if _pivot != null and not _dragging:
-		_pivot.rotate_y(deg_to_rad(AUTO_ORBIT_DEG_S) * delta)
+	if _orbit == null or _dragging or not auto_orbit:
+		return
+
+	_auto_elevation_time += delta
+	var phase := TAU * _auto_elevation_time / AUTO_ELEVATION_PERIOD_S
+	set_orbit(
+		_azimuth_rad + deg_to_rad(AUTO_ORBIT_DEG_S) * delta,
+		deg_to_rad(AUTO_ELEVATION_CENTRE_DEG + AUTO_ELEVATION_SWING_DEG * sin(phase))
+	)
 
 
-## Drag anywhere over the viewport to take the turntable over by hand; releasing hands it
-## back to the slow automatic orbit.
+## Drag anywhere over the viewport to orbit by hand: horizontal swings around the build,
+## vertical rises over the top plate and drops under the belly. Releasing hands the azimuth
+## back to the slow automatic turn, but leaves the elevation where it was put.
+##
+## There is deliberately no scroll-to-zoom. The camera distance is what makes two frames
+## comparable at a glance (see _camera_distance_m), and a zoom control would let that go
+## without anything looking wrong.
 func _gui_input(event: InputEvent) -> void:
 	var button := event as InputEventMouseButton
 	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
@@ -207,5 +306,8 @@ func _gui_input(event: InputEvent) -> void:
 		return
 
 	var motion := event as InputEventMouseMotion
-	if motion != null and _dragging and _pivot != null:
-		_pivot.rotate_y(deg_to_rad(motion.relative.x * DRAG_DEG_PER_PIXEL))
+	if motion != null and _dragging:
+		orbit_by(
+			deg_to_rad(motion.relative.x * DRAG_DEG_PER_PIXEL),
+			deg_to_rad(-motion.relative.y * DRAG_DEG_PER_PIXEL)
+		)
