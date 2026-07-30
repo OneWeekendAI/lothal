@@ -1,0 +1,17 @@
+[gd_scene load_steps=2 format=3]
+
+; The application root: the Lab | Sim shell (src/ui/app_shell.gd). Lab is the default
+; screen and is built in code; Sim is main.tscn, instantiated on entering its tab and
+; freed on leaving it. Deliberately almost empty — everything is constructed in the
+; script, because hand-placed UI does not survive version control (architecture.md).
+
+[ext_resource type="Script" path="res://src/ui/app_shell.gd" id="1"]
+
+[node name="Root" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
