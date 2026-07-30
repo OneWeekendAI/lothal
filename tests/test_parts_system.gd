@@ -22,6 +22,9 @@ static func run() -> Array:
 		"errors=%s" % [catalog.load_errors] if not catalog.load_errors.is_empty() else "4 categories loaded"
 	))
 	results.append(_every_part_has_the_specs_the_physics_reads(catalog))
+	results.append(_catalog_is_deep_enough_to_browse(catalog))
+	results.append(_every_part_carries_browsing_metadata(catalog))
+	results.append(_every_motor_thrust_test_names_a_real_prop(catalog))
 	results.append_array(_reference_build_matches_the_documented_table(catalog))
 	results.append_array(_four_s_to_six_s(catalog))
 	results.append(_arm_length_dominates_roll_inertia(catalog))
@@ -57,6 +60,88 @@ static func _every_part_has_the_specs_the_physics_reads(catalog: PartsCatalog) -
 		"every catalog part carries the specs the physics reads",
 		missing.is_empty(),
 		"%d parts checked, %s" % [count, "all complete" if missing.is_empty() else str(missing)]
+	)
+
+
+## A filter is only worth having if it has work to do. Three motors and five props can be
+## read off a single unfiltered list, so a picker over them proves nothing — the filters
+## would pass their tests while being decoration. These floors are what makes the motor and
+## propeller rails answer the same question the frame rail does.
+static func _catalog_is_deep_enough_to_browse(catalog: PartsCatalog) -> TestResult:
+	var counts := {
+		"frame": catalog.list_category("frame").size(),
+		"motor": catalog.list_category("motor").size(),
+		"propeller": catalog.list_category("propeller").size(),
+	}
+	return TestResult.new(
+		"the catalog is deep enough for its filters to mean anything",
+		counts["frame"] >= 12 and counts["motor"] >= 12 and counts["propeller"] >= 14,
+		"%d frames, %d motors, %d propellers" % [counts["frame"], counts["motor"], counts["propeller"]]
+	)
+
+
+## The two-tier schema, enforced. `catalog` is browsing metadata and every part must carry
+## the axes its picker filters on, or a filter silently drops that part out of every list
+## but "All" — which looks like a missing product rather than a missing field.
+##
+## The banned-field half is the more important one. frames.json's _schema bans colour, price
+## and vendor links BY NAME from both blocks, and a ban stated only in prose is a ban that
+## erodes: the first PR to add a price is a small, reasonable-looking diff. This is the check
+## that makes the diff fail instead.
+static func _every_part_carries_browsing_metadata(catalog: PartsCatalog) -> TestResult:
+	var required := {
+		"frame": ["frame_type", "size_class", "material"],
+		"motor": ["stator_class", "kv_class", "intended_use"],
+		"propeller": ["blade_count", "diameter_class", "intended_use", "material"],
+	}
+	# Substrings, not exact keys, so "vendor_url", "price_usd" and "colour" are all caught.
+	var banned := ["colour", "color", "price", "cost", "vendor", "url", "link", "buy", "shop", "sku"]
+
+	var problems: Array[String] = []
+	var checked := 0
+	for category in required:
+		for part in catalog.list_category(category):
+			checked += 1
+			var meta: Dictionary = part.get("catalog", {})
+			for field in required[category]:
+				if String(meta.get(field, "")) == "":
+					problems.append("%s: missing catalog.%s" % [part["part_id"], field])
+			for block_name in ["specs", "catalog"]:
+				for key in part.get(block_name, {}):
+					for word in banned:
+						if String(key).to_lower().contains(word):
+							problems.append("%s: %s.%s is a banned field" % [part["part_id"], block_name, key])
+
+	return TestResult.new(
+		"every part carries its browsing metadata, and no banned field",
+		problems.is_empty(),
+		"%d parts checked, %s" % [checked, "all clean" if problems.is_empty() else str(problems)]
+	)
+
+
+## Build fits k_t from the motor's published thrust figure and the exact prop and pack it was
+## measured on (physics.md §4: do not guess C_T). A thrust_test naming a prop_id that does
+## not exist therefore does not produce a slightly-wrong drone — it produces a k_t fitted
+## against an empty dictionary, and the failure surfaces far away from the typo that caused
+## it. Catch it here, at the JSON.
+static func _every_motor_thrust_test_names_a_real_prop(catalog: PartsCatalog) -> TestResult:
+	var problems: Array[String] = []
+	for motor in catalog.list_category("motor"):
+		var test: Dictionary = motor.get("thrust_test", {})
+		var prop_id := String(test.get("prop_id", ""))
+		var prop: Dictionary = catalog.get_part(prop_id)
+		if prop.is_empty():
+			problems.append("%s: thrust_test names %s, which is not in the catalog" % [motor["part_id"], prop_id])
+		elif prop.get("category", "") != "propeller":
+			problems.append("%s: thrust_test names %s, which is a %s" % [motor["part_id"], prop_id, prop["category"]])
+		if float(test.get("voltage_v", 0.0)) <= 0.0:
+			problems.append("%s: thrust_test has no voltage_v" % motor["part_id"])
+
+	return TestResult.new(
+		"every motor's thrust test names a propeller that exists, at a real voltage",
+		problems.is_empty(),
+		"%d motors checked, %s" % [catalog.list_category("motor").size(),
+			"all resolve" if problems.is_empty() else str(problems)]
 	)
 
 

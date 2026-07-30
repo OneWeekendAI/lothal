@@ -1,6 +1,42 @@
 {
-  "_schema": "Diameter, pitch and blade count set the thrust and torque coefficients (physics.md §4: T = C_T*rho*n^2*D^4, Q = C_Q*rho*n^2*D^5). Thrust goes as D^4, so diameter dominates everything else on this list. Including both a 2-blade and a 3-blade at the same 5x4.3 is deliberate: it is the cleanest A/B in the catalog, because bi-blade is smoother and more efficient while tri-blade has more grip and draws more current.",
+  "_schema": "Diameter, pitch and blade count set the thrust and torque coefficients (physics.md §4: T = C_T*rho*n^2*D^4, Q = C_Q*rho*n^2*D^5). Thrust goes as D^4, so diameter dominates everything else on this list. Including both a 2-blade and a 3-blade at the same 5x4.3 is deliberate: it is the cleanest A/B in the catalog, because bi-blade is smoother and more efficient while tri-blade has more grip and draws more current. Two tiers, as in frames.json: `specs` is physics-bearing and `catalog` is browsing metadata only — a field is admitted to `catalog` only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale. Colour, price and vendor links are banned by name from both blocks. Entries are ordered smallest diameter first, which is what gives the diameter filter an ascending order without anything sorting it. 'material' is browsing metadata rather than a spec because nothing in the physics reads it yet: blade stiffness would change the thrust curve, and the day this model grows a flex term is the day it moves into `specs`.",
   "parts": [
+    {
+      "part_id": "prop_16x12x4",
+      "name": "1.6x1.2x4",
+      "category": "propeller",
+      "mass_g": 0.5,
+      "specs": {
+        "diameter_inches": 1.6,
+        "pitch_inches": 1.2,
+        "blades": 4
+      },
+      "catalog": {
+        "blade_count": "4-blade",
+        "diameter_class": "1.6\"",
+        "intended_use": "tinywhoop",
+        "material": "polycarbonate"
+      },
+      "source": "representative 40mm whoop quad-blade spec sheet; class-typical, not a specific product"
+    },
+    {
+      "part_id": "prop_25x25x4",
+      "name": "2.5x2.5x4",
+      "category": "propeller",
+      "mass_g": 1.4,
+      "specs": {
+        "diameter_inches": 2.5,
+        "pitch_inches": 2.5,
+        "blades": 4
+      },
+      "catalog": {
+        "blade_count": "4-blade",
+        "diameter_class": "2.5\"",
+        "intended_use": "micro",
+        "material": "polycarbonate"
+      },
+      "source": "representative 2.5\" quad-blade spec sheet; class-typical, not a specific product"
+    },
     {
       "part_id": "prop_3x3x3",
       "name": "3x3x3",
@@ -11,7 +47,31 @@
         "pitch_inches": 3.0,
         "blades": 3
       },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "3\"",
+        "intended_use": "toothpick",
+        "material": "polycarbonate"
+      },
       "source": "representative 3\" tri-blade spec sheet"
+    },
+    {
+      "part_id": "prop_35x28x3",
+      "name": "3.5x2.8x3",
+      "category": "propeller",
+      "mass_g": 2.2,
+      "specs": {
+        "diameter_inches": 3.5,
+        "pitch_inches": 2.8,
+        "blades": 3
+      },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "3.5\"",
+        "intended_use": "freestyle",
+        "material": "polycarbonate"
+      },
+      "source": "representative 3.5\" tri-blade spec sheet; class-typical, not a specific product"
     },
     {
       "part_id": "prop_5x43x2",
@@ -22,6 +82,12 @@
         "diameter_inches": 5.0,
         "pitch_inches": 4.3,
         "blades": 2
+      },
+      "catalog": {
+        "blade_count": "2-blade",
+        "diameter_class": "5\"",
+        "intended_use": "freestyle",
+        "material": "polycarbonate"
       },
       "source": "representative 5\" bi-blade spec sheet"
     },
@@ -35,6 +101,12 @@
         "pitch_inches": 4.3,
         "blades": 3
       },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "5\"",
+        "intended_use": "freestyle",
+        "material": "polycarbonate"
+      },
       "source": "representative 5\" tri-blade spec sheet; the reference build's prop"
     },
     {
@@ -47,7 +119,85 @@
         "pitch_inches": 4.8,
         "blades": 3
       },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "5\"",
+        "intended_use": "racing",
+        "material": "glass-filled nylon"
+      },
       "source": "representative 5\" high-pitch tri-blade spec sheet"
+    },
+    {
+      "part_id": "prop_5x5x2",
+      "name": "5x5.0x2",
+      "category": "propeller",
+      "mass_g": 4.0,
+      "specs": {
+        "diameter_inches": 5.0,
+        "pitch_inches": 5.0,
+        "blades": 2
+      },
+      "catalog": {
+        "blade_count": "2-blade",
+        "diameter_class": "5\"",
+        "intended_use": "racing",
+        "material": "glass-filled nylon"
+      },
+      "source": "representative 5\" race bi-blade spec sheet; class-typical, not a specific product"
+    },
+    {
+      "part_id": "prop_6x4x2",
+      "name": "6x4.0x2",
+      "category": "propeller",
+      "mass_g": 6.0,
+      "specs": {
+        "diameter_inches": 6.0,
+        "pitch_inches": 4.0,
+        "blades": 2
+      },
+      "catalog": {
+        "blade_count": "2-blade",
+        "diameter_class": "6\"",
+        "intended_use": "long-range",
+        "material": "polycarbonate"
+      },
+      "source": "representative 6\" bi-blade spec sheet; class-typical, not a specific product"
+    },
+    {
+      "part_id": "prop_6x45x3",
+      "name": "6x4.5x3",
+      "category": "propeller",
+      "mass_g": 7.2,
+      "specs": {
+        "diameter_inches": 6.0,
+        "pitch_inches": 4.5,
+        "blades": 3
+      },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "6\"",
+        "intended_use": "freestyle",
+        "material": "glass-filled nylon"
+      },
+      "source": "representative 6\" tri-blade spec sheet; class-typical, not a specific product"
+    },
+    {
+      "part_id": "prop_7x35x2",
+      "name": "7x3.5x2",
+      "category": "propeller",
+      "mass_g": 7.5,
+      "specs": {
+        "diameter_inches": 7.0,
+        "pitch_inches": 3.5,
+        "blades": 2
+      },
+      "catalog": {
+        "blade_count": "2-blade",
+        "diameter_class": "7\"",
+        "intended_use": "long-range",
+        "material": "polycarbonate"
+      },
+      "source": "representative 7\" bi-blade spec sheet; class-typical, not a specific product"
     },
     {
       "part_id": "prop_7x4x3",
@@ -59,7 +209,49 @@
         "pitch_inches": 4.0,
         "blades": 3
       },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "7\"",
+        "intended_use": "long-range",
+        "material": "glass-filled nylon"
+      },
       "source": "representative 7\" tri-blade spec sheet"
+    },
+    {
+      "part_id": "prop_8x45x3",
+      "name": "8x4.5x3",
+      "category": "propeller",
+      "mass_g": 12.0,
+      "specs": {
+        "diameter_inches": 8.0,
+        "pitch_inches": 4.5,
+        "blades": 3
+      },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "8\"",
+        "intended_use": "cinelifter",
+        "material": "carbon-filled nylon"
+      },
+      "source": "representative 8\" tri-blade spec sheet; class-typical, not a specific product"
+    },
+    {
+      "part_id": "prop_10x5x2",
+      "name": "10x5.0x2",
+      "category": "propeller",
+      "mass_g": 18.0,
+      "specs": {
+        "diameter_inches": 10.0,
+        "pitch_inches": 5.0,
+        "blades": 2
+      },
+      "catalog": {
+        "blade_count": "2-blade",
+        "diameter_class": "10\"",
+        "intended_use": "long-range",
+        "material": "carbon-filled nylon"
+      },
+      "source": "representative 10\" bi-blade spec sheet; class-typical, not a specific product"
     }
   ]
 }

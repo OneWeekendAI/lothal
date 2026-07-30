@@ -1,6 +1,56 @@
 {
-  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md §4: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. 'poles' is carried for the electrical-frequency observable (a 14-pole motor has 7 pole pairs); no consumer reads it yet, and it is kept because it is a real spec of a real motor, not because something depends on it.",
+  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md §4: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. EVERY motor must carry a thrust_test whose prop_id exists in propellers.json — a typo there does not make the drone slightly wrong, it fits k_t against an empty dictionary; tests/test_parts_system.gd guards this. 'poles' is carried for the electrical-frequency observable (a 14-pole motor has 7 pole pairs); no consumer reads it yet, and it is kept because it is a real spec of a real motor, not because something depends on it. Two tiers, as in frames.json: `specs` is physics-bearing, `catalog` is browsing metadata only, and colour, price and vendor links are banned by name from both. Entries are ordered by stator size then KV, which is what gives the stator filter an ascending order without anything sorting it.",
   "parts": [
+    {
+      "part_id": "motor_0802_19000kv",
+      "name": "0802 19000KV",
+      "category": "motor",
+      "mass_g": 3.2,
+      "mount_pattern": "6x6",
+      "specs": {
+        "kv": 19000,
+        "stator_diameter_mm": 8,
+        "stator_height_mm": 2,
+        "max_thrust_g": 28.0,
+        "max_amps": 3.5,
+        "poles": 12
+      },
+      "thrust_test": {
+        "prop_id": "prop_16x12x4",
+        "voltage_v": 3.7
+      },
+      "catalog": {
+        "stator_class": "08xx",
+        "kv_class": "8000KV+",
+        "intended_use": "tinywhoop"
+      },
+      "source": "representative 0802 whoop motor thrust table, 40mm quad-blade on 1S"
+    },
+    {
+      "part_id": "motor_1103_8000kv",
+      "name": "1103 8000KV",
+      "category": "motor",
+      "mass_g": 6.0,
+      "mount_pattern": "9x9",
+      "specs": {
+        "kv": 8000,
+        "stator_diameter_mm": 11,
+        "stator_height_mm": 3,
+        "max_thrust_g": 110.0,
+        "max_amps": 6.0,
+        "poles": 12
+      },
+      "thrust_test": {
+        "prop_id": "prop_25x25x4",
+        "voltage_v": 7.4
+      },
+      "catalog": {
+        "stator_class": "11xx",
+        "kv_class": "8000KV+",
+        "intended_use": "micro"
+      },
+      "source": "representative 1103 micro motor thrust table, 2.5\" quad-blade on 2S"
+    },
     {
       "part_id": "motor_1404_3800kv",
       "name": "1404 3800KV",
@@ -19,7 +69,62 @@
         "prop_id": "prop_3x3x3",
         "voltage_v": 14.8
       },
+      "catalog": {
+        "stator_class": "14xx",
+        "kv_class": "3000-5000KV",
+        "intended_use": "toothpick"
+      },
       "source": "manufacturer thrust table, 3x3x3 on 4S"
+    },
+    {
+      "part_id": "motor_1404_4600kv",
+      "name": "1404 4600KV",
+      "category": "motor",
+      "mass_g": 15.0,
+      "mount_pattern": "12x12",
+      "specs": {
+        "kv": 4600,
+        "stator_diameter_mm": 14,
+        "stator_height_mm": 4,
+        "max_thrust_g": 480.0,
+        "max_amps": 14.0,
+        "poles": 12
+      },
+      "thrust_test": {
+        "prop_id": "prop_3x3x3",
+        "voltage_v": 14.8
+      },
+      "catalog": {
+        "stator_class": "14xx",
+        "kv_class": "3000-5000KV",
+        "intended_use": "toothpick"
+      },
+      "source": "representative 1404 high-KV thrust table, 3x3x3 on 4S; class-typical, not a specific product"
+    },
+    {
+      "part_id": "motor_1507_3600kv",
+      "name": "1507 3600KV",
+      "category": "motor",
+      "mass_g": 21.0,
+      "mount_pattern": "12x12",
+      "specs": {
+        "kv": 3600,
+        "stator_diameter_mm": 15,
+        "stator_height_mm": 7,
+        "max_thrust_g": 780.0,
+        "max_amps": 20.0,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_35x28x3",
+        "voltage_v": 14.8
+      },
+      "catalog": {
+        "stator_class": "15xx",
+        "kv_class": "3000-5000KV",
+        "intended_use": "freestyle"
+      },
+      "source": "representative 1507 thrust table, 3.5x2.8x3 on 4S; class-typical, not a specific product"
     },
     {
       "part_id": "motor_2207_1750kv",
@@ -38,6 +143,11 @@
       "thrust_test": {
         "prop_id": "prop_5x43x3",
         "voltage_v": 22.2
+      },
+      "catalog": {
+        "stator_class": "22xx",
+        "kv_class": "1500-2000KV",
+        "intended_use": "freestyle"
       },
       "source": "manufacturer thrust table, 5x4.3x3 on 6S"
     },
@@ -59,6 +169,11 @@
         "prop_id": "prop_5x43x3",
         "voltage_v": 14.8
       },
+      "catalog": {
+        "stator_class": "22xx",
+        "kv_class": "1500-2000KV",
+        "intended_use": "freestyle"
+      },
       "source": "manufacturer thrust table, 5x4.3x3 on 4S; the reference build's motor"
     },
     {
@@ -79,7 +194,62 @@
         "prop_id": "prop_5x43x3",
         "voltage_v": 14.8
       },
+      "catalog": {
+        "stator_class": "22xx",
+        "kv_class": "2000-2600KV",
+        "intended_use": "racing"
+      },
       "source": "manufacturer thrust table, 5x4.3x3 on 4S"
+    },
+    {
+      "part_id": "motor_2306_2450kv",
+      "name": "2306 2450KV",
+      "category": "motor",
+      "mass_g": 30.0,
+      "mount_pattern": "16x16",
+      "specs": {
+        "kv": 2450,
+        "stator_diameter_mm": 23,
+        "stator_height_mm": 6,
+        "max_thrust_g": 1550.0,
+        "max_amps": 42.0,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_5x5x2",
+        "voltage_v": 14.8
+      },
+      "catalog": {
+        "stator_class": "23xx",
+        "kv_class": "2000-2600KV",
+        "intended_use": "racing"
+      },
+      "source": "representative 2306 race motor thrust table, 5x5.0x2 on 4S; class-typical, not a specific product"
+    },
+    {
+      "part_id": "motor_2506_1500kv",
+      "name": "2506 1500KV",
+      "category": "motor",
+      "mass_g": 38.0,
+      "mount_pattern": "16x16",
+      "specs": {
+        "kv": 1500,
+        "stator_diameter_mm": 25,
+        "stator_height_mm": 6,
+        "max_thrust_g": 1900.0,
+        "max_amps": 34.0,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_6x45x3",
+        "voltage_v": 22.2
+      },
+      "catalog": {
+        "stator_class": "25xx",
+        "kv_class": "1500-2000KV",
+        "intended_use": "long-range"
+      },
+      "source": "representative 2506 thrust table, 6x4.5x3 on 6S; class-typical, not a specific product"
     },
     {
       "part_id": "motor_2807_1300kv",
@@ -99,7 +269,37 @@
         "prop_id": "prop_7x4x3",
         "voltage_v": 22.2
       },
+      "catalog": {
+        "stator_class": "28xx",
+        "kv_class": "under 1500KV",
+        "intended_use": "long-range"
+      },
       "source": "manufacturer thrust table, 7x4x3 on 6S"
+    },
+    {
+      "part_id": "motor_2808_1300kv",
+      "name": "2808 1300KV",
+      "category": "motor",
+      "mass_g": 58.0,
+      "mount_pattern": "19x19",
+      "specs": {
+        "kv": 1300,
+        "stator_diameter_mm": 28,
+        "stator_height_mm": 8,
+        "max_thrust_g": 2900.0,
+        "max_amps": 50.0,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_8x45x3",
+        "voltage_v": 22.2
+      },
+      "catalog": {
+        "stator_class": "28xx",
+        "kv_class": "under 1500KV",
+        "intended_use": "cinelifter"
+      },
+      "source": "representative 2808 cinelifter thrust table, 8x4.5x3 on 6S; class-typical, not a specific product"
     }
   ]
 }
