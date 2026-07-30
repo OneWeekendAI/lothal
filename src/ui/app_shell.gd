@@ -28,9 +28,20 @@ const TAB_BAR_HEIGHT := 40.0
 var lab: LabScreen
 ## The flight simulation, or null whenever Lab is showing. Null IS the assertion — see above.
 var sim: Node = null
+## The thrust stand, or null whenever it is not the room you are in. Same argument as `sim`
+## and for the same reason: a bench holds a running Powertrain and a live audio bus, so "it
+## costs nothing while you are choosing parts" has to be an absence rather than a paused flag.
+##
+## It is a room rather than a panel inside Lab deliberately. labs-and-sim.md §2.1 puts the
+## component benches inside Labs, and they are — but Lab's stated virtue is that it is quiet
+## and cheap while you work, and a bench is the one part of the garage that runs a physics
+## loop and makes noise. Putting it behind its own door keeps that promise literally true
+## instead of nearly true.
+var bench: BenchScreen = null
 
 var _host: Control
 var _lab_button: Button
+var _bench_button: Button
 var _sim_button: Button
 var _showing_lab := true
 
@@ -65,6 +76,7 @@ func _init() -> void:
 	tab_layer.add_child(bar)
 
 	_lab_button = _add_tab(bar, "Lab", show_lab)
+	_bench_button = _add_tab(bar, "Bench", show_bench)
 	_sim_button = _add_tab(bar, "Sim", show_sim)
 	_refresh_tabs()
 
@@ -92,13 +104,44 @@ func showing_lab() -> bool:
 ## queue_free()'d, so that "the flight loop has stopped" is true the moment this returns
 ## instead of at the end of the frame — which is also what makes it testable synchronously.
 func show_lab() -> void:
+	_close_rooms()
+	_showing_lab = true
+	lab.visible = true
+	_refresh_tabs()
+
+
+## Onto the thrust stand, with the pairing currently chosen on Lab's rails. The bench judges
+## the build being assembled next door — it has no fixture of its own, because a bench that
+## tested something other than what you are building would be answering a question nobody asked.
+##
+## Built fresh every time, so the pack starts full and the motor starts stopped. A bench you
+## walked away from mid-run and came back to still spinning would be a machine left unattended.
+func show_bench() -> void:
+	_close_rooms()
+	bench = BenchScreen.new(
+		lab.catalog,
+		lab.motor_picker.selected_part()["part_id"],
+		lab.propeller_picker.selected_part()["part_id"],
+		ReferenceBuild.BATTERY_ID
+	)
+	_host.add_child(bench)
+	_showing_lab = false
+	lab.visible = false
+	_refresh_tabs()
+
+
+## Tears down whichever room is currently running. Freed immediately rather than
+## queue_free()'d, so "the loop has stopped" is true the moment this returns instead of at the
+## end of the frame — which is also what makes it testable synchronously.
+func _close_rooms() -> void:
 	if sim != null:
 		remove_child(sim)
 		sim.free()
 		sim = null
-	_showing_lab = true
-	lab.visible = true
-	_refresh_tabs()
+	if bench != null:
+		_host.remove_child(bench)
+		bench.free()
+		bench = null
 
 
 ## Out to the field, flying what the garage built. The scene is instantiated fresh, handed
@@ -109,6 +152,7 @@ func show_lab() -> void:
 ## the door: pick the 7" frame in the garage and the airframe in the field is a 7", because
 ## both rooms generate it from the same Build rather than each drawing their own.
 func show_sim() -> void:
+	_close_rooms()
 	if sim == null:
 		sim = load(SIM_SCENE).instantiate()
 		sim.initial_selection = {
@@ -124,4 +168,5 @@ func show_sim() -> void:
 
 func _refresh_tabs() -> void:
 	_lab_button.button_pressed = _showing_lab
-	_sim_button.button_pressed = not _showing_lab
+	_bench_button.button_pressed = bench != null
+	_sim_button.button_pressed = sim != null
