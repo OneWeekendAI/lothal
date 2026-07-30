@@ -106,6 +106,12 @@ func _init(p_catalog: PartsCatalog, p_motor_id: String = "", p_propeller_id: Str
 	_viewport.size = VIEWPORT_SIZE
 	_viewport.own_world_3d = true
 	_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+	# Without this the bench is SILENT, and silently so. A SubViewport does not route 3D audio
+	# unless asked: it defaults to false, and an AudioStreamPlayer3D inside one with no listener
+	# simply plays to nobody. Sim never needed it because main.tscn is a scene on the root
+	# viewport, where 3D audio is on already — so "the audio code needs no changes" was true and
+	# the bench was still going to make no noise.
+	_viewport.audio_listener_enable_3d = true
 	viewport_container.add_child(_viewport)
 
 	_build_world()
@@ -252,6 +258,12 @@ func _frame_camera() -> void:
 	# the headless tests it is never parented at all. Node3D.look_at needs a tree and prints an
 	# ERROR without one — which in this runner reads exactly like a failing test.
 	_camera.transform = Transform3D(Basis.looking_at(-offset, Vector3.UP), subject + offset)
+
+
+## The viewport the stand and the synthesiser both live in. Exposed so a test can assert the
+## one property that decides whether any of this is audible — see test_bench.gd.
+func audio_viewport() -> SubViewport:
+	return _viewport
 
 
 ## The camera's transform in the bench's own world. Composed rather than read from

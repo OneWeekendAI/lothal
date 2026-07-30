@@ -31,7 +31,42 @@ static func run() -> Array:
 	results.append_array(_test_sweep(catalog))
 	results.append_array(_test_it_is_a_room_of_its_own(catalog))
 	results.append_array(_test_the_camera_is_looking_at_the_pairing(catalog))
+	results.append_array(_test_the_bench_can_be_heard(catalog))
 
+	return results
+
+
+# ---------------------------------------------------------------------------
+# The bench is audible
+# ---------------------------------------------------------------------------
+
+## "It works for free because the synthesiser reads only Observables" is true, and it was still
+## not enough. The bench renders into a SubViewport, and a SubViewport does not route 3D audio
+## unless audio_listener_enable_3d is set — it defaults to false. Sim never needed it because
+## main.tscn sits on the root viewport, where it is already on.
+##
+## So the failure mode was: every audio assertion in the project passing, no audio file
+## changed, the wiring visibly correct, and the bench making no sound at all. Nothing that
+## reads like a bug anywhere. Hence a test about the one property that decides it.
+static func _test_the_bench_can_be_heard(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	var bench := BenchScreen.new(catalog)
+
+	results.append(TestResult.new(
+		"the bench's viewport actually routes 3D audio, so the stand can be heard at all",
+		bench.audio_viewport().audio_listener_enable_3d,
+		"audio_listener_enable_3d = %s" % bench.audio_viewport().audio_listener_enable_3d
+	))
+
+	# The synthesiser is present and reading the same published layer everything else reads.
+	# If this ever has to become a DIFFERENT synthesiser, the Powertrain split has failed.
+	results.append(TestResult.new(
+		"the bench drives the flight sim's own synthesiser, not a copy of it",
+		bench.drone_audio is DroneAudio,
+		"attached %s" % bench.drone_audio
+	))
+
+	bench.free()
 	return results
 
 
