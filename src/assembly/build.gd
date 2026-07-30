@@ -163,7 +163,9 @@ func battery_model() -> BatteryModel:
 	return BatteryModel.new(
 		float(battery["specs"]["nominal_v"]),
 		float(battery["specs"]["internal_r_ohm"]),
-		float(battery["specs"]["mah"])
+		float(battery["specs"]["mah"]),
+		int(battery["specs"].get("cells", 0)),
+		str(battery["specs"].get("chemistry", BatteryModel.DEFAULT_CHEMISTRY))
 	)
 
 func build_drone_core() -> DroneCore:

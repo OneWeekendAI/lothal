@@ -14,7 +14,7 @@ static func run() -> Array:
 	var results: Array = []
 	results.append(_banked_flight_accelerates_sideways())
 	results.append(_body_yaw_does_not_tilt_a_rolled_drone())
-	results.append(_holds_altitude_at_published_hover_throttle())
+	results.append_array(_holds_altitude_at_published_hover_throttle())
 	return results
 
 
@@ -63,19 +63,71 @@ static func _body_yaw_does_not_tilt_a_rolled_drone() -> TestResult:
 ## The published hover throttle has to actually hover. Solving it against nominal pack
 ## voltage while the sim runs on sagged voltage leaves a ~2% thrust deficit — invisible in
 ## a "velocity stays bounded" check, but a 12 m sink over ten seconds on screen.
-static func _holds_altitude_at_published_hover_throttle() -> TestResult:
-	var core := ReferenceBuild.build_drone_core()
+##
+## This was one assertion — 10 s hands-off, within 1 m — until BatteryModel grew a
+## state-of-charge term. It now has to be two, because two different things are being claimed and
+## the change made only one of them still true:
+##
+## 1. THE THROTTLE IS SOLVED CORRECTLY. That is what the original test was about, and it is
+##    unaffected: a hover throttle solved against the wrong voltage is wrong from the first
+##    instant, so it is measured at half a second, before drain has done anything worth measuring
+##    (about 0.1% of the pack, worth 3 mm/s of sink against the 100 mm/s a 2% deficit would give).
+##
+## 2. THE DRONE THEN SINKS ANYWAY, because the pack is emptying and its resting voltage is
+##    falling with it. That is not a regression, it is the new model being right — a real quad
+##    held at one throttle setting descends slowly as the pack goes down, which is most of why
+##    hovering hands-off is not a thing anyone does. The original 1 m bound survives intact as
+##    the control: the SAME aircraft on a pack too large to empty still holds altitude, which is
+##    what attributes the sink to the state-of-charge term and to nothing else.
+static func _holds_altitude_at_published_hover_throttle() -> Array:
+	var results: Array = []
 	var hover := ReferenceBuild.hover_throttle()
-	core.prime_motors(hover)
-	var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": hover}
 
-	for i in int(10.0 / DT):
-		var cmds := AngleModeController.update(core.rigid_body.orientation, core.rigid_body.angular_velocity_rad_s, rc)
+	var draining := ReferenceBuild.build_drone_core()
+	var early_climb_rate := _fly_hands_off(draining, hover, 0.5)
+	results.append(TestResult.new(
+		"the published hover throttle hovers: no sink at all in the first half second",
+		absf(early_climb_rate) < 0.03,
+		"%.4f m/s after 0.5 s (a 2%% thrust deficit would read about -0.10 m/s)" % early_climb_rate
+	))
+
+	_fly_hands_off(draining, hover, 9.5)
+	var drained_drift := draining.rigid_body.position_m.y
+
+	# The control: the identical aircraft on a pack whose capacity is large enough that ten
+	# seconds of hover empties none of it. Nothing else about the pack changes — same nominal
+	# voltage, same internal resistance, so the same sag under the same current.
+	var full := ReferenceBuild.build_drone_core()
+	full.powertrain.battery.capacity_mah *= 100000.0
+	_fly_hands_off(full, hover, 10.0)
+	var undrained_drift := full.rigid_body.position_m.y
+
+	results.append(TestResult.new(
+		"10s hands-off on a pack that cannot empty: holds altitude within 1 m",
+		absf(undrained_drift) < 1.0,
+		"altitude drift = %.3f m (V_live=%.2f V, I=%.1f A)" % [
+			undrained_drift, full.observables.voltage_live_v, full.observables.current_total_a]
+	))
+
+	results.append(TestResult.new(
+		"on a real pack it sinks instead, and the drain is the whole of the difference",
+		drained_drift < -0.5 and drained_drift < undrained_drift - 0.5,
+		"%.2f m draining (%.1f%% of the pack used) vs %.2f m on a pack that cannot empty" % [
+			drained_drift, draining.observables.capacity_used_fraction * 100.0, undrained_drift]
+	))
+
+	return results
+
+
+## Flies `seconds` of hands-off angle mode at a fixed throttle, and reports the climb rate at the
+## end. Continues from wherever the core already is, so a run can be measured part way through
+## and then carried on rather than being started again from a different state.
+static func _fly_hands_off(core: DroneCore, throttle: float, seconds: float) -> float:
+	if core.observables.rpm[0] <= 0.0:
+		core.prime_motors(throttle)
+	var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": throttle}
+	for _i in int(seconds / DT):
+		var cmds := AngleModeController.update(
+			core.rigid_body.orientation, core.rigid_body.angular_velocity_rad_s, rc)
 		core.step(cmds, DT)
-
-	var altitude_m := core.rigid_body.position_m.y
-	return TestResult.new(
-		"10s hands-off at published hover throttle: holds altitude within 1 m",
-		absf(altitude_m) < 1.0,
-		"altitude drift = %.3f m (V_live=%.2f V, I=%.1f A)" % [altitude_m, core.observables.voltage_live_v, core.observables.current_total_a]
-	)
+	return core.rigid_body.velocity_mps.y
