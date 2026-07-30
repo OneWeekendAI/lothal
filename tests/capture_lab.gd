@@ -9,7 +9,8 @@ extends SceneTree
 ##
 ##   godot --script res://tests/capture_lab.gd -- <out.png> [settle_frames] [frame_part_id]
 ##                                                 [azimuth_deg] [elevation_deg]
-##                                                 [motor_part_id] [prop_part_id] ["sim"]
+##                                                 [motor_part_id] [prop_part_id]
+##                                                 ["sim" | <panel name>]
 ##
 ## A trailing "sim" makes the selections in Lab and then walks out through the Sim tab before
 ## shooting, which is how the project's central claim gets photographed: the airframe in the
@@ -62,6 +63,13 @@ func _init() -> void:
 
 	if args.size() > 7 and args[7] == "sim":
 		shell.show_sim()
+	elif args.size() > 7 and args[7] != "":
+		# Anything else names a right-hand panel to bring to the front ("Fit"), since a panel that
+		# is behind a tab cannot otherwise be photographed.
+		if not shell.lab.show_panel(args[7]):
+			print("no such panel: %s" % args[7])
+			quit(1)
+			return
 
 	for i in settle:
 		await process_frame

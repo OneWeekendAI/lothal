@@ -38,8 +38,16 @@ func _init() -> void:
 ## Regenerates the whole airframe from `build`. Safe to call on every part change; the frame
 ## rebuild clears the pads and everything hanging off them, so nothing from the previous
 ## build can survive into this one.
-func rebuild(build: Build) -> void:
-	frame_model.rebuild(build.frame)
+## `tweaks` is the builder's own assembly configuration (shims, soft mounts, standoff height), or
+## null for the geometry the parts imply on their own. It is resolved to plain metres HERE, once,
+## and handed to the mesh generators as numbers — a generator that could reach into settings for
+## itself would be a second source for a dimension the assembler already knows.
+func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
+	var tweak_m := {"prop_spacer_m": 0.0, "soft_mount_m": 0.0, "plate_gap_m": -1.0}
+	if tweaks != null:
+		tweak_m = tweaks.resolved_m(build)
+
+	frame_model.rebuild(build.frame, tweak_m["plate_gap_m"])
 	motor_meshes.clear()
 	propeller_meshes.clear()
 	arm_m = build.arm_m
@@ -57,7 +65,8 @@ func rebuild(build: Build) -> void:
 
 		var motor := MotorMesh.new()
 		motor.name = "Motor_%s" % motor_name
-		motor.rebuild(build.motor, propeller.stack_height_m)
+		motor.rebuild(build.motor, propeller.stack_height_m,
+			tweak_m["prop_spacer_m"], tweak_m["soft_mount_m"])
 		# Sits on top of the pad, not centred in it — MotorMesh measures upward from y = 0.
 		motor.position = Vector3(0, FrameModel.PAD_THICKNESS_M * 0.5, 0)
 		pad.add_child(motor)

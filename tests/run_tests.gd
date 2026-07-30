@@ -10,7 +10,8 @@ extends SceneTree
 const SUITES := ["mass properties", "hover", "torque signs", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "build panel",
 	"gate course", "hud", "keyboard throttle", "observables", "rotor synth",
-	"frame model", "motor mesh", "propeller mesh", "airframe", "mounting", "lab"]
+	"frame model", "motor mesh", "propeller mesh", "airframe", "mounting",
+	"assembly tweaks", "lab"]
 
 func _init() -> void:
 	var total := 0
@@ -63,6 +64,7 @@ func _run_suite(suite_name: String) -> Array:
 		"propeller mesh": return TestPropellerMesh.run()
 		"airframe": return TestAirframeModel.run()
 		"mounting": return TestMounting.run()
+		"assembly tweaks": return TestAssemblyTweaks.run()
 		"lab": return TestLab.run()
 	push_error("unknown suite: %s" % suite_name)
 	return []

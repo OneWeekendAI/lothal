@@ -55,6 +55,11 @@ var airframe: AirframeModel
 ## (labs-and-sim.md §4). Left empty it falls back to the reference build, so main.tscn still
 ## runs on its own — capture_frame.gd and F5-from-the-editor both load it directly.
 var initial_selection: Dictionary = {}
+## The builder's fit adjustments, read from the same file Lab writes. Read from disk rather than
+## handed over with the selection, deliberately: it is one file, Lab is the only writer, and a copy
+## passed through the door would be a second place for the shim height to live. Sim never writes it
+## — the field authors nothing (labs-and-sim.md §1).
+var tweaks: AssemblyTweaks = AssemblyTweaks.load_from()
 var hud: Hud
 var course := GateCourse.new()
 var lap_timer := LapTimer.new()
@@ -109,7 +114,7 @@ func _on_build_changed(new_build: Build) -> void:
 	# props, all from this same Build. There is no second description of the aircraft to keep
 	# in step, which is what the old _fit_drone_mesh_to_arm was: a scale factor applied to a
 	# box, correcting a 110 mm arm that had been baked into the scene file.
-	airframe.rebuild(build)
+	airframe.rebuild(build, tweaks)
 	# A lap time belongs to a build. Swapping a part mid-lap starts the attempt over rather
 	# than letting a 6S pack finish a lap a 4S one started.
 	_restart_course()

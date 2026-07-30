@@ -26,6 +26,12 @@ const ARM_THICKNESS_TO_WIDTH_RATIO := 0.5
 ## rather than as a fresh authored number.
 const PLATE_STACK_GAP_TO_THICKNESS_RATIO := 1.5
 
+## The tallest standoffs this frame can sensibly take, as a fraction of the centre plate's own
+## side length. Past this the stack is taller than the plate is wide and the thing has stopped
+## being a quadcopter — the same class of documented rule of thumb as the arm cross-section
+## above, and the DERIVED limit behind the standoff tweak (see AssemblyTweaks.limits).
+const MAX_PLATE_GAP_TO_PLATE_SIDE_RATIO := 0.5
+
 ## Centre-plate side length as a fraction of arm length. This deliberately does NOT reuse
 ## Build.FRAME_PLATE_TO_ARM_RATIO, and the distinction matters: Build's box (150 mm for a
 ## 110 mm arm) is a lumped stand-in for the mass distribution of the WHOLE airframe, arms
@@ -48,7 +54,11 @@ var arm_tips: Dictionary = {}
 ## Clears any previously generated geometry and rebuilds it from `frame`. Safe to call
 ## repeatedly with different frames; the only state that survives a call is this node
 ## itself and the `arm_tips` dictionary, which is fully replaced each time.
-func rebuild(frame: Dictionary) -> void:
+## `plate_gap_m` is the standoff height the builder has chosen (AssemblyTweaks). A negative value
+## means "whatever this frame implies", which is what every caller with no opinion passes — the
+## default is derived, so a frame change moves it rather than freezing it at whatever the frame
+## on screen happened to be when the file was first written.
+func rebuild(frame: Dictionary, plate_gap_m: float = -1.0) -> void:
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
@@ -58,7 +68,24 @@ func rebuild(frame: Dictionary) -> void:
 	var material := _material_for(frame)
 
 	_build_arms_and_pads(arm_m, frame, material)
-	_build_centre_plates(arm_m, material)
+	_build_centre_plates(arm_m, material, plate_gap_m)
+
+
+## Standoff height when nobody has chosen one: the ratio above, applied to the plate thickness
+## Build already derives. Static so AssemblyTweaks can quote it as a default without building a
+## frame to ask.
+static func default_plate_gap_m() -> float:
+	return Build.FRAME_PLATE_THICKNESS_M * PLATE_STACK_GAP_TO_THICKNESS_RATIO
+
+
+## The shortest standoff that still leaves two plates: one plate thickness. Below that the gap is
+## thinner than the parts either side of it and the stack reads as a single slab.
+static func min_plate_gap_m() -> float:
+	return Build.FRAME_PLATE_THICKNESS_M
+
+
+static func max_plate_gap_m(arm_m: float) -> float:
+	return arm_m * CENTRE_PLATE_TO_ARM_RATIO * MAX_PLATE_GAP_TO_PLATE_SIDE_RATIO
 
 
 ## One BoxMesh per motor, spanning from the centre to that motor's arm-tip position, plus
@@ -125,10 +152,12 @@ func _pad_size_m(frame: Dictionary, arm_m: float) -> float:
 ## so that number stays authored in one place, but the plate's SIDE is deliberately its own
 ## ratio — see CENTRE_PLATE_TO_ARM_RATIO for why Build's footprint constant is the wrong
 ## thing to draw here.
-func _build_centre_plates(arm_m: float, material: StandardMaterial3D) -> void:
+func _build_centre_plates(arm_m: float, material: StandardMaterial3D, plate_gap_m: float) -> void:
 	var side: float = arm_m * CENTRE_PLATE_TO_ARM_RATIO
 	var thickness: float = Build.FRAME_PLATE_THICKNESS_M
-	var gap: float = thickness * PLATE_STACK_GAP_TO_THICKNESS_RATIO
+	var gap: float = plate_gap_m
+	if gap < 0.0:
+		gap = default_plate_gap_m()
 
 	var top := MeshInstance3D.new()
 	top.name = "PlateTop"

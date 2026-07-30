@@ -76,11 +76,20 @@ var propeller_picker: PropellerPicker
 var details: FrameDetails
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
+var assembly_panel: AssemblyPanel
+## The builder's fit adjustments, loaded from disk on the way in and saved on every change. Lab
+## owns them because Lab is where the drone is assembled (labs-and-sim.md §1); Sim reads the same
+## file and never writes it.
+var tweaks: AssemblyTweaks
 ## The whole generated aircraft. `frame_model` is kept as a name because it is what Lab's
 ## screenshot tooling and tests reach for, but it is the airframe's frame now, not a
 ## free-standing one.
 var airframe: AirframeModel
 var frame_model: FrameModel
+
+## The right-hand details column. Held as a field so the fit panel can be brought to the front by
+## name — capture_lab.gd photographs it, and there is no other way to reach a tab from outside.
+var panels: TabContainer
 
 var _viewport: SubViewport
 ## The camera boom. Rotating this orbits the camera; the airframe itself never moves.
@@ -98,8 +107,12 @@ var _azimuth_rad := deg_to_rad(START_AZIMUTH_DEG)
 var _elevation_rad := deg_to_rad(START_ELEVATION_DEG)
 var _auto_elevation_time := 0.0
 
-func _init(p_catalog: PartsCatalog) -> void:
+## `p_tweaks` is the assembly configuration to open with. It defaults to whatever is on disk,
+## which is the real startup path; tests pass their own so the suite never depends on, or
+## overwrites, the configuration of the person running it.
+func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null) -> void:
 	catalog = p_catalog
+	tweaks = p_tweaks if p_tweaks != null else AssemblyTweaks.load_from()
 
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	anchor_right = 1.0
@@ -148,7 +161,7 @@ func _init(p_catalog: PartsCatalog) -> void:
 
 	_build_world()
 
-	var panels := TabContainer.new()
+	panels = TabContainer.new()
 	panels.custom_minimum_size = Vector2(336, 0)
 	panels.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	row.add_child(panels)
@@ -164,6 +177,14 @@ func _init(p_catalog: PartsCatalog) -> void:
 	propeller_details = PropellerDetails.new()
 	propeller_details.name = "Prop"
 	panels.add_child(propeller_details)
+
+	# A fourth panel with no rail behind it, because a fit adjustment is not a part choice: there is
+	# nothing to browse and nothing to filter. It sits with the other panels rather than becoming a
+	# fourth column, which would take screen space from the airframe — the thing being judged.
+	assembly_panel = AssemblyPanel.new(tweaks)
+	assembly_panel.name = "Fit"
+	assembly_panel.tweaks_changed.connect(_on_tweaks_changed)
+	panels.add_child(assembly_panel)
 
 	# Working on a rail should show the panel for the part being chosen, so the two columns
 	# never describe different components.
@@ -297,10 +318,34 @@ func _on_part_selected(_part: Dictionary) -> void:
 ## the failure this project has already been bitten by.
 func _on_selection_changed() -> void:
 	var build := current_build()
-	airframe.rebuild(build)
+	airframe.rebuild(build, tweaks)
 	details.render(build.frame, build)
 	motor_details.render(build.motor, build)
 	propeller_details.render(build.propeller, build)
+	# The fit panel is re-rendered on a PART change too, not only on a fit change: the limits are
+	# derived from the parts, so a smaller motor has to narrow the shim slider then and there.
+	assembly_panel.render(build)
+
+
+## A shim, a pad or a standoff moved. Same single path as a part change — the geometry, the panels
+## and the stats are all rebuilt from one Build — and then the configuration is written to disk.
+##
+## Saved on every change rather than on exit, because there is no exit: Lothal is closed by closing
+## the window, and a configuration that only persists when you quit politely is a configuration that
+## does not persist. The file is a few dozen bytes.
+func _on_tweaks_changed() -> void:
+	_on_selection_changed()
+	tweaks.save()
+
+
+## Brings one of the right-hand panels to the front by its tab name ("Frame", "Motor", "Prop",
+## "Fit"). Returns false for a name that is not there rather than selecting something arbitrary.
+func show_panel(panel_name: String) -> bool:
+	for i in panels.get_tab_count():
+		if panels.get_tab_title(i) == panel_name:
+			panels.current_tab = i
+			return true
+	return false
 
 
 ## The build currently selected across the three rails, on the reference pack. Public because
