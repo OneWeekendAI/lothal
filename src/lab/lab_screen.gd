@@ -2,24 +2,25 @@ class_name LabScreen
 extends Control
 ## Lothal Labs — the garage, and the screen the app opens on (labs-and-sim.md §2).
 ##
-## This slice holds frame selection: the rail on the left, the generated airframe in the
-## middle, the details and derived stats on the right. Nothing here flies. There is no
-## integrator, no flight controller and no audio synthesiser in this file, and that absence
-## is the entire point of the Lab/Sim split — choosing a frame is arithmetic and should not
-## cost a laptop's fans.
+## This slice holds frame, motor and propeller selection: three rails on the left, the
+## generated airframe in the middle, the details and derived stats on the right. Nothing here
+## flies. There is no integrator, no flight controller and no audio synthesiser in this file,
+## and that absence is the entire point of the Lab/Sim split — choosing a frame is arithmetic
+## and should not cost a laptop's fans.
 ##
 ## The 3D content lives in a SubViewport with its OWN World3D. That is not decoration: Sim
 ## is a separate scene with its own cameras and lights, and giving Lab a private world is
 ## what stops the two from rendering into each other. It also means a hidden Lab genuinely
 ## stops drawing (UPDATE_WHEN_VISIBLE) rather than quietly rendering behind the field.
 ##
-## One handler drives everything (_on_frame_selected): geometry, details, stats. There is no
-## apply button and there is no second path — a stat cannot disagree with the airframe on
-## screen because both are rebuilt from the same dictionary in the same call.
-
-## The other three parts are held fixed at the reference build while a frame is chosen.
-## Comparing two frames means changing one thing, so the motor, prop and pack stay put; the
-## rest of the catalog gets its own bench in a later slice.
+## One handler drives everything (_on_selection_changed): geometry, all three details panels,
+## and the stats. There is no apply button and there is no second path — a stat cannot
+## disagree with the airframe on screen because both are rebuilt from the same Build in the
+## same call, whichever rail the change came from.
+##
+## The pack is still held at the reference battery. It gets its own bench (a load test, per
+## labs-and-sim.md §2.1) in a later slice; holding it still is also what keeps three-part
+## comparisons honest in the meantime.
 const VIEWPORT_SIZE := Vector2i(1280, 720)
 
 ## The camera sits at a FIXED distance, deliberately — and this is the one piece of framing
@@ -32,7 +33,14 @@ const VIEWPORT_SIZE := Vector2i(1280, 720)
 const CAMERA_FOV := 38.0
 ## Fraction of the viewport width the largest airframe should span. Leaves the biggest frame
 ## visibly inside the room rather than touching both edges.
-const LARGEST_FRAME_SCREEN_FRACTION := 0.78
+##
+## Raised from 0.78 when the props arrived. The widest legitimate build in the catalog went from
+## a bare 10" frame (215 mm half-span) to a 10" frame carrying 10" props (342 mm), and since the
+## distance is chosen by that build and then held for every build, the reference 5" quad lost a
+## third of its size on screen — which is the one thing this viewport cannot afford, because
+## propeller twist is the detail it now exists to show. The margin left over is smaller, but it
+## is the biggest build that gets close to the edges and nothing else.
+const LARGEST_FRAME_SCREEN_FRACTION := 0.95
 
 ## The camera orbits the airframe on two angles: AZIMUTH around the vertical, and ELEVATION
 ## above and below the horizon. Together those reach every point on the sphere, which is what
@@ -63,7 +71,15 @@ const DRAG_DEG_PER_PIXEL := 0.4
 
 var catalog: PartsCatalog
 var picker: FramePicker
+var motor_picker: MotorPicker
+var propeller_picker: PropellerPicker
 var details: FrameDetails
+var motor_details: MotorDetails
+var propeller_details: PropellerDetails
+## The whole generated aircraft. `frame_model` is kept as a name because it is what Lab's
+## screenshot tooling and tests reach for, but it is the airframe's frame now, not a
+## free-standing one.
+var airframe: AirframeModel
 var frame_model: FrameModel
 
 var _viewport: SubViewport
@@ -96,8 +112,26 @@ func _init(p_catalog: PartsCatalog) -> void:
 	row.add_theme_constant_override("separation", 8)
 	add_child(row)
 
+	# Three rails behind tabs rather than three rails side by side. Side by side would put six
+	# columns on screen and leave the airframe — the thing being judged — as a sliver in the
+	# middle, which inverts what this screen is for. Tabs also match how the decision is
+	# actually made: one component at a time, against a build that stays whole between visits.
+	var rails := TabContainer.new()
+	rails.custom_minimum_size = Vector2(292, 0)
+	rails.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_child(rails)
+
 	picker = FramePicker.new(catalog)
-	row.add_child(picker)
+	picker.name = "Frame"
+	rails.add_child(picker)
+
+	motor_picker = MotorPicker.new(catalog)
+	motor_picker.name = "Motor"
+	rails.add_child(motor_picker)
+
+	propeller_picker = PropellerPicker.new(catalog)
+	propeller_picker.name = "Prop"
+	rails.add_child(propeller_picker)
 
 	var viewport_container := SubViewportContainer.new()
 	viewport_container.stretch = true
@@ -114,13 +148,40 @@ func _init(p_catalog: PartsCatalog) -> void:
 
 	_build_world()
 
-	details = FrameDetails.new()
-	row.add_child(details)
+	var panels := TabContainer.new()
+	panels.custom_minimum_size = Vector2(336, 0)
+	panels.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_child(panels)
 
-	# Connected before anything is announced, then asked for the current selection once — so
-	# the first paint goes through exactly the same path as every later change.
-	picker.frame_selected.connect(_on_frame_selected)
-	picker.emit_current()
+	details = FrameDetails.new()
+	details.name = "Frame"
+	panels.add_child(details)
+
+	motor_details = MotorDetails.new(catalog)
+	motor_details.name = "Motor"
+	panels.add_child(motor_details)
+
+	propeller_details = PropellerDetails.new()
+	propeller_details.name = "Prop"
+	panels.add_child(propeller_details)
+
+	# Working on a rail should show the panel for the part being chosen, so the two columns
+	# never describe different components.
+	rails.tab_changed.connect(func(index: int) -> void: panels.current_tab = index)
+
+	# Lab opens on the reference build rather than on whatever happens to be first in each
+	# catalog file — a 65 mm whoop frame under a 2807 and a 10" prop is a strange thing to
+	# greet somebody with, and the reference build is the one combination the project's own
+	# oracles describe. Selected BEFORE the handlers are connected so the first paint happens
+	# once, from a complete selection, rather than three times through partial ones.
+	picker.select_id(ReferenceBuild.FRAME_ID)
+	motor_picker.select_id(ReferenceBuild.MOTOR_ID)
+	propeller_picker.select_id(ReferenceBuild.PROPELLER_ID)
+
+	for rail in [picker, motor_picker, propeller_picker]:
+		rail.part_selected.connect(_on_part_selected)
+
+	_on_selection_changed()
 
 
 ## Lab's private 3D world: a turntable pivot holding the generated airframe, a camera at a
@@ -141,8 +202,9 @@ func _build_world() -> void:
 	_viewport.add_child(world_environment)
 
 	# The airframe sits still and level at the origin; only the camera moves.
-	frame_model = FrameModel.new()
-	_viewport.add_child(frame_model)
+	airframe = AirframeModel.new()
+	frame_model = airframe.frame_model
+	_viewport.add_child(airframe)
 
 	_orbit = Node3D.new()
 	_viewport.add_child(_orbit)
@@ -201,8 +263,17 @@ func _camera_distance_m() -> float:
 	if largest_arm_m <= 0.0:
 		largest_arm_m = Build.REFERENCE_ARM_M
 
+	# The props reach beyond the arm tips, so the widest thing the room has to hold is the
+	# biggest arm carrying the biggest prop. Taking the arm alone put a 10" prop on a 10" frame
+	# half off the edge of the viewport — and since Lab deliberately never zooms, there is no
+	# recovering from that at the time it happens.
+	var largest_prop_radius_m := 0.0
+	for prop in catalog.list_category("propeller"):
+		largest_prop_radius_m = maxf(
+			largest_prop_radius_m, float(prop["specs"]["diameter_inches"]) * Build.INCH_M * 0.5)
+
 	# Arm length is centre-to-motor, so the airframe spans twice that tip to tip.
-	var span_m := largest_arm_m * 2.0
+	var span_m := (largest_arm_m + largest_prop_radius_m) * 2.0
 	var required_width_m := span_m / LARGEST_FRAME_SCREEN_FRACTION
 
 	# CAMERA_FOV is the HORIZONTAL angle, because the camera is set to KEEP_WIDTH (see
@@ -213,22 +284,34 @@ func _camera_distance_m() -> float:
 	return (required_width_m * 0.5) / tan(deg_to_rad(CAMERA_FOV) * 0.5)
 
 
-## The single path from a selection to everything that shows it. Geometry, spec rows and the
-## five derived stats are rebuilt from one dictionary in one call, so there is no ordering in
-## which the panel could be showing one frame while the viewport shows another.
-func _on_frame_selected(frame: Dictionary) -> void:
-	frame_model.rebuild(frame)
-	details.render(frame, _build_with(frame))
+## Any rail, one handler. The part that changed is deliberately ignored: the answer to "what
+## should the screen show now" is the whole current selection, and taking the argument would
+## invite a partial update that got some of it.
+func _on_part_selected(_part: Dictionary) -> void:
+	_on_selection_changed()
 
 
-## This frame fitted to the reference motor, prop and pack. Frames are only comparable if
-## everything downstream of them is held still.
-func _build_with(frame: Dictionary) -> Build:
+## The single path from a selection to everything that shows it. Geometry, all three panels'
+## spec rows and the five derived stats are rebuilt from ONE Build in ONE call, so there is no
+## ordering in which a panel could be showing one component while the viewport shows another —
+## the failure this project has already been bitten by.
+func _on_selection_changed() -> void:
+	var build := current_build()
+	airframe.rebuild(build)
+	details.render(build.frame, build)
+	motor_details.render(build.motor, build)
+	propeller_details.render(build.propeller, build)
+
+
+## The build currently selected across the three rails, on the reference pack. Public because
+## it is what crosses the boundary into Sim (labs-and-sim.md §4) — the field flies exactly the
+## Build the garage assembled, and AppShell hands this one over rather than rebuilding it.
+func current_build() -> Build:
 	return Build.from_ids(
 		catalog,
-		frame["part_id"],
-		ReferenceBuild.MOTOR_ID,
-		ReferenceBuild.PROPELLER_ID,
+		picker.selected_part()["part_id"],
+		motor_picker.selected_part()["part_id"],
+		propeller_picker.selected_part()["part_id"],
 		ReferenceBuild.BATTERY_ID
 	)
 

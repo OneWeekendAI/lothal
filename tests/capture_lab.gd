@@ -9,6 +9,11 @@ extends SceneTree
 ##
 ##   godot --script res://tests/capture_lab.gd -- <out.png> [settle_frames] [frame_part_id]
 ##                                                 [azimuth_deg] [elevation_deg]
+##                                                 [motor_part_id] [prop_part_id]
+##
+## The motor and prop arguments are what let a specific BUILD be photographed rather than a
+## specific frame — needed the moment prop clearance became something to look at, since "a 7"
+## prop on a 3" frame" is a combination and not a part.
 ##
 ## The orbit angles are applied AFTER settling, because the idle orbit is still turning during
 ## those frames and would otherwise carry the view off the angle asked for. A negative
@@ -39,6 +44,17 @@ func _init() -> void:
 			quit(1)
 			return
 		shell.lab.picker.select_index(index)
+
+	if args.size() > 5 and args[5] != "":
+		if not shell.lab.motor_picker.select_id(args[5]):
+			print("no such motor in the visible list: %s" % args[5])
+			quit(1)
+			return
+	if args.size() > 6 and args[6] != "":
+		if not shell.lab.propeller_picker.select_id(args[6]):
+			print("no such propeller in the visible list: %s" % args[6])
+			quit(1)
+			return
 
 	for i in settle:
 		await process_frame

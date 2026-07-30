@@ -23,6 +23,7 @@ static func run() -> Array:
 	results.append_array(_test_shell_lifecycle())
 	results.append_array(_test_filters(catalog))
 	results.append_array(_test_live_reaction(catalog))
+	results.append_array(_test_powertrain_rails(catalog))
 	results.append_array(_test_orbit(catalog))
 
 	return results
@@ -202,31 +203,46 @@ static func _test_shell_lifecycle() -> Array:
 # Deliverable 3 — the filters
 # ---------------------------------------------------------------------------
 
+## Every rail gets the same suite. Frames, motors and propellers browse different fields but
+## must behave identically, and running one set of assertions over all three is what keeps them
+## that way — a rail that quietly stopped intersecting its filters would otherwise only be
+## caught if somebody thought to write the test again for that category.
 static func _test_filters(catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var picker := FramePicker.new(catalog)
-	var all_frames: Array = catalog.list_category("frame")
+	results.append_array(_filter_suite(FramePicker.new(catalog), catalog, "frame",
+		FramePicker.FILTER_KEYS, 12))
+	results.append_array(_filter_suite(MotorPicker.new(catalog), catalog, "motor",
+		MotorPicker.FILTER_KEYS, 12))
+	results.append_array(_filter_suite(PropellerPicker.new(catalog), catalog, "propeller",
+		PropellerPicker.FILTER_KEYS, 14))
+	return results
+
+
+static func _filter_suite(picker: PartPicker, catalog: PartsCatalog, category: String,
+		filter_keys: Array, minimum: int) -> Array:
+	var results: Array = []
+	var all_frames: Array = catalog.list_category(category)
 
 	results.append(TestResult.new(
-		"the picker lists every frame in the catalog before any filter is applied",
-		picker.visible_frames().size() == all_frames.size() and all_frames.size() >= 12,
-		"%d of %d frames listed" % [picker.visible_frames().size(), all_frames.size()]
+		"the %s rail lists every %s in the catalog before any filter is applied" % [category, category],
+		picker.visible_parts().size() == all_frames.size() and all_frames.size() >= minimum,
+		"%d of %d %ss listed" % [picker.visible_parts().size(), all_frames.size(), category]
 	))
 
 	# Filter options must be DERIVED from the JSON, never hardcoded. If a contributor adds a
-	# frame in a new material, the material filter has to grow on its own.
+	# part in a new material, the material filter has to grow on its own.
 	var option_check := true
 	var option_detail: Array = []
-	for entry in FramePicker.FILTER_KEYS:
+	for entry in filter_keys:
 		var key: String = entry["key"]
 		var derived: Array = picker.filter_options(key)
 		var expected := _distinct_values(all_frames, key)
 		# +1 for the "All" entry the picker puts at the top.
-		if derived.size() != expected.size() + 1 or derived[0] != FramePicker.ALL:
+		if derived.size() != expected.size() + 1 or derived[0] != PartPicker.ALL:
 			option_check = false
 		option_detail.append("%s=%d" % [key, derived.size() - 1])
 	results.append(TestResult.new(
-		"every filter's options are derived from frames.json, not hardcoded",
+		"every %s filter's options are derived from the JSON, not hardcoded" % category,
 		option_check,
 		"distinct values found: %s" % ", ".join(option_detail)
 	))
@@ -235,56 +251,59 @@ static func _test_filters(catalog: PartsCatalog) -> Array:
 	# genuinely carry the value filtered on.
 	var narrowing_ok := true
 	var narrowing_detail: Array = []
-	for entry in FramePicker.FILTER_KEYS:
+	for entry in filter_keys:
 		var key: String = entry["key"]
 		var values: Array = picker.filter_options(key)
 		var value: String = values[1]   # first real value after "All"
 		picker.set_filter(key, value)
-		var shown: Array = picker.visible_frames()
+		var shown: Array = picker.visible_parts()
 		if shown.is_empty() or shown.size() >= all_frames.size():
 			narrowing_ok = false
 		for frame in shown:
 			if _catalog_value(frame, key) != value:
 				narrowing_ok = false
 		narrowing_detail.append("%s=%s -> %d" % [key, value, shown.size()])
-		picker.set_filter(key, FramePicker.ALL)
+		picker.set_filter(key, PartPicker.ALL)
 	results.append(TestResult.new(
-		"each filter narrows the list and keeps only matching frames",
+		"each %s filter narrows the list and keeps only matching parts" % category,
 		narrowing_ok,
 		", ".join(narrowing_detail)
 	))
 
-	# Combining filters must intersect, not replace one another.
-	var pair := _find_pair(all_frames, "frame_type", "size_class", true)
-	picker.set_filter("frame_type", pair["type"])
-	picker.set_filter("size_class", pair["size"])
-	var combined: Array = picker.visible_frames()
+	# Combining filters must intersect, not replace one another. The two axes are taken from
+	# whatever the rail actually filters on, so this reads the same for every category.
+	var key_a: String = filter_keys[0]["key"]
+	var key_b: String = filter_keys[1]["key"]
+	var pair := _find_pair(all_frames, key_a, key_b, true)
+	picker.set_filter(key_a, pair["type"])
+	picker.set_filter(key_b, pair["size"])
+	var combined: Array = picker.visible_parts()
 	var combined_ok := not combined.is_empty()
 	for frame in combined:
-		if _catalog_value(frame, "frame_type") != pair["type"] \
-				or _catalog_value(frame, "size_class") != pair["size"]:
+		if _catalog_value(frame, key_a) != pair["type"] \
+				or _catalog_value(frame, key_b) != pair["size"]:
 			combined_ok = false
 	# The intersection must be a strict subset of either filter alone, or the filters are
 	# not really combining.
-	picker.set_filter("size_class", FramePicker.ALL)
-	var type_only: int = picker.visible_frames().size()
-	picker.set_filter("size_class", pair["size"])
+	picker.set_filter(key_b, PartPicker.ALL)
+	var type_only: int = picker.visible_parts().size()
+	picker.set_filter(key_b, pair["size"])
 	results.append(TestResult.new(
-		"combining two filters intersects them",
+		"combining two %s filters intersects them" % category,
 		combined_ok and combined.size() <= type_only,
-		"%s + %s -> %d (type alone: %d)" % [pair["type"], pair["size"], combined.size(), type_only]
+		"%s + %s -> %d (%s alone: %d)" % [pair["type"], pair["size"], combined.size(), key_a, type_only]
 	))
 
 	# A combination matching nothing must SAY so rather than showing an empty void.
-	var impossible := _find_pair(all_frames, "frame_type", "size_class", false)
-	picker.set_filter("frame_type", impossible["type"])
-	picker.set_filter("size_class", impossible["size"])
+	var impossible := _find_pair(all_frames, key_a, key_b, false)
+	picker.set_filter(key_a, impossible["type"])
+	picker.set_filter(key_b, impossible["size"])
 	results.append(TestResult.new(
-		"a filter combination matching nothing says so instead of showing a void",
-		picker.visible_frames().is_empty()
+		"a %s filter combination matching nothing says so instead of showing a void" % category,
+		picker.visible_parts().is_empty()
 			and picker._list.item_count == 1
 			and not picker._list.is_item_selectable(0)
-			and picker._list.get_item_text(0).to_lower().contains("no frame")
+			and picker._list.get_item_text(0).to_lower().contains("no %s" % picker.noun)
 			and picker.empty_state_visible(),
 		"%s + %s -> %d rows, row 0 = \"%s\"" % [
 			impossible["type"], impossible["size"], picker._list.item_count,
@@ -348,6 +367,132 @@ static func _test_live_reaction(catalog: PartsCatalog) -> Array:
 		"every value on the details panel traces back to frames.json",
 		traced,
 		"all 7 fields match the JSON" if traced else "; ".join(missing)
+	))
+
+	lab.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# The motor and propeller rails, live
+# ---------------------------------------------------------------------------
+
+## The frame rail already proved that one change moves geometry, details and stats together.
+## These do the same for the two new rails, and add the thing that only becomes possible with
+## three of them: a change on ANY rail has to move ALL the panels, because the five derived
+## stats belong to the aircraft rather than to the component you happen to be looking at. A
+## motor swap that updated the motor panel and left the frame panel quoting the old
+## thrust-to-weight would look completely fine on screen.
+static func _test_powertrain_rails(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	var lab := LabScreen.new(catalog)
+
+	# Lab must open on the reference build, not on whatever sorts first in each JSON file.
+	results.append(TestResult.new(
+		"Lab opens on the reference build across all three rails",
+		lab.picker.selected_part()["part_id"] == ReferenceBuild.FRAME_ID
+			and lab.motor_picker.selected_part()["part_id"] == ReferenceBuild.MOTOR_ID
+			and lab.propeller_picker.selected_part()["part_id"] == ReferenceBuild.PROPELLER_ID,
+		"%s / %s / %s" % [lab.picker.selected_part()["part_id"],
+			lab.motor_picker.selected_part()["part_id"],
+			lab.propeller_picker.selected_part()["part_id"]]
+	))
+
+	# --- the motor rail ---
+	lab.motor_picker.select_id("motor_1404_3800kv")
+	var small_bell: float = (lab.airframe.motor_meshes["M1"] as MotorMesh).bell_radius_m
+	var small_kv: String = lab.motor_details._detail_values["kv"].text
+	var small_twr: String = lab.details._stat_values["twr"].text
+
+	lab.motor_picker.select_id("motor_2807_1300kv")
+	var large_bell: float = (lab.airframe.motor_meshes["M1"] as MotorMesh).bell_radius_m
+	var large_kv: String = lab.motor_details._detail_values["kv"].text
+	var large_twr: String = lab.details._stat_values["twr"].text
+
+	results.append(TestResult.new(
+		"one motor change moves the geometry, the motor panel and the whole build's stats",
+		large_bell > small_bell + 0.001 and large_kv != small_kv and large_twr != small_twr,
+		"bell %.4f -> %.4f m, KV %s -> %s, thrust:weight %s -> %s (on the FRAME panel)" % [
+			small_bell, large_bell, small_kv, large_kv, small_twr, large_twr]
+	))
+
+	# --- the propeller rail ---
+	lab.motor_picker.select_id(ReferenceBuild.MOTOR_ID)
+	lab.propeller_picker.select_id("prop_5x43x3")
+	var five_radius: float = (lab.airframe.propeller_meshes["M1"] as PropellerMesh).radius_m
+	var five_blades: int = (lab.airframe.propeller_meshes["M1"] as PropellerMesh).blade_count
+	var five_pitch: String = lab.propeller_details._detail_values["pitch_inches"].text
+	var five_weight: String = lab.motor_details._stat_values["weight"].text
+
+	lab.propeller_picker.select_id("prop_7x35x2")
+	var seven_radius: float = (lab.airframe.propeller_meshes["M1"] as PropellerMesh).radius_m
+	var seven_blades: int = (lab.airframe.propeller_meshes["M1"] as PropellerMesh).blade_count
+	var seven_pitch: String = lab.propeller_details._detail_values["pitch_inches"].text
+	var seven_weight: String = lab.motor_details._stat_values["weight"].text
+
+	results.append(TestResult.new(
+		"one propeller change moves the blades, the prop panel and the whole build's stats",
+		seven_radius > five_radius * 1.3 and five_blades == 3 and seven_blades == 2
+			and seven_pitch != five_pitch and seven_weight != five_weight,
+		"r %.4f -> %.4f m, %d -> %d blades, pitch %s -> %s, weight %s -> %s (on the MOTOR panel)" % [
+			five_radius, seven_radius, five_blades, seven_blades,
+			five_pitch, seven_pitch, five_weight, seven_weight]
+	))
+
+	# Every value on the two new panels must trace back to the JSON rather than be spelled out
+	# in code — the same guarantee the frame panel is held to.
+	var motor: Dictionary = catalog.get_part("motor_2506_1500kv")
+	var prop: Dictionary = catalog.get_part("prop_6x45x3")
+	lab.motor_picker.select_id(motor["part_id"])
+	lab.propeller_picker.select_id(prop["part_id"])
+
+	var expectations := {
+		lab.motor_details: {
+			"stator_class": str(motor["catalog"]["stator_class"]),
+			"kv_class": str(motor["catalog"]["kv_class"]),
+			"intended_use": str(motor["catalog"]["intended_use"]),
+			"kv": "%.0f" % float(motor["specs"]["kv"]),
+			"max_thrust_g": "%.0f" % float(motor["specs"]["max_thrust_g"]),
+			"max_amps": "%.0f" % float(motor["specs"]["max_amps"]),
+			"poles": "%.0f" % float(motor["specs"]["poles"]),
+			"mount_pattern": str(motor["mount_pattern"]),
+			# The provenance row: the prop the headline thrust was measured on, by name.
+			"thrust_test": str(catalog.get_part(motor["thrust_test"]["prop_id"])["name"]),
+		},
+		lab.propeller_details: {
+			"blade_count": str(prop["catalog"]["blade_count"]),
+			"diameter_class": str(prop["catalog"]["diameter_class"]),
+			"material": str(prop["catalog"]["material"]),
+			"diameter_inches": "%.1f" % float(prop["specs"]["diameter_inches"]),
+			"pitch_inches": "%.1f" % float(prop["specs"]["pitch_inches"]),
+		},
+	}
+	var missing: Array = []
+	var checked := 0
+	for panel in expectations:
+		for key in expectations[panel]:
+			checked += 1
+			var shown: String = panel._detail_values[key].text
+			if not shown.contains(expectations[panel][key]):
+				missing.append("%s: \"%s\" lacks \"%s\"" % [key, shown, expectations[panel][key]])
+	results.append(TestResult.new(
+		"every value on the motor and propeller panels traces back to the JSON",
+		missing.is_empty(),
+		"all %d fields match the JSON" % checked if missing.is_empty() else "; ".join(missing)
+	))
+
+	# Warn, never block: an over-propped build stays selectable and says what would happen.
+	lab.picker.select_id("frame_3in_toothpick")
+	lab.propeller_picker.select_id("prop_7x4x3")
+	var warning_text: String = lab.details._warning_label.text
+	results.append(TestResult.new(
+		"a 7\" prop on a 3\" frame stays selectable, warns in words, and intersects on screen",
+		lab.propeller_picker.selected_part()["part_id"] == "prop_7x4x3"
+			and lab.details._warning_label.visible
+			and warning_text.contains("strike the frame")
+			and lab.airframe.adjacent_prop_gap_m() < 0.0,
+		"clearance %+.4f m, warning: \"%s\"" % [
+			lab.airframe.adjacent_prop_gap_m(), warning_text.split("\n")[0]]
 	))
 
 	lab.free()
