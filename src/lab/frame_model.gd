@@ -1,0 +1,181 @@
+class_name FrameModel
+extends Node3D
+## Procedural frame geometry, generated from a chosen frame part's real specs rather than
+## authored as a fixed asset. Picking the 7" frame over the 3" one must make the arms
+## genuinely longer because arm_mm changed — a hand-modelled mesh (even one that gets
+## uniformly scaled to "look right") would decouple the geometry the pilot sees from the
+## arm_mm that drives the physics, and the whole point of this workbench (architecture.md:
+## "Models: Godot primitives (v1)") is that picking a part changes what you see AND what you
+## fly, from the same number. Motors, props and batteries are out of scope here — frame only.
+##
+## Node layout after rebuild():
+##   Arm_M1..Arm_M4  — one BoxMesh per MotorLayout.MOTOR_NAMES, spanning centre to arm tip
+##   Pad_M1..Pad_M4  — motor-mount pad at each arm tip; arm_tips[name] points at these
+##   PlateTop, PlateBottom — the twin centre plates
+const INCH_M := 0.0254
+
+## Arm cross-section, not in the JSON: parts.md's spec-field table has no body-dimension
+## field for a frame's arm, so — same precedent as Build.FRAME_PLATE_TO_ARM_RATIO — it is
+## derived from arm_m instead of authored. An arm on a real quad is roughly 1/8 as wide as
+## it is long, and noticeably thinner than it is wide (carbon plate, not a square rod).
+const ARM_WIDTH_TO_LENGTH_RATIO := 1.0 / 8.0
+const ARM_THICKNESS_TO_WIDTH_RATIO := 0.5
+
+## Vertical gap between the top and bottom centre plates (standoff height), also not a
+## parts.md spec field. Expressed relative to the plate thickness Build already derives,
+## rather than as a fresh authored number.
+const PLATE_STACK_GAP_TO_THICKNESS_RATIO := 1.5
+
+## Centre-plate side length as a fraction of arm length. This deliberately does NOT reuse
+## Build.FRAME_PLATE_TO_ARM_RATIO, and the distinction matters: Build's box (150 mm for a
+## 110 mm arm) is a lumped stand-in for the mass distribution of the WHOLE airframe, arms
+## included — which is why it is wider than the arms reach. Using it as the literal centre
+## plate drew a slab that swallowed the arms entirely, so the one thing this screen exists to
+## show was invisible. A real 5" frame carries roughly a 60 mm centre plate on a 110 mm arm.
+const CENTRE_PLATE_TO_ARM_RATIO := 0.55
+
+## Fallback bolt spacing (metres) when a frame's motor_mount string cannot be parsed, e.g.
+## "16x16" -> 0.016. Falls back to a fraction of arm_m so an odd/missing string still
+## produces a sane pad instead of a magic constant with no relation to this frame at all.
+const PAD_SIZE_TO_ARM_RATIO := 0.12
+const PAD_THICKNESS_M := 0.003
+
+## dict of MotorLayout motor name -> the Node3D sitting exactly at that motor's position
+## (the mount pad). Tests assert against this rather than walking get_children().
+var arm_tips: Dictionary = {}
+
+
+## Clears any previously generated geometry and rebuilds it from `frame`. Safe to call
+## repeatedly with different frames; the only state that survives a call is this node
+## itself and the `arm_tips` dictionary, which is fully replaced each time.
+func rebuild(frame: Dictionary) -> void:
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	arm_tips.clear()
+
+	var arm_m: float = float(frame["specs"]["arm_mm"]) / 1000.0
+	var material := _material_for(frame)
+
+	_build_arms_and_pads(arm_m, frame, material)
+	_build_centre_plates(arm_m, material)
+
+
+## One BoxMesh per motor, spanning from the centre to that motor's arm-tip position, plus
+## a small mount pad centred on the tip itself. Orientation is derived from the actual
+## motor_position vector via look_at, never a hardcoded 45-degree rotation, so an odd
+## future layout (not a symmetric X) would still come out correct.
+func _build_arms_and_pads(arm_m: float, frame: Dictionary, material: StandardMaterial3D) -> void:
+	var arm_width: float = arm_m * ARM_WIDTH_TO_LENGTH_RATIO
+	var arm_thickness: float = arm_width * ARM_THICKNESS_TO_WIDTH_RATIO
+	var pad_size := _pad_size_m(frame, arm_m)
+
+	for motor_name in MotorLayout.MOTOR_NAMES:
+		var tip := MotorLayout.motor_position(motor_name, arm_m)
+		var length := tip.length()
+		var midpoint := tip * 0.5
+
+		var arm := MeshInstance3D.new()
+		arm.name = "Arm_%s" % motor_name
+		var box := BoxMesh.new()
+		# Box's local Y axis is the "long" axis; we lay it flat by rotating below, so length
+		# goes on X here and gets pointed at the tip via basis, not by re-authoring the mesh.
+		box.size = Vector3(length, arm_width, arm_thickness)
+		arm.mesh = box
+		arm.material_override = material
+		arm.position = midpoint
+		# Orient the box's local +X axis (its length) toward the tip. transform.basis.x is
+		# the box's long axis, so build a basis whose X column is the tip direction.
+		var forward := tip.normalized()
+		var up := Vector3.UP
+		if absf(forward.dot(up)) > 0.99:
+			up = Vector3.FORWARD
+		var right := forward
+		var new_up := right.cross(up).cross(right).normalized()
+		var new_forward := new_up.cross(right).normalized()
+		arm.transform.basis = Basis(right, new_up, new_forward)
+		add_child(arm)
+
+		var pad := MeshInstance3D.new()
+		pad.name = "Pad_%s" % motor_name
+		var pad_mesh := BoxMesh.new()
+		pad_mesh.size = Vector3(pad_size, PAD_THICKNESS_M, pad_size)
+		pad.mesh = pad_mesh
+		pad.material_override = material
+		pad.position = tip
+		add_child(pad)
+
+		arm_tips[motor_name] = pad
+
+
+## The motor-mount pad's bolt-spacing side length, parsed from the frame's motor_mount
+## string (e.g. "16x16" -> 0.016 m) when possible. This is frame hardware (the plate the
+## motor bolts to), not the motor itself, so it stays in scope here. Falls back to a
+## fraction of arm_m for a frame dictionary that omits or malforms the field, which the
+## missing-catalog-block test exercises.
+func _pad_size_m(frame: Dictionary, arm_m: float) -> float:
+	var mount: String = frame.get("specs", {}).get("motor_mount", "")
+	var parts := mount.split("x")
+	if parts.size() == 2 and parts[0].is_valid_float():
+		return float(parts[0]) / 1000.0
+	return arm_m * PAD_SIZE_TO_ARM_RATIO
+
+
+## Twin top/bottom centre plates. Plate THICKNESS is taken from Build.FRAME_PLATE_THICKNESS_M
+## so that number stays authored in one place, but the plate's SIDE is deliberately its own
+## ratio — see CENTRE_PLATE_TO_ARM_RATIO for why Build's footprint constant is the wrong
+## thing to draw here.
+func _build_centre_plates(arm_m: float, material: StandardMaterial3D) -> void:
+	var side: float = arm_m * CENTRE_PLATE_TO_ARM_RATIO
+	var thickness: float = Build.FRAME_PLATE_THICKNESS_M
+	var gap: float = thickness * PLATE_STACK_GAP_TO_THICKNESS_RATIO
+
+	var top := MeshInstance3D.new()
+	top.name = "PlateTop"
+	var top_mesh := BoxMesh.new()
+	top_mesh.size = Vector3(side, thickness, side)
+	top.mesh = top_mesh
+	top.material_override = material
+	top.position = Vector3(0, gap * 0.5, 0)
+	add_child(top)
+
+	var bottom := MeshInstance3D.new()
+	bottom.name = "PlateBottom"
+	var bottom_mesh := BoxMesh.new()
+	bottom_mesh.size = Vector3(side, thickness, side)
+	bottom.mesh = bottom_mesh
+	bottom.material_override = material
+	bottom.position = Vector3(0, -gap * 0.5, 0)
+	add_child(bottom)
+
+
+## Reads material appearance from frame["catalog"]["material"] by substring match, with a
+## safe default when the catalog block is absent (it is being added to frames.json
+## concurrently with this file, so mid-edit reads must not crash) or unrecognised. Carbon
+## fibre reads dark and glossy; nylon reads lighter and matte; anything else gets a neutral
+## middle-ground so an unrecognised material is visibly a frame but not asserting a look
+## it hasn't earned.
+func _material_for(frame: Dictionary) -> StandardMaterial3D:
+	var catalog: Dictionary = frame.get("catalog", {})
+	var material_name: String = String(catalog.get("material", "")).to_lower()
+
+	# Albedos are lifted well above the true reflectance of these materials on purpose. Real
+	# 3K carbon is near-black, and rendering it honestly turned the airframe into an unreadable
+	# smear against a dark viewport — the arms, which are the whole point of this screen,
+	# disappeared. architecture.md already names this tradeoff: derive from physics, then
+	# transform for perception. This is the vision layer's perceptual transform, and it is why
+	# carbon here reads as dark grey with a sheen rather than as black.
+	var mat := StandardMaterial3D.new()
+	if material_name.contains("carbon"):
+		mat.albedo_color = Color(0.14, 0.145, 0.16)
+		mat.roughness = 0.35
+		mat.metallic = 0.25
+	elif material_name.contains("nylon"):
+		mat.albedo_color = Color(0.62, 0.62, 0.58)
+		mat.roughness = 0.85
+		mat.metallic = 0.0
+	else:
+		mat.albedo_color = Color(0.36, 0.36, 0.38)
+		mat.roughness = 0.6
+		mat.metallic = 0.05
+	return mat
