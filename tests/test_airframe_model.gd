@@ -18,8 +18,104 @@ static func run() -> Array:
 	results.append(_test_motors_hang_off_the_arm_tips(catalog))
 	results.append(_test_a_frame_change_takes_its_motors_with_it(catalog))
 	results.append(_test_motor_choice_changes_motor_size(catalog))
+	results.append(_test_props_sit_on_the_motor_shafts(catalog))
+	results.append(_test_prop_choice_changes_the_props(catalog))
+	results.append(_test_an_oversized_prop_overlaps_the_airframe(catalog))
 
 	return results
+
+
+## A propeller belongs to its motor, not to the frame. Parented that way, a taller motor lifts
+## its own prop and nothing at the call site has to know how tall a 2807 is.
+static func _test_props_sit_on_the_motor_shafts(catalog: PartsCatalog) -> TestResult:
+	var build := _build(catalog, "frame_5in_freestyle", "motor_2207_1960kv", "prop_5x43x3")
+	var airframe := AirframeModel.new()
+	airframe.rebuild(build)
+
+	var problems: Array[String] = []
+	for motor_name in MotorLayout.MOTOR_NAMES:
+		var motor: MotorMesh = airframe.motor_meshes[motor_name]
+		var prop: PropellerMesh = airframe.propeller_meshes[motor_name]
+		if prop.get_parent() != motor:
+			problems.append("%s's prop is not on its motor" % motor_name)
+		var bell := motor.get_node("Bell") as MeshInstance3D
+		var bell_top: float = bell.position.y + (bell.mesh as CylinderMesh).height * 0.5
+		if prop.position.y <= bell_top:
+			problems.append("%s's prop at y=%.4f is inside the bell (top %.4f)" % [
+				motor_name, prop.position.y, bell_top])
+
+	# A taller motor must carry its prop higher — the check that the height is asked for rather
+	# than assumed.
+	var tall := AirframeModel.new()
+	tall.rebuild(_build(catalog, "frame_5in_freestyle", "motor_2807_1300kv", "prop_5x43x3"))
+	var short_y: float = (airframe.propeller_meshes["M1"] as Node3D).position.y
+	var tall_y: float = (tall.propeller_meshes["M1"] as Node3D).position.y
+	if tall_y <= short_y:
+		problems.append("a 2807 does not raise its prop above a 2207's (%.4f vs %.4f)" % [tall_y, short_y])
+
+	airframe.free()
+	tall.free()
+
+	return TestResult.new(
+		"every propeller sits on its own motor's shaft, clear of the bell",
+		problems.is_empty(),
+		"prop height 2207 %.4f m -> 2807 %.4f m, %s" % [
+			short_y, tall_y, "all seated" if problems.is_empty() else str(problems)]
+	)
+
+
+## Frame and motor held still, so anything that moves came from the prop selection. This is the
+## acceptance criterion — a 3-blade 5" swapped for a 2-blade 7" changes diameter AND count —
+## asserted on the assembled airframe rather than on a prop on its own.
+static func _test_prop_choice_changes_the_props(catalog: PartsCatalog) -> TestResult:
+	var airframe := AirframeModel.new()
+	airframe.rebuild(_build(catalog, "frame_7in_long_range", "motor_2807_1300kv", "prop_5x43x3"))
+	var five: PropellerMesh = airframe.propeller_meshes["M1"]
+	var five_radius := five.radius_m
+	var five_blades := five.blade_count
+
+	airframe.rebuild(_build(catalog, "frame_7in_long_range", "motor_2807_1300kv", "prop_7x35x2"))
+	var seven: PropellerMesh = airframe.propeller_meshes["M1"]
+	var seven_radius := seven.radius_m
+	var seven_blades := seven.blade_count
+
+	var count := airframe.propeller_meshes.size()
+	airframe.free()
+
+	return TestResult.new(
+		"swapping a 3-blade 5\" for a 2-blade 7\" changes all four props",
+		count == 4 and seven_radius > five_radius * 1.3 and five_blades == 3 and seven_blades == 2,
+		"%d props: %d-blade r=%.4f m -> %d-blade r=%.4f m" % [
+			count, five_blades, five_radius, seven_blades, seven_radius]
+	)
+
+
+## Incompatibility has to be visible in the geometry, not only in a warnings panel
+## (labs-and-sim.md §2.2: "the render is the engineering check"). A 7" prop on a 3" frame must
+## produce discs that actually intersect — and the text warning must still fire, because warn-
+## never-block means the build stays selectable and the consequence is the lesson.
+static func _test_an_oversized_prop_overlaps_the_airframe(catalog: PartsCatalog) -> TestResult:
+	var legal := _build(catalog, "frame_5in_freestyle", "motor_2207_1960kv", "prop_5x43x3")
+	var oversized := _build(catalog, "frame_3in_toothpick", "motor_2207_1960kv", "prop_7x4x3")
+
+	var airframe := AirframeModel.new()
+	airframe.rebuild(legal)
+	var legal_gap := airframe.adjacent_prop_gap_m()
+	airframe.rebuild(oversized)
+	var oversized_gap := airframe.adjacent_prop_gap_m()
+	airframe.free()
+
+	var warned := false
+	for warning in oversized.warnings():
+		if warning.contains("strike the frame"):
+			warned = true
+
+	return TestResult.new(
+		"an oversized prop intersects the airframe on screen, and still says so in words",
+		legal_gap > 0.0 and oversized_gap < 0.0 and warned,
+		"5\" prop on a 5\" frame: %+.4f m clearance; 7\" prop on a 3\" frame: %+.4f m; warning fired: %s" % [
+			legal_gap, oversized_gap, warned]
+	)
 
 
 static func _build(catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String) -> Build:
