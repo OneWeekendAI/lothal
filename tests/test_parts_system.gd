@@ -24,6 +24,7 @@ static func run() -> Array:
 	results.append(_every_part_has_the_specs_the_physics_reads(catalog))
 	results.append(_catalog_is_deep_enough_to_browse(catalog))
 	results.append(_every_part_carries_browsing_metadata(catalog))
+	results.append_array(_pack_dimensions_are_measured_rather_than_derived(catalog))
 	results.append(_every_motor_thrust_test_names_a_real_prop(catalog))
 	results.append_array(_reference_build_matches_the_documented_table(catalog))
 	results.append_array(_four_s_to_six_s(catalog))
@@ -41,7 +42,8 @@ static func _every_part_has_the_specs_the_physics_reads(catalog: PartsCatalog) -
 		"frame": ["arm_mm", "max_prop_inches", "motor_mount"],
 		"motor": ["kv", "max_thrust_g", "max_amps", "poles", "stator_diameter_mm", "stator_height_mm"],
 		"propeller": ["diameter_inches", "pitch_inches", "blades"],
-		"battery": ["cells", "nominal_v", "mah", "internal_r_ohm"],
+		"battery": ["cells", "nominal_v", "mah", "internal_r_ohm",
+			"length_mm", "width_mm", "height_mm"],
 	}
 	var missing: Array[String] = []
 	var count := 0
@@ -88,6 +90,86 @@ static func _catalog_is_deep_enough_to_browse(catalog: PartsCatalog) -> TestResu
 ## and vendor links BY NAME from both blocks, and a ban stated only in prose is a ban that
 ## erodes: the first PR to add a price is a small, reasonable-looking diff. This is the check
 ## that makes the diff fail instead.
+## The pack's published length, width and height, and the reason they are AUTHORED rather than
+## estimated. Build used to size the pack from its mass — a fixed 70x30x35 box scaled by the cube
+## root of mass — and that estimate has two signatures this test is built to reject, because a
+## re-derived guess would sail past a "the fields are present" check.
+##
+## A mass-scaled box of fixed proportions has ONE aspect ratio for the whole catalog (2.0, every
+## time) and orders the packs by volume exactly as it orders them by mass. Real packs do neither: a
+## 1S whoop stick is six times as long as it is wide and a 6S 21700 brick is barely wider than it is
+## long, and the 320 g Li-ion 18650 pack occupies LESS space than the 205 g 6S LiPo because a
+## cylindrical cell is denser than a pouch. So both halves are asserted against the catalog as a
+## whole, and either one failing means somebody has computed a dimension instead of reading one off
+## a spec sheet.
+static func _pack_dimensions_are_measured_rather_than_derived(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+
+	var by_mass: Array = catalog.list_category("battery").duplicate()
+	by_mass.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["mass_g"]) < float(b["mass_g"]))
+
+	var aspects: Array[float] = []
+	var volumes_cm3: Array[float] = []
+	var densities: Array[float] = []
+	var inversions: Array[String] = []
+
+	for part in by_mass:
+		var specs: Dictionary = part.get("specs", {})
+		var length: float = float(specs.get("length_mm", 0.0))
+		var width: float = float(specs.get("width_mm", 0.0))
+		var height: float = float(specs.get("height_mm", 0.0))
+		if length <= 0.0 or width <= 0.0 or height <= 0.0:
+			return [TestResult.new(
+				"pack dimensions are measured rather than derived from mass",
+				false,
+				"%s has no usable dimensions (%.1f x %.1f x %.1f mm)" % [
+					part["part_id"], length, width, height])]
+		aspects.append(length / width)
+		var volume_cm3 := length * width * height / 1000.0
+		volumes_cm3.append(volume_cm3)
+		densities.append(float(part["mass_g"]) / volume_cm3)
+
+	for i in volumes_cm3.size() - 1:
+		if volumes_cm3[i] > volumes_cm3[i + 1]:
+			inversions.append("%s (%.0f cm3) is bigger than the heavier %s (%.0f cm3)" % [
+				by_mass[i]["part_id"], volumes_cm3[i],
+				by_mass[i + 1]["part_id"], volumes_cm3[i + 1]])
+
+	var min_aspect: float = aspects.min()
+	var max_aspect: float = aspects.max()
+	results.append(TestResult.new(
+		"packs have real, differing proportions, not one box scaled by mass",
+		min_aspect < 2.0 and max_aspect > 4.0,
+		"length:width runs %.2f to %.2f across %d packs (a mass-scaled box would be 2.00 for every one)" % [
+			min_aspect, max_aspect, aspects.size()]
+	))
+
+	results.append(TestResult.new(
+		"a heavier pack is not always a bigger one, which no cube-root-of-mass estimate can produce",
+		inversions.size() >= 2,
+		"%d mass/volume inversions: %s" % [inversions.size(), str(inversions)]
+	))
+
+	# The typo guard. A millimetre entered as a centimetre, or a transposed digit, changes the
+	# volume by orders of magnitude and would otherwise show up only as an airframe with a shipping
+	# crate strapped to it. Lithium cells sit in a narrow, well-known band: pouch LiPo around
+	# 1.8-2.2 g/cm3, cylindrical 18650/21700 cells higher because they carry more metal.
+	var loose: Array[String] = []
+	for i in densities.size():
+		if densities[i] < 1.5 or densities[i] > 3.5:
+			loose.append("%s at %.2f g/cm3" % [by_mass[i]["part_id"], densities[i]])
+	results.append(TestResult.new(
+		"every pack's mass and volume agree on a believable cell density",
+		loose.is_empty(),
+		"%.2f-%.2f g/cm3 across %d packs%s" % [
+			densities.min(), densities.max(), densities.size(),
+			"" if loose.is_empty() else ", outside the band: " + str(loose)]
+	))
+
+	return results
+
+
 static func _every_part_carries_browsing_metadata(catalog: PartsCatalog) -> TestResult:
 	var required := {
 		"frame": ["frame_type", "size_class", "material"],
