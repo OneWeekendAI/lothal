@@ -145,3 +145,94 @@ func adjacent_prop_gap_m() -> float:
 	var separation: float = MotorLayout.motor_position("M1", arm_m) \
 		.distance_to(MotorLayout.motor_position("M2", arm_m))
 	return separation - (first.radius_m + second.radius_m)
+
+
+# ---------------------------------------------------------------------------
+# Does the pack fit?
+# ---------------------------------------------------------------------------
+
+## How far the pack hangs over the edge of the centre plate it is strapped to, fore/aft and
+## laterally, in metres. Positive hangs over; negative clears.
+##
+## Measured off the DRAWN parts — the plate's own mesh and the pack's own reported size — in the
+## manner of adjacent_prop_gap_m() above, and for the same reason: labs-and-sim.md §2.2 says "the
+## fit check and the picture are the same geometry", and a fit check recomputed from arm_mm times a
+## ratio would be a second opinion that could agree with the render for a long time and then stop.
+##
+## Both axes are reported, but only one of them is a problem — see battery_fit_warnings().
+func battery_overhang_m() -> Dictionary:
+	if battery_mesh == null or frame_model.plate_top == null:
+		return {"fore_aft": 0.0, "lateral": 0.0}
+	var plate: Vector3 = (frame_model.plate_top.mesh as BoxMesh).size
+	return {
+		"fore_aft": (battery_mesh.size_m.z - plate.z) * 0.5,
+		"lateral": (battery_mesh.size_m.x - plate.x) * 0.5,
+	}
+
+
+## The narrowest gap in PLAN VIEW between the pack's footprint and any propeller's swept disc, in
+## metres. Negative means the pack is inside the disc: the props would strike it.
+##
+## Plan view, deliberately, and it is the honest reading rather than a simplification. The pack sits
+## on the top plate and the props turn above the motors, so they are at different heights and a
+## three-dimensional test would report a comfortable gap for a build that is obviously absurd on
+## screen. But a propeller is a rotor, not a fixed object: it is what gets pitched into and struck
+## by anything the airframe hits, its disc is where nothing may be, and a pack occupying that
+## airspace is a build with no room for the props whatever the current standoff height happens to
+## put between them.
+##
+## Each prop's radius is the one it drew, and the hub positions are MotorLayout's — the same table
+## the physics reads, so the discs measured here are the discs on screen.
+func battery_prop_clearance_m() -> float:
+	if battery_mesh == null or propeller_meshes.is_empty():
+		return 0.0
+
+	var half_x: float = battery_mesh.size_m.x * 0.5
+	var half_z: float = battery_mesh.size_m.z * 0.5
+	var narrowest := INF
+
+	for motor_name in MotorLayout.MOTOR_NAMES:
+		var propeller: PropellerMesh = propeller_meshes[motor_name]
+		var hub := MotorLayout.motor_position(motor_name, arm_m)
+		# Distance from the hub to the nearest point of the pack's rectangle. Zero on each axis the
+		# hub is already inside, which is what makes this correct for a pack the props sit over as
+		# well as for one they sit clear of.
+		var gap := Vector2(
+			maxf(absf(hub.x) - half_x, 0.0),
+			maxf(absf(hub.z) - half_z, 0.0)).length()
+		narrowest = minf(narrowest, gap - propeller.radius_m)
+
+	return narrowest
+
+
+## What is wrong with how this pack fits, in words, measured off the geometry above. Empty for a
+## build that fits — including the reference build, which overhangs its own plate by 7 mm fore and
+## aft and is not being warned about, because that is what every real 5" build does and a warning
+## nobody can act on is noise.
+##
+## Two conditions, and they are the two that mean something:
+##
+##   - the pack is WIDER than the plate. A strap runs across the pack and through the plate, so a
+##     pack wider than what it is strapped to has nothing holding its edges down. Overhanging fore
+##     and aft is normal; overhanging sideways is a mounting problem.
+##   - the pack reaches into the propeller discs. Warn, never block: a 6S Li-ion on a 3" toothpick
+##     is exactly the curiosity worth having, and seeing it dwarf the airframe is the answer.
+##
+## Separate from Build.warnings(), which is the same split the prop clearance already uses: that
+## list is what the parts DECLARE about each other, and this is what the assembled geometry does.
+func battery_fit_warnings() -> Array[String]:
+	var out: Array[String] = []
+	if battery_mesh == null:
+		return out
+
+	var overhang := battery_overhang_m()
+	if overhang["lateral"] > 0.0:
+		out.append("The pack is %.0f mm wider than the centre plate — %.0f mm hangs over each side, with nothing for a strap to hold down." % [
+			overhang["lateral"] * 2000.0, overhang["lateral"] * 1000.0])
+
+	var clearance := battery_prop_clearance_m()
+	if clearance < 0.0:
+		out.append("The pack reaches %.0f mm into the propeller discs — there is no room on this airframe for it." % [
+			-clearance * 1000.0])
+
+	return out

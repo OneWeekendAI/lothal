@@ -384,7 +384,10 @@ func _on_selection_changed() -> void:
 	charge_panel.render(build)
 	# The fit panel is re-rendered on a PART change too, not only on a fit change: the limits are
 	# derived from the parts, so a smaller motor has to narrow the shim slider then and there.
-	assembly_panel.render(build)
+	# The airframe goes in as well as the build, because the fit rows are measured off the geometry
+	# that was just rebuilt two lines above — so the overhang on the panel is the overhang on the
+	# screen, in the same call, and cannot describe a pack that is no longer fitted.
+	assembly_panel.render(build, airframe)
 
 
 ## A shim, a pad or a standoff moved. Same single path as a part change — the geometry, the panels

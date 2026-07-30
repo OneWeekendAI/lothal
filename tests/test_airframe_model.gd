@@ -24,8 +24,99 @@ static func run() -> Array:
 	results.append(_test_the_pack_sits_on_the_top_plate(catalog))
 	results.append(_test_a_pack_change_changes_the_block(catalog))
 	results.append(_test_a_frame_change_takes_the_pack_with_it(catalog))
+	results.append(_test_the_overhang_is_measured_off_the_geometry(catalog))
+	results.append(_test_a_pack_that_reaches_the_props_says_so(catalog))
 
 	return results
+
+
+## The fit check and the picture are the same geometry (labs-and-sim.md §2.2), so the overhang is
+## measured off the drawn plate and the drawn pack rather than recomputed from arm_mm and a ratio —
+## the same posture as adjacent_prop_gap_m().
+##
+## Both numbers below were worked out by hand from the two spec sheets before the code was run,
+## which is what makes this test able to fail. Asserting the reference build's overhang is merely
+## some number, or non-negative, would prove nothing at all:
+##
+##   a 2S 450 (63 x 15.5 mm) on a 10" frame (215 mm arm -> a 118.25 mm plate)
+##     fore/aft (63 - 118.25) / 2 = -27.625 mm      lateral (15.5 - 118.25) / 2 = -51.375 mm
+##
+##   a 6S 4000 Li-ion (78 x 64 mm) on a 3" toothpick (75 mm arm -> a 41.25 mm plate)
+##     fore/aft (78 - 41.25) / 2 = +18.375 mm       lateral (64 - 41.25) / 2 = +11.375 mm
+##
+## Negative clears, positive hangs over the edge.
+static func _test_the_overhang_is_measured_off_the_geometry(catalog: PartsCatalog) -> TestResult:
+	var airframe := AirframeModel.new()
+
+	airframe.rebuild(Build.from_ids(catalog, "frame_10in_long_range", "motor_2807_1300kv",
+		"prop_5x43x3", "battery_2s_450"))
+	var clears := airframe.battery_overhang_m()
+
+	airframe.rebuild(Build.from_ids(catalog, "frame_3in_toothpick", "motor_1404_3800kv",
+		"prop_3x3x3", "battery_6s_4000_liion"))
+	var hangs := airframe.battery_overhang_m()
+	airframe.free()
+
+	var passed := absf(clears["fore_aft"] - -0.027625) < 1e-6 \
+		and absf(clears["lateral"] - -0.051375) < 1e-6 \
+		and absf(hangs["fore_aft"] - 0.018375) < 1e-6 \
+		and absf(hangs["lateral"] - 0.011375) < 1e-6
+
+	return TestResult.new(
+		"the pack's overhang past the centre plate is measured, and reads both ways",
+		passed,
+		"2S 450 on a 10\": %+.1f mm fore/aft, %+.1f mm lateral; 6S 4000 Li-ion on a 3\": %+.1f mm fore/aft, %+.1f mm lateral" % [
+			clears["fore_aft"] * 1000.0, clears["lateral"] * 1000.0,
+			hangs["fore_aft"] * 1000.0, hangs["lateral"] * 1000.0]
+	)
+
+
+## Warn, never block. A 6S Li-ion on a 3" toothpick is exactly the curiosity this workbench exists
+## for — seeing the pack dwarf the airframe IS the answer — so the build stays selectable and the
+## consequence is the lesson, the same bargain an oversized prop already strikes.
+##
+## Hand-computed again, from the plan view. A 3" toothpick puts its motors at 75 * cos45 = 53.03 mm
+## on each axis and its 3" props sweep a 38.1 mm radius. The 6S pack's footprint reaches 32 mm
+## sideways and 39 mm fore/aft, so the nearest corner of the pack sits sqrt(21.03^2 + 14.03^2) =
+## 25.3 mm from the hub — 12.8 mm INSIDE a disc that wants 38.1 mm.
+##
+## The reference build clears by 9.0 mm on the same arithmetic (77.78 mm arms, a 63.5 mm radius, a
+## pack reaching 17.5 x 37.5 mm), and must raise no warning at all: it overhangs its plate by
+## 7.25 mm fore and aft, which is what every real 5" build does and is why a fore/aft overhang is
+## reported rather than warned about. Only being WIDER than the plate is a warning.
+static func _test_a_pack_that_reaches_the_props_says_so(catalog: PartsCatalog) -> TestResult:
+	var airframe := AirframeModel.new()
+
+	airframe.rebuild(Build.from_ids(catalog, "frame_5in_freestyle", "motor_2207_1960kv",
+		"prop_5x43x3", "battery_4s_1500"))
+	var reference_clearance := airframe.battery_prop_clearance_m()
+	var reference_warnings := airframe.battery_fit_warnings()
+
+	airframe.rebuild(Build.from_ids(catalog, "frame_3in_toothpick", "motor_1404_3800kv",
+		"prop_3x3x3", "battery_6s_4000_liion"))
+	var absurd_clearance := airframe.battery_prop_clearance_m()
+	var absurd_warnings := airframe.battery_fit_warnings()
+	airframe.free()
+
+	var warned_about_props := false
+	var warned_about_width := false
+	for warning in absurd_warnings:
+		if warning.contains("propeller"):
+			warned_about_props = true
+		if warning.contains("wider"):
+			warned_about_width = true
+
+	var passed := absf(reference_clearance - 0.00900) < 5e-5 and reference_warnings.is_empty() \
+		and absf(absurd_clearance - -0.01282) < 5e-5 \
+		and warned_about_props and warned_about_width
+
+	return TestResult.new(
+		"a pack big enough to reach the props says so, and the reference build says nothing",
+		passed,
+		"reference build clears the discs by %+.1f mm with %d warnings; 6S 4000 Li-ion on a 3\" toothpick is %+.1f mm and says %s" % [
+			reference_clearance * 1000.0, reference_warnings.size(),
+			absurd_clearance * 1000.0, str(absurd_warnings)]
+	)
 
 
 ## The pack is mounted where a 5" pack goes: on the top centre plate, lying along the aircraft's

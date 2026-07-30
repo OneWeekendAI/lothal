@@ -20,12 +20,23 @@ extends PanelContainer
 ## washer is a decision for the build sheet, not for the input.
 const STEP_MM := 0.1
 
+## The three fit measurements, all taken off the assembled geometry rather than off the catalog.
+## Fore/aft overhang is reported and never warned about — a 75 mm pack on a 60 mm plate is what
+## every real 5" build looks like — while being wider than the plate, or reaching the props, is.
+const FIT_ROWS := [
+	{"key": "fore_aft", "label": "Overhang, fore/aft"},
+	{"key": "lateral", "label": "Overhang, each side"},
+	{"key": "prop_clearance", "label": "Clearance to props"},
+]
+
 signal tweaks_changed
 
 var tweaks: AssemblyTweaks
 
 var _sliders: Dictionary = {}   # key -> HSlider
 var _values: Dictionary = {}    # key -> Label
+var _fit_values: Dictionary = {}   # FIT_ROWS key -> Label
+var _fit_warning_label: Label
 ## Set while the panel is writing its own controls from the model, so that programmatic slider
 ## moves do not read back as the builder having dragged something.
 var _updating := false
@@ -55,6 +66,39 @@ func _init(p_tweaks: AssemblyTweaks) -> void:
 
 	for row in AssemblyTweaks.ROWS:
 		_add_row(root, row)
+
+	root.add_child(HSeparator.new())
+
+	# What the pack actually does on this frame. It sits with the sliders rather than in the Pack
+	# panel deliberately: the Pack panel describes the part, and this describes the FIT — the same
+	# distinction that put shims here instead of in the catalog. It is read-only, because where the
+	# pack sits is not one of the three tweaks (that is its own decision, not a fourth slider).
+	var fit_title := Label.new()
+	fit_title.text = "PACK ON THE PLATE"
+	root.add_child(fit_title)
+
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.add_child(grid)
+	for row in FIT_ROWS:
+		var label := Label.new()
+		label.text = row["label"]
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(label)
+		var value := Label.new()
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(value)
+		_fit_values[row["key"]] = value
+
+	# Same amber as the part panels' warnings, because it is the same kind of statement: warn,
+	# never block.
+	_fit_warning_label = Label.new()
+	_fit_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_fit_warning_label.custom_minimum_size = Vector2(280, 0)
+	_fit_warning_label.add_theme_color_override("font_color", Color(1.0, 0.72, 0.25))
+	root.add_child(_fit_warning_label)
 
 	root.add_child(HSeparator.new())
 
@@ -107,7 +151,15 @@ func _add_row(parent: VBoxContainer, row: Dictionary) -> void:
 ## as well as after a tweak, because a part change moves the limits — and a slider still sitting at
 ## a range the current motor does not have is exactly the disagreement between panel and geometry
 ## this screen is built to make impossible.
-func render(build: Build) -> void:
+## `airframe` is the assembled aircraft the fit rows are measured off. It is passed in rather than
+## reached for, and it is the AIRFRAME rather than the Build, because these three numbers are
+## properties of the assembled geometry and not of the parts list — the same reason
+## AirframeModel.adjacent_prop_gap_m() lives on the airframe and Build.warnings() does not. Null
+## leaves the rows blank, which is what a panel rendered before anything has been assembled should
+## show.
+func render(build: Build, airframe: AirframeModel = null) -> void:
+	_render_fit(airframe)
+
 	_updating = true
 	for row in AssemblyTweaks.ROWS:
 		var key: String = row["key"]
@@ -122,6 +174,43 @@ func render(build: Build) -> void:
 			suffix = "  (as built)"
 		_values[key].text = "%.1f mm%s" % [current, suffix]
 	_updating = false
+
+
+## The three fit rows and any warning, straight from the airframe's own measurements. Signed and
+## labelled in words rather than as a bare number: "+18 mm over" and "-28 mm clear" are the same
+## measurement, and which of the two you are looking at is the whole point.
+func _render_fit(airframe: AirframeModel) -> void:
+	if airframe == null or airframe.battery_mesh == null:
+		for key in _fit_values:
+			_fit_values[key].text = "—"
+		_fit_warning_label.visible = false
+		return
+
+	var overhang := airframe.battery_overhang_m()
+	for key in ["fore_aft", "lateral"]:
+		_fit_values[key].text = _signed_mm(overhang[key], "over", "clear")
+	_fit_values["prop_clearance"].text = _signed_mm(
+		-airframe.battery_prop_clearance_m(), "into disc", "clear")
+
+	var warnings := airframe.battery_fit_warnings()
+	_fit_warning_label.text = "\n".join(warnings)
+	_fit_warning_label.visible = not warnings.is_empty()
+
+
+## What one fit row currently reads, and what the warning currently says. Named accessors rather
+## than tests reaching into _fit_values, so the panel's internals stay its own.
+func fit_row_text(key: String) -> String:
+	return (_fit_values[key] as Label).text if _fit_values.has(key) else ""
+
+
+func fit_warning_text() -> String:
+	return _fit_warning_label.text if _fit_warning_label.visible else ""
+
+
+static func _signed_mm(metres: float, over_word: String, clear_word: String) -> String:
+	if metres > 0.0:
+		return "%.0f mm %s" % [metres * 1000.0, over_word]
+	return "%.0f mm %s" % [-metres * 1000.0, clear_word]
 
 
 ## Sets one row, and returns the value that actually landed: the asked-for value snapped to STEP_MM

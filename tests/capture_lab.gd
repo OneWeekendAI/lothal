@@ -10,7 +10,11 @@ extends SceneTree
 ##   godot --script res://tests/capture_lab.gd -- <out.png> [settle_frames] [frame_part_id]
 ##                                                 [azimuth_deg] [elevation_deg]
 ##                                                 [motor_part_id] [prop_part_id]
-##                                                 ["sim" | <panel name>]
+##                                                 ["sim" | <panel name>] [battery_part_id]
+##
+## The pack argument comes last rather than next to the motor and prop, so that every invocation
+## written before it existed still means what it meant. Pass "" for the sim/panel slot to reach it
+## while staying in Lab.
 ##
 ## A trailing "sim" makes the selections in Lab and then walks out through the Sim tab before
 ## shooting, which is how the project's central claim gets photographed: the airframe in the
@@ -58,6 +62,15 @@ func _init() -> void:
 	if args.size() > 6 and args[6] != "":
 		if not shell.lab.propeller_picker.select_id(args[6]):
 			print("no such propeller in the visible list: %s" % args[6])
+			quit(1)
+			return
+
+	# The pack, last so every existing invocation keeps working. It is selected BEFORE the sim/panel
+	# branch below, because walking out to the field with the wrong pack fitted would photograph
+	# precisely the claim this argument exists to check.
+	if args.size() > 8 and args[8] != "":
+		if not shell.lab.battery_picker.select_id(args[8]):
+			print("no such pack in the visible list: %s" % args[8])
 			quit(1)
 			return
 

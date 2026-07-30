@@ -25,8 +25,41 @@ static func run() -> Array:
 	results.append(_chemistry_changes_what_the_cells_are(catalog))
 	results.append(_leads_come_out_of_one_end(catalog))
 	results.append(_a_pack_with_no_dimensions_still_draws_something(catalog))
+	results.append(_lab_reports_the_fit_of_the_pack_it_just_fitted(catalog))
 
 	return results
+
+
+## The measurement reaches the screen. Everything above proves AirframeModel can measure an
+## overhang; this proves Lab shows the one belonging to the build on screen, through the same
+## single handler that redraws the geometry — so a panel that described the previous pack would
+## fail here rather than in front of a builder.
+##
+## Driven through the rails, not by calling render() with a hand-made argument: the rail is how a
+## pack is really chosen, and the wiring between the two is the only thing left to get wrong.
+static func _lab_reports_the_fit_of_the_pack_it_just_fitted(catalog: PartsCatalog) -> TestResult:
+	var lab := LabScreen.new(catalog, AssemblyTweaks.new(), PackCharge.new())
+
+	# The reference build fits, and says so with no warning at all.
+	var reference_warning: bool = lab.assembly_panel.fit_warning_text() != ""
+	var reference_lateral: String = lab.assembly_panel.fit_row_text("lateral")
+
+	lab.picker.select_id("frame_3in_toothpick")
+	lab.propeller_picker.select_id("prop_3x3x3")
+	lab.battery_picker.select_id("battery_6s_4000_liion")
+	var absurd_warning: String = lab.assembly_panel.fit_warning_text()
+	var absurd_lateral: String = lab.assembly_panel.fit_row_text("lateral")
+
+	lab.free()
+
+	return TestResult.new(
+		"Lab reports the fit of the pack it has just fitted, and warns when it does not fit",
+		not reference_warning and reference_lateral.contains("clear")
+			and absurd_warning.contains("propeller") and absurd_lateral.contains("over"),
+		"reference build: lateral \"%s\", no warning: %s; 6S 4000 Li-ion on a 3\" toothpick: lateral \"%s\", warning \"%s\"" % [
+			reference_lateral, not reference_warning, absurd_lateral,
+			absurd_warning.replace("\n", " / ")]
+	)
 
 
 ## Length along the aircraft's forward axis (Z, nose = -Z), width across it, height up. Measured
