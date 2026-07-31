@@ -1,5 +1,5 @@
 {
-  "_schema": "One JSON file per part category (parts.md). Two tiers now live side by side: `specs` is physics-bearing, and that rule is unchanged — if a spec does not feed the physics, it does not belong in `specs`. `catalog` is browsing metadata: a field is admitted there only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale — colour, price and vendor links are still banned by name, from either block. 'arm_mm' is centre-to-motor and is the sleeper spec — it is squared in the parallel axis theorem, so a 7\" frame has roughly 4x the roll inertia of a 3\" from geometry alone. 'max_prop_inches' and 'motor_mount' drive compatibility warnings only; Lothal warns, it never blocks.",
+  "_schema": "One JSON file per part category (parts.md). Two tiers now live side by side: `specs` is physics-bearing, and that rule is unchanged — if a spec does not feed the physics, it does not belong in `specs`. `catalog` is browsing metadata: a field is admitted there only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale — colour, price and vendor links are still banned by name, from either block. 'arm_mm' is centre-to-motor and is the sleeper spec — it is squared in the parallel axis theorem, so a 7\" frame has roughly 4x the roll inertia of a 3\" from geometry alone. 'max_prop_inches' and 'motor_mount' drive compatibility warnings only; Lothal warns, it never blocks. 'stack_mount' is the centre-plate bolt pattern the FC/ESC stack sandwiches into — it is geometry-bearing (it is where the stack is drawn and what it is checked against), not physics-bearing: no mount position reaches the mass model.",
   "parts": [
     {
       "part_id": "frame_65mm_whoop",
@@ -9,7 +9,8 @@
       "specs": {
         "arm_mm": 32.0,
         "max_prop_inches": 1.6,
-        "motor_mount": "6x6"
+        "motor_mount": "6x6",
+        "stack_mount": "25.5x25.5"
       },
       "catalog": {
         "frame_type": "tinywhoop",
@@ -26,7 +27,8 @@
       "specs": {
         "arm_mm": 60.0,
         "max_prop_inches": 2.5,
-        "motor_mount": "9x9"
+        "motor_mount": "9x9",
+        "stack_mount": "25.5x25.5"
       },
       "catalog": {
         "frame_type": "tinywhoop",
@@ -43,7 +45,8 @@
       "specs": {
         "arm_mm": 75.0,
         "max_prop_inches": 3.5,
-        "motor_mount": "12x12"
+        "motor_mount": "12x12",
+        "stack_mount": "25.5x25.5"
       },
       "catalog": {
         "frame_type": "toothpick",
@@ -60,7 +63,8 @@
       "specs": {
         "arm_mm": 88.0,
         "max_prop_inches": 3.5,
-        "motor_mount": "12x12"
+        "motor_mount": "12x12",
+        "stack_mount": "20x20"
       },
       "catalog": {
         "frame_type": "freestyle",
@@ -77,7 +81,8 @@
       "specs": {
         "arm_mm": 108.0,
         "max_prop_inches": 5.0,
-        "motor_mount": "16x16"
+        "motor_mount": "16x16",
+        "stack_mount": "30.5x30.5"
       },
       "catalog": {
         "frame_type": "racing",
@@ -94,7 +99,8 @@
       "specs": {
         "arm_mm": 110.0,
         "max_prop_inches": 5.1,
-        "motor_mount": "16x16"
+        "motor_mount": "16x16",
+        "stack_mount": "30.5x30.5"
       },
       "catalog": {
         "frame_type": "freestyle",
@@ -111,7 +117,8 @@
       "specs": {
         "arm_mm": 118.0,
         "max_prop_inches": 5.1,
-        "motor_mount": "16x16"
+        "motor_mount": "16x16",
+        "stack_mount": "30.5x30.5"
       },
       "catalog": {
         "frame_type": "freestyle",
@@ -128,7 +135,8 @@
       "specs": {
         "arm_mm": 96.0,
         "max_prop_inches": 5.0,
-        "motor_mount": "16x16"
+        "motor_mount": "16x16",
+        "stack_mount": "20x20"
       },
       "catalog": {
         "frame_type": "cinewhoop",
@@ -145,7 +153,8 @@
       "specs": {
         "arm_mm": 130.0,
         "max_prop_inches": 6.0,
-        "motor_mount": "16x16"
+        "motor_mount": "16x16",
+        "stack_mount": "30.5x30.5"
       },
       "catalog": {
         "frame_type": "long-range",
@@ -162,7 +171,8 @@
       "specs": {
         "arm_mm": 150.0,
         "max_prop_inches": 7.0,
-        "motor_mount": "16x16"
+        "motor_mount": "16x16",
+        "stack_mount": "30.5x30.5"
       },
       "catalog": {
         "frame_type": "long-range",
@@ -179,7 +189,8 @@
       "specs": {
         "arm_mm": 158.0,
         "max_prop_inches": 7.0,
-        "motor_mount": "19x19"
+        "motor_mount": "19x19",
+        "stack_mount": "30.5x30.5"
       },
       "catalog": {
         "frame_type": "cinelifter",
@@ -196,7 +207,8 @@
       "specs": {
         "arm_mm": 215.0,
         "max_prop_inches": 10.0,
-        "motor_mount": "19x19"
+        "motor_mount": "19x19",
+        "stack_mount": "30.5x30.5"
       },
       "catalog": {
         "frame_type": "long-range",

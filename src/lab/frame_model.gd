@@ -12,6 +12,9 @@ extends Node3D
 ##   Arm_M1..Arm_M4  — one BoxMesh per MotorLayout.MOTOR_NAMES, spanning centre to arm tip
 ##   Pad_M1..Pad_M4  — motor-mount pad at each arm tip; arm_tips[name] points at these
 ##   PlateTop, PlateBottom — the twin centre plates
+##
+## It also publishes `mount_points`: the places on this frame where something attaches. See
+## mount_points_for(), and MountPoint for what a mount point is.
 const INCH_M := 0.0254
 
 ## Arm cross-section, not in the JSON: parts.md's spec-field table has no body-dimension
@@ -46,6 +49,11 @@ const CENTRE_PLATE_TO_ARM_RATIO := 0.55
 const PAD_SIZE_TO_ARM_RATIO := 0.12
 const PAD_THICKNESS_M := 0.003
 
+## The narrowest strip of plate a battery strap slot can be cut into, either side of the centre
+## bolt pattern. Below this there is no carbon left to cut, which is what decides whether a frame
+## offers a bottom-plate mount at all — see mount_points_for().
+const MIN_STRAP_SLOT_M := 0.010
+
 ## dict of MotorLayout motor name -> the Node3D sitting exactly at that motor's position
 ## (the mount pad). Tests assert against this rather than walking get_children().
 var arm_tips: Dictionary = {}
@@ -57,6 +65,9 @@ var plate_top: MeshInstance3D
 ## Side length of the centre plates, in metres. What the pack's overhang is measured against, so
 ## the number the fit check uses is the plate that is actually on screen.
 var plate_side_m := 0.0
+## Every place on this frame where something attaches, in the order mount_points_for() lists them.
+## Regenerated on every rebuild, because a mount is a position on a plate and the plates move.
+var mount_points: Array[MountPoint] = []
 
 
 ## Clears any previously generated geometry and rebuilds it from `frame`. Safe to call
@@ -77,6 +88,7 @@ func rebuild(frame: Dictionary, plate_gap_m: float = -1.0) -> void:
 
 	_build_arms_and_pads(arm_m, frame, material)
 	_build_centre_plates(arm_m, material, plate_gap_m)
+	mount_points = mount_points_for(frame, plate_gap_m)
 
 
 ## Standoff height when nobody has chosen one: the ratio above, applied to the plate thickness
@@ -100,6 +112,81 @@ func plate_top_face_m() -> float:
 	if plate_top == null:
 		return 0.0
 	return plate_top.position.y + (plate_top.mesh as BoxMesh).size.y * 0.5
+
+
+## Every place on this frame where something attaches, derived from the frame's own specs and the
+## standoff height currently fitted. Static because the limits on the fit panel are needed before
+## anything is drawn (AssemblyTweaks.limits), and because a mount table that could only be obtained
+## by generating geometry would tempt somebody into writing a second one that could not.
+##
+## WHICH MOUNTS A FRAME HAS IS A PROPERTY OF THAT FRAME, not a constant this file knows. Every
+## frame has a centre-plate bolt pattern and a top-plate strap location — a pack goes on top of
+## even a 65 mm whoop. A BOTTOM-plate strap location has to be earned: the bottom plate is the one
+## the stack bolts down onto and the arms clamp against, so a pack underneath has to strap through
+## slots cut BESIDE the bolt pattern, and on a small frame the pattern has already eaten the plate.
+## A 3" toothpick carries a 25.5 pattern through a 41 mm plate and has 8 mm of carbon either side
+## of it; a 5" freestyle has 15 mm either side of a 30.5 pattern on a 60 mm plate. That is why the
+## toothpick offers two mounts and the freestyle three, and it is arithmetic rather than a policy.
+static func mount_points_for(frame: Dictionary, plate_gap_m: float) -> Array[MountPoint]:
+	var arm_m: float = float(frame.get("specs", {}).get("arm_mm", 0.0)) / 1000.0
+	var side: float = arm_m * CENTRE_PLATE_TO_ARM_RATIO
+	var thickness: float = Build.FRAME_PLATE_THICKNESS_M
+	var gap: float = plate_gap_m
+	if gap < 0.0:
+		gap = default_plate_gap_m()
+
+	var span := Vector2(side, side)
+	var reach := mount_reach_m(arm_m)
+	var pattern: String = String(frame.get("specs", {}).get("stack_mount", ""))
+	var pattern_m := MountPoint.parse_pattern_m(pattern)
+
+	var out: Array[MountPoint] = []
+
+	# The standoff stack. The seat is the bottom plate's UPPER face, which is where the standoffs
+	# start and where the lower board in a stack actually sits; the stack then grows upward into the
+	# gap between the plates — the gap the standoff tweak sets.
+	var stack := MountPoint.new()
+	stack.id = "stack"
+	stack.label = "the standoff stack"
+	stack.attachment = MountPoint.BOLT
+	stack.pattern = pattern
+	stack.pattern_m = pattern_m
+	stack.position = Vector3(0.0, -gap * 0.5 + thickness * 0.5, 0.0)
+	stack.normal = 1
+	stack.span_m = span
+	stack.reach_m = 0.0
+	out.append(stack)
+
+	var top := MountPoint.new()
+	top.id = "strap_top"
+	top.label = "the top plate"
+	top.attachment = MountPoint.STRAP
+	top.position = Vector3(0.0, gap * 0.5 + thickness * 0.5, 0.0)
+	top.normal = 1
+	top.span_m = span
+	top.reach_m = reach
+	out.append(top)
+
+	if side - pattern_m.x >= 2.0 * MIN_STRAP_SLOT_M:
+		var bottom := MountPoint.new()
+		bottom.id = "strap_bottom"
+		bottom.label = "the bottom plate"
+		bottom.attachment = MountPoint.STRAP
+		bottom.position = Vector3(0.0, -(gap * 0.5 + thickness * 0.5), 0.0)
+		bottom.normal = -1
+		bottom.span_m = span
+		bottom.reach_m = reach
+		out.append(bottom)
+
+	return out
+
+
+## How far fore or aft anything mounted on this frame may be slid before it is inside a propeller
+## hub: the front motors' own forward extent, from the same MotorLayout table the physics reads.
+## Nothing may be positioned past it, and a component long enough to reach it at zero offset has no
+## travel at all — which is how a longer pack narrows its own range (AssemblyTweaks.limits).
+static func mount_reach_m(arm_m: float) -> float:
+	return absf(MotorLayout.motor_position("M2", arm_m).z)
 
 
 static func max_plate_gap_m(arm_m: float) -> float:
