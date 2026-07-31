@@ -182,7 +182,7 @@ static func _test_the_limit_actually_costs_thrust(catalog: PartsCatalog) -> Arra
 # The oracle
 # ---------------------------------------------------------------------------
 
-static func _test_the_bench_figure_is_untouched(catalog: PartsCatalog) -> Array:
+static func _test_the_bench_figure_is_untouched(_catalog: PartsCatalog) -> Array:
 	var results: Array = []
 	var build := ReferenceBuild.build()
 

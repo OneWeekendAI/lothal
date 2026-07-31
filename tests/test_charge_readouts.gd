@@ -230,7 +230,7 @@ static func _test_the_shelf_separates_flat_from_charged(catalog: PartsCatalog) -
 
 ## Remaining charge and remaining flying, alongside the volts and amps that were already there,
 ## and both moving while the aircraft flies.
-static func _test_the_hud_shows_charge_and_time_left(catalog: PartsCatalog) -> Array:
+static func _test_the_hud_shows_charge_and_time_left(_catalog: PartsCatalog) -> Array:
 	var results: Array = []
 
 	var build := ReferenceBuild.build()

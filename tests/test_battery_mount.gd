@@ -41,7 +41,7 @@ static func run() -> Array:
 ## not configuration. Written and read back through the same file the shims already use — extended,
 ## not duplicated — and stored as the mount's own id rather than as an index into a list, because
 ## an index means something different the day a frame gains a mount.
-static func _test_the_mount_choice_survives_a_restart(catalog: PartsCatalog) -> TestResult:
+static func _test_the_mount_choice_survives_a_restart(_catalog: PartsCatalog) -> TestResult:
 	var path := "user://test_battery_mount.json"
 	var build := ReferenceBuild.build()
 
@@ -113,7 +113,7 @@ static func _test_the_panel_offers_the_mounts_the_frame_has(catalog: PartsCatalo
 
 ## Bottom-mounted, the pack hangs BELOW the bottom plate rather than sinking into it: its upper
 ## face lands on the plate's underside, which is the mount's seat, and the whole pack is under it.
-static func _test_the_pack_can_hang_under_the_bottom_plate(catalog: PartsCatalog) -> TestResult:
+static func _test_the_pack_can_hang_under_the_bottom_plate(_catalog: PartsCatalog) -> TestResult:
 	var build := ReferenceBuild.build()
 	var airframe := AirframeModel.new()
 	airframe.rebuild(build, _tweaks_with(build, "strap_bottom", 0.0))
@@ -154,7 +154,7 @@ static func _test_the_pack_can_hang_under_the_bottom_plate(catalog: PartsCatalog
 
 ## Nose is -Z (physics.md §1), so sliding the pack FORWARD moves it toward negative Z. Measured off
 ## the drawn pack, in the airframe's own space.
-static func _test_the_pack_slides_fore_and_aft(catalog: PartsCatalog) -> TestResult:
+static func _test_the_pack_slides_fore_and_aft(_catalog: PartsCatalog) -> TestResult:
 	var build := ReferenceBuild.build()
 
 	var forward := AirframeModel.new()
@@ -210,7 +210,7 @@ static func _test_a_longer_pack_has_less_travel(catalog: PartsCatalog) -> TestRe
 ## discs by 9 mm sitting centred, and reaches into them once it is slid all the way forward — so
 ## the same build must be silent at one offset and warned about at the other. A fit check still
 ## measuring the pack's old home would be silent at both.
-static func _test_the_prop_warning_follows_the_pack(catalog: PartsCatalog) -> TestResult:
+static func _test_the_prop_warning_follows_the_pack(_catalog: PartsCatalog) -> TestResult:
 	var build := ReferenceBuild.build()
 	var travel: float = AssemblyTweaks.limits(build)[AssemblyTweaks.BATTERY_OFFSET]["max"]
 
@@ -266,7 +266,7 @@ static func _test_a_frame_without_a_bottom_mount_falls_back(catalog: PartsCatalo
 ## moves nothing in this model, because this model has no centre-of-gravity term to move. Asserted
 ## rather than assumed, because the day someone wires a mount position into mass_parts() the
 ## reference build's oracles stop being reproducible from a parts list alone.
-static func _test_sliding_the_pack_moves_no_flight_number(catalog: PartsCatalog) -> TestResult:
+static func _test_sliding_the_pack_moves_no_flight_number(_catalog: PartsCatalog) -> TestResult:
 	var build := ReferenceBuild.build()
 	var travel: float = AssemblyTweaks.limits(build)[AssemblyTweaks.BATTERY_OFFSET]["max"]
 

@@ -112,7 +112,6 @@ static func _test_rebuild_no_stale_children(catalog: PartsCatalog) -> TestResult
 	model.rebuild(frame_3in)
 	var first_count := model.get_child_count()
 	var old_m1_node: Node3D = model.arm_tips["M1"]
-	var old_m1_pos: Vector3 = old_m1_node.position
 	var arm_3in_m: float = float(frame_3in["specs"]["arm_mm"]) / 1000.0
 	var arm_7in_m: float = float(frame_7in["specs"]["arm_mm"]) / 1000.0
 

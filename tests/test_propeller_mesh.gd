@@ -166,7 +166,11 @@ static func _test_higher_pitch_is_more_twisted(catalog: PartsCatalog) -> TestRes
 		var high_twist := _twist_rad(high_stations[i]["points"])
 		if high_twist <= low_twist:
 			all_steeper = false
-		if i == low_stations.size() / 2:
+		# The middle station, by index. Integer division on purpose: an odd count has no exact
+		# middle and either neighbour of it is the sample worth quoting.
+		@warning_ignore("integer_division")
+		var middle := low_stations.size() / 2
+		if i == middle:
 			sample = "mid-blade %.1f deg -> %.1f deg" % [rad_to_deg(low_twist), rad_to_deg(high_twist)]
 
 	low.free()
@@ -282,7 +286,10 @@ static func _chord_at_mid(vertices: PackedVector3Array) -> float:
 	var stations := _stations(vertices)
 	if stations.is_empty():
 		return 0.0
-	var mid: Array = stations[stations.size() / 2]["points"]
+	# As above: the middle station by index, truncating deliberately.
+	@warning_ignore("integer_division")
+	var middle := stations.size() / 2
+	var mid: Array = stations[middle]["points"]
 	var widest := 0.0
 	for a in mid:
 		for b in mid:

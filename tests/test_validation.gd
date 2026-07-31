@@ -146,12 +146,12 @@ static func _test_the_data_is_genuinely_held_out(catalog: PartsCatalog) -> Array
 static func _test_unvalidated_motors_say_so(catalog: PartsCatalog) -> Array:
 	var results: Array = []
 
-	var reference: Dictionary = catalog.get_part(ReferenceBuild.MOTOR_ID)
+	var ref_motor: Dictionary = catalog.get_part(ReferenceBuild.MOTOR_ID)
 	results.append(TestResult.new(
 		"a motor with no held-out data reads \"not validated\" rather than showing a number",
-		ThrustValidation.summary_for(catalog, reference) == "not validated"
-			and ThrustValidation.evaluate_motor(catalog, reference).is_empty(),
-		"%s reports \"%s\"" % [reference["name"], ThrustValidation.summary_for(catalog, reference)]
+		ThrustValidation.summary_for(catalog, ref_motor) == "not validated"
+			and ThrustValidation.evaluate_motor(catalog, ref_motor).is_empty(),
+		"%s reports \"%s\"" % [ref_motor["name"], ThrustValidation.summary_for(catalog, ref_motor)]
 	))
 
 	var validated := 0

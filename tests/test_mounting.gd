@@ -52,7 +52,7 @@ static func _bell_top_m(motor: MotorMesh) -> float:
 ## The lowest point of any blade, in the MOTOR's space. Blades are yawed about the vertical
 ## about the hub, and a yaw leaves Y alone, so a blade mesh's own AABB gives the vertical
 ## extent regardless of which blade it is.
-static func _lowest_blade_point_m(motor: MotorMesh, prop: PropellerMesh) -> float:
+static func _lowest_blade_point_m(_motor: MotorMesh, prop: PropellerMesh) -> float:
 	var lowest := INF
 	for child in prop.get_children():
 		if not String(child.name).begins_with("Blade_"):

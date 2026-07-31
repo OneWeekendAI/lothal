@@ -229,7 +229,7 @@ static func _every_motor_thrust_test_names_a_real_prop(catalog: PartsCatalog) ->
 
 ## The catalog must reproduce parts.md's hand-verified reference table. This is what ties
 ## the JSON to the day 2 oracle: if someone edits the 2207's thrust figure, this fails.
-static func _reference_build_matches_the_documented_table(catalog: PartsCatalog) -> Array:
+static func _reference_build_matches_the_documented_table(_catalog: PartsCatalog) -> Array:
 	var b := ReferenceBuild.build()
 	var results: Array = []
 

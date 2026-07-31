@@ -70,9 +70,9 @@ static func _test_the_catalog_loads_and_is_two_tier(catalog: PartsCatalog) -> Ar
 	# The source string is the project's whole defence against a plausible invented number.
 	var incomplete: Array = []
 	for board in escs:
-		var specs: Dictionary = board.get("specs", {})
+		var board_specs: Dictionary = board.get("specs", {})
 		var mounting: Dictionary = board.get("mounting", {})
-		if not (specs.has("continuous_a") and specs.has("burst_a") and specs.has("channels")):
+		if not (board_specs.has("continuous_a") and board_specs.has("burst_a") and board_specs.has("channels")):
 			incomplete.append("%s: specs" % board["part_id"])
 		elif float(board.get("mass_g", 0.0)) <= 0.0:
 			incomplete.append("%s: mass" % board["part_id"])
@@ -223,13 +223,13 @@ static func _test_the_esc_can_be_the_limit(catalog: PartsCatalog) -> Array:
 
 static func _test_the_mass_came_out_of_the_lump(catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var reference := ReferenceBuild.build()
+	var built := ReferenceBuild.build()
 
 	results.append(TestResult.new(
 		"the reference build still weighs 496 g to the gram with the ESC unbundled",
-		absf(reference.all_up_weight_g() - 496.0) < 0.5,
+		absf(built.all_up_weight_g() - 496.0) < 0.5,
 		"%.1f g (FC %.0f g + ESC %.0f g + %.0f g still lumped = %.0f g of electronics)" % [
-			reference.all_up_weight_g(), Build.FC_MASS_G, reference.esc_mass_g(),
+			built.all_up_weight_g(), Build.FC_MASS_G, built.esc_mass_g(),
 			Build.ELECTRONICS_MASS_G - Build.FC_MASS_G - Build.ESC_BUDGET_MASS_G,
 			Build.ELECTRONICS_MASS_G]
 	))
@@ -241,7 +241,7 @@ static func _test_the_mass_came_out_of_the_lump(catalog: PartsCatalog) -> Array:
 		is_equal_approx(Build.FC_MASS_G + Build.ESC_BUDGET_MASS_G
 			+ (Build.ELECTRONICS_MASS_G - Build.FC_MASS_G - Build.ESC_BUDGET_MASS_G),
 			Build.ELECTRONICS_MASS_G)
-			and is_equal_approx(reference.esc_mass_g(), Build.ESC_BUDGET_MASS_G),
+			and is_equal_approx(built.esc_mass_g(), Build.ESC_BUDGET_MASS_G),
 		"%.0f + %.0f + %.0f = %.0f g" % [Build.FC_MASS_G, Build.ESC_BUDGET_MASS_G,
 			Build.ELECTRONICS_MASS_G - Build.FC_MASS_G - Build.ESC_BUDGET_MASS_G,
 			Build.ELECTRONICS_MASS_G]

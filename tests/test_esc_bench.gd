@@ -121,15 +121,15 @@ static func _test_headroom_fails_in_both_directions(catalog: PartsCatalog) -> Ar
 
 	# The demand this whole bench is measured against, checked against the spec sheet first: with
 	# the prop the motor's own amp figure was measured on, one motor pulls exactly its rating.
-	var reference := _bench(catalog, ADEQUATE_ESC)
-	var demand: float = reference.readings()["demand_per_channel_a"]
+	var probe := _bench(catalog, ADEQUATE_ESC)
+	var demand: float = probe.readings()["demand_per_channel_a"]
 	results.append(TestResult.new(
 		"one motor's demand is its rated current on the prop that rating was measured with",
 		absf(demand - MOTOR_RATED_A) < 0.01,
 		"%s pulls %.2f A flat out, rated %.0f A" % [
-			reference.current_build().motor["name"], demand, MOTOR_RATED_A]
+			probe.current_build().motor["name"], demand, MOTOR_RATED_A]
 	))
-	reference.free()
+	probe.free()
 
 	var small := _bench(catalog, UNDERSIZED_ESC)
 	var small_read := small.readings()

@@ -59,20 +59,20 @@ static func run() -> Array:
 		"%d packs checked, furthest from target was %s at %.2f g" % [checked, worst_name, worst_climb_g]
 	))
 
-	var reference := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+	var ref_build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
 		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID)
-	var hover := reference.hover_throttle()
+	var ref_hover := ref_build.hover_throttle()
 
 	results.append(TestResult.new(
 		"a centred throttle key holds hover exactly",
-		is_equal_approx(Main.keyboard_throttle(hover, 0.0), hover),
-		"axis 0 -> %.4f (hover = %.4f)" % [Main.keyboard_throttle(hover, 0.0), hover]
+		is_equal_approx(Main.keyboard_throttle(ref_hover, 0.0), ref_hover),
+		"axis 0 -> %.4f (hover = %.4f)" % [Main.keyboard_throttle(ref_hover, 0.0), ref_hover]
 	))
 
 	results.append(TestResult.new(
 		"the descend key reduces thrust below weight without cutting the motors",
-		Main.keyboard_throttle(hover, -1.0) < hover and Main.keyboard_throttle(hover, -1.0) > hover * 0.5,
-		"axis -1 -> %.1f %% (hover = %.1f %%)" % [Main.keyboard_throttle(hover, -1.0) * 100.0, hover * 100.0]
+		Main.keyboard_throttle(ref_hover, -1.0) < ref_hover and Main.keyboard_throttle(ref_hover, -1.0) > ref_hover * 0.5,
+		"axis -1 -> %.1f %% (hover = %.1f %%)" % [Main.keyboard_throttle(ref_hover, -1.0) * 100.0, ref_hover * 100.0]
 	))
 
 	# The regression that started all this, stated the way it was actually observed: from the
@@ -83,13 +83,13 @@ static func run() -> Array:
 	# Note this is NOT a claim that the drone cannot out-climb a gate — an 11.7:1 airframe
 	# absolutely can, and so can the real thing. It is a claim about the *first second* off
 	# the start line, which is the part a new pilot has no chance to correct.
-	var climb_g := _climb_g_at(reference, Main.keyboard_throttle(hover, 1.0))
-	var rise_after_1s := 0.5 * climb_g * 9.81 * 1.0
+	var ref_climb_g := _climb_g_at(ref_build, Main.keyboard_throttle(ref_hover, 1.0))
+	var rise_after_1s := 0.5 * ref_climb_g * 9.81 * 1.0
 	results.append(TestResult.new(
 		"one second of held climb key does not put the drone above gate 1's ring",
 		rise_after_1s < GateCourse.GATE_INNER_RADIUS_M,
 		"rises %.2f m in the first second (ring radius %.1f m, %.2f g)" % [
-			rise_after_1s, GateCourse.GATE_INNER_RADIUS_M, climb_g]
+			rise_after_1s, GateCourse.GATE_INNER_RADIUS_M, ref_climb_g]
 	))
 
 	return results
