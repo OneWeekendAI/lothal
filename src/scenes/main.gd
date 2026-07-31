@@ -146,6 +146,7 @@ func _opening_selection() -> Dictionary:
 		"motor": ReferenceBuild.MOTOR_ID,
 		"propeller": ReferenceBuild.PROPELLER_ID,
 		"battery": ReferenceBuild.BATTERY_ID,
+		"esc": ReferenceBuild.ESC_ID,
 	}
 	for category in defaults:
 		if initial_selection.has(category):

@@ -129,9 +129,10 @@ func render(part: Dictionary, build: Build) -> void:
 	_warning_label.text = "\n".join(warnings)
 	_warning_label.visible = not warnings.is_empty()
 
-	_build_note.text = "Stats for %s / %s / %s / %s." % [
+	_build_note.text = "Stats for %s / %s / %s / %s / %s." % [
 		build.frame.get("name", "?"), build.motor.get("name", "?"),
-		build.propeller.get("name", "?"), build.battery.get("name", "?")]
+		build.propeller.get("name", "?"), build.battery.get("name", "?"),
+		build.esc.get("name", "?")]
 
 
 ## Resolves a row key against the part dictionary and formats it for display. The default

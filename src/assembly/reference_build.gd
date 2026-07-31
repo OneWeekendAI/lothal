@@ -13,6 +13,9 @@ const FRAME_ID := "frame_5in_freestyle"
 const MOTOR_ID := "motor_2207_1960kv"
 const PROPELLER_ID := "prop_5x43x3"
 const BATTERY_ID := "battery_4s_1500"
+## The reference board. Its 12 g is exactly the ESC's share of the electronics budget, so the
+## reference build still weighs 496 g; see Build.ESC_BUDGET_MASS_G.
+const ESC_ID := Build.DEFAULT_ESC_ID
 
 ## Values the day 2-4 tests refer to directly. Kept as named constants rather than JSON
 ## lookups so a test failure points at the physics, not at a dictionary key.
@@ -21,7 +24,7 @@ const BATTERY_NOMINAL_V := 14.8
 const MOTOR_MAX_AMPS := 32.0
 
 static func build() -> Build:
-	return Build.from_ids(PartsCatalog.load_default(), FRAME_ID, MOTOR_ID, PROPELLER_ID, BATTERY_ID)
+	return Build.from_ids(PartsCatalog.load_default(), FRAME_ID, MOTOR_ID, PROPELLER_ID, BATTERY_ID, ESC_ID)
 
 static func arm_m() -> float:
 	return build().arm_m

@@ -14,6 +14,7 @@ const CATEGORY_ORDER := [
 	{"category": "motor", "label": "Motor"},
 	{"category": "propeller", "label": "Propeller"},
 	{"category": "battery", "label": "Battery"},
+	{"category": "esc", "label": "ESC"},
 ]
 
 const STAT_ROWS := [
@@ -30,6 +31,21 @@ var build: Build
 var _selectors: Dictionary = {}   # category -> OptionButton
 var _stat_values: Dictionary = {} # key -> Label
 var _warning_label: Label
+
+## `initial_ids` may name only some categories. Anything it leaves out falls back to the
+## reference build's part rather than to whatever happens to sit first in the catalog file — which
+## for ESCs would be a 3 g whoop board, silently making every caller's aircraft 9 g lighter and
+## its ESC the binding constraint. A partial hand-over is a normal thing (scenes/main.gd fills its
+## own defaults, Lab hands over what its rails hold, and a test names what it cares about), so the
+## fallback belongs here where every one of them passes through.
+const CATEGORY_FALLBACKS := {
+	"frame": ReferenceBuild.FRAME_ID,
+	"motor": ReferenceBuild.MOTOR_ID,
+	"propeller": ReferenceBuild.PROPELLER_ID,
+	"battery": ReferenceBuild.BATTERY_ID,
+	"esc": ReferenceBuild.ESC_ID,
+}
+
 
 func _init(p_catalog: PartsCatalog, initial_ids: Dictionary) -> void:
 	catalog = p_catalog
@@ -65,7 +81,7 @@ func _init(p_catalog: PartsCatalog, initial_ids: Dictionary) -> void:
 		var parts := catalog.list_category(category)
 		for i in parts.size():
 			selector.add_item(parts[i]["name"], i)
-			if parts[i]["part_id"] == initial_ids.get(category, ""):
+			if parts[i]["part_id"] == initial_ids.get(category, CATEGORY_FALLBACKS.get(category, "")):
 				selector.select(i)
 		selector.item_selected.connect(_on_selection_changed.bind(category))
 		grid.add_child(selector)
@@ -115,7 +131,7 @@ func _rebuild() -> void:
 	build = Build.from_ids(
 		catalog,
 		selected_id("frame"), selected_id("motor"),
-		selected_id("propeller"), selected_id("battery")
+		selected_id("propeller"), selected_id("battery"), selected_id("esc")
 	)
 	_refresh_stats()
 	build_changed.emit(build)
