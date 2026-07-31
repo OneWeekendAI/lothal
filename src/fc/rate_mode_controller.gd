@@ -27,7 +27,40 @@ const MAX_RATE_RAD_S := 13.962634   # 800 deg/s at full stick
 
 var pid_roll := PIDController.new(2.3, 0.15, 0.042)
 var pid_pitch := PIDController.new(2.3, 0.15, 0.042)
-var pid_yaw := PIDController.new(2.3, 0.15, 0.042)
+
+## Yaw is NOT roll's gains, and sharing them was never a neutral choice.
+##
+## Yaw torque comes from propeller DRAG (k_q) rather than from thrust differential across an
+## arm, and yaw inertia is the LARGEST of the three axes on a flat quad. Measured on the
+## reference build in tests/test_yaw_authority.gd, at full deflection:
+##
+##   yaw:  0.1316 N*m / I_yy 0.002302 =  57.2 rad/s^2
+##   roll: 0.5119 N*m / I_zz 0.001141 = 448.8 rad/s^2      yaw is 0.127 of roll
+##
+## Turn that into a loop gain. A command of 1.0 buys 57.2 rad/s^2 on yaw, and a normalized
+## rate error of 1.0 is MAX_RATE_RAD_S = 13.96 rad/s, so the closed loop is
+## rate_dot = (57.2 / 13.96) * kp * error = 4.10 * kp * error, a first-order response with
+## time constant 1 / (4.10 * kp). The same arithmetic on roll gives 32.15 * kp, so roll at
+## kp = 2.3 runs a 13.5 ms time constant — and yaw at those same gains runs 106 ms, nearly
+## eight times slower. That is the whole of "A feels stronger than D and neither settles":
+## not asymmetry, but a yaw loop far too slow to close before the pilot has moved on.
+##
+## kp = 6.0 puts yaw at a 41 ms time constant — three times roll's rather than eight, which
+## is honest to yaw genuinely having less authority without pretending it does not.
+##
+## It is deliberately not higher. A 500 deg/s yaw step is SLEW-LIMITED, not gain-limited:
+## reaching 8.7 rad/s at 57.2 rad/s^2 takes 145 ms with the command pinned at full, and no
+## tuning beats that. Sweeping kp from 6.5 to 9.0 moved the measured settling time by 2 ms
+## (261 -> 259) and bought nothing but more gain multiplying gyro noise on the axis with the
+## least authority to spare. Above about 6 the loop is waiting on the airframe, so 6 is where
+## it stops.
+## ki holds the same integral time constant as roll (kp/ki = 15.3 s), which is the standard
+## way to move a PID onto a weaker plant: the ratio is what sets the character, the absolute
+## values follow the authority.
+## kd is ZERO, matching Betaflight's own yaw default. Yaw's plant is dominated by rotor drag
+## and is already damped; there is no fast resonance for D to catch, so all it would do is
+## amplify gyro noise on the axis with the least authority to spare.
+var pid_yaw := PIDController.new(6.0, 0.39, 0.0)
 
 ## The acro front end: all three sticks ARE rate setpoints, and the outer loop is simply
 ## absent. Named as a function rather than left inline so both front ends read the same way
