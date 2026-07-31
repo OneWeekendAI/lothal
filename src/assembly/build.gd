@@ -28,10 +28,10 @@ const ELECTRONICS_MASS_G := 55.0
 ## in mass, and the stack's own box below carries the difference honestly.
 const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
 
-## The FC/ESC stack's share of that budget: a 1.6 mm 30.5 FC at about 8 g on top of a 4-in-1 ESC at
-## about 12 g. Taken OUT of ELECTRONICS_MASS_G, not added to it, which leaves 35 g of camera, VTX,
-## antenna, receiver and wiring still lumped at the origin.
-const STACK_MASS_G := 20.0
+## The FC/ESC stack's share of that budget, straight off parts.md's published breakdown of the
+## fixed electronics package rather than re-estimated here. Taken OUT of ELECTRONICS_MASS_G, not
+## added to it, which leaves 43 g of camera, VTX, antenna, receiver and wiring lumped at the origin.
+const STACK_MASS_G := 12.0
 
 ## The FC/ESC stack's own bolt pattern. 30.5x30.5 is the full-size standard, and it is a property
 ## of the STACK rather than of the frame — which is the whole reason a fit check is worth having.
