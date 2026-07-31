@@ -13,6 +13,10 @@ const GRAVITY_MPS2 := 9.81
 var powertrain: Powertrain
 var mass_properties: MassProperties
 var rigid_body := RigidBodyState.new()
+## The aircraft's rate sensor. It lives here, on the aircraft, rather than in the scene:
+## the flight controller must have exactly ONE route to a rate, and if a consumer can reach
+## around this to rigid_body.angular_velocity_rad_s then the seam exists on paper only.
+var gyro := Gyro.new()
 var arm_m: float
 ## 0.5 * rho * Cd * A, supplied per build — a 7" airframe presents far more area than a 3".
 var drag_coefficient: float
@@ -95,6 +99,11 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 
 	rigid_body.integrate(total_force, total_torque, mass_properties.total_mass_kg, mass_properties.inertia, mass_properties.inertia_inverse, dt)
 
+	# Sampled AFTER integration, so the reading the controller picks up at the top of the
+	# next substep is one tick old. That is not an approximation to apologise for — it is
+	# what a real loop does, and the delay is part of what the gains are tuned against.
+	gyro.update(rigid_body.angular_velocity_rad_s, dt)
+
 	_publish(specific_force)
 
 ## Fills the FLIGHT half of the observables layer; the powertrain half is already filled by
@@ -114,6 +123,7 @@ func _publish(specific_force_n: Vector3) -> void:
 	observables.velocity_mps = rigid_body.velocity_mps
 	observables.orientation = rigid_body.orientation
 	observables.angular_velocity_rad_s = rigid_body.angular_velocity_rad_s
+	observables.gyro_rad_s = gyro.rate_rad_s
 	observables.airspeed_mps = rigid_body.velocity_mps.length()
 
 	var specific_accel := specific_force_n / mass_properties.total_mass_kg

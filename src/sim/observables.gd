@@ -44,6 +44,11 @@ var position_m := Vector3.ZERO
 var velocity_mps := Vector3.ZERO
 var orientation := Quaternion.IDENTITY
 var angular_velocity_rad_s := Vector3.ZERO
+## What the GYRO reads — sampled, band-limited, and slightly wrong, as against
+## angular_velocity_rad_s above which is ground truth. The flight controller consumes this
+## one and never the other; the HUD and anything reporting on the flight consume truth.
+## Keeping both published, side by side, is what makes the difference inspectable.
+var gyro_rad_s := Vector3.ZERO
 ## Specific force in the BODY frame — what an onboard accelerometer would read, i.e.
 ## excluding gravity. A drone in free fall reads zero here, which is the physically
 ## correct answer and the one a consumer wants.

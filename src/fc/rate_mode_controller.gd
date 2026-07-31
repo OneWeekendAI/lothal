@@ -20,10 +20,10 @@ var pid_yaw := PIDController.new(2.3, 0.15, 0.042)
 
 ## rc = {roll: -1..1, pitch: -1..1, yaw: -1..1, throttle: 0..1} — sticks command a RATE,
 ## not an angle, so releasing the stick commands zero rate, not "return to level."
-func update(angular_velocity_rad_s: Vector3, rc: Dictionary, dt: float) -> Dictionary:
-	var roll_rate_measured := -angular_velocity_rad_s.z    # matches the -euler.z roll sign convention
-	var pitch_rate_measured := angular_velocity_rad_s.x
-	var yaw_rate_measured := -angular_velocity_rad_s.y     # matches the "+Yaw = rotation about -Y" convention
+func update(gyro_rate_rad_s: Vector3, rc: Dictionary, dt: float) -> Dictionary:
+	var roll_rate_measured := -gyro_rate_rad_s.z    # matches the -euler.z roll sign convention
+	var pitch_rate_measured := gyro_rate_rad_s.x
+	var yaw_rate_measured := -gyro_rate_rad_s.y     # matches the "+Yaw = rotation about -Y" convention
 
 	var roll_cmd := clampf(pid_roll.update(rc.roll, roll_rate_measured / MAX_RATE_RAD_S, dt), -1.0, 1.0)
 	var pitch_cmd := clampf(pid_pitch.update(rc.pitch, pitch_rate_measured / MAX_RATE_RAD_S, dt), -1.0, 1.0)

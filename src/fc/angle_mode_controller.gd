@@ -15,12 +15,12 @@ const ANGLE_P := 1.5               # tuned by feel; day 4 owns the real tuning h
 const ANGLE_D := 0.15
 
 ## rc = {roll: -1..1, pitch: -1..1, yaw: -1..1, throttle: 0..1}
-static func update(orientation: Quaternion, angular_velocity_rad_s: Vector3, rc: Dictionary) -> Dictionary:
+static func update(orientation: Quaternion, gyro_rate_rad_s: Vector3, rc: Dictionary) -> Dictionary:
 	var euler := orientation.get_euler(EULER_ORDER_YXZ)
 	var pitch_current := euler.x    # rotation about +X; +Pitch = nose up (coordinate contract)
 	var roll_current := -euler.z    # rotation about -Z; +Roll = right side down (coordinate contract)
-	var pitch_rate_current := angular_velocity_rad_s.x
-	var roll_rate_current := -angular_velocity_rad_s.z
+	var pitch_rate_current := gyro_rate_rad_s.x
+	var roll_rate_current := -gyro_rate_rad_s.z
 
 	var pitch_error: float = (rc.pitch * MAX_ANGLE_RAD) - pitch_current
 	var roll_error: float = (rc.roll * MAX_ANGLE_RAD) - roll_current

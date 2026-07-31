@@ -67,7 +67,7 @@ func _render_sweep(build: Build, core: DroneCore, synth: RotorSynth) -> PackedFl
 		var substep := block_dt / float(PHYSICS_SUBSTEPS)
 		for _i in PHYSICS_SUBSTEPS:
 			var cmds := AngleModeController.update(core.rigid_body.orientation,
-				core.rigid_body.angular_velocity_rad_s,
+				core.gyro.rate_rad_s,
 				{"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": throttle})
 			core.step(cmds, substep)
 
@@ -100,7 +100,7 @@ func _render_flypast(build: Build, core: DroneCore, synth: RotorSynth) -> Packed
 		var substep := block_dt / float(PHYSICS_SUBSTEPS)
 		for _i in PHYSICS_SUBSTEPS:
 			var cmds := AngleModeController.update(core.rigid_body.orientation,
-				core.rigid_body.angular_velocity_rad_s,
+				core.gyro.rate_rad_s,
 				{"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": hover})
 			core.step(cmds, substep)
 		# Held at altitude — there is no altitude hold in the sim, and a drone that sinks

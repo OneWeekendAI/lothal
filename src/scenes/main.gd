@@ -234,9 +234,9 @@ func _physics_process(delta: float) -> void:
 	for i in SUBSTEPS:
 		var motor_cmds: Dictionary
 		if use_rate_mode:
-			motor_cmds = rate_controller.update(core.rigid_body.angular_velocity_rad_s, rc, substep_dt)
+			motor_cmds = rate_controller.update(core.gyro.rate_rad_s, rc, substep_dt)
 		else:
-			motor_cmds = AngleModeController.update(core.rigid_body.orientation, core.rigid_body.angular_velocity_rad_s, rc)
+			motor_cmds = AngleModeController.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc)
 		core.step(motor_cmds, substep_dt)
 
 	# Score the segment actually flown this frame, BEFORE any crash reset — otherwise a

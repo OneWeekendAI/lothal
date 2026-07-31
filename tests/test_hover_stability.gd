@@ -25,7 +25,7 @@ static func run() -> Array:
 	var diverged := false
 
 	for i in steps:
-		var motor_cmds := AngleModeController.update(core.rigid_body.orientation, core.rigid_body.angular_velocity_rad_s, rc)
+		var motor_cmds := AngleModeController.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc)
 		core.step(motor_cmds, DT)
 
 		max_angular_speed = max(max_angular_speed, core.rigid_body.angular_velocity_rad_s.length())
