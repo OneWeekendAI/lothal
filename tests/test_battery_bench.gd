@@ -177,10 +177,25 @@ static func _test_the_trace(catalog: PartsCatalog) -> Array:
 	_run_for(bench, SETTLE_S)
 	var punch_sag := bench.trace.deepest_sag_v()
 	var hover_sag: float = bench.readings()["sag_v"]
+	var hover_a: float = bench.readings()["current_a"]
+	var punch_a := punch_sag / maxf(float(bench.current_build().battery["specs"]["internal_r_ohm"]), 1e-9)
+
+	# Stated as PROPORTIONALITY rather than as a ratio threshold, which is both the stronger claim
+	# and the stable one. Sag is I*R, so the two sags must stand in the same ratio as the two
+	# currents that produced them — a constant offset between the series fails this outright, and
+	# so does any sag that is not linear in current.
+	#
+	# It used to assert "hover sag is less than half punch sag", which was a threshold calibrated
+	# against an uncapped punch. On this Li-ion the punch is now current-limited to 30 A by its 10C
+	# rating, so hover and full throttle draw much more similar currents than they used to and the
+	# ratio narrowed to 0.58. Nothing about sag changed; what changed is how hard this pack can be
+	# asked to work, which is the C-rating doing its job.
 	results.append(TestResult.new(
-		"the gap narrows when the load comes off, so it is sag rather than a constant offset",
-		hover_sag < punch_sag * 0.5 and hover_sag > 0.0,
-		"%.2f V at hover against a deepest %.2f V under punch" % [hover_sag, punch_sag]
+		"the gap tracks the current that made it, so it is sag rather than a constant offset",
+		hover_sag < punch_sag and hover_sag > 0.0
+			and absf(hover_sag / punch_sag - hover_a / punch_a) < 0.05,
+		"%.2f V at %.0f A against %.2f V at %.0f A — sag ratio %.2f, current ratio %.2f" % [
+			hover_sag, hover_a, punch_sag, punch_a, hover_sag / punch_sag, hover_a / punch_a]
 	))
 
 	# Bounded memory over a long run. A twenty-minute Li-ion discharge must not accumulate a
@@ -299,12 +314,33 @@ static func _test_the_pack_is_what_differs(catalog: PartsCatalog) -> Array:
 	var lipo_read := lipo.readings()
 	var liion_read := liion.readings()
 
+	# The bound was 3.0 while the Li-ion could be commanded to full throttle. Its 10C rating now
+	# caps it at a fraction of that, so it draws less current and therefore sags less — the
+	# measured factor is about 2.5. The pack has not got better; it has run into the OTHER limit
+	# first, and the assertion below this one is that limit stated directly.
 	results.append(TestResult.new(
 		"under the same punch the Li-ion sags several times as hard as the high-C LiPo",
-		liion_read["sag_v"] > lipo_read["sag_v"] * 3.0,
+		liion_read["sag_v"] > lipo_read["sag_v"] * 2.0,
 		"%s: %.2f V vs %s: %.2f V" % [
 			liion.current_build().battery["name"], liion_read["sag_v"],
 			lipo.current_build().battery["name"], lipo_read["sag_v"]]
+	))
+
+	# ...and the other half of why a Li-ion flies like a brick, which is not sag at all. A 3000 mAh
+	# 10C pack is a 30 A pack against the 1300 mAh 95C's 124 A, so the big battery cannot even be
+	# ASKED for the punch. Both are nominally pack-limited against four 2207s wanting 128 A — the
+	# high-C LiPo only just, at 98% throttle, which is what a good pack looks like — so the claim
+	# is about the SEVERITY, and about the Li-ion being told what is stopping it.
+	var liion_build := liion.current_build()
+	var lipo_build := lipo.current_build()
+	results.append(TestResult.new(
+		"the Li-ion is throttle-capped by its own C-rating where the high-C LiPo is barely touched",
+		liion_build.limiting_component()["name"] == "battery"
+			and liion_build.max_throttle_fraction() < 0.6
+			and lipo_build.max_throttle_fraction() > 0.95,
+		"Li-ion %.0f A capping throttle at %.0f%%, LiPo %.0f A at %.0f%%" % [
+			liion_build.pack_max_amps(), liion_build.max_throttle_fraction() * 100.0,
+			lipo_build.pack_max_amps(), lipo_build.max_throttle_fraction() * 100.0]
 	))
 
 	# The consequence that makes it a lesson rather than a curiosity: the sag costs RPM, and the

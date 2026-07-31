@@ -231,12 +231,76 @@ static func battery_size_of(pack: Dictionary) -> Vector3:
 ## given the prop fitted. Current tracks shaft torque, which climbs as D^5, so an
 ## oversized prop is current-limited long before it is voltage-limited. Exactly 1.0 when
 ## the fitted prop is the one the motor's amp rating was measured with.
+## The throttle ceiling the aircraft is ACTUALLY flown at: whichever limit binds first. Everything
+## dynamic goes through here — the motor model's ceiling, peak thrust, hover, top speed — so a
+## build cannot be commanded past what its weakest link will pass.
+##
+## Deliberately NOT what max_total_thrust_n() is quoted at; see that function.
 func max_throttle_fraction() -> float:
-	var rated_amps: float = float(motor["specs"]["max_amps"])
+	return minf(motor_throttle_limit(), pack_throttle_limit())
+
+
+## How much of the RPM ceiling the MOTORS can reach before their own current limit stops them,
+## given the prop fitted. Exactly 1.0 when the fitted prop is the one the motor's amp rating was
+## measured with. This is the limit the project had before packs had a rating.
+func motor_throttle_limit() -> float:
+	return throttle_limit_for(4.0 * float(motor["specs"]["max_amps"]))
+
+
+## The pack's maximum continuous discharge: capacity in amp-hours times its C-rating. The number
+## on the wrapper, meaning what the wrapper means by it.
+##
+## This is why c_rating is a `specs` field rather than browsing metadata. Left in `catalog` and
+## read by nothing, a 300 mAh 30C whoop pack would deliver 100 A on demand, and pack choice would
+## be a question of capacity and mass alone — which is exactly the half of the lesson a battery
+## bench exists to teach the other half of.
+func pack_max_amps() -> float:
+	return float(battery["specs"]["mah"]) / 1000.0 * float(battery["specs"].get("c_rating", 0.0))
+
+
+func pack_throttle_limit() -> float:
+	return throttle_limit_for(pack_max_amps())
+
+
+## The throttle at which the four motors together draw `total_amps`. Current tracks shaft torque
+## and torque goes as RPM^2, so the current at a throttle is quadratic in it — which is why this
+## is a square root and not a ratio, and why an oversized prop or an undersized pack bites much
+## harder than the headline numbers suggest.
+##
+## One expression, used by both limits, so the pack limit cannot end up meaning something subtly
+## different from the motor limit that has been in the project since day one.
+func throttle_limit_for(total_amps: float) -> float:
 	var full_throttle_amps := 4.0 * effective_max_amps
-	if full_throttle_amps <= 0.0:
+	if full_throttle_amps <= 0.0 or total_amps <= 0.0:
 		return 1.0
-	return clampf(sqrt((4.0 * rated_amps) / full_throttle_amps), 0.0, 1.0)
+	return clampf(sqrt(total_amps / full_throttle_amps), 0.0, 1.0)
+
+
+## WHICH component is holding this build back, by name, with the ceiling it imposes.
+##
+## The point of modelling two limits is not that a build is limited — it is that a builder can see
+## which part to spend money on. "You are capped at 62% throttle" sends nobody anywhere; "your
+## pack is capped at 62% and your motors would take 100%" sells a battery.
+##
+## Ties go to the motors, which is the pre-existing behaviour and the right default: an unrated
+## pack (a contribution missing c_rating) yields a zero limit that throttle_limit_for reads as
+## "no limit stated", so it must not be reported as the binding one.
+func limiting_component() -> Dictionary:
+	var motor_limit := motor_throttle_limit()
+	var pack_limit := pack_throttle_limit()
+	if pack_limit < motor_limit:
+		return {
+			"name": "battery",
+			"label": str(battery["name"]),
+			"amps": pack_max_amps(),
+			"throttle": pack_limit,
+		}
+	return {
+		"name": "motors",
+		"label": str(motor["name"]),
+		"amps": 4.0 * float(motor["specs"]["max_amps"]),
+		"throttle": motor_limit,
+	}
 
 func motor_model() -> MotorModel:
 	return MotorModel.new(float(motor["specs"]["kv"]), max_throttle_fraction())
@@ -281,8 +345,18 @@ func weight_n() -> float:
 ##
 ## Sag is not being ignored — it is fully modelled where it is actually felt, in flight
 ## and in hover throttle. A spec sheet number and a flying number are different things.
+## Quoted at the MOTOR's current limit as well, for the same reason and by the same line of
+## argument. A pack's C-rating is a property of the battery strapped on today, not of the
+## airframe: swap the pack and this number would move, and the figure two builders compare would
+## stop being about the aircraft. So the bench figure asks what these motors and props can make at
+## this voltage, and the pack's limit binds everywhere the machine is actually flown —
+## max_throttle_fraction(), and therefore peak thrust, hover, top speed and the sim's own ceiling.
+##
+## warnings() says out loud when the reachable thrust is far below this, which is where a
+## builder finds out that the bench figure is not the flying figure. Naming the gap is worth more
+## than hiding it inside a single number that then explains nothing.
 func max_total_thrust_n() -> float:
-	var max_rpm: float = float(motor["specs"]["kv"]) * float(battery["specs"]["nominal_v"]) * max_throttle_fraction()
+	var max_rpm: float = float(motor["specs"]["kv"]) * float(battery["specs"]["nominal_v"]) * motor_throttle_limit()
 	return 4.0 * PropellerModel.thrust_n(k_t, max_rpm)
 
 func thrust_to_weight() -> float:
@@ -431,10 +505,19 @@ func warnings() -> Array[String]:
 		out.append("%s uses a %s mount; the %s is drilled %s." % [
 			motor["name"], motor.get("mount_pattern", "?"), frame["name"], frame["specs"].get("motor_mount", "?")])
 
+	# Named by the component that actually binds. Reporting "too much prop for the motor" when it
+	# is the pack that runs out first would send a builder to buy the wrong part, which is the
+	# whole reason the binding constraint is modelled separately rather than as one ceiling.
 	var throttle_cap := max_throttle_fraction()
 	if throttle_cap < 0.99:
-		out.append("%s is too much prop for the %s — it hits its %.0f A limit at %.0f%% throttle." % [
-			propeller["name"], motor["name"], float(motor["specs"]["max_amps"]), throttle_cap * 100.0])
+		var limit := limiting_component()
+		if limit["name"] == "battery":
+			out.append("The %s runs out of current before the motors do — %.0f A continuous caps this build at %.0f%% throttle, where the %s would take %.0f%%." % [
+				limit["label"], limit["amps"], throttle_cap * 100.0,
+				motor["name"], motor_throttle_limit() * 100.0])
+		else:
+			out.append("%s is too much prop for the %s — it hits its %.0f A limit at %.0f%% throttle." % [
+				propeller["name"], motor["name"], float(motor["specs"]["max_amps"]), throttle_cap * 100.0])
 
 	# Thrust-to-weight is a bench number at nominal voltage (see max_total_thrust_n). On a
 	# high-resistance pack the thrust actually reachable is far below it, which would

@@ -19,7 +19,7 @@ extends PartPicker
 const FILTER_KEYS := [
 	{"key": "cell_class", "label": "Cells"},
 	{"key": "chemistry", "label": "Chemistry", "block": "specs"},
-	{"key": "c_rating", "label": "C-rating"},
+	{"key": "c_rating", "label": "C-rating", "block": "specs", "format": "%.0fC"},
 	{"key": "connector", "label": "Connector"},
 ]
 

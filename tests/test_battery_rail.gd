@@ -19,11 +19,14 @@ extends RefCounted
 
 ## Admitted browsing fields. A `catalog` block may hold these and nothing else: each is a
 ## factual, checkable property of the real product AND is needed to navigate a shelf of packs.
-const ADMITTED_CATALOG_FIELDS := ["cell_class", "c_rating", "connector"]
+const ADMITTED_CATALOG_FIELDS := ["cell_class", "connector"]
 
 ## Physics-bearing fields every pack must carry. `chemistry` is here rather than in the catalog
-## block because it selects the discharge curve (physics.md §5).
-const REQUIRED_SPEC_FIELDS := ["cells", "nominal_v", "mah", "internal_r_ohm", "chemistry"]
+## block because it selects the discharge curve (physics.md §5), and `c_rating` because capacity
+## times C is the pack's maximum continuous discharge — the current limit that decides whether
+## this battery can feed these motors. Both read like browsing metadata and are not.
+const REQUIRED_SPEC_FIELDS := ["cells", "nominal_v", "mah", "internal_r_ohm", "chemistry",
+	"c_rating"]
 
 ## Banned by name from both blocks, per every catalog file's own `_schema`. Checked as substrings
 ## of the key so "vendor_url" and "price_inr" are caught as readily as "price".
@@ -238,7 +241,7 @@ static func _test_the_rail_moves_the_build(catalog: PartsCatalog) -> Array:
 		"mah": "%.0f" % float(pack["specs"]["mah"]),
 		"chemistry": str(pack["specs"]["chemistry"]),
 		"cell_class": str(pack["catalog"]["cell_class"]),
-		"c_rating": str(pack["catalog"]["c_rating"]),
+		"c_rating": "%.0fC" % float(pack["specs"]["c_rating"]),
 		"connector": str(pack["catalog"]["connector"]),
 	}
 	var untraced: Array = []

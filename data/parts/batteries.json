@@ -1,5 +1,5 @@
 {
-  "_schema": "`mounting` says how a pack is held on: it straps, it does not bolt, so it declares no pattern. That block is geometry-bearing only — it decides what the pack is checked against and where it is drawn, and never reaches the mass model. The biggest single mass in most builds, and the only source of voltage sag. Two tiers, as in frames.json, motors.json and propellers.json: `specs` is physics-bearing and `catalog` is browsing metadata only — a field is admitted to `catalog` only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale. Colour, price and vendor links are banned by name, from either block. 'cells' sets pack voltage, which sets the RPM ceiling (max_RPM = KV * live voltage) — this is most of why a 4S->6S swap feels dramatic rather than cosmetic. 'internal_r_ohm' is what makes that voltage live rather than fixed: punch the throttle, current spikes, voltage drops, RPM ceiling drops, thrust drops. 'chemistry' sits in `specs` rather than in `catalog` even though it reads like browsing metadata, because it is physics-bearing: it selects which open-circuit discharge curve BatteryModel runs (physics.md §5), and a LiPo and a Li-ion at the same state of charge do not rest at the same voltage. The catalog block is therefore c_rating, connector and cell_class — the three things a builder actually narrows a shelf of packs by, and none of which any model reads. 'nominal_v' is the voltage printed on the wrapper, and in this model it means what it means on the wrapper: the voltage the pack RESTS AT PARTWAY DOWN its discharge, which is the datum the state-of-charge term is displacement from in both directions. A full pack rests ABOVE it (a 14.8 V 4S LiPo comes off the charger at 16.8 V) and a flat one below it. It used to be treated as the full-charge resting voltage instead, which put every pack half a volt per cell too low from the first minute of flight and dropped the aircraft out of the sky on a half-used battery; see physics.md §5 for what changed and why. Note that a 4S LiPo is labelled 14.8 V and a 4S Li-ion 14.4 V for a real reason — their cells' nominal voltages differ — so this field is not cells x 3.7 and must be the figure the actual product states. 'length_mm', 'width_mm' and 'height_mm' are the pack's published outside dimensions, and they sit in `specs` for the same reason a frame's 'arm_mm' does: they are read by a geometry generator (BatteryMesh) AND by the mass model, which used to estimate a box from mass and now does not. Length runs along the aircraft's forward axis, width across it, height vertically — the orientation a pack is actually strapped down in. One set of numbers draws the block on screen, decides whether it overhangs the centre plate, and sets the pack's contribution to the inertia tensor; a second estimate anywhere would be the divergence this catalog exists to prevent. They are MEASURED, never back-computed from mass: a 4S 3000 Li-ion is heavier than a 6S 1300 LiPo and takes up less room, and tests/test_parts_system.gd asserts that a heavier pack is not always a bigger one, which is precisely what the old cube-root-of-mass estimate could never produce. Entries are ordered by cell count and then capacity, which is what gives the cell filter an ascending order without anything sorting it.",
+  "_schema": "`mounting` says how a pack is held on: it straps, it does not bolt, so it declares no pattern. That block is geometry-bearing only — it decides what the pack is checked against and where it is drawn, and never reaches the mass model. The biggest single mass in most builds, and the only source of voltage sag. Two tiers, as in frames.json, motors.json and propellers.json: `specs` is physics-bearing and `catalog` is browsing metadata only — a field is admitted to `catalog` only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale. Colour, price and vendor links are banned by name, from either block. 'cells' sets pack voltage, which sets the RPM ceiling (max_RPM = KV * live voltage) — this is most of why a 4S->6S swap feels dramatic rather than cosmetic. 'internal_r_ohm' is what makes that voltage live rather than fixed: punch the throttle, current spikes, voltage drops, RPM ceiling drops, thrust drops. 'chemistry' sits in `specs` rather than in `catalog` even though it reads like browsing metadata, because it is physics-bearing: it selects which open-circuit discharge curve BatteryModel runs (physics.md §5), and a LiPo and a Li-ion at the same state of charge do not rest at the same voltage. 'c_rating' MOVED from `catalog` to `specs` for the same reason, and it is the clearest case in the file: capacity in amp-hours multiplied by C is the pack's maximum continuous discharge, which is a hard current limit on the whole build (Build.pack_max_amps). Left in `catalog` and read by nothing, a 300 mAh 30C whoop pack would happily deliver 100 A, and pack choice would come down to capacity and mass alone. It is a NUMBER here rather than the '75C' string it used to be, because it is multiplied rather than displayed; the UI formats the C back on, and the picker filters it through the same seam chemistry uses. The catalog block is therefore connector and cell_class — the two things a builder narrows a shelf of packs by that no model reads. 'nominal_v' is the voltage printed on the wrapper, and in this model it means what it means on the wrapper: the voltage the pack RESTS AT PARTWAY DOWN its discharge, which is the datum the state-of-charge term is displacement from in both directions. A full pack rests ABOVE it (a 14.8 V 4S LiPo comes off the charger at 16.8 V) and a flat one below it. It used to be treated as the full-charge resting voltage instead, which put every pack half a volt per cell too low from the first minute of flight and dropped the aircraft out of the sky on a half-used battery; see physics.md §5 for what changed and why. Note that a 4S LiPo is labelled 14.8 V and a 4S Li-ion 14.4 V for a real reason — their cells' nominal voltages differ — so this field is not cells x 3.7 and must be the figure the actual product states. 'length_mm', 'width_mm' and 'height_mm' are the pack's published outside dimensions, and they sit in `specs` for the same reason a frame's 'arm_mm' does: they are read by a geometry generator (BatteryMesh) AND by the mass model, which used to estimate a box from mass and now does not. Length runs along the aircraft's forward axis, width across it, height vertically — the orientation a pack is actually strapped down in. One set of numbers draws the block on screen, decides whether it overhangs the centre plate, and sets the pack's contribution to the inertia tensor; a second estimate anywhere would be the divergence this catalog exists to prevent. They are MEASURED, never back-computed from mass: a 4S 3000 Li-ion is heavier than a 6S 1300 LiPo and takes up less room, and tests/test_parts_system.gd asserts that a heavier pack is not always a bigger one, which is precisely what the old cube-root-of-mass estimate could never produce. Entries are ordered by cell count and then capacity, which is what gives the cell filter an ascending order without anything sorting it.",
   "parts": [
     {
       "part_id": "battery_1s_300",
@@ -15,13 +15,13 @@
         "mah": 300.0,
         "internal_r_ohm": 0.090,
         "chemistry": "LiPo",
+        "c_rating": 30.0,
         "length_mm": 63.5,
         "width_mm": 11.0,
         "height_mm": 6.4
       },
       "catalog": {
         "cell_class": "1S",
-        "c_rating": "30C",
         "connector": "BT2.0"
       },
       "source": "representative 1S 300mAh whoop pack spec sheet; class-typical, not a specific product. Dimensions are the BetaFPV LAVA 1S 300mAh 75C's published 63.5 x 11 x 6.4 mm"
@@ -40,13 +40,13 @@
         "mah": 550.0,
         "internal_r_ohm": 0.070,
         "chemistry": "LiPo",
+        "c_rating": 40.0,
         "length_mm": 68.0,
         "width_mm": 15.5,
         "height_mm": 6.7
       },
       "catalog": {
         "cell_class": "1S",
-        "c_rating": "40C",
         "connector": "BT2.0"
       },
       "source": "representative 1S 550mAh whoop pack spec sheet; class-typical, not a specific product. Dimensions are the BetaFPV LAVA 1S 550mAh 75C's published 68 x 15.5 x 6.7 mm"
@@ -65,13 +65,13 @@
         "mah": 300.0,
         "internal_r_ohm": 0.030,
         "chemistry": "LiPo",
+        "c_rating": 75.0,
         "length_mm": 45.0,
         "width_mm": 16.5,
         "height_mm": 12.0
       },
       "catalog": {
         "cell_class": "2S",
-        "c_rating": "75C",
         "connector": "PH2.0"
       },
       "source": "representative 2S 300mAh micro pack spec sheet; class-typical, not a specific product. Dimensions are the BetaFPV 300mAh 2S 45C's published 45 x 16.5 x 12 mm"
@@ -90,13 +90,13 @@
         "mah": 450.0,
         "internal_r_ohm": 0.014,
         "chemistry": "LiPo",
+        "c_rating": 75.0,
         "length_mm": 63.0,
         "width_mm": 15.5,
         "height_mm": 13.5
       },
       "catalog": {
         "cell_class": "2S",
-        "c_rating": "75C",
         "connector": "XT30"
       },
       "source": "representative 2S 75C pack spec sheet. Dimensions are the BetaFPV LAVA 2S 450mAh 75C's published 63 x 15.5 x 13.5 mm"
@@ -115,13 +115,13 @@
         "mah": 650.0,
         "internal_r_ohm": 0.020,
         "chemistry": "LiPo",
+        "c_rating": 75.0,
         "length_mm": 59.0,
         "width_mm": 31.0,
         "height_mm": 18.0
       },
       "catalog": {
         "cell_class": "3S",
-        "c_rating": "75C",
         "connector": "XT30"
       },
       "source": "representative 3S 650mAh toothpick pack spec sheet; class-typical, not a specific product. Dimensions are the Tattu R-Line 3S 650mAh 95C's published 59 x 31 x 18 mm"
@@ -140,13 +140,13 @@
         "mah": 650.0,
         "internal_r_ohm": 0.018,
         "chemistry": "LiPo",
+        "c_rating": 95.0,
         "length_mm": 61.0,
         "width_mm": 31.0,
         "height_mm": 25.0
       },
       "catalog": {
         "cell_class": "4S",
-        "c_rating": "95C",
         "connector": "XT30"
       },
       "source": "representative 4S 650mAh 3-inch pack spec sheet; class-typical, not a specific product. Dimensions are the Tattu R-Line 4S 650mAh 95C's published 61 x 31 x 25 mm"
@@ -165,13 +165,13 @@
         "mah": 1300.0,
         "internal_r_ohm": 0.011,
         "chemistry": "LiPo",
+        "c_rating": 95.0,
         "length_mm": 77.0,
         "width_mm": 38.5,
         "height_mm": 27.0
       },
       "catalog": {
         "cell_class": "4S",
-        "c_rating": "95C",
         "connector": "XT60"
       },
       "source": "representative 4S 95C pack spec sheet. Dimensions are the Tattu R-Line Version 3.0 4S 1300mAh 120C's published 77 x 38.5 x 27 mm"
@@ -190,13 +190,13 @@
         "mah": 1500.0,
         "internal_r_ohm": 0.015,
         "chemistry": "LiPo",
+        "c_rating": 75.0,
         "length_mm": 75.0,
         "width_mm": 35.0,
         "height_mm": 37.0
       },
       "catalog": {
         "cell_class": "4S",
-        "c_rating": "75C",
         "connector": "XT60"
       },
       "source": "representative 4S 75C pack spec sheet; the reference build's pack. Dimensions are the CNHL Black Series 4S 1500mAh 100C's published 75 x 35 x 37 mm, whose 183 g is within 2 g of this entry's mass"
@@ -215,13 +215,13 @@
         "mah": 1200.0,
         "internal_r_ohm": 0.014,
         "chemistry": "LiPo",
+        "c_rating": 100.0,
         "length_mm": 79.0,
         "width_mm": 39.5,
         "height_mm": 26.0
       },
       "catalog": {
         "cell_class": "5S",
-        "c_rating": "100C",
         "connector": "XT60"
       },
       "source": "representative 5S 1200mAh freestyle pack spec sheet; class-typical, not a specific product. Dimensions are the DOGCOM 1300mAh 5S 150C's published 79 x 39.5 x 26 mm, the nearest real pack of this class"
@@ -240,13 +240,13 @@
         "mah": 1100.0,
         "internal_r_ohm": 0.013,
         "chemistry": "LiPo",
+        "c_rating": 120.0,
         "length_mm": 75.0,
         "width_mm": 35.0,
         "height_mm": 39.5
       },
       "catalog": {
         "cell_class": "6S",
-        "c_rating": "120C",
         "connector": "XT60"
       },
       "source": "representative 6S 120C pack spec sheet. Dimensions are the CNHL Black Series 6S 1100mAh 100C's published 75 x 35 x 39.5 mm"
@@ -265,13 +265,13 @@
         "mah": 1300.0,
         "internal_r_ohm": 0.017,
         "chemistry": "LiPo",
+        "c_rating": 100.0,
         "length_mm": 75.0,
         "width_mm": 38.0,
         "height_mm": 38.0
       },
       "catalog": {
         "cell_class": "6S",
-        "c_rating": "100C",
         "connector": "XT60"
       },
       "source": "representative 6S 100C pack spec sheet. Dimensions are the Tattu R-Line 6S 1300mAh 120C's published 75 x 38 x 38 mm, whose 208 g is within 3 g of this entry's mass"
@@ -290,13 +290,13 @@
         "mah": 3000.0,
         "internal_r_ohm": 0.150,
         "chemistry": "Li-ion",
+        "c_rating": 10.0,
         "length_mm": 74.0,
         "width_mm": 37.0,
         "height_mm": 37.0
       },
       "catalog": {
         "cell_class": "4S",
-        "c_rating": "10C",
         "connector": "XT60"
       },
       "source": "representative 4S Li-ion 18650 pack spec sheet; 10x the internal resistance of a LiPo, deliberately. Dimensions are the GNB 3000mAh 4S 10C Li-ion (Sony VTC6, 4S1P)'s published 74 x 37 x 37 mm — a 2x2 brick of 18650s"
@@ -315,13 +315,13 @@
         "mah": 4000.0,
         "internal_r_ohm": 0.200,
         "chemistry": "Li-ion",
+        "c_rating": 10.0,
         "length_mm": 78.0,
         "width_mm": 64.0,
         "height_mm": 43.0
       },
       "catalog": {
         "cell_class": "6S",
-        "c_rating": "10C",
         "connector": "XT60"
       },
       "source": "representative 6S 21700 Li-ion long-range pack spec sheet; the whole point is capacity at the cost of internal resistance. Dimensions are the GNB Li-Ion 21700 6S1P 4000mAh's published 78 x 64 x 43 mm — a 3x2 brick, and the widest pack in this catalog by some margin"

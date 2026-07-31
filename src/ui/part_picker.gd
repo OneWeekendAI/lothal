@@ -29,6 +29,12 @@ extends PanelContainer
 ## filterable. The two alternatives were both worse — copying it into `catalog` would give one
 ## fact two homes that can disagree, and quietly falling back from one block to the other would
 ## make "which block is this read from" a thing you have to work out rather than read.
+##
+## An entry may also carry a `"format"` — a single-argument format string applied to the raw
+## value, e.g. `"%.0fC"` for a pack's C-rating. That exists for the same reason `block` does: a
+## physics-bearing number has to stay browsable without being stored twice. c_rating is capacity
+## multiplied by it to get the pack's current limit, so it is a float in `specs`; a filter labelled
+## "75" rather than "75C" is not the thing a builder narrows a shelf by.
 
 signal part_selected(part: Dictionary)
 
@@ -137,7 +143,11 @@ func _derive_options(entry: Dictionary) -> Array:
 ## assert against the same function rather than against a second copy of the lookup.
 static func value_of(part: Dictionary, entry: Dictionary) -> String:
 	var block: String = entry.get("block", DEFAULT_BLOCK)
-	return str(part.get(block, {}).get(entry["key"], ""))
+	var raw: Variant = part.get(block, {}).get(entry["key"], "")
+	if raw == "":
+		return ""
+	var format: String = entry.get("format", "")
+	return (format % raw) if format != "" else str(raw)
 
 
 func no_match_text() -> String:
