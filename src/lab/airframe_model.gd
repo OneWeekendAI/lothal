@@ -29,6 +29,10 @@ var propeller_meshes: Dictionary = {}
 ## motors hang off the arm-tip pads: the plate's height is FrameModel's, the standoff tweak moves
 ## it, and a second copy of that arithmetic here is a second thing to get wrong.
 var battery_mesh: BatteryMesh
+## The FC/ESC stack, sandwiched into the frame's centre-plate bolt pattern. Parented onto the frame
+## for the same reason the motors hang off the arm-tip pads: the mount's height is FrameModel's, the
+## standoff tweak moves it, and a frame rebuild frees it rather than leaving a stale board behind.
+var stack_mesh: StackMesh
 ## Arm length of the build currently drawn, kept so clearance can be reported against the
 ## geometry actually on screen rather than against whatever Build was asked about last.
 var arm_m := 0.0
@@ -74,6 +78,19 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		frame_model.plate_top_face_m() - plate_top.position.y + battery_mesh.size_m.y * 0.5,
 		0)
 	plate_top.add_child(battery_mesh)
+
+	# The stack, in the frame's own standoff stack. Nothing here decides where that is: the mount
+	# point does, from the frame's specs and the standoff height currently fitted, and this line
+	# only seats the board on it. That is what makes the same call right for a 30.5 stack on a 5"
+	# freestyle and for the same board hanging off a 65 mm whoop's 18 mm plate — which is warned
+	# about (mount_warnings) and still mounted, because Lothal never blocks.
+	stack_mesh = StackMesh.new()
+	stack_mesh.name = "Stack"
+	stack_mesh.rebuild(Build.STACK_MOUNT_PATTERN)
+	var stack_mount := mount_point("stack")
+	if stack_mount != null:
+		stack_mesh.position = stack_mount.position
+	frame_model.add_child(stack_mesh)
 
 	for motor_name in MotorLayout.MOTOR_NAMES:
 		var pad: Node3D = frame_model.arm_tips[motor_name]
@@ -126,6 +143,28 @@ func set_rates_rpm(rpm: PackedFloat32Array) -> void:
 func set_all_rates_rpm(rpm: float) -> void:
 	for motor_name in MotorLayout.MOTOR_NAMES:
 		(propeller_meshes[motor_name] as PropellerMesh).set_rate_rpm(rpm)
+
+
+## One of the frame's mount points by id, or null. Named accessor rather than callers walking
+## frame_model.mount_points, so the airframe stays the one place that knows what is mounted where.
+func mount_point(id: String) -> MountPoint:
+	for point in frame_model.mount_points:
+		if point.id == id:
+			return point
+	return null
+
+
+## What is wrong with how the mounted components are attached, in words: the mount system's own
+## verdict on each of them, in one list. Separate from battery_fit_warnings() below, which is what
+## the assembled GEOMETRY does, in the same way Build.warnings() is separate from both.
+func mount_warnings() -> Array[String]:
+	var out: Array[String] = []
+	var stack_mount := mount_point("stack")
+	if stack_mount != null:
+		out.append_array(stack_mount.fit_warnings(
+			"The FC/ESC stack", Build.stack_mounting(),
+			StackMesh.size_m(Build.STACK_MOUNT_PATTERN)))
+	return out
 
 
 ## Clearance between two adjacent propeller discs, measured from the geometry on screen: the

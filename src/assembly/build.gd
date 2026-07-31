@@ -15,8 +15,23 @@ const AIR_DENSITY_KGM3 := 1.225
 ## Fixed electronics package (parts.md): FC+ESC stack, camera, VTX, antenna, receiver,
 ## wiring. Not selectable in v1, but it is 55 g of real mass, so it stays in the
 ## mass-properties calculation. A constant, not an omission.
+##
+## THIS IS A BUDGET, AND IT DOES NOT GROW. As components come out of the lump and get physical
+## form, they take their share OUT of this number rather than being added beside it — see
+## STACK_MASS_G below and mass_parts(). The reference build's 496 g, 11.7:1 and 29% hover were
+## computed with the whole 55 g included, so a component that gained mass on its way to becoming
+## visible would silently move two of the project's three fixed points for what was meant to be a
+## change to the picture.
 const ELECTRONICS_MASS_G := 55.0
+## The part of the lump still lumped: camera, VTX, antenna, receiver and wiring, as one box at the
+## origin. Its SIZE stayed as it was rather than shrinking with the mass — an inertia box is linear
+## in mass, and the stack's own box below carries the difference honestly.
 const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
+
+## The FC/ESC stack's share of that budget: a 1.6 mm 30.5 FC at about 8 g on top of a 4-in-1 ESC at
+## about 12 g. Taken OUT of ELECTRONICS_MASS_G, not added to it, which leaves 35 g of camera, VTX,
+## antenna, receiver and wiring still lumped at the origin.
+const STACK_MASS_G := 20.0
 
 ## The FC/ESC stack's own bolt pattern. 30.5x30.5 is the full-size standard, and it is a property
 ## of the STACK rather than of the frame — which is the whole reason a fit check is worth having.
@@ -149,8 +164,22 @@ func mass_parts() -> Array:
 	parts.append(PartMass.new(battery_mass_kg, Vector3.ZERO,
 		InertiaPrimitives.box(battery_mass_kg, battery_size_m())))
 
-	var electronics_mass_kg := ELECTRONICS_MASS_G / 1000.0
-	parts.append(PartMass.new(electronics_mass_kg, Vector3.ZERO, InertiaPrimitives.box(electronics_mass_kg, ELECTRONICS_SIZE_M)))
+	# The electronics, in two entries that sum to ELECTRONICS_MASS_G exactly. The stack is separate
+	# because it is now a real object with a real footprint, and its 36.5 mm board has a different
+	# tensor from the 30 mm cube the lump stands on; the two together weigh what the one did.
+	#
+	# BOTH ARE AT THE ORIGIN, and that is the point of labs-and-sim.md §2.5 rather than an
+	# oversight. The stack is DRAWN between the plates, below the centreline, and the mass model
+	# does not hear about that: it is a lumped centre box plus four point masses and has no term a
+	# mount offset could enter. When it grows a real centre-of-gravity term, the mount point is
+	# already the single source for where the stack is — a consumer gets added, nothing gets
+	# re-decided.
+	var stack_mass_kg := STACK_MASS_G / 1000.0
+	parts.append(PartMass.new(stack_mass_kg, Vector3.ZERO,
+		InertiaPrimitives.box(stack_mass_kg, StackMesh.size_m(STACK_MOUNT_PATTERN))))
+
+	var loose_mass_kg := (ELECTRONICS_MASS_G - STACK_MASS_G) / 1000.0
+	parts.append(PartMass.new(loose_mass_kg, Vector3.ZERO, InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M)))
 
 	return parts
 

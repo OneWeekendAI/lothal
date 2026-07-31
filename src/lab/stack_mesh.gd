@@ -44,3 +44,110 @@ static func size_m(pattern: String) -> Vector3:
 		spacing = MountPoint.parse_pattern_m(Build.STACK_MOUNT_PATTERN)
 	var board := spacing + Vector2(BOARD_EDGE_M, BOARD_EDGE_M) * 2.0
 	return Vector3(board.x, BOARD_THICKNESS_M * 2.0 + BOARD_GAP_M, board.y)
+
+
+## Clears any previous stack and rebuilds it for `pattern`. Safe to call on every part change;
+## nothing survives a call except this node.
+##
+## Seated on y = 0 and growing UPWARD, like MotorMesh: the mount point knows where its seat is, and
+## a component that placed itself would need to know the plate stack's height — which is
+## FrameModel's, and the standoff tweak's, and a second copy of arithmetic that already exists.
+func rebuild(pattern: String) -> void:
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+
+	var size := size_m(pattern)
+	var spacing := Vector2(size.x, size.z) - Vector2(BOARD_EDGE_M, BOARD_EDGE_M) * 2.0
+
+	_build_board("Board_ESC", size, BOARD_THICKNESS_M * 0.5, _esc_material())
+	_build_board("Board_FC", size,
+		BOARD_THICKNESS_M * 1.5 + BOARD_GAP_M, _fc_material())
+	_build_standoffs(spacing, size.y)
+	_build_connector(size)
+
+
+## One board, centred on the bolt pattern at the given height above the seat.
+func _build_board(board_name: String, size: Vector3, height: float, material: StandardMaterial3D) -> void:
+	var board := MeshInstance3D.new()
+	board.name = board_name
+	var box := BoxMesh.new()
+	box.size = Vector3(size.x, BOARD_THICKNESS_M, size.z)
+	board.mesh = box
+	board.material_override = material
+	board.position = Vector3(0.0, height, 0.0)
+	add_child(board)
+
+
+## The four posts at the bolt pattern's corners, running the whole height of the stack. They are
+## what makes it read as a STACK rather than as two boards floating apart, and they are the reason
+## the pattern is visible on screen at all: the spacing between them is the number the fit check
+## warns about.
+func _build_standoffs(spacing: Vector2, height: float) -> void:
+	var material := _standoff_material()
+	var index := 0
+	for x in [-spacing.x * 0.5, spacing.x * 0.5]:
+		for z in [-spacing.y * 0.5, spacing.y * 0.5]:
+			var post := MeshInstance3D.new()
+			post.name = "Standoff_%d" % index
+			var cylinder := CylinderMesh.new()
+			cylinder.top_radius = STANDOFF_RADIUS_M
+			cylinder.bottom_radius = STANDOFF_RADIUS_M
+			cylinder.height = height
+			cylinder.radial_segments = 8
+			cylinder.rings = 1
+			post.mesh = cylinder
+			post.material_override = material
+			post.position = Vector3(x, height * 0.5, z)
+			add_child(post)
+			index += 1
+
+
+## The USB port and plug block on the FC's rear edge. Nose is -Z, so the connectors face aft — the
+## cheapest possible cue for which way round the stack is fitted, exactly as the pack's leads are.
+func _build_connector(size: Vector3) -> void:
+	var block := MeshInstance3D.new()
+	block.name = "Connector"
+	var box := BoxMesh.new()
+	box.size = Vector3(size.x * CONNECTOR_WIDTH_RATIO, CONNECTOR_HEIGHT_M, size.z * 0.18)
+	block.mesh = box
+	block.material_override = _standoff_material()
+	block.position = Vector3(
+		0.0,
+		size.y + CONNECTOR_HEIGHT_M * 0.5 - BOARD_THICKNESS_M,
+		size.z * 0.5 - size.z * 0.09)
+	add_child(block)
+
+
+# ---------------------------------------------------------------------------
+# Appearance
+# ---------------------------------------------------------------------------
+
+## A flight controller board: dark solder mask with a faint sheen, lifted above true reflectance
+## for the reason FrameModel's header sets out — this viewport is read against a dark background
+## and a near-black airframe, and a board at its real darkness is a hole between the plates.
+func _fc_material() -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.16, 0.30, 0.24)
+	mat.roughness = 0.45
+	mat.metallic = 0.1
+	return mat
+
+
+## The 4-in-1 underneath, cooler and slightly darker so the two boards are separable at a glance.
+func _esc_material() -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.15, 0.19, 0.30)
+	mat.roughness = 0.5
+	mat.metallic = 0.1
+	return mat
+
+
+## Aluminium standoffs and connector shells: bright and metallic, which is what lets the pattern
+## be picked out from outside the frame.
+func _standoff_material() -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.68, 0.70, 0.74)
+	mat.roughness = 0.28
+	mat.metallic = 0.75
+	return mat

@@ -10,7 +10,7 @@ extends SceneTree
 const SUITES := ["mass properties", "hover", "torque signs", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "build panel",
 	"gate course", "hud", "keyboard throttle", "observables", "rotor synth",
-	"frame model", "mount points", "motor mesh", "propeller mesh", "airframe", "mounting",
+	"frame model", "mount points", "stack mesh", "motor mesh", "propeller mesh", "airframe", "mounting",
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation",
 	"battery rail", "battery model", "battery bench", "pack charge", "battery mesh",
 	"yaw authority", "gyro", "motor mixer", "control path", "stick release"]
@@ -63,6 +63,7 @@ func _run_suite(suite_name: String) -> Array:
 		"rotor synth": return TestRotorSynth.run()
 		"frame model": return TestFrameModel.run()
 		"mount points": return TestMountPoints.run()
+		"stack mesh": return TestStackMesh.run()
 		"motor mesh": return TestMotorMesh.run()
 		"propeller mesh": return TestPropellerMesh.run()
 		"airframe": return TestAirframeModel.run()
