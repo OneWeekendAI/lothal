@@ -209,6 +209,15 @@ static func soc_at_nominal(p_chemistry: String = DEFAULT_CHEMISTRY) -> float:
 	return high
 
 
+## What one cell of this pack is resting at. The number a real builder actually reads: pack
+## voltage means nothing without the cell count beside it, and "3.79 V per cell" is the figure a
+## storage charge, a low-voltage alarm and a decision to land are all quoted in.
+func resting_cell_v() -> float:
+	if cells <= 0:
+		return resting_voltage_v()
+	return resting_voltage_v() / float(cells)
+
+
 func voltage_live(current_total_a: float) -> float:
 	return resting_voltage_v() - current_total_a * internal_r_ohm
 

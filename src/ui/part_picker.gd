@@ -143,8 +143,10 @@ func _derive_options(entry: Dictionary) -> Array:
 ## assert against the same function rather than against a second copy of the lookup.
 static func value_of(part: Dictionary, entry: Dictionary) -> String:
 	var block: String = entry.get("block", DEFAULT_BLOCK)
-	var raw: Variant = part.get(block, {}).get(entry["key"], "")
-	if raw == "":
+	var raw: Variant = part.get(block, {}).get(entry["key"], null)
+	# Compared against null rather than against "": a filter may now read a NUMBER out of `specs`
+	# (a pack's C-rating), and `some_float == ""` is a type error in GDScript rather than false.
+	if raw == null or (raw is String and raw == ""):
 		return ""
 	var format: String = entry.get("format", "")
 	return (format % raw) if format != "" else str(raw)

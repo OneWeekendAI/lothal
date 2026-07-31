@@ -478,6 +478,31 @@ func flight_time_min() -> float:
 	var usable_mah: float = float(battery["specs"]["mah"]) * USABLE_CAPACITY_FRACTION
 	return (usable_mah / (average_current_a * 1000.0)) * 60.0
 
+## How much flying is LEFT in a pack in the state it is actually in, in minutes.
+##
+## The same convention as flight_time_min() — average current is hover current times
+## FLIGHT_CURRENT_TO_HOVER_RATIO, and only USABLE_CAPACITY_FRACTION of the pack is flown — so the
+## HUD's countdown and the stats panel's estimate are the same claim about the same aircraft, and
+## a pilot who reads 4.1 minutes in the garage and 4.1 minutes at spawn is not being told two
+## different things by two different formulas.
+##
+## What differs is only the capacity remaining, and the voltage it is solved at: a half-empty pack
+## rests lower, so the hover it has to hold costs a little more current. Zero for a build that
+## cannot hover, and zero once the usable capacity is gone — the pack is not flat, it is past the
+## reserve you would have landed on.
+func remaining_flight_time_min(pack: BatteryModel) -> float:
+	var rest_v := pack.resting_voltage_v()
+	if not can_hover(rest_v):
+		return 0.0
+	var average_current_a := hover_current_a(hover_throttle(rest_v), rest_v) * FLIGHT_CURRENT_TO_HOVER_RATIO
+	if average_current_a <= 0.0:
+		return 0.0
+	var usable_mah := pack.capacity_mah * USABLE_CAPACITY_FRACTION - pack.used_mah
+	if usable_mah <= 0.0:
+		return 0.0
+	return (usable_mah / (average_current_a * 1000.0)) * 60.0
+
+
 ## Terminal speed at the reference lean: horizontal thrust balances aerodynamic drag.
 func top_speed_kmh() -> float:
 	var horizontal_thrust_n := weight_n() * tan(TOP_SPEED_LEAN_RAD)

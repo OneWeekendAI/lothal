@@ -1,7 +1,18 @@
 class_name Hud
 extends Control
-## Throttle, voltage, speed, lap timer and next gate — the fourth consumer of the
-## observables layer, after vision, controls and the build panel.
+## Throttle, voltage, current, pack charge, remaining flight time, speed, lap timer and next gate
+## — the fourth consumer of the observables layer, after vision, controls and the build panel.
+##
+## THE PACK LINE IS TWO QUESTIONS, and a pilot in the air asks the second one. Voltage and current
+## say what the pack is doing right now; remaining charge and remaining flight time say how much
+## longer you have. The discharge curve is exactly why both are needed — a LiPo sits on its
+## plateau for most of a flight and the voltmeter barely moves, so a timer is the better fuel
+## gauge and the voltmeter is the better warning of the knee (physics.md §5).
+##
+## Neither of the two new figures is computed here. Charge comes off the observables layer where
+## the powertrain publishes it, and the minutes come from Build.remaining_flight_time_min(), which
+## uses the same reserve and the same average-to-hover ratio as the flight time on the garage
+## stats panel. A HUD that did its own arithmetic would be a second opinion about the aircraft.
 ##
 ## Architecture note worth keeping, with a correction. Adding this required no change to
 ## src/sim — but only because it reached into DroneCore's internal fields (motor_rpm,
@@ -26,6 +37,7 @@ const COLOR_DIM := Color(0.6, 0.63, 0.68)
 var _throttle_bar: ProgressBar
 var _throttle_label: Label
 var _voltage_label: Label
+var _pack_label: Label
 var _speed_label: Label
 var _current_lap_label: Label
 var _best_lap_label: Label
@@ -43,7 +55,7 @@ func _init() -> void:
 	var flight := VBoxContainer.new()
 	flight.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	flight.offset_left = 16
-	flight.offset_top = -104
+	flight.offset_top = -136
 	flight.offset_bottom = -16
 	flight.offset_right = 296
 	flight.add_theme_constant_override("separation", 4)
@@ -74,6 +86,7 @@ func _init() -> void:
 
 	_speed_label = _add_readout(flight)
 	_voltage_label = _add_readout(flight)
+	_pack_label = _add_readout(flight)
 
 	_mode_label = Label.new()
 	_mode_label.add_theme_color_override("font_color", COLOR_DIM)
@@ -129,11 +142,30 @@ func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, 
 	_voltage_label.text = "%.2f V   %.0f A" % [obs.voltage_live_v, obs.current_total_a]
 	_voltage_label.add_theme_color_override("font_color", _voltage_color(obs, build))
 
+	# Remaining charge and remaining flying, updating live off the same pack the physics drains.
+	# Amber below a fifth, the same threshold the garage's charger and the bench's knee use, so
+	# "nearly flat" reads the same everywhere.
+	var remaining := 1.0 - obs.capacity_used_fraction
+	var minutes := build.remaining_flight_time_min(core.powertrain.battery)
+	_pack_label.text = "%.0f %%   %s left" % [remaining * 100.0, _format_minutes(minutes)]
+	_pack_label.add_theme_color_override("font_color",
+		COLOR_CRITICAL if minutes <= 0.0 else (COLOR_WARN if remaining < 0.2 else COLOR_OK))
+
 	_mode_label.text = "ACRO" if rate_mode else "ANGLE"
 
 	_current_lap_label.text = "LAP  %s" % LapTimer.format(timer.current_lap_s) if timer.running else "LAP  --:--.--"
 	_best_lap_label.text = "BEST %s" % LapTimer.format(timer.best_lap_s)
 	_gate_label.text = "GATE %d / %d" % [course.next_gate_index + 1, GateCourse.GATE_COUNT]
+
+## Minutes and seconds, because "2.4 min" is a number a pilot has to convert mid-flight and
+## "2:24" is one they can act on. Zero reads as spent rather than as 0:00, which would look like a
+## clock that had stopped rather than a pack past its reserve.
+static func _format_minutes(minutes: float) -> String:
+	if minutes <= 0.0:
+		return "RESERVE"
+	var seconds := int(round(minutes * 60.0))
+	return "%d:%02d" % [seconds / 60, seconds % 60]
+
 
 func tick_banner(delta: float) -> void:
 	if _banner_timeout > 0.0:

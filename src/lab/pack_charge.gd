@@ -72,6 +72,17 @@ const TOP_KEYS := ["schema", "packs", "charge_compression"]
 ## becomes a four-and-a-half-minute wait.
 const FULL_CHARGE_S := 45.0 * 60.0
 
+## Below this much used charge a pack is FULL, and is recorded as exactly full.
+##
+## Not a tolerance for comparisons — a snap, applied when charge is put back. Repeatedly
+## subtracting a rate from a remainder lands on a residue of about 1e-15 mAh rather than on zero,
+## and set_used_mah() then refuses to write it away because is_equal_approx() reads the change as
+## a no-op. The pack is left one part in 1e18 short of full for ever: is_full() stays false, the
+## charger never stops itself, and the countdown sits at "0 s left" with the Stop button still
+## showing. A thousandth of a mAh is far below anything the model or the UI can distinguish and
+## enormously above the residue, so the two cannot be confused.
+const NEGLIGIBLE_MAH := 0.001
+
 const DEFAULT_COMPRESSION := 10.0
 ## 1:1 is the honest end of the range; nothing above 60:1, past which "charging" is a button that
 ## fills the pack and the consequence has been designed out rather than compressed.
@@ -145,7 +156,13 @@ func charge(part_id: String, seconds: float, capacity_mah: float) -> float:
 	if capacity_mah <= 0.0 or seconds <= 0.0:
 		return 0.0
 	var restored := minf(charge_rate_mah_per_s(capacity_mah) * seconds, used_mah(part_id))
-	set_used_mah(part_id, used_mah(part_id) - restored)
+	var remaining := used_mah(part_id) - restored
+	# Snapped, not rounded for display: see NEGLIGIBLE_MAH. A pack this close to full IS full, and
+	# saying so is what lets the charger stop.
+	if remaining < NEGLIGIBLE_MAH:
+		restored = used_mah(part_id)
+		remaining = 0.0
+	set_used_mah(part_id, remaining)
 	return restored
 
 
@@ -160,6 +177,17 @@ func seconds_to_full(part_id: String, capacity_mah: float) -> float:
 	if rate <= 0.0:
 		return 0.0
 	return used_mah(part_id) / rate
+
+
+## Wall-clock seconds this charge WOULD take on a real charger, with the compression taken back
+## out. Shown beside seconds_to_full() so the panel can say both numbers rather than making the
+## user infer one from the other: a 45-minute charge at 10:1 is a four-and-a-half-minute wait, and
+## the whole point of the compression being a visible setting is that both halves of that sentence
+## are on screen.
+func real_seconds_to_full(part_id: String, capacity_mah: float) -> float:
+	if charge_compression <= 0.0:
+		return 0.0
+	return seconds_to_full(part_id, capacity_mah) * charge_compression
 
 
 func set_compression(value: float) -> void:

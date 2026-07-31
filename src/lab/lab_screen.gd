@@ -225,7 +225,7 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	# not change while you look at them. The charge does, it is the only control on the right-hand
 	# column, and it is the reason you opened this tab twice in an evening. Reference belongs
 	# under the thing you act on.
-	charge_panel = PackChargePanel.new(pack_charge)
+	charge_panel = PackChargePanel.new(pack_charge, catalog)
 	charge_panel.charge_changed.connect(_on_charge_changed)
 	pack_column.add_child(charge_panel)
 
