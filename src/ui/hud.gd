@@ -163,8 +163,10 @@ func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, 
 static func _format_minutes(minutes: float) -> String:
 	if minutes <= 0.0:
 		return "RESERVE"
-	var seconds := int(round(minutes * 60.0))
-	return "%d:%02d" % [seconds / 60, seconds % 60]
+	# Rounded to the nearest second HERE, then handed to a formatter that truncates — so the
+	# countdown ticks on the half-second the way a clock does, and the mm:ss arithmetic itself
+	# lives in exactly one place (Duration, which this was the fourth copy of).
+	return Duration.clock(round(minutes * 60.0))
 
 
 func tick_banner(delta: float) -> void:

@@ -66,7 +66,7 @@ func render_build(build: Build, load_name: String) -> void:
 ## off the published observables; this panel derives nothing.
 func render_live(reading: Dictionary) -> void:
 	set_headline("sag", "−%.2f V" % reading["sag_v"])
-	set_headline("hold_up", _format_duration(reading["hold_up_s"]))
+	set_headline("hold_up", Duration.or_dash(reading["hold_up_s"]))
 
 	set_value("current", "%.1f A" % reading["current_a"])
 	set_value("resting", "%.2f V" % reading["resting_v"])
@@ -74,7 +74,7 @@ func render_live(reading: Dictionary) -> void:
 	set_value("per_cell", "%.2f V" % (reading["live_v"] / float(_cells)))
 	set_value("remaining", "%.0f mAh  (%.0f %%)" % [
 		reading["remaining_mah"], reading["remaining_fraction"] * 100.0])
-	set_value("elapsed", _format_duration(reading["elapsed_s"]))
+	set_value("elapsed", Duration.or_dash(reading["elapsed_s"]))
 	set_value("thrust", "%.0f g" % reading["thrust_g"])
 
 	# Below the knee the pack is not low, it is finished — and the difference is worth a colour
@@ -82,13 +82,3 @@ func render_live(reading: Dictionary) -> void:
 	var past_knee: bool = reading["remaining_fraction"] < 0.2
 	set_value_colour("remaining", SAG_COLOUR if past_knee else VALUE_COLOUR)
 	set_headline_colour("hold_up", SAG_COLOUR if past_knee else EFFICIENCY_COLOUR)
-
-
-## Seconds as something a builder says out loud. An empty pack reads as a dash rather than as
-## "0:00", which would be indistinguishable from a bench that had not been started.
-static func _format_duration(seconds: float) -> String:
-	if seconds <= 0.0 or not is_finite(seconds):
-		return "—"
-	if seconds < 60.0:
-		return "%.0f s" % seconds
-	return "%d:%02d" % [int(seconds) / 60, int(seconds) % 60]

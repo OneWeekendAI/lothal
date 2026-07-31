@@ -229,9 +229,9 @@ func _clock_text() -> String:
 	var real := charge.real_seconds_to_full(_part_id(), _capacity_mah())
 	var verb := "Charging: " if charging else "To full: "
 	if is_equal_approx(charge.charge_compression, 1.0):
-		return "%s%s, in real time." % [verb, _format(real)]
+		return "%s%s, in real time." % [verb, Duration.spoken(real)]
 	return "%s%s left, compressed %.0f:1 from a real %s." % [
-		verb, _format(compressed), charge.charge_compression, _format(real)]
+		verb, Duration.spoken(compressed), charge.charge_compression, Duration.spoken(real)]
 
 
 ## Every pack on the shelf and whether it is worth fitting, shortest form that still distinguishes
@@ -279,9 +279,3 @@ func readout_text() -> Dictionary:
 		"shelf": _shelf.text,
 		"note": _note.text,
 	}
-
-
-static func _format(seconds: float) -> String:
-	if seconds < 60.0:
-		return "%.0f s" % seconds
-	return "%d:%02d" % [int(seconds) / 60, int(seconds) % 60]

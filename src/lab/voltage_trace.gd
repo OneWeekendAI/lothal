@@ -120,20 +120,23 @@ func sample(t: float, resting_v: float, live_v: float, mode: int) -> void:
 ## first and last samples are always kept: the last is the live end of the trace, and losing it
 ## makes the line stop short of the reading the instruments are showing.
 func _decimate() -> void:
-	var times := PackedFloat32Array()
-	var resting := PackedFloat32Array()
-	var live := PackedFloat32Array()
-	var modes := PackedInt32Array()
+	# Named `kept_*` rather than `times`, `resting` and so on: a local called `times` shadows this
+	# class's own times() accessor, which reads fine until someone edits it and reaches for the
+	# accessor by name three lines down.
+	var kept_times := PackedFloat32Array()
+	var kept_resting := PackedFloat32Array()
+	var kept_live := PackedFloat32Array()
+	var kept_modes := PackedInt32Array()
 	for i in _times.size():
 		if i % 2 == 0 or i == _times.size() - 1:
-			times.append(_times[i])
-			resting.append(_resting[i])
-			live.append(_live[i])
-			modes.append(_modes[i])
-	_times = times
-	_resting = resting
-	_live = live
-	_modes = modes
+			kept_times.append(_times[i])
+			kept_resting.append(_resting[i])
+			kept_live.append(_live[i])
+			kept_modes.append(_modes[i])
+	_times = kept_times
+	_resting = kept_resting
+	_live = kept_live
+	_modes = kept_modes
 	_interval_s *= 2.0
 
 
@@ -213,7 +216,7 @@ func _draw() -> void:
 	while t <= span:
 		var x := _point(t, v_min).x
 		draw_line(Vector2(x, plot.position.y), Vector2(x, plot.end.y), GRID_COLOUR, 1.0)
-		draw_string(font, Vector2(x - 14.0, plot.end.y + 18.0), _format_time(t),
+		draw_string(font, Vector2(x - 14.0, plot.end.y + 18.0), Duration.short(t),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, AXIS_TEXT)
 		t += time_step
 
@@ -273,9 +276,3 @@ static func _nice_step(raw: float) -> float:
 	if normalised <= 5.0:
 		return 5.0 * magnitude
 	return 10.0 * magnitude
-
-
-static func _format_time(seconds: float) -> String:
-	if seconds < 60.0:
-		return "%.0fs" % seconds
-	return "%d:%02d" % [int(seconds) / 60, int(seconds) % 60]

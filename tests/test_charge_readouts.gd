@@ -111,8 +111,8 @@ static func _test_the_charger_shows_both_clocks(catalog: PartsCatalog) -> Array:
 
 	results.append(TestResult.new(
 		"the charger shows the compressed wait AND the real one it stands for",
-		text["clock"].contains(PackChargePanel._format(compressed))
-			and text["clock"].contains(PackChargePanel._format(real))
+		text["clock"].contains(Duration.spoken(compressed))
+			and text["clock"].contains(Duration.spoken(real))
 			and text["clock"].contains("10:1"),
 		"clock reads \"%s\" (compressed %.0f s, real %.0f s)" % [
 			text["clock"], compressed, real]
@@ -159,7 +159,7 @@ static func _test_the_countdown_counts_down(catalog: PartsCatalog) -> Array:
 	results.append(TestResult.new(
 		"a minute on the charger puts charge in and takes it off the countdown",
 		after < before - 1.0 and after_text != before_text,
-		"%s -> %s" % [PackChargePanel._format(before), PackChargePanel._format(after)]
+		"%s -> %s" % [Duration.spoken(before), Duration.spoken(after)]
 	))
 
 	# ...and it stops at full rather than running against a pack that cannot take any more.

@@ -169,6 +169,9 @@ func _build_cylindrical_cells() -> void:
 
 	for i in cell_count:
 		var column := i % columns
+		# Integer division on purpose: the row is which full row of `columns` cells this index has
+		# got past, so the truncation IS the answer rather than a lost fraction.
+		@warning_ignore("integer_division")
 		var row := i / columns
 
 		var cell := MeshInstance3D.new()

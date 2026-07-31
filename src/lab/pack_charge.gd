@@ -242,24 +242,27 @@ func save(path: String = SAVE_PATH) -> bool:
 ## silent zero here means a pack reported as full when the file said something unreadable — which
 ## is the one direction this particular error must not fail in.
 static func load_from(path: String = SAVE_PATH) -> PackCharge:
-	var charge := PackCharge.new()
+	# `store` rather than `charge`, which shadowed this class's own charge() method. Nothing here
+	# called it, which is exactly why the shadow was worth removing rather than living with: the
+	# next edit to this loader is the one that reaches for charge() and silently gets a local.
+	var store := PackCharge.new()
 
 	var document := JsonStore.read_document(path)
 	if document.is_empty():
-		return charge
+		return store
 
-	charge._unknown_top = JsonStore.unknown_fields(document, TOP_KEYS)
+	store._unknown_top = JsonStore.unknown_fields(document, TOP_KEYS)
 
 	var compression: Variant = document.get("charge_compression", DEFAULT_COMPRESSION)
 	if compression is float or compression is int:
-		charge.set_compression(float(compression))
+		store.set_compression(float(compression))
 	else:
 		push_warning("%s: charge_compression is not a number; using the default" % path)
 
 	var packs: Variant = document.get("packs", {})
 	if not (packs is Dictionary):
 		push_warning("%s has no readable packs block; using defaults" % path)
-		return charge
+		return store
 
 	for part_id in (packs as Dictionary):
 		var block: Variant = (packs as Dictionary)[part_id]
@@ -267,14 +270,14 @@ static func load_from(path: String = SAVE_PATH) -> PackCharge:
 			push_warning("%s: %s is not a pack block; treating it as full" % [path, part_id])
 			continue
 
-		charge._unknown_pack_fields[part_id] = JsonStore.unknown_fields(block, PACK_KEYS)
+		store._unknown_pack_fields[part_id] = JsonStore.unknown_fields(block, PACK_KEYS)
 
 		var used: Variant = (block as Dictionary).get(USED_MAH, null)
 		if used is float or used is int:
-			charge._used_mah[part_id] = maxf(float(used), 0.0)
+			store._used_mah[part_id] = maxf(float(used), 0.0)
 		elif used != null:
 			push_warning("%s: %s used_mah is not a number; treating it as full" % [path, part_id])
 
 	# A store that has only just been read has nothing to write back.
-	charge._dirty = false
-	return charge
+	store._dirty = false
+	return store
