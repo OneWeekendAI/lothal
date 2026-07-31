@@ -43,6 +43,11 @@ var bench: BenchScreen = null
 ## a pack that kept emptying while you were next door choosing propellers would be the worst kind
 ## of bug, since the only evidence would be a number that was wrong later.
 var battery_bench: BatteryBenchScreen = null
+## The ESC bench — a board swept against the motors chosen — or null when it is not the room you
+## are in. Same argument as the other two: it holds a running Powertrain drawing real current out
+## of a real pack, and a sweep left running behind Lab would be flattening a battery to answer a
+## question nobody was still asking.
+var esc_bench: EscBenchScreen = null
 ## How much charge is in each pack right now. Loaded once on startup and held here rather than in
 ## any one room, because it is the one piece of state every room touches: two benches and the
 ## field all drain it, and Lab is where it gets charged back up. It is saved whenever a room that
@@ -53,6 +58,7 @@ var _host: Control
 var _lab_button: Button
 var _bench_button: Button
 var _pack_bench_button: Button
+var _esc_bench_button: Button
 var _sim_button: Button
 var _showing_lab := true
 
@@ -89,6 +95,7 @@ func _init() -> void:
 	_lab_button = _add_tab(bar, "Lab", show_lab)
 	_bench_button = _add_tab(bar, "Thrust", show_bench)
 	_pack_bench_button = _add_tab(bar, "Pack", show_battery_bench)
+	_esc_bench_button = _add_tab(bar, "ESC", show_esc_bench)
 	_sim_button = _add_tab(bar, "Sim", show_sim)
 	_refresh_tabs()
 
@@ -164,6 +171,28 @@ func show_battery_bench() -> void:
 	_refresh_tabs()
 
 
+## Onto the ESC bench, with the board currently chosen on Lab's rail and the motors that will be
+## pulling through it. Built fresh every time, for the same reason the other two benches are: a
+## bench you walked away from mid-sweep and came back to still at full throttle would be a machine
+## left unattended.
+func show_esc_bench() -> void:
+	_close_rooms()
+	var selection := lab.selection()
+	esc_bench = EscBenchScreen.new(
+		lab.catalog,
+		selection["motor"],
+		selection["propeller"],
+		selection["battery"],
+		selection["esc"],
+		pack_charge,
+		selection["frame"]
+	)
+	_host.add_child(esc_bench)
+	_showing_lab = false
+	lab.visible = false
+	_refresh_tabs()
+
+
 ## Tears down whichever room is currently running. Freed immediately rather than
 ## queue_free()'d, so "the loop has stopped" is true the moment this returns instead of at the
 ## end of the frame — which is also what makes it testable synchronously.
@@ -187,6 +216,11 @@ func _close_rooms() -> void:
 		_host.remove_child(battery_bench)
 		battery_bench.free()
 		battery_bench = null
+	if esc_bench != null:
+		esc_bench.persist_pack_charge()
+		_host.remove_child(esc_bench)
+		esc_bench.free()
+		esc_bench = null
 	# Only when a room actually changed something. Opening a bench and walking straight back out
 	# must not rewrite the file — see PackCharge._dirty.
 	if pack_charge.has_unsaved_changes():
@@ -218,4 +252,5 @@ func _refresh_tabs() -> void:
 	_lab_button.button_pressed = _showing_lab
 	_bench_button.button_pressed = bench != null
 	_pack_bench_button.button_pressed = battery_bench != null
+	_esc_bench_button.button_pressed = esc_bench != null
 	_sim_button.button_pressed = sim != null

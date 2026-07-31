@@ -152,30 +152,30 @@ static func _test_the_trace(catalog: PartsCatalog) -> Array:
 
 	results.append(TestResult.new(
 		"applying a load starts a trace against time",
-		bench.trace.sample_count() > 10 and bench.trace.span_s() > SETTLE_S * 0.5,
-		"%d samples over %.1f s" % [bench.trace.sample_count(), bench.trace.span_s()]
+		bench.trace.sample_count() > 10 and bench.trace.span() > SETTLE_S * 0.5,
+		"%d samples over %.1f s" % [bench.trace.sample_count(), bench.trace.span()]
 	))
 
 	# TWO series, and the gap between them. A single line would satisfy every "voltage falls"
 	# check and lose the distinction the bench exists to draw.
-	var resting := bench.trace.resting_series()
-	var live := bench.trace.live_series()
+	var resting := bench.trace.upper_series()
+	var live := bench.trace.lower_series()
 	var gap_everywhere := resting.size() == live.size() and resting.size() > 0
 	for i in resting.size():
 		if resting[i] - live[i] < 0.05:
 			gap_everywhere = false
 	results.append(TestResult.new(
 		"the trace plots resting voltage AND voltage under load, with the sag visible as the gap",
-		gap_everywhere and bench.trace.deepest_sag_v() > 0.5,
+		gap_everywhere and bench.trace.widest_gap() > 0.5,
 		"deepest gap %.2f V across %d sample pairs" % [
-			bench.trace.deepest_sag_v(), resting.size()]
+			bench.trace.widest_gap(), resting.size()]
 	))
 
 	# The gap has to be the load's doing, so backing off has to close it. A constant offset
 	# between two series would pass the check above and mean nothing.
 	bench.set_load_mode(BatteryBenchScreen.Load.HOVER)
 	_run_for(bench, SETTLE_S)
-	var punch_sag := bench.trace.deepest_sag_v()
+	var punch_sag := bench.trace.widest_gap()
 	var hover_sag: float = bench.readings()["sag_v"]
 	var hover_a: float = bench.readings()["current_a"]
 	var punch_a := punch_sag / maxf(float(bench.current_build().battery["specs"]["internal_r_ohm"]), 1e-9)
@@ -205,11 +205,11 @@ static func _test_the_trace(catalog: PartsCatalog) -> Array:
 	_run_for(bench, 400.0, 0.25)
 	results.append(TestResult.new(
 		"a long run stays bounded in memory and still shows the whole discharge from t=0",
-		bench.trace.sample_count() <= VoltageTrace.MAX_SAMPLES
-			and bench.trace.times()[0] < 1.0,
+		bench.trace.sample_count() <= BandTrace.MAX_SAMPLES
+			and bench.trace.xs()[0] < 1.0,
 		"%d samples (cap %d), trace starts at t=%.2f s and spans %.0f s" % [
-			bench.trace.sample_count(), VoltageTrace.MAX_SAMPLES,
-			bench.trace.times()[0], bench.trace.span_s()]
+			bench.trace.sample_count(), BandTrace.MAX_SAMPLES,
+			bench.trace.xs()[0], bench.trace.span()]
 	))
 
 	# Every sample has to be INSIDE the voltage axis, checked after the pack has been taken all
@@ -218,20 +218,20 @@ static func _test_the_trace(catalog: PartsCatalog) -> Array:
 	# levelled off, which is a confident and completely wrong thing to say about a pack that is
 	# collapsing. The Li-ion is the case that exposes it, running volts below an axis a LiPo fits
 	# comfortably inside.
-	var final_live := bench.trace.live_series()
-	var final_resting := bench.trace.resting_series()
+	var final_live := bench.trace.lower_series()
+	var final_resting := bench.trace.upper_series()
 	var clipped: Array = []
 	var lowest := INF
 	for i in final_live.size():
 		lowest = minf(lowest, final_live[i])
-		if final_live[i] < bench.trace.v_min or final_resting[i] > bench.trace.v_max:
+		if final_live[i] < bench.trace.y_min or final_resting[i] > bench.trace.y_max:
 			clipped.append("sample %d: %.2f V against a floor of %.2f V" % [
-				i, final_live[i], bench.trace.v_min])
+				i, final_live[i], bench.trace.y_min])
 	results.append(TestResult.new(
 		"no part of either line is drawn clipped to the axis, which would read as a false plateau",
-		clipped.is_empty() and lowest < bench.trace.v_max - 5.0,
+		clipped.is_empty() and lowest < bench.trace.y_max - 5.0,
 		"axis %.2f..%.2f V holds all %d samples, lowest %.2f V" % [
-			bench.trace.v_min, bench.trace.v_max, final_live.size(), lowest]
+			bench.trace.y_min, bench.trace.y_max, final_live.size(), lowest]
 			if clipped.is_empty() else "; ".join(clipped)
 	))
 
@@ -384,7 +384,7 @@ static func _test_the_baseline_falls_and_the_knee_arrives(catalog: PartsCatalog)
 		bench.advance(0.1)
 		guard += 1
 
-	var resting := bench.trace.resting_series()
+	var resting := bench.trace.upper_series()
 	var first := resting[0]
 	var last := resting[resting.size() - 1]
 

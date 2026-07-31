@@ -515,6 +515,63 @@ func esc_throttle_limit() -> float:
 	return throttle_limit_for(esc_max_amps())
 
 
+## The board's continuous rating for ONE CHANNEL, which is the number printed on the product and
+## the number the hardware actually enforces. esc_max_amps() above is this times the channel count;
+## the two are a factor of four apart on every board in the catalog, and confusing them in either
+## direction is the single most expensive mistake available here.
+func esc_continuous_a() -> float:
+	return float(esc.get("specs", {}).get("continuous_a", 0.0))
+
+
+func esc_channels() -> int:
+	return int(esc.get("specs", {}).get("channels", 4))
+
+
+## The board's BURST rating per channel, carried and deliberately not used as a limit anywhere.
+## Exposed only so a readout can show it while saying it is not modelled — a builder comparing two
+## boards compares both numbers, and leaving it off the screen entirely would be its own kind of
+## dishonesty. Modelling it properly needs a thermal state (how long the burst has lasted, how hot
+## the board already was); applied as though it were continuous it is simply a larger continuous
+## rating wearing a misleading name.
+func esc_burst_a() -> float:
+	return float(esc.get("specs", {}).get("burst_a", 0.0))
+
+
+## What ONE motor pulls at the highest throttle the MOTORS themselves can reach — the demand one
+## channel of the board has to pass.
+##
+## Quoted at motor_throttle_limit() and NOT at max_throttle_fraction(), which is the whole trick.
+## max_throttle_fraction() is already clamped by the ESC, so asking what the motors draw there
+## would ask what they draw once the board has stopped them — and every board in the catalog would
+## report exactly enough headroom for itself. A bench that cannot fail is not a bench.
+##
+## The pack is left out for a different reason: a weak pack would make a weak board look adequate,
+## and the moment you fit a better battery the board is the thing that lets the smoke out. What the
+## pack does to this build is reported by name through limiting_component(), which is where a
+## builder finds out that the money is better spent there.
+##
+## Equal to the motor's rated max_amps whenever the fitted prop is heavy enough to reach that
+## rating, and less on a prop too small to load the motor that far — which is why this bench, like
+## the thrust stand, is testing a PAIRING and not a board against a datasheet.
+func motor_demand_per_channel_a() -> float:
+	var ceiling := motor_throttle_limit()
+	return effective_max_amps * ceiling * ceiling
+
+
+## Continuous amps available on one channel, less what one motor will ask of it. Negative means the
+## board is undersized for these motors and would be the thing that fails.
+func esc_channel_headroom_a() -> float:
+	# Both sides PER CHANNEL. Putting esc_max_amps() on the left — the board's total against one
+	# motor's draw — is the reading escs.json's schema warns about, and it reports 208 A of headroom
+	# where there are 28: every board in the catalog looks ample, which is a failure that resembles
+	# a working feature.
+	return esc_continuous_a() - motor_demand_per_channel_a()
+
+
+func esc_has_channel_headroom() -> bool:
+	return esc_channel_headroom_a() >= 0.0
+
+
 ## Total pack current at a throttle command, via the RPM that throttle actually reaches.
 func hover_current_a(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
 	return 4.0 * current_at_rpm(rpm_at_throttle(throttle, open_circuit_v))

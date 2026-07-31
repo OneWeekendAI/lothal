@@ -73,7 +73,7 @@ var powertrain: Powertrain
 ## Injected rather than loaded here, for the reason AssemblyTweaks is: the tests must not depend
 ## on, or overwrite, the packs of whoever is running them.
 var pack_charge: PackCharge = null
-var trace: VoltageTrace
+var trace: BandTrace
 var instruments: BatteryInstruments
 
 ## Which load is applied. Switchable mid-run — the trace marks where it changed.
@@ -119,7 +119,7 @@ func _init(p_catalog: PartsCatalog, p_motor_id: String = "", p_propeller_id: Str
 	_title.add_theme_color_override("font_color", InstrumentPanel.LABEL_COLOUR)
 	stage.add_child(_title)
 
-	trace = VoltageTrace.new()
+	trace = BandTrace.new()
 	trace.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	trace.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	stage.add_child(trace)
