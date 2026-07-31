@@ -24,9 +24,10 @@ static func run() -> Array:
 static func _banked_flight_accelerates_sideways() -> TestResult:
 	var core := ReferenceBuild.build_drone_core()
 	var rc := {"roll": 1.0, "pitch": 0.0, "yaw": 0.0, "throttle": 1.0}
+	var fc := FlightController.new()   # angle mode by default
 
 	for i in int(3.0 / DT):
-		var cmds := AngleModeController.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc)
+		var cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT)
 		core.step(cmds, DT)
 
 	var lateral_mps := core.rigid_body.velocity_mps.x
@@ -126,8 +127,8 @@ static func _fly_hands_off(core: DroneCore, throttle: float, seconds: float) -> 
 	if core.observables.rpm[0] <= 0.0:
 		core.prime_motors(throttle)
 	var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": throttle}
+	var fc := FlightController.new()   # angle mode by default
 	for _i in int(seconds / DT):
-		var cmds := AngleModeController.update(
-			core.rigid_body.orientation, core.gyro.rate_rad_s, rc)
+		var cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT)
 		core.step(cmds, DT)
 	return core.rigid_body.velocity_mps.y

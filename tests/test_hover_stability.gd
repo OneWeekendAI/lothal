@@ -18,6 +18,7 @@ static func run() -> Array:
 	var hover_throttle := ReferenceBuild.hover_throttle()
 	core.prime_motors(hover_throttle)   # steady state, not a spin-up transient
 	var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": hover_throttle}
+	var fc := FlightController.new()   # angle mode by default
 
 	var steps := int(DURATION_S / DT)
 	var max_angular_speed := 0.0
@@ -25,7 +26,7 @@ static func run() -> Array:
 	var diverged := false
 
 	for i in steps:
-		var motor_cmds := AngleModeController.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc)
+		var motor_cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT)
 		core.step(motor_cmds, DT)
 
 		max_angular_speed = max(max_angular_speed, core.rigid_body.angular_velocity_rad_s.length())

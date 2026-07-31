@@ -57,6 +57,7 @@ func _render_sweep(build: Build, core: DroneCore, synth: RotorSynth) -> PackedFl
 	var out := PackedFloat32Array()
 	var duration := 9.0
 	var elapsed := 0.0
+	var fc := FlightController.new()   # angle mode by default
 
 	while elapsed < duration:
 		var throttle := _sweep_throttle(elapsed / duration, hover, full)
@@ -66,9 +67,8 @@ func _render_sweep(build: Build, core: DroneCore, synth: RotorSynth) -> PackedFl
 		var block_dt := float(BLOCK) / SAMPLE_RATE
 		var substep := block_dt / float(PHYSICS_SUBSTEPS)
 		for _i in PHYSICS_SUBSTEPS:
-			var cmds := AngleModeController.update(core.rigid_body.orientation,
-				core.gyro.rate_rad_s,
-				{"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": throttle})
+			var cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s,
+				{"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": throttle}, substep)
 			core.step(cmds, substep)
 
 		# The airframe is pinned in place for this take: the point is to hear the throttle,
@@ -95,13 +95,13 @@ func _render_flypast(build: Build, core: DroneCore, synth: RotorSynth) -> Packed
 	var out := PackedFloat32Array()
 	var elapsed := 0.0
 	var block_dt := float(BLOCK) / SAMPLE_RATE
+	var fc := FlightController.new()   # angle mode by default
 
 	while elapsed < 6.0:
 		var substep := block_dt / float(PHYSICS_SUBSTEPS)
 		for _i in PHYSICS_SUBSTEPS:
-			var cmds := AngleModeController.update(core.rigid_body.orientation,
-				core.gyro.rate_rad_s,
-				{"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": hover})
+			var cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s,
+				{"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": hover}, substep)
 			core.step(cmds, substep)
 		# Held at altitude — there is no altitude hold in the sim, and a drone that sinks
 		# into the ground mid-take ends the demonstration early.

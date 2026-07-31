@@ -18,19 +18,20 @@ static func run() -> Array:
 	var core := ReferenceBuild.build_drone_core()
 	var controller := RateModeController.new()
 	var rate_rad_s := deg_to_rad(ROLL_RATE_DEG_S)
-	var hover_rc := {"roll": rate_rad_s / RateModeController.MAX_RATE_RAD_S, "pitch": 0.0, "yaw": 0.0, "throttle": ReferenceBuild.hover_throttle()}
+	var throttle := ReferenceBuild.hover_throttle()
+	var held := Vector3(rate_rad_s / RateModeController.MAX_RATE_RAD_S, 0.0, 0.0)
 
 	# Hold the roll rate for exactly one second -> one full 360deg rotation.
 	for i in int(1.0 / DT):
-		var motor_cmds := controller.update(core.gyro.rate_rad_s, hover_rc, DT)
+		var motor_cmds := controller.update(held, core.gyro.rate_rad_s, throttle, DT)
 		core.step(motor_cmds, DT)
 
 	# Release: roll stick back to centre.
-	var release_rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": ReferenceBuild.hover_throttle()}
+	var released := Vector3.ZERO
 	var min_rate_after_release := 0.0
 	var final_rate := 0.0
 	for i in int(POST_RELEASE_DURATION_S / DT):
-		var motor_cmds := controller.update(core.gyro.rate_rad_s, release_rc, DT)
+		var motor_cmds := controller.update(released, core.gyro.rate_rad_s, throttle, DT)
 		core.step(motor_cmds, DT)
 		var roll_rate := -core.rigid_body.angular_velocity_rad_s.z
 		min_rate_after_release = min(min_rate_after_release, roll_rate)

@@ -17,12 +17,13 @@ static func run() -> Array:
 	var core := ReferenceBuild.build_drone_core()
 	var controller := RateModeController.new()
 	var target_rad_s := deg_to_rad(STEP_DEG_S)
-	var rc := {"roll": target_rad_s / RateModeController.MAX_RATE_RAD_S, "pitch": 0.0, "yaw": 0.0, "throttle": ReferenceBuild.hover_throttle()}
+	var throttle := ReferenceBuild.hover_throttle()
+	var setpoint := Vector3(target_rad_s / RateModeController.MAX_RATE_RAD_S, 0.0, 0.0)
 
 	var trace: Array = []
 	var steps := int(DURATION_S / DT)
 	for i in steps:
-		var motor_cmds := controller.update(core.gyro.rate_rad_s, rc, DT)
+		var motor_cmds := controller.update(setpoint, core.gyro.rate_rad_s, throttle, DT)
 		core.step(motor_cmds, DT)
 		trace.append(-core.rigid_body.angular_velocity_rad_s.z)   # roll rate, contract sign
 

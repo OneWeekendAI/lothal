@@ -74,9 +74,10 @@ var lap_timer := LapTimer.new()
 var course_renderer: CourseRenderer
 var drone_audio: DroneAudio
 var _l_was_pressed := false
-var rate_controller := RateModeController.new()
+## One control path. The mode switch changes what produces the rate setpoints and nothing
+## else — see src/fc/flight_controller.gd.
+var fc := FlightController.new()
 var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": 0.0}
-var use_rate_mode := false
 var _mode_button_was_pressed := false
 var _tab_was_pressed := false
 ## Previous frame's position, so gate passage is tested against the segment actually
@@ -193,7 +194,11 @@ func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 	# which is heard as a swoop across a teleport that never happened.
 	if drone_audio != null:
 		drone_audio.reset()
-	rate_controller.reset()
+	fc.reset()
+	# A respawn is a fresh sensor too: without this the gyro carries its filter state and its
+	# noise stream across a teleport, which is the same class of artefact as the audio swoop
+	# the line above prevents.
+	core.gyro.reset()
 	rc.throttle = _hover_throttle
 	_previous_position = position
 
@@ -232,11 +237,7 @@ func _physics_process(delta: float) -> void:
 
 	var substep_dt := delta / SUBSTEPS
 	for i in SUBSTEPS:
-		var motor_cmds: Dictionary
-		if use_rate_mode:
-			motor_cmds = rate_controller.update(core.gyro.rate_rad_s, rc, substep_dt)
-		else:
-			motor_cmds = AngleModeController.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc)
+		var motor_cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, substep_dt)
 		core.step(motor_cmds, substep_dt)
 
 	# Score the segment actually flown this frame, BEFORE any crash reset — otherwise a
@@ -262,7 +263,7 @@ func _physics_process(delta: float) -> void:
 	# no physics.
 	drone_audio.update(core.observables, camera.global_position)
 
-	hud.render(core, build, course, lap_timer, use_rate_mode)
+	hud.render(core, build, course, lap_timer, fc.is_rate_mode())
 	hud.tick_banner(delta)
 
 ## Swaps between hearing the drone from where the pilot stands and hearing it from the
@@ -356,8 +357,7 @@ func _read_keyboard() -> void:
 
 func _apply_mode_toggle(pressed: bool) -> void:
 	if pressed and not _mode_button_was_pressed:
-		use_rate_mode = not use_rate_mode
-		rate_controller.reset()   # clear integral/derivative history from the other mode
+		fc.toggle_mode()   # also clears integral/derivative history from the other mode
 	_mode_button_was_pressed = pressed
 
 func _apply_rc(roll_axis: float, pitch_axis: float, yaw_axis: float, throttle_axis: float) -> void:
