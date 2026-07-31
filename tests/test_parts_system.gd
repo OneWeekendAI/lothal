@@ -272,12 +272,21 @@ static func _four_s_to_six_s(catalog: PartsCatalog) -> Array:
 	))
 
 	# The half that matters: fly both at an IDENTICAL throttle command and compare. If
-	# voltage never reaches the RPM calculation, these two climb rates come out the same.
+	# voltage never reaches the RPM calculation, these two climb rates come out the same and the
+	# ratio below is 1.00 — that is the failure this defends against, and the margin to it is
+	# what matters rather than the exact bound.
+	#
+	# The bound was 1.25 while a full pack rested at nominal voltage, where the measured ratio was
+	# 1.292. Moving the datum to nominal (physics.md §5) means a full pack now rests above it, both
+	# builds climb harder, and the ratio measures 1.246 — because these are drag-terminal climb
+	# rates after 2 s, and drag goes as v^2, so a faster pair is a compressed pair. The two builds
+	# did not become more alike; the yardstick did. 1.2 keeps the same distance from the 1.00 that
+	# would mean voltage had stopped reaching the RPM ceiling.
 	var climb_4s := _climb_rate_at_throttle(four_s, 0.5)
 	var climb_6s := _climb_rate_at_throttle(six_s, 0.5)
 	results.append(TestResult.new(
 		"4S -> 6S is different to FLY at the same stick position",
-		climb_6s > climb_4s * 1.25,
+		climb_6s > climb_4s * 1.2,
 		"at 50%% throttle: 4S climbs %.2f m/s, 6S climbs %.2f m/s" % [climb_4s, climb_6s]
 	))
 	return results

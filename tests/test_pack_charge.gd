@@ -307,8 +307,13 @@ static func _test_drain_runs_at_one_to_one(catalog: PartsCatalog) -> Array:
 	var build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
 		ReferenceBuild.PROPELLER_ID, PACK_A)
 
-	var hover := build.hover_throttle()
-	var hover_current_a := build.hover_current_a(hover)
+	# Solved at the voltage a FULL pack rests at, because that is the pack the run below starts
+	# with. Since nominal voltage became an operating point rather than full charge
+	# (physics.md §5), Build's default figures are quoted a couple of volts below where a fresh
+	# battery actually sits, and the two routes have to be asked the same question to be evidence.
+	var full_rest_v := build.battery_model().resting_voltage_v()
+	var hover := build.hover_throttle(full_rest_v)
+	var hover_current_a := build.hover_current_a(hover, full_rest_v)
 
 	# --- The tight one, at full charge, where nothing else is moving ---
 	#

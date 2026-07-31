@@ -61,9 +61,14 @@ static func run() -> Array:
 		"motors off reads %.3f g" % falling.observables.g_force
 	))
 
+	# The FLYING hover throttle, solved against the pack this core actually holds, rather than the
+	# stats panel's nominal-datum figure. A fresh pack rests above nominal (physics.md §5), so
+	# commanding the quoted 29% here would read about 1.29 g — which is a correct reading of a
+	# climbing aircraft, and not the hover this test is about.
+	var flying_hover := ReferenceBuild.hover_throttle()
 	var hovering := build.build_drone_core()
-	hovering.prime_motors(build.hover_throttle())
-	hovering.step(_even_throttle(build.hover_throttle()), 0.001)
+	hovering.prime_motors(flying_hover)
+	hovering.step(_even_throttle(flying_hover), 0.001)
 	results.append(TestResult.new(
 		"specific force at hover reads ~1 g, the weight the airframe is carrying",
 		absf(hovering.observables.g_force - 1.0) < 0.15,

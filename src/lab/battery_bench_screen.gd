@@ -191,18 +191,29 @@ func _rebuild() -> void:
 
 
 ## The voltage axis for this pack: from a little below where it rests when empty, to a little
-## above nominal. Derived from the pack's own curve rather than from the samples, so two packs
-## drawn on the same axis stay comparable and a Li-ion's deeper collapse does not silently
-## rescale itself back into looking like a LiPo's.
+## above where it rests when FULL. Derived from the pack's own curve rather than from the samples,
+## so two packs drawn on the same axis stay comparable and a Li-ion's deeper collapse does not
+## silently rescale itself back into looking like a LiPo's.
+##
+## The top was nominal voltage plus headroom while nominal WAS the full-charge resting voltage.
+## Since the datum moved (physics.md §5) a full 4S rests at 16.8 V rather than 14.8, which is
+## above that ceiling — so the resting line started the run drawn off the top of its own chart.
+## Both ends now come from the same place: the two ends of this pack's discharge.
 func _configure_axis() -> void:
 	var pack := powertrain.battery
-	var empty := BatteryModel.new(pack.nominal_v, pack.internal_r_ohm, pack.capacity_mah,
-		pack.cells, pack.chemistry)
+	var empty := _pack_like(pack)
 	empty.used_mah = empty.capacity_mah
 	trace.configure(
 		empty.resting_voltage_v() - AXIS_SAG_ROOM_V,
-		pack.nominal_v + AXIS_HEADROOM_V,
+		_pack_like(pack).resting_voltage_v() + AXIS_HEADROOM_V,
 		empty.resting_voltage_v())
+
+
+## A full pack with this one's electrical character, for asking where its discharge starts and
+## ends without disturbing the pack actually on the bench.
+func _pack_like(pack: BatteryModel) -> BatteryModel:
+	return BatteryModel.new(pack.nominal_v, pack.internal_r_ohm, pack.capacity_mah,
+		pack.cells, pack.chemistry)
 
 
 ## The throttle each load applies. Both come from Build, which is what makes them properties of
@@ -213,7 +224,12 @@ func _apply_load() -> void:
 		Load.PUNCH:
 			_throttle = _build.max_throttle_fraction()
 		_:
-			_throttle = _build.hover_throttle()
+			# The hover load is the throttle that holds this build up ON THE PACK ON THE BENCH,
+			# not the stats panel's nominal-datum figure. A pack half-way through its discharge
+			# needs a different command from a fresh one to carry the same weight, and a bench
+			# whose load ignored that would be draining the pack at the wrong current — which is
+			# precisely the number this bench exists to show.
+			_throttle = _build.hover_throttle_for(powertrain.battery)
 
 
 func set_load_mode(mode: int) -> void:

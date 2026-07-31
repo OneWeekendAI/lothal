@@ -32,8 +32,8 @@ const YAW_TO_ROLL_TAU := 3.0
 ## to 9.0 moves the measured settling time by 2 ms. Grading yaw against a time-constant
 ## budget would have been grading the airframe and calling it a tune.
 static func _slew_floor_ms(axis: int) -> float:
-	var core := ReferenceBuild.build_drone_core()
-	var throttle := ReferenceBuild.hover_throttle()
+	var core := _core_at_reference_condition()
+	var throttle := _reference_throttle()
 	core.prime_motors(throttle)
 	var cmds := MotorMixer.mix(throttle,
 		1.0 if axis == 0 else 0.0,
@@ -49,10 +49,10 @@ static func _slew_floor_ms(axis: int) -> float:
 ## Runs one axis to a step and returns its overshoot and settling time.
 ## axis: 0 = roll, 1 = pitch, 2 = yaw, matching the setpoint vector's ordering.
 static func _step_response(axis: int) -> Dictionary:
-	var core := ReferenceBuild.build_drone_core()
+	var core := _core_at_reference_condition()
 	var controller := RateModeController.new()
 	var target_rad_s := deg_to_rad(STEP_DEG_S)
-	var throttle := ReferenceBuild.hover_throttle()
+	var throttle := _reference_throttle()
 
 	var setpoint := Vector3.ZERO
 	setpoint[axis] = target_rad_s / RateModeController.MAX_RATE_RAD_S
@@ -141,3 +141,26 @@ static func run() -> Array:
 	))
 
 	return results
+
+
+## THE REFERENCE CONDITION: the aircraft with its pack AT THE NOMINAL VOLTAGE DATUM, which is
+## where rate_mode_controller.gd's gain arithmetic is derived and therefore where the budget above
+## is meaningful.
+##
+## Flown here rather than on a full pack deliberately. Since the datum moved (physics.md §5) a full
+## 4S rests at 16.8 V rather than 14.8, and the whole rate loop is a slightly different plant at
+## that voltage: measured on a fresh pack, yaw's loop share comes out about 3.03 times roll's
+## against the 3.0 the documented time constants give. That is not the loop getting worse — the
+## gains are fixed and the airframe is unchanged — it is a step response measured at an operating
+## point its budget was never derived at. Every other suite flies a real pack in a real state;
+## this one grades a controller, so it holds the plant still.
+static func _core_at_reference_condition() -> DroneCore:
+	var core := ReferenceBuild.build_drone_core()
+	core.powertrain.battery.set_to_nominal_datum()
+	return core
+
+
+## The hover throttle at that same condition — Build's quoted nominal-datum figure, which is what
+## the aircraft actually needs when its pack is resting at nominal.
+static func _reference_throttle() -> float:
+	return ReferenceBuild.build().hover_throttle()

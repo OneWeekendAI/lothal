@@ -23,7 +23,13 @@ static func run() -> Array:
 	for _i in SETTLE_STEPS:
 		pt.step(_even(TEST_THROTTLE), BENCH_DT)
 
-	var expected_rpm := build.rpm_at_throttle(TEST_THROTTLE)
+	# Predicted at the voltage the bench's pack is ACTUALLY resting at, not at the nominal datum
+	# Build quotes its stats panel figures at. Those are different questions since nominal became
+	# an operating point rather than full charge (physics.md §5): this pack is nearly full, so it
+	# rests above nominal, and comparing a run at 16.8 V against arithmetic at 14.8 V would be
+	# asserting that the datum change did not happen.
+	var bench_rest_v := pt.battery.resting_voltage_v()
+	var expected_rpm := build.rpm_at_throttle(TEST_THROTTLE, bench_rest_v)
 	var actual_rpm: float = pt.motor_rpm["M1"]
 	results.append(TestResult.new(
 		"a bench with no rigid body settles at the analytically predicted RPM",
@@ -32,7 +38,7 @@ static func run() -> Array:
 	))
 
 	# --- Steady-state thrust, dynamic vs analytic ---
-	var expected_thrust := build.thrust_at_throttle_n(TEST_THROTTLE)
+	var expected_thrust := build.thrust_at_throttle_n(TEST_THROTTLE, bench_rest_v)
 	var actual_thrust: float = pt.observables.total_thrust_n
 	results.append(TestResult.new(
 		"published bench thrust matches the analytic thrust at the same throttle",
@@ -42,10 +48,11 @@ static func run() -> Array:
 
 	# --- The pack sags under load, on the bench, exactly as it does in flight ---
 	results.append(TestResult.new(
-		"the pack sags under bench load rather than sitting at nominal",
-		pt.last_voltage_v < build.battery_model().nominal_v - 0.05 and pt.last_voltage_v > 0.0,
-		"%.2f V live under %.1f A, nominal %.2f V" % [
-			pt.last_voltage_v, pt.last_current_total_a, build.battery_model().nominal_v]
+		"the pack sags under bench load rather than sitting at its resting voltage",
+		pt.last_voltage_v < bench_rest_v - 0.05 and pt.last_voltage_v > 0.0,
+		"%.2f V live under %.1f A, resting %.2f V (nominal %.2f V)" % [
+			pt.last_voltage_v, pt.last_current_total_a, bench_rest_v,
+			build.battery_model().nominal_v]
 	))
 
 	# --- Capacity is consumed by bench running, so a bench session costs charge ---
@@ -105,7 +112,7 @@ static func run() -> Array:
 	# held the pack at nominal converges perfectly happily; it just converges high, because
 	# nothing ever takes voltage away from the RPM ceiling. Naming the size of that gap
 	# means the check cannot be satisfied by a model that merely runs.
-	var no_sag_rpm := TEST_THROTTLE * build.motor_model().max_rpm(build.battery_model().nominal_v)
+	var no_sag_rpm := TEST_THROTTLE * build.motor_model().max_rpm(bench_rest_v)
 	results.append(TestResult.new(
 		"the bench lands below the no-sag RPM ceiling, by the amount the pack's resistance costs",
 		actual_rpm < no_sag_rpm - 100.0,

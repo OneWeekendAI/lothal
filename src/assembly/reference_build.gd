@@ -44,7 +44,16 @@ static func propeller_k_q() -> float:
 static func build_drone_core() -> DroneCore:
 	return build().build_drone_core()
 
-## Steady-state hover throttle command (0..1) — the value each motor should sit at,
-## hands-off, once RPM has settled. Solved against the sagged pack voltage; see Build.
+## Steady-state hover throttle command (0..1) — the value each motor should sit at, hands-off,
+## once RPM has settled, ON A FRESH PACK. Solved against the sagged voltage of a full battery,
+## which is what scenes/main.gd rests the throttle stick at when you spawn with one.
+##
+## NOT the 29% oracle, and the difference is the point of the nominal-voltage datum
+## (physics.md §5). The oracle is Build.hover_throttle(), quoted at nominal voltage the way a
+## spec sheet is; a full 4S rests at 16.8 V rather than 14.8, so it needs about three points less
+## throttle than the sheet says. Every flight test in tests/ takes its throttle from here, and
+## they are all asking the flying question — what does the stick sit at — rather than the
+## spec-sheet one.
 static func hover_throttle() -> float:
-	return build().hover_throttle()
+	var b := build()
+	return b.hover_throttle_for(b.battery_model())

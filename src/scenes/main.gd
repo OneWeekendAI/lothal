@@ -117,12 +117,17 @@ func _ready() -> void:
 ## the panel to disagree with what is being flown.
 func _on_build_changed(new_build: Build) -> void:
 	build = new_build
-	_hover_throttle = build.hover_throttle()
 	core = build.build_drone_core()
 	# The pack comes out of the bag as it actually is. Seeded here rather than inside Build,
-	# which must stay pure: the reference build's 11.7:1 and 29% are full-pack figures and
-	# cannot become a function of how much flying anyone has done.
+	# which must stay pure: the reference build's 11.7:1 and 29% are quoted at the nominal
+	# voltage datum and cannot become a function of how much flying anyone has done.
 	pack_charge.apply_to(build.battery["part_id"], core.powertrain.battery)
+	# Solved AFTER the pack is seeded, and against that pack rather than against nominal, so
+	# centring the stick hovers whatever came out of the bag. A fresh pack rests above nominal
+	# and needs less than the quoted 29%; a half-used one needs a little more. Left alone from
+	# here: the pack drains as you fly and the aircraft drifts slowly down, which is the
+	# consequence, not a bug.
+	_hover_throttle = build.hover_throttle_for(core.powertrain.battery)
 	# One call, and the airframe on screen is the airframe being flown — frame, motors and
 	# props, all from this same Build. There is no second description of the aircraft to keep
 	# in step, which is what the old _fit_drone_mesh_to_arm was: a scale factor applied to a

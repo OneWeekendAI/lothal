@@ -80,7 +80,13 @@ static func _test_the_load_is_the_real_motors(catalog: PartsCatalog) -> Array:
 
 	# Hover load is the throttle Build says hovers this build — an aircraft property, not a
 	# number this screen chose.
-	var hover_current := bench.current_build().hover_current_a(bench.current_build().hover_throttle())
+	# Both sides asked at the pack's own resting voltage: the bench applies the hover load for the
+	# battery it is holding, so the analytic prediction has to be made at the same datum. Asking
+	# Build for its nominal-voltage figure instead would compare a run on a full pack against
+	# arithmetic for a half-discharged one.
+	var bench_rest_v := bench.powertrain.battery.resting_voltage_v()
+	var hover_current := bench.current_build().hover_current_a(
+		bench.current_build().hover_throttle_for(bench.powertrain.battery), bench_rest_v)
 	results.append(TestResult.new(
 		"the hover load draws the hover current Build predicts analytically for the same build",
 		absf(published - hover_current) / hover_current < 0.05,

@@ -222,7 +222,12 @@ static func _test_settles_where_the_analytic_model_says(catalog: PartsCatalog) -
 	var build := bench.current_build()
 	_settle(bench, TEST_THROTTLE)
 
-	var expected_rpm := build.rpm_at_throttle(TEST_THROTTLE)
+	# Predicted at the voltage the bench's pack is actually resting at, not at the nominal datum
+	# Build quotes the stats panel at. Since nominal became an operating point rather than full
+	# charge (physics.md §5) those are different voltages for any pack that is not exactly at its
+	# nominal state of charge, and this bench's is nearly full.
+	var bench_rest_v := bench.powertrain.battery.resting_voltage_v()
+	var expected_rpm := build.rpm_at_throttle(TEST_THROTTLE, bench_rest_v)
 	var actual_rpm := bench.rpm()
 	results.append(TestResult.new(
 		"the bench settles at the RPM Build predicts analytically for the same throttle",
@@ -231,7 +236,7 @@ static func _test_settles_where_the_analytic_model_says(catalog: PartsCatalog) -
 	))
 
 	# thrust_at_throttle_n is the total across four motors; the bench reports ONE.
-	var expected_thrust_g := (build.thrust_at_throttle_n(TEST_THROTTLE) / 4.0) / 9.81 * 1000.0
+	var expected_thrust_g := (build.thrust_at_throttle_n(TEST_THROTTLE, bench_rest_v) / 4.0) / 9.81 * 1000.0
 	var actual_thrust_g := bench.thrust_g()
 	results.append(TestResult.new(
 		"the bench settles at the thrust Build predicts analytically for the same throttle",
@@ -309,7 +314,11 @@ static func _test_the_rotor_turns_at_published_rpm(catalog: PartsCatalog) -> Arr
 static func _test_sag_and_recovery(catalog: PartsCatalog) -> Array:
 	var results: Array = []
 	var bench := BenchScreen.new(catalog)
+	# The pack's own resting voltage, which is what sag is measured DOWN FROM. Not nominal: a
+	# fresh 4S rests at 16.8 V, well above its 14.8 V label, so a check written against nominal
+	# would call a heavily sagging pack unsagged.
 	var nominal: float = bench.current_build().battery_model().nominal_v
+	var resting: float = bench.powertrain.battery.resting_voltage_v()
 
 	_settle(bench, 0.0, 0.5)
 	var idle_v := bench.voltage_v()
@@ -322,9 +331,10 @@ static func _test_sag_and_recovery(catalog: PartsCatalog) -> Array:
 	var recovered_v := bench.voltage_v()
 
 	results.append(TestResult.new(
-		"the pack sags under bench load rather than sitting at its nominal voltage",
-		loaded_v < nominal - 0.2 and loaded_v > 0.0,
-		"%.2f V under %.1f A per motor, nominal %.2f V" % [loaded_v, loaded_a, nominal]
+		"the pack sags under bench load rather than sitting at its resting voltage",
+		loaded_v < resting - 0.2 and loaded_v > 0.0,
+		"%.2f V under %.1f A per motor, resting %.2f V (nominal %.2f V)" % [
+			loaded_v, loaded_a, resting, nominal]
 	))
 	results.append(TestResult.new(
 		"backing the throttle off lets the pack recover, so voltage tracks current draw",
@@ -337,7 +347,7 @@ static func _test_sag_and_recovery(catalog: PartsCatalog) -> Array:
 	results.append(TestResult.new(
 		"a bench run consumes real pack charge, and recovering voltage does not refill it",
 		bench.powertrain.observables.capacity_used_fraction > 0.0
-			and recovered_v < nominal + 0.001,
+			and recovered_v < resting + 0.001,
 		"%.3f%% of the pack used" % (bench.powertrain.observables.capacity_used_fraction * 100.0)
 	))
 
@@ -424,7 +434,8 @@ static func _test_sweep(catalog: PartsCatalog) -> Array:
 		"swept for %.1f s of a %.1f s ramp" % [elapsed, BenchScreen.SWEEP_SECONDS]
 	))
 
-	var full_rpm := bench.current_build().rpm_at_throttle(bench.current_build().max_throttle_fraction())
+	var full_rpm := bench.current_build().rpm_at_throttle(
+		bench.current_build().max_throttle_fraction(), bench.powertrain.battery.resting_voltage_v())
 	results.append(TestResult.new(
 		"the sweep actually reaches full throttle rather than stopping short",
 		peak_rpm > full_rpm * 0.97,

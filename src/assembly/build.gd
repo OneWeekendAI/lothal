@@ -67,6 +67,16 @@ const REFERENCE_ARM_M := 0.110
 ## is the lean a speed run actually sits at.
 const TOP_SPEED_LEAN_RAD := 0.7853982
 
+## Passed as `open_circuit_v` to mean "at the pack's NOMINAL voltage" — the datum every figure on
+## the stats panel is quoted at, and the one the 11.7:1 and 29% oracles are defined at
+## (physics.md §5). It is the default everywhere, so the analytic layer answers the spec-sheet
+## question unless a caller explicitly asks a different one.
+##
+## A sentinel rather than an overload because the alternative is two near-identical solvers, and
+## the project has already paid for one number having two expressions. Negative because no pack
+## rests at a negative voltage, so it cannot collide with a real reading.
+const AT_NOMINAL := -1.0
+
 ## Hover is the cheapest thing a quad ever does. Real flying averages well above it, and
 ## packs are landed with reserve rather than run flat.
 const FLIGHT_CURRENT_TO_HOVER_RATIO := 1.6
@@ -284,22 +294,30 @@ func thrust_to_weight() -> float:
 ## and thrust peaks and then falls. That is the Li-ion entry's whole reason to exist, and
 ## it is why hover is solved by bracketing rather than by iterating a fixed point — the
 ## fixed point diverges on exactly the packs the catalog includes to be interesting.
-func thrust_at_throttle_n(throttle: float) -> float:
-	return 4.0 * PropellerModel.thrust_n(k_t, rpm_at_throttle(throttle))
+func thrust_at_throttle_n(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
+	return 4.0 * PropellerModel.thrust_n(k_t, rpm_at_throttle(throttle, open_circuit_v))
 
 ## Steady-state RPM at a throttle command. RPM and pack sag depend on each other, but the
 ## loop converges quickly: more sag means less RPM means less current means less sag.
-func rpm_at_throttle(throttle: float) -> float:
+## Turns the AT_NOMINAL sentinel into a voltage. Anything non-negative is taken at face value: a
+## caller that has a real pack in hand passes what that pack is actually resting at.
+func resolve_open_circuit_v(open_circuit_v: float) -> float:
+	if open_circuit_v < 0.0:
+		return float(battery["specs"]["nominal_v"])
+	return open_circuit_v
+
+
+func rpm_at_throttle(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
 	var t := clampf(throttle, 0.0, max_throttle_fraction())
 	var kv: float = float(motor["specs"]["kv"])
-	var nominal_v: float = float(battery["specs"]["nominal_v"])
+	var rest_v := resolve_open_circuit_v(open_circuit_v)
 	var internal_r: float = float(battery["specs"]["internal_r_ohm"])
 
-	var voltage_v := nominal_v
+	var voltage_v := rest_v
 	var rpm := 0.0
 	for _i in 12:
 		rpm = t * kv * voltage_v
-		voltage_v = maxf(nominal_v - current_at_rpm(rpm) * 4.0 * internal_r, 0.0)
+		voltage_v = maxf(rest_v - current_at_rpm(rpm) * 4.0 * internal_r, 0.0)
 	return rpm
 
 ## Current drawn by one motor at a given RPM — see DroneCore.current_at_rpm, which this
@@ -315,29 +333,33 @@ func rated_rpm() -> float:
 
 ## Throttle at which sagged thrust peaks, and that peak. Everything above this throttle is
 ## the pack losing the argument with the motors.
-func peak_thrust() -> Dictionary:
+func peak_thrust(open_circuit_v: float = AT_NOMINAL) -> Dictionary:
 	var best_throttle := 0.0
 	var best_thrust := 0.0
 	var cap := max_throttle_fraction()
 	var samples := 400
 	for i in range(samples + 1):
 		var t := cap * float(i) / float(samples)
-		var thrust := thrust_at_throttle_n(t)
+		var thrust := thrust_at_throttle_n(t, open_circuit_v)
 		if thrust > best_thrust:
 			best_thrust = thrust
 			best_throttle = t
 	return {"throttle": best_throttle, "thrust_n": best_thrust}
 
 ## True when the build can actually generate its own weight in thrust, sag included.
-func can_hover() -> bool:
-	return peak_thrust()["thrust_n"] > weight_n()
+func can_hover(open_circuit_v: float = AT_NOMINAL) -> bool:
+	return peak_thrust(open_circuit_v)["thrust_n"] > weight_n()
 
-## Steady-state hover throttle: bisected on the rising branch of thrust_at_throttle_n,
+## Steady-state hover throttle AT THE NOMINAL VOLTAGE DATUM by default (physics.md §5) — the
+## project's 29% oracle, and the figure the stats panel quotes. Pass a resting voltage, or use
+## hover_throttle_for(), to ask what a pack in a particular state of charge actually needs.
+##
+## Bisected on the rising branch of thrust_at_throttle_n,
 ## so it is the LOWER of the two throttles that produce hover thrust — the stable one.
 ## Returns the peak-thrust throttle for a build that cannot hold itself up, which reads as
 ## "flat out and still sinking" rather than as a number that was quietly clamped.
-func hover_throttle() -> float:
-	var peak := peak_thrust()
+func hover_throttle(open_circuit_v: float = AT_NOMINAL) -> float:
+	var peak := peak_thrust(open_circuit_v)
 	var target_n := weight_n()
 	if peak["thrust_n"] <= target_n:
 		return peak["throttle"]
@@ -346,15 +368,31 @@ func hover_throttle() -> float:
 	var high: float = peak["throttle"]
 	for _i in 60:
 		var mid := (low + high) * 0.5
-		if thrust_at_throttle_n(mid) < target_n:
+		if thrust_at_throttle_n(mid, open_circuit_v) < target_n:
 			low = mid
 		else:
 			high = mid
 	return high
 
 ## Total pack current at a throttle command, via the RPM that throttle actually reaches.
-func hover_current_a(throttle: float) -> float:
-	return 4.0 * current_at_rpm(rpm_at_throttle(throttle))
+func hover_current_a(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
+	return 4.0 * current_at_rpm(rpm_at_throttle(throttle, open_circuit_v))
+
+
+## The hover throttle for a pack in the state it is ACTUALLY in, rather than at the nominal datum.
+##
+## This is what the field flies. scenes/main.gd rests the throttle stick here, so centring the
+## stick hovers whatever pack came out of the bag — a fresh one, which rests above nominal and
+## needs LESS than the quoted 29%, or a half-used one, which needs a little more. Solved once at
+## spawn and then left alone: the pack keeps draining while you fly, and the aircraft settling
+## slowly downward over four minutes is the consequence pack choice exists to teach, not a bug to
+## servo out. What was a bug was the aircraft dropping out of the sky at half pack, which was the
+## discharge datum and is fixed in BatteryModel.
+##
+## Deliberately NOT what the stats panel shows. That number is quoted at nominal voltage, it is
+## the one two builders can compare, and it does not move.
+func hover_throttle_for(pack: BatteryModel) -> float:
+	return hover_throttle(pack.resting_voltage_v())
 
 ## Zero for a build that cannot hover — there is no flight to put a time on.
 func flight_time_min() -> float:

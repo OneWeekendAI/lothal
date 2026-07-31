@@ -19,24 +19,41 @@ extends RefCounted
 ## load makes it the first thing anyone notices.
 ##
 ## ---------------------------------------------------------------------------
-## THE CONSTRAINT: THE STATE-OF-CHARGE TERM IS EXACTLY ZERO AT FULL CHARGE
+## THE DATUM: NOMINAL VOLTAGE IS AN OPERATING POINT, NOT FULL CHARGE
 ## ---------------------------------------------------------------------------
 ##
-## `nominal_v` is treated as the pack's RESTING voltage at full charge, and the curve below
-## measures its fall from there. That is a deliberate choice of datum rather than an oversight
-## about real cell voltages — a real 4S LiPo comes off the charger at 16.8 V, not 14.8 V.
+## `nominal_v` is the voltage the pack rests at somewhere down the middle of its discharge — the
+## point the whole plateau is named after — and the curve below measures displacement from THERE,
+## in both directions. A full pack rests ABOVE nominal and an empty one below it. For a 4S LiPo
+## that is 16.8 V off the charger, 14.8 V nominal, and about 13.1 V flat, which is what a real
+## one does.
 ##
-## The reason is that the reference build's 11.7:1 thrust-to-weight and 29% hover throttle are
-## FULL-PACK figures, quoted at nominal voltage the way every manufacturer's thrust table and
-## every spec sheet quotes them. They are the project's fixed points: if a state-of-charge term
-## could move them, every number Lothal reports would depend on how much flying had been done
-## since, and no two builders could compare anything. So the term is exactly zero at used_mah = 0
-## — not small, not within a tolerance, zero, asserted as an exact equality in
-## tests/test_battery_model.gd — and voltage_live() at full charge returns precisely what it
-## returned before this file grew a curve.
+## WHAT THIS REPLACED, AND WHY. Until this slice `nominal_v` was treated as the RESTING VOLTAGE
+## AT FULL CHARGE, and the state-of-charge term was defined to be exactly zero at used_mah = 0.
+## That was a considered choice rather than an oversight, and the reasoning was sound given what
+## it was protecting: the reference build's 11.7:1 thrust-to-weight and 29% hover throttle are
+## the project's fixed points, and if a state-of-charge term could move them, every number Lothal
+## reported would depend on how much flying had been done since and no two builders could compare
+## anything. Anchoring at full charge made the term vanish exactly where those numbers are quoted.
 ##
-## What that buys is the whole point: everything AFTER the first minute of flight is honest, and
-## nothing before it moved.
+## The cost was that every pack was physically wrong from the first minute of flight: the curve's
+## shape was right and its anchor was half a volt per cell too high, so the entire discharge was
+## displaced DOWNWARD by that much. A 4S at half charge rested at 13.16 V instead of 15.16 V. RPM
+## ceiling is KV times live voltage and thrust goes as omega squared, so a fifth of the available
+## thrust was missing at half pack — and since scenes/main.gd rests the throttle stick at a hover
+## figure solved at nominal voltage, the aircraft simply sank once the pack was half gone. That is
+## a bug a pilot meets on every flight, and it was reported as one.
+##
+## The two goals looked like they conflicted and did not, because the oracles were never full-pack
+## figures in the first place. They are quoted AT NOMINAL VOLTAGE — the datum every manufacturer's
+## thrust table and every spec sheet uses, which the old header already said in as many words.
+## Moving the anchor from full charge to nominal therefore leaves them exactly where they were:
+## 11.7:1 and 29% are what this build does at 14.8 V, and tests/test_battery_model.gd now asserts
+## the identity at that stated datum rather than at a state of charge.
+##
+## What changes is that a freshly charged pack delivers MORE than the spec figure. That is true of
+## every real aircraft, it is the reason a fresh pack feels different on the first punch-out, and
+## it is worth learning rather than hiding.
 ##
 ## ---------------------------------------------------------------------------
 ## THE CURVE
@@ -77,6 +94,21 @@ const CURVES := {
 	],
 }
 
+## Where each chemistry's NOMINAL voltage sits on its own curve, per cell. This is the datum: the
+## state-of-charge term is displacement from here, so it is zero at whatever state of charge the
+## cell happens to rest at its nominal voltage — around 30% for a LiPo, around 60% for a Li-ion,
+## which is a real difference between the two rather than a tuning knob.
+##
+## These are the published nominal figures for the chemistries (3.7 V for LiPo, 3.6 V for a
+## Li-ion 18650/21700), not values read off the curve, and the two must agree: a knot table that
+## did not pass through its own nominal voltage would make `nominal_v` mean something slightly
+## different from what batteries.json says it means. tests/test_battery_model.gd asserts the
+## agreement, which is what stops these four numbers from drifting into being two opinions.
+const NOMINAL_CELL_V := {
+	"LiPo": 3.70,
+	"Li-ion": 3.60,
+}
+
 ## What an unrecognised chemistry gets. batteries.json is contributor-editable, and a typo there
 ## must not silently delete the model and leave a flat baseline that looks like the old behaviour.
 const DEFAULT_CHEMISTRY := "LiPo"
@@ -102,19 +134,28 @@ func _init(p_nominal_v: float, p_internal_r_ohm: float, p_capacity_mah: float,
 	chemistry = p_chemistry if CURVES.has(p_chemistry) else DEFAULT_CHEMISTRY
 
 
-## Where the pack sits with nothing drawing from it. Falls as the pack empties, and is EXACTLY
-## nominal_v at full charge — see the constraint in the header.
+## Where the pack sits with nothing drawing from it. Falls as the pack empties, passing THROUGH
+## nominal_v partway down rather than starting there — see the datum in the header.
 func resting_voltage_v() -> float:
 	return nominal_v + soc_offset_v()
 
 
-## The state-of-charge term itself, in volts at the pack. Written as a difference from the
-## curve's own full-charge value rather than as an absolute, which is what makes the zero at full
-## charge exact instead of a coincidence of two hand-entered numbers agreeing to five places.
+## The state-of-charge term itself, in volts at the pack: how far this pack is from its nominal
+## resting voltage right now. POSITIVE above the nominal point and negative below it, which is the
+## whole content of the change of datum.
+##
+## Written as a difference from the chemistry's nominal cell voltage rather than as an absolute,
+## so that a pack whose catalog `nominal_v` is not exactly cells x NOMINAL_CELL_V — a contributor
+## rounding 21.6 V to 22 V, say — still gets a curve hung off the figure the catalog actually
+## states, rather than one that silently disagrees with the number shown in the UI.
 func soc_offset_v() -> float:
-	var curve: Array = CURVES[chemistry]
-	var full_cell_v: float = curve[curve.size() - 1][1]
-	return float(cells) * (cell_open_circuit_v(remaining_fraction(), chemistry) - full_cell_v)
+	return float(cells) * (cell_open_circuit_v(remaining_fraction(), chemistry) - nominal_cell_v(chemistry))
+
+
+## The nominal resting voltage of one cell of a chemistry. Falls back to LiPo's alongside the
+## curve, so an unrecognised chemistry gets a consistent pair rather than one of each.
+static func nominal_cell_v(p_chemistry: String) -> float:
+	return float(NOMINAL_CELL_V.get(p_chemistry, NOMINAL_CELL_V[DEFAULT_CHEMISTRY]))
 
 
 ## One cell's resting voltage at a state of charge, linearly interpolated between the knots.
@@ -137,6 +178,35 @@ static func cell_open_circuit_v(soc: float, p_chemistry: String = DEFAULT_CHEMIS
 			return lerpf(float(low[1]), float(high[1]), t)
 
 	return float(curve[curve.size() - 1][1])
+
+
+## Puts this pack AT the nominal datum: the state of charge where it rests at exactly its nominal
+## voltage, so resting_voltage_v() == nominal_v and soc_offset_v() is zero.
+##
+## This is the aircraft's reference operating point, and it is what anything comparing a dynamic
+## run against Build's analytic figures should be run at — those are quoted at nominal voltage and
+## at no other. The rate-loop step-response budget in tests/test_rate_step_response.gd is measured
+## here for the same reason: its gains' arithmetic is derived at this condition, and a pack resting
+## two volts higher is a different aircraft to tune, not a worse tune.
+func set_to_nominal_datum() -> void:
+	used_mah = capacity_mah * (1.0 - soc_at_nominal(chemistry))
+
+
+## Where a chemistry's nominal voltage sits on its own discharge, as a state of charge. Bisected on
+## the curve rather than written down: it is a consequence of the curve's shape — about 30% for a
+## LiPo, about 45% for a Li-ion — and a fourth hand-entered number would be a fourth thing to keep
+## in step with the other three.
+static func soc_at_nominal(p_chemistry: String = DEFAULT_CHEMISTRY) -> float:
+	var target := nominal_cell_v(p_chemistry)
+	var low := 0.0
+	var high := 1.0
+	for _i in 200:
+		var mid := (low + high) * 0.5
+		if cell_open_circuit_v(mid, p_chemistry) < target:
+			low = mid
+		else:
+			high = mid
+	return high
 
 
 func voltage_live(current_total_a: float) -> float:
