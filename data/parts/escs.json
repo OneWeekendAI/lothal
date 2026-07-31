@@ -1,0 +1,131 @@
+{
+  "_schema": "The electronic speed controllers, which are what actually pass current to the motors — and therefore the third thing that can run out first. Two tiers, as in frames.json, motors.json, propellers.json and batteries.json: `specs` is physics-bearing and `catalog` is browsing metadata only, admitted only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale. Colour, price and vendor links are banned by name, from either block. RATINGS ARE PER MOTOR, NOT PER BOARD, and this is the single most important thing to get right when adding an entry: a '45A 4-in-1' is four 45 A channels, so it passes 180 A in total, and reading it as 45 A for the whole aircraft would make every ESC in this file the binding constraint on every build. 'continuous_a' is the rating the model uses as a limit — the current one channel will pass indefinitely with the manufacturer's assumed airflow. 'burst_a' is what it will pass for a few seconds, and it is carried but NOT yet used as a limit: modelling it properly needs a thermal state (how long the burst has lasted, how hot the board already was), and a burst rating applied as though it were continuous would simply be a larger continuous rating wearing a misleading name. It is here because it is the number printed next to the continuous one on every product page, and a builder comparing two boards compares both. 'mounting' says how the board is held on: it BOLTS, and its pattern must match the frame's `stack_mount` or it does not fit — the same check the FC stack already gets, and the reason a 20x20 board and a 30.5x30.5 frame is a real mistake someone makes once. Mass is real and it comes OUT of Build.ELECTRONICS_MASS_G rather than being added beside it, exactly as the flight controller's did; see Build's header for what remains lumped. Entries are ordered by continuous rating, which gives the current filter an ascending order without anything sorting it.",
+  "parts": [
+    {
+      "part_id": "esc_aio_5a_whoop",
+      "name": "5A 1-2S AIO (whoop)",
+      "category": "esc",
+      "mass_g": 3.0,
+      "mounting": {
+        "attachment": "bolt",
+        "pattern": "25.5x25.5"
+      },
+      "specs": {
+        "continuous_a": 5.0,
+        "burst_a": 6.0,
+        "channels": 4
+      },
+      "catalog": {
+        "board_class": "AIO",
+        "cell_range": "1-2S",
+        "protocol": "DShot300"
+      },
+      "source": "representative 1-2S whoop all-in-one board; class-typical, not a specific product. Ratings and mass follow the BetaFPV F4 1S 5A AIO's published 5A continuous per channel and ~3 g board mass"
+    },
+    {
+      "part_id": "esc_4in1_20a_20x20",
+      "name": "20A 4-in-1 (20x20)",
+      "category": "esc",
+      "mass_g": 5.0,
+      "mounting": {
+        "attachment": "bolt",
+        "pattern": "20x20"
+      },
+      "specs": {
+        "continuous_a": 20.0,
+        "burst_a": 25.0,
+        "channels": 4
+      },
+      "catalog": {
+        "board_class": "4-in-1",
+        "cell_range": "2-4S",
+        "protocol": "DShot600"
+      },
+      "source": "representative 20x20 micro 4-in-1; class-typical, not a specific product. Ratings follow the HGLRC 20A 20x20 BLHeli_S 4-in-1's published 20A continuous / 25A burst per channel, and its ~5 g board mass"
+    },
+    {
+      "part_id": "esc_4in1_35a_20x20",
+      "name": "35A 4-in-1 (20x20)",
+      "category": "esc",
+      "mass_g": 7.0,
+      "mounting": {
+        "attachment": "bolt",
+        "pattern": "20x20"
+      },
+      "specs": {
+        "continuous_a": 35.0,
+        "burst_a": 45.0,
+        "channels": 4
+      },
+      "catalog": {
+        "board_class": "4-in-1",
+        "cell_range": "2-6S",
+        "protocol": "DShot600"
+      },
+      "source": "representative 20x20 6S-capable 4-in-1; class-typical, not a specific product. Ratings follow the HAKRC 35A 20x20 BLHeli_32 4-in-1's published 35A continuous / 45A burst per channel, and its ~7 g board mass"
+    },
+    {
+      "part_id": "esc_4in1_45a_30x30",
+      "name": "45A 4-in-1 (30.5x30.5)",
+      "category": "esc",
+      "mass_g": 12.0,
+      "mounting": {
+        "attachment": "bolt",
+        "pattern": "30.5x30.5"
+      },
+      "specs": {
+        "continuous_a": 45.0,
+        "burst_a": 55.0,
+        "channels": 4
+      },
+      "catalog": {
+        "board_class": "4-in-1",
+        "cell_range": "3-6S",
+        "protocol": "DShot600"
+      },
+      "source": "representative full-size 5\" 4-in-1; the reference build's board. Ratings and mass follow the Holybro Tekko32 F4 45A 4-in-1's published 45A continuous / 55A burst per channel and 12 g board mass"
+    },
+    {
+      "part_id": "esc_4in1_60a_30x30",
+      "name": "60A 4-in-1 (30.5x30.5)",
+      "category": "esc",
+      "mass_g": 13.0,
+      "mounting": {
+        "attachment": "bolt",
+        "pattern": "30.5x30.5"
+      },
+      "specs": {
+        "continuous_a": 60.0,
+        "burst_a": 70.0,
+        "channels": 4
+      },
+      "catalog": {
+        "board_class": "4-in-1",
+        "cell_range": "3-6S",
+        "protocol": "DShot600"
+      },
+      "source": "representative 6S race 4-in-1; class-typical, not a specific product. Ratings follow the T-Motor F55A Pro II's published 55A continuous / 70A burst per channel, rounded to the 60A the class is sold as, and its ~13 g board mass"
+    },
+    {
+      "part_id": "esc_4in1_80a_30x30",
+      "name": "80A 4-in-1 (30.5x30.5)",
+      "category": "esc",
+      "mass_g": 18.0,
+      "mounting": {
+        "attachment": "bolt",
+        "pattern": "30.5x30.5"
+      },
+      "specs": {
+        "continuous_a": 80.0,
+        "burst_a": 100.0,
+        "channels": 4
+      },
+      "catalog": {
+        "board_class": "4-in-1",
+        "cell_range": "3-8S",
+        "protocol": "DShot600"
+      },
+      "source": "representative cinelifter / X-class 4-in-1; class-typical, not a specific product. Ratings follow the HGLRC Thor 80A BLHeli_32 4-in-1's published 80A continuous / 100A burst per channel, and its ~18 g board mass"
+    }
+  ]
+}

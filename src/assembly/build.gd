@@ -31,16 +31,34 @@ const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
 ## The FC/ESC stack's share of that budget, straight off parts.md's published breakdown of the
 ## fixed electronics package rather than re-estimated here. Taken OUT of ELECTRONICS_MASS_G, not
 ## added to it, which leaves 43 g of camera, VTX, antenna, receiver and wiring lumped at the origin.
-const STACK_MASS_G := 12.0
+## The FLIGHT CONTROLLER's share of that budget. Was 12 g of "FC/ESC stack" while the two were one
+## lumped constant; unbundling the ESC into a catalog part forced honest figures for both, and a
+## real F4 board is about 8 g against a real 45 A 4-in-1's 12 g.
+const FC_MASS_G := 8.0
+
+## The ESC's BUDGETED share, which is what the lump gives up rather than what any particular board
+## weighs. The reference build's 45 A 4-in-1 weighs exactly this, so its 496 g is unchanged to the
+## gram; fit the 80 A board instead and the aircraft gets 6 g heavier, which is the right answer and
+## the whole reason the ESC stopped being a constant.
+const ESC_BUDGET_MASS_G := 12.0
+
+## Kept as the sum of the two, because several places still speak of "the stack" as one object —
+## it is still one object on the aircraft, bolted through one pattern.
+const STACK_MASS_G := FC_MASS_G + ESC_BUDGET_MASS_G
 
 ## The FC/ESC stack's own bolt pattern. 30.5x30.5 is the full-size standard, and it is a property
 ## of the STACK rather than of the frame — which is the whole reason a fit check is worth having.
 ## Buy the wrong one and it does not bolt to your frame; frames.json drills the 3.5" freestyle
 ## 20x20 and the whoops 25.5x25.5, and none of those take this board.
 ##
-## Not selectable yet. Unbundling the electronics into separately choosable parts needs an ESC
-## bench and current-headroom checking, and that is its own slice.
+## The flight controller is still not selectable; the ESC now is, and carries its own pattern in
+## data/parts/escs.json. Both bolt through the same holes on a real stack, and warnings() checks
+## the ESC's against the frame the same way it checks the motors'.
 const STACK_MOUNT_PATTERN := "30.5x30.5"
+
+## The board a selection that does not name one gets. Every Build call site written before ESCs
+## existed still means what it meant, and the reference build still weighs 496 g.
+const DEFAULT_ESC_ID := "esc_4in1_45a_30x30"
 
 
 ## How the FC/ESC stack attaches, in the same shape MountPoint.mounting_of() returns for a catalog
@@ -86,6 +104,7 @@ var frame: Dictionary
 var motor: Dictionary
 var propeller: Dictionary
 var battery: Dictionary
+var esc: Dictionary
 var catalog: PartsCatalog
 
 var arm_m: float
@@ -98,13 +117,15 @@ var k_q: float
 var effective_max_amps: float
 var drag_coefficient: float
 
-static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String, battery_id: String) -> Build:
+static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String,
+		battery_id: String, esc_id: String = DEFAULT_ESC_ID) -> Build:
 	var b := Build.new()
 	b.catalog = p_catalog
 	b.frame = p_catalog.get_part(frame_id)
 	b.motor = p_catalog.get_part(motor_id)
 	b.propeller = p_catalog.get_part(prop_id)
 	b.battery = p_catalog.get_part(battery_id)
+	b.esc = p_catalog.get_part(esc_id)
 	b._recompute()
 	return b
 
@@ -184,11 +205,18 @@ func mass_parts() -> Array:
 	# mount offset could enter. When it grows a real centre-of-gravity term, the mount point is
 	# already the single source for where the stack is — a consumer gets added, nothing gets
 	# re-decided.
-	var stack_mass_kg := STACK_MASS_G / 1000.0
-	parts.append(PartMass.new(stack_mass_kg, Vector3.ZERO,
-		InertiaPrimitives.box(stack_mass_kg, StackMesh.size_m(STACK_MOUNT_PATTERN))))
+	var fc_mass_kg := FC_MASS_G / 1000.0
+	parts.append(PartMass.new(fc_mass_kg, Vector3.ZERO,
+		InertiaPrimitives.box(fc_mass_kg, StackMesh.size_m(STACK_MOUNT_PATTERN))))
 
-	var loose_mass_kg := (ELECTRONICS_MASS_G - STACK_MASS_G) / 1000.0
+	# The ESC at its OWN catalog mass, on its own footprint. This is the line that makes fitting a
+	# bigger board cost something: the budget below gave up ESC_BUDGET_MASS_G, and whatever this
+	# board actually weighs is what the aircraft carries.
+	var esc_mass_kg := esc_mass_g() / 1000.0
+	parts.append(PartMass.new(esc_mass_kg, Vector3.ZERO,
+		InertiaPrimitives.box(esc_mass_kg, StackMesh.size_m(esc_mount_pattern()))))
+
+	var loose_mass_kg := (ELECTRONICS_MASS_G - FC_MASS_G - ESC_BUDGET_MASS_G) / 1000.0
 	parts.append(PartMass.new(loose_mass_kg, Vector3.ZERO, InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M)))
 
 	return parts
@@ -237,7 +265,7 @@ static func battery_size_of(pack: Dictionary) -> Vector3:
 ##
 ## Deliberately NOT what max_total_thrust_n() is quoted at; see that function.
 func max_throttle_fraction() -> float:
-	return minf(motor_throttle_limit(), pack_throttle_limit())
+	return minf(motor_throttle_limit(), minf(pack_throttle_limit(), esc_throttle_limit()))
 
 
 ## How much of the RPM ceiling the MOTORS can reach before their own current limit stops them,
@@ -286,21 +314,35 @@ func throttle_limit_for(total_amps: float) -> float:
 ## pack (a contribution missing c_rating) yields a zero limit that throttle_limit_for reads as
 ## "no limit stated", so it must not be reported as the binding one.
 func limiting_component() -> Dictionary:
-	var motor_limit := motor_throttle_limit()
-	var pack_limit := pack_throttle_limit()
-	if pack_limit < motor_limit:
-		return {
+	# Ordered so that ties go to the motors, then the pack, then the ESC. That is the pre-existing
+	# behaviour extended rather than reshuffled, and it matters for an unrated part: a contribution
+	# missing continuous_a yields a zero limit that throttle_limit_for() reads as "no limit
+	# stated", and it must not then be reported as the thing holding the build back.
+	var candidates := [
+		{
+			"name": "motors",
+			"label": str(motor["name"]),
+			"amps": 4.0 * float(motor["specs"]["max_amps"]),
+			"throttle": motor_throttle_limit(),
+		},
+		{
 			"name": "battery",
 			"label": str(battery["name"]),
 			"amps": pack_max_amps(),
-			"throttle": pack_limit,
-		}
-	return {
-		"name": "motors",
-		"label": str(motor["name"]),
-		"amps": 4.0 * float(motor["specs"]["max_amps"]),
-		"throttle": motor_limit,
-	}
+			"throttle": pack_throttle_limit(),
+		},
+		{
+			"name": "esc",
+			"label": str(esc.get("name", "ESC")),
+			"amps": esc_max_amps(),
+			"throttle": esc_throttle_limit(),
+		},
+	]
+	var binding: Dictionary = candidates[0]
+	for candidate in candidates:
+		if candidate["throttle"] < binding["throttle"]:
+			binding = candidate
+	return binding
 
 func motor_model() -> MotorModel:
 	return MotorModel.new(float(motor["specs"]["kv"]), max_throttle_fraction())
@@ -448,6 +490,31 @@ func hover_throttle(open_circuit_v: float = AT_NOMINAL) -> float:
 			high = mid
 	return high
 
+## This board's mass, or the budgeted share if a selection reached here without one.
+func esc_mass_g() -> float:
+	return float(esc.get("mass_g", ESC_BUDGET_MASS_G))
+
+
+func esc_mount_pattern() -> String:
+	return str(esc.get("mounting", {}).get("pattern", STACK_MOUNT_PATTERN))
+
+
+## What the ESC will pass in TOTAL: its per-channel continuous rating times its channel count.
+##
+## Reading a "45A 4-in-1" as 45 A for the whole aircraft is the mistake this function exists to
+## make impossible — it is four 45 A channels, so 180 A, and the other reading would make every
+## board in the catalog the binding constraint on every build. Burst is carried in the catalog and
+## deliberately not used: applying a burst rating as though it were continuous is just a larger
+## continuous rating wearing a misleading name, and doing it properly needs a thermal state.
+func esc_max_amps() -> float:
+	var specs: Dictionary = esc.get("specs", {})
+	return float(specs.get("continuous_a", 0.0)) * float(specs.get("channels", 4.0))
+
+
+func esc_throttle_limit() -> float:
+	return throttle_limit_for(esc_max_amps())
+
+
 ## Total pack current at a throttle command, via the RPM that throttle actually reaches.
 func hover_current_a(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
 	return 4.0 * current_at_rpm(rpm_at_throttle(throttle, open_circuit_v))
@@ -536,13 +603,25 @@ func warnings() -> Array[String]:
 	var throttle_cap := max_throttle_fraction()
 	if throttle_cap < 0.99:
 		var limit := limiting_component()
-		if limit["name"] == "battery":
-			out.append("The %s runs out of current before the motors do — %.0f A continuous caps this build at %.0f%% throttle, where the %s would take %.0f%%." % [
-				limit["label"], limit["amps"], throttle_cap * 100.0,
-				motor["name"], motor_throttle_limit() * 100.0])
-		else:
-			out.append("%s is too much prop for the %s — it hits its %.0f A limit at %.0f%% throttle." % [
-				propeller["name"], motor["name"], float(motor["specs"]["max_amps"]), throttle_cap * 100.0])
+		match limit["name"]:
+			"battery":
+				out.append("The %s runs out of current before the motors or the %s do — %.0f A continuous caps this build at %.0f%% throttle." % [
+					limit["label"], esc.get("name", "ESC"), limit["amps"], throttle_cap * 100.0])
+			"esc":
+				out.append("The %s runs out of current first — %.0f A across four channels caps this build at %.0f%% throttle, where the %s would take %.0f%% and the %s would pass %.0f A." % [
+					limit["label"], limit["amps"], throttle_cap * 100.0,
+					motor["name"], motor_throttle_limit() * 100.0,
+					battery["name"], pack_max_amps()])
+			_:
+				out.append("%s is too much prop for the %s — it hits its %.0f A limit at %.0f%% throttle." % [
+					propeller["name"], motor["name"], float(motor["specs"]["max_amps"]), throttle_cap * 100.0])
+
+	# The board has to bolt to the frame, which is the same check the motors already get and the
+	# same mistake someone makes exactly once: a 20x20 board and a 30.5x30.5 frame do not meet.
+	var frame_stack: String = str(frame["specs"].get("stack_mount", ""))
+	if frame_stack != "" and esc_mount_pattern() != frame_stack:
+		out.append("%s is a %s board; the %s is drilled %s for its stack." % [
+			esc.get("name", "The ESC"), esc_mount_pattern(), frame["name"], frame_stack])
 
 	# Thrust-to-weight is a bench number at nominal voltage (see max_total_thrust_n). On a
 	# high-resistance pack the thrust actually reachable is far below it, which would

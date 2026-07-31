@@ -13,6 +13,7 @@ const CATEGORY_FILES := {
 	"motor": "res://data/parts/motors.json",
 	"propeller": "res://data/parts/propellers.json",
 	"battery": "res://data/parts/batteries.json",
+	"esc": "res://data/parts/escs.json",
 }
 
 ## category -> Array[Dictionary], in catalog file order (which is the dropdown order).
