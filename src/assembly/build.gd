@@ -18,6 +18,23 @@ const AIR_DENSITY_KGM3 := 1.225
 const ELECTRONICS_MASS_G := 55.0
 const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
 
+## The FC/ESC stack's own bolt pattern. 30.5x30.5 is the full-size standard, and it is a property
+## of the STACK rather than of the frame — which is the whole reason a fit check is worth having.
+## Buy the wrong one and it does not bolt to your frame; frames.json drills the 3.5" freestyle
+## 20x20 and the whoops 25.5x25.5, and none of those take this board.
+##
+## Not selectable yet. Unbundling the electronics into separately choosable parts needs an ESC
+## bench and current-headroom checking, and that is its own slice.
+const STACK_MOUNT_PATTERN := "30.5x30.5"
+
+
+## How the FC/ESC stack attaches, in the same shape MountPoint.mounting_of() returns for a catalog
+## part. Here rather than in the catalog because the stack is not a catalog part yet — and stating
+## it in the one place the mesh and the mass both read keeps it from becoming two opinions the day
+## it becomes one.
+static func stack_mounting() -> Dictionary:
+	return {"attachment": MountPoint.BOLT, "pattern": STACK_MOUNT_PATTERN}
+
 ## The frame's centre plate, as a box, derived from arm length rather than authored — a
 ## body dimension is not in parts.md's spec-field table, so it does not belong in the JSON.
 const FRAME_PLATE_TO_ARM_RATIO := 1.364   # 110 mm arm -> 150 mm plate

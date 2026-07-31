@@ -23,7 +23,107 @@ static func run() -> Array:
 	results.append(_test_the_standoff_tweak_carries_the_mounts(catalog))
 	results.append(_test_fore_aft_reach_follows_the_arm())
 
+	results.append(_test_a_matching_bolt_pattern_does_not_warn(catalog))
+	results.append(_test_a_mismatched_bolt_pattern_warns(catalog))
+	results.append(_test_a_strapped_part_on_a_bolt_mount_warns(catalog))
+	results.append(_test_a_board_wider_than_its_plate_warns(catalog))
+	results.append(_test_every_pack_declares_that_it_straps(catalog))
+
 	return results
+
+
+# ---------------------------------------------------------------------------
+# Does it fit? Both directions, on pairings checked by hand against the two spec sheets.
+#
+# The FC/ESC stack is drilled 30.5x30.5 — the full-size standard. frames.json drills the 5"
+# freestyle 30.5x30.5 and the 3.5" freestyle 20x20. So one of those two pairings must be silent
+# and the other must not, and a fit check that always says yes fails the first pair while a fit
+# check that always says no fails the second. Asserting only that the reference build's own stack
+# fits its own frame would prove neither.
+# ---------------------------------------------------------------------------
+
+static func _test_a_matching_bolt_pattern_does_not_warn(catalog: PartsCatalog) -> TestResult:
+	var mount: MountPoint = _mount_by_id(
+		FrameModel.mount_points_for(catalog.get_part("frame_5in_freestyle"), -1.0), "stack")
+	var warnings := mount.fit_warnings("The FC/ESC stack", Build.stack_mounting(),
+		StackMesh.size_m(Build.STACK_MOUNT_PATTERN))
+
+	return TestResult.new(
+		"a 30.5 stack on a 30.5-drilled frame is not warned about",
+		mount.pattern == "30.5x30.5" and warnings.is_empty(),
+		"5\" freestyle mount is %s; warnings: %s" % [mount.pattern, warnings])
+
+
+static func _test_a_mismatched_bolt_pattern_warns(catalog: PartsCatalog) -> TestResult:
+	var mount: MountPoint = _mount_by_id(
+		FrameModel.mount_points_for(catalog.get_part("frame_35in_freestyle"), -1.0), "stack")
+	var warnings := mount.fit_warnings("The FC/ESC stack", Build.stack_mounting(),
+		StackMesh.size_m(Build.STACK_MOUNT_PATTERN))
+
+	var mentions_both := false
+	for warning in warnings:
+		if warning.contains("30.5x30.5") and warning.contains("20x20"):
+			mentions_both = true
+
+	return TestResult.new(
+		"a 30.5 stack on a 20x20-drilled frame is warned about, in both patterns' words",
+		mount.pattern == "20x20" and mentions_both,
+		"3.5\" freestyle mount is %s; warnings: %s" % [mount.pattern, warnings])
+
+
+## A pack is strapped, and a bolt pattern is not something a strap can pass through. The warning
+## is the whole answer here — the pack still mounts, because Lothal never blocks.
+static func _test_a_strapped_part_on_a_bolt_mount_warns(catalog: PartsCatalog) -> TestResult:
+	var frame: Dictionary = catalog.get_part("frame_5in_freestyle")
+	var pack: Dictionary = catalog.get_part("battery_4s_1500")
+	var mounts := FrameModel.mount_points_for(frame, -1.0)
+
+	var on_bolts := (_mount_by_id(mounts, "stack") as MountPoint).fit_warnings(
+		pack["name"], MountPoint.mounting_of(pack), Build.battery_size_of(pack))
+	var on_strap := (_mount_by_id(mounts, "strap_top") as MountPoint).fit_warnings(
+		pack["name"], MountPoint.mounting_of(pack), Build.battery_size_of(pack))
+
+	return TestResult.new(
+		"a strapped pack warns on a bolt pattern and not on a strap location",
+		on_bolts.size() == 1 and on_strap.is_empty(),
+		"on the stack mount: %s; on the top plate: %s" % [on_bolts, on_strap])
+
+
+## The geometry half of the check, on the frame it actually bites on: a 65 mm whoop's centre plate
+## is 17.6 mm across (32 mm arm x 0.55) and a 30.5 stack is a 36.5 mm board. It is drilled wrong
+## AND it hangs off the plate, and both are worth saying.
+static func _test_a_board_wider_than_its_plate_warns(catalog: PartsCatalog) -> TestResult:
+	var mount: MountPoint = _mount_by_id(
+		FrameModel.mount_points_for(catalog.get_part("frame_65mm_whoop"), -1.0), "stack")
+	var warnings := mount.fit_warnings("The FC/ESC stack", Build.stack_mounting(),
+		StackMesh.size_m(Build.STACK_MOUNT_PATTERN))
+
+	var overhangs := false
+	for warning in warnings:
+		if warning.contains("overhangs"):
+			overhangs = true
+
+	return TestResult.new(
+		"a board wider than the plate it bolts to is called out as well as mis-drilled",
+		warnings.size() == 2 and overhangs,
+		"65 mm whoop stack mount (%s, plate %.1f mm): %s" % [
+			mount.pattern, mount.span_m.x * 1000.0, warnings])
+
+
+## Every pack in the catalog says how it attaches, rather than falling through to a default. A
+## default that happened to be right is a default nobody would notice being wrong.
+static func _test_every_pack_declares_that_it_straps(catalog: PartsCatalog) -> TestResult:
+	var missing: Array = []
+	for pack in catalog.list_category("battery"):
+		var block: Dictionary = pack.get("mounting", {})
+		if String(block.get("attachment", "")) != MountPoint.STRAP:
+			missing.append(pack["part_id"])
+
+	return TestResult.new(
+		"every pack in the catalog declares that it straps",
+		missing.is_empty(),
+		"%d packs checked, %d without a mounting block: %s" % [
+			catalog.list_category("battery").size(), missing.size(), missing])
 
 
 ## Every frame in the catalog offers a bolt-pattern stack mount, and the pattern it offers is the

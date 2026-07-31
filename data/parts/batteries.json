@@ -1,11 +1,14 @@
 {
-  "_schema": "The biggest single mass in most builds, and the only source of voltage sag. Two tiers, as in frames.json, motors.json and propellers.json: `specs` is physics-bearing and `catalog` is browsing metadata only — a field is admitted to `catalog` only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale. Colour, price and vendor links are banned by name, from either block. 'cells' sets pack voltage, which sets the RPM ceiling (max_RPM = KV * live voltage) — this is most of why a 4S->6S swap feels dramatic rather than cosmetic. 'internal_r_ohm' is what makes that voltage live rather than fixed: punch the throttle, current spikes, voltage drops, RPM ceiling drops, thrust drops. 'chemistry' sits in `specs` rather than in `catalog` even though it reads like browsing metadata, because it is physics-bearing: it selects which open-circuit discharge curve BatteryModel runs (physics.md §5), and a LiPo and a Li-ion at the same state of charge do not rest at the same voltage. The catalog block is therefore c_rating, connector and cell_class — the three things a builder actually narrows a shelf of packs by, and none of which any model reads. 'nominal_v' is the pack's RESTING voltage at full charge in this model, which is the datum the state-of-charge term measures its fall from; see physics.md §5. 'length_mm', 'width_mm' and 'height_mm' are the pack's published outside dimensions, and they sit in `specs` for the same reason a frame's 'arm_mm' does: they are read by a geometry generator (BatteryMesh) AND by the mass model, which used to estimate a box from mass and now does not. Length runs along the aircraft's forward axis, width across it, height vertically — the orientation a pack is actually strapped down in. One set of numbers draws the block on screen, decides whether it overhangs the centre plate, and sets the pack's contribution to the inertia tensor; a second estimate anywhere would be the divergence this catalog exists to prevent. They are MEASURED, never back-computed from mass: a 4S 3000 Li-ion is heavier than a 6S 1300 LiPo and takes up less room, and tests/test_parts_system.gd asserts that a heavier pack is not always a bigger one, which is precisely what the old cube-root-of-mass estimate could never produce. Entries are ordered by cell count and then capacity, which is what gives the cell filter an ascending order without anything sorting it.",
+  "_schema": "`mounting` says how a pack is held on: it straps, it does not bolt, so it declares no pattern. That block is geometry-bearing only — it decides what the pack is checked against and where it is drawn, and never reaches the mass model. The biggest single mass in most builds, and the only source of voltage sag. Two tiers, as in frames.json, motors.json and propellers.json: `specs` is physics-bearing and `catalog` is browsing metadata only — a field is admitted to `catalog` only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale. Colour, price and vendor links are banned by name, from either block. 'cells' sets pack voltage, which sets the RPM ceiling (max_RPM = KV * live voltage) — this is most of why a 4S->6S swap feels dramatic rather than cosmetic. 'internal_r_ohm' is what makes that voltage live rather than fixed: punch the throttle, current spikes, voltage drops, RPM ceiling drops, thrust drops. 'chemistry' sits in `specs` rather than in `catalog` even though it reads like browsing metadata, because it is physics-bearing: it selects which open-circuit discharge curve BatteryModel runs (physics.md §5), and a LiPo and a Li-ion at the same state of charge do not rest at the same voltage. The catalog block is therefore c_rating, connector and cell_class — the three things a builder actually narrows a shelf of packs by, and none of which any model reads. 'nominal_v' is the pack's RESTING voltage at full charge in this model, which is the datum the state-of-charge term measures its fall from; see physics.md §5. 'length_mm', 'width_mm' and 'height_mm' are the pack's published outside dimensions, and they sit in `specs` for the same reason a frame's 'arm_mm' does: they are read by a geometry generator (BatteryMesh) AND by the mass model, which used to estimate a box from mass and now does not. Length runs along the aircraft's forward axis, width across it, height vertically — the orientation a pack is actually strapped down in. One set of numbers draws the block on screen, decides whether it overhangs the centre plate, and sets the pack's contribution to the inertia tensor; a second estimate anywhere would be the divergence this catalog exists to prevent. They are MEASURED, never back-computed from mass: a 4S 3000 Li-ion is heavier than a 6S 1300 LiPo and takes up less room, and tests/test_parts_system.gd asserts that a heavier pack is not always a bigger one, which is precisely what the old cube-root-of-mass estimate could never produce. Entries are ordered by cell count and then capacity, which is what gives the cell filter an ascending order without anything sorting it.",
   "parts": [
     {
       "part_id": "battery_1s_300",
       "name": "1S 300mAh 30C",
       "category": "battery",
       "mass_g": 8.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 1,
         "nominal_v": 3.7,
@@ -28,6 +31,9 @@
       "name": "1S 550mAh 40C",
       "category": "battery",
       "mass_g": 13.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 1,
         "nominal_v": 3.7,
@@ -50,6 +56,9 @@
       "name": "2S 300mAh 75C",
       "category": "battery",
       "mass_g": 19.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 2,
         "nominal_v": 7.4,
@@ -72,6 +81,9 @@
       "name": "2S 450mAh 75C",
       "category": "battery",
       "mass_g": 28.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 2,
         "nominal_v": 7.4,
@@ -94,6 +106,9 @@
       "name": "3S 650mAh 75C",
       "category": "battery",
       "mass_g": 62.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 3,
         "nominal_v": 11.1,
@@ -116,6 +131,9 @@
       "name": "4S 650mAh 95C",
       "category": "battery",
       "mass_g": 78.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 4,
         "nominal_v": 14.8,
@@ -138,6 +156,9 @@
       "name": "4S 1300mAh 95C",
       "category": "battery",
       "mass_g": 155.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 4,
         "nominal_v": 14.8,
@@ -160,6 +181,9 @@
       "name": "4S 1500mAh 75C",
       "category": "battery",
       "mass_g": 185.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 4,
         "nominal_v": 14.8,
@@ -182,6 +206,9 @@
       "name": "5S 1200mAh 100C",
       "category": "battery",
       "mass_g": 172.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 5,
         "nominal_v": 18.5,
@@ -204,6 +231,9 @@
       "name": "6S 1100mAh 120C",
       "category": "battery",
       "mass_g": 178.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 6,
         "nominal_v": 22.2,
@@ -226,6 +256,9 @@
       "name": "6S 1300mAh 100C",
       "category": "battery",
       "mass_g": 205.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 6,
         "nominal_v": 22.2,
@@ -248,6 +281,9 @@
       "name": "4S 3000mAh Li-ion",
       "category": "battery",
       "mass_g": 320.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 4,
         "nominal_v": 14.4,
@@ -270,6 +306,9 @@
       "name": "6S 4000mAh Li-ion",
       "category": "battery",
       "mass_g": 590.0,
+      "mounting": {
+        "attachment": "strap"
+      },
       "specs": {
         "cells": 6,
         "nominal_v": 21.6,
