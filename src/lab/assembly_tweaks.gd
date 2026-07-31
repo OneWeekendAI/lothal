@@ -13,9 +13,11 @@ extends RefCounted
 ## data/parts/ — those files are the shared, version-controlled catalog — and it is not a Build
 ## field either. It is per-user configuration, and it lives here.
 ##
-## Three tweaks, deliberately: shim washers under the prop, a soft-mount pad under the motor, and
-## the centre-plate standoff height. The set is small because the point of this slice is to
-## establish the pattern, not to expose every dimension in the project.
+## Three tweaks to start with: shim washers under the prop, a soft-mount pad under the motor, and
+## the centre-plate standoff height. Since the mount points arrived, two more — WHERE the pack is
+## strapped and how far fore or aft it sits on that mount. Those two are not dimensions of a part;
+## they are which of the frame's mount points the pack is attached to, which is the same category
+## of thing as a shim: it is what you did with the parts you have.
 ##
 ## ---------------------------------------------------------------------------
 ## THE DECISION: THESE ARE GEOMETRY-BEARING, NOT PHYSICS-BEARING
@@ -58,7 +60,8 @@ extends RefCounted
 ##
 ##     {
 ##       "schema": 1,
-##       "tweaks": { "prop_spacer_mm": 1.5, "plate_gap_mm": 6.0 }
+##       "tweaks": { "prop_spacer_mm": 1.5, "plate_gap_mm": 6.0,
+##                   "battery_mount": "strap_bottom", "battery_offset_mm": -8.0 }
 ##     }
 ##
 ## Four rules, chosen now because persistent pack charge lands in this same file later and a
@@ -75,7 +78,9 @@ extends RefCounted
 ##   that will not start because a preferences file is half-written has made a preference more
 ##   important than the product.
 ## - **Values are stored in millimetres**, matching the catalog's own units and the numbers a
-##   builder actually says out loud. Metres appear only at the geometry boundary (resolved_m).
+##   builder actually says out loud. Metres appear only at the geometry boundary (resolved_m). A
+##   CHOICE is stored as the mount point's own id, not as an index — an index would silently mean
+##   something else the day a frame gained a mount.
 ##
 ## `schema` is written but not yet branched on — there is one version. It exists so a future
 ## change of meaning (as opposed to a new field, which the unknown-field rule already handles)
@@ -91,7 +96,20 @@ const SOFT_MOUNT := "soft_mount_mm"
 ## Standoff height between the two centre plates.
 const PLATE_GAP := "plate_gap_mm"
 
-const KEYS := [PROP_SPACER, SOFT_MOUNT, PLATE_GAP]
+## Which of the frame's strap mounts the pack is on. A CHOICE rather than a dimension: the options
+## are whatever the frame offers (FrameModel.mount_points_for), and a frame with no bottom plate to
+## strap to simply does not offer one.
+const BATTERY_MOUNT := "battery_mount"
+## How far fore or aft the pack is slid on that mount, in millimetres. Positive is forward, and
+## forward is -Z (physics.md §1).
+const BATTERY_OFFSET := "battery_offset_mm"
+
+## Keys whose value is a dimension in millimetres.
+const KEYS := [PROP_SPACER, SOFT_MOUNT, PLATE_GAP, BATTERY_OFFSET]
+## Keys whose value is one of a set of named options rather than a number. Held separately because
+## a slider and a dropdown are read, clamped and persisted differently — but the four file rules
+## above apply to both without change.
+const CHOICE_KEYS := [BATTERY_MOUNT]
 
 ## Labels and the unit suffix the UI shows. Here rather than in the panel so the panel has no
 ## opinion about what a tweak is, only about how to draw a row.
@@ -99,10 +117,20 @@ const ROWS := [
 	{"key": PROP_SPACER, "label": "Prop spacer", "hint": "Washers on the shaft, under the prop."},
 	{"key": SOFT_MOUNT, "label": "Motor soft mount", "hint": "Pad between the motor and the arm."},
 	{"key": PLATE_GAP, "label": "Stack standoffs", "hint": "Height between the centre plates."},
+	{"key": BATTERY_OFFSET, "label": "Pack fore/aft", "hint": "Slide the pack along the strap. Forward is positive."},
+]
+
+## The choice rows, drawn as dropdowns rather than sliders. Same idea as ROWS and same reason: the
+## panel knows how to draw a row and nothing about what a mount is.
+const CHOICE_ROWS := [
+	{"key": BATTERY_MOUNT, "label": "Pack mount", "hint": "Which plate the pack straps to."},
 ]
 
 ## Only the keys the builder has actually set. Sparse on purpose — see the file rules above.
 var _overrides: Dictionary = {}
+## Only the choice keys the builder has actually made. Sparse for the same reason and under the
+## same rules; an absent key means "whatever the frame implies", not the first option.
+var _choices: Dictionary = {}
 ## Everything in the loaded file this version did not recognise, kept verbatim for the next save.
 ## Top-level blocks and unknown entries under "tweaks" are held separately because they go back
 ## to different places.
@@ -139,7 +167,68 @@ static func limits(build: Build) -> Dictionary:
 			"max": FrameModel.max_plate_gap_m(build.arm_m) * 1000.0,
 			"default": FrameModel.default_plate_gap_m() * 1000.0,
 		},
+		BATTERY_OFFSET: {
+			"min": -battery_travel_mm(build),
+			"max": battery_travel_mm(build),
+			"default": 0.0,
+		},
 	}
+
+
+## How far the pack may be slid fore or aft, in millimetres. The frame's own forward reach less
+## half the pack's own length — both terms from the parts, neither from this file — so choosing a
+## longer pack narrows the range while you watch, which is the §2.5 rule made arithmetic. Zero for
+## a pack already as long as the frame reaches, which reads as "there is nowhere to slide it".
+static func battery_travel_mm(build: Build) -> float:
+	return maxf(
+		FrameModel.mount_reach_m(build.arm_m) - build.battery_size_m().z * 0.5, 0.0) * 1000.0
+
+
+## The named options each choice key offers on this build, and the option in force when nothing has
+## been chosen. Derived from the frame, exactly as the numeric limits are derived from the parts: a
+## frame with no room for strap slots under its bottom plate offers one option, and a 5" freestyle
+## offers two. A list typed into the panel would be a second opinion about what the hardware allows.
+static func mount_choices(build: Build) -> Dictionary:
+	var options: Array[String] = []
+	var labels: Array[String] = []
+	for mount in FrameModel.mount_points_for(build.frame, -1.0):
+		if mount.attachment == MountPoint.STRAP:
+			options.append(mount.id)
+			labels.append(mount.label)
+	return {
+		BATTERY_MOUNT: {
+			"options": options,
+			"labels": labels,
+			# The first strap mount the frame lists, which is the top plate — where a pack goes if
+			# nobody says otherwise, on every frame in the catalog.
+			"default": options[0] if not options.is_empty() else "",
+		},
+	}
+
+
+## Records a choice. Stored UNCLAMPED against the current frame, for the same reason a shim is:
+## a pack mounted underneath a 5" freestyle has to still be underneath when you come back from
+## trying it on a toothpick, and silently rewriting the builder's choice because a smaller frame is
+## fitted is the same mistake in a different place.
+func set_choice(key: String, value: String) -> void:
+	if not CHOICE_KEYS.has(key):
+		push_error("unknown assembly choice: %s" % key)
+		return
+	_choices[key] = value
+
+
+func has_choice(key: String) -> bool:
+	return _choices.has(key)
+
+
+## The option in force for this build: what was chosen if this frame offers it, and the derived
+## default otherwise.
+func value_choice(key: String, build: Build) -> String:
+	var row: Dictionary = mount_choices(build)[key]
+	var chosen: String = String(_choices.get(key, ""))
+	if (row["options"] as Array).has(chosen):
+		return chosen
+	return row["default"]
 
 
 # ---------------------------------------------------------------------------
@@ -164,10 +253,12 @@ func set_mm(key: String, millimetres: float) -> void:
 ## Back to what the parts imply, for one tweak or for all of them.
 func clear(key: String) -> void:
 	_overrides.erase(key)
+	_choices.erase(key)
 
 
 func reset() -> void:
 	_overrides.clear()
+	_choices.clear()
 
 
 ## The value in force for this build: what was set, clamped to what this build's hardware allows,
@@ -188,6 +279,12 @@ func resolved_m(build: Build) -> Dictionary:
 		"prop_spacer_m": value_mm(PROP_SPACER, build) / 1000.0,
 		"soft_mount_m": value_mm(SOFT_MOUNT, build) / 1000.0,
 		"plate_gap_m": value_mm(PLATE_GAP, build) / 1000.0,
+		# Where the pack is strapped and how far along that mount it sits. The mount is an id
+		# rather than a length, which is why this dictionary is not purely metres any more — but it
+		# is still the ONE place the configuration crosses into the geometry, which is what the
+		# name is really about.
+		"battery_mount": value_choice(BATTERY_MOUNT, build),
+		"battery_offset_m": value_mm(BATTERY_OFFSET, build) / 1000.0,
 	}
 
 
@@ -202,6 +299,8 @@ func save(path: String = SAVE_PATH) -> bool:
 	var tweaks := _unknown_tweaks.duplicate(true)
 	for key in _overrides:
 		tweaks[key] = _overrides[key]
+	for key in _choices:
+		tweaks[key] = _choices[key]
 
 	var document := _unknown_top.duplicate(true)
 	document["schema"] = SCHEMA_VERSION
@@ -233,6 +332,15 @@ static func load_from(path: String = SAVE_PATH) -> AssemblyTweaks:
 
 	for key in (stored as Dictionary):
 		var value: Variant = (stored as Dictionary)[key]
+		if CHOICE_KEYS.has(key):
+			# A choice is a name, and a name that this version does not recognise is handled at
+			# READ time by value_choice() rather than dropped here — the frame decides which names
+			# are real, and the frame is not known yet.
+			if value is String:
+				tweaks._choices[key] = String(value)
+			else:
+				push_warning("%s: %s is not a name; using the default" % [path, key])
+			continue
 		if not KEYS.has(key):
 			tweaks._unknown_tweaks[key] = value
 			continue

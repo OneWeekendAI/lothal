@@ -25,10 +25,17 @@ var motor_meshes: Dictionary = {}
 ## propeller physically bolts — so a taller motor lifts its prop without anything recomputing
 ## a clearance, and a frame change moves motors and props together in one step.
 var propeller_meshes: Dictionary = {}
-## The pack, strapped to the top centre plate. Parented onto the plate for the same reason the
-## motors hang off the arm-tip pads: the plate's height is FrameModel's, the standoff tweak moves
-## it, and a second copy of that arithmetic here is a second thing to get wrong.
+## The pack. Parented onto the frame for the same reason the motors hang off the arm-tip pads: the
+## mount's height is FrameModel's, the standoff tweak moves it, and a frame rebuild frees it rather
+## than leaving a stale pack behind.
 var battery_mesh: BatteryMesh
+## The mount point the pack is currently attached to, or null before the first rebuild. Held rather
+## than re-derived, so every fit measurement below is taken against the mount the pack is ACTUALLY
+## on — the failure that would otherwise be invisible is a fit check still describing the pack's
+## previous home while the picture shows it somewhere else.
+var battery_mount: MountPoint
+## How far forward the pack is slid on that mount, in metres. Positive is forward.
+var battery_offset_m := 0.0
 ## The FC/ESC stack, sandwiched into the frame's centre-plate bolt pattern. Parented onto the frame
 ## for the same reason the motors hang off the arm-tip pads: the mount's height is FrameModel's, the
 ## standoff tweak moves it, and a frame rebuild frees it rather than leaving a stale board behind.
@@ -51,7 +58,10 @@ func _init() -> void:
 ## and handed to the mesh generators as numbers — a generator that could reach into settings for
 ## itself would be a second source for a dimension the assembler already knows.
 func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
-	var tweak_m := {"prop_spacer_m": 0.0, "soft_mount_m": 0.0, "plate_gap_m": -1.0}
+	var tweak_m := {
+		"prop_spacer_m": 0.0, "soft_mount_m": 0.0, "plate_gap_m": -1.0,
+		"battery_mount": "strap_top", "battery_offset_m": 0.0,
+	}
 	if tweaks != null:
 		tweak_m = tweaks.resolved_m(build)
 
@@ -60,24 +70,29 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 	propeller_meshes.clear()
 	arm_m = build.arm_m
 
-	# The pack, strapped to the top centre plate — where a 5" pack goes, and where the standoff
-	# tweak can move it from underneath without anything here being told. Parented onto the plate
-	# rather than positioned beside it, so a frame rebuild takes it with the plate exactly as it
-	# takes the motors with the arm tips; there is no path by which a stale pack survives a frame
-	# change, and no second copy of the plate stack's height.
+	# The pack, on whichever of the frame's strap mounts the builder chose, slid to wherever they
+	# put it. There is deliberately no branch here on WHICH mount that is: a mount point knows its
+	# own seat, which way a component grows from it, and how far along it there is room — so top and
+	# bottom are two entries in a table rather than two code paths, and a payload mount the day it
+	# exists is a third entry and no new code at all.
 	#
-	# It is seated on its UNDERSIDE, not centred: the pack rests on the plate, so a taller pack has
-	# to grow upward. Both terms come from the parts — the plate's own top face and the pack's own
-	# reported height — so this line stays right for a 1S stick and a 6S brick alike.
+	# The pack is seated on the face the mount names and grows AWAY from it: upward on the top
+	# plate, downward under the bottom one. Both terms come from the parts — the mount's own
+	# position and the pack's own reported height — so this stays right for a 1S stick and a 6S
+	# brick alike. Forward is -Z (physics.md §1), which is why a positive offset subtracts.
 	battery_mesh = BatteryMesh.new()
 	battery_mesh.name = "Battery"
 	battery_mesh.rebuild(build.battery)
-	var plate_top: Node3D = frame_model.plate_top
-	battery_mesh.position = Vector3(
-		0,
-		frame_model.plate_top_face_m() - plate_top.position.y + battery_mesh.size_m.y * 0.5,
-		0)
-	plate_top.add_child(battery_mesh)
+	battery_offset_m = tweak_m["battery_offset_m"]
+	battery_mount = mount_point(String(tweak_m["battery_mount"]))
+	if battery_mount == null:
+		battery_mount = mount_point("strap_top")
+	if battery_mount != null:
+		battery_mesh.position = battery_mount.position + Vector3(
+			0.0,
+			battery_mount.normal * battery_mesh.size_m.y * 0.5,
+			-battery_offset_m)
+	frame_model.add_child(battery_mesh)
 
 	# The stack, in the frame's own standoff stack. Nothing here decides where that is: the mount
 	# point does, from the frame's specs and the standoff height currently fitted, and this line
@@ -164,6 +179,9 @@ func mount_warnings() -> Array[String]:
 		out.append_array(stack_mount.fit_warnings(
 			"The FC/ESC stack", Build.stack_mounting(),
 			StackMesh.size_m(Build.STACK_MOUNT_PATTERN)))
+	if battery_mount != null and battery_mesh != null:
+		out.append_array(battery_mount.fit_warnings(
+			"The pack", {"attachment": MountPoint.STRAP, "pattern": ""}, battery_mesh.size_m))
 	return out
 
 
@@ -199,12 +217,17 @@ func adjacent_prop_gap_m() -> float:
 ## ratio would be a second opinion that could agree with the render for a long time and then stop.
 ##
 ## Both axes are reported, but only one of them is a problem — see battery_fit_warnings().
+##
+## Measured against the plate the pack is actually on, and INCLUDING the fore/aft offset: sliding a
+## pack forward puts more of it past the front edge, and reporting the centred figure while the
+## picture shows it hanging off the nose would be exactly the divergence §2.2 forbids. The fore/aft
+## figure is therefore the WORST end, which is the end a strap loses its grip at.
 func battery_overhang_m() -> Dictionary:
-	if battery_mesh == null or frame_model.plate_top == null:
+	if battery_mesh == null or battery_mount == null:
 		return {"fore_aft": 0.0, "lateral": 0.0}
-	var plate: Vector3 = (frame_model.plate_top.mesh as BoxMesh).size
+	var plate := battery_mount.span_m
 	return {
-		"fore_aft": (battery_mesh.size_m.z - plate.z) * 0.5,
+		"fore_aft": battery_mesh.size_m.z * 0.5 + absf(battery_offset_m) - plate.y * 0.5,
 		"lateral": (battery_mesh.size_m.x - plate.x) * 0.5,
 	}
 
@@ -228,6 +251,9 @@ func battery_prop_clearance_m() -> float:
 
 	var half_x: float = battery_mesh.size_m.x * 0.5
 	var half_z: float = battery_mesh.size_m.z * 0.5
+	# Where the pack's centre actually is along the aircraft, which is what makes this measurement
+	# follow the pack rather than describe where it used to live. Forward is -Z.
+	var centre_z := -battery_offset_m
 	var narrowest := INF
 
 	for motor_name in MotorLayout.MOTOR_NAMES:
@@ -238,7 +264,7 @@ func battery_prop_clearance_m() -> float:
 		# well as for one they sit clear of.
 		var gap := Vector2(
 			maxf(absf(hub.x) - half_x, 0.0),
-			maxf(absf(hub.z) - half_z, 0.0)).length()
+			maxf(absf(hub.z - centre_z) - half_z, 0.0)).length()
 		narrowest = minf(narrowest, gap - propeller.radius_m)
 
 	return narrowest

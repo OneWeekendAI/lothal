@@ -1,7 +1,7 @@
 class_name AssemblyPanel
 extends PanelContainer
-## The fit adjustments: three sliders and a reset, over the AssemblyTweaks the builder's
-## configuration lives in.
+## The fit adjustments: a mount dropdown, four sliders and a reset, over the AssemblyTweaks the
+## builder's configuration lives in.
 ##
 ## This panel owns no dimensions and no ranges. Every slider's minimum, maximum and default come
 ## from AssemblyTweaks.limits() for the CURRENT build, which derives them from the parts on screen
@@ -33,6 +33,11 @@ signal tweaks_changed
 
 var tweaks: AssemblyTweaks
 
+var _mount_buttons: Dictionary = {}   # CHOICE_ROWS key -> OptionButton
+## key -> Array[String] of the mount ids currently in that dropdown, in the order they were added.
+## Held because an OptionButton stores an index and the configuration stores a NAME, and the map
+## between the two changes with the frame.
+var _mount_ids: Dictionary = {}
 var _sliders: Dictionary = {}   # key -> HSlider
 var _values: Dictionary = {}    # key -> Label
 var _fit_values: Dictionary = {}   # FIT_ROWS key -> Label
@@ -47,22 +52,36 @@ func _init(p_tweaks: AssemblyTweaks) -> void:
 	custom_minimum_size = Vector2(316, 0)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
+	# It scrolls, and for the same reason Lab's pack tab does: this panel now carries a mount
+	# dropdown, four sliders with their hints, three fit rows and a warning block, which on a
+	# laptop-height window puts the warning below the bottom of the screen — and the warning is the
+	# one thing on here nobody can afford to miss. Vertical only: a details column that scrolls
+	# sideways has a layout bug rather than a scrollbar.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	add_child(scroll)
+
 	var root := VBoxContainer.new()
+	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.add_theme_constant_override("separation", 6)
-	_padded(self).add_child(root)
+	_padded(scroll).add_child(root)
 
 	var title := Label.new()
 	title.text = "FIT"
 	root.add_child(title)
 
 	var note := Label.new()
-	note.text = "Shims and standoffs. Changes the fit, not the flight numbers."
+	note.text = "Mounts, shims and standoffs. Changes the fit, not the flight numbers."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
 	note.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	root.add_child(note)
 
 	root.add_child(HSeparator.new())
+
+	for row in AssemblyTweaks.CHOICE_ROWS:
+		_add_mount_row(root, row)
 
 	for row in AssemblyTweaks.ROWS:
 		_add_row(root, row)
@@ -118,6 +137,35 @@ static func _padded(parent: Control) -> MarginContainer:
 	return margin
 
 
+## A dropdown rather than a slider, because where a pack is strapped is a choice between named
+## places and not a dimension. Its ENTRIES are filled in by render() from the frame that is fitted,
+## never here — a panel holding its own list of mounts would be exactly the second opinion about
+## what the hardware allows that deriving the limits exists to prevent.
+func _add_mount_row(parent: VBoxContainer, row: Dictionary) -> void:
+	var key: String = row["key"]
+
+	var header := HBoxContainer.new()
+	var label := Label.new()
+	label.text = row["label"]
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(label)
+	parent.add_child(header)
+
+	var button := OptionButton.new()
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.item_selected.connect(func(index: int) -> void: _on_mount_selected(key, index))
+	parent.add_child(button)
+	_mount_buttons[key] = button
+	_mount_ids[key] = ([] as Array[String])
+
+	var hint := Label.new()
+	hint.text = row["hint"]
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(280, 0)
+	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+	parent.add_child(hint)
+
+
 func _add_row(parent: VBoxContainer, row: Dictionary) -> void:
 	var key: String = row["key"]
 
@@ -161,6 +209,20 @@ func render(build: Build, airframe: AirframeModel = null) -> void:
 	_render_fit(airframe)
 
 	_updating = true
+	for row in AssemblyTweaks.CHOICE_ROWS:
+		var choice_key: String = row["key"]
+		var choices: Dictionary = AssemblyTweaks.mount_choices(build)[choice_key]
+		var button: OptionButton = _mount_buttons[choice_key]
+		var ids: Array[String] = []
+		button.clear()
+		for i in (choices["options"] as Array).size():
+			ids.append(String(choices["options"][i]))
+			button.add_item(String(choices["labels"][i]))
+		_mount_ids[choice_key] = ids
+		var in_force := tweaks.value_choice(choice_key, build)
+		if ids.has(in_force):
+			button.selected = ids.find(in_force)
+
 	for row in AssemblyTweaks.ROWS:
 		var key: String = row["key"]
 		var limits: Dictionary = AssemblyTweaks.limits(build)[key]
@@ -192,7 +254,12 @@ func _render_fit(airframe: AirframeModel) -> void:
 	_fit_values["prop_clearance"].text = _signed_mm(
 		-airframe.battery_prop_clearance_m(), "into disc", "clear")
 
-	var warnings := airframe.battery_fit_warnings()
+	# Both lists: what the MOUNT SYSTEM says about how each component attaches, and what the
+	# assembled geometry says about where it ended up. They are separate checks for the same reason
+	# Build.warnings() is separate from both — one is what the parts declare, the other is what they
+	# do when placed — and one amber block is where a builder looks for either.
+	var warnings := airframe.mount_warnings()
+	warnings.append_array(airframe.battery_fit_warnings())
 	_fit_warning_label.text = "\n".join(warnings)
 	_fit_warning_label.visible = not warnings.is_empty()
 
@@ -232,6 +299,42 @@ func set_tweak_mm(key: String, millimetres: float) -> float:
 	tweaks.set_mm(key, applied)
 	tweaks_changed.emit()
 	return applied
+
+
+## The mount ids currently in one dropdown, in order. Named accessor rather than tests reaching
+## into the OptionButton, for the reason fit_row_text exists: the panel's internals stay its own.
+func mount_options(key: String) -> Array[String]:
+	var out: Array[String] = []
+	out.assign(_mount_ids.get(key, []))
+	return out
+
+
+## Sets one mount, and it is the single path a mount change takes — the dropdown's own
+## item_selected hands straight through to it rather than writing the model itself. Same reasoning
+## as set_tweak_mm: a panel whose model was only updated from inside a signal works under the mouse
+## and does nothing when driven any other way, including from a test.
+##
+## A mount id this frame does not offer is recorded anyway rather than rejected. That is the
+## unclamped-storage rule the shims already follow: a pack mounted underneath has to still be
+## underneath when you come back from trying the build on a toothpick.
+func set_mount(key: String, mount_id: String) -> void:
+	var ids: Array = _mount_ids.get(key, [])
+	if ids.has(mount_id):
+		_updating = true
+		(_mount_buttons[key] as OptionButton).selected = ids.find(mount_id)
+		_updating = false
+
+	tweaks.set_choice(key, mount_id)
+	tweaks_changed.emit()
+
+
+func _on_mount_selected(key: String, index: int) -> void:
+	if _updating:
+		return
+	var ids: Array = _mount_ids.get(key, [])
+	if index < 0 or index >= ids.size():
+		return
+	set_mount(key, String(ids[index]))
 
 
 ## The reset button, pressed.

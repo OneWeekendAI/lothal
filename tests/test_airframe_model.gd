@@ -119,11 +119,15 @@ static func _test_a_pack_that_reaches_the_props_says_so(catalog: PartsCatalog) -
 	)
 
 
-## The pack is mounted where a 5" pack goes: on the top centre plate, lying along the aircraft's
-## forward axis. Parented ONTO the plate rather than positioned beside it, for the reason the
-## motors hang off the arm-tip pads — the plate's height is FrameModel's (and the standoff tweak
-## moves it), so an airframe that placed the pack at its own computed height would be a second copy
-## of the plate stack's arithmetic, and it would drift the first time somebody wound the standoffs.
+## With nothing chosen, the pack is where a 5" pack goes: on the top centre plate, lying along the
+## aircraft's forward axis. It gets there through the frame's top strap MOUNT POINT rather than
+## through a line that names the top plate — see TestBatteryMount for the underside and the
+## fore/aft slide — and what is asserted here is the DEFAULT, which has not changed.
+##
+## The seat is the mount's, not the airframe's: the plate's height is FrameModel's (and the
+## standoff tweak moves it), so an airframe that placed the pack at its own computed height would
+## be a second copy of the plate stack's arithmetic, and it would drift the first time somebody
+## wound the standoffs.
 static func _test_the_pack_sits_on_the_top_plate(catalog: PartsCatalog) -> TestResult:
 	var build := _build(catalog, "frame_5in_freestyle", "motor_2207_1960kv", "prop_5x43x3")
 	var airframe := AirframeModel.new()
@@ -137,8 +141,9 @@ static func _test_the_pack_sits_on_the_top_plate(catalog: PartsCatalog) -> TestR
 		return TestResult.new("the pack is mounted on the frame's top centre plate", false,
 			"there is no pack on the airframe")
 
-	if pack.get_parent() != airframe.frame_model.plate_top:
-		problems.append("the pack is not parented on the top plate")
+	if airframe.battery_mount == null or airframe.battery_mount.id != "strap_top":
+		problems.append("the pack defaulted to %s rather than the top strap mount" % [
+			"nothing" if airframe.battery_mount == null else airframe.battery_mount.id])
 
 	# Its underside rests ON the plate's top face, measured through the transform chain rather than
 	# read off a field: a pack floating 2 mm above the plate, or sunk into it, is exactly the class
@@ -157,7 +162,7 @@ static func _test_the_pack_sits_on_the_top_plate(catalog: PartsCatalog) -> TestR
 	airframe.free()
 
 	return TestResult.new(
-		"the pack is mounted on the frame's top centre plate, lying fore-and-aft",
+		"with nothing chosen, the pack is on the top strap mount, lying fore-and-aft",
 		problems.is_empty(),
 		"underside %.4f m on a plate face at %.4f m, %s" % [
 			underside, plate_face, "seated" if problems.is_empty() else str(problems)]
@@ -219,7 +224,7 @@ static func _test_a_frame_change_takes_the_pack_with_it(catalog: PartsCatalog) -
 	var face: float = airframe.frame_model.plate_top_face_m()
 	var large_side: float = airframe.frame_model.plate_side_m
 	var packs_drawn := 0
-	for node in airframe.frame_model.plate_top.get_children():
+	for node in airframe.frame_model.get_children():
 		if node is BatteryMesh:
 			packs_drawn += 1
 
