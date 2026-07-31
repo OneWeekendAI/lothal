@@ -169,6 +169,25 @@ architecture is arranged so that adding one touches no physics code.
 - **Custom 1 kHz flight dynamics** — own integrator, not the rigid-body solver
 - **Jolt** — collision queries only
 
+## Project Statistics
+
+<!-- CLOC-START -->
+```
+github.com/AlDanial/cloc v 2.10  T=0.08 s (1475.1 files/s, 260984.1 lines/s)
+-------------------------------------------------------------------------------
+Language                     files          blank        comment           code
+-------------------------------------------------------------------------------
+GDScript                       110           2833           5189          11181
+JSON                             4              0              0           1221
+Markdown                         1             45              2            146
+Godot Scene                      2             17             10             57
+-------------------------------------------------------------------------------
+SUM:                           117           2895           5201          12605
+-------------------------------------------------------------------------------
+```
+
+<!-- CLOC-END -->
+
 ## License
 
 MIT
