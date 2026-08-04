@@ -602,11 +602,11 @@ static func _test_powertrain_rails(catalog: PartsCatalog) -> Array:
 	# Warn, never block: an over-propped build stays selectable and says what would happen.
 	lab.picker.select_id("frame_3in_toothpick")
 	lab.propeller_picker.select_id("prop_7x4x3")
-	var warning_text: String = lab.details._warning_label.text
+	var warning_text: String = lab.details._warnings.ordered_text()
 	results.append(TestResult.new(
 		"a 7\" prop on a 3\" frame stays selectable, warns in words, and intersects on screen",
 		lab.propeller_picker.selected_part()["part_id"] == "prop_7x4x3"
-			and lab.details._warning_label.visible
+			and lab.details._warnings.visible
 			and warning_text.contains("strike the frame")
 			and lab.airframe.adjacent_prop_gap_m() < 0.0,
 		"clearance %+.4f m, warning: \"%s\"" % [

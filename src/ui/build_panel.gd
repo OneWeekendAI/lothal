@@ -39,7 +39,7 @@ var bottom_reserve := 0.0
 
 var _selectors: Dictionary = {}   # category -> OptionButton
 var _stat_values: Dictionary = {} # key -> Label
-var _warning_label: Label
+var _warnings: WarningList
 var _scroll: ScrollContainer
 ## The padded box inside the scroll — its minimum size is the panel's natural height.
 var _content: MarginContainer
@@ -123,13 +123,8 @@ func _init(p_catalog: PartsCatalog, initial_ids: Dictionary) -> void:
 		stats.add_child(value_label)
 		_stat_values[row["key"]] = value_label
 
-	_warning_label = Label.new()
-	_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_warning_label.custom_minimum_size = Vector2(300, 0)
-	_warning_label.theme_type_variation = &"WarnLabel"
-	# Exception: Warning label explicit amber color override
-	_warning_label.add_theme_color_override("font_color", LothalTheme.WARNING)
-	root.add_child(_warning_label)
+	_warnings = WarningList.new(300)
+	root.add_child(_warnings)
 
 	var hint := Label.new()
 	hint.text = "Tab: hide panel   Space/A: angle <-> acro"
@@ -186,6 +181,4 @@ func _refresh_stats() -> void:
 
 	_stat_values["speed"].text = "%.0f km/h" % build.top_speed_kmh()
 
-	var warnings := build.warnings()
-	_warning_label.text = "\n".join(BuildWarning.messages(warnings))
-	_warning_label.visible = not warnings.is_empty()
+	_warnings.show_warnings(build.warnings())

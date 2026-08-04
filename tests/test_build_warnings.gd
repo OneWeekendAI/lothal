@@ -39,6 +39,7 @@ static func run() -> Array:
 	results.append(_test_both_facts_are_told_every_time(catalog))
 	results.append(_test_hover_throttle_and_thrust_to_weight_are_one_fact(catalog))
 	results.append(_test_the_readout_is_accountable_to_the_sim(catalog))
+	results.append_array(_test_the_panels_show_severity(catalog))
 
 	return results
 
@@ -351,3 +352,62 @@ static func _entry(entries: Array[BuildWarning], id: StringName) -> BuildWarning
 		if entry.id == id:
 			return entry
 	return null
+
+
+# ---------------------------------------------------------------------------
+# The panels: severity is visible, or it may as well not exist
+# ---------------------------------------------------------------------------
+
+## Both panels used to dump every warning into one amber block, which is the UI half of the same
+## bug: a build that cannot be assembled and a build that is merely heavy arrived looking
+## identical. Impossible has to read as a problem and characteristic has to read as information,
+## and the impossible ones must never sit below the descriptive ones.
+##
+## The colours are the theme's existing roles — no new literals, no icon font.
+static func _test_the_panels_show_severity(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+
+	# A build with all three severities at once: 7" props on the 5" freestyle frame (impossible),
+	# its pack's current cap and sag (limiting), and what it flies like (characteristic).
+	var mixed := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		"prop_7x4x3", ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID)
+
+	var panel := BuildPanel.new(catalog, {"propeller": "prop_7x4x3"})
+	panel._rebuild()
+	results.append_array(_assert_panel_shows_severity("build panel", panel._warnings))
+	panel.free()
+
+	var details := PartDetails.new([])
+	details.render(catalog.list_category("frame")[0], mixed)
+	results.append_array(_assert_panel_shows_severity("part details", details._warnings))
+	details.free()
+
+	return results
+
+
+static func _assert_panel_shows_severity(panel_name: String, list: WarningList) -> Array:
+	var impossible := list.text_for(BuildWarning.Severity.IMPOSSIBLE)
+	var limiting := list.text_for(BuildWarning.Severity.LIMITING)
+	var characteristic := list.text_for(BuildWarning.Severity.CHARACTERISTIC)
+	var whole := list.ordered_text()
+
+	return [
+		TestResult.new(
+			"%s: the impossible warning is above the descriptive one, never below it" % panel_name,
+			impossible != "" and characteristic != "" and limiting != ""
+				and whole.find(impossible) < whole.find(limiting)
+				and whole.find(limiting) < whole.find(characteristic),
+			"impossible at %d, limiting at %d, characteristic at %d" % [
+				whole.find(impossible), whole.find(limiting), whole.find(characteristic)]
+		),
+		TestResult.new(
+			"%s: impossible reads as a problem and characteristic reads as information" % panel_name,
+			list.color_for(BuildWarning.Severity.IMPOSSIBLE) == LothalTheme.DANGER
+				and list.color_for(BuildWarning.Severity.LIMITING) == LothalTheme.WARNING
+				and list.color_for(BuildWarning.Severity.CHARACTERISTIC) == LothalTheme.TEXT_MUTED,
+			"impossible %s, limiting %s, characteristic %s" % [
+				list.color_for(BuildWarning.Severity.IMPOSSIBLE),
+				list.color_for(BuildWarning.Severity.LIMITING),
+				list.color_for(BuildWarning.Severity.CHARACTERISTIC)]
+		),
+	]

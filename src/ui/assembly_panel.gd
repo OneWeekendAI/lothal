@@ -41,7 +41,7 @@ var _mount_ids: Dictionary = {}
 var _sliders: Dictionary = {}   # key -> HSlider
 var _values: Dictionary = {}    # key -> Label
 var _fit_values: Dictionary = {}   # FIT_ROWS key -> Label
-var _fit_warning_label: Label
+var _fit_warnings: WarningList
 ## Set while the panel is writing its own controls from the model, so that programmatic slider
 ## moves do not read back as the builder having dragged something.
 var _updating := false
@@ -112,15 +112,10 @@ func _init(p_tweaks: AssemblyTweaks) -> void:
 		grid.add_child(value)
 		_fit_values[row["key"]] = value
 
-	# Same amber as the part panels' warnings, because it is the same kind of statement: warn,
-	# never block.
-	_fit_warning_label = Label.new()
-	_fit_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_fit_warning_label.custom_minimum_size = Vector2(280, 0)
-	_fit_warning_label.theme_type_variation = &"WarnLabel"
-	# Exception: Warning label explicit amber color override
-	_fit_warning_label.add_theme_color_override("font_color", LothalTheme.WARNING)
-	root.add_child(_fit_warning_label)
+	# The same severity treatment as the part panels' warnings, because it is the same kind of
+	# statement said about a different question: warn, never block.
+	_fit_warnings = WarningList.new(280)
+	root.add_child(_fit_warnings)
 
 	root.add_child(HSeparator.new())
 
@@ -249,7 +244,7 @@ func _render_fit(airframe: AirframeModel) -> void:
 	if airframe == null or airframe.battery_mesh == null:
 		for key in _fit_values:
 			_fit_values[key].text = "—"
-		_fit_warning_label.visible = false
+		_fit_warnings.visible = false
 		return
 
 	var overhang := airframe.battery_overhang_m()
@@ -264,8 +259,7 @@ func _render_fit(airframe: AirframeModel) -> void:
 	# do when placed — and one amber block is where a builder looks for either.
 	var warnings := airframe.mount_warnings()
 	warnings.append_array(airframe.battery_fit_warnings())
-	_fit_warning_label.text = "\n".join(BuildWarning.messages(warnings))
-	_fit_warning_label.visible = not warnings.is_empty()
+	_fit_warnings.show_warnings(warnings)
 
 
 ## What one fit row currently reads, and what the warning currently says. Named accessors rather
@@ -275,7 +269,7 @@ func fit_row_text(key: String) -> String:
 
 
 func fit_warning_text() -> String:
-	return _fit_warning_label.text if _fit_warning_label.visible else ""
+	return _fit_warnings.ordered_text() if _fit_warnings.visible else ""
 
 
 static func _signed_mm(metres: float, over_word: String, clear_word: String) -> String:

@@ -85,7 +85,7 @@ static func run() -> Array:
 
 	results.append(TestResult.new(
 		"an over-sized prop warns and stays selectable (warn, never block)",
-		panel._warning_label.visible and not panel._warning_label.text.is_empty()
+		panel._warnings.visible and not panel._warnings.ordered_text().is_empty()
 			and panel.build.propeller["part_id"] == "prop_7x4x3",
 		"%d warning(s) shown, selection kept" % panel.build.warnings().size()
 	))

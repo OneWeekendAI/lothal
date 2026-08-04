@@ -30,7 +30,7 @@ var spec_rows: Array = []
 var _title: Label
 var _detail_values: Dictionary = {}   # spec key -> Label
 var _stat_values: Dictionary = {}     # stat key -> Label
-var _warning_label: Label
+var _warnings: WarningList
 var _build_note: Label
 
 func _init(p_spec_rows: Array) -> void:
@@ -72,13 +72,8 @@ func _init(p_spec_rows: Array) -> void:
 	for row in STAT_ROWS:
 		_stat_values[row["key"]] = _add_row(stats, row["label"])
 
-	_warning_label = Label.new()
-	_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_warning_label.custom_minimum_size = Vector2(280, 0)
-	_warning_label.theme_type_variation = &"WarnLabel"
-	# Exception: Warning label explicit amber color override
-	_warning_label.add_theme_color_override("font_color", LothalTheme.WARNING)
-	root.add_child(_warning_label)
+	_warnings = WarningList.new(280)
+	root.add_child(_warnings)
 
 	_build_note = Label.new()
 	_build_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -131,9 +126,7 @@ func render(part: Dictionary, build: Build) -> void:
 
 	# Warn, never block (parts.md). A 3" frame under a 7" prop is a legitimate thing to look at;
 	# the consequence is the lesson, and the choice stays selectable.
-	var warnings := build.warnings()
-	_warning_label.text = "\n".join(BuildWarning.messages(warnings))
-	_warning_label.visible = not warnings.is_empty()
+	_warnings.show_warnings(build.warnings())
 
 	_build_note.text = "Stats for %s / %s / %s / %s / %s." % [
 		build.frame.get("name", "?"), build.motor.get("name", "?"),
