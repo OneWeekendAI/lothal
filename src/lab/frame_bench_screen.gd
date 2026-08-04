@@ -68,6 +68,15 @@ const CAMERA_ELEVATION_DEG := 24.0
 ## The chart's y axis, in deg/s. Fixed rather than fitted, for the reason BandTrace's own header
 ## gives: an axis that rescaled to its data would draw every frame's response as the same shape.
 const AXIS_TOP_DEG_S := FrameBench.TARGET_RATE_DEG_S * 1.3
+
+## The x axis, in seconds. Sized for the SLOWEST frame in the catalog — the 10" long-range, which
+## takes 68 ms — rather than for FrameBench.RUN_SECONDS, which is the backstop for a build that
+## never arrives and would draw every real response inside the leftmost twentieth of the chart.
+##
+## Fixed rather than fitted to the run, for BandTrace's own reason: an axis that rescaled would draw
+## the 65 mm whoop's 26 ms and the 10" long-range's 68 ms as identical curves, and the difference
+## between them is the answer.
+const CHART_SPAN_S := 0.10
 const AXIS_STEP_DEG_S := 100.0
 ## One sample per PHYSICS SUBSTEP. Far finer than the other benches', because their events last
 ## seconds and a roll step is over in forty milliseconds — at the battery bench's interval the whole
@@ -175,7 +184,7 @@ func _init(p_catalog: PartsCatalog, p_frame_id: String = "", p_motor_id: String 
 
 	trace = BandTrace.new()
 	trace.x_axis = BandTrace.XAxis.TIME_FINE
-	trace.x_max = FrameBench.RUN_SECONDS
+	trace.x_max = CHART_SPAN_S
 	trace.base_interval = SAMPLE_INTERVAL
 	trace.y_unit = "deg/s"
 	trace.y_step = AXIS_STEP_DEG_S
@@ -416,7 +425,12 @@ func _draw_new_history() -> void:
 	while _drawn < available:
 		var mine_row: Array = mine[mini(_drawn, mine.size() - 1)] if not mine.is_empty() else [0.0, 0.0]
 		var their_row: Array = theirs[mini(_drawn, theirs.size() - 1)] if not theirs.is_empty() else [0.0, 0.0]
-		trace.sample(float(mine_row[0]), float(their_row[1]), float(mine_row[1]))
+		# The clock is whichever bench is still running, not this build's own — both step at the same
+		# dt, so index i is the same instant for both. Taking this build's elapsed time would freeze
+		# the x axis the moment it arrived and leave the reference's remaining travel undrawn, which
+		# is precisely the part of the comparison worth seeing.
+		trace.sample(maxf(float(mine_row[0]), float(their_row[0])),
+			float(their_row[1]), float(mine_row[1]))
 		_drawn += 1
 
 
@@ -467,4 +481,5 @@ func readings() -> Dictionary:
 	out["yardstick_rate_deg_s"] = yardstick.readings()["rate_deg_s"]
 	out["yardstick_peak_alpha_rad_s2"] = yardstick.peak_alpha_rad_s2
 	out["yardstick_inertia_kg_m2"] = yardstick.inertia_kg_m2()[bench.axis]
+	out["yardstick_time_to_rate_s"] = yardstick.time_to_rate_s
 	return out

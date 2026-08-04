@@ -129,6 +129,7 @@ var history: Array = []
 ## Seconds to reach TARGET_RATE_DEG_S, or -1 while it has not been reached.
 var time_to_rate_s := -1.0
 var _alpha_rad_s2 := 0.0
+var _measured_gap_m := NAN
 
 
 static func for_build(p_build: Build, p_airframe: AirframeModel = null) -> FrameBench:
@@ -209,14 +210,19 @@ func roll_inertia_contributions() -> Array:
 ## if this bench has been handed it, a throwaway one built from the same Build if not. Never
 ## re-derived from arm_mm and a diameter: airframe_model.gd:193 names that as the divergence to
 ## avoid, and a second opinion here would agree for a long time and then stop.
+## Cached when it has to be measured off a throwaway airframe, because readings() is called every
+## substep-batch and generating a whole set of meshes per frame — to read one number that cannot have
+## changed — is a node churn nobody would find by looking at the chart.
 func prop_gap_m() -> float:
 	if airframe != null:
 		return airframe.adjacent_prop_gap_m()
+	if not is_nan(_measured_gap_m):
+		return _measured_gap_m
 	var drawn := AirframeModel.new()
 	drawn.rebuild(build)
-	var gap := drawn.adjacent_prop_gap_m()
+	_measured_gap_m = drawn.adjacent_prop_gap_m()
 	drawn.free()
-	return gap
+	return _measured_gap_m
 
 
 ## The collective the step is trimmed at: what this aircraft's throttle actually sits at, hands off,
@@ -258,8 +264,17 @@ func begin(p_axis: int, p_collective: float) -> void:
 func _take_settled_figures() -> void:
 	var scratch := _powertrain_for(build)
 	scratch.battery.set_to_nominal_datum()
-	scratch.prime(collective)
-	var cmds := commands()
+	# AND trimmed at the hover throttle the DATUM implies, not at the one today's pack needs. Half a
+	# datum is worse than either: the mixer adds its deflection to whatever collective it is given,
+	# so a fresh pack hovering three points lower would report a lower settled torque for the same
+	# airframe, and two frames measured on two states of charge would not be comparable — which is
+	# the whole reason this figure exists separately from the trace.
+	var settled_collective := build.hover_throttle()
+	scratch.prime(settled_collective)
+	var cmds := MotorMixer.mix(settled_collective,
+		1.0 if axis == AXIS_ROLL else 0.0,
+		1.0 if axis == AXIS_PITCH else 0.0,
+		1.0 if axis == AXIS_YAW else 0.0)
 	var dt := 1.0 / PHYSICS_HZ
 	for _i in int(SETTLE_SECONDS * PHYSICS_HZ):
 		scratch.step(cmds, dt)
