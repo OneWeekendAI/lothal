@@ -54,7 +54,7 @@ const CAMERA_FOV := 50.0
 ## Looking down on the layout steeply enough to read the plan, shallowly enough that gate heights
 ## are still visible as heights. A pure top-down view makes every gate look like it is on the
 ## ground, which is exactly the mistake a field editor must not encourage.
-const START_ELEVATION_DEG := 34.0
+const START_ELEVATION_DEG := 46.0
 const START_AZIMUTH_DEG := 0.0
 const ELEVATION_LIMIT_DEG := 85.0
 const DRAG_DEG_PER_PIXEL := 0.4
@@ -649,7 +649,7 @@ func _frame_course() -> void:
 
 	# The ground is sized to the layout for the same reason the camera is: a fixed 400 m plane is
 	# a grey haze behind a 6 m whoop box and runs out from under a long-range route.
-	var ground_size := maxf(extent_m * 6.0, 60.0)
+	var ground_size := maxf(extent_m * 3.0, 40.0)
 	(_ground.mesh as PlaneMesh).size = Vector2(ground_size, ground_size)
 	_ground.material_override = GroundGrid.build_material(ground_size)
 	_ground.position = centre
