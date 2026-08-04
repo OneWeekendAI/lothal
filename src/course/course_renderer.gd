@@ -24,12 +24,29 @@ const COLOR_IDLE := Color(0.62, 0.66, 0.74)
 const COLOR_START_FINISH := Color(1.0, 0.62, 0.20)
 
 var course: GateCourse
+## Which gate to light instead of the one that is due. -1 in Sim, where the gate that is due IS
+## the one worth lighting. The field editor sets it to the gate being edited, so that the ring you
+## are dragging is the bright one — and it does that through this renderer rather than by drawing
+## its own marker ring, because a second implementation of a gate is a second description of the
+## world (see this file's opening line, and gate_course.gd's).
+var highlight_index := -1
 var _ring_materials: Array[StandardMaterial3D] = []
 
 func _init(p_course: GateCourse) -> void:
 	course = p_course
 
 func _ready() -> void:
+	rebuild()
+
+## Throws the gates away and builds them again from whatever the course now says. Sim never calls
+## this — a course does not change while it is being flown — and the editor calls it on every
+## change, which is what keeps "the renderer renders what GateCourse describes and decides nothing"
+## true while gates are being added, moved and deleted.
+func rebuild() -> void:
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	_ring_materials.clear()
 	for i in course.gates.size():
 		add_child(_build_gate(course.gates[i], i))
 	highlight_next()
@@ -82,13 +99,17 @@ func _build_gate(gate: Dictionary, index: int) -> Node3D:
 ## Lights the gate that is due and dims the others. Gate 1 doubles as start/finish and keeps
 ## a distinct colour when it is not the active target.
 func highlight_next() -> void:
+	var lit := highlight_index if highlight_index >= 0 else course.next_gate_index
 	for i in _ring_materials.size():
 		var material := _ring_materials[i]
 		var color := COLOR_IDLE
-		if i == course.next_gate_index:
+		if i == lit:
 			color = COLOR_NEXT
 		elif i == 0:
+			# Gate 1 is the start/finish, on any layout. That is an index rather than a position,
+			# and it stays correct for an authored course precisely because it is one: the start
+			# line is defined as being behind the first gate, whatever shape the course is.
 			color = COLOR_START_FINISH
 		material.albedo_color = color
 		material.emission = color
-		material.emission_energy_multiplier = 2.4 if i == course.next_gate_index else 1.0
+		material.emission_energy_multiplier = 2.4 if i == lit else 1.0

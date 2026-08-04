@@ -53,6 +53,16 @@ var esc_bench: EscBenchScreen = null
 ## at four different throttles out of a real pack, and a step response left running behind Lab would
 ## be flattening a battery to answer a question nobody was still asking.
 var frame_bench: FrameBenchScreen = null
+## The field editor — where the course is laid out — or null when it is not the room you are in.
+## Freed on the way out like the others, but for a different reason: it holds no powertrain and
+## costs no charge (laying out gates turns no motors, labs-and-sim.md §5). What it does hold is a
+## SubViewport rendering a 3D world, and Lab's stated virtue is that it is quiet and cheap while
+## you work.
+var field_editor: FieldEditorScreen = null
+## The courses that have been laid out, and which one is flown. Held here for the same reason
+## `pack_charge` is: two rooms touch it — the editor writes it and the field reads it — and one
+## instance within a session is what stops the door from handing over a stale copy.
+var course_library := CourseLibrary.load_from()
 ## How much charge is in each pack right now. Loaded once on startup and held here rather than in
 ## any one room, because it is the one piece of state every room touches: two benches and the
 ## field all drain it, and Lab is where it gets charged back up. It is saved whenever a room that
@@ -65,6 +75,7 @@ var _bench_button: Button
 var _pack_bench_button: Button
 var _esc_bench_button: Button
 var _frame_bench_button: Button
+var _field_button: Button
 var _sim_button: Button
 var _showing_lab := true
 
@@ -107,6 +118,7 @@ func _init() -> void:
 	_pack_bench_button = _add_tab(bar, "Pack", show_battery_bench)
 	_esc_bench_button = _add_tab(bar, "ESC", show_esc_bench)
 	_frame_bench_button = _add_tab(bar, "Frame", show_frame_bench)
+	_field_button = _add_tab(bar, "Field", show_field_editor)
 	_sim_button = _add_tab(bar, "Sim", show_sim)
 	_refresh_tabs()
 
@@ -238,6 +250,22 @@ func show_frame_bench() -> void:
 	_refresh_tabs()
 
 
+## Into the field editor, with the build currently on Lab's rails. The build is here for exactly one
+## reason — a ring smaller than the aircraft that has to fly through it is impossible, and that is a
+## comparison of two known dimensions — and this room changes nothing about it.
+##
+## Notably it does NOT call _unplug_for(). A charger running while you lay out gates is fine: this
+## room draws no current, so there is nothing for it to overwrite. That is labs-and-sim.md §5 read
+## literally rather than by analogy with the benches.
+func show_field_editor() -> void:
+	_close_rooms()
+	field_editor = FieldEditorScreen.new(course_library, lab.current_build())
+	_host.add_child(field_editor)
+	_showing_lab = false
+	lab.visible = false
+	_refresh_tabs()
+
+
 ## Takes the pack this room is about to use off the charger. A pack cannot be plugged in and
 ## under load at once, and — the part that actually bites — every one of these rooms snapshots
 ## the pack on the way in and writes it back on the way out, so a charger still running into one
@@ -283,6 +311,13 @@ func _close_rooms() -> void:
 		_host.remove_child(frame_bench)
 		frame_bench.free()
 		frame_bench = null
+	# No persist_pack_charge() here, and its absence is the assertion: the field editor cannot have
+	# drained anything, because nothing in it turns. A write-back "for symmetry" would be inventing
+	# a consequence, which is precisely what §5 does not permit.
+	if field_editor != null:
+		_host.remove_child(field_editor)
+		field_editor.free()
+		field_editor = null
 	# Only when a room actually changed something. Opening a bench and walking straight back out
 	# must not rewrite the file — see PackCharge._dirty.
 	if pack_charge.has_unsaved_changes():
@@ -305,6 +340,11 @@ func show_sim() -> void:
 		# Handed over rather than loaded by Sim, so both rooms are looking at ONE set of packs
 		# within a session. Sim drains it and writes back on landing; it authors nothing else.
 		sim.pack_charge = pack_charge
+		# The field crosses the door the same way the build does, and in the same direction only.
+		# Handed over rather than re-loaded so a course laid out next door is the course you fly
+		# without a trip through the file; Sim reads it and never writes it (labs-and-sim.md §4).
+		sim.course_library = course_library
+		sim.adopt_selected_course()
 		# Sim is a direct child rather than living in `_host`, so nothing insets it below the
 		# tab bar the way Lab is inset. Its panel is told how much room the bar takes instead.
 		sim.ui_top_inset = TAB_BAR_HEIGHT
@@ -320,4 +360,5 @@ func _refresh_tabs() -> void:
 	_pack_bench_button.button_pressed = battery_bench != null
 	_esc_bench_button.button_pressed = esc_bench != null
 	_frame_bench_button.button_pressed = frame_bench != null
+	_field_button.button_pressed = field_editor != null
 	_sim_button.button_pressed = sim != null

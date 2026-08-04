@@ -100,6 +100,18 @@ var _last_heading := Basis.IDENTITY
 ## far too much work to redo on every input frame.
 var _hover_throttle := 0.0
 
+## Takes the course the handed-over library has selected, and re-keys the lap timer to it. Called
+## by AppShell after it hands `course_library` over and BEFORE this scene enters the tree, so the
+## field is finished by the time _ready builds anything from it — the same ordering, and for the
+## same reason, as the build crossing the door.
+##
+## Re-keying the timer is the part that must not be forgotten: a timer still holding the previous
+## course's best would be reporting a record set somewhere else, which is the exact failure
+## lap_timer.gd's header exists to describe.
+func adopt_selected_course() -> void:
+	course = course_library.selected()
+	lap_timer = LapTimer.new(course.fingerprint())
+
 func _ready() -> void:
 	ground_mesh.material_override = GroundGrid.build_material(GROUND_SIZE_M)
 
