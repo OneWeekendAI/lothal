@@ -11,7 +11,7 @@ extends SceneTree
 ##                                                 [azimuth_deg] [elevation_deg]
 ##                                                 [motor_part_id] [prop_part_id]
 ##                                                 ["sim" | <panel name>] [battery_part_id]
-##                                                 [resolution_WxH]
+##                                                 [resolution_WxH] [esc_part_id]
 ##
 ## The pack argument comes last rather than next to the motor and prop, so that every invocation
 ## written before it existed still means what it meant. Pass "" for the sim/panel slot to reach it
@@ -80,6 +80,15 @@ func _init() -> void:
 	if args.size() > 8 and args[8] != "":
 		if not shell.lab.battery_picker.select_id(args[8]):
 			print("no such pack in the visible list: %s" % args[8])
+			quit(1)
+			return
+
+	# The board, last again and for the same reason. It matters to a photograph of the BUILD panel
+	# because the board is often what binds: shooting a cinelifter through a 45 A stack would
+	# photograph a current limit that the build being illustrated does not have.
+	if args.size() > 10 and args[10] != "":
+		if not shell.lab.esc_picker.select_id(args[10]):
+			print("no such ESC in the visible list: %s" % args[10])
 			quit(1)
 			return
 
