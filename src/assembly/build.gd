@@ -247,6 +247,21 @@ func battery_size_m() -> Vector3:
 	return battery_size_of(battery)
 
 
+## How wide the assembled aircraft is, tip to tip across the propeller discs.
+##
+## Two motors face each other across the airframe at `arm_m` from the centre, and each carries a
+## prop reaching another radius past its own hub — so the widest thing that has to fit through a
+## gate is 2 * (arm + prop radius). Derived rather than measured off AirframeModel, because this is
+## the same arithmetic LabScreen._camera_distance_m() uses to frame the catalog's biggest build,
+## and it needs no meshes to exist: a course warning is asked at a point where nothing has been
+## drawn yet.
+##
+## Used by CourseWarnings to say whether a ring is smaller than the aircraft that has to fly
+## through it, which is a comparison of two known dimensions and therefore needs no threshold.
+func airframe_span_m() -> float:
+	return (arm_m + float(prop_geometry()["diameter_m"]) * 0.5) * 2.0
+
+
 ## Static so anything holding a catalog entry can ask its size without assembling a Build. The
 ## fallback is for an entry whose contributor has not published dimensions yet: the old estimate
 ## from mass at LiPo pack density, which is wrong in a small way rather than absent in a large one.

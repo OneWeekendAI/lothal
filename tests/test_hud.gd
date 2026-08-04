@@ -17,7 +17,7 @@ static func run() -> Array:
 
 	var hud := Hud.new()
 	var course := GateCourse.new()
-	var timer := LapTimer.new("user://test_hud_lap.json")
+	var timer := LapTimer.new(course.fingerprint(), "user://test_hud_lap.json")
 
 	var core := build.build_drone_core()
 	core.prime_motors(build.hover_throttle())

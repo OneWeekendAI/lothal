@@ -73,8 +73,16 @@ var tweaks: AssemblyTweaks = AssemblyTweaks.load_from()
 ## is what §3 says the field is for.
 var pack_charge: PackCharge = PackCharge.load_from()
 var hud: Hud
-var course := GateCourse.new()
-var lap_timer := LapTimer.new()
+## The field, read from the library Lab writes. Read from disk rather than handed over with the
+## selection, for exactly the reason `tweaks` above is: it is one file, Lab is the only writer, and
+## a copy passed through the door would be a second place a gate position lives. Sim never writes
+## it — the field authors nothing (labs-and-sim.md §1). AppShell may replace this with its own
+## instance before _ready so that both rooms are looking at one library within a session.
+var course_library: CourseLibrary = CourseLibrary.load_from()
+var course: GateCourse = course_library.selected()
+## Keyed on the course being flown, so a time set on one track is never reported as the record on
+## another. See lap_timer.gd's header — this is the one line that stops a best lap becoming a lie.
+var lap_timer := LapTimer.new(course.fingerprint())
 var course_renderer: CourseRenderer
 var drone_audio: DroneAudio
 var _l_was_pressed := false

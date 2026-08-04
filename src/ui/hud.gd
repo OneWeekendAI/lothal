@@ -168,7 +168,9 @@ func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, 
 
 	_current_lap_label.text = "LAP  %s" % LapTimer.format(timer.current_lap_s) if timer.running else "LAP  --:--.--"
 	_best_lap_label.text = "BEST %s" % LapTimer.format(timer.best_lap_s)
-	_gate_label.text = "GATE %d / %d" % [course.next_gate_index + 1, GateCourse.GATE_COUNT]
+	# Off the course being flown, not off GateCourse.GATE_COUNT — which was 8 whatever the pilot
+	# had laid out, and would have read "GATE 3 / 8" all the way round a five-gate course.
+	_gate_label.text = "GATE %d / %d" % [course.next_gate_index + 1, course.gate_count()]
 
 ## Minutes and seconds, because "2.4 min" is a number a pilot has to convert mid-flight and
 ## "2:24" is one they can act on. Zero reads as spent rather than as 0:00, which would look like a

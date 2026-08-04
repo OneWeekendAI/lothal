@@ -11,7 +11,11 @@ extends Node3D
 ## Thick enough to read as a structure at 18 m. The first pass used 9 cm, which is honest
 ## to a real race gate's tubing and rendered as an almost invisible pencil line — the ring
 ## has to be legible from the far side of the course or it cannot be aimed at.
-const RING_THICKNESS_M := 0.18
+##
+## It moved to GateCourse when the field editor arrived, because CourseWarnings has to know how
+## thick a hoop is to say whether two of them collide, and the tubing on screen and the tubing in
+## that answer have to be one number.
+const RING_THICKNESS_M := GateCourse.RING_THICKNESS_M
 
 const COLOR_NEXT := Color(0.30, 0.85, 1.0)
 ## Idle gates are dimmer than the target but still clearly lit: a pilot needs to see the

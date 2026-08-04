@@ -177,7 +177,7 @@ static func _timing() -> Array:
 	if FileAccess.file_exists(save_path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
 
-	var timer := LapTimer.new(save_path)
+	var timer := LapTimer.new(GateCourse.new().fingerprint(), save_path)
 
 	# Time spent before the first gate must not land on the lap.
 	timer.tick(5.0)
@@ -228,8 +228,8 @@ static func _timing() -> Array:
 
 	results.append(TestResult.new(
 		"the best time survives a restart (persisted to disk)",
-		absf(LapTimer.new(save_path).best_lap_s - 4.0) < 0.001,
-		"reloaded best = %.2f s" % LapTimer.new(save_path).best_lap_s
+		absf(LapTimer.new(GateCourse.new().fingerprint(), save_path).best_lap_s - 4.0) < 0.001,
+		"reloaded best = %.2f s" % LapTimer.new(GateCourse.new().fingerprint(), save_path).best_lap_s
 	))
 
 	# Crashing must void the lap in progress rather than time through the respawn.
