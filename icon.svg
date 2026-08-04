@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Lothal app icon.
+       Top-down plan of the reference quad: arm length and propeller radius are in the
+       real 5" ratio (110 mm arm, 127 mm prop), so the discs clear each other the way
+       they do on the bench. The front-right arm is cyan, matching the forward
+       convention the sim already uses. Colors are LothalTheme's own palette. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#171A1F"/>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="184.5" fill="none" stroke="#2E333B" stroke-width="1"/>
+  <g transform="translate(80,80) scale(3.6)">
+    <g fill="none" stroke-linecap="round">
+      <g stroke="#4E555F" stroke-width="5">
+        <circle cx="164" cy="76" r="36"/>
+        <circle cx="164" cy="164" r="36"/>
+        <circle cx="76" cy="164" r="36"/>
+        <circle cx="76" cy="76" r="36"/>
+      </g>
+      <g stroke="#E3E8F0" stroke-width="15">
+        <path d="M100 100 L76 76"/>
+        <path d="M140 140 L164 164"/>
+        <path d="M100 140 L76 164"/>
+      </g>
+      <path d="M140 100 L164 76" stroke="#66D1F5" stroke-width="15"/>
+      <rect x="99" y="97" width="42" height="46" rx="10" stroke="#E3E8F0" stroke-width="13"/>
+    </g>
+    <g fill="#E3E8F0">
+      <circle cx="76" cy="76" r="11"/>
+      <circle cx="164" cy="164" r="11"/>
+      <circle cx="76" cy="164" r="11"/>
+    </g>
+    <circle cx="164" cy="76" r="11" fill="#66D1F5"/>
+  </g>
+</svg>
