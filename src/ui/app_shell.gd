@@ -147,6 +147,7 @@ func show_lab() -> void:
 func show_bench() -> void:
 	_close_rooms()
 	var selection := lab.selection()
+	_unplug_for(selection)
 	bench = BenchScreen.new(
 		lab.catalog,
 		selection["motor"],
@@ -167,6 +168,7 @@ func show_bench() -> void:
 func show_battery_bench() -> void:
 	_close_rooms()
 	var selection := lab.selection()
+	_unplug_for(selection)
 	battery_bench = BatteryBenchScreen.new(
 		lab.catalog,
 		selection["motor"],
@@ -187,6 +189,7 @@ func show_battery_bench() -> void:
 func show_esc_bench() -> void:
 	_close_rooms()
 	var selection := lab.selection()
+	_unplug_for(selection)
 	esc_bench = EscBenchScreen.new(
 		lab.catalog,
 		selection["motor"],
@@ -200,6 +203,18 @@ func show_esc_bench() -> void:
 	_showing_lab = false
 	lab.visible = false
 	_refresh_tabs()
+
+
+## Takes the pack this room is about to use off the charger. A pack cannot be plugged in and
+## under load at once, and — the part that actually bites — every one of these rooms snapshots
+## the pack on the way in and writes it back on the way out, so a charger still running into one
+## of them has its whole contribution overwritten when you come back. Charging a pack you are
+## NOT taking with you carries on untouched.
+func _unplug_for(selection: Dictionary) -> void:
+	if lab == null or lab.charge_panel == null:
+		return
+	if lab.charge_panel.release(str(selection.get("battery", ""))):
+		pack_charge.save()
 
 
 ## Tears down whichever room is currently running. Freed immediately rather than
@@ -248,6 +263,7 @@ func show_sim() -> void:
 	if sim == null:
 		sim = load(SIM_SCENE).instantiate()
 		sim.initial_selection = lab.selection()
+		_unplug_for(sim.initial_selection)
 		# Handed over rather than loaded by Sim, so both rooms are looking at ONE set of packs
 		# within a session. Sim drains it and writes back on landing; it authors nothing else.
 		sim.pack_charge = pack_charge

@@ -49,8 +49,21 @@ var _compression: OptionButton
 var _shelf: Label
 var _note: Label
 
-## Whether the charger is running. Lab ticks it; nothing else does.
-var charging := false
+## WHAT IS ON THE CHARGER IS NOT WHAT IS ON SCREEN. The charger holds the pack that was put on
+## it and keeps hold of it while the builder goes and reads about something else — which is the
+## only behaviour a charger can have and still be worth walking away from. Selection decides what
+## this panel DISPLAYS; these three decide what is actually filling.
+##
+## Held as an id, a capacity and a name rather than as a Build, precisely because the pack being
+## charged may be one the panel is no longer showing and can no longer ask.
+var _charging_id := ""
+var _charging_capacity_mah := 0.0
+var _charging_name := ""
+
+## Whether the charger is running at all, on any pack. Lab ticks it; nothing else does.
+var charging: bool:
+	get:
+		return _charging_id != ""
 
 var _pack: Dictionary = {}
 ## The build the selected pack belongs to, so the panel can ask it for a BatteryModel rather than
@@ -90,7 +103,12 @@ func _init(p_charge: PackCharge, p_catalog: PartsCatalog = null) -> void:
 
 	# The countdown, and what it is a compression of. Updated on every tick while charging, so it
 	# actually counts down rather than being a figure quoted once when the button was pressed.
+	# Wraps, like the shelf and the note below it: the longest form of this line names the pack
+	# being charged as well as both clocks, and a Label that cannot wrap answers a string that
+	# long by widening the whole rail.
 	_clock = Label.new()
+	_clock.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_clock.custom_minimum_size = Vector2(InstrumentPanel.CAPTION_WIDTH, 0)
 	_clock.theme_type_variation = &"ReadoutLabel"
 	root.add_child(_clock)
 
@@ -130,30 +148,65 @@ func _init(p_charge: PackCharge, p_catalog: PartsCatalog = null) -> void:
 	_select_current_compression()
 
 
-## Points the charger at a pack. Called whenever Lab's selection changes.
+## Points the panel at a pack. Called whenever Lab's selection changes — which is on EVERY part
+## change, frames and motors included. It therefore does not touch what is on the charger: this
+## used to stop it, so picking a different frame silently unplugged a pack that was halfway full.
 func render(build: Build) -> void:
 	_pack = build.battery
 	_build = build
-	charging = false
 	_refresh()
 
 
 ## Puts `delta` seconds on the charger, if it is running. Returns true if anything changed, so
 ## Lab only writes the file on a frame that actually moved something.
 func tick(delta: float) -> bool:
-	if not charging or _pack.is_empty():
+	if _charging_id == "":
 		return false
-	var restored := charge.charge(_part_id(), delta, _capacity_mah())
+	# The pack on the charger and its capacity, NOT the selected pack's — otherwise a 1500 mAh
+	# pack would fill at whatever rate the pack you happen to be reading about implies.
+	var restored := charge.charge(_charging_id, delta, _charging_capacity_mah)
 	if restored <= 0.0:
 		# Full. Stop rather than sit there running against a pack that cannot take any more.
-		set_charging(false)
+		_stop()
 		return true
 	_refresh()
 	return true
 
 
+## Puts the SELECTED pack on the charger, or takes whatever is on it off. Pressing Charge while
+## looking at a second pack moves the charger to that pack: there is one charger in the garage,
+## and putting a pack on it is the act of taking the other one off.
 func set_charging(value: bool) -> void:
-	charging = value and not charge.is_full(_part_id())
+	if value and not _pack.is_empty() and not charge.is_full(_part_id()):
+		_charging_id = _part_id()
+		_charging_capacity_mah = _capacity_mah()
+		_charging_name = str(_pack.get("name", _charging_id))
+	else:
+		_charging_id = ""
+		_charging_capacity_mah = 0.0
+		_charging_name = ""
+	_refresh()
+	charge_changed.emit()
+
+
+## Takes `part_id` off the charger, if that is what is on it. Returns whether anything came off.
+##
+## A pack cannot be on the charger and in the aircraft at the same time, and the rooms that fly
+## or bench one do not merely disagree with a charger that keeps running into them: they snapshot
+## the pack on the way in and write it back on the way out, so the charger's whole contribution
+## is overwritten the moment you walk back to the garage. Leaving with a pack unplugs it.
+## Charging a pack you are NOT taking with you is untouched — that is the case worth having.
+func release(part_id: String) -> bool:
+	if part_id == "" or _charging_id != part_id:
+		return false
+	_stop()
+	return true
+
+
+func _stop() -> void:
+	_charging_id = ""
+	_charging_capacity_mah = 0.0
+	_charging_name = ""
 	_refresh()
 	charge_changed.emit()
 
@@ -197,14 +250,17 @@ func _refresh() -> void:
 	_clock.text = _clock_text()
 	_shelf.text = _shelf_text()
 
+	# The button acts on the pack ON SCREEN, so it reads against that pack rather than against
+	# the charger: "Stop" only while the thing you are looking at is the thing that is filling.
+	var showing_the_charged_pack := _charging_id != "" and _charging_id == _part_id()
 	if charge.is_full(_part_id()):
 		_button.text = "Full"
 		_button.disabled = true
 		_button.button_pressed = false
 	else:
 		_button.disabled = false
-		_button.button_pressed = charging
-		_button.text = "Stop" if charging else "Charge"
+		_button.button_pressed = showing_the_charged_pack
+		_button.text = "Stop" if showing_the_charged_pack else "Charge"
 
 
 ## Where this pack is resting at its current state of charge, at the pack and per cell. Seeded
@@ -220,12 +276,23 @@ func _voltage_text() -> String:
 
 ## The countdown, and the real wait it stands for. Both, always, while there is charging left to
 ## do — the compression is only honest if the thing being compressed is legible beside it.
+##
+## When the charger is running on a pack that is NOT the one on screen, the countdown is about
+## that pack and has to name it. A time with no subject beside a different pack's percentage is
+## worse than no time at all — it reads as a claim about the pack you are looking at.
 func _clock_text() -> String:
-	if charge.is_full(_part_id()):
+	var id := _part_id()
+	var capacity := _capacity_mah()
+	var away := _charging_id != "" and _charging_id != id
+	if away:
+		id = _charging_id
+		capacity = _charging_capacity_mah
+	elif charge.is_full(id):
 		return "Full — nothing to put back."
-	var compressed := charge.seconds_to_full(_part_id(), _capacity_mah())
-	var real := charge.real_seconds_to_full(_part_id(), _capacity_mah())
-	var verb := "Charging: " if charging else "To full: "
+	var compressed := charge.seconds_to_full(id, capacity)
+	var real := charge.real_seconds_to_full(id, capacity)
+	var verb := ("Charging %s: " % _charging_name) if away \
+		else ("Charging: " if charging else "To full: ")
 	if is_equal_approx(charge.charge_compression, 1.0):
 		return "%s%s, in real time." % [verb, Duration.spoken(real)]
 	return "%s%s left, compressed %.0f:1 from a real %s." % [

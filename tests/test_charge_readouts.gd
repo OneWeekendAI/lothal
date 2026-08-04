@@ -31,6 +31,7 @@ static func run() -> Array:
 	results.append_array(_test_the_charger_states_the_pack(catalog))
 	results.append_array(_test_the_charger_shows_both_clocks(catalog))
 	results.append_array(_test_the_countdown_counts_down(catalog))
+	results.append_array(_test_the_charger_runs_unattended(catalog))
 	results.append_array(_test_the_shelf_separates_flat_from_charged(catalog))
 	results.append_array(_test_the_hud_shows_charge_and_time_left(catalog))
 
@@ -134,6 +135,109 @@ static func _test_the_charger_shows_both_clocks(catalog: PartsCatalog) -> Array:
 		"at 1:1 the charger says so plainly instead of quoting a compression of one",
 		real_time.contains("real time") and not real_time.contains(":1,"),
 		"clock reads \"%s\"" % real_time
+	))
+
+	panel.free()
+	return results
+
+
+## ---------------------------------------------------------------------------
+## A CHARGER YOU HAVE TO STAND IN FRONT OF IS NOT A CHARGER
+## ---------------------------------------------------------------------------
+##
+## The charger used to be stopped by `render()`, which Lab calls on EVERY selection change —
+## so picking a different frame, motor or propeller, none of which is the pack on the charger,
+## silently took the pack off it. The user found this by leaving a pack charging and clicking
+## around: 45 compressed minutes of charge quietly never happened, and nothing said so.
+##
+## The rule these three checks pin down: what is ON the charger is what was put on it. What is
+## SELECTED only decides what the panel is showing you. The two are allowed to differ, and the
+## charger keeps running while they do — which is the entire point of a charger on a bench.
+static func _test_the_charger_runs_unattended(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	var panel := _panel(catalog, HALF)
+	var capacity: float = float(ReferenceBuild.build().battery["specs"]["mah"])
+
+	panel.set_charging(true)
+	for _i in 30:
+		panel.tick(1.0)
+	var before := panel.charge.used_mah(ReferenceBuild.BATTERY_ID)
+
+	# Look at a different FRAME. Same pack, and it is still the pack on the charger — nothing
+	# about this click went anywhere near the battery rail.
+	var other_frame := Build.from_ids(catalog, "frame_7in_long_range", ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID)
+	panel.render(other_frame)
+
+	results.append(TestResult.new(
+		"changing a part that is not the pack leaves the charger running",
+		panel.charging,
+		"charger reports charging = %s after the frame changed" % panel.charging
+	))
+
+	for _i in 30:
+		panel.tick(1.0)
+	var after := panel.charge.used_mah(ReferenceBuild.BATTERY_ID)
+	results.append(TestResult.new(
+		"...and it is still actually putting charge in, not merely claiming to be on",
+		after < before - 1.0,
+		"%.1f mAh used -> %.1f mAh used over 30 s after the change" % [before, after]
+	))
+
+	# Now walk over to a DIFFERENT PACK. The charger does not follow the eye: the pack that was
+	# put on it stays on it and keeps filling while a second one is being read about.
+	var other_pack := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, "battery_6s_1300", ReferenceBuild.ESC_ID)
+	panel.render(other_pack)
+	var before_away := panel.charge.used_mah(ReferenceBuild.BATTERY_ID)
+	for _i in 30:
+		panel.tick(1.0)
+	var after_away := panel.charge.used_mah(ReferenceBuild.BATTERY_ID)
+
+	results.append(TestResult.new(
+		"a pack left on the charger keeps charging while a different pack is on screen",
+		after_away < before_away - 1.0
+			and panel.charge.used_mah("battery_6s_1300") == 0.0,
+		"%.1f -> %.1f mAh used on the charged pack; the pack being looked at moved %.1f mAh" % [
+			before_away, after_away, panel.charge.used_mah("battery_6s_1300")]
+	))
+
+	# The countdown is now describing a pack you cannot see, so it has to say WHICH pack, or it
+	# is a number with no subject.
+	results.append(TestResult.new(
+		"and the panel names the pack that is on the charger when it is not the one shown",
+		panel.readout_text()["clock"].contains(ReferenceBuild.build().battery["name"]),
+		"clock reads \"%s\"" % panel.readout_text()["clock"]
+	))
+
+	# Capacity comes from the pack ON the charger, not the one on screen — a 1500 mAh pack must
+	# not fill at a 1300 mAh pack's rate because the eye wandered. Checked as the mAh actually
+	# delivered over those 30 s, against both rates: the wrong one is a distinguishable number,
+	# which is the only reason this assertion can fail.
+	var delivered := before_away - after_away
+	var charged_rate := panel.charge.charge_rate_mah_per_s(capacity) * 30.0
+	var displayed_rate := panel.charge.charge_rate_mah_per_s(
+		float(catalog.get_part("battery_6s_1300")["specs"]["mah"])) * 30.0
+	results.append(TestResult.new(
+		"the charge rate is the charged pack's, not the displayed pack's",
+		is_equal_approx(delivered, charged_rate) and not is_equal_approx(charged_rate, displayed_rate),
+		"delivered %.2f mAh in 30 s; the %.0f mAh pack's rate gives %.2f, the 1300 mAh pack's %.2f" % [
+			delivered, capacity, charged_rate, displayed_rate]
+	))
+
+	# Leaving with the pack unplugs it — and only that pack. A room that flies or benches a pack
+	# snapshots it on entry and writes it back on exit, so a charger still running into one has
+	# its whole contribution overwritten on the way back: you would return with LESS than you
+	# left. Charging a pack you are not taking with you is exactly the case worth keeping.
+	results.append(TestResult.new(
+		"taking a DIFFERENT pack out of the garage leaves the charger alone",
+		not panel.release("battery_6s_1300") and panel.charging,
+		"released the 6S; charger reports charging = %s" % panel.charging
+	))
+	results.append(TestResult.new(
+		"taking the CHARGED pack out unplugs it, rather than letting the room overwrite it",
+		panel.release(ReferenceBuild.BATTERY_ID) and not panel.charging,
+		"released the charged pack; charger reports charging = %s" % panel.charging
 	))
 
 	panel.free()
