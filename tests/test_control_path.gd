@@ -36,18 +36,36 @@ static func _gd_files(dir_path: String) -> PackedStringArray:
 static func run() -> Array:
 	var results: Array = []
 
-	# --- One mixer call site ---
+	# --- One mixer call site IN THE CONTROL PATH ---
+	#
+	# The failure this guards against is TWO CONTROL LAWS, each mixing its own commands — which is
+	# how angle mode came to have an open-loop yaw axis that no fix to the rate loop ever reached.
+	# It is not a ban on reading the mixer. Build.attitude_demand_at_hover() asks it, at design
+	# time and with nothing flying, at what stick deflection airmode starts trading collective for
+	# attitude, so that the build panel's manoeuvre-headroom figure comes from the mixer that is
+	# actually installed rather than from a formula beside it that could drift.
+	#
+	# So the check is by LOCATION rather than by count: anything under the flight path — the
+	# controllers, the sim, the scene that steps them — may not mix, except the one rate loop.
+	const FLIGHT_PATH := ["res://src/fc/", "res://src/sim/", "res://src/scenes/"]
 	var callers: PackedStringArray = []
+	var flight_path_callers: PackedStringArray = []
 	for path in _gd_files("res://src"):
 		if path == "res://src/sim/motor_mixer.gd":
 			continue   # its own definition, not a call
 		var code := _code_only(FileAccess.get_file_as_string(path))
-		if code.contains("MotorMixer.mix"):
-			callers.append(path.get_file())
+		if not code.contains("MotorMixer.mix"):
+			continue
+		callers.append(path.get_file())
+		for prefix in FLIGHT_PATH:
+			if path.begins_with(prefix):
+				flight_path_callers.append(path.get_file())
 	results.append(TestResult.new(
-		"MotorMixer.mix is called from exactly one place in src/",
-		callers.size() == 1 and callers[0] == "rate_mode_controller.gd",
-		"callers: %s" % ("none" if callers.is_empty() else ", ".join(callers))
+		"exactly one thing in the flight path mixes: the single inner rate loop",
+		flight_path_callers.size() == 1 and flight_path_callers[0] == "rate_mode_controller.gd",
+		"flight-path callers: %s (all callers: %s)" % [
+			"none" if flight_path_callers.is_empty() else ", ".join(flight_path_callers),
+			"none" if callers.is_empty() else ", ".join(callers)]
 	))
 
 	# --- The FC cannot reach around the gyro ---

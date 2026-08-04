@@ -723,17 +723,114 @@ func warnings() -> Array[BuildWarning]:
 			{"usable_fraction": usable_fraction, "bench_twr": thrust_to_weight(),
 				"reachable_twr": reachable_thrust_n / weight_n()}))
 
+	out.append_array(_flight_quality())
+	return out
+
+
+## What this aircraft DOES, in numbers with units — as opposed to whether it is any good.
+##
+## This block used to be three branches on one axis: cannot hover, else TWR < 2.0 "will barely
+## leave the ground", else hover > 60% "almost no headroom". Four things were wrong with it, and
+## they are worth naming because they are the failure modes this whole file now guards against.
+##
+##   1. 2.0:1 IS TASTE WEARING PHYSICS CLOTHING. It is not a boundary between flying and not
+##      flying; it is roughly the boundary between sluggish and sporty. Cinelifters and camera
+##      rigs fly at and below it deliberately, and one such build was told it would barely leave a
+##      ground it had in fact left, climbed away from and flown laps around.
+##   2. IT CUT ONE QUANTITY TWICE. Hover throttle is sqrt(1 / TWR) — thrust goes as RPM squared
+##      and RPM as the command — so TWR 2.0 IS hover 70.7%. Two constants, one continuum, and
+##      either could be edited into disagreeing with the other about the same aircraft.
+##   3. `elif` HID THE USEFUL STATEMENT BEHIND THE ALARMING ONE. The reported build never saw the
+##      headroom sentence, which was the accurate and actionable one, because the TWR branch
+##      consumed it first. They are not mutually exclusive facts.
+##   4. IT WAS ALL THE SAME SEVERITY as a pack that physically does not fit.
+##
+## What is left is one hard boundary and two descriptions. The boundary is real: peak thrust below
+## weight means the aircraft cannot hold itself up, and no wording makes that a preference. The two
+## descriptions are both reported, every time, because they are different facts — how hard it can
+## climb, and how much of a stick input it can absorb without giving up altitude to do it.
+##
+## There is deliberately no derived "floor" between them. The only floor that could be computed
+## honestly — the TWR at which climb margin no longer arrests a descent — depends on the descent
+## rate being arrested, which is a pilot's choice and not a property of the parts. Rather than
+## assert one, the margin itself is printed and the reader can do what they like with it.
+func _flight_quality() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+
 	if not can_hover():
 		out.append(BuildWarning.impossible(&"cannot_hover",
 			"This build cannot lift its own %.0f g — it will not leave the ground." % all_up_weight_g(),
-			{"all_up_weight_g": all_up_weight_g(), "twr": thrust_to_weight()}))
-	elif thrust_to_weight() < 2.0:
-		out.append(BuildWarning.limiting(&"low_twr",
-			"Thrust-to-weight is only %.1f:1 — this will barely leave the ground." % thrust_to_weight(),
-			{"twr": thrust_to_weight()}))
-	elif hover_throttle() > 0.6:
-		out.append(BuildWarning.limiting(&"high_hover",
-			"Hover throttle is %.0f%% — almost no headroom left to manoeuvre." % (hover_throttle() * 100.0),
-			{"hover_throttle": hover_throttle()}))
+			{"all_up_weight_g": all_up_weight_g(), "twr": thrust_to_weight(),
+				"reachable_twr": peak_thrust()["thrust_n"] / weight_n()}))
+		# Climb margin and headroom are statements about flight, and there is none. Printing
+		# "climbs at -2 m/s^2" beneath "it will not leave the ground" would be arithmetic, not
+		# information.
+		return out
+
+	var climb := climb_margin_mps2()
+	out.append(BuildWarning.characteristic(&"climb_margin",
+		"Thrust-to-weight %.1f:1 — %.1f m/s%s of climb available above hover, about %.1f g." % [
+			thrust_to_weight(), climb, "²", climb / GRAVITY_MPS2],
+		{"twr": thrust_to_weight(), "climb_accel_mps2": climb,
+			"climb_g": climb / GRAVITY_MPS2}))
+
+	# Two wordings for one figure, because "past that" is not a true clause when there is no past
+	# that: a build with the whole range in hand should read as having it, rather than as having
+	# 100% of something it is about to run out of.
+	var demand := attitude_demand_at_hover()
+	var headroom := "Hover sits at %.0f%% throttle and holds it through any input the mixer can ask for." % [
+		hover_throttle() * 100.0]
+	if demand < 1.0:
+		headroom = "Hover sits at %.0f%% throttle, and holds it through %.0f%% of a full roll-pitch-yaw demand — past that the mixer keeps the attitude and gives up the collective." % [
+			hover_throttle() * 100.0, demand * 100.0]
+	out.append(BuildWarning.characteristic(&"manoeuvre_headroom", headroom,
+		{"hover_throttle": hover_throttle(), "attitude_demand_fraction": demand}))
 
 	return out
+
+
+## Upward acceleration available above hover, in m/s^2. Whatever thrust is not holding the aircraft
+## up is free to accelerate it, so this is exactly g(TWR - 1) — a physical statement with units,
+## and one that needs no threshold to be worth printing.
+func climb_margin_mps2() -> float:
+	return GRAVITY_MPS2 * (thrust_to_weight() - 1.0)
+
+
+## How much of a full simultaneous roll-pitch-yaw demand this build can absorb while still HOLDING
+## its hover throttle, as a fraction of full command. 1.0 means the stick can go anywhere and the
+## aircraft keeps its altitude authority.
+##
+## This is the honest reason a high hover throttle matters, and it is derived from the mixer rather
+## than asserted. MotorMixer gives attitude priority over collective (airmode, see its header): it
+## builds the per-motor attitude deltas first, then shifts the collective until they fit inside
+## [0, 1]. So the throttle actually delivered is capped at 1 - hi, where hi is the largest delta,
+## and a build hovering above that cap sinks whenever the pilot asks for that much attitude.
+##
+## Bisected against MotorMixer.mix() itself rather than solved from MIX_GAIN, so that if the mixing
+## strategy changes — a different gain, a different airmode policy, renormalisation — this figure
+## follows it instead of quietly describing a mixer that no longer exists.
+func attitude_demand_at_hover() -> float:
+	var hover := hover_throttle()
+	if _holds_collective(hover, 1.0):
+		return 1.0
+
+	var low := 0.0
+	var high := 1.0
+	for _i in 40:
+		var mid := (low + high) * 0.5
+		if _holds_collective(hover, mid):
+			low = mid
+		else:
+			high = mid
+	return low
+
+
+## Does the mixer still deliver the commanded collective at this demand? The three mix rows each
+## sum to zero across the four motors, so the mean of the mixed commands IS the collective the
+## mixer settled on — below the command means it has started trading throttle for attitude.
+func _holds_collective(throttle: float, demand: float) -> bool:
+	var mixed := MotorMixer.mix(throttle, demand, demand, demand)
+	var total := 0.0
+	for name in MotorLayout.MOTOR_NAMES:
+		total += float(mixed[name])
+	return total / 4.0 >= throttle - 1e-6
