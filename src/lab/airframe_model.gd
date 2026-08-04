@@ -172,8 +172,8 @@ func mount_point(id: String) -> MountPoint:
 ## What is wrong with how the mounted components are attached, in words: the mount system's own
 ## verdict on each of them, in one list. Separate from battery_fit_warnings() below, which is what
 ## the assembled GEOMETRY does, in the same way Build.warnings() is separate from both.
-func mount_warnings() -> Array[String]:
-	var out: Array[String] = []
+func mount_warnings() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
 	var stack_mount := mount_point("stack")
 	if stack_mount != null:
 		out.append_array(stack_mount.fit_warnings(
@@ -285,19 +285,23 @@ func battery_prop_clearance_m() -> float:
 ##
 ## Separate from Build.warnings(), which is the same split the prop clearance already uses: that
 ## list is what the parts DECLARE about each other, and this is what the assembled geometry does.
-func battery_fit_warnings() -> Array[String]:
-	var out: Array[String] = []
+func battery_fit_warnings() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
 	if battery_mesh == null:
 		return out
 
 	var overhang := battery_overhang_m()
 	if overhang["lateral"] > 0.0:
-		out.append("The pack is %.0f mm wider than the centre plate — %.0f mm hangs over each side, with nothing for a strap to hold down." % [
-			overhang["lateral"] * 2000.0, overhang["lateral"] * 1000.0])
+		out.append(BuildWarning.limiting(&"pack_wider_than_plate",
+			"The pack is %.0f mm wider than the centre plate — %.0f mm hangs over each side, with nothing for a strap to hold down." % [
+				overhang["lateral"] * 2000.0, overhang["lateral"] * 1000.0],
+			{"lateral_overhang_mm": overhang["lateral"] * 1000.0}))
 
 	var clearance := battery_prop_clearance_m()
 	if clearance < 0.0:
-		out.append("The pack reaches %.0f mm into the propeller discs — there is no room on this airframe for it." % [
-			-clearance * 1000.0])
+		out.append(BuildWarning.impossible(&"pack_in_prop_disc",
+			"The pack reaches %.0f mm into the propeller discs — there is no room on this airframe for it." % [
+				-clearance * 1000.0],
+			{"intrusion_mm": -clearance * 1000.0}))
 
 	return out

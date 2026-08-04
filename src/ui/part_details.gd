@@ -132,7 +132,7 @@ func render(part: Dictionary, build: Build) -> void:
 	# Warn, never block (parts.md). A 3" frame under a 7" prop is a legitimate thing to look at;
 	# the consequence is the lesson, and the choice stays selectable.
 	var warnings := build.warnings()
-	_warning_label.text = "\n".join(warnings)
+	_warning_label.text = "\n".join(BuildWarning.messages(warnings))
 	_warning_label.visible = not warnings.is_empty()
 
 	_build_note.text = "Stats for %s / %s / %s / %s / %s." % [

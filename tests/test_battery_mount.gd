@@ -224,7 +224,7 @@ static func _test_the_prop_warning_follows_the_pack(_catalog: PartsCatalog) -> T
 
 	var forward_says_so := false
 	for warning in forward.battery_fit_warnings():
-		if warning.contains("propeller discs"):
+		if warning.message.contains("propeller discs"):
 			forward_says_so = true
 
 	var passed := centred_clearance > 0.0 \

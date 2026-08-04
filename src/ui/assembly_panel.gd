@@ -264,7 +264,7 @@ func _render_fit(airframe: AirframeModel) -> void:
 	# do when placed — and one amber block is where a builder looks for either.
 	var warnings := airframe.mount_warnings()
 	warnings.append_array(airframe.battery_fit_warnings())
-	_fit_warning_label.text = "\n".join(warnings)
+	_fit_warning_label.text = "\n".join(BuildWarning.messages(warnings))
 	_fit_warning_label.visible = not warnings.is_empty()
 
 

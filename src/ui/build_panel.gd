@@ -187,5 +187,5 @@ func _refresh_stats() -> void:
 	_stat_values["speed"].text = "%.0f km/h" % build.top_speed_kmh()
 
 	var warnings := build.warnings()
-	_warning_label.text = "\n".join(warnings) if not warnings.is_empty() else ""
+	_warning_label.text = "\n".join(BuildWarning.messages(warnings))
 	_warning_label.visible = not warnings.is_empty()

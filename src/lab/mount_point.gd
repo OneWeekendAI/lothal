@@ -85,27 +85,39 @@ static func mounting_of(part: Dictionary) -> Dictionary:
 ##
 ## `size_m` is the component's drawn footprint in BODY axes (width across X, height up Y, length
 ## along Z), or Vector3.ZERO to skip the clearance half of the check.
-func fit_warnings(part_name: String, mounting: Dictionary, size_m: Vector3 = Vector3.ZERO) -> Array[String]:
-	var out: Array[String] = []
+## Severity follows the same rule as everywhere else (labs-and-sim.md §2.1): what the geometry
+## REFUSES is impossible, what merely binds is limiting. A pattern that does not line up does not
+## bolt down — that is a fact about two sets of holes. A board that bolts down but overhangs the
+## plate is mounted, with its corners over air: a real trade-off a builder may accept.
+func fit_warnings(part_name: String, mounting: Dictionary, size_m: Vector3 = Vector3.ZERO) -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
 	var wants: String = mounting.get("attachment", STRAP)
 
 	if wants != attachment:
 		if wants == BOLT:
-			out.append("%s bolts through a %s pattern, and %s has nothing to bolt into — it would have to be zip-tied or trayed." % [
-				part_name, mounting.get("pattern", "?"), label])
+			out.append(BuildWarning.impossible(&"mount_attachment",
+				"%s bolts through a %s pattern, and %s has nothing to bolt into — it would have to be zip-tied or trayed." % [
+					part_name, mounting.get("pattern", "?"), label],
+				{"wants": wants, "offers": attachment, "mount": label}))
 		else:
-			out.append("%s straps down, and %s is a bolt pattern — a strap has nothing to pass through there." % [
-				part_name, label])
+			out.append(BuildWarning.impossible(&"mount_attachment",
+				"%s straps down, and %s is a bolt pattern — a strap has nothing to pass through there." % [
+					part_name, label],
+				{"wants": wants, "offers": attachment, "mount": label}))
 		return out
 
 	if attachment == BOLT:
 		var wanted := parse_pattern_m(String(mounting.get("pattern", "")))
 		if wanted == Vector2.ZERO or pattern_m == Vector2.ZERO:
-			out.append("%s does not say what pattern it is drilled for, so nothing here can confirm it lines up with %s." % [
-				part_name, pattern if pattern != "" else "this mount"])
+			out.append(BuildWarning.limiting(&"mount_pattern_unknown",
+				"%s does not say what pattern it is drilled for, so nothing here can confirm it lines up with %s." % [
+					part_name, pattern if pattern != "" else "this mount"],
+				{"mount": label, "mount_pattern": pattern}))
 		elif (wanted - pattern_m).length() > 0.0005:
-			out.append("%s is drilled %s and %s is %s — it will not bolt down, and needs an adapter plate or soft mounts." % [
-				part_name, mounting.get("pattern", "?"), label, pattern])
+			out.append(BuildWarning.impossible(&"mount_pattern",
+				"%s is drilled %s and %s is %s — it will not bolt down, and needs an adapter plate or soft mounts." % [
+					part_name, mounting.get("pattern", "?"), label, pattern],
+				{"part_pattern": str(mounting.get("pattern", "?")), "mount_pattern": pattern}))
 
 		# A board wider than the plate it bolts to has its corners over open air. This is the
 		# geometry half of "the patterns agree AND the geometry clears": a 30.5 stack is a 36 mm
@@ -115,8 +127,10 @@ func fit_warnings(part_name: String, mounting: Dictionary, size_m: Vector3 = Vec
 			var over_z := size_m.z - span_m.y
 			var worst := maxf(over_x, over_z)
 			if worst > 0.0005:
-				out.append("%s is %.0f mm across and %s offers %.0f mm — it overhangs the plate it is bolted to." % [
-					part_name, maxf(size_m.x, size_m.z) * 1000.0, label,
-					minf(span_m.x, span_m.y) * 1000.0])
+				out.append(BuildWarning.limiting(&"mount_overhang",
+					"%s is %.0f mm across and %s offers %.0f mm — it overhangs the plate it is bolted to." % [
+						part_name, maxf(size_m.x, size_m.z) * 1000.0, label,
+						minf(span_m.x, span_m.y) * 1000.0],
+					{"overhang_mm": worst * 1000.0, "plate_mm": minf(span_m.x, span_m.y) * 1000.0}))
 
 	return out

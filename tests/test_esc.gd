@@ -186,12 +186,12 @@ static func _test_the_binding_constraint_is_reported(catalog: PartsCatalog) -> A
 	# ...and the warning says so in words, naming the board rather than blaming the prop.
 	var said_it := false
 	for warning in esc_bound.warnings():
-		if warning.contains(str(esc_bound.esc["name"])) and warning.contains("current first"):
+		if warning.message.contains(str(esc_bound.esc["name"])) and warning.message.contains("current first"):
 			said_it = true
 	results.append(TestResult.new(
 		"an ESC-limited build is TOLD it is the board, not the prop or the pack",
 		said_it,
-		"warnings: %s" % " | ".join(esc_bound.warnings())
+		"warnings: %s" % " | ".join(BuildWarning.messages(esc_bound.warnings()))
 	))
 
 	return results
@@ -271,20 +271,20 @@ static func _test_it_has_to_bolt_on(catalog: PartsCatalog) -> Array:
 	var mismatched := _build(catalog, "motor_2207_1960kv", "battery_4s_1500", SMALL_ESC)
 	var complained := false
 	for warning in mismatched.warnings():
-		if warning.contains("drilled") and warning.contains(str(mismatched.esc["name"])):
+		if warning.message.contains("drilled") and warning.message.contains(str(mismatched.esc["name"])):
 			complained = true
 	results.append(TestResult.new(
 		"a 20x20 board on a 30.5x30.5 frame is warned about rather than silently fitted",
 		complained,
-		"warnings: %s" % " | ".join(mismatched.warnings())
+		"warnings: %s" % " | ".join(BuildWarning.messages(mismatched.warnings()))
 	))
 
 	# ...and the right board raises no complaint, or the warning is noise rather than information.
 	var fitting := ReferenceBuild.build()
 	var spurious: Array = []
 	for warning in fitting.warnings():
-		if warning.contains("drilled"):
-			spurious.append(warning)
+		if warning.message.contains("drilled"):
+			spurious.append(warning.message)
 	results.append(TestResult.new(
 		"the reference board bolts to the reference frame without complaint",
 		spurious.is_empty(),

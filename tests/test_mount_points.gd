@@ -51,7 +51,7 @@ static func _test_a_matching_bolt_pattern_does_not_warn(catalog: PartsCatalog) -
 	return TestResult.new(
 		"a 30.5 stack on a 30.5-drilled frame is not warned about",
 		mount.pattern == "30.5x30.5" and warnings.is_empty(),
-		"5\" freestyle mount is %s; warnings: %s" % [mount.pattern, warnings])
+		"5\" freestyle mount is %s; warnings: %s" % [mount.pattern, BuildWarning.messages(warnings)])
 
 
 static func _test_a_mismatched_bolt_pattern_warns(catalog: PartsCatalog) -> TestResult:
@@ -62,13 +62,13 @@ static func _test_a_mismatched_bolt_pattern_warns(catalog: PartsCatalog) -> Test
 
 	var mentions_both := false
 	for warning in warnings:
-		if warning.contains("30.5x30.5") and warning.contains("20x20"):
+		if warning.message.contains("30.5x30.5") and warning.message.contains("20x20"):
 			mentions_both = true
 
 	return TestResult.new(
 		"a 30.5 stack on a 20x20-drilled frame is warned about, in both patterns' words",
 		mount.pattern == "20x20" and mentions_both,
-		"3.5\" freestyle mount is %s; warnings: %s" % [mount.pattern, warnings])
+		"3.5\" freestyle mount is %s; warnings: %s" % [mount.pattern, BuildWarning.messages(warnings)])
 
 
 ## A pack is strapped, and a bolt pattern is not something a strap can pass through. The warning
@@ -100,14 +100,14 @@ static func _test_a_board_wider_than_its_plate_warns(catalog: PartsCatalog) -> T
 
 	var overhangs := false
 	for warning in warnings:
-		if warning.contains("overhangs"):
+		if warning.message.contains("overhangs"):
 			overhangs = true
 
 	return TestResult.new(
 		"a board wider than the plate it bolts to is called out as well as mis-drilled",
 		warnings.size() == 2 and overhangs,
 		"65 mm whoop stack mount (%s, plate %.1f mm): %s" % [
-			mount.pattern, mount.span_m.x * 1000.0, warnings])
+			mount.pattern, mount.span_m.x * 1000.0, BuildWarning.messages(warnings)])
 
 
 ## Every pack in the catalog says how it attaches, rather than falling through to a default. A

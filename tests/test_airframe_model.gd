@@ -101,9 +101,9 @@ static func _test_a_pack_that_reaches_the_props_says_so(catalog: PartsCatalog) -
 	var warned_about_props := false
 	var warned_about_width := false
 	for warning in absurd_warnings:
-		if warning.contains("propeller"):
+		if warning.message.contains("propeller"):
 			warned_about_props = true
-		if warning.contains("wider"):
+		if warning.message.contains("wider"):
 			warned_about_width = true
 
 	var passed := absf(reference_clearance - 0.00900) < 5e-5 and reference_warnings.is_empty() \
@@ -115,7 +115,7 @@ static func _test_a_pack_that_reaches_the_props_says_so(catalog: PartsCatalog) -
 		passed,
 		"reference build clears the discs by %+.1f mm with %d warnings; 6S 4000 Li-ion on a 3\" toothpick is %+.1f mm and says %s" % [
 			reference_clearance * 1000.0, reference_warnings.size(),
-			absurd_clearance * 1000.0, str(absurd_warnings)]
+			absurd_clearance * 1000.0, str(BuildWarning.messages(absurd_warnings))]
 	)
 
 
@@ -337,7 +337,7 @@ static func _test_an_oversized_prop_overlaps_the_airframe(catalog: PartsCatalog)
 
 	var warned := false
 	for warning in oversized.warnings():
-		if warning.contains("strike the frame"):
+		if warning.message.contains("strike the frame"):
 			warned = true
 
 	return TestResult.new(

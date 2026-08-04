@@ -12,6 +12,16 @@ const INCH_M := 0.0254
 const GRAVITY_MPS2 := 9.81
 const AIR_DENSITY_KGM3 := 1.225
 
+## How far the reachable thrust may fall below the bench figure before warnings() names the pack.
+##
+## A PICKED CONSTANT, and flagged as one deliberately. It is not a boundary in the physics — sag is
+## a continuum, and every pack is somewhere on it. What it marks is the point at which the bench
+## figure stops being a useful prediction of the aircraft, which is a judgement about a reader
+## rather than about a battery. It survives as a threshold only because what it gates is a
+## LIMITING statement that names the binding part, and the two figures either side of it are both
+## printed in the sentence — so a builder reading it can see the continuum the constant sits on.
+const SAG_WORTH_NAMING := 0.75
+
 ## Fixed electronics package (parts.md): FC+ESC stack, camera, VTX, antenna, receiver,
 ## wiring. Not selectable in v1, but it is 55 g of real mass, so it stays in the
 ## mass-properties calculation. A constant, not an omission.
@@ -641,18 +651,24 @@ func top_speed_kmh() -> float:
 # dropdown ever would.
 # ---------------------------------------------------------------------------
 
-func warnings() -> Array[String]:
-	var out: Array[String] = []
+func warnings() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
 
 	var prop_inches: float = float(propeller["specs"]["diameter_inches"])
 	var max_prop_inches: float = float(frame["specs"]["max_prop_inches"])
 	if prop_inches > max_prop_inches:
-		out.append("%s props exceed the %s's %.1f\" clearance — they would strike the frame." % [
-			propeller["name"], frame["name"], max_prop_inches])
+		out.append(BuildWarning.impossible(&"prop_clearance",
+			"%s props exceed the %s's %.1f\" clearance — they would strike the frame." % [
+				propeller["name"], frame["name"], max_prop_inches],
+			{"prop_inches": prop_inches, "max_prop_inches": max_prop_inches}))
 
 	if motor.get("mount_pattern", "") != frame["specs"].get("motor_mount", ""):
-		out.append("%s uses a %s mount; the %s is drilled %s." % [
-			motor["name"], motor.get("mount_pattern", "?"), frame["name"], frame["specs"].get("motor_mount", "?")])
+		out.append(BuildWarning.impossible(&"motor_mount",
+			"%s uses a %s mount; the %s is drilled %s." % [
+				motor["name"], motor.get("mount_pattern", "?"),
+				frame["name"], frame["specs"].get("motor_mount", "?")],
+			{"motor_pattern": str(motor.get("mount_pattern", "?")),
+				"frame_pattern": str(frame["specs"].get("motor_mount", "?"))}))
 
 	# Named by the component that actually binds. Reporting "too much prop for the motor" when it
 	# is the pack that runs out first would send a builder to buy the wrong part, which is the
@@ -660,25 +676,38 @@ func warnings() -> Array[String]:
 	var throttle_cap := max_throttle_fraction()
 	if throttle_cap < 0.99:
 		var limit := limiting_component()
+		var limit_values := {
+			"limited_by": str(limit["name"]), "limit_amps": float(limit["amps"]),
+			"throttle_cap": throttle_cap,
+		}
 		match limit["name"]:
 			"battery":
-				out.append("The %s runs out of current before the motors or the %s do — %.0f A continuous caps this build at %.0f%% throttle." % [
-					limit["label"], esc.get("name", "ESC"), limit["amps"], throttle_cap * 100.0])
+				out.append(BuildWarning.limiting(&"current_limit",
+					"The %s runs out of current before the motors or the %s do — %.0f A continuous caps this build at %.0f%% throttle." % [
+						limit["label"], esc.get("name", "ESC"), limit["amps"], throttle_cap * 100.0],
+					limit_values))
 			"esc":
-				out.append("The %s runs out of current first — %.0f A across four channels caps this build at %.0f%% throttle, where the %s would take %.0f%% and the %s would pass %.0f A." % [
-					limit["label"], limit["amps"], throttle_cap * 100.0,
-					motor["name"], motor_throttle_limit() * 100.0,
-					battery["name"], pack_max_amps()])
+				out.append(BuildWarning.limiting(&"current_limit",
+					"The %s runs out of current first — %.0f A across four channels caps this build at %.0f%% throttle, where the %s would take %.0f%% and the %s would pass %.0f A." % [
+						limit["label"], limit["amps"], throttle_cap * 100.0,
+						motor["name"], motor_throttle_limit() * 100.0,
+						battery["name"], pack_max_amps()],
+					limit_values))
 			_:
-				out.append("%s is too much prop for the %s — it hits its %.0f A limit at %.0f%% throttle." % [
-					propeller["name"], motor["name"], float(motor["specs"]["max_amps"]), throttle_cap * 100.0])
+				out.append(BuildWarning.limiting(&"current_limit",
+					"%s is too much prop for the %s — it hits its %.0f A limit at %.0f%% throttle." % [
+						propeller["name"], motor["name"],
+						float(motor["specs"]["max_amps"]), throttle_cap * 100.0],
+					limit_values))
 
 	# The board has to bolt to the frame, which is the same check the motors already get and the
 	# same mistake someone makes exactly once: a 20x20 board and a 30.5x30.5 frame do not meet.
 	var frame_stack: String = str(frame["specs"].get("stack_mount", ""))
 	if frame_stack != "" and esc_mount_pattern() != frame_stack:
-		out.append("%s is a %s board; the %s is drilled %s for its stack." % [
-			esc.get("name", "The ESC"), esc_mount_pattern(), frame["name"], frame_stack])
+		out.append(BuildWarning.impossible(&"stack_mount",
+			"%s is a %s board; the %s is drilled %s for its stack." % [
+				esc.get("name", "The ESC"), esc_mount_pattern(), frame["name"], frame_stack],
+			{"board_pattern": esc_mount_pattern(), "frame_pattern": frame_stack}))
 
 	# Thrust-to-weight is a bench number at nominal voltage (see max_total_thrust_n). On a
 	# high-resistance pack the thrust actually reachable is far below it, which would
@@ -686,16 +715,25 @@ func warnings() -> Array[String]:
 	# will not fly. Say it out loud instead — this is the lesson the Li-ion is here to teach.
 	var reachable_thrust_n: float = peak_thrust()["thrust_n"]
 	var usable_fraction := reachable_thrust_n / max_total_thrust_n()
-	if usable_fraction < 0.75:
-		out.append("The %s sags hard under load — only %.0f%% of that %.1f:1 bench figure is reachable, or %.1f:1 in the air." % [
-			battery["name"], usable_fraction * 100.0, thrust_to_weight(),
-			reachable_thrust_n / weight_n()])
+	if usable_fraction < SAG_WORTH_NAMING:
+		out.append(BuildWarning.limiting(&"pack_sag",
+			"The %s sags hard under load — only %.0f%% of that %.1f:1 bench figure is reachable, or %.1f:1 in the air." % [
+				battery["name"], usable_fraction * 100.0, thrust_to_weight(),
+				reachable_thrust_n / weight_n()],
+			{"usable_fraction": usable_fraction, "bench_twr": thrust_to_weight(),
+				"reachable_twr": reachable_thrust_n / weight_n()}))
 
 	if not can_hover():
-		out.append("This build cannot lift its own %.0f g — it will not leave the ground." % all_up_weight_g())
+		out.append(BuildWarning.impossible(&"cannot_hover",
+			"This build cannot lift its own %.0f g — it will not leave the ground." % all_up_weight_g(),
+			{"all_up_weight_g": all_up_weight_g(), "twr": thrust_to_weight()}))
 	elif thrust_to_weight() < 2.0:
-		out.append("Thrust-to-weight is only %.1f:1 — this will barely leave the ground." % thrust_to_weight())
+		out.append(BuildWarning.limiting(&"low_twr",
+			"Thrust-to-weight is only %.1f:1 — this will barely leave the ground." % thrust_to_weight(),
+			{"twr": thrust_to_weight()}))
 	elif hover_throttle() > 0.6:
-		out.append("Hover throttle is %.0f%% — almost no headroom left to manoeuvre." % (hover_throttle() * 100.0))
+		out.append(BuildWarning.limiting(&"high_hover",
+			"Hover throttle is %.0f%% — almost no headroom left to manoeuvre." % (hover_throttle() * 100.0),
+			{"hover_throttle": hover_throttle()}))
 
 	return out
