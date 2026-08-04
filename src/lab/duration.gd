@@ -44,6 +44,14 @@ static func short(seconds: float) -> String:
 	return clock(seconds)
 
 
+## Milliseconds below a second, then `short`. For an axis a STEP RESPONSE is measured on: a roll
+## step is over in 60 ms, and every label `short` would draw across it reads "0s".
+static func fine(seconds: float) -> String:
+	if seconds < 1.0:
+		return "%.0fms" % (seconds * 1000.0)
+	return short(seconds)
+
+
 ## A duration that may not exist — a hold-up time on a bench drawing no current, a charge time on a
 ## pack already full. Nothing to say is said as nothing, not as zero.
 static func or_dash(seconds: float) -> String:

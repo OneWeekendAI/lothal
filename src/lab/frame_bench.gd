@@ -70,13 +70,28 @@ const AXIS_NAMES := ["roll", "pitch", "yaw"]
 ## project rather than one chosen for this screen.
 const TARGET_RATE_DEG_S := 500.0
 
-## How long a run lasts. Long enough that the 10" long-range — the slowest thing in the catalog —
-## reaches the target rate, short enough that nobody walks away from it.
+## THE RUN ENDS WHEN THE TARGET RATE IS REACHED. This is a cap on the measurement, not on the
+## physics: full stick held open-loop really does keep accelerating, and a real quad flicked into a
+## flip really does keep speeding up until something stops it. But past a few hundred deg/s the
+## number stops meaning anything to a pilot — no airframe in this catalog is flown there, and a
+## gyro clips around 2000 deg/s — so a run held for a fixed duration produces five figures of
+## deg/s, an axis rescaled to fit them, and every frame's curve flattened into the same shape.
+##
+## Stopping at the rate is also what makes the chart the comparison it is meant to be: every line
+## climbs to the same 500 deg/s, and the only thing that differs between two frames is HOW LONG it
+## took them — which is exactly the quantity a pilot feels and the one the panel headlines.
+##
+## RUN_SECONDS is the backstop for an airframe that never gets there, not the normal end of a run.
 const RUN_SECONDS := 0.8
 
 ## Physics at 1 kHz, the same substep the flight loop and the other three benches use.
 const PHYSICS_HZ := 1000.0
 const MAX_SUBSTEPS := 300
+
+## How long the motors are given to finish spooling when the SETTLED figure is taken. Comfortably
+## past the ~30 ms electrical lag; torque climbs monotonically to its steady state, so this is the
+## peak rather than a point on the way to it.
+const SETTLE_SECONDS := 0.4
 
 var build: Build
 var powertrain: Powertrain
@@ -95,8 +110,22 @@ var rate_rad_s := 0.0
 var angle_rad := 0.0
 var elapsed_s := 0.0
 
+## THE AIRFRAME'S OWN NUMBERS, and deliberately not "the largest value seen during the last run".
+##
+## A peak read off the visible run would depend on how long that run happened to last, and the run
+## stops the moment the target rate is reached — so a light airframe that got there in 25 ms would
+## report a peak taken before its motors had finished spooling, and would look WEAKER than a heavy
+## one that had time to settle. That is the exact inversion this bench exists to prevent.
+##
+## So these are taken once, at begin(), by spooling a scratch powertrain to steady state at the same
+## full-stick commands. They are a property of the aircraft; the trace is what it did today.
 var peak_alpha_rad_s2 := 0.0
 var peak_torque_n_m := 0.0
+
+## Every substep of the visible run, as [elapsed_s, rate_deg_s]. Held here rather than sampled by
+## whoever is drawing, because a roll step is over in tens of milliseconds and a screen sampling it
+## once a frame at 60 Hz would draw the whole response as three points.
+var history: Array = []
 ## Seconds to reach TARGET_RATE_DEG_S, or -1 while it has not been reached.
 var time_to_rate_s := -1.0
 var _alpha_rad_s2 := 0.0
@@ -208,14 +237,36 @@ func begin(p_axis: int, p_collective: float) -> void:
 	axis = p_axis
 	collective = clampf(p_collective, 0.0, 1.0)
 	powertrain.prime(collective)
+	_take_settled_figures()
 	rate_rad_s = 0.0
 	angle_rad = 0.0
 	elapsed_s = 0.0
-	peak_alpha_rad_s2 = 0.0
-	peak_torque_n_m = 0.0
+	history = []
 	time_to_rate_s = -1.0
 	_alpha_rad_s2 = 0.0
 	running = true
+
+
+## The settled torque and acceleration for the armed axis, on a SCRATCH powertrain at the
+## nominal-voltage datum (physics.md §5).
+##
+## Scratch, so taking the figure costs the user's pack nothing — the visible run is what costs. At
+## the datum, so two frames are comparable: measured on whatever charge each happened to have, a 7"
+## on a fresh pack could out-accelerate a 3" on a flat one and the arm-length result would disappear
+## into the batteries. It is the same convention Build.max_total_thrust_n() is quoted at, and for
+## the same reason — this is the spec-sheet figure, and the trace beside it is the flying one.
+func _take_settled_figures() -> void:
+	var scratch := _powertrain_for(build)
+	scratch.battery.set_to_nominal_datum()
+	scratch.prime(collective)
+	var cmds := commands()
+	var dt := 1.0 / PHYSICS_HZ
+	for _i in int(SETTLE_SECONDS * PHYSICS_HZ):
+		scratch.step(cmds, dt)
+
+	var inertia: float = inertia_kg_m2()[axis]
+	peak_torque_n_m = absf(torque_n_m(scratch)[axis])
+	peak_alpha_rad_s2 = peak_torque_n_m / inertia if inertia > 0.0 else 0.0
 
 
 ## Full deflection on the armed axis and neutral on the other two, through the mixer that is
@@ -232,15 +283,16 @@ func commands() -> Dictionary:
 ## The torque the four motors are producing RIGHT NOW about roll, pitch and yaw, from the thrust the
 ## powertrain has published and the reaction torque their RPM implies. MotorLayout does the
 ## resolving; this only sums.
-func torque_n_m() -> Vector3:
+func torque_n_m(source: Powertrain = null) -> Vector3:
+	var from := source if source != null else powertrain
 	var total := Vector3.ZERO
 	for i in MotorLayout.MOTOR_NAMES.size():
 		var name: String = MotorLayout.MOTOR_NAMES[i]
-		var rpm: float = powertrain.motor_rpm[name]
+		var rpm: float = from.motor_rpm[name]
 		var contribution := MotorLayout.torque_from_motor(
 			name,
-			powertrain.observables.thrust_n[i],
-			PropellerModel.reaction_torque_n_m(powertrain.k_q, rpm),
+			from.observables.thrust_n[i],
+			PropellerModel.reaction_torque_n_m(from.k_q, rpm),
 			build.arm_m)
 		total += Vector3(contribution["roll"], contribution["pitch"], contribution["yaw"])
 	return total
@@ -266,10 +318,13 @@ func advance(delta: float) -> void:
 		rate_rad_s += _alpha_rad_s2 * dt
 		angle_rad += rate_rad_s * dt
 
-		peak_torque_n_m = maxf(peak_torque_n_m, absf(tau))
-		peak_alpha_rad_s2 = maxf(peak_alpha_rad_s2, _alpha_rad_s2)
-		if time_to_rate_s < 0.0 and rate_rad_s >= deg_to_rad(TARGET_RATE_DEG_S):
+		history.append([elapsed_s + (_i + 1) * dt, rad_to_deg(rate_rad_s)])
+
+		if rate_rad_s >= deg_to_rad(TARGET_RATE_DEG_S):
 			time_to_rate_s = elapsed_s + (_i + 1) * dt
+			elapsed_s = time_to_rate_s
+			running = false
+			return
 
 	elapsed_s += delta
 	if elapsed_s >= RUN_SECONDS:

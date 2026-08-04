@@ -33,7 +33,8 @@ extends Control
 ## for. The ESC bench plots against THROTTLE, because "at what throttle does this board become the
 ## binding constraint" is a question you cannot read off a time axis, even though the sweep that
 ## produced the samples took time to run.
-enum XAxis { TIME, FRACTION }
+## TIME_FINE is TIME with a millisecond ruler, for a chart whose whole x axis is under a second.
+enum XAxis { TIME, FRACTION, TIME_FINE }
 
 ## How often a sample is taken, in x units. Fine enough that a punch shows as a step rather than a
 ## ramp on a time axis, and that the crossing point is legible on a throttle one.
@@ -403,4 +404,6 @@ static func _nice_step(raw: float) -> float:
 func _format_x(x: float) -> String:
 	if x_axis == XAxis.FRACTION:
 		return "%.0f %%" % (x * 100.0)
+	if x_axis == XAxis.TIME_FINE:
+		return Duration.fine(x)
 	return Duration.short(x)

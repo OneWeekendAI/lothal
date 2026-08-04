@@ -127,6 +127,9 @@ static func run() -> Array:
 	# --- 7. What the spread across the catalog is, since §7 needs it ---
 	results.append_array(_catalog_spread())
 
+	# --- 8. The room around the model ---
+	results.append_array(screen_tests())
+
 	return results
 
 
@@ -290,3 +293,156 @@ static func _catalog_spread() -> Array:
 		"%.0fx — %s %.0f to %s %.0f g*cm^2 (input to labs-and-sim.md §7, not fixed here)" % [
 			highest / lowest, lowest_name, lowest * 1.0e7, highest_name, highest * 1.0e7]
 	)]
+
+
+# ---------------------------------------------------------------------------
+# The room around the model. Every Control built here is freed, or the runner emits leaked-RID
+# ERROR lines that read like failures.
+# ---------------------------------------------------------------------------
+
+static func _screen(frame_id: String) -> FrameBenchScreen:
+	return FrameBenchScreen.new(PartsCatalog.load_default(), frame_id, CARRIED_MOTOR,
+		CARRIED_PROP, CARRIED_PACK, ReferenceBuild.ESC_ID, PackCharge.new())
+
+
+## Runs a screen's step to completion the way the screenshot tool does — by hand, with _process
+## off, so the bench is never advanced twice per frame.
+static func _run_to_completion(screen: FrameBenchScreen) -> void:
+	screen.set_process(false)
+	screen.start_run()
+	var guard := 0
+	while screen.running and guard < 10000:
+		screen.advance(1.0 / 60.0)
+		guard += 1
+
+
+static func screen_tests() -> Array:
+	var results: Array = []
+
+	# --- The chart carries the comparison, and the two lines actually differ ---
+	#
+	# A yardstick line that tracked the build's own line would look entirely correct and compare
+	# nothing. So a 7" is run and the two series are required to separate — by a margin far larger
+	# than any sampling artefact could produce.
+	var screen := _screen(LONG_FRAME)
+	_run_to_completion(screen)
+	var reading := screen.readings()
+	var mine := screen.trace.lower_series()
+	var theirs := screen.trace.upper_series()
+	var widest := screen.trace.widest_gap()
+	results.append(TestResult.new(
+		"the chart draws this build against the 5\" reference, and the two lines are not the same line",
+		mine.size() > 20 and mine.size() == theirs.size() and widest > 50.0,
+		"%d samples a series, widest separation %.0f deg/s" % [mine.size(), widest]
+	))
+
+	# The 7" must be the SLOWER of the two, which is the direction the whole bench argues for. A
+	# check on separation alone would pass just as happily if the long frame were quicker.
+	results.append(TestResult.new(
+		"and the 7\" is the slower line: it reaches a lower rate than the 5\" reference throughout",
+		reading["rate_deg_s"] < reading["yardstick_rate_deg_s"]
+			and reading["inertia_kg_m2"] > reading["yardstick_inertia_kg_m2"],
+		"7\" reached %.0f deg/s against the reference's %.0f, on %.1fx the roll inertia" % [
+			reading["rate_deg_s"], reading["yardstick_rate_deg_s"],
+			reading["inertia_kg_m2"] / reading["yardstick_inertia_kg_m2"]]
+	))
+
+	# --- The run costs charge, and the yardstick's pack is not the user's ---
+	var store := screen.pack_charge
+	screen.persist_pack_charge()
+	var used: float = store.used_mah(CARRIED_PACK)
+	results.append(TestResult.new(
+		"a step response costs pack charge — four motors turning are four motors drawing (§5)",
+		used > 0.0,
+		"the run took %.2f mAh out of the pack" % used
+	))
+	# The yardstick is the SAME pack part as the build's, so a write-back that included it would
+	# silently overwrite the user's charge with the reference run's. The yardstick starts at the
+	# nominal datum — a long way down a 4S — so if its state ever reached the store the recorded draw
+	# would be hundreds of mAh rather than the handful a forty-millisecond step actually costs.
+	results.append(TestResult.new(
+		"and the yardstick runs on its own pack, so comparing frames never drains the user's",
+		screen.yardstick.powertrain.battery != screen.bench.powertrain.battery and used < 50.0,
+		"%.2f mAh recorded against the pack; the yardstick alone sits %.0f%% down and is not in it" % [
+			used, (1.0 - screen.yardstick.powertrain.battery.remaining_fraction()) * 100.0]
+	))
+
+	# --- The rotors turn on a rate they are handed (§2.1) ---
+	var turning := 0
+	for motor_name in MotorLayout.MOTOR_NAMES:
+		var mesh: PropellerMesh = screen.airframe.propeller_meshes[motor_name]
+		if absf(mesh.rate_rad_s()) > 0.0:
+			turning += 1
+	var m1: PropellerMesh = screen.airframe.propeller_meshes["M1"]
+	var m1_rpm := absf(m1.rate_rad_s()) / TAU * 60.0
+	results.append(TestResult.new(
+		"the four rotors turn on the rate the powertrain published, and on no rate the room chose",
+		turning == 4 and absf(m1_rpm - screen.bench.powertrain.observables.rpm[0]) < 0.5,
+		"%d rotors turning; M1 at %.0f rpm against the published %.0f" % [
+			turning, m1_rpm, screen.bench.powertrain.observables.rpm[0]]
+	))
+
+	# --- And the airframe turned by the angle that was MEASURED, not by an animation ---
+	# Against the contract's roll axis (-Z), not against "it moved". A basis built about the wrong
+	# axis, or by an animation curve that merely looked like rotation, fails here.
+	var expected := Basis(Vector3(0, 0, -1), screen.bench.angle_rad)
+	results.append(TestResult.new(
+		"the airframe on screen turned by exactly the angle the measurement says it turned",
+		screen.bench.angle_rad > 0.1
+			and screen.airframe.transform.basis.is_equal_approx(expected),
+		"rolled %.1f deg about the contract's roll axis (-Z)" % rad_to_deg(screen.bench.angle_rad)
+	))
+
+	# --- Audible through the existing path, or silently silent ---
+	results.append(TestResult.new(
+		"3D audio is routed out of the bench's own SubViewport, or the room is silent and says nothing",
+		screen.audio_viewport().audio_listener_enable_3d,
+		"audio_listener_enable_3d = true"
+	))
+
+	screen.free()
+
+	# --- NOTHING HERE FLIES, checked by reading the source ---
+	#
+	# An absence cannot be asserted at runtime: a bench that quietly built a DroneCore would produce
+	# numbers that still looked entirely plausible. The only way to see it is to look for the text,
+	# which is the same argument test_bench.gd and test_control_path.gd make.
+	var flight_words := ["DroneCore", "RigidBodyState", "RateModeController"]
+	var named: PackedStringArray = []
+	for path in ["res://src/lab/frame_bench.gd", "res://src/lab/frame_bench_screen.gd",
+			"res://src/lab/frame_instruments.gd"]:
+		var code := FileAccess.get_file_as_string(path)
+		for line in code.split("\n"):
+			if line.strip_edges().begins_with("#"):
+				continue
+			for word in flight_words:
+				if line.contains(word):
+					named.append("%s: %s" % [path.get_file(), word])
+	results.append(TestResult.new(
+		"the frame bench names no part of the flight half — one axis is free and nothing flies (§6)",
+		named.is_empty(),
+		"checked 3 files for %s%s" % [", ".join(flight_words),
+			"" if named.is_empty() else " — found " + ", ".join(named)]
+	))
+
+	# --- It is a room of its own, and leaving it frees it ---
+	var shell := AppShell.new()
+	shell.lab.picker.select_id(LONG_FRAME)
+	shell.show_frame_bench()
+	results.append(TestResult.new(
+		"the frame bench opens on the frame chosen on Lab's rail, with no other room running",
+		shell.frame_bench != null and shell.bench == null and shell.battery_bench == null
+			and shell.esc_bench == null and shell.sim == null
+			and shell.frame_bench.current_build().frame["part_id"] == LONG_FRAME,
+		"testing %s" % shell.frame_bench.current_build().frame["name"]
+	))
+
+	shell.show_lab()
+	results.append(TestResult.new(
+		"leaving frees it, so no pack drains behind Lab",
+		shell.frame_bench == null and shell.showing_lab(),
+		"frame_bench=%s" % shell.frame_bench
+	))
+	shell.free()
+
+	return results
