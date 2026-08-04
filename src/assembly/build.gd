@@ -194,16 +194,18 @@ func mass_parts() -> Array:
 		float(motor["specs"]["stator_height_mm"]) / 1000.0
 	)
 	for name in MotorLayout.MOTOR_NAMES:
-		parts.append(PartMass.new(motor_prop_mass_kg, MotorLayout.motor_position(name, arm_m), motor_inertia))
+		parts.append(PartMass.new(motor_prop_mass_kg, MotorLayout.motor_position(name, arm_m),
+			motor_inertia, "Motor + prop %s" % name))
 
 	var frame_mass_kg := float(frame["mass_g"]) / 1000.0
 	var plate := arm_m * FRAME_PLATE_TO_ARM_RATIO
 	var frame_size := Vector3(plate, FRAME_PLATE_THICKNESS_M, plate)
-	parts.append(PartMass.new(frame_mass_kg, Vector3.ZERO, InertiaPrimitives.box(frame_mass_kg, frame_size)))
+	parts.append(PartMass.new(frame_mass_kg, Vector3.ZERO,
+		InertiaPrimitives.box(frame_mass_kg, frame_size), "Frame"))
 
 	var battery_mass_kg := float(battery["mass_g"]) / 1000.0
 	parts.append(PartMass.new(battery_mass_kg, Vector3.ZERO,
-		InertiaPrimitives.box(battery_mass_kg, battery_size_m())))
+		InertiaPrimitives.box(battery_mass_kg, battery_size_m()), "Pack"))
 
 	# The electronics, in two entries that sum to ELECTRONICS_MASS_G exactly. The stack is separate
 	# because it is now a real object with a real footprint, and its 36.5 mm board has a different
@@ -217,17 +219,18 @@ func mass_parts() -> Array:
 	# re-decided.
 	var fc_mass_kg := FC_MASS_G / 1000.0
 	parts.append(PartMass.new(fc_mass_kg, Vector3.ZERO,
-		InertiaPrimitives.box(fc_mass_kg, StackMesh.size_m(STACK_MOUNT_PATTERN))))
+		InertiaPrimitives.box(fc_mass_kg, StackMesh.size_m(STACK_MOUNT_PATTERN)), "Flight controller"))
 
 	# The ESC at its OWN catalog mass, on its own footprint. This is the line that makes fitting a
 	# bigger board cost something: the budget below gave up ESC_BUDGET_MASS_G, and whatever this
 	# board actually weighs is what the aircraft carries.
 	var esc_mass_kg := esc_mass_g() / 1000.0
 	parts.append(PartMass.new(esc_mass_kg, Vector3.ZERO,
-		InertiaPrimitives.box(esc_mass_kg, StackMesh.size_m(esc_mount_pattern()))))
+		InertiaPrimitives.box(esc_mass_kg, StackMesh.size_m(esc_mount_pattern())), "ESC"))
 
 	var loose_mass_kg := (ELECTRONICS_MASS_G - FC_MASS_G - ESC_BUDGET_MASS_G) / 1000.0
-	parts.append(PartMass.new(loose_mass_kg, Vector3.ZERO, InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M)))
+	parts.append(PartMass.new(loose_mass_kg, Vector3.ZERO,
+		InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M), "Wiring and electronics"))
 
 	return parts
 

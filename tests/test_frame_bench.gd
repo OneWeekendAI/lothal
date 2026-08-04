@@ -1,0 +1,292 @@
+class_name TestFrameBench
+extends RefCounted
+## The frame bench: mass distribution made measurable.
+##
+## Every assertion here was chosen against one standard — CAN IT FAIL? Asserting that the roll
+## inertia of a build assembled from m and r comes out as m*r^2 is arithmetic checking itself, and
+## this bench is unusually exposed to that. So the checks below are all statements about the REAL
+## catalog, or cross-checks against a second implementation that was written for another purpose:
+##
+##   - the ~4x claim frames.json's own schema makes about 3" vs 7", which nothing verified before;
+##   - the counterintuitive result — a longer arm has MORE leverage and still rolls SLOWER —
+##     asserted with the torque derived from the real motors, so both terms are free to move;
+##   - the perpendicular-axis identity, which fails the moment the tensor's axes are mismapped;
+##   - the bench's predicted roll acceleration against what DroneCore actually achieves, which is
+##     the accountability that makes the bench answerable to the physics rather than to itself;
+##   - prop clearance against the drawn geometry (the two-sources hazard airframe_model.gd:193
+##     names by name);
+##   - and the centre of mass under a slid pack, which is the one that reports a LIMITATION rather
+##     than a capability. See _com_under_a_slid_pack below.
+
+## The build carried by every frame under comparison. Same motors, same props, same pack — so the
+## only thing that differs between two rows is the frame, which is the entire argument of the bench.
+const CARRIED_MOTOR := ReferenceBuild.MOTOR_ID
+const CARRIED_PROP := ReferenceBuild.PROPELLER_ID
+const CARRIED_PACK := ReferenceBuild.BATTERY_ID
+
+const SHORT_FRAME := "frame_3in_toothpick"     # 75 mm arm
+const LONG_FRAME := "frame_7in_long_range"     # 150 mm arm
+
+const DT := 0.001
+const DURATION_S := 0.8
+
+
+static func _build_on(frame_id: String) -> Build:
+	return Build.from_ids(PartsCatalog.load_default(), frame_id, CARRIED_MOTOR, CARRIED_PROP,
+		CARRIED_PACK, ReferenceBuild.ESC_ID)
+
+
+static func run() -> Array:
+	var results: Array = []
+
+	var short_build := _build_on(SHORT_FRAME)
+	var long_build := _build_on(LONG_FRAME)
+
+	# --- 1. The sleeper spec, verified ---
+	#
+	# frames.json's _schema states that arm_mm "is squared in the parallel axis theorem, so a 7"
+	# frame has roughly 4x the roll inertia of a 3" from geometry alone". Nothing in the project
+	# checked that until now. The arms are 75 mm and 150 mm — exactly 2x, so the geometry term
+	# alone contributes 4x, and the heavier frame plate adds on top of it.
+	var short_inertia := FrameBench.for_build(short_build).inertia_kg_m2()
+	var long_inertia := FrameBench.for_build(long_build).inertia_kg_m2()
+	var inertia_ratio: float = long_inertia.x / short_inertia.x
+	results.append(TestResult.new(
+		"a 7\" carries roughly 4x the roll inertia of a 3\" on the same build (frames.json's schema)",
+		inertia_ratio > 3.0 and inertia_ratio < 5.0,
+		"%.1fx — %.0f vs %.0f g*cm^2 (arms 150 vs 75 mm)" % [
+			inertia_ratio, long_inertia.x * 1.0e7, short_inertia.x * 1.0e7]
+	))
+
+	# --- 2. THE RESULT THE BENCH EXISTS FOR ---
+	#
+	# Motor torque about the roll axis scales with arm LENGTH. Roll inertia scales with arm length
+	# SQUARED. So alpha = tau / I goes as 1/arm: the longer arm has more leverage and still rolls
+	# slower, because inertia wins the exponent.
+	#
+	# Both terms are derived, neither is asserted. The torque comes from the four real motors at
+	# their real positions through MotorMixer and MotorLayout, so a longer arm genuinely does
+	# produce more of it — which is what stops this from being "bigger number divided by bigger
+	# number". If the torque were a constant, this test would pass trivially and prove nothing.
+	var short_roll := FrameBench.measure(short_build, FrameBench.AXIS_ROLL)
+	var long_roll := FrameBench.measure(long_build, FrameBench.AXIS_ROLL)
+
+	results.append(TestResult.new(
+		"the LONGER arm does produce more roll torque — the leverage term is real, not held fixed",
+		long_roll["peak_torque_n_m"] > short_roll["peak_torque_n_m"],
+		"%.3f N*m at 150 mm vs %.3f N*m at 75 mm" % [
+			long_roll["peak_torque_n_m"], short_roll["peak_torque_n_m"]]
+	))
+
+	var alpha_ratio: float = short_roll["peak_alpha_rad_s2"] / long_roll["peak_alpha_rad_s2"]
+	results.append(TestResult.new(
+		"and it STILL rolls slower: peak angular acceleration falls as roughly 1/arm",
+		alpha_ratio > 1.4 and alpha_ratio < 3.0,
+		"3\" accelerates %.2fx harder (%.0f vs %.0f rad/s^2) on a 2.00x arm ratio" % [
+			alpha_ratio, short_roll["peak_alpha_rad_s2"], long_roll["peak_alpha_rad_s2"]]
+	))
+
+	# --- 3. The tensor's axes are mapped to the contract's axes, and mismapping shows ---
+	#
+	# A quad is very nearly planar in its mass distribution, so the perpendicular axis theorem
+	# holds to within the parts' own thickness: I_yaw ~= I_roll + I_pitch. This fails immediately
+	# if roll is read off the wrong element of the Basis, which is the single most likely mistake
+	# in the whole model and the one an "inertia is positive" check would never see.
+	var datum := FrameBench.for_build(ReferenceBuild.build()).inertia_kg_m2()
+	var planar_error: float = absf(datum.z - (datum.x + datum.y)) / datum.z
+	results.append(TestResult.new(
+		"yaw inertia is roll plus pitch to within the airframe's own thickness (perpendicular axis)",
+		planar_error < 0.12,
+		"yaw %.0f vs roll+pitch %.0f g*cm^2 — %.1f%% apart" % [
+			datum.z * 1.0e7, (datum.x + datum.y) * 1.0e7, planar_error * 100.0]
+	))
+
+	# --- 4. THE BENCH IS ACCOUNTABLE TO THE SIMULATOR ---
+	#
+	# The bench predicts a peak roll acceleration from MassProperties and MotorLayout. DroneCore
+	# reaches one by integrating a rigid body under the same command. Nothing forces them to agree:
+	# the bench reads the tensor's diagonal and the body integrates the full tensor with a
+	# gyroscopic term, and they are two separate expressions of "what does full stick do".
+	#
+	# This is the same accountability that proved the hover-throttle readout honest, and it is what
+	# makes the frame bench a measurement rather than a formula with a picture next to it.
+	var cross := _bench_against_the_simulator()
+	results.append(TestResult.new(
+		"the bench's predicted peak roll acceleration is what the simulator actually achieves",
+		cross["error_fraction"] < 0.05,
+		"bench %.1f rad/s^2, sim %.1f rad/s^2 — %.2f%% apart" % [
+			cross["bench"], cross["sim"], cross["error_fraction"] * 100.0]
+	))
+
+	# --- 5. Prop clearance comes from the drawn geometry, not from a second derivation ---
+	results.append_array(_clearance_matches_the_drawing())
+
+	# --- 6. The centre of mass under a slid pack ---
+	results.append_array(_com_under_a_slid_pack())
+
+	# --- 7. What the spread across the catalog is, since §7 needs it ---
+	results.append_array(_catalog_spread())
+
+	return results
+
+
+## Bench prediction vs. simulator truth, both at the nominal-voltage datum and both at the same
+## collective, so the only thing that can differ is the rotational model itself.
+static func _bench_against_the_simulator() -> Dictionary:
+	var build := ReferenceBuild.build()
+	var collective := build.hover_throttle()
+
+	var bench := FrameBench.for_build(build)
+	bench.powertrain.battery.set_to_nominal_datum()
+	bench.begin(FrameBench.AXIS_ROLL, collective)
+	for _i in int(DURATION_S / DT):
+		bench.advance(DT)
+	var predicted: float = bench.readings()["peak_alpha_rad_s2"]
+
+	# The simulator, driven by the same mixer command with no controller in the path — the same
+	# open-loop measurement tests/test_rate_step_response.gd takes its slew floor from.
+	var core := build.build_drone_core()
+	core.powertrain.battery.set_to_nominal_datum()
+	core.prime_motors(collective)
+	var cmds := MotorMixer.mix(collective, 1.0, 0.0, 0.0)
+	var previous := 0.0
+	var achieved := 0.0
+	for _i in int(DURATION_S / DT):
+		core.step(cmds, DT)
+		var rate: float = Gyro.contract_rates(core.rigid_body.angular_velocity_rad_s).x
+		achieved = maxf(achieved, (rate - previous) / DT)
+		previous = rate
+
+	return {
+		"bench": predicted,
+		"sim": achieved,
+		"error_fraction": absf(predicted - achieved) / achieved if achieved > 0.0 else 1.0,
+	}
+
+
+## The clearance the bench reports must be the clearance of the airframe on screen. AirframeModel
+## already measures it off the drawn props; a bench that recomputed it from arm_mm and a diameter
+## would agree for a long time and then stop — which is the whole content of the comment at
+## airframe_model.gd:193.
+static func _clearance_matches_the_drawing() -> Array:
+	var results: Array = []
+	# A build whose props genuinely overlap, so the check is not made against a comfortable
+	# positive number that any plausible formula would reproduce.
+	for pair in [[ReferenceBuild.FRAME_ID, ReferenceBuild.PROPELLER_ID],
+			["frame_3in_toothpick", ReferenceBuild.PROPELLER_ID]]:
+		var build := Build.from_ids(PartsCatalog.load_default(), pair[0], CARRIED_MOTOR,
+			pair[1], CARRIED_PACK, ReferenceBuild.ESC_ID)
+
+		var drawn := AirframeModel.new()
+		drawn.rebuild(build)
+		var drawn_gap := drawn.adjacent_prop_gap_m()
+		drawn.free()
+
+		var reported := FrameBench.for_build(build).prop_gap_m()
+		results.append(TestResult.new(
+			"prop clearance on %s is read off the drawn airframe, to the millimetre" % pair[0],
+			absf(reported - drawn_gap) < 1e-9,
+			"bench %.2f mm, drawing %.2f mm" % [reported * 1000.0, drawn_gap * 1000.0]
+		))
+	return results
+
+
+## SLIDING THE PACK MOVES THE PICTURE AND NOT THE MASS MODEL, and that gap is what this asserts.
+##
+## build.gd:216 says so in its own words: the electronics and the pack are lumped at the origin,
+## "the mass model does not hear about" where anything is mounted, and when it grows a real
+## centre-of-gravity term the mount point is already the single source for where the pack is.
+##
+## So the honest assertion is the divergence, not a capability. The drawn pack MUST move — that is
+## the mount travel of §2.6 working — and the modelled centre of mass must be seen not to, because
+## a bench that showed a COM shifting when nothing in the physics had shifted would be inventing a
+## number. This test fails the day the offset is wired into mass_parts(), which is exactly when
+## somebody should be made to come back and read this comment.
+static func _com_under_a_slid_pack() -> Array:
+	var results: Array = []
+	var build := ReferenceBuild.build()
+
+	var tweaks := AssemblyTweaks.new()
+	var travel_mm := AssemblyTweaks.battery_travel_mm(build)
+	tweaks.set_mm(AssemblyTweaks.BATTERY_OFFSET, travel_mm)
+
+	var drawn := AirframeModel.new()
+	drawn.rebuild(build, tweaks)
+	var slid_z: float = drawn.battery_mesh.position.z
+	var slid_offset := drawn.battery_offset_m
+
+	var centred := AirframeModel.new()
+	centred.rebuild(build, AssemblyTweaks.new())
+	var centred_z: float = centred.battery_mesh.position.z
+
+	var bench_com := FrameBench.for_build(build, drawn).com_offset_m()
+	drawn.free()
+	centred.free()
+
+	results.append(TestResult.new(
+		"sliding the pack to the end of its travel moves the pack that is drawn",
+		travel_mm > 1.0 and absf(slid_z - centred_z) > 0.001
+			and is_equal_approx(slid_offset, travel_mm / 1000.0),
+		"%.0f mm of travel moved the drawn pack %.1f mm forward" % [
+			travel_mm, (centred_z - slid_z) * 1000.0]
+	))
+
+	# And the mass model does not hear about it — see the docstring. The bench must report the
+	# centre of mass the physics is actually using, which for every build in the catalog is the
+	# geometric centre, because every centre-mounted part is lumped at the origin.
+	results.append(TestResult.new(
+		"and the modelled centre of mass does NOT move: no mount position reaches mass_parts()",
+		bench_com.length() < 1e-9,
+		"COM offset %.4f mm from the geometric centre with the pack slid %.0f mm forward"
+			% [bench_com.length() * 1000.0, travel_mm]
+	))
+
+	# The one thing that must be true whatever the pack is doing: the parts that dominate roll
+	# inertia are the four motor/prop assemblies and the pack, not the frame. This is the reading
+	# the panel exists to give, and it is falsifiable — on a 5" freestyle the 110 g frame is the
+	# single heaviest part and contributes less than the four 41 g arm-tip lumps do.
+	var contributions := FrameBench.for_build(build).roll_inertia_contributions()
+	var frame_share := 0.0
+	var motor_share := 0.0
+	for entry in contributions:
+		if String(entry["label"]).begins_with("Frame"):
+			frame_share = entry["fraction"]
+		elif String(entry["label"]).begins_with("Motor"):
+			motor_share += entry["fraction"]
+	results.append(TestResult.new(
+		"the arm-tip motor/prop assemblies dominate roll inertia, and the frame does not",
+		motor_share > frame_share and contributions.size() >= 7,
+		"motors %.0f%% vs frame %.0f%% across %d parts" % [
+			motor_share * 100.0, frame_share * 100.0, contributions.size()]
+	))
+
+	return results
+
+
+## The spread the fixed PID gains have to cover, measured rather than assumed. This is the number
+## labs-and-sim.md §7 needs and the reason the bench makes the problem visible; it fixes nothing.
+static func _catalog_spread() -> Array:
+	var lowest := INF
+	var highest := 0.0
+	var lowest_name := ""
+	var highest_name := ""
+	for frame in PartsCatalog.load_default().list_category("frame"):
+		var build := _build_on(String(frame["part_id"]))
+		var roll: float = FrameBench.for_build(build).inertia_kg_m2().x
+		if roll < lowest:
+			lowest = roll
+			lowest_name = String(frame["name"])
+		if roll > highest:
+			highest = roll
+			highest_name = String(frame["name"])
+
+	# More than an order of magnitude, measured on ONE carried build so the frame is the only thing
+	# that differs. Flown with class-appropriate parts the real spread is far wider still — a whoop
+	# does not carry a 2207 and a 4S 1500 — so this is the CONSERVATIVE reading of the problem, and
+	# rate_mode_controller.gd hands every one of these the same three gains.
+	return [TestResult.new(
+		"the catalog spans more than an order of magnitude of roll inertia on ONE set of fixed PID gains",
+		highest / lowest > 10.0,
+		"%.0fx — %s %.0f to %s %.0f g*cm^2 (input to labs-and-sim.md §7, not fixed here)" % [
+			highest / lowest, lowest_name, lowest * 1.0e7, highest_name, highest * 1.0e7]
+	)]
