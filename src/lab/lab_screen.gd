@@ -145,7 +145,6 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	row.set_anchors_preset(Control.PRESET_FULL_RECT)
 	row.anchor_right = 1.0
 	row.anchor_bottom = 1.0
-	row.add_theme_constant_override("separation", 8)
 	add_child(row)
 
 	# Three rails behind tabs rather than three rails side by side. Side by side would put six
@@ -223,7 +222,6 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 
 	var pack_column := VBoxContainer.new()
 	pack_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	pack_column.add_theme_constant_override("separation", 6)
 	pack_tab.add_child(pack_column)
 
 	# The charger goes ABOVE the spec sheet, which is the opposite of the order the other panels

@@ -66,7 +66,7 @@ func _init() -> void:
 		reading["current_a"], reading["live_v"], reading["resting_v"],
 		reading["remaining_fraction"] * 100.0, reading["thrust_g"], reading["hold_up_s"]])
 	print("trace: %d samples over %.0f s, deepest sag %.2f V%s" % [
-		bench.trace.sample_count(), bench.trace.span_s(), bench.trace.deepest_sag_v(),
+		bench.trace.sample_count(), bench.trace.span(), bench.trace.widest_gap(),
 		", pack flat" if not bench.running else ""])
 
 	# Two frames, because the trace only queues a redraw — the first frame processes the layout

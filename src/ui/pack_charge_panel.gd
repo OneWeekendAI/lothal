@@ -64,22 +64,21 @@ func _init(p_charge: PackCharge, p_catalog: PartsCatalog = null) -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 6)
 	PartDetails._padded(self).add_child(root)
 
 	var title := Label.new()
 	title.text = "CHARGER"
-	title.add_theme_color_override("font_color", InstrumentPanel.LABEL_COLOUR)
+	title.theme_type_variation = &"MutedLabel"
 	root.add_child(title)
 
 	_summary = Label.new()
-	_summary.add_theme_font_size_override("font_size", 22)
+	_summary.theme_type_variation = &"SubHeroReadoutLabel"
 	root.add_child(_summary)
 
 	# Resting voltage and per-cell voltage, on their own line under the capacity. Two views of one
 	# fact, because a pack is bought and charged in pack volts and JUDGED in cell volts.
 	_volts = Label.new()
-	_volts.add_theme_color_override("font_color", InstrumentPanel.MUTED_COLOUR)
+	_volts.theme_type_variation = &"MutedLabel"
 	root.add_child(_volts)
 
 	_bar = ProgressBar.new()
@@ -92,11 +91,10 @@ func _init(p_charge: PackCharge, p_catalog: PartsCatalog = null) -> void:
 	# The countdown, and what it is a compression of. Updated on every tick while charging, so it
 	# actually counts down rather than being a figure quoted once when the button was pressed.
 	_clock = Label.new()
-	_clock.add_theme_color_override("font_color", InstrumentPanel.VALUE_COLOUR)
+	_clock.theme_type_variation = &"ReadoutLabel"
 	root.add_child(_clock)
 
 	var controls := HBoxContainer.new()
-	controls.add_theme_constant_override("separation", 8)
 	root.add_child(controls)
 
 	_button = Button.new()
@@ -118,13 +116,13 @@ func _init(p_charge: PackCharge, p_catalog: PartsCatalog = null) -> void:
 	_shelf = Label.new()
 	_shelf.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_shelf.custom_minimum_size = Vector2(InstrumentPanel.CAPTION_WIDTH, 0)
-	_shelf.add_theme_color_override("font_color", InstrumentPanel.MUTED_COLOUR)
+	_shelf.theme_type_variation = &"MutedLabel"
 	root.add_child(_shelf)
 
 	_note = Label.new()
 	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_note.custom_minimum_size = Vector2(InstrumentPanel.CAPTION_WIDTH, 0)
-	_note.add_theme_color_override("font_color", InstrumentPanel.MUTED_COLOUR)
+	_note.theme_type_variation = &"MutedLabel"
 	_note.text = "Flying and bench runs drain at 1:1. Charging is compressed, because waiting " \
 		+ "45 minutes teaches nothing that waiting four does not."
 	root.add_child(_note)
@@ -191,7 +189,7 @@ func _refresh() -> void:
 	_bar.value = fraction * 100.0
 	_summary.text = "%.0f %%   ·   %.0f of %.0f mAh" % [
 		fraction * 100.0, capacity * fraction, capacity]
-	# The same colour the bench uses below the knee, so "nearly flat" reads the same in both rooms.
+	# Exception: Dynamic runtime color shift based on low battery state threshold
 	_summary.add_theme_color_override("font_color",
 		InstrumentPanel.SAG_COLOUR if fraction < LOW_FRACTION else InstrumentPanel.VALUE_COLOUR)
 

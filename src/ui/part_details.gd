@@ -39,20 +39,25 @@ func _init(p_spec_rows: Array) -> void:
 	custom_minimum_size = Vector2(316, 0)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(scroll)
+
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 6)
-	_padded(self).add_child(root)
+	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_padded(scroll).add_child(root)
 
 	_title = Label.new()
 	_title.text = "—"
+	_title.theme_type_variation = &"TitleLabel"
 	root.add_child(_title)
 
 	root.add_child(HSeparator.new())
 
 	var specs := GridContainer.new()
 	specs.columns = 2
-	specs.add_theme_constant_override("h_separation", 10)
-	specs.add_theme_constant_override("v_separation", 4)
 	root.add_child(specs)
 
 	for row in spec_rows:
@@ -62,8 +67,6 @@ func _init(p_spec_rows: Array) -> void:
 
 	var stats := GridContainer.new()
 	stats.columns = 2
-	stats.add_theme_constant_override("h_separation", 10)
-	stats.add_theme_constant_override("v_separation", 4)
 	root.add_child(stats)
 
 	for row in STAT_ROWS:
@@ -72,13 +75,15 @@ func _init(p_spec_rows: Array) -> void:
 	_warning_label = Label.new()
 	_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_warning_label.custom_minimum_size = Vector2(280, 0)
-	_warning_label.add_theme_color_override("font_color", Color(1.0, 0.72, 0.25))
+	_warning_label.theme_type_variation = &"WarnLabel"
+	# Exception: Warning label explicit amber color override
+	_warning_label.add_theme_color_override("font_color", LothalTheme.WARNING)
 	root.add_child(_warning_label)
 
 	_build_note = Label.new()
 	_build_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_build_note.custom_minimum_size = Vector2(280, 0)
-	_build_note.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	_build_note.theme_type_variation = &"MutedLabel"
 	root.add_child(_build_note)
 
 
@@ -86,8 +91,9 @@ func _init(p_spec_rows: Array) -> void:
 ## which reads as clipped text even when nothing is actually cut off.
 static func _padded(parent: Control) -> MarginContainer:
 	var margin := MarginContainer.new()
+	# Exception: Programmatic margin container insets using spacing scale
 	for side in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_%s" % side, 10)
+		margin.add_theme_constant_override("margin_%s" % side, LothalTheme.SPACE_2)
 	parent.add_child(margin)
 	return margin
 

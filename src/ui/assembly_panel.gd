@@ -64,18 +64,18 @@ func _init(p_tweaks: AssemblyTweaks) -> void:
 
 	var root := VBoxContainer.new()
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	root.add_theme_constant_override("separation", 6)
 	_padded(scroll).add_child(root)
 
 	var title := Label.new()
 	title.text = "FIT"
+	title.theme_type_variation = &"TitleLabel"
 	root.add_child(title)
 
 	var note := Label.new()
 	note.text = "Mounts, shims and standoffs. Changes the fit, not the flight numbers."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
-	note.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	note.theme_type_variation = &"MutedLabel"
 	root.add_child(note)
 
 	root.add_child(HSeparator.new())
@@ -94,6 +94,7 @@ func _init(p_tweaks: AssemblyTweaks) -> void:
 	# pack sits is not one of the three tweaks (that is its own decision, not a fourth slider).
 	var fit_title := Label.new()
 	fit_title.text = "PACK ON THE PLATE"
+	fit_title.theme_type_variation = &"TitleLabel"
 	root.add_child(fit_title)
 
 	var grid := GridContainer.new()
@@ -116,7 +117,9 @@ func _init(p_tweaks: AssemblyTweaks) -> void:
 	_fit_warning_label = Label.new()
 	_fit_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_fit_warning_label.custom_minimum_size = Vector2(280, 0)
-	_fit_warning_label.add_theme_color_override("font_color", Color(1.0, 0.72, 0.25))
+	_fit_warning_label.theme_type_variation = &"WarnLabel"
+	# Exception: Warning label explicit amber color override
+	_fit_warning_label.add_theme_color_override("font_color", LothalTheme.WARNING)
 	root.add_child(_fit_warning_label)
 
 	root.add_child(HSeparator.new())
@@ -131,8 +134,9 @@ func _init(p_tweaks: AssemblyTweaks) -> void:
 ## edge read as clipped text even when nothing is cut off.
 static func _padded(parent: Control) -> MarginContainer:
 	var margin := MarginContainer.new()
+	# Exception: Programmatic margin container insets using spacing scale
 	for side in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_%s" % side, 10)
+		margin.add_theme_constant_override("margin_%s" % side, LothalTheme.SPACE_2)
 	parent.add_child(margin)
 	return margin
 
@@ -162,7 +166,7 @@ func _add_mount_row(parent: VBoxContainer, row: Dictionary) -> void:
 	hint.text = row["hint"]
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size = Vector2(280, 0)
-	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+	hint.theme_type_variation = &"MutedLabel"
 	parent.add_child(hint)
 
 
@@ -191,7 +195,7 @@ func _add_row(parent: VBoxContainer, row: Dictionary) -> void:
 	hint.text = row["hint"]
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size = Vector2(280, 0)
-	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+	hint.theme_type_variation = &"MutedLabel"
 	parent.add_child(hint)
 
 

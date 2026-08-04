@@ -62,7 +62,12 @@ var _esc_bench_button: Button
 var _sim_button: Button
 var _showing_lab := true
 
+var settings: AppSettings
+
 func _init() -> void:
+	theme = LothalTheme.get_theme()
+	settings = AppSettings.load_from()
+
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	anchor_right = 1.0
 	anchor_bottom = 1.0
@@ -88,8 +93,7 @@ func _init() -> void:
 	add_child(tab_layer)
 
 	var bar := HBoxContainer.new()
-	bar.add_theme_constant_override("separation", 4)
-	bar.position = Vector2(8, 6)
+	bar.position = Vector2(LothalTheme.SPACE_2, 6)
 	tab_layer.add_child(bar)
 
 	_lab_button = _add_tab(bar, "Lab", show_lab)
@@ -98,6 +102,11 @@ func _init() -> void:
 	_esc_bench_button = _add_tab(bar, "ESC", show_esc_bench)
 	_sim_button = _add_tab(bar, "Sim", show_sim)
 	_refresh_tabs()
+
+func _ready() -> void:
+	if get_tree() != null and get_tree().root != null and settings != null:
+		get_tree().root.content_scale_factor = settings.ui_scale
+
 
 func _add_tab(bar: HBoxContainer, text: String, handler: Callable) -> Button:
 	var button := Button.new()
@@ -242,6 +251,9 @@ func show_sim() -> void:
 		# Handed over rather than loaded by Sim, so both rooms are looking at ONE set of packs
 		# within a session. Sim drains it and writes back on landing; it authors nothing else.
 		sim.pack_charge = pack_charge
+		# Sim is a direct child rather than living in `_host`, so nothing insets it below the
+		# tab bar the way Lab is inset. Its panel is told how much room the bar takes instead.
+		sim.ui_top_inset = TAB_BAR_HEIGHT
 		add_child(sim)
 	_showing_lab = false
 	lab.visible = false

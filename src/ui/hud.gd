@@ -28,11 +28,18 @@ extends Control
 const VOLTAGE_WARN_FRACTION := 0.82
 const VOLTAGE_CRITICAL_FRACTION := 0.75
 
-const COLOR_OK := Color(0.86, 0.90, 0.94)
-const COLOR_WARN := Color(1.0, 0.72, 0.25)
-const COLOR_CRITICAL := Color(1.0, 0.36, 0.30)
-const COLOR_ACCENT := Color(0.45, 0.86, 1.0)
-const COLOR_DIM := Color(0.6, 0.63, 0.68)
+## Named against LothalTheme rather than restated as literals: a copied colour that agrees with
+## the theme today is a colour that disagrees with it after the next palette change, silently.
+const COLOR_OK := LothalTheme.TEXT_MAIN
+const COLOR_WARN := LothalTheme.WARNING
+const COLOR_CRITICAL := LothalTheme.DANGER
+const COLOR_ACCENT := LothalTheme.ACCENT
+const COLOR_DIM := LothalTheme.TEXT_MUTED
+
+## How much of the bottom-left corner the flight readouts claim. Stated rather than measured
+## because the panel that has to keep clear of them is sized before this block has ever been
+## laid out — and a HUD that another panel draws over is not a HUD.
+const FLIGHT_BLOCK_HEIGHT := 136.0
 
 var _throttle_bar: ProgressBar
 var _throttle_label: Label
@@ -54,21 +61,19 @@ func _init() -> void:
 	# --- Bottom-left: the flight instruments ---
 	var flight := VBoxContainer.new()
 	flight.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	flight.offset_left = 16
-	flight.offset_top = -136
-	flight.offset_bottom = -16
-	flight.offset_right = 296
-	flight.add_theme_constant_override("separation", 4)
+	flight.offset_left = LothalTheme.SPACE_4
+	flight.offset_bottom = -LothalTheme.SPACE_4
+	flight.custom_minimum_size = Vector2(280, 0)
+	flight.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	flight.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(flight)
 
 	var throttle_row := HBoxContainer.new()
-	throttle_row.add_theme_constant_override("separation", 8)
 	flight.add_child(throttle_row)
 
 	var throttle_caption := Label.new()
 	throttle_caption.text = "THR"
-	throttle_caption.add_theme_color_override("font_color", COLOR_DIM)
+	throttle_caption.theme_type_variation = &"MutedLabel"
 	throttle_row.add_child(throttle_caption)
 
 	_throttle_bar = ProgressBar.new()
@@ -82,6 +87,7 @@ func _init() -> void:
 	_throttle_label = Label.new()
 	_throttle_label.custom_minimum_size = Vector2(52, 0)
 	_throttle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_throttle_label.theme_type_variation = &"ReadoutLabel"
 	throttle_row.add_child(_throttle_label)
 
 	_speed_label = _add_readout(flight)
@@ -89,33 +95,36 @@ func _init() -> void:
 	_pack_label = _add_readout(flight)
 
 	_mode_label = Label.new()
-	_mode_label.add_theme_color_override("font_color", COLOR_DIM)
+	_mode_label.theme_type_variation = &"MutedLabel"
 	flight.add_child(_mode_label)
 
 	# --- Top-right: the race ---
 	var race := VBoxContainer.new()
 	race.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	race.offset_left = -240
-	race.offset_top = 16
-	race.offset_right = -16
+	race.offset_right = -LothalTheme.SPACE_4
+	race.offset_top = LothalTheme.SPACE_4
+	race.custom_minimum_size = Vector2(220, 0)
+	race.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	race.alignment = BoxContainer.ALIGNMENT_BEGIN
 	race.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(race)
 
 	_current_lap_label = _add_readout(race, HORIZONTAL_ALIGNMENT_RIGHT)
-	_current_lap_label.add_theme_font_size_override("font_size", 22)
+	_current_lap_label.theme_type_variation = &"TitleLabel"
 	_best_lap_label = _add_readout(race, HORIZONTAL_ALIGNMENT_RIGHT)
 	_gate_label = _add_readout(race, HORIZONTAL_ALIGNMENT_RIGHT)
+	# Exception: Accent highlight for gate label
 	_gate_label.add_theme_color_override("font_color", COLOR_ACCENT)
 
 	# --- Centre: transient banners (lap complete, new best) ---
 	_banner_label = Label.new()
 	_banner_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_banner_label.offset_top = 72
-	_banner_label.offset_left = -220
-	_banner_label.offset_right = 220
+	_banner_label.custom_minimum_size = Vector2(440, 0)
+	_banner_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_banner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_banner_label.add_theme_font_size_override("font_size", 28)
+	_banner_label.theme_type_variation = &"TitleLabel"
+	# Exception: Accent highlight for transient banner
 	_banner_label.add_theme_color_override("font_color", COLOR_ACCENT)
 	_banner_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_banner_label.visible = false
@@ -124,6 +133,8 @@ func _init() -> void:
 func _add_readout(parent: Node, alignment: HorizontalAlignment = HORIZONTAL_ALIGNMENT_LEFT) -> Label:
 	var label := Label.new()
 	label.horizontal_alignment = alignment
+	label.theme_type_variation = &"ReadoutLabel"
+	# Exception: Default base color for HUD readouts
 	label.add_theme_color_override("font_color", COLOR_OK)
 	parent.add_child(label)
 	return label
@@ -140,6 +151,7 @@ func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, 
 	_speed_label.text = "%.0f km/h" % (obs.airspeed_mps * 3.6)
 
 	_voltage_label.text = "%.2f V   %.0f A" % [obs.voltage_live_v, obs.current_total_a]
+	# Exception: Dynamic runtime voltage sag color shift
 	_voltage_label.add_theme_color_override("font_color", _voltage_color(obs, build))
 
 	# Remaining charge and remaining flying, updating live off the same pack the physics drains.
@@ -148,6 +160,7 @@ func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, 
 	var remaining := 1.0 - obs.capacity_used_fraction
 	var minutes := build.remaining_flight_time_min(core.powertrain.battery)
 	_pack_label.text = "%.0f %%   %s left" % [remaining * 100.0, _format_minutes(minutes)]
+	# Exception: Dynamic runtime flight time / pack warning color shift
 	_pack_label.add_theme_color_override("font_color",
 		COLOR_CRITICAL if minutes <= 0.0 else (COLOR_WARN if remaining < 0.2 else COLOR_OK))
 

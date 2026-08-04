@@ -11,6 +11,7 @@ extends SceneTree
 ##                                                 [azimuth_deg] [elevation_deg]
 ##                                                 [motor_part_id] [prop_part_id]
 ##                                                 ["sim" | <panel name>] [battery_part_id]
+##                                                 [resolution_WxH]
 ##
 ## The pack argument comes last rather than next to the motor and prop, so that every invocation
 ## written before it existed still means what it meant. Pass "" for the sim/panel slot to reach it
@@ -34,6 +35,14 @@ func _init() -> void:
 	var out_path: String = args[0] if args.size() > 0 else "user://lab.png"
 	var settle: int = int(args[1]) if args.size() > 1 else 30
 	var part_id: String = args[2] if args.size() > 2 else ""
+
+	if args.size() > 9 and args[9] != "":
+		var res_parts := args[9].split("x")
+		if res_parts.size() == 2:
+			var w := int(res_parts[0])
+			var h := int(res_parts[1])
+			DisplayServer.window_set_size(Vector2i(w, h))
+			root.size = Vector2i(w, h)
 
 	var shell: AppShell = load("res://src/scenes/root.tscn").instantiate()
 	root.add_child(shell)

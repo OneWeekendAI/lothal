@@ -112,17 +112,26 @@ func _init(p_catalog: PartsCatalog, p_motor_id: String = "", p_propeller_id: Str
 	row.set_anchors_preset(Control.PRESET_FULL_RECT)
 	row.anchor_right = 1.0
 	row.anchor_bottom = 1.0
-	row.add_theme_constant_override("separation", 8)
 	add_child(row)
+
+	# Padded, because the stage runs to the window edges otherwise: the caption loses its first
+	# character on the left and the throttle button loses its bottom border off the end of the
+	# screen. The right-hand instrument panel gets its inset from PanelContainer's stylebox;
+	# this column has no panel behind it, so it states the same inset itself.
+	var stage_pad := MarginContainer.new()
+	stage_pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stage_pad.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for side in ["left", "right", "top", "bottom"]:
+		stage_pad.add_theme_constant_override("margin_%s" % side, LothalTheme.SPACE_2)
+	row.add_child(stage_pad)
 
 	var stage := VBoxContainer.new()
 	stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	stage.add_theme_constant_override("separation", 6)
-	row.add_child(stage)
+	stage_pad.add_child(stage)
 
 	_title = Label.new()
-	_title.add_theme_color_override("font_color", InstrumentPanel.LABEL_COLOUR)
+	_title.theme_type_variation = &"MutedLabel"
 	stage.add_child(_title)
 
 	trace = BandTrace.new()
@@ -153,12 +162,11 @@ func _init(p_catalog: PartsCatalog, p_motor_id: String = "", p_propeller_id: Str
 
 func _build_controls(stage: VBoxContainer) -> void:
 	var controls := HBoxContainer.new()
-	controls.add_theme_constant_override("separation", 10)
 	stage.add_child(controls)
 
 	var caption := Label.new()
 	caption.text = "THROTTLE"
-	caption.add_theme_color_override("font_color", InstrumentPanel.LABEL_COLOUR)
+	caption.theme_type_variation = &"MutedLabel"
 	controls.add_child(caption)
 
 	_run_button = Button.new()

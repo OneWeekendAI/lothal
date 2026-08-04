@@ -52,15 +52,15 @@ const MIN_SPAN_S := 30.0
 ## — or of an overload — sits on the chart rather than exactly on its edge.
 const AXIS_OVERSHOOT := 0.3
 
-const BACKGROUND := Color(0.11, 0.12, 0.15)
-const GRID_COLOUR := Color(0.22, 0.24, 0.28)
-const AXIS_TEXT := Color(0.62, 0.66, 0.72)
+const BACKGROUND := LothalTheme.PANEL_BG
+const GRID_COLOUR := LothalTheme.BORDER
+const AXIS_TEXT := LothalTheme.TEXT_MUTED
 const MARKER_COLOUR := Color(0.85, 0.80, 0.45, 0.55)
 
 ## The battery bench's palette, and the default, because it was the first caller and these are the
 ## colours the two lines were chosen against.
-const RESTING_COLOUR := Color(0.55, 0.70, 0.95)
-const LIVE_COLOUR := Color(1.0, 0.45, 0.36)
+const RESTING_COLOUR := LothalTheme.ACCENT
+const LIVE_COLOUR := LothalTheme.DANGER
 const SAG_FILL := Color(1.0, 0.45, 0.36, 0.16)
 ## What a band drawn the WRONG WAY UP is filled with — the lower series above the upper one. On the
 ## battery bench that cannot happen. On the ESC bench it is the entire finding.

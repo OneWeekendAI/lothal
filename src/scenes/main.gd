@@ -55,6 +55,10 @@ var airframe: AirframeModel
 ## (labs-and-sim.md §4). Left empty it falls back to the reference build, so main.tscn still
 ## runs on its own — capture_frame.gd and F5-from-the-editor both load it directly.
 var initial_selection: Dictionary = {}
+## How much of the top of the screen is already covered when this scene is reached through
+## AppShell, which draws its tab bar on a CanvasLayer above the flight scene. Set the same way
+## and for the same reason as `initial_selection`: zero when main.tscn runs on its own.
+var ui_top_inset := 0.0
 ## The builder's fit adjustments, read from the same file Lab writes. Read from disk rather than
 ## handed over with the selection, deliberately: it is one file, Lab is the only writer, and a copy
 ## passed through the door would be a second place for the shim height to live. Sim never writes it
@@ -102,13 +106,25 @@ func _ready() -> void:
 	var ui_layer := CanvasLayer.new()
 	add_child(ui_layer)
 
+	# Stated here as well as on AppShell. Sim inherits the shell's theme when it is reached
+	# through the door, but main.tscn also runs on its own — F5 from the editor, and
+	# capture_frame.gd — and unthemed is exactly the state in which a screenshot of Sim stops
+	# being a picture of the app. Same cached Theme either way, so the door path is unchanged.
+	var theme := LothalTheme.get_theme()
+
 	hud = Hud.new()
+	hud.theme = theme
 	ui_layer.add_child(hud)
 
 	airframe = AirframeModel.new()
 	drone.add_child(airframe)
 
 	build_panel = BuildPanel.new(PartsCatalog.load_default(), _opening_selection())
+	build_panel.theme = theme
+	# This scene owns both, so this is where the two are told about each other rather than
+	# either one reaching across for the other's geometry.
+	build_panel.top_inset = ui_top_inset
+	build_panel.bottom_reserve = Hud.FLIGHT_BLOCK_HEIGHT
 	build_panel.build_changed.connect(_on_build_changed)
 	ui_layer.add_child(build_panel)   # emits build_changed on _ready, which builds the core
 

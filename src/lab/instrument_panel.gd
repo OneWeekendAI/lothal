@@ -16,12 +16,14 @@ extends PanelContainer
 ## benches feed it straight off the published Observables without either one growing a second
 ## opinion about what the numbers are.
 
-const LABEL_COLOUR := Color(0.62, 0.66, 0.72)
-const VALUE_COLOUR := Color(0.92, 0.94, 0.97)
-const EFFICIENCY_COLOUR := Color(0.55, 0.86, 0.68)
-const SAG_COLOUR := Color(1.0, 0.45, 0.36)
-const LIMIT_COLOUR := Color(1.0, 0.72, 0.25)
-const MUTED_COLOUR := Color(0.58, 0.60, 0.64)
+## Named against LothalTheme rather than restated as literals: a copied colour that agrees with
+## the theme today is a colour that disagrees with it after the next palette change, silently.
+const LABEL_COLOUR := LothalTheme.TEXT_MUTED
+const VALUE_COLOUR := LothalTheme.TEXT_MAIN
+const EFFICIENCY_COLOUR := LothalTheme.SUCCESS
+const SAG_COLOUR := LothalTheme.DANGER
+const LIMIT_COLOUR := LothalTheme.WARNING
+const MUTED_COLOUR := LothalTheme.TEXT_MUTED
 
 const PANEL_WIDTH := 336
 const CAPTION_WIDTH := 280
@@ -36,23 +38,29 @@ var _note_bottom: Label
 func _init(headlines: Array, rows: Array) -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(scroll)
+
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 8)
-	PartDetails._padded(self).add_child(root)
+	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	PartDetails._padded(scroll).add_child(root)
 
 	for headline in headlines:
 		var box := VBoxContainer.new()
-		box.add_theme_constant_override("separation", 0)
 		root.add_child(box)
 
 		var name_label := Label.new()
 		name_label.text = headline["label"]
-		name_label.add_theme_color_override("font_color", LABEL_COLOUR)
+		name_label.theme_type_variation = &"MutedLabel"
 		box.add_child(name_label)
 
 		var value := Label.new()
 		value.text = "—"
-		value.add_theme_font_size_override("font_size", 34 if headlines.size() == 1 else 26)
+		value.theme_type_variation = &"HeroReadoutLabel" if headlines.size() == 1 else &"SubHeroReadoutLabel"
+		# Exception: Dynamic headline color initialization
 		value.add_theme_color_override("font_color", headline.get("colour", VALUE_COLOUR))
 		box.add_child(value)
 		_headlines[headline["key"]] = value
@@ -61,28 +69,26 @@ func _init(headlines: Array, rows: Array) -> void:
 		caption.text = headline.get("caption", "")
 		caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		caption.custom_minimum_size = Vector2(CAPTION_WIDTH, 0)
-		caption.add_theme_color_override("font_color", MUTED_COLOUR)
+		caption.theme_type_variation = &"MutedLabel"
 		box.add_child(caption)
 
 	root.add_child(HSeparator.new())
 
 	var grid := GridContainer.new()
 	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 10)
-	grid.add_theme_constant_override("v_separation", 4)
 	root.add_child(grid)
 
 	for row in rows:
 		var name_label := Label.new()
 		name_label.text = row["label"]
-		name_label.add_theme_color_override("font_color", LABEL_COLOUR)
+		name_label.theme_type_variation = &"MutedLabel"
 		grid.add_child(name_label)
 
 		var value := Label.new()
 		value.text = "—"
 		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		value.add_theme_color_override("font_color", VALUE_COLOUR)
+		value.theme_type_variation = &"ReadoutLabel"
 		grid.add_child(value)
 		_values[row["key"]] = value
 
@@ -96,6 +102,7 @@ func _note(root: VBoxContainer, colour: Color) -> Label:
 	var label := Label.new()
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.custom_minimum_size = Vector2(CAPTION_WIDTH, 0)
+	# Exception: Note role color override
 	label.add_theme_color_override("font_color", colour)
 	root.add_child(label)
 	return label
@@ -105,12 +112,14 @@ func set_headline(key: String, text: String) -> void:
 	_headlines[key].text = text
 
 func set_headline_colour(key: String, colour: Color) -> void:
+	# Exception: Dynamic headline readout color change
 	_headlines[key].add_theme_color_override("font_color", colour)
 
 func set_value(key: String, text: String) -> void:
 	_values[key].text = text
 
 func set_value_colour(key: String, colour: Color) -> void:
+	# Exception: Dynamic grid readout color change
 	_values[key].add_theme_color_override("font_color", colour)
 
 func set_notes(top: String, bottom: String) -> void:

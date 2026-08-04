@@ -3,7 +3,7 @@ extends SceneTree
 ## PNG of the framebuffer. This is how the UI gets looked at on a machine where the shell has
 ## no screen-recording permission — Godot captures its own viewport, so the OS is not involved.
 ##
-##   godot --script res://tests/capture_frame.gd -- <out.png> [settle_frames] [overview]
+##   godot --script res://tests/capture_frame.gd -- <out.png> [settle_frames] [overview] [resolution_WxH]
 ##
 ## Passing "overview" detaches the chase cam and shoots the whole circuit from above, which
 ## is the only way to check the course as a shape rather than one gate at a time.
@@ -13,6 +13,14 @@ func _init() -> void:
 	var out_path: String = args[0] if args.size() > 0 else "user://frame.png"
 	var settle: int = int(args[1]) if args.size() > 1 else 30
 	var overview: bool = args.size() > 2 and args[2] == "overview"
+
+	if args.size() > 3 and args[3] != "":
+		var res_parts := args[3].split("x")
+		if res_parts.size() == 2:
+			var w := int(res_parts[0])
+			var h := int(res_parts[1])
+			DisplayServer.window_set_size(Vector2i(w, h))
+			root.size = Vector2i(w, h)
 
 	var scene: Node = load("res://src/scenes/main.tscn").instantiate()
 	root.add_child(scene)
