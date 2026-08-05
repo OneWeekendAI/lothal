@@ -15,7 +15,7 @@ extends RefCounted
 ##
 ##   Build.mass_parts() — the sum of frame, four motor-and-prop pairs, the two boards, and
 ##   the loose electronics budget. Not a physical prediction; an addition. The interesting
-##   term by far is Build.ELECTRONICS_MASS_G's undisplaced remainder (LTHL-11): 43 g standing
+##   term by far is Build.ELECTRONICS_MASS_G's undisplaced remainder (LTHL-11): 35 g standing
 ##   in for a VTX, a camera, a receiver, an antenna, straps, screws and wiring, whose real
 ##   total varies a lot between aircraft and is the one number here nobody has ever measured.
 ##
@@ -60,8 +60,8 @@ extends RefCounted
 ## propeller geometry; this is a sum of masses that are each printed on a product page. There
 ## is no modelling in it to be generous about. What the five percent is actually buying is:
 ##
-##   - the 43 g loose-electronics budget, which is the only invented number in the sum, and
-##     which is about 10% of a 5" aircraft's dry mass. A bound tighter than the size of the
+##   - the 35 g loose-electronics budget, which is the only invented number in the sum, and
+##     which is about 8% of a 5" aircraft's dry mass. A bound tighter than the size of the
 ##     one term under test could not be met by a correct model either.
 ##   - the FC and ESC standing at their budgeted 8 g and 12 g rather than at the boards these
 ##     aircraft actually fly, because a named flight controller cannot be entered in the
@@ -123,8 +123,15 @@ static func evaluate(catalog: PartsCatalog, entry: Dictionary) -> Dictionary:
 	if reported <= 0.0:
 		return {}
 
+	# The two boards are chosen by the aircraft's PUBLISHED stack size — a 20x20 mini stack gets
+	# the catalog's 20x20 boards — and that choice is made off the spec sheet before any error is
+	# computed. Picking the board that flattered the number afterwards would be fitting the model
+	# to the data it is being measured against. An entry that names neither gets Build's defaults,
+	# which is the full-size 30.5x30.5 pair.
 	var build := Build.from_ids(catalog, String(entry["frame_id"]), String(entry["motor_id"]),
-		String(entry["propeller_id"]), PACK_ID)
+		String(entry["propeller_id"]), PACK_ID,
+		String(entry.get("esc_id", Build.DEFAULT_ESC_ID)),
+		String(entry.get("fc_id", Build.DEFAULT_FC_ID)))
 	var predicted := predicted_dry_mass_g(build)
 	var error_fraction := (predicted - reported) / reported
 

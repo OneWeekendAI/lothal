@@ -182,6 +182,24 @@
       "source": "representative 5\" race bi-blade spec sheet; class-typical, not a specific product"
     },
     {
+      "part_id": "prop_nazgul_f5_51x35x3",
+      "name": "Nazgul F5 5.1x3.5x3",
+      "category": "propeller",
+      "mass_g": 3.9,
+      "specs": {
+        "diameter_inches": 5.1,
+        "pitch_inches": 3.5,
+        "blades": 3
+      },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "5\"",
+        "intended_use": "freestyle",
+        "material": "polycarbonate"
+      },
+      "source": "iFlight 'Nazgul F5 Tri-blade Prop' product page (shop.iflight.com, product 964): diameter 5.1 inch, pitch 3.5, 3 blades, 3.9 g each, polycarbonate, 5 mm centre hole. A NAMED PRODUCT rather than a class-typical entry, because it is the prop the held-out builds in data/validation/builds.json actually fly AND the prop iFlight's own XING2 2207 datasheet quotes a thrust row on — one prop, one source, both sides."
+    },
+    {
       "part_id": "prop_6x4x2",
       "name": "6x4.0x2",
       "category": "propeller",

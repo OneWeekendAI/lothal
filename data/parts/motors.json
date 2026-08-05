@@ -152,6 +152,31 @@
       "source": "manufacturer thrust table, 5x4.3x3 on 6S"
     },
     {
+      "part_id": "motor_xing2_2207_1750kv",
+      "name": "XING2 2207 1750KV",
+      "category": "motor",
+      "mass_g": 30.5,
+      "mount_pattern": "16x16",
+      "specs": {
+        "kv": 1750,
+        "stator_diameter_mm": 22,
+        "stator_height_mm": 7,
+        "max_thrust_g": 1678.0,
+        "max_amps": 35.46,
+        "poles": 14
+      },
+      "thrust_test": {
+        "prop_id": "prop_nazgul_f5_51x35x3",
+        "voltage_v": 24.95
+      },
+      "catalog": {
+        "stator_class": "22xx",
+        "kv_class": "1500-2000KV",
+        "intended_use": "freestyle"
+      },
+      "source": "iFlight XING2 2207 1750KV published datasheet (shop.iflight.com/image/catalog/TEST REPORT/XING2-2207-1750KV.png), Datasheet block, 'Nazgul F5' prop, 100% row: 24.95 V, 35.46 A, 1678 g. Mass 30.5 g 'included wire' and configuration 12N14P — hence 14 poles — from the specification block of the same sheet. A NAMED PRODUCT with no 'validation' block: the sheet's second prop row (GF51466) is a propeller whose mass nobody publishes, so it cannot be entered here without inventing one, and a held-out thrust point is not worth a fabricated part. The bench says 'not validated' for this motor, which is the honest reading. It is here because the held-out AIRCRAFT in data/validation/builds.json fly it."
+    },
+    {
       "part_id": "motor_2207_1960kv",
       "name": "2207 1960KV",
       "category": "motor",

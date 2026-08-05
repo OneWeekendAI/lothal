@@ -128,6 +128,42 @@
       "source": "representative 5\" deadcat frame; arm and mass class-typical, not a specific product"
     },
     {
+      "part_id": "frame_iflight_evoque_f5_v2_o4",
+      "name": "Nazgul Evoque F5 V2 (O4)",
+      "category": "frame",
+      "mass_g": 249.0,
+      "specs": {
+        "arm_mm": 111.5,
+        "max_prop_inches": 5.1,
+        "motor_mount": "16x16",
+        "stack_mount": "20x20"
+      },
+      "catalog": {
+        "frame_type": "freestyle",
+        "material": "carbon fibre 3K",
+        "size_class": "5\""
+      },
+      "source": "iFlight 'Nazgul Evoque F5 V2 O4 Frame Kit' product page (shop.iflight.com, product 2283): weight 249±5 g, wheelbase 223 mm (DeadCat), 6 mm arms, 20x20/O3.0 mm stack, 16x16 mm motor mount. arm_mm is the published wheelbase halved, which is the motor radius; the frame is a DEADCAT, so the four motors are not on a square and this project's X layout is an approximation of its geometry — it is exact for mass, which is what data/validation/builds.json reads it for, and approximate for inertia."
+    },
+    {
+      "part_id": "frame_iflight_evoque_f5_v3",
+      "name": "Nazgul Evoque F5 V3",
+      "category": "frame",
+      "mass_g": 256.0,
+      "specs": {
+        "arm_mm": 118.0,
+        "max_prop_inches": 5.1,
+        "motor_mount": "16x16",
+        "stack_mount": "20x20"
+      },
+      "catalog": {
+        "frame_type": "freestyle",
+        "material": "carbon fibre 3K",
+        "size_class": "5\""
+      },
+      "source": "iFlight 'Nazgul Evoque F5 V3 Frame Kit' product page (shop.iflight.com, product 2407): weight 256±10 g, wheelbase 236 mm (DeadCat default) / 239 mm (True X), 6 mm arms, 20x20/O3.0 mm stack, 16x16 mm motor mount. arm_mm is the DeadCat wheelbase halved; same approximation note as the V2 above."
+    },
+    {
       "part_id": "frame_5in_cinewhoop",
       "name": "5\" Cinewhoop",
       "category": "frame",

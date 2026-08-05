@@ -18,7 +18,7 @@ extends RefCounted
 ## failure and look at the model — not to widen the bound.
 ##
 ## What is under test is Build.mass_parts(), and the interesting term in it by a distance is
-## the 43 g of loose electronics that LTHL-11 will eventually unbundle: a VTX, a camera, a
+## the 35 g of loose electronics that LTHL-11 will eventually unbundle: a VTX, a camera, a
 ## receiver, an antenna, straps, screws and wiring, standing as one budgeted lump that nobody
 ## has ever weighed. See BuildValidation's header for why the quantity is DRY mass and why
 ## hover throttle is absent.
@@ -196,15 +196,22 @@ static func _test_the_pack_cancels(catalog: PartsCatalog) -> Array:
 # The check has teeth
 # ---------------------------------------------------------------------------
 
-## Proof that the bound rejects something. Every assertion above is a pass, and a suite made
-## entirely of passes cannot tell a working check from one wired to `true`. So: take the real
-## dataset, break the MODEL rather than the data — add 60 g to every frame in a private copy
-## of the catalog, which is roughly what a wrong electronics budget would look like — and
-## confirm the machinery says no.
+## Proof that the bound rejects something. Every other assertion is a pass or a fail ABOUT THE
+## MODEL, and neither kind can tell a working check from one wired to `true`. So: take the real
+## dataset, break the MODEL rather than the data — add 60 g to every frame in a private copy of
+## the catalog, which is roughly the size of a wrong electronics budget — and confirm the
+## machinery says no.
 ##
-## The model side rather than the reported side deliberately. Halving a reported mass proves
-## the subtraction works; moving a mass the model reads proves the bound would actually catch
-## Build being wrong, which is the only thing this file exists to catch.
+## The model side rather than the reported side deliberately. Halving a reported mass proves the
+## subtraction works; moving a mass the model reads proves the bound would actually catch Build
+## being wrong, which is the only thing this file exists to catch.
+##
+## Scoped to the points that pass HONESTLY, and that scoping is the whole subtlety. A point that
+## already busts the bound says nothing about whether the check discriminates — and worse, a
+## build that misses LOW by 10% is moved TOWARDS zero by 60 g of extra frame, so demanding that
+## every tampered point fail would make this test fail whenever the model is wrong in the
+## direction it is currently wrong in. That would couple "does the check work" to "does the model
+## pass", which is exactly the confusion this test exists to break.
 static func _test_the_check_can_actually_fail() -> Array:
 	var honest := PartsCatalog.load_default()
 	var dataset := BuildValidation.load_dataset()
@@ -221,18 +228,22 @@ static func _test_the_check_can_actually_fail() -> Array:
 		frame["mass_g"] = float(frame["mass_g"]) + 60.0
 	var tampered_points := BuildValidation.evaluate_all(tampered, dataset)
 
-	var all_honest_pass := true
-	var all_tampered_fail := true
+	var checked := 0
+	var caught := 0
 	for i in honest_points.size():
 		if honest_points[i].is_empty() or tampered_points[i].is_empty():
 			continue
-		all_honest_pass = all_honest_pass and bool(honest_points[i]["within_bound"])
-		all_tampered_fail = all_tampered_fail and not bool(tampered_points[i]["within_bound"])
+		if not bool(honest_points[i]["within_bound"]):
+			continue
+		checked += 1
+		if not bool(tampered_points[i]["within_bound"]):
+			caught += 1
 
 	return [TestResult.new(
-		"the bound rejects a mass model that is 60 g heavy",
-		all_honest_pass and all_tampered_fail,
-		"real catalog %+.1f%% mean, same builds with 60 g of extra frame %+.1f%% mean" % [
+		"a build the bound accepts is rejected once the mass model is made 60 g heavy",
+		checked > 0 and caught == checked,
+		"%d of %d honestly-passing build(s) rejected after tampering (%+.1f%% -> %+.1f%% mean)" % [
+			caught, checked,
 			BuildValidation.signed_mean_error(honest_points) * 100.0,
 			BuildValidation.signed_mean_error(tampered_points) * 100.0]
 	)]

@@ -40,7 +40,10 @@ const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
 
 ## The FC/ESC stack's share of that budget, straight off parts.md's published breakdown of the
 ## fixed electronics package rather than re-estimated here. Taken OUT of ELECTRONICS_MASS_G, not
-## added to it, which leaves 43 g of camera, VTX, antenna, receiver and wiring lumped at the origin.
+## added to it, which leaves 35 g of camera, VTX, antenna, receiver and wiring lumped at the origin.
+## (This line read 43 g until build-level validation went looking for the number: 43 was the remainder
+## when only the ESC had been carved out, and nothing updated it when the FC's 8 g followed. The code
+## below has always computed 55 - 8 - 12; only the prose was stale.)
 ## The FLIGHT CONTROLLER's BUDGETED share, which is what the lump gives up rather than what any
 ## particular board weighs — the same shape ESC_BUDGET_MASS_G has, and for the same reason. Was
 ## 12 g of "FC/ESC stack" while the two were one lumped constant; unbundling the ESC into a
@@ -336,7 +339,7 @@ func mass_parts() -> Array:
 		stack_position + Vector3(0.0, StackMesh.esc_centre_height_m(), 0.0),
 		InertiaPrimitives.box(esc_mass_kg, StackMesh.size_m(esc_mount_pattern())), "ESC"))
 
-	# THE LOOSE 43 g STAYS AT THE ORIGIN, and this is a decision rather than the one entry that got
+	# THE LOOSE 35 g STAYS AT THE ORIGIN, and this is a decision rather than the one entry that got
 	# forgotten while the others were given positions.
 	#
 	# It is camera, VTX, antenna, receiver and wiring, and the honest thing to say about where they
