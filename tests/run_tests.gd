@@ -11,7 +11,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"rate step response", "rate mode release", "translation", "parts system", "build panel",
 	"gate course", "course library", "course warnings", "field editor", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
-	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation",
+	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
 	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh",
 	"yaw authority", "gyro", "motor mixer", "control path", "stick release", "warnings", "build warnings",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes"]
@@ -81,6 +81,7 @@ func _run_suite(suite_name: String) -> Array:
 		"powertrain": return TestPowertrain.run()
 		"bench": return TestBench.run()
 		"validation": return TestValidation.run()
+		"build validation": return TestBuildValidation.run()
 		"battery rail": return TestBatteryRail.run()
 		"battery model": return TestBatteryModel.run()
 		"hover at charge": return TestHoverAtCharge.run()
