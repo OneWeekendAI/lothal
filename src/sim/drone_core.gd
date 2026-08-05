@@ -16,7 +16,13 @@ var rigid_body := RigidBodyState.new()
 ## The aircraft's rate sensor. It lives here, on the aircraft, rather than in the scene:
 ## the flight controller must have exactly ONE route to a rate, and if a consumer can reach
 ## around this to rigid_body.angular_velocity_rad_s then the seam exists on paper only.
-var gyro := Gyro.new()
+##
+## HANDED IN rather than constructed here, because its four figures are properties of the
+## FLIGHT CONTROLLER that is fitted (data/parts/flight_controllers.json) and a core that
+## built its own would be a second opinion about what board this aircraft has. A core built
+## without one gets the stock sensor, so every call site written before flight controllers
+## were selectable still means what it meant.
+var gyro: Gyro
 var arm_m: float
 ## 0.5 * rho * Cd * A, supplied per build — a 7" airframe presents far more area than a 3".
 var drag_coefficient: float
@@ -29,7 +35,7 @@ var observables: Observables
 ## writing through either name reaches the same storage.
 var motor_rpm: Dictionary
 
-func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m: float, p_k_t: float, p_k_q: float, p_battery: BatteryModel, p_motor_max_amps: float, p_rated_rpm: float, p_drag_coefficient: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635) -> void:
+func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m: float, p_k_t: float, p_k_q: float, p_battery: BatteryModel, p_motor_max_amps: float, p_rated_rpm: float, p_drag_coefficient: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635, p_gyro: Gyro = null) -> void:
 	powertrain = Powertrain.new(p_motor_model, p_k_t, p_k_q, p_battery, p_motor_max_amps,
 		p_rated_rpm, p_pole_pairs, p_blades, p_prop_radius_m)
 	observables = powertrain.observables
@@ -37,6 +43,7 @@ func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m
 	mass_properties = p_mass_properties
 	arm_m = p_arm_m
 	drag_coefficient = p_drag_coefficient
+	gyro = p_gyro if p_gyro != null else Gyro.new()
 	_publish(Vector3.ZERO)
 
 ## Current drawn by ONE motor at a given RPM. Delegates: there is one such function in the

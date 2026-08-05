@@ -70,6 +70,11 @@ const STACK_MOUNT_PATTERN := "30.5x30.5"
 ## existed still means what it meant, and the reference build still weighs 496 g.
 const DEFAULT_ESC_ID := "esc_4in1_45a_30x30"
 
+## The board a selection that does not name one gets. Every Build call site written before
+## flight controllers existed still means what it meant, and the reference build still
+## weighs 496 g — this board weighs exactly FC_BUDGET_MASS_G.
+const DEFAULT_FC_ID := "fc_f405_30x30"
+
 
 ## How the FC/ESC stack attaches, in the same shape MountPoint.mounting_of() returns for a catalog
 ## part. Here rather than in the catalog because the stack is not a catalog part yet — and stating
@@ -115,6 +120,7 @@ var motor: Dictionary
 var propeller: Dictionary
 var battery: Dictionary
 var esc: Dictionary
+var fc: Dictionary
 var catalog: PartsCatalog
 
 var arm_m: float
@@ -128,7 +134,8 @@ var effective_max_amps: float
 var drag_coefficient: float
 
 static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String,
-		battery_id: String, esc_id: String = DEFAULT_ESC_ID) -> Build:
+		battery_id: String, esc_id: String = DEFAULT_ESC_ID,
+		fc_id: String = DEFAULT_FC_ID) -> Build:
 	var b := Build.new()
 	b.catalog = p_catalog
 	b.frame = p_catalog.get_part(frame_id)
@@ -136,6 +143,7 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 	b.propeller = p_catalog.get_part(prop_id)
 	b.battery = p_catalog.get_part(battery_id)
 	b.esc = p_catalog.get_part(esc_id)
+	b.fc = p_catalog.get_part(fc_id)
 	b._recompute()
 	return b
 
@@ -388,7 +396,7 @@ func build_drone_core() -> DroneCore:
 	var geometry := _prop_geometry(propeller)
 	return DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
 		effective_max_amps, rated_rpm(), drag_coefficient,
-		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5)
+		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro())
 
 ## Electrical frequency is per POLE PAIR, not per pole — a 14-pole motor turns through
 ## seven electrical cycles per revolution, not fourteen. Getting this wrong is a factor of
@@ -519,6 +527,13 @@ func hover_throttle(open_circuit_v: float = AT_NOMINAL) -> float:
 	return high
 
 ## This board's mass, or the budgeted share if a selection reached here without one.
+## The sensor this aircraft flies, from the fitted board. The ONE answer to "what gyro is on
+## this build" — the details panel and the flying aircraft read the same call, so they cannot
+## come to describe different sensors.
+func gyro() -> Gyro:
+	return Gyro.from_part(fc)
+
+
 func esc_mass_g() -> float:
 	return float(esc.get("mass_g", ESC_BUDGET_MASS_G))
 

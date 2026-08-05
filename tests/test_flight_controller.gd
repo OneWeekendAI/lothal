@@ -122,4 +122,61 @@ static func run() -> Array:
 				Gyro.DEFAULT_NOISE_RAD_S, Gyro.DEFAULT_BIAS_RAD_S]
 	))
 
+	# --- Choosing a different board changes what the FC actually SEES ---
+	# Two aircraft, identical in every part but the board, stepped identically from rest.
+	# The noisier board must deliver a measurably noisier signal — not merely store a
+	# different number. That distinction is the whole slice: a check that compared
+	# build.gyro().noise_rad_s would pass on a Gyro that was never wired in.
+	var dt := 0.001
+	var rms: Dictionary = {}
+	for board_id in ["fc_h743_30x30", "fc_f405_30x30_budget"]:
+		var core := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+			ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+			board_id).build_drone_core()
+		# Settle first, so what is measured is the noise floor and not the filter's
+		# start-up transient from zero.
+		for _i in 500:
+			core.step(MotorMixer.mix(0.0, 0.0, 0.0, 0.0), dt)
+		var sum_sq := 0.0
+		var n := 4000
+		for _i in n:
+			core.step(MotorMixer.mix(0.0, 0.0, 0.0, 0.0), dt)
+			var reading: Vector3 = core.observables.gyro_rad_s - core.rigid_body.angular_velocity_rad_s
+			sum_sq += reading.length_squared()
+		rms[board_id] = sqrt(sum_sq / float(n))
+
+	var quiet_rms: float = rms["fc_h743_30x30"]
+	var loud_rms: float = rms["fc_f405_30x30_budget"]
+	results.append(TestResult.new(
+		"a noisier board delivers a measurably noisier signal to the FC",
+		loud_rms > quiet_rms * 1.3,
+		"ICM-42688 board %.5f rad/s RMS error, BMI270 board %.5f — ratio %.2fx"
+			% [quiet_rms, loud_rms, loud_rms / maxf(quiet_rms, 1e-9)]
+	))
+
+	# ONE gyro, and only one. That nothing in src/fc/ reaches around it to ground truth is
+	# already checked, properly and with a comment stripper, by test_control_path.gd — this
+	# is the half that check cannot make: that the sensor the aircraft flies is the one it
+	# was HANDED, rather than a second one it built for itself. Two constructions here would
+	# be two opinions about what board is fitted, and both would produce plausible numbers.
+	var core_src := FileAccess.get_file_as_string("res://src/sim/drone_core.gd")
+	var built: int = core_src.count("Gyro.new") + core_src.count("Gyro.from_part")
+	results.append(TestResult.new(
+		"DroneCore does not build itself a second gyro behind the one it was given",
+		built <= 1,
+		"drone_core.gd constructs %d gyros" % built
+	))
+
+	# And Build is the single source for the configuration the aircraft is flying.
+	var wired := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		"fc_f405_30x30_budget")
+	results.append(TestResult.new(
+		"the aircraft flies the board Build says it does",
+		wired.build_drone_core().gyro.noise_rad_s == wired.gyro().noise_rad_s
+			and wired.gyro().noise_rad_s == 0.0069,
+		"Build.gyro() %.4f, DroneCore's gyro %.4f"
+			% [wired.gyro().noise_rad_s, wired.build_drone_core().gyro.noise_rad_s]
+	))
+
 	return results
