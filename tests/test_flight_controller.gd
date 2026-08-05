@@ -83,4 +83,43 @@ static func run() -> Array:
 		"physics files naming loop_rate_hz: %s" % ("none" if not reads_loop_rate else "SOME")
 	))
 
+	# --- The gyro is configured FROM THE PART ---
+	# One owner: Gyro.from_part is the only place catalog keys become gyro fields.
+	var quiet := Gyro.from_part(catalog.get_part("fc_h743_30x30"))
+	var loud := Gyro.from_part(catalog.get_part("fc_f405_30x30_budget"))
+	results.append(TestResult.new(
+		"from_part reads the board's own four specs, not the defaults",
+		quiet.noise_rad_s == 0.0044 and quiet.sample_rate_hz == 8000.0
+			and loud.noise_rad_s == 0.0069 and loud.sample_rate_hz == 3200.0,
+		"H743 %.4f rad/s @ %.0f Hz, budget %.4f rad/s @ %.0f Hz"
+			% [quiet.noise_rad_s, quiet.sample_rate_hz, loud.noise_rad_s, loud.sample_rate_hz]
+	))
+
+	# A partial entry degrades to the stock sensor rather than to zero. A zero cutoff is a
+	# divide-by-zero and a zero sample rate is an infinite loop in update().
+	var partial := Gyro.from_part({"specs": {"gyro_noise_rad_s": 0.01}})
+	results.append(TestResult.new(
+		"a board that omits a spec falls back to that field's default, not to zero",
+		partial.noise_rad_s == 0.01 and partial.sample_rate_hz == Gyro.DEFAULT_SAMPLE_RATE_HZ
+			and partial.cutoff_hz == Gyro.DEFAULT_CUTOFF_HZ
+			and partial.bias_rad_s == Gyro.DEFAULT_BIAS_RAD_S,
+		"noise %.4f, rate %.0f, cutoff %.0f, bias %s"
+			% [partial.noise_rad_s, partial.sample_rate_hz, partial.cutoff_hz, partial.bias_rad_s]
+	))
+
+	# THE PIN. The reference board's JSON figures and Gyro's DEFAULT_* are two copies of the
+	# same four numbers. The day one moves without the other, this says so by name.
+	var stock := Gyro.from_part(catalog.get_part("fc_f405_30x30"))
+	results.append(TestResult.new(
+		"the reference board's specs ARE Gyro's stock defaults, to the digit",
+		stock.sample_rate_hz == Gyro.DEFAULT_SAMPLE_RATE_HZ
+			and stock.cutoff_hz == Gyro.DEFAULT_CUTOFF_HZ
+			and stock.noise_rad_s == Gyro.DEFAULT_NOISE_RAD_S
+			and stock.bias_rad_s == Gyro.DEFAULT_BIAS_RAD_S,
+		"board %.0f Hz / %.0f Hz / %.4f / %s vs defaults %.0f / %.0f / %.4f / %s"
+			% [stock.sample_rate_hz, stock.cutoff_hz, stock.noise_rad_s,
+				stock.bias_rad_s, Gyro.DEFAULT_SAMPLE_RATE_HZ, Gyro.DEFAULT_CUTOFF_HZ,
+				Gyro.DEFAULT_NOISE_RAD_S, Gyro.DEFAULT_BIAS_RAD_S]
+	))
+
 	return results

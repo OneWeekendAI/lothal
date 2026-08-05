@@ -47,8 +47,14 @@ const DEFAULT_SAMPLE_RATE_HZ := 1000.0
 ## still flies clean. RAISING them is how you explore why real drones need filtering at
 ## all — wind the noise up and watch the D term turn into a motor heater.
 ##
-## ~0.16 deg/s RMS: an ICM-42688-class part's ~0.005 deg/s/sqrt(Hz) noise density carried
-## across a 1 kHz bandwidth.
+## ~0.16 deg/s RMS: an MPU-6000's published 0.005 deg/s/sqrt(Hz) rate noise density carried
+## across a 1 kHz bandwidth (InvenSense PS-MPU-6000A-00 rev 3.4).
+##
+## This previously named the ICM-42688, whose density is 0.0028 — the NUMBER was right and
+## the PART was wrong. The fix was not to move a constant every flight test is calibrated
+## against: it was to make the reference board in data/parts/flight_controllers.json the
+## MPU-6000 board this figure actually describes. The ICM-42688 boards in that file are
+## genuinely quieter, which is an upgrade a builder can feel rather than a relabelling.
 const DEFAULT_NOISE_RAD_S := 0.0028
 ## ~0.1 deg/s on each axis: the residue a bench calibration leaves behind, not the raw
 ## uncalibrated offset, which is tens of times larger.
@@ -82,6 +88,32 @@ func _init(p_sample_rate_hz: float = DEFAULT_SAMPLE_RATE_HZ, p_cutoff_hz: float 
 	bias_rad_s = p_bias_rad_s
 	_seed = p_seed
 	_rng.seed = _seed
+
+## A gyro configured from a catalog flight controller — THE ONE PLACE catalog keys become
+## gyro fields.
+##
+## The four specs are properties of the IMU on the board you buy, and the constants above are
+## what a board that does not name one gets. That is the whole point of the FC catalog:
+## sensor quality stops being a project-wide constant and becomes a decision with a
+## consequence you can feel.
+##
+## Every field falls back INDIVIDUALLY, so a contributor's partial entry degrades to the
+## stock sensor rather than to zero. Zero is not a quiet sensor here: a zero cutoff is a
+## divide-by-zero, and a zero sample rate is an infinite loop in update().
+##
+## Bias is published as one scalar and applied to all three axes. Real per-axis residues
+## differ, but a catalog that asked a contributor for three numbers would be asking them to
+## invent two — the scalar is the honest shape for a class-typical figure.
+static func from_part(fc: Dictionary) -> Gyro:
+	var specs: Dictionary = fc.get("specs", {})
+	var bias := DEFAULT_BIAS_RAD_S
+	if specs.has("gyro_bias_rad_s"):
+		bias = Vector3.ONE * float(specs["gyro_bias_rad_s"])
+	return Gyro.new(
+		float(specs.get("gyro_sample_rate_hz", DEFAULT_SAMPLE_RATE_HZ)),
+		float(specs.get("gyro_cutoff_hz", DEFAULT_CUTOFF_HZ)),
+		float(specs.get("gyro_noise_rad_s", DEFAULT_NOISE_RAD_S)),
+		bias)
 
 ## Advances the sensor by dt against the body's true angular rate and returns the current
 ## reading. Called once per substep by DroneCore, AFTER integration.
