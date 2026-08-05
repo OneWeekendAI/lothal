@@ -94,16 +94,42 @@ static func _test_every_build_is_within_its_bound(catalog: PartsCatalog) -> Arra
 ## amount, and names ELECTRONICS_MASS_G as the first place to look. Averaging the magnitudes
 ## would destroy exactly the distinction worth having, so the signed mean is printed as its own
 ## line whether or not anything failed.
+##
+## SHARING A SIGN IS NOT ENOUGH TO CALL IT A BIAS, and getting this wrong sends the reader at
+## the wrong constant with the test's own authority behind it. A constant error in the mass sum
+## lands on every aircraft ALIKE: it moves each prediction by roughly the same number of grams,
+## so the points must agree in MAGNITUDE, not merely in direction. Two points at -0.6% and
+## -10.4% share a sign and are not evidence of a bias — a constant big enough to explain the
+## second would throw the first out by the same 50 g in the opposite direction. That is one
+## outlier next to one aircraft the model gets right, and it is a claim about a spec sheet
+## rather than a claim about Build. So a point close enough to zero is recorded as ON THE
+## NUMBER and casts no vote, and the remaining points have to cluster before the word "bias"
+## is used at all.
+const ON_THE_NUMBER := 0.25   ## of the bound — nearer than this to zero is a hit, not a direction
+const CLUSTERED := 3.0        ## worst error over best; wider than this is an outlier, not a bias
+
 static func _test_the_error_is_reported_with_its_sign(catalog: PartsCatalog) -> Array:
 	var points := BuildValidation.evaluate_all(catalog)
 	var mean := BuildValidation.signed_mean_error(points)
 
+	var negligible := BuildValidation.DRY_MASS_BOUND * ON_THE_NUMBER
 	var same_sign := true
 	var first_sign := 0.0
+	var smallest := INF
+	var largest := 0.0
+	var voting := 0
 	for point in points:
 		if point.is_empty():
 			continue
-		var direction := signf(float(point["error_fraction"]))
+		var error := float(point["error_fraction"])
+		# A prediction that already lands on the reported mass tells you nothing about which way
+		# a constant would have to move, so it must not be counted as agreeing with anything.
+		if absf(error) < negligible:
+			continue
+		voting += 1
+		smallest = minf(smallest, absf(error))
+		largest = maxf(largest, absf(error))
+		var direction := signf(error)
 		if first_sign == 0.0:
 			first_sign = direction
 		elif direction != first_sign:
@@ -112,10 +138,20 @@ static func _test_the_error_is_reported_with_its_sign(catalog: PartsCatalog) -> 
 	# "no points" must not render as a diagnosis. A zero mean over an empty dataset is not the
 	# model being unbiased, and the sentence has to say so or it reads as a clean bill of health.
 	var reading := "no builds to average"
-	if first_sign != 0.0:
-		reading = "scatter either side of zero" if not same_sign else \
-			("a consistent OVER-prediction — look at ELECTRONICS_MASS_G" if first_sign > 0.0
-				else "a consistent UNDER-prediction — look at ELECTRONICS_MASS_G")
+	if points.size() > 0 and voting == 0:
+		reading = "every build lands on its reported mass"
+	elif voting == 1:
+		reading = "one build off the number and one is not a trend — a spec sheet, not a constant"
+	elif first_sign != 0.0:
+		if not same_sign:
+			reading = "scatter either side of zero"
+		elif largest > smallest * CLUSTERED:
+			# Same sign, wildly different magnitudes: an outlier wearing a bias's clothes.
+			reading = "same sign but %.0fx apart (%.1f%% to %.1f%%) — an outlier, not a constant" % [
+				largest / smallest, smallest * 100.0, largest * 100.0]
+		else:
+			reading = "a consistent OVER-prediction — look at ELECTRONICS_MASS_G" if first_sign > 0.0 \
+				else "a consistent UNDER-prediction — look at ELECTRONICS_MASS_G"
 
 	return [TestResult.new(
 		"the signed mean error is inside the bound, and its sign is reported",
