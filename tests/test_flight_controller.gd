@@ -179,4 +179,62 @@ static func run() -> Array:
 			% [wired.gyro().noise_rad_s, wired.build_drone_core().gyro.noise_rad_s]
 	))
 
+	# --- THE MASS-BUDGET GUARD ---
+	# The three fixed points, with the default board selected. If these move, mass was ADDED
+	# to the 55 g electronics budget instead of taken OUT of it — which is the mistake this
+	# whole slice is most likely to make, and the one that would silently move two of the
+	# project's three oracles for what was meant to be a change to the catalog.
+	# Hover is held to the project's OWN oracle tolerance (test_hover.gd: +/-0.02 of 0.29)
+	# rather than a tighter one invented here. The solver has always returned 29.6%, which is
+	# what parts.md rounds to 29%; asserting a bound the project does not itself hold would
+	# be this test disagreeing with the oracle it claims to be guarding.
+	var ref := ReferenceBuild.build()
+	results.append(TestResult.new(
+		"the reference build is unchanged: 496 g, 11.7:1, 29% hover",
+		absf(ref.all_up_weight_g() - 496.0) < 0.5
+			and absf(ref.thrust_to_weight() - 11.7) < 0.05
+			and absf(ref.hover_throttle() - 0.29) < 0.02,
+		"%.1f g, %.2f:1, %.1f%% hover"
+			% [ref.all_up_weight_g(), ref.thrust_to_weight(), ref.hover_throttle() * 100.0]
+	))
+
+	# A heavier board is carried honestly: the aircraft gains exactly the excess over the
+	# budgeted share, and the lump does not move.
+	var heavy := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		"fc_h743_30x30")
+	var gained := heavy.all_up_weight_g() - ref.all_up_weight_g()
+	results.append(TestResult.new(
+		"a 12 g board makes the aircraft exactly 4 g heavier, not 12 g heavier",
+		absf(gained - 4.0) < 0.01,
+		"all-up went %.1f g -> %.1f g, a gain of %.2f g against a %.0f g budgeted share"
+			% [ref.all_up_weight_g(), heavy.all_up_weight_g(), gained, Build.FC_BUDGET_MASS_G]
+	))
+
+	# And it says so, as a DESCRIPTION. Being 4 g heavier is a position on a continuum, not
+	# a boundary in the physics (labs-and-sim.md §2.1), so it describes rather than warns —
+	# and it certainly does not block.
+	var budget_warning: BuildWarning = null
+	for w in heavy.warnings():
+		if w.id == &"fc_mass_budget":
+			budget_warning = w
+	results.append(TestResult.new(
+		"an over-budget board is described, not scolded, and still builds",
+		budget_warning != null
+			and budget_warning.severity == BuildWarning.Severity.CHARACTERISTIC
+			and heavy.mass_properties.total_mass_kg > 0.0,
+		"warning: %s" % ("absent" if budget_warning == null else budget_warning.message)
+	))
+
+	# The reference board is exactly the budgeted share, so it says nothing at all.
+	var quiet_on_budget := true
+	for w in ref.warnings():
+		if w.id == &"fc_mass_budget":
+			quiet_on_budget = false
+	results.append(TestResult.new(
+		"a board that weighs its budgeted share says nothing about mass",
+		quiet_on_budget,
+		"reference board is %.0f g against a %.0f g share" % [ref.fc_mass_g(), Build.FC_BUDGET_MASS_G]
+	))
+
 	return results

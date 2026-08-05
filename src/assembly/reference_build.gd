@@ -16,6 +16,10 @@ const BATTERY_ID := "battery_4s_1500"
 ## The reference board. Its 12 g is exactly the ESC's share of the electronics budget, so the
 ## reference build still weighs 496 g; see Build.ESC_BUDGET_MASS_G.
 const ESC_ID := Build.DEFAULT_ESC_ID
+## The reference board. Its 8 g is exactly the FC's share of the electronics budget, so the
+## reference build still weighs 496 g; see Build.FC_BUDGET_MASS_G. Its four gyro specs are
+## Gyro's DEFAULT_* exactly, and a test pins them together.
+const FC_ID := Build.DEFAULT_FC_ID
 
 ## Values the day 2-4 tests refer to directly. Kept as named constants rather than JSON
 ## lookups so a test failure points at the physics, not at a dictionary key.
@@ -24,7 +28,8 @@ const BATTERY_NOMINAL_V := 14.8
 const MOTOR_MAX_AMPS := 32.0
 
 static func build() -> Build:
-	return Build.from_ids(PartsCatalog.load_default(), FRAME_ID, MOTOR_ID, PROPELLER_ID, BATTERY_ID, ESC_ID)
+	return Build.from_ids(PartsCatalog.load_default(), FRAME_ID, MOTOR_ID, PROPELLER_ID,
+		BATTERY_ID, ESC_ID, FC_ID)
 
 static func arm_m() -> float:
 	return build().arm_m

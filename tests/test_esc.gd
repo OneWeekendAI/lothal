@@ -229,8 +229,8 @@ static func _test_the_mass_came_out_of_the_lump(catalog: PartsCatalog) -> Array:
 		"the reference build still weighs 496 g to the gram with the ESC unbundled",
 		absf(built.all_up_weight_g() - 496.0) < 0.5,
 		"%.1f g (FC %.0f g + ESC %.0f g + %.0f g still lumped = %.0f g of electronics)" % [
-			built.all_up_weight_g(), Build.FC_MASS_G, built.esc_mass_g(),
-			Build.ELECTRONICS_MASS_G - Build.FC_MASS_G - Build.ESC_BUDGET_MASS_G,
+			built.all_up_weight_g(), Build.FC_BUDGET_MASS_G, built.esc_mass_g(),
+			Build.ELECTRONICS_MASS_G - Build.FC_BUDGET_MASS_G - Build.ESC_BUDGET_MASS_G,
 			Build.ELECTRONICS_MASS_G]
 	))
 
@@ -238,12 +238,12 @@ static func _test_the_mass_came_out_of_the_lump(catalog: PartsCatalog) -> Array:
 	# the constant they always did, for the board the budget was sized around.
 	results.append(TestResult.new(
 		"the electronics package still sums to its budget rather than growing beside it",
-		is_equal_approx(Build.FC_MASS_G + Build.ESC_BUDGET_MASS_G
-			+ (Build.ELECTRONICS_MASS_G - Build.FC_MASS_G - Build.ESC_BUDGET_MASS_G),
+		is_equal_approx(Build.FC_BUDGET_MASS_G + Build.ESC_BUDGET_MASS_G
+			+ (Build.ELECTRONICS_MASS_G - Build.FC_BUDGET_MASS_G - Build.ESC_BUDGET_MASS_G),
 			Build.ELECTRONICS_MASS_G)
 			and is_equal_approx(built.esc_mass_g(), Build.ESC_BUDGET_MASS_G),
-		"%.0f + %.0f + %.0f = %.0f g" % [Build.FC_MASS_G, Build.ESC_BUDGET_MASS_G,
-			Build.ELECTRONICS_MASS_G - Build.FC_MASS_G - Build.ESC_BUDGET_MASS_G,
+		"%.0f + %.0f + %.0f = %.0f g" % [Build.FC_BUDGET_MASS_G, Build.ESC_BUDGET_MASS_G,
+			Build.ELECTRONICS_MASS_G - Build.FC_BUDGET_MASS_G - Build.ESC_BUDGET_MASS_G,
 			Build.ELECTRONICS_MASS_G]
 	))
 

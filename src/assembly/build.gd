@@ -41,10 +41,16 @@ const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
 ## The FC/ESC stack's share of that budget, straight off parts.md's published breakdown of the
 ## fixed electronics package rather than re-estimated here. Taken OUT of ELECTRONICS_MASS_G, not
 ## added to it, which leaves 43 g of camera, VTX, antenna, receiver and wiring lumped at the origin.
-## The FLIGHT CONTROLLER's share of that budget. Was 12 g of "FC/ESC stack" while the two were one
-## lumped constant; unbundling the ESC into a catalog part forced honest figures for both, and a
-## real F4 board is about 8 g against a real 45 A 4-in-1's 12 g.
-const FC_MASS_G := 8.0
+## The FLIGHT CONTROLLER's BUDGETED share, which is what the lump gives up rather than what any
+## particular board weighs — the same shape ESC_BUDGET_MASS_G has, and for the same reason. Was
+## 12 g of "FC/ESC stack" while the two were one lumped constant; unbundling the ESC into a
+## catalog part forced honest figures for both, and a real F4 board is about 8 g against a real
+## 45 A 4-in-1's 12 g.
+##
+## The reference board weighs exactly this, so the reference build's 496 g is unchanged to the
+## gram; fit the H743 instead and the aircraft gets 4 g heavier, which is the right answer and the
+## whole reason the flight controller stopped being a constant.
+const FC_BUDGET_MASS_G := 8.0
 
 ## The ESC's BUDGETED share, which is what the lump gives up rather than what any particular board
 ## weighs. The reference build's 45 A 4-in-1 weighs exactly this, so its 496 g is unchanged to the
@@ -54,7 +60,7 @@ const ESC_BUDGET_MASS_G := 12.0
 
 ## Kept as the sum of the two, because several places still speak of "the stack" as one object —
 ## it is still one object on the aircraft, bolted through one pattern.
-const STACK_MASS_G := FC_MASS_G + ESC_BUDGET_MASS_G
+const STACK_MASS_G := FC_BUDGET_MASS_G + ESC_BUDGET_MASS_G
 
 ## The FC/ESC stack's own bolt pattern. 30.5x30.5 is the full-size standard, and it is a property
 ## of the STACK rather than of the frame — which is the whole reason a fit check is worth having.
@@ -225,9 +231,12 @@ func mass_parts() -> Array:
 	# mount offset could enter. When it grows a real centre-of-gravity term, the mount point is
 	# already the single source for where the stack is — a consumer gets added, nothing gets
 	# re-decided.
-	var fc_mass_kg := FC_MASS_G / 1000.0
+	# The FC at its OWN catalog mass, on its own footprint — the line that makes fitting a
+	# bigger board cost something. The budget below gives up FC_BUDGET_MASS_G, and whatever
+	# this board actually weighs is what the aircraft carries.
+	var fc_mass_kg := fc_mass_g() / 1000.0
 	parts.append(PartMass.new(fc_mass_kg, Vector3.ZERO,
-		InertiaPrimitives.box(fc_mass_kg, StackMesh.size_m(STACK_MOUNT_PATTERN)), "Flight controller"))
+		InertiaPrimitives.box(fc_mass_kg, StackMesh.size_m(fc_mount_pattern())), "Flight controller"))
 
 	# The ESC at its OWN catalog mass, on its own footprint. This is the line that makes fitting a
 	# bigger board cost something: the budget below gave up ESC_BUDGET_MASS_G, and whatever this
@@ -236,7 +245,7 @@ func mass_parts() -> Array:
 	parts.append(PartMass.new(esc_mass_kg, Vector3.ZERO,
 		InertiaPrimitives.box(esc_mass_kg, StackMesh.size_m(esc_mount_pattern())), "ESC"))
 
-	var loose_mass_kg := (ELECTRONICS_MASS_G - FC_MASS_G - ESC_BUDGET_MASS_G) / 1000.0
+	var loose_mass_kg := (ELECTRONICS_MASS_G - FC_BUDGET_MASS_G - ESC_BUDGET_MASS_G) / 1000.0
 	parts.append(PartMass.new(loose_mass_kg, Vector3.ZERO,
 		InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M), "Wiring and electronics"))
 
@@ -534,6 +543,15 @@ func gyro() -> Gyro:
 	return Gyro.from_part(fc)
 
 
+## This board's mass, or the budgeted share if a selection reached here without one.
+func fc_mass_g() -> float:
+	return float(fc.get("mass_g", FC_BUDGET_MASS_G))
+
+
+func fc_mount_pattern() -> String:
+	return str(fc.get("mounting", {}).get("pattern", STACK_MOUNT_PATTERN))
+
+
 func esc_mass_g() -> float:
 	return float(esc.get("mass_g", ESC_BUDGET_MASS_G))
 
@@ -741,6 +759,19 @@ func warnings() -> Array[BuildWarning]:
 			"%s is a %s board; the %s is drilled %s for its stack." % [
 				esc.get("name", "The ESC"), esc_mount_pattern(), frame["name"], frame_stack],
 			{"board_pattern": esc_mount_pattern(), "frame_pattern": frame_stack}))
+
+	# CHARACTERISTIC, and deliberately: labs-and-sim.md §2.1's rule is that where the physics has
+	# a hard boundary you warn, and where it has a continuum you describe. Four grams over a
+	# budgeted share is a position on a continuum. Nothing binds, nothing refuses — the aircraft is
+	# simply heavier, and every number on the panel already says so. LIMITING would claim something
+	# caps this build when nothing does, which is the failure the severity scale exists to prevent.
+	if fc_mass_g() > FC_BUDGET_MASS_G:
+		out.append(BuildWarning.characteristic(&"fc_mass_budget",
+			"%s is %.0f g against the %.0f g the electronics budget allots — the aircraft carries the extra %.0f g." % [
+				fc.get("name", "The flight controller"), fc_mass_g(), FC_BUDGET_MASS_G,
+				fc_mass_g() - FC_BUDGET_MASS_G],
+			{"board_mass_g": fc_mass_g(), "budget_mass_g": FC_BUDGET_MASS_G,
+				"excess_g": fc_mass_g() - FC_BUDGET_MASS_G}))
 
 	# Thrust-to-weight is a bench number at nominal voltage (see max_total_thrust_n). On a
 	# high-resistance pack the thrust actually reachable is far below it, which would
