@@ -22,6 +22,10 @@ const SPEC_ROWS := [
 ]
 
 var _build: Build = null
+## The tune actually installed on this aircraft, so the D cost quoted below is the cost of the D
+## gain that is flying rather than of the reference build's. Null falls back to the hand tune, which
+## is what a panel rendered before anything has been derived should show.
+var _tune: RateTune = null
 
 func _init() -> void:
 	super(SPEC_ROWS)
@@ -29,8 +33,9 @@ func _init() -> void:
 ## Kept so the consequence rows can reach the installed controller. PartDetails hands the part
 ## down; this panel needs the aircraft the part is fitted to, which is a different thing.
 ## Stashed BEFORE the super call, because that is what fills the rows _read() answers.
-func render(part: Dictionary, build: Build) -> void:
+func render(part: Dictionary, build: Build, tune: RateTune = null) -> void:
 	_build = build
+	_tune = tune
 	super(part, build)
 
 func _read(fc: Dictionary, key: String) -> String:
@@ -85,33 +90,34 @@ func _read(fc: Dictionary, key: String) -> String:
 ## been a number derived from a filter the code does not have while a filter the code DOES have
 ## sat one call away.
 ##
-## For a PT1 with coefficient a = T/(RC+T), driven by white noise of standard deviation sigma:
+## The filtered-step arithmetic now lives on Gyro (sample_step_noise_rad_s) and the command-fraction
+## arithmetic on RateTune (d_noise_fraction), because a SECOND consumer arrived: the derived tune
+## bounds its own D gain against this exact figure. Two copies would be two opinions about one board
+## the day anyone corrected the filter model — and that model has already been corrected once.
 ##
-##   var_out  = sigma^2 * a / (2 - a)        the filter's own noise reduction
-##   rho      = 1 - a                        correlation between successive outputs
-##   sd(step) = sigma * sqrt(2 * a^2 / (2 - a))
-##   d_rms    = kd * sd(step) / (T * MAX_RATE_RAD_S)
-##
-## IT STILL SCALES ROUGHLY AS 1/T, which is the real reason fast boards need better sensors, and
-## it falls out of the arithmetic here rather than being asserted somewhere else. That is this
-## slice's contribution to labs-and-sim.md §7, whose open question is what one fixed gain set can
-## mean across the catalog: the achievable D is bounded by the BOARD as well as by the frame.
+## IT STILL SCALES ROUGHLY AS 1/T, which is the real reason fast boards need better sensors, and it
+## falls out of the arithmetic rather than being asserted somewhere else. That was this row's
+## contribution to labs-and-sim.md §7, whose open question was what one fixed gain set could mean
+## across the catalog: the achievable D is bounded by the BOARD as well as by the frame. §7 is now
+## resolved, and this row is one half of the answer — RateTune is the other.
 ##
 ## Still quoted as an upper bound, for one remaining and honest reason: real Betaflight applies a
 ## D-term lowpass on top of the gyro filter, and Lothal models no such stage. So this is what the
 ## noise costs with the gyro's own filter and nothing further — not a prediction of a real board's
 ## motor heat.
 ##
-## kd and MAX_RATE_RAD_S are read from the installed controller rather than restated here, so this
-## panel and the loop that is actually flying cannot come to different conclusions.
+## The kd is the one ACTUALLY INSTALLED on this aircraft, from the tune the panel was handed, so
+## this row and the loop that is flying cannot come to different conclusions. Without a tune it
+## quotes the hand tune, which is what the reference build's is anyway.
 func _d_term_noise() -> String:
 	if _build == null:
 		return "—"
-	var gyro := _build.gyro()
-	var period := 1.0 / gyro.sample_rate_hz
-	var rc := 1.0 / (TAU * gyro.cutoff_hz)
-	var a := period / (rc + period)
-	var step_sd := gyro.noise_rad_s * sqrt(2.0 * a * a / (2.0 - a))
-	var d_rms := RateModeController.ROLL_PITCH_KD * step_sd \
-		/ (period * RateModeController.MAX_RATE_RAD_S)
-	return "%.1f%% of full command  (upper bound)" % (d_rms * 100.0)
+	var kd: float = _tune.kd.x if _tune != null else RateModeController.ROLL_PITCH_KD
+	var d_rms := RateTune.d_noise_fraction(_build, kd)
+	var ceiling := RateTune.kd_ceiling_for(_build)
+	# Naming the ceiling beside the cost is what turns a number into a decision. A board whose
+	# ceiling is below what this airframe's plant asks for is a board that is choosing the tune.
+	var headroom := ""
+	if is_finite(ceiling):
+		headroom = "  (D up to %.3f here)" % ceiling
+	return "%.1f%% of full command at D %.3f%s" % [d_rms * 100.0, kd, headroom]

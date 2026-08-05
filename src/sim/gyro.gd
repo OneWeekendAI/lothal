@@ -164,6 +164,34 @@ func _sample(true_rate_rad_s: Vector3, period: float) -> void:
 	var alpha := period / (rc + period)
 	rate_rad_s += (raw - rate_rad_s) * alpha
 
+## The standard deviation of the DIFFERENCE between two successive readings, rad/s — the signal a
+## derivative term is actually differentiating when the aircraft is perfectly still.
+##
+## It lives on the sensor because it is a property of the sensor, and it is not the raw noise floor.
+## What reaches a consumer is the noise THROUGH the PT1 above, so successive readings are
+## CORRELATED and the step between them is far smaller than two independent samples would give. For
+## a PT1 with coefficient a = T/(RC+T) driven by white noise of standard deviation sigma:
+##
+##     var_out  = sigma^2 * a / (2 - a)        the filter's own noise reduction
+##     rho      = 1 - a                        correlation between successive outputs
+##     sd(step) = sigma * sqrt(2 * a^2 / (2 - a))
+##
+## Getting this wrong is not academic. Treating the samples as independent (sqrt(2)*sigma) reports
+## six times the real figure on the noisiest board in the catalog, and the overstatement GROWS with
+## sample rate — so it would have been worst exactly on the boards a builder is most likely to be
+## considering. It would also have been derived from a filter this class does not have, while the
+## filter it does have sat four lines up.
+##
+## Two things read this: FcDetails, to say what the installed D gain costs at the motors, and
+## RateTune, to bound the D gain it derives. One expression, so those two can never disagree about
+## one board.
+func sample_step_noise_rad_s() -> float:
+	var period := 1.0 / sample_rate_hz
+	var rc := 1.0 / (TAU * cutoff_hz)
+	var a := period / (rc + period)
+	return noise_rad_s * sqrt(2.0 * a * a / (2.0 - a))
+
+
 ## Body-axis rates re-expressed in the coordinate contract's roll/pitch/yaw
 ## (physics.md §1): +Roll about -Z, +Pitch about +X, +Yaw about -Y.
 ##

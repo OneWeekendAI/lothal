@@ -32,6 +32,17 @@ const MAX_RATE_RAD_S := 13.962634   # 800 deg/s at full stick
 ## that restated 0.042 would be a second opinion about the tune the day anyone changed it.
 const ROLL_PITCH_KD := 0.042
 
+## THE HAND TUNE, per axis, as Vector3(roll, pitch, yaw) — the gains below, named so that RateTune
+## has a reference to scale FROM without restating them.
+##
+## Another read seam, and the same reasoning as ROLL_PITCH_KD's: these values are exactly what they
+## were, and the derivation in rate_tune.gd is normalised so that the aircraft they were found on
+## reproduces them exactly. What changed is that a build which is NOT that aircraft no longer gets
+## them unaltered.
+const REFERENCE_KP := Vector3(2.3, 2.3, 6.0)
+const REFERENCE_KI := Vector3(0.15, 0.15, 0.39)
+const REFERENCE_KD := Vector3(ROLL_PITCH_KD, ROLL_PITCH_KD, 0.0)
+
 var pid_roll := PIDController.new(2.3, 0.15, ROLL_PITCH_KD)
 var pid_pitch := PIDController.new(2.3, 0.15, ROLL_PITCH_KD)
 
@@ -68,6 +79,37 @@ var pid_pitch := PIDController.new(2.3, 0.15, ROLL_PITCH_KD)
 ## and is already damped; there is no fast resonance for D to catch, so all it would do is
 ## amplify gyro noise on the axis with the least authority to spare.
 var pid_yaw := PIDController.new(6.0, 0.39, 0.0)
+
+## The tune in force, or null for the hand tune above.
+##
+## The default is the hand tune rather than "derive one", deliberately, and it is what keeps
+## RateModeController.new() meaning what it has always meant: a bare controller is the REFERENCE
+## aircraft's controller, which is the fixture every control test in this repo is written against.
+## Deriving a tune requires a Build, and the objects that have one — DroneCore's owner, Lab — hand
+## it in through adopt_tune(). Nothing reaches for a catalog from in here.
+var tune: RateTune = null
+
+
+## Retunes the three axes in place. In place rather than by construction, because the integrator
+## state is holding the aircraft trimmed and rebuilding the controllers would dump it — the same
+## reason FlightController keeps its rate loop across a mode change.
+##
+## Sim never calls this. Lab derives the tune, Lab persists the builder's overrides, and the
+## aircraft arrives in the field already tuned (labs-and-sim.md §1: Sim authors nothing).
+func adopt_tune(p_tune: RateTune) -> void:
+	tune = p_tune
+	if p_tune == null:
+		return
+	pid_roll.kp = p_tune.kp.x
+	pid_roll.ki = p_tune.ki.x
+	pid_roll.kd = p_tune.kd.x
+	pid_pitch.kp = p_tune.kp.y
+	pid_pitch.ki = p_tune.ki.y
+	pid_pitch.kd = p_tune.kd.y
+	pid_yaw.kp = p_tune.kp.z
+	pid_yaw.ki = p_tune.ki.z
+	pid_yaw.kd = p_tune.kd.z
+
 
 ## The acro front end: all three sticks ARE rate setpoints, and the outer loop is simply
 ## absent. Named as a function rather than left inline so both front ends read the same way
