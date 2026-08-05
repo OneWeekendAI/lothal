@@ -21,8 +21,34 @@ extends SceneTree
 ##   ... -- /tmp/framebench_3in.png frame_3in_toothpick
 ##   ... -- /tmp/framebench_7in.png frame_7in_long_range
 
+## THE TUNING MODE, which is the same tool answering a second question.
+##
+##   godot --script res://tests/capture_frame_bench.gd -- <out.png> tune
+##
+## The bench above shows what ONE airframe does open-loop. This shows what three of them do with a
+## flight controller in the path, on the fixed gains and on the derived ones, on identical axes —
+## which is the whole argument of rate_tune.gd in one picture.
+##
+## It reuses BandTrace, the chart the bench itself draws its step response on, one per frame with
+## the fixed-gain response as the upper series and the derived one as the lower. Three panels rather
+## than six lines on one, because the frames differ by 30x in yaw plant and stacking them would draw
+## the whoop's response as a spike against the 10"s: the axes have to be identical for the
+## comparison to mean anything, and identical axes on one chart means two of the six lines are flat.
+##
+## Yaw, not roll. Roll is the axis the frame bench itself is about; yaw is where the fixed gains
+## were worst by a distance, and where the picture has something to say.
+const TUNE_FRAMES := ["frame_65mm_whoop", "frame_5in_freestyle", "frame_10in_long_range"]
+const TUNE_STEP_DEG_S := 50.0
+const TUNE_DURATION_S := 0.45
+const TUNE_DT := 0.001
+const TUNE_AXIS := 2   # yaw
+
+
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
+	if args.size() > 1 and args[1] == "tune":
+		_capture_tune_chart(args[0])
+		return
 	var out_path: String = args[0] if args.size() > 0 else "user://frame_bench.png"
 	var frame_id: String = args[1] if args.size() > 1 else ""
 	var axis_name: String = args[2] if args.size() > 2 else "roll"
@@ -88,3 +114,107 @@ func _init() -> void:
 	image.save_png(out_path)
 	print("wrote %s (%dx%d)" % [out_path, image.get_width(), image.get_height()])
 	quit()
+
+
+## One closed-loop yaw step, as [[t, deg/s], ...]. `tune` null means the fixed gains, which is the
+## behaviour this chart exists to show being replaced.
+static func _tune_trace(build: Build, tune: RateTune) -> Array:
+	var core := build.build_drone_core()
+	core.powertrain.battery.set_to_nominal_datum()
+	var controller := RateModeController.new()
+	controller.adopt_tune(tune)
+	var throttle := build.hover_throttle()
+	var setpoint := Vector3.ZERO
+	setpoint[TUNE_AXIS] = deg_to_rad(TUNE_STEP_DEG_S) / RateModeController.MAX_RATE_RAD_S
+
+	var out: Array = []
+	for i in int(TUNE_DURATION_S / TUNE_DT):
+		core.step(controller.update(setpoint, core.gyro.rate_rad_s, throttle, TUNE_DT), TUNE_DT)
+		out.append([(i + 1) * TUNE_DT,
+			rad_to_deg(Gyro.contract_rates(core.rigid_body.angular_velocity_rad_s)[TUNE_AXIS])])
+	return out
+
+
+func _capture_tune_chart(out_path: String) -> void:
+	# Taller than the app's own window: three stacked charts with their captions do not fit in
+	# 720, and a proof image with its third panel cut off is not a proof of anything.
+	DisplayServer.window_set_size(Vector2i(1280, 900))
+
+	var theme := LothalTheme.get_theme()
+	var backdrop := PanelContainer.new()
+	backdrop.theme = theme
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(backdrop)
+
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", LothalTheme.SPACE_3)
+	backdrop.add_child(column)
+
+	var heading := Label.new()
+	heading.text = "%.0f deg/s YAW STEP — FIXED GAINS vs DERIVED, IDENTICAL AXES" % TUNE_STEP_DEG_S
+	heading.theme_type_variation = &"TitleLabel"
+	column.add_child(heading)
+
+	var legend := Label.new()
+	legend.text = "red: one gain set for every build (kp 6.0 throughout)      blue: derived from each airframe's own yaw acceleration"
+	legend.theme_type_variation = &"MutedLabel"
+	column.add_child(legend)
+
+	var catalog := PartsCatalog.load_default()
+	for frame_id in TUNE_FRAMES:
+		var build := Build.from_ids(catalog, frame_id, ReferenceBuild.MOTOR_ID,
+			ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+			ReferenceBuild.FC_ID)
+		var tune := RateTune.derive(build)
+		var fixed := _tune_trace(build, null)
+		var derived := _tune_trace(build, tune)
+
+		var caption := Label.new()
+		caption.text = "%s — yaw plant %.0f rad/s%s, %.2fx the reference.   fixed kp %.1f  ->  derived kp %.2f" % [
+			build.frame["name"], tune.plant_alpha.z, "\u00b2", tune.scale.z,
+			RateModeController.REFERENCE_KP.z, tune.kp.z]
+		caption.theme_type_variation = &"MutedLabel"
+		column.add_child(caption)
+
+		var chart := BandTrace.new()
+		chart.x_axis = BandTrace.XAxis.TIME_FINE
+		chart.x_max = TUNE_DURATION_S
+		# Every sample kept: the whole event is 450 ms and the chart's default interval would draw
+		# it as a handful of points.
+		chart.base_interval = 0.0
+		chart.y_unit = "deg/s"
+		chart.y_step = 20.0
+		chart.upper_colour = LothalTheme.DANGER      # the fixed gains
+		chart.lower_colour = LothalTheme.ACCENT      # the derived tune
+		chart.reference_label = "%.0f deg/s demanded" % TUNE_STEP_DEG_S
+		chart.custom_minimum_size = Vector2(860, 210)
+		chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		column.add_child(chart)
+		# clear() rather than only setting base_interval: the running interval is seeded at
+		# construction, so a chart told to keep every sample after it was built keeps one every
+		# 50 ms anyway and draws a 450 ms event as nine points.
+		chart.clear()
+		# IDENTICAL on all three, and that is the point of the picture: the y range is not fitted to
+		# each frame, so the whoop ringing to 82 deg/s and the 10" crawling up to 50 are drawn
+		# against the same ruler.
+		chart.configure(0.0, 90.0, TUNE_STEP_DEG_S)
+		for i in fixed.size():
+			chart.sample(fixed[i][0], fixed[i][1], derived[i][1])
+
+		print("%s: fixed peak %.1f deg/s, derived peak %.1f deg/s" % [frame_id,
+			_peak(fixed), _peak(derived)])
+
+	await process_frame
+	await process_frame
+	await RenderingServer.frame_post_draw
+	var image := root.get_texture().get_image()
+	image.save_png(out_path)
+	print("wrote %s (%dx%d)" % [out_path, image.get_width(), image.get_height()])
+	quit()
+
+
+static func _peak(trace: Array) -> float:
+	var peak := 0.0
+	for row in trace:
+		peak = maxf(peak, row[1])
+	return peak

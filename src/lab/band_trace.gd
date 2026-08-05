@@ -373,10 +373,31 @@ func _draw_band_segment(i: int) -> void:
 	# so it is one point on both lines and the apex of both triangles.
 	var t := gap_a / (gap_a - gap_b)
 	var crossing := upper_a.lerp(upper_b, t)
-	draw_colored_polygon(PackedVector2Array([upper_a, crossing, lower_a]),
-		over_fill_colour if gap_a < 0.0 else fill_colour)
-	draw_colored_polygon(PackedVector2Array([crossing, upper_b, lower_b]),
-		over_fill_colour if gap_b < 0.0 else fill_colour)
+	_fill_triangle(upper_a, crossing, lower_a, over_fill_colour if gap_a < 0.0 else fill_colour)
+	_fill_triangle(crossing, upper_b, lower_b, over_fill_colour if gap_b < 0.0 else fill_colour)
+
+
+## The smallest sliver worth handing the renderer, in square pixels — twice the triangle's area,
+## since a cross product is the parallelogram. A twentieth of a pixel is far below anything that
+## could show up, and it is set by MEASUREMENT rather than by taste: Godot's own triangulation
+## refuses slivers well above exact collinearity, and the ones observed failing here came in at
+## 0.004 and 0.009 while genuine thin fills in the same chart ran 0.6 and up.
+const MIN_FILL_AREA_PX2 := 0.05
+
+
+## A triangle with no area is skipped rather than handed to the renderer, which answers a
+## degenerate polygon with "Invalid polygon data, triangulation failed" — an engine-level ERROR
+## line, in a test runner's output indistinguishable from a failing test, for a picture that is
+## perfectly correct.
+##
+## It is not a corner case. When the two series MEET exactly on a sample, the crossing lands on that
+## sample and one of the two triangles above collapses to a line. That happens whenever anything
+## draws the same data twice — a before-and-after chart on the build that did not change is the
+## whole reason it turned up.
+func _fill_triangle(a: Vector2, b: Vector2, c: Vector2, colour: Color) -> void:
+	if absf((b - a).cross(c - a)) < MIN_FILL_AREA_PX2:
+		return
+	draw_colored_polygon(PackedVector2Array([a, b, c]), colour)
 
 
 func _draw_series(series: PackedFloat32Array, colour: Color, width: float) -> void:
