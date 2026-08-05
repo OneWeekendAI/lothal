@@ -7,7 +7,7 @@ extends SceneTree
 ## dumped at the end, so a suite that hangs or crashes names itself instead of leaving
 ## the runner silent.
 
-const SUITES := ["mass properties", "hover", "torque signs", "hover stability",
+const SUITES := ["mass properties", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "build panel",
 	"gate course", "course library", "course warnings", "field editor", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
@@ -51,6 +51,7 @@ func _run_suite(suite_name: String) -> Array:
 		"mass properties": return TestMassProperties.run()
 		"hover": return TestHover.run()
 		"torque signs": return TestTorqueSigns.run()
+		"torque reference": return TestTorqueReference.run()
 		"hover stability": return TestHoverStability.run()
 		"rate step response": return TestRateStepResponse.run()
 		"rate mode release": return TestRateModeRelease.run()

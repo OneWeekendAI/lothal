@@ -308,7 +308,8 @@ func torque_n_m(source: Powertrain = null) -> Vector3:
 			name,
 			from.observables.thrust_n[i],
 			PropellerModel.reaction_torque_n_m(from.k_q, rpm),
-			build.arm_m)
+			build.arm_m,
+			build.mass_properties.com_m)
 		total += Vector3(contribution["roll"], contribution["pitch"], contribution["yaw"])
 	return total
 

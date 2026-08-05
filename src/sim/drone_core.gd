@@ -78,11 +78,14 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 		var thrust_n: float = powertrain.observables.thrust_n[i]
 		var reaction_n_m := PropellerModel.reaction_torque_n_m(powertrain.k_q, rpm)
 
-		var pos := MotorLayout.motor_position(name, arm_m)
-		var lift := Vector3(0, thrust_n, 0)   # BODY frame: props always push along the body's own up
 		total_thrust_body_n += thrust_n
 
-		var tau := pos.cross(lift)   # body-frame torque about X/Z from thrust position; Y is always 0 here
+		# Arms are measured from the CENTRE OF MASS, not from the frame's origin — the aircraft
+		# rotates about the former, and the inertia tensor this torque is about to be integrated
+		# against is already computed about it too (MassProperties). MotorLayout owns the cross
+		# product; this loop must not grow a second one, which is the duplication that made the
+		# reference point possible to get wrong in only one of two places.
+		var tau := MotorLayout.thrust_torque(name, thrust_n, arm_m, mass_properties.com_m)
 		var spin: float = MotorLayout.SPIN[name]
 		var reaction_about_y := -spin * reaction_n_m   # Newton's third law: opposes the rotor's own spin
 		total_torque += Vector3(tau.x, reaction_about_y, tau.z)
