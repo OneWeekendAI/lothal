@@ -149,6 +149,8 @@ static func run() -> Array:
 			% [rad_to_deg(stock_read.length()), Gyro.DEFAULT_NOISE_RAD_S, Gyro.DEFAULT_BIAS_RAD_S]
 	))
 
+	results.append_array(_vibration_path_results())
+
 	# --- Axis convention ---
 	var contract := Gyro.contract_rates(Vector3(1.0, 2.0, 3.0))
 	results.append(TestResult.new(
@@ -176,5 +178,170 @@ static func run() -> Array:
 		core.observables.gyro_rad_s != core.rigid_body.angular_velocity_rad_s,
 		"gyro %s vs true %s" % [core.observables.gyro_rad_s, core.rigid_body.angular_velocity_rad_s]
 	))
+
+	return results
+
+
+# ---------------------------------------------------------------------------
+# The vibration path (LTHL-15)
+#
+# These check the MECHANISM — that a vibration source reaches the reading at the sensor's own
+# sample instants, through the PT1 and not around it — and nothing about what vibration IS.
+# What it is belongs to VibrationModel and is checked in tests/test_vibration.gd, which is a
+# separate suite for the same reason these are separate commits: a wrong signal delivered
+# correctly and a right signal delivered wrongly look the same from the output and have
+# nothing to do with each other.
+#
+# So the source used here is a fixed-frequency tone that knows nothing about rpm. As a MODEL
+# of vibration that is deliberately, uselessly wrong. As a test instrument it is exactly right,
+# because every assertion below wants a signal whose frequency and amplitude are known in
+# advance rather than derived from an aircraft.
+# ---------------------------------------------------------------------------
+
+## A pure tone on body X. Frequency-fixed, so it may compute phase straight from t; a source
+## whose frequency follows rpm may not, and VibrationModel integrates phase instead.
+class Tone extends VibrationSource:
+	var hz: float
+	var amplitude_rad_s: float
+	func _init(p_hz: float, p_amplitude_rad_s: float) -> void:
+		hz = p_hz
+		amplitude_rad_s = p_amplitude_rad_s
+	func angular_rate_at(t_s: float) -> Vector3:
+		return Vector3(amplitude_rad_s * sin(TAU * hz * t_s), 0.0, 0.0)
+
+
+## The amplitude of the component at `hz` in a sampled signal — one DFT bin, by correlation.
+## Exact when the window holds a whole number of cycles, which every caller below arranges.
+## A peak-of-the-samples measurement would not do: at 1 kHz a 100 Hz tone is only sampled ten
+## times per cycle, so the largest sample can miss the true peak by 5%, and 5% is larger than
+## the differences these checks are trying to resolve.
+static func _amplitude_at(samples: PackedFloat64Array, hz: float, sample_rate_hz: float) -> float:
+	var re := 0.0
+	var im := 0.0
+	for n in samples.size():
+		var theta := TAU * hz * float(n) / sample_rate_hz
+		re += samples[n] * cos(theta)
+		im += samples[n] * sin(theta)
+	return 2.0 / float(samples.size()) * sqrt(re * re + im * im)
+
+
+## Drives a gyro at its own sample rate for `count` samples and returns the X readings.
+static func _trace_x(gyro: Gyro, count: int) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	var dt := 1.0 / gyro.sample_rate_hz
+	for i in count:
+		out.append(gyro.update(Vector3.ZERO, dt).x)
+	return out
+
+
+## The discrete PT1's magnitude response at one frequency. For y[n] = (1-a)y[n-1] + a x[n],
+## H(z) = a / (1 - (1-a) z^-1), so |H| = a / |1 - (1-a) e^-jw|. Written out here rather than
+## asserted as "roughly attenuated", because a filter that attenuates by an arbitrary amount is
+## indistinguishable from a bug that attenuates by an arbitrary amount.
+static func _pt1_gain(hz: float, cutoff_hz: float, sample_rate_hz: float) -> float:
+	var period := 1.0 / sample_rate_hz
+	var rc := 1.0 / (TAU * cutoff_hz)
+	var a := period / (rc + period)
+	var w := TAU * hz / sample_rate_hz
+	var real := 1.0 - (1.0 - a) * cos(w)
+	var imag := (1.0 - a) * sin(w)
+	return a / sqrt(real * real + imag * imag)
+
+
+static func _vibration_path_results() -> Array:
+	var results: Array = []
+	var fs := Gyro.DEFAULT_SAMPLE_RATE_HZ
+
+	# --- A source with no vibration in it changes nothing ---
+	# The default. 670 tests were written against a gyro with no vibration path at all, and they
+	# are entitled to keep meaning what they meant.
+	var quiet := Gyro.new(fs, Gyro.DEFAULT_CUTOFF_HZ, 0.0, Vector3.ZERO)
+	var silent := Gyro.new(fs, Gyro.DEFAULT_CUTOFF_HZ, 0.0, Vector3.ZERO)
+	silent.vibration = VibrationSource.new()
+	var matched := true
+	for i in 200:
+		if quiet.update(Vector3(0.3, 0.0, 0.0), 1.0 / fs) != silent.update(Vector3(0.3, 0.0, 0.0), 1.0 / fs):
+			matched = false
+			break
+	results.append(TestResult.new(
+		"a gyro with the base vibration source reads exactly what a gyro with none reads",
+		matched,
+		"200 samples compared, traces %s" % ("identical" if matched else "DIVERGED")))
+
+	# --- Vibration arrives THROUGH the PT1, at the filter's own published attenuation ---
+	# This is the check that says the injection point is right. Added after the filter it would
+	# arrive at full amplitude; added to the rigid body it would not arrive at all.
+	var through := Gyro.new(fs, Gyro.DEFAULT_CUTOFF_HZ, 0.0, Vector3.ZERO)
+	through.vibration = Tone.new(200.0, 1.0)
+	_trace_x(through, 1000)   # let the filter settle before measuring
+	var seen := _amplitude_at(_trace_x(through, 1000), 200.0, fs)
+	var predicted := _pt1_gain(200.0, Gyro.DEFAULT_CUTOFF_HZ, fs)
+	results.append(TestResult.new(
+		"vibration is added ahead of the PT1, so a 200 Hz tone arrives at the filter's own gain",
+		absf(seen - predicted) < 0.01,
+		"1.000 rad/s at 200 Hz read as %.4f; the %0.f Hz PT1's magnitude response there is %.4f"
+			% [seen, Gyro.DEFAULT_CUTOFF_HZ, predicted]))
+
+	# --- Raising the cutoff lets more of it through ---
+	# The FC bench's whole argument in one assertion. A model that added vibration anywhere but
+	# ahead of the filter would show the same amplitude at both cutoffs.
+	var sharp := Gyro.new(fs, 500.0, 0.0, Vector3.ZERO)
+	sharp.vibration = Tone.new(200.0, 1.0)
+	_trace_x(sharp, 1000)
+	var sharp_seen := _amplitude_at(_trace_x(sharp, 1000), 200.0, fs)
+	results.append(TestResult.new(
+		"raising the gyro cutoff lets more vibration through — the cutoff sweep has a landmark",
+		sharp_seen > seen * 1.4,
+		"200 Hz tone reads %.4f at a %.0f Hz cutoff and %.4f at 500 Hz (%.2fx)"
+			% [seen, Gyro.DEFAULT_CUTOFF_HZ, sharp_seen, sharp_seen / seen]))
+
+	# --- Aliasing, by construction ---
+	# Blade pass on the reference build at full throttle is ~1450 Hz, and the sensor samples at
+	# 1000. A 1 kHz sampler cannot tell 1450 Hz from 450 Hz: 1450n/1000 and 450n/1000 differ by
+	# exactly n whole cycles, so the two sample sequences are not similar, they are IDENTICAL.
+	# Asserting equality rather than "some low-frequency content appears" is what makes this a
+	# statement about the sampler instead of an observation about the output.
+	var above := Gyro.new(fs, 10000.0, 0.0, Vector3.ZERO)
+	above.vibration = Tone.new(1450.0, 1.0)
+	var below := Gyro.new(fs, 10000.0, 0.0, Vector3.ZERO)
+	below.vibration = Tone.new(450.0, 1.0)
+	var folded := _trace_x(above, 400)
+	var direct := _trace_x(below, 400)
+	var worst := 0.0
+	for i in folded.size():
+		worst = maxf(worst, absf(folded[i] - direct[i]))
+	results.append(TestResult.new(
+		"blade pass above Nyquist folds down: 1450 Hz through a 1 kHz sensor IS 450 Hz",
+		worst < 1e-9,
+		"400 samples, largest difference between the 1450 Hz and 450 Hz traces %.12f rad/s" % worst))
+
+	# ...and it is not that everything simply gets through. The fold-down is a specific frequency,
+	# not a smear, so the SAME tone must be absent from the bin it was actually generated at.
+	var alias_amp := _amplitude_at(_trace_x(above, 1000), 450.0, fs)
+	var origin_amp := _amplitude_at(_trace_x(above, 1000), 1450.0 - 1000.0 + 200.0, fs)
+	results.append(TestResult.new(
+		"the fold-down lands on one frequency rather than smearing across the band",
+		alias_amp > 0.9 and origin_amp < 0.05,
+		"1450 Hz tone reads %.4f rad/s in the 450 Hz bin and %.4f in the 650 Hz bin"
+			% [alias_amp, origin_amp]))
+
+	# --- Determinism across a respawn ---
+	# gyro.gd re-seeds its RNG in reset() so that "the same flight twice" is the same flight.
+	# A vibration source that carried its phase across a respawn would break that guarantee from
+	# a place nobody would think to look.
+	var respawned := Gyro.new(fs, Gyro.DEFAULT_CUTOFF_HZ, 0.0, Vector3.ZERO)
+	respawned.vibration = Tone.new(213.0, 1.0)
+	var first_run := _trace_x(respawned, 300)
+	respawned.reset()
+	var second_run := _trace_x(respawned, 300)
+	var replay := true
+	for i in first_run.size():
+		if absf(first_run[i] - second_run[i]) > 1e-12:
+			replay = false
+			break
+	results.append(TestResult.new(
+		"reset returns the vibration phase to zero, so a respawn replays the same shake",
+		replay,
+		"300 samples either side of a reset, traces %s" % ("identical" if replay else "DIVERGED")))
 
 	return results

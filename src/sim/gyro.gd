@@ -75,9 +75,25 @@ var bias_rad_s: Vector3
 ## than the sensor actually gets.
 var rate_rad_s := Vector3.ZERO
 
+## What the airframe is shaking the sensor with, or null for a sensor on a perfectly still
+## bench. Sampled in _sample(), ahead of the PT1 — see vibration_source.gd for why vibration
+## enters here rather than as a force on the rigid body, and why the aliasing that results is
+## a modelled phenomenon rather than an oversight.
+##
+## Null by default, and DELIBERATELY not a VibrationSource.new(): the null check below is one
+## branch, where a base instance would be a virtual call and an allocation on every sample of
+## every gyro in the project to produce a vector of zeroes. Build.gyro() is what fits a real
+## one, because what an airframe shakes with is a property of the airframe.
+var vibration: VibrationSource = null
+
 var _rng := RandomNumberGenerator.new()
 var _seed: int
 var _time_since_sample: float = 0.0
+## The sensor's own clock, advanced one sample period per sample and never by dt. It is the
+## sample instants that matter — a vibration source asked for its value at the wall clock
+## instead would be band-limited by the caller's step rate rather than by the sensor's, which
+## is precisely the aliasing this model is trying to reproduce.
+var _sample_time_s: float = 0.0
 
 func _init(p_sample_rate_hz: float = DEFAULT_SAMPLE_RATE_HZ, p_cutoff_hz: float = DEFAULT_CUTOFF_HZ,
 		p_noise_rad_s: float = DEFAULT_NOISE_RAD_S, p_bias_rad_s: Vector3 = DEFAULT_BIAS_RAD_S,
@@ -139,13 +155,36 @@ func update(true_rate_rad_s: Vector3, dt: float) -> Vector3:
 func reset() -> void:
 	rate_rad_s = Vector3.ZERO
 	_time_since_sample = 0.0
+	_sample_time_s = 0.0
+	if vibration != null:
+		vibration.reset()
 	# Re-seeded, so a respawn replays the same noise rather than continuing the old stream.
 	# Without this, "the same flight twice" would not be the same flight.
 	_rng.seed = _seed
 
-## One sensor sample: truth, plus bias, plus noise, through the PT1.
+## One sensor sample: truth, plus bias, plus vibration, plus noise, through the PT1.
 func _sample(true_rate_rad_s: Vector3, period: float) -> void:
 	var raw := true_rate_rad_s + bias_rad_s
+
+	# Vibration is read at THIS SAMPLE INSTANT and at no other, which is the whole mechanism.
+	# Everything interesting about it follows from that one line and needs no further code:
+	#
+	#   * Content above the sensor's Nyquist FOLDS DOWN, because a sampler asked for a 1450 Hz
+	#     tone a thousand times a second returns the 450 Hz tone it cannot distinguish it from.
+	#     That is not a special case handled here — there is nothing here to handle it. It is
+	#     what sampling does, and it is why real firmware runs its gyro at 8 kHz rather than at
+	#     the loop rate. tests/test_gyro.gd pins the fold-down to the exact arithmetic.
+	#   * It reaches the FC only through the PT1 below, so the cutoff is what decides how much
+	#     of a resonance peak the D term ever differentiates.
+	#   * The rigid body never sees it, because at these frequencies the aircraft barely moves
+	#     and the 1 kHz integrator could not represent the motion if it did.
+	#
+	# Stated at this length because aliasing that emerges from a correct sample-and-hold and
+	# aliasing that happens because nobody thought about it look identical in the output.
+	if vibration != null:
+		raw += vibration.angular_rate_at(_sample_time_s)
+	_sample_time_s += period
+
 	if noise_rad_s > 0.0:
 		raw += Vector3(
 			_rng.randfn(0.0, noise_rad_s),
