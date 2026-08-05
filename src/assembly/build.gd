@@ -163,9 +163,15 @@ var assembly: Dictionary = {}
 ## at whatever the frame implies. Here rather than in AirframeModel because BOTH the drawing and
 ## the mass model need the same fallbacks, and two lists of defaults is two things to get out of
 ## step.
+## `prop_imbalance_g` is in GRAMS rather than metres, which is why this dictionary can no longer be
+## described as "the tweaks in SI". It is here rather than as a spec on the propeller because
+## residual imbalance is a property of the BUILD, not of the part: the same prop out of the same
+## bag is balanced or not depending on what has happened to it since, and a catalog entry claiming
+## a figure would be asserting something about an object nobody has weighed. See VibrationModel.
 const DEFAULT_ASSEMBLY := {
 	"prop_spacer_m": 0.0, "soft_mount_m": 0.0, "plate_gap_m": -1.0,
 	"battery_mount": "strap_top", "battery_offset_m": 0.0,
+	"prop_imbalance_g": VibrationModel.DEFAULT_IMBALANCE_KG * 1000.0,
 }
 
 static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String,
@@ -663,8 +669,14 @@ func fingerprint() -> String:
 	return "/".join(ids)
 
 
+## The fitted board's sensor, ON THIS AIRFRAME. Two different aircraft carrying the same board get
+## the same sensor and a different shake, which is the point: the noise a gyro reads stopped being
+## a property of the board when frame resonance arrived, and became a property of the board plus
+## the thing it is bolted to.
 func gyro() -> Gyro:
-	return Gyro.from_part(fc)
+	var g := Gyro.from_part(fc)
+	g.vibration = VibrationModel.for_build(self)
+	return g
 
 
 ## This board's mass, or the budgeted share if a selection reached here without one.
@@ -910,6 +922,104 @@ func warnings() -> Array[BuildWarning]:
 				"reachable_twr": reachable_thrust_n / weight_n()}))
 
 	out.append_array(_flight_quality())
+	out.append_array(_vibration_character())
+	return out
+
+
+## The throttle command that settles at a given RPM — rpm_at_throttle inverted, by bisection.
+##
+## Bisection rather than the obvious `rpm / rpm_at_throttle(1.0)`, and the difference is not small:
+## that ratio puts the reference build's 180 Hz crossing at 44% throttle, where it actually turns
+## 207 Hz. The curve is not a line, because voltage sags with load and the motor's own current cap
+## bites near the top, so a linear inversion is wrong by 15% in the middle of the range — exactly
+## where a builder would be listening for the peak. rpm_at_throttle IS monotone, which is all
+## bisection needs, and asking IT rather than modelling its shape here means this stays correct if
+## the powertrain ever gains another nonlinearity.
+##
+## Returns above 1.0 for an rpm this build cannot reach, so a caller can tell "at 140% throttle"
+## from "at full throttle" and say the honest thing about it.
+func throttle_at_rpm(target_rpm: float) -> float:
+	var full := rpm_at_throttle(1.0)
+	if full <= 0.0:
+		return INF
+	if target_rpm >= full:
+		return target_rpm / full   # unreachable: report how far out of reach, not a clamp
+	var low := 0.0
+	var high := 1.0
+	# 40 halvings takes the bracket below one part in 10^12 — far past the precision of anything
+	# that reads this, and cheap enough that there is no reason to stop earlier.
+	for i in 40:
+		var mid := (low + high) * 0.5
+		if rpm_at_throttle(mid) < target_rpm:
+			low = mid
+		else:
+			high = mid
+	return (low + high) * 0.5
+
+
+## Where this airframe rings, and where in the throttle range its own harmonics drive it.
+##
+## CHARACTERISTIC, and this is the purest case of the rule in the whole file. There is no throttle
+## at which a resonance stops the aircraft working; there is one at which the gyro gets noisy, the
+## D term starts spending itself on shake, and the motors get warm. That is a continuum from end to
+## end — parts.md: where physics has a hard boundary, warn; where it has a continuum, describe. A
+## build whose hover harmonic sits on its frame mode has not made a mistake. Half the 5" quads ever
+## built are that build.
+##
+## WHAT THIS SENTENCE MAY AND MAY NOT SAY. VibrationModel's whole scale rests on one guessed
+## constant and no manufacturer publishes a frame resonance for anything, so there is no held-out
+## measurement to be right or wrong against. It may therefore quote FREQUENCIES and THROTTLES —
+## those come from the cantilever scaling law and from this build's own rpm curve, both of which
+## are derivations a reader can check — and it may NOT quote an amplitude, an error bar, or an
+## accuracy. labs-and-sim.md §2.1 says a bench that will not quote its own error bar is
+## decoration; the converse is that one quoting a fabricated error bar is worse than decoration,
+## and a test in tests/test_build_warnings.gd holds this sentence to it.
+func _vibration_character() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	var model := VibrationModel.for_build(self)
+	var full_rpm := rpm_at_throttle(1.0)
+	if full_rpm <= 0.0 or model.resonance_hz <= 0.0:
+		return out
+
+	var blades: float = prop_geometry().blades
+	var imbalance_throttle := throttle_at_rpm(model.resonance_hz * 60.0)
+	var blade_throttle := throttle_at_rpm(model.resonance_hz * 60.0 / blades)
+	var hover := hover_throttle()
+
+	# The sentence changes when the crossing is out of reach, because "sweeps through it at 140%
+	# throttle" is arithmetic rather than information — the same reason manoeuvre headroom has two
+	# wordings for one figure.
+	var where := "Prop imbalance sweeps through it at %.0f%% throttle and blade passage at %.0f%%" % [
+		imbalance_throttle * 100.0, blade_throttle * 100.0]
+	if imbalance_throttle > 1.0:
+		where = "Blade passage sweeps through it at %.0f%% throttle; rotation itself never reaches it" % [
+			blade_throttle * 100.0]
+	if blade_throttle > 1.0:
+		where = "Neither harmonic reaches it inside the throttle range — this airframe rings above anything its own props can drive"
+
+	out.append(BuildWarning.characteristic(&"frame_resonance",
+		"%s arms put the first bending mode near %.0f Hz. %s — that is where the gyro is noisiest and where the D term costs the most." % [
+			frame["name"], model.resonance_hz, where],
+		{"resonance_hz": model.resonance_hz,
+			"imbalance_crossing_throttle": imbalance_throttle,
+			"blade_crossing_throttle": blade_throttle,
+			"hover_throttle": hover,
+			"blades": blades}))
+
+	# A separate id rather than a clause on the one above, because it is a separate fact and a
+	# panel or a test must be able to ask about it alone. It is the fact a builder can act on:
+	# hover is where the aircraft spends its life, and a harmonic parked on the mode there is a
+	# permanently noisy gyro rather than a peak you fly through.
+	var hover_hz := rpm_at_throttle(hover) / 60.0
+	for harmonic in [{"hz": hover_hz, "what": "Prop imbalance"}, {"hz": hover_hz * blades, "what": "Blade passage"}]:
+		if absf(float(harmonic["hz"]) - model.resonance_hz) < model.resonance_hz * 0.15:
+			out.append(BuildWarning.characteristic(&"hover_on_resonance",
+				"%s sits at %.0f Hz at hover, right on the %.0f Hz frame mode — this one will be shaking the gyro the whole flight rather than only on the way past." % [
+					harmonic["what"], float(harmonic["hz"]), model.resonance_hz],
+				{"harmonic_hz": float(harmonic["hz"]), "resonance_hz": model.resonance_hz,
+					"hover_throttle": hover}))
+			break
+
 	return out
 
 

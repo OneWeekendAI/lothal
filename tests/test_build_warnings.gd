@@ -40,6 +40,7 @@ static func run() -> Array:
 	results.append(_test_hover_throttle_and_thrust_to_weight_are_one_fact(catalog))
 	results.append(_test_the_readout_is_accountable_to_the_sim(catalog))
 	results.append_array(_test_the_panels_show_severity(catalog))
+	results.append_array(_test_vibration_is_described_never_blocked(catalog))
 
 	return results
 
@@ -411,3 +412,66 @@ static func _assert_panel_shows_severity(panel_name: String, list: WarningList) 
 				list.color_for(BuildWarning.Severity.CHARACTERISTIC)]
 		),
 	]
+
+
+# ---------------------------------------------------------------------------
+# Vibration describes a continuum (LTHL-15)
+# ---------------------------------------------------------------------------
+
+## Where physics has a hard boundary, warn; where it has a continuum, describe (parts.md).
+## Frame resonance is the purest continuum in the project: there is no throttle at which the
+## aircraft stops working, only one at which the gyro gets noisy and the D term starts costing
+## motor heat. So a build whose hover harmonic sits on its frame mode is DESCRIBED, and a
+## severity that implied otherwise would be telling a builder they had made a mistake for
+## building a perfectly ordinary quad — which is the exact failure the cinelifter above suffered.
+static func _test_vibration_is_described_never_blocked(_catalog: PartsCatalog) -> Array:
+	var out: Array = []
+	var build := ReferenceBuild.build()
+	var found: BuildWarning = null
+	for w in build.warnings():
+		if w.id == &"frame_resonance":
+			found = w
+
+	out.append(TestResult.new(
+		"every build is told where its frame mode is",
+		found != null,
+		"warning ids: %s" % str(_ids(build.warnings()))))
+	if found == null:
+		return out
+
+	out.append(TestResult.new(
+		"frame resonance is characteristic, never limiting or impossible",
+		found.severity == BuildWarning.Severity.CHARACTERISTIC,
+		"severity %s: \"%s\"" % [BuildWarning.severity_name(found.severity), found.message]))
+
+	# The sentence must be accountable to the model that produced it, the way climb margin is.
+	# A wording test alone would go green if someone "fixed" the warning by breaking the physics.
+	var model := VibrationModel.for_build(build)
+	out.append(TestResult.new(
+		"the sentence quotes the model's own frame mode rather than a second derivation",
+		absf(float(found.values["resonance_hz"]) - model.resonance_hz) < 0.01,
+		"warning says %.1f Hz, VibrationModel says %.1f Hz"
+			% [float(found.values["resonance_hz"]), model.resonance_hz]))
+
+	# The throttle at which a harmonic crosses the mode is the actionable half — it is what a
+	# builder would go and listen for. Checked against the build's own rpm curve rather than
+	# against a number typed into the test.
+	var crossing := float(found.values["imbalance_crossing_throttle"])
+	var rpm_there := build.rpm_at_throttle(crossing)
+	out.append(TestResult.new(
+		"the throttle it quotes is the one where rotation frequency actually meets the mode",
+		absf(rpm_there / 60.0 - model.resonance_hz) < model.resonance_hz * 0.02,
+		"crossing quoted at %.0f%% throttle, where the build turns %.0f rpm = %.0f Hz against a %.0f Hz mode"
+			% [crossing * 100.0, rpm_there, rpm_there / 60.0, model.resonance_hz]))
+
+	# NOTHING here may quote an error bar. VibrationModel rests on one guessed scale constant and
+	# no held-out measurement exists to check it against, so a percentage in this sentence would
+	# be a fabricated accuracy claim — worse than no error bar at all (labs-and-sim.md §2.1's
+	# converse). Frequencies and throttles are fine: those come from laws and from the rpm curve.
+	out.append(TestResult.new(
+		"the sentence claims no accuracy it cannot back — no error bar on a characteristic model",
+		not found.message.contains("±") and not found.message.contains("+/-")
+			and not found.values.has("error_fraction"),
+		"\"%s\"" % found.message))
+
+	return out

@@ -114,8 +114,22 @@ const BATTERY_MOUNT := "battery_mount"
 ## forward is -Z (physics.md §1).
 const BATTERY_OFFSET := "battery_offset_mm"
 
-## Keys whose value is a dimension in millimetres.
-const KEYS := [PROP_SPACER, SOFT_MOUNT, PLATE_GAP, BATTERY_OFFSET]
+## How well the props are balanced: the residual offset mass at the blade radius, in grams.
+##
+## A BUILD QUALITY PROPERTY, NOT A PART PROPERTY, which is why it is a tweak rather than a spec on
+## the propeller. The same prop out of the same bag is balanced or not depending on what has
+## happened to it since — a catalog figure would be asserting something about an object nobody has
+## weighed. See VibrationModel, which is what reads it.
+const PROP_IMBALANCE := "prop_imbalance_g"
+
+## Keys whose value is a plain number the panel draws as a slider.
+##
+## Every one of these was a length in millimetres until prop imbalance arrived, which is a mass in
+## grams — so `value_mm` is now a slightly wrong name for "the value in whatever unit its row is
+## quoted in". The machinery underneath (clamping to limits, sparse overrides, persistence) never
+## cared about the unit, and renaming the function across the panel and its tests is a bigger diff
+## than this slice should carry. Noted rather than hidden.
+const KEYS := [PROP_SPACER, SOFT_MOUNT, PLATE_GAP, BATTERY_OFFSET, PROP_IMBALANCE]
 ## Keys whose value is one of a set of named options rather than a number. Held separately because
 ## a slider and a dropdown are read, clamped and persisted differently — but the four file rules
 ## above apply to both without change.
@@ -128,6 +142,7 @@ const ROWS := [
 	{"key": SOFT_MOUNT, "label": "Motor soft mount", "hint": "Pad between the motor and the arm."},
 	{"key": PLATE_GAP, "label": "Stack standoffs", "hint": "Height between the centre plates."},
 	{"key": BATTERY_OFFSET, "label": "Pack fore/aft", "hint": "Slide the pack along the strap. Forward is positive."},
+	{"key": PROP_IMBALANCE, "label": "Prop imbalance", "hint": "Residual offset mass per prop, in grams. Wind it up and watch the D term."},
 ]
 
 ## The choice rows, drawn as dropdowns rather than sliders. Same idea as ROWS and same reason: the
@@ -181,6 +196,17 @@ static func limits(build: Build) -> Dictionary:
 			"min": -battery_travel_mm(build),
 			"max": battery_travel_mm(build),
 			"default": 0.0,
+		},
+		# The only limits here that are AUTHORED rather than derived from the parts, and they are
+		# authored because there is nothing to derive them from: no prop in the catalog publishes a
+		# balance tolerance and none ever will. The range spans what a balancer can achieve at the
+		# bottom to a prop with a visible nick at the top, and the default is a decently balanced
+		# one — low, on gyro.gd's DEFAULT_NOISE_RAD_S precedent, so the stock aircraft flies clean
+		# and winding it up is how a builder finds out what it does.
+		PROP_IMBALANCE: {
+			"min": 0.0,
+			"max": 0.5,
+			"default": VibrationModel.DEFAULT_IMBALANCE_KG * 1000.0,
 		},
 	}
 
@@ -295,6 +321,10 @@ func resolved_m(build: Build) -> Dictionary:
 		# name is really about.
 		"battery_mount": value_choice(BATTERY_MOUNT, build),
 		"battery_offset_m": value_mm(BATTERY_OFFSET, build) / 1000.0,
+		# Grams, not metres — see PROP_IMBALANCE and the note on KEYS. It crosses here with the
+		# rest because this is still the ONE place the configuration reaches the physics, which is
+		# what the name is really about.
+		"prop_imbalance_g": value_mm(PROP_IMBALANCE, build),
 	}
 
 

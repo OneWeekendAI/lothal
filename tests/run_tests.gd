@@ -14,7 +14,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
 	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh",
 	"yaw authority", "gyro", "motor mixer", "control path", "stick release", "warnings", "build warnings",
-	"flight controller", "rate tune", "catalog tuning", "pid tunes"]
+	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration"]
 
 func _init() -> void:
 	var total := 0
@@ -95,6 +95,7 @@ func _run_suite(suite_name: String) -> Array:
 		"battery mesh": return TestBatteryMesh.run()
 		"yaw authority": return TestYawAuthority.run()
 		"gyro": return TestGyro.run()
+		"vibration": return TestVibration.run()
 		"motor mixer": return TestMotorMixer.run()
 		"control path": return TestControlPath.run()
 		"stick release": return TestStickRelease.run()

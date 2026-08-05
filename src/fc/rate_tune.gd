@@ -265,9 +265,116 @@ static func d_noise_fraction(p_build: Build, p_kd: float) -> float:
 	return p_kd * gyro.sample_step_noise_rad_s() / (period * RateModeController.MAX_RATE_RAD_S)
 
 
+## How many sensor samples of vibration to measure the D term against, and where.
+##
+## AT HOVER, because vibration is not a constant — it sweeps with throttle, so a single figure has
+## to name the condition it describes or it means nothing. Hover is the honest datum: it is where
+## the aircraft spends its life, and it is the datum every other spec-sheet figure in this project
+## is already quoted at (physics.md §5). A ceiling computed at full throttle would bound the tune
+## by a condition the aircraft is in for a few seconds a flight; one computed at idle would bound
+## it by nothing at all.
+##
+## Two seconds of samples after a settling window. The signal is periodic and deterministic, so
+## this is a measurement rather than an estimate — there is no variance to average down.
+const VIBRATION_SETTLE_SAMPLES := 400
+const VIBRATION_WINDOW_SAMPLES := 2000
+
+## The standard deviation of the difference between successive gyro readings caused by VIBRATION
+## alone, at hover, rad/s — the vibration counterpart of Gyro.sample_step_noise_rad_s().
+##
+## MEASURED BY RUNNING THE MODEL, not by an analytic formula, and the reason is the fold-down.
+## The signal is a sum of tones whose step statistics are individually elementary, but at hover on
+## a 1 kHz sensor the blade-pass line may sit above Nyquist and alias, and an analytic expression
+## would have to reproduce that by hand — which is to say it would have to re-derive the sampler
+## Gyro already is. Running the real Gyro with the real model for two seconds costs a few thousand
+## sines once per tune derivation, against three FrameBench spool-ups this function already sits
+## beside, and it cannot disagree with what the aircraft will actually do.
+##
+## The worst of roll and pitch rather than an average of three: D runs on those two axes (yaw's kd
+## is zero on physical grounds), and a bound is about the worse case, not the typical one.
+static func vibration_step_noise_rad_s(p_build: Build) -> float:
+	var gyro := p_build.gyro()
+	if not gyro.vibration is VibrationModel:
+		return 0.0
+
+	# The sensor is asked about vibration and nothing else, so bias and white noise are stripped:
+	# the board's own contribution is already counted by d_noise_fraction, and counting it twice
+	# would be a bound tightening itself.
+	gyro.noise_rad_s = 0.0
+	gyro.bias_rad_s = Vector3.ZERO
+
+	var hover_rpm := p_build.rpm_at_throttle(p_build.hover_throttle())
+	var rpms := {}
+	for name in MotorLayout.MOTOR_NAMES:
+		rpms[name] = hover_rpm
+	gyro.vibration.set_rpm(rpms)
+
+	var dt := 1.0 / gyro.sample_rate_hz
+	for i in VIBRATION_SETTLE_SAMPLES:
+		gyro.update(Vector3.ZERO, dt)
+
+	var previous := gyro.rate_rad_s
+	var sum_x := 0.0
+	var sum_z := 0.0
+	for i in VIBRATION_WINDOW_SAMPLES:
+		var reading := gyro.update(Vector3.ZERO, dt)
+		var step := reading - previous
+		previous = reading
+		sum_x += step.x * step.x
+		sum_z += step.z * step.z
+	var n := float(VIBRATION_WINDOW_SAMPLES)
+	return maxf(sqrt(sum_x / n), sqrt(sum_z / n))
+
+
+## What fraction of full command, RMS, a D gain of `kd` spends on VIBRATION at hover. Same
+## arithmetic as d_noise_fraction, on the other half of what the sensor reads.
+static func vibration_noise_fraction(p_build: Build, p_kd: float) -> float:
+	var gyro := p_build.gyro()
+	var period := 1.0 / gyro.sample_rate_hz
+	return p_kd * vibration_step_noise_rad_s(p_build) / (period * RateModeController.MAX_RATE_RAD_S)
+
+
 ## The largest kd the fitted board can carry inside D_NOISE_BUDGET — the above, inverted. A board
 ## with no noise at all has no ceiling, which is INF rather than a large number, because a large
 ## number would be a bound somebody could later mistake for a measurement.
+##
+## ---------------------------------------------------------------------------
+## WHY VIBRATION IS MEASURED ABOVE AND DELIBERATELY NOT APPLIED HERE
+## ---------------------------------------------------------------------------
+##
+## On a real quad, vibration rather than the board's thermal floor is what caps D, and it is far
+## larger. That is not in dispute, it is why vibration_noise_fraction exists, and folding it into
+## this ceiling is a two-line change that was written, measured and then deliberately backed out.
+## What the measurement showed is why.
+##
+## Across the catalog with everything but the frame held fixed, the vibration term at the reference
+## D gain runs from 0.18% on the 10" to 14.56% on the iFlight Evoque F5 V3, and SIX OF FOURTEEN
+## frames blow the 2% budget. The ordering is not arbitrary — it is how close each frame's hover
+## rotation frequency sits to its own bending mode, which is exactly the physics this slice set out
+## to model, and the Evoque lands at r = 0.99. Applied here, that would cut its D by a factor of
+## seven and take its pitch overshoot from 3.8% to 29.7%.
+##
+## The problem is what decides that ordering. Every frame's mode is anchored on ONE GUESSED NUMBER,
+## VibrationModel.REFERENCE_RESONANCE_HZ, for which no source exists and none can be obtained: no
+## manufacturer publishes a frame resonance. So applying it here would let a guess set the D gain
+## of six named products a builder can go and buy.
+##
+## And the anchor is not comfortably clear even of the reference build. At 180 Hz the reference
+## sits at 1.71% against the 2% budget — 15% of headroom, where the board alone left 4x. Guess
+## 160 Hz instead, which is no less defensible, and the reference build itself becomes D-limited,
+## the hand-tuned anchor at the top of this file moves, and every flight test in this repo that
+## encodes the current tune changes with it. A tune anchor whose position depends on an unsourced
+## constant to within 12% is not an anchor.
+##
+## So the mechanism ships, measured and reportable — an FC bench may show what a build's vibration
+## costs in D, and the ranking between builds is trustworthy even though the absolute figure is
+## not. What does not ship is letting it move the gains. Two real mechanisms beat three with one
+## invented, and this is the same judgement one file over from ThrustValidation's: the bound waits
+## for the data rather than the data being assumed to fit the bound.
+##
+## WHAT WOULD CHANGE THIS: a measured resonance for one real frame. One would do. The scaling law
+## carries it to the rest of the catalog, and this function's last line becomes the RMS sum that is
+## already written out in vibration_noise_fraction's units.
 static func kd_ceiling_for(p_build: Build) -> float:
 	var per_unit_kd := d_noise_fraction(p_build, 1.0)
 	if per_unit_kd <= 0.0:

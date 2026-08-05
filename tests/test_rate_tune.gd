@@ -146,6 +146,52 @@ static func run() -> Array:
 		"installed kd %.4f against a ceiling of %.4f" % [
 			ANCHOR_KD.x, RateTune.kd_ceiling_for(ReferenceBuild.build())]))
 
+	# --- WHAT VIBRATION COSTS IN D, MEASURED BUT NOT APPLIED (LTHL-15) --------------------
+	#
+	# On a real quad vibration rather than the board's thermal floor is what caps D. The model
+	# now measures that, and rate_tune.gd explains at length why the measurement deliberately
+	# does NOT move the ceiling: every frame's mode is anchored on one guessed frequency, and
+	# letting a guess set the D gain of named products a builder can buy is a claim the data
+	# does not support. These checks hold that decision in place from both sides.
+	var balanced := ReferenceBuild.build()
+	var chipped := ReferenceBuild.build()
+	var chipped_assembly := balanced.assembly.duplicate()
+	chipped_assembly["prop_imbalance_g"] = 0.4
+	chipped.set_assembly(chipped_assembly)
+
+	# The quantity is real and it responds to the aircraft: same board, same white-noise floor,
+	# and a chipped prop costs far more of the D budget. This is what an FC bench may show.
+	results.append(TestResult.new(
+		"vibration's cost in D is measured, and it follows the build rather than the board",
+		RateTune.vibration_noise_fraction(chipped, ANCHOR_KD.x)
+			> RateTune.vibration_noise_fraction(balanced, ANCHOR_KD.x) * 4.0
+			and balanced.gyro().sample_step_noise_rad_s() == chipped.gyro().sample_step_noise_rad_s(),
+		"%.2f%% of full command balanced vs %.2f%% chipped, on an identical %.5f rad/s board floor" % [
+			RateTune.vibration_noise_fraction(balanced, ANCHOR_KD.x) * 100.0,
+			RateTune.vibration_noise_fraction(chipped, ANCHOR_KD.x) * 100.0,
+			balanced.gyro().sample_step_noise_rad_s()]))
+
+	# It is quoted AT HOVER, because vibration sweeps and a single figure that does not name its
+	# condition means nothing. Hover is the datum every other spec-sheet figure here is quoted at.
+	results.append(TestResult.new(
+		"vibration's contribution is quoted at hover, the project's datum, and scales with kd",
+		RateTune.vibration_noise_fraction(balanced, 0.0) == 0.0
+			and absf(RateTune.vibration_noise_fraction(balanced, ANCHOR_KD.x * 2.0)
+				- RateTune.vibration_noise_fraction(balanced, ANCHOR_KD.x) * 2.0) < 1e-9,
+		"the reference build spends %.2f%% of full command on vibration at hover carrying kd %.4f" % [
+			RateTune.vibration_noise_fraction(balanced, ANCHOR_KD.x) * 100.0, ANCHOR_KD.x]))
+
+	# AND IT DOES NOT MOVE THE CEILING. A chipped prop costs 19x the D budget of a good one and the
+	# ceiling must not budge, because the ceiling is the board's. If someone folds vibration in
+	# later, this is the check that will fail and send them to read why it was left out.
+	results.append(TestResult.new(
+		"the D ceiling stays the BOARD's — a guessed frame mode does not set anyone's gains",
+		RateTune.kd_ceiling_for(chipped) == RateTune.kd_ceiling_for(balanced),
+		"ceiling %.4f on both, while vibration's own cost differs %.2f%% vs %.2f%%" % [
+			RateTune.kd_ceiling_for(balanced),
+			RateTune.vibration_noise_fraction(balanced, ANCHOR_KD.x) * 100.0,
+			RateTune.vibration_noise_fraction(chipped, ANCHOR_KD.x) * 100.0]))
+
 	# And it must actually BITE somewhere, or it is a bound nobody could ever reach — a check that
 	# cannot fail. The 10" long-range wants twice the reference's D; the budget board cannot pay
 	# for it.

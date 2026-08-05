@@ -109,6 +109,14 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 
 	rigid_body.integrate(total_force, total_torque, mass_properties.total_mass_kg, mass_properties.inertia, mass_properties.inertia_inverse, dt)
 
+	# The sensor's shake follows the MOTORS, so the four current rpms are handed over before the
+	# sample. Four rather than one average: they are not equal while the aircraft is manoeuvring,
+	# and that inequality is what turns the signal into a beating, wandering thing instead of a
+	# single sine. Pushed rather than pulled because Gyro must not know what a Powertrain is —
+	# it is a sensor, and this core is the one thing that holds both halves.
+	if gyro.vibration is VibrationModel:
+		gyro.vibration.set_rpm(powertrain.motor_rpm)
+
 	# Sampled AFTER integration, so the reading the controller picks up at the top of the
 	# next substep is one tick old. That is not an approximation to apologise for — it is
 	# what a real loop does, and the delay is part of what the gains are tuned against.
