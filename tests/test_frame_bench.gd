@@ -194,17 +194,18 @@ static func _clearance_matches_the_drawing() -> Array:
 	return results
 
 
-## SLIDING THE PACK MOVES THE PICTURE AND NOT THE MASS MODEL, and that gap is what this asserts.
+## SLIDING THE PACK MOVES THE PICTURE AND THE MASS MODEL TOGETHER.
 ##
-## build.gd:216 says so in its own words: the electronics and the pack are lumped at the origin,
-## "the mass model does not hear about" where anything is mounted, and when it grows a real
-## centre-of-gravity term the mount point is already the single source for where the pack is.
+## This test used to assert the opposite, and said so at length: the pack was lumped at the origin,
+## "the mass model does not hear about" where anything is mounted, and the honest assertion was the
+## divergence rather than a capability. Its docstring ended "this test fails the day the offset is
+## wired into mass_parts(), which is exactly when somebody should be made to come back and read this
+## comment." This is that day, and this is somebody having read it.
 ##
-## So the honest assertion is the divergence, not a capability. The drawn pack MUST move — that is
-## the mount travel of §2.6 working — and the modelled centre of mass must be seen not to, because
-## a bench that showed a COM shifting when nothing in the physics had shifted would be inventing a
-## number. This test fails the day the offset is wired into mass_parts(), which is exactly when
-## somebody should be made to come back and read this comment.
+## What it checks now is the same relationship from the other side, and it is a stronger check than
+## either half alone: the drawn pack moves, the modelled centre of mass moves, and the second is the
+## first times the pack's share of the all-up weight. A bench reporting a COM that moved by some
+## other amount would be inventing a number just as surely as one reporting a stuck zero was.
 static func _com_under_a_slid_pack() -> Array:
 	var results: Array = []
 	var build := ReferenceBuild.build()
@@ -213,6 +214,11 @@ static func _com_under_a_slid_pack() -> Array:
 	var travel_mm := AssemblyTweaks.battery_travel_mm(build)
 	tweaks.set_mm(AssemblyTweaks.BATTERY_OFFSET, travel_mm)
 
+	var centred_com := build.mass_properties.com_m
+
+	# The same resolved dictionary reaches the mass model and the drawing, which is what Lab does
+	# on every part change (lab_screen.gd) and is the whole point of there being one of them.
+	build.set_assembly(tweaks.resolved_m(build))
 	var drawn := AirframeModel.new()
 	drawn.rebuild(build, tweaks)
 	var slid_z: float = drawn.battery_mesh.position.z
@@ -234,14 +240,28 @@ static func _com_under_a_slid_pack() -> Array:
 			travel_mm, (centred_z - slid_z) * 1000.0]
 	))
 
-	# And the mass model does not hear about it — see the docstring. The bench must report the
-	# centre of mass the physics is actually using, which for every build in the catalog is the
-	# geometric centre, because every centre-mounted part is lumped at the origin.
+	# And the mass model DOES hear about it, by the right amount: the drawn pack's own displacement
+	# times its share of the aircraft. Both terms are read off the objects under test rather than
+	# restated as constants, so this stays true when the reference pack or frame changes.
+	var pack_fraction: float = (float(build.battery["mass_g"]) / 1000.0) \
+		/ build.mass_properties.total_mass_kg
+	var expected_z := centred_com.z + (slid_z - centred_z) * pack_fraction
 	results.append(TestResult.new(
-		"and the modelled centre of mass does NOT move: no mount position reaches mass_parts()",
-		bench_com.length() < 1e-9,
-		"COM offset %.4f mm from the geometric centre with the pack slid %.0f mm forward"
-			% [bench_com.length() * 1000.0, travel_mm]
+		"and the modelled centre of mass moves with it, by the pack's share of the weight",
+		absf(bench_com.z - expected_z) < 1e-9 and absf(bench_com.z) > 1e-4,
+		"COM moved to %.2f mm fore/aft, expected %.2f mm, with the pack slid %.0f mm forward"
+			% [bench_com.z * 1000.0, expected_z * 1000.0, travel_mm]
+	))
+
+	# The vertical figure is untouched by a fore/aft slide, and is not zero: the pack is strapped to
+	# the TOP plate, so a 5" build's centre of mass sits about 11.6 mm above the plate midplane
+	# whatever the pack is doing along the aircraft. Stated here because the frame bench is where a
+	# builder reads that number, and because "the CoM row is non-zero" must not be satisfiable by
+	# the height alone when the subject of the test is the slide.
+	results.append(TestResult.new(
+		"sliding the pack does not change how high the centre of mass sits",
+		absf(bench_com.y - centred_com.y) < 1e-12 and bench_com.y > 1e-4,
+		"%.4f mm up, was %.4f mm" % [bench_com.y * 1000.0, centred_com.y * 1000.0]
 	))
 
 	# The one thing that must be true whatever the pack is doing: the parts that dominate roll
@@ -338,12 +358,24 @@ static func screen_tests() -> Array:
 
 	# The 7" must be the SLOWER of the two, which is the direction the whole bench argues for. A
 	# check on separation alone would pass just as happily if the long frame were quicker.
+	#
+	# "Slower" is TIME TO REACH THE RATE, and this check used to compare the two runs' final rate
+	# readings instead. That was never quite what it claimed: both runs stop the substep AFTER they
+	# cross 500 deg/s, so both terminal figures are 500 plus a one-substep overshoot, and which
+	# overshoot is larger is a fact about sampling rather than about airframes. It held for as long
+	# as it did by luck, and the inertia re-baseline in this slice is what finally moved the two
+	# overshoots past each other — the 7" ended a run at 511 deg/s against the reference's 500 and
+	# read as the FASTER aircraft while carrying 1.9x the roll inertia.
+	#
+	# time_to_rate_s is what the panel headlines and what a pilot means by slower, and it is the
+	# quantity the alpha ~ 1/arm argument actually predicts.
 	results.append(TestResult.new(
-		"and the 7\" is the slower line: it reaches a lower rate than the 5\" reference throughout",
-		reading["rate_deg_s"] < reading["yardstick_rate_deg_s"]
+		"and the 7\" is the slower line: it takes longer to reach 500 deg/s than the 5\" reference",
+		reading["time_to_rate_s"] > reading["yardstick_time_to_rate_s"]
+			and reading["yardstick_time_to_rate_s"] > 0.0
 			and reading["inertia_kg_m2"] > reading["yardstick_inertia_kg_m2"],
-		"7\" reached %.0f deg/s against the reference's %.0f, on %.1fx the roll inertia" % [
-			reading["rate_deg_s"], reading["yardstick_rate_deg_s"],
+		"7\" took %.1f ms against the reference's %.1f ms, on %.1fx the roll inertia" % [
+			reading["time_to_rate_s"] * 1000.0, reading["yardstick_time_to_rate_s"] * 1000.0,
 			reading["inertia_kg_m2"] / reading["yardstick_inertia_kg_m2"]]
 	))
 

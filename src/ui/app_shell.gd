@@ -242,7 +242,8 @@ func show_frame_bench() -> void:
 		selection["propeller"],
 		selection["battery"],
 		selection["esc"],
-		pack_charge
+		pack_charge,
+		lab.tweaks
 	)
 	_host.add_child(frame_bench)
 	_showing_lab = false

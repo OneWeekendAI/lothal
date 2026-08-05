@@ -58,10 +58,9 @@ func _init() -> void:
 ## and handed to the mesh generators as numbers — a generator that could reach into settings for
 ## itself would be a second source for a dimension the assembler already knows.
 func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
-	var tweak_m := {
-		"prop_spacer_m": 0.0, "soft_mount_m": 0.0, "plate_gap_m": -1.0,
-		"battery_mount": "strap_top", "battery_offset_m": 0.0,
-	}
+	# The parts-implied defaults are Build's, not a second list here: the mass model falls back to
+	# the same ones, and two lists of defaults is two things to get out of step.
+	var tweak_m := Build.DEFAULT_ASSEMBLY.duplicate()
 	if tweaks != null:
 		tweak_m = tweaks.resolved_m(build)
 
@@ -88,10 +87,11 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 	if battery_mount == null:
 		battery_mount = mount_point("strap_top")
 	if battery_mount != null:
-		battery_mesh.position = battery_mount.position + Vector3(
-			0.0,
-			battery_mount.normal * battery_mesh.size_m.y * 0.5,
-			-battery_offset_m)
+		# The seating sum is MountLayout's, and is the SAME call Build.mass_parts() makes to decide
+		# where the pack's mass is. That is what makes labs-and-sim.md §2.2 — "the fit check and the
+		# picture are the same geometry" — true of mass as well as of clearance.
+		battery_mesh.position = MountLayout.seated_centre_m(
+			battery_mount, battery_mesh.size_m, battery_offset_m)
 	frame_model.add_child(battery_mesh)
 
 	# The stack, in the frame's own standoff stack. Nothing here decides where that is: the mount

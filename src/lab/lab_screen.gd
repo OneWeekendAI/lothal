@@ -412,6 +412,11 @@ func _on_part_selected(_part: Dictionary) -> void:
 ## the failure this project has already been bitten by.
 func _on_selection_changed() -> void:
 	var build := current_build()
+	# The assembly reaches the BUILD before it reaches the drawing, because it is no longer only a
+	# drawing: where the pack is strapped and how far it is slid decide where its mass sits, and
+	# every panel below reads mass properties off this object. Resolved once, here, and handed to
+	# both — the same dictionary, so the aircraft that is weighed is the aircraft that is drawn.
+	build.set_assembly(tweaks.resolved_m(build))
 	airframe.rebuild(build, tweaks)
 	# A rebuild is new propellers, and they have to be turning: the hand spin is a property of the
 	# room, not of the props that happen to be fitted.

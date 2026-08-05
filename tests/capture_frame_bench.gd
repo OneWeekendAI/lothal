@@ -3,9 +3,18 @@ extends SceneTree
 ## frame carrying chosen parts, runs the step, and writes a PNG. The companion to
 ## capture_esc_bench.gd, capture_battery_bench.gd, capture_bench.gd and capture_lab.gd.
 ##
-##   godot --script res://tests/capture_frame_bench.gd -- <out.png> [frame_id] [axis] [motor_id] [prop_id]
+##   godot --script res://tests/capture_frame_bench.gd -- <out.png> [frame_id] [axis] [motor_id] [prop_id] [pack_offset_mm]
 ##
 ## `axis` is "roll", "pitch" or "yaw", defaulting to roll — the axis the arm-length result lives on.
+##
+## `pack_offset_mm` slides the pack fore (positive) or aft on its mount, clamped to whatever travel
+## the frame and pack leave. It exists so THE PAIR that proves the mass model can be shot: the same
+## build with the pack centred and with it slid to its stop, where the only thing that differs is
+## the centre-of-mass row and the inertia under it. Before the mount offsets reached the mass model
+## that pair would have been two identical panels.
+##
+##   ... -- /tmp/com_centred.png frame_5in_freestyle roll "" "" 0
+##   ... -- /tmp/com_slid.png    frame_5in_freestyle roll "" "" 999
 ##
 ## Note: no --headless. This captures Godot's own framebuffer, which the dummy driver does not have,
 ## so a headless run HANGS silently rather than failing.
@@ -54,6 +63,7 @@ func _init() -> void:
 	var axis_name: String = args[2] if args.size() > 2 else "roll"
 	var motor_id: String = args[3] if args.size() > 3 else ""
 	var prop_id: String = args[4] if args.size() > 4 else ""
+	var pack_offset_mm: float = float(args[5]) if args.size() > 5 else NAN
 
 	var shell: AppShell = load("res://src/scenes/root.tscn").instantiate()
 	root.add_child(shell)
@@ -66,6 +76,14 @@ func _init() -> void:
 			print("no such part in the visible list: %s" % part_id)
 			quit(1)
 			return
+
+	# Slid through Lab's OWN tweaks object, not a fresh one, because that is the object AppShell
+	# hands the bench — a second one here would move the picture and leave the bench measuring the
+	# aircraft nobody asked for, which is the exact divergence this slice closed.
+	if is_finite(pack_offset_mm):
+		var travel := AssemblyTweaks.battery_travel_mm(shell.lab.current_build())
+		shell.lab.tweaks.set_mm(AssemblyTweaks.BATTERY_OFFSET,
+			clampf(pack_offset_mm, -travel, travel))
 
 	shell.show_frame_bench()
 	var bench: FrameBenchScreen = shell.frame_bench
@@ -104,6 +122,7 @@ func _init() -> void:
 		reading["yardstick_inertia_kg_m2"] * 1.0e7])
 	print("  prop clearance %+.1f mm;  %d samples a series" % [
 		reading["prop_gap_mm"], bench.trace.sample_count()])
+	print("  centre of mass %.2f mm off centre" % reading["com_offset_mm"])
 
 	# Two frames, because the trace only queues a redraw — the first processes the layout and the
 	# second is the one that has the polylines in it.

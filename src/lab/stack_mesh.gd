@@ -60,11 +60,23 @@ func rebuild(pattern: String) -> void:
 	var size := size_m(pattern)
 	var spacing := Vector2(size.x, size.z) - Vector2(BOARD_EDGE_M, BOARD_EDGE_M) * 2.0
 
-	_build_board("Board_ESC", size, BOARD_THICKNESS_M * 0.5, _esc_material())
-	_build_board("Board_FC", size,
-		BOARD_THICKNESS_M * 1.5 + BOARD_GAP_M, _fc_material())
+	_build_board("Board_ESC", size, esc_centre_height_m(), _esc_material())
+	_build_board("Board_FC", size, fc_centre_height_m(), _fc_material())
 	_build_standoffs(spacing, size.y)
 	_build_connector(size)
+
+
+## How high each board's CENTRE sits above the mount's seat. Static and named, because the mass
+## model puts the ESC's and the FC's mass at these same two heights (Build.mass_parts) — the seat
+## is MountLayout's and these are the boards' own offsets from it, so the stack that is drawn and
+## the stack that is weighed cannot end up at different heights. The ESC is the lower board, which
+## is how a 4-in-1 is actually stacked: it carries the pack leads in from below.
+static func esc_centre_height_m() -> float:
+	return BOARD_THICKNESS_M * 0.5
+
+
+static func fc_centre_height_m() -> float:
+	return BOARD_THICKNESS_M * 1.5 + BOARD_GAP_M
 
 
 ## One board, centred on the bolt pattern at the given height above the seat.

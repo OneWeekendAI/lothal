@@ -96,6 +96,16 @@ var bench: FrameBench
 ## only if the reference build itself failed to assemble.
 var yardstick: FrameBench
 var pack_charge: PackCharge = null
+## The builder's own assembly configuration, or null for whatever the parts imply. Handed over by
+## AppShell rather than re-read from disk, the same way the catalog and the pack charge are: Lab is
+## the only writer of it, and a second copy read here could disagree with the one Lab is editing.
+##
+## The bench NEEDS it, which it did not before this slice. Where the pack is strapped now decides
+## where the aircraft's mass is, so a bench that built its aircraft without the assembly would
+## report the inertia and the centre of mass of a differently-assembled quad from the one in the
+## garage — and the centre-of-mass row is the one row on this panel where that would be the whole
+## content of the reading.
+var tweaks: AssemblyTweaks = null
 
 var airframe: AirframeModel
 var trace: BandTrace
@@ -126,9 +136,10 @@ var _drawn := 0
 
 func _init(p_catalog: PartsCatalog, p_frame_id: String = "", p_motor_id: String = "",
 		p_propeller_id: String = "", p_battery_id: String = "", p_esc_id: String = "",
-		p_pack_charge: PackCharge = null) -> void:
+		p_pack_charge: PackCharge = null, p_tweaks: AssemblyTweaks = null) -> void:
 	catalog = p_catalog
 	pack_charge = p_pack_charge
+	tweaks = p_tweaks
 	frame_id = p_frame_id if p_frame_id != "" else ReferenceBuild.FRAME_ID
 	motor_id = p_motor_id if p_motor_id != "" else ReferenceBuild.MOTOR_ID
 	propeller_id = p_propeller_id if p_propeller_id != "" else ReferenceBuild.PROPELLER_ID
@@ -311,7 +322,11 @@ func _build_controls(stage: VBoxContainer) -> void:
 ## are one illegible chart — and the second line on this chart already means something else.
 func _rebuild() -> void:
 	_build = Build.from_ids(catalog, frame_id, motor_id, propeller_id, battery_id, esc_id)
-	airframe.rebuild(_build)
+	# The assembly reaches the build before the drawing, exactly as it does in Lab: the mass model
+	# reads it, and everything this screen reports is read off the resulting mass properties.
+	if tweaks != null:
+		_build.set_assembly(tweaks.resolved_m(_build))
+	airframe.rebuild(_build, tweaks)
 	airframe.transform = Transform3D.IDENTITY
 
 	# The bench is handed the DRAWN airframe, so the clearance on the panel is the clearance of the

@@ -172,12 +172,15 @@ func inertia_kg_m2() -> Vector3:
 
 ## Where the mass actually sits, as an offset from the frame's geometric centre.
 ##
-## For every build in the catalog this is exactly zero, and that is a REPORT rather than a bug: the
-## mass model lumps the pack, the stack, the ESC and the loose electronics at the origin, and no
-## mount position reaches it (build.gd's own comment on mass_parts() says so). Sliding the pack
-## forward moves the picture and the fit warnings and not this. The bench states it rather than
-## omitting it, because a builder who can see the pack hanging off the nose is entitled to know
-## whether the physics has heard about it.
+## This row used to be able to say only one thing. Every part except the four motors was pinned to
+## the origin, so it read 0.0 mm for every build Lothal could describe, and the panel beside it
+## carried a sentence explaining why. It is now a real measurement: the pack sits where it is
+## strapped, the boards sit on their standoffs, and a pack slid to the end of its travel shows up
+## here — which is what a builder looking at a pack hanging off the nose is entitled to see.
+##
+## Still zero for a centred build, and that is the aircraft being balanced rather than the model
+## being silent. The one mass still lumped at the origin is the 43 g of camera, VTX, receiver and
+## wiring, which is said out loud at Build.mass_parts() and unbundled by LTHL-11.
 func com_offset_m() -> Vector3:
 	return build.mass_properties.com_m
 

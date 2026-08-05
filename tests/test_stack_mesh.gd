@@ -28,7 +28,7 @@ static func run() -> Array:
 	results.append(_test_the_stack_sits_in_the_standoff_stack(catalog))
 	results.append(_test_the_electronics_budget_still_totals_the_lump(catalog))
 	results.append(_test_the_reference_oracles_did_not_move())
-	results.append(_test_no_mount_position_reaches_the_mass_model(catalog))
+	results.append(_test_the_mount_position_reaches_the_mass_model(catalog))
 
 	return results
 
@@ -174,34 +174,45 @@ static func _test_the_reference_oracles_did_not_move() -> TestResult:
 			weight_g, twr, hover * 100.0])
 
 
-## Geometry-bearing, not physics-bearing (labs-and-sim.md §2.5). The stack is drawn well below the
-## origin, between the plates — and the mass model must not have heard about it. Every mass in the
-## model still sits either at the centre or at a motor position, and there is no third place.
-static func _test_no_mount_position_reaches_the_mass_model(_catalog: PartsCatalog) -> TestResult:
+## THE INVERSE OF WHAT THIS TEST USED TO ASSERT, and deliberately so.
+##
+## It read "the stack's mount position stays out of the mass model": the stack was drawn between
+## the plates and the mass model had not heard about it, because assembly was geometry-bearing and
+## not physics-bearing (labs-and-sim.md §2.5). That was the right decision while the mass model had
+## no centre-of-gravity term to put it in, and assembly_tweaks.gd named the day it would change.
+##
+## That day is this slice. So the assertion is now that the two agree: the boards weigh in at the
+## height they are drawn at, from the same seat and the same two board offsets. Inverting it rather
+## than deleting it keeps the check that matters — that the picture and the physics cannot drift —
+## pointing the other way.
+static func _test_the_mount_position_reaches_the_mass_model(_catalog: PartsCatalog) -> TestResult:
 	var build := ReferenceBuild.build()
-	var allowed: Array[Vector3] = [Vector3.ZERO]
-	for motor_name in MotorLayout.MOTOR_NAMES:
-		allowed.append(MotorLayout.motor_position(motor_name, build.arm_m))
 
-	var stray: Array = []
-	for part in build.mass_parts():
-		var position: Vector3 = (part as PartMass).position_m
-		var known := false
-		for candidate in allowed:
-			if (position - candidate).length() < 1e-9:
-				known = true
-		if not known:
-			stray.append(position)
-
-	# And the thing that would make the check vacuous: the stack really is drawn off the origin.
+	# Where the boards are DRAWN: the stack node's own position, plus each board's height within it.
 	var airframe := AirframeModel.new()
 	airframe.rebuild(build)
-	var drawn_off_origin: bool = airframe.stack_mesh != null \
-		and absf(airframe.stack_mesh.position.y) > EPS
+	var drawn := airframe.stack_mesh.position if airframe.stack_mesh != null else Vector3.ZERO
+	var drawn_off_origin: bool = airframe.stack_mesh != null and absf(drawn.y) > EPS
 	airframe.free()
 
+	var drawn_fc := drawn + Vector3(0.0, StackMesh.fc_centre_height_m(), 0.0)
+	var drawn_esc := drawn + Vector3(0.0, StackMesh.esc_centre_height_m(), 0.0)
+
+	# Where they are WEIGHED.
+	var weighed_fc := Vector3.ZERO
+	var weighed_esc := Vector3.ZERO
+	for part in build.mass_parts():
+		if (part as PartMass).label == "Flight controller":
+			weighed_fc = (part as PartMass).position_m
+		elif (part as PartMass).label == "ESC":
+			weighed_esc = (part as PartMass).position_m
+
+	var agrees: bool = (weighed_fc - drawn_fc).length() < 1e-9 \
+		and (weighed_esc - drawn_esc).length() < 1e-9
+	# And the thing that would make the check vacuous: the stack really is drawn off the origin, so
+	# "they agree" is not two zeroes agreeing.
 	return TestResult.new(
-		"the stack's mount position stays out of the mass model",
-		stray.is_empty() and drawn_off_origin,
-		"%d masses off the centre or an arm tip %s; stack drawn off the origin: %s" % [
-			stray.size(), stray, drawn_off_origin])
+		"the stack is weighed at the height it is drawn",
+		agrees and drawn_off_origin and weighed_fc != weighed_esc,
+		"FC drawn %s weighed %s; ESC drawn %s weighed %s; stack drawn off the origin: %s" % [
+			drawn_fc, weighed_fc, drawn_esc, weighed_esc, drawn_off_origin])

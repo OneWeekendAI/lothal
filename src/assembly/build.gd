@@ -139,6 +139,32 @@ var k_q: float
 var effective_max_amps: float
 var drag_coefficient: float
 
+## How this builder assembled the aircraft, in the same resolved form AssemblyTweaks hands the
+## geometry (AssemblyTweaks.resolved_m) and AirframeModel draws from. Empty means "whatever the
+## parts imply", which is what DEFAULT_ASSEMBLY below spells out.
+##
+## THIS IS THE LINE THAT MADE ASSEMBLY PHYSICS-BEARING, and it is a reversal of a decision this
+## project made deliberately and wrote down at length (assembly_tweaks.gd). That decision was
+## right for what it covered — a 2 mm prop shim genuinely changes clearance and nothing else — and
+## it named this exact door: "when the mass model grows a real centre-of-gravity term, these values
+## are already the single source for it; nothing has to be re-decided, a consumer is added." This
+## is that consumer. What did NOT happen is the thing it forbade: there is no second copy of a
+## mount position inside the physics. Build reads the same MountLayout table Lab draws from.
+##
+## A resolved DICTIONARY rather than an AssemblyTweaks object, deliberately: AssemblyTweaks reads
+## a user file and clamps against limits that are themselves derived from a Build, so a Build
+## holding one would be a cycle. Build takes the answer, not the thing that computes it.
+var assembly: Dictionary = {}
+
+## What the parts imply when nobody has tweaked anything: pack centred on the top plate, standoffs
+## at whatever the frame implies. Here rather than in AirframeModel because BOTH the drawing and
+## the mass model need the same fallbacks, and two lists of defaults is two things to get out of
+## step.
+const DEFAULT_ASSEMBLY := {
+	"prop_spacer_m": 0.0, "soft_mount_m": 0.0, "plate_gap_m": -1.0,
+	"battery_mount": "strap_top", "battery_offset_m": 0.0,
+}
+
 static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String,
 		battery_id: String, esc_id: String = DEFAULT_ESC_ID,
 		fc_id: String = DEFAULT_FC_ID) -> Build:
@@ -152,6 +178,29 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 	b.fc = p_catalog.get_part(fc_id)
 	b._recompute()
 	return b
+
+## Adopts an assembly configuration and recomputes. The mass properties are the only thing that
+## changes: nothing here touches thrust, current or any collective figure, which is why the
+## project's three fixed points survive a pack slid to the end of its travel.
+##
+## Partial dictionaries are fine — anything absent falls back to DEFAULT_ASSEMBLY, which is the
+## same "an absent key means whatever the parts imply" rule the tweak FILE already follows.
+func set_assembly(resolved: Dictionary) -> void:
+	assembly = resolved
+	_recompute()
+
+
+## One assembly value, with the parts-implied fallback applied. The single reader, so a caller
+## cannot accidentally invent a different default for a key it happens to know about.
+func assembly_value(key: String) -> Variant:
+	return assembly.get(key, DEFAULT_ASSEMBLY[key])
+
+
+## The frame's mount table at the standoff height currently fitted. Both the mass model below and
+## Lab's drawing resolve mounts through MountLayout; this is Build's way in.
+func mount_points() -> Array[MountPoint]:
+	return MountLayout.for_frame(frame, float(assembly_value("plate_gap_m")))
+
 
 func _recompute() -> void:
 	arm_m = float(frame["specs"]["arm_mm"]) / 1000.0
@@ -211,40 +260,97 @@ func mass_parts() -> Array:
 		parts.append(PartMass.new(motor_prop_mass_kg, MotorLayout.motor_position(name, arm_m),
 			motor_inertia, "Motor + prop %s" % name))
 
+	# THE FRAME STAYS ONE LUMPED BOX AT THE ORIGIN, and that is a decision rather than the
+	# leftover it looks like next to the four entries below that just gained positions.
+	#
+	# A frame's mass is genuinely distributed — arms, plates and standoffs are in different places —
+	# and modelling that is more honest than this. But this box was AUTHORED as a stand-in for the
+	# distribution of the whole airframe, arms included: FRAME_PLATE_TO_ARM_RATIO makes it 150 mm
+	# across on a 110 mm arm, wider than the arms reach, precisely so its m*r^2 stands for carbon
+	# that is out at the tips (frame_model.gd says the same thing from the other side, explaining
+	# why the DRAWN centre plate must not reuse this ratio). Splitting it into plates plus four arms
+	# therefore means shrinking this box to the real 60 mm plate at the same time — a second and
+	# larger inertia re-baseline, landing in the same commit as the one this slice is actually
+	# about, with no way to attribute the two apart afterwards.
+	#
+	# It also costs nothing HERE: the frame is symmetric about the origin either way, so it
+	# contributes exactly zero to the centre of mass, which is what this slice moves. What it would
+	# sharpen is the arm-length exponent in the roll-inertia comparison — which is a question about
+	# arms, and belongs in the slice whose subject is arms.
 	var frame_mass_kg := float(frame["mass_g"]) / 1000.0
 	var plate := arm_m * FRAME_PLATE_TO_ARM_RATIO
 	var frame_size := Vector3(plate, FRAME_PLATE_THICKNESS_M, plate)
 	parts.append(PartMass.new(frame_mass_kg, Vector3.ZERO,
 		InertiaPrimitives.box(frame_mass_kg, frame_size), "Frame"))
 
+	# The pack, where the builder actually strapped it. This is the entry the whole slice is for:
+	# it is the one mass the user can move, so it is the one that proves the offset reached the
+	# physics rather than only the picture.
+	#
+	# Nothing here decides where that is. MountLayout resolves the seat from the frame's own specs
+	# and the standoffs currently fitted, and seats the pack on it — the SAME call AirframeModel
+	# makes to draw it, which is what makes labs-and-sim.md §2.2's "the fit check and the picture
+	# are the same geometry" true of mass and not just of clearance.
 	var battery_mass_kg := float(battery["mass_g"]) / 1000.0
-	parts.append(PartMass.new(battery_mass_kg, Vector3.ZERO,
-		InertiaPrimitives.box(battery_mass_kg, battery_size_m()), "Pack"))
+	var battery_size := battery_size_m()
+	var battery_mount := MountLayout.by_id(mount_points(), String(assembly_value("battery_mount")))
+	if battery_mount == null:
+		# A frame that does not offer the saved mount — a whoop whose bottom plate has no room for
+		# strap slots — falls back to the top plate rather than dropping the pack at the origin.
+		# Same rule as AirframeModel's drawing: the pack is somewhere on every real aircraft.
+		battery_mount = MountLayout.by_id(mount_points(), "strap_top")
+	parts.append(PartMass.new(battery_mass_kg,
+		MountLayout.seated_centre_m(battery_mount, battery_size,
+			float(assembly_value("battery_offset_m"))),
+		InertiaPrimitives.box(battery_mass_kg, battery_size), "Pack"))
 
 	# The electronics, in two entries that sum to ELECTRONICS_MASS_G exactly. The stack is separate
-	# because it is now a real object with a real footprint, and its 36.5 mm board has a different
+	# because it is a real object with a real footprint, and its 36.5 mm board has a different
 	# tensor from the 30 mm cube the lump stands on; the two together weigh what the one did.
 	#
-	# BOTH ARE AT THE ORIGIN, and that is the point of labs-and-sim.md §2.5 rather than an
-	# oversight. The stack is DRAWN between the plates, below the centreline, and the mass model
-	# does not hear about that: it is a lumped centre box plus four point masses and has no term a
-	# mount offset could enter. When it grows a real centre-of-gravity term, the mount point is
-	# already the single source for where the stack is — a consumer gets added, nothing gets
-	# re-decided.
+	# BOTH BOARDS NOW SIT WHERE THEY ARE DRAWN: on the standoff stack's seat — the bottom plate's
+	# upper face — each raised by its own offset within the stack, ESC below and FC above it. Both
+	# terms come from the parts: the seat is MountLayout's, and the two heights are StackMesh's own,
+	# the same numbers it draws the boards at. So the standoff tweak now moves the stack's mass
+	# along with its picture (labs-and-sim.md §2.5), and neither height is written twice.
+	#
+	# This is the term assembly_tweaks.gd said the mass model would grow one day: "when the mass
+	# model grows a real centre-of-gravity term, these values are already the single source for it."
+	# A consumer was added; nothing was re-decided.
+	var stack_seat := MountLayout.by_id(mount_points(), "stack")
+	var stack_position := stack_seat.position if stack_seat != null else Vector3.ZERO
+
 	# The FC at its OWN catalog mass, on its own footprint — the line that makes fitting a
 	# bigger board cost something. The budget below gives up FC_BUDGET_MASS_G, and whatever
 	# this board actually weighs is what the aircraft carries.
 	var fc_mass_kg := fc_mass_g() / 1000.0
-	parts.append(PartMass.new(fc_mass_kg, Vector3.ZERO,
+	parts.append(PartMass.new(fc_mass_kg,
+		stack_position + Vector3(0.0, StackMesh.fc_centre_height_m(), 0.0),
 		InertiaPrimitives.box(fc_mass_kg, StackMesh.size_m(fc_mount_pattern())), "Flight controller"))
 
 	# The ESC at its OWN catalog mass, on its own footprint. This is the line that makes fitting a
 	# bigger board cost something: the budget below gave up ESC_BUDGET_MASS_G, and whatever this
 	# board actually weighs is what the aircraft carries.
 	var esc_mass_kg := esc_mass_g() / 1000.0
-	parts.append(PartMass.new(esc_mass_kg, Vector3.ZERO,
+	parts.append(PartMass.new(esc_mass_kg,
+		stack_position + Vector3(0.0, StackMesh.esc_centre_height_m(), 0.0),
 		InertiaPrimitives.box(esc_mass_kg, StackMesh.size_m(esc_mount_pattern())), "ESC"))
 
+	# THE LOOSE 43 g STAYS AT THE ORIGIN, and this is a decision rather than the one entry that got
+	# forgotten while the others were given positions.
+	#
+	# It is camera, VTX, antenna, receiver and wiring, and the honest thing to say about where they
+	# are is that this project does not know. The camera and VTX are forward and high on a real
+	# quad; the receiver is wherever it fits; the wiring is everywhere by definition. Splitting one
+	# lump into three or four invented positions would be exactly the precision-not-yet-earned that
+	# physics.md is written to prevent — worse here than elsewhere, because those positions would
+	# then be moving the centre of mass, and the number this slice exists to make trustworthy would
+	# be carrying a guess.
+	#
+	# The right fix is LTHL-11, which unbundles the lump into parts that declare their own mounting.
+	# When a camera is a catalog part with a mount, its position comes from the same MountLayout
+	# call the pack's does and nothing here has to be re-decided. Until then: at the origin, said
+	# out loud.
 	var loose_mass_kg := (ELECTRONICS_MASS_G - FC_BUDGET_MASS_G - ESC_BUDGET_MASS_G) / 1000.0
 	parts.append(PartMass.new(loose_mass_kg, Vector3.ZERO,
 		InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M), "Wiring and electronics"))

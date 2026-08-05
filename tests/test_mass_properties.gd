@@ -16,10 +16,27 @@ static func run() -> Array:
 		"got %.4f kg" % mp.total_mass_kg
 	))
 
+	# LATERALLY at the origin, and 11.6 mm above it.
+	#
+	# This assertion used to read "the COM sits at the geometric origin", which held only because
+	# every part except the four motors was pinned there. Now that the pack sits where it is
+	# strapped, the vertical half of it is simply false — and finding out WHY was worth more than
+	# the line: a 185 g pack on the TOP PLATE is 37% of a 496 g aircraft sitting 31 mm up, so a real
+	# 5" quad's centre of mass is about a centimetre above its plates. "Centred on its mount"
+	# constrains fore/aft and lateral only; the mount's own 12.5 mm height is real, and the frame's
+	# origin is the plate midplane rather than a balance point.
+	#
+	# The two halves are asserted separately because they mean different things. X and Z at exactly
+	# zero is the symmetry check this line was always worth. Y is a measurement.
 	results.append(TestResult.new(
-		"COM of symmetric build sits at the geometric origin",
-		mp.com_m.length() < EPSILON,
+		"COM of a symmetric build is laterally exact: no X, no Z",
+		absf(mp.com_m.x) < EPSILON and absf(mp.com_m.z) < EPSILON,
 		"got %s" % mp.com_m
+	))
+	results.append(TestResult.new(
+		"COM sits above the plates, because the pack is strapped on top of them",
+		absf(mp.com_m.y - 0.011633) < 1e-5,
+		"got %.5f m up" % mp.com_m.y
 	))
 
 	var i := mp.inertia
@@ -116,11 +133,20 @@ static func _pack_inertia_comes_from_the_catalog(build: Build) -> Array:
 	return results
 
 
-## The battery's local tensor, found by its mass among the assembled parts rather than by an index
-## into mass_parts() — an index would keep passing while pointing at the electronics.
+## The battery's local tensor, found by its mass AND the position the mount resolution puts it at,
+## rather than by an index into mass_parts() — an index would keep passing while pointing at the
+## electronics.
+##
+## The position half of that test used to read `position_m == Vector3.ZERO`, which stopped being a
+## way of recognising the pack the moment the pack acquired a position. It is asked of MountLayout
+## now, which keeps the check doing what it was for: this is the entry the mount system placed, at
+## the seat it placed it on, and not some other 185 g object.
 static func _battery_inertia(build: Build) -> Vector3:
 	var mass_kg: float = float(build.battery["mass_g"]) / 1000.0
+	var mount := MountLayout.by_id(build.mount_points(), String(build.assembly_value("battery_mount")))
+	var seated := MountLayout.seated_centre_m(mount, build.battery_size_m(),
+		float(build.assembly_value("battery_offset_m")))
 	for part in build.mass_parts():
-		if absf(part.mass_kg - mass_kg) < 1e-9 and part.position_m == Vector3.ZERO:
+		if absf(part.mass_kg - mass_kg) < 1e-9 and (part.position_m - seated).length() < 1e-9:
 			return part.local_inertia_diag
 	return Vector3.ZERO

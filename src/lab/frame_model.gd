@@ -24,35 +24,16 @@ const INCH_M := 0.0254
 const ARM_WIDTH_TO_LENGTH_RATIO := 1.0 / 8.0
 const ARM_THICKNESS_TO_WIDTH_RATIO := 0.5
 
-## Vertical gap between the top and bottom centre plates (standoff height), also not a
-## parts.md spec field. Expressed relative to the plate thickness Build already derives,
-## rather than as a fresh authored number.
-const PLATE_STACK_GAP_TO_THICKNESS_RATIO := 1.5
-
-## The tallest standoffs this frame can sensibly take, as a fraction of the centre plate's own
-## side length. Past this the stack is taller than the plate is wide and the thing has stopped
-## being a quadcopter — the same class of documented rule of thumb as the arm cross-section
-## above, and the DERIVED limit behind the standoff tweak (see AssemblyTweaks.limits).
-const MAX_PLATE_GAP_TO_PLATE_SIDE_RATIO := 0.5
-
-## Centre-plate side length as a fraction of arm length. This deliberately does NOT reuse
-## Build.FRAME_PLATE_TO_ARM_RATIO, and the distinction matters: Build's box (150 mm for a
-## 110 mm arm) is a lumped stand-in for the mass distribution of the WHOLE airframe, arms
-## included — which is why it is wider than the arms reach. Using it as the literal centre
-## plate drew a slab that swallowed the arms entirely, so the one thing this screen exists to
-## show was invisible. A real 5" frame carries roughly a 60 mm centre plate on a 110 mm arm.
-const CENTRE_PLATE_TO_ARM_RATIO := 0.55
+## How a frame is LAID OUT — plate size, standoff height, strap-slot minimum — now lives in
+## MountLayout, next to the mount table it decides. These aliases keep the names readable at the
+## drawing call sites below; they are the same constants, not copies of them.
+const CENTRE_PLATE_TO_ARM_RATIO := MountLayout.CENTRE_PLATE_TO_ARM_RATIO
 
 ## Fallback bolt spacing (metres) when a frame's motor_mount string cannot be parsed, e.g.
 ## "16x16" -> 0.016. Falls back to a fraction of arm_m so an odd/missing string still
 ## produces a sane pad instead of a magic constant with no relation to this frame at all.
 const PAD_SIZE_TO_ARM_RATIO := 0.12
 const PAD_THICKNESS_M := 0.003
-
-## The narrowest strip of plate a battery strap slot can be cut into, either side of the centre
-## bolt pattern. Below this there is no carbon left to cut, which is what decides whether a frame
-## offers a bottom-plate mount at all — see mount_points_for().
-const MIN_STRAP_SLOT_M := 0.010
 
 ## dict of MotorLayout motor name -> the Node3D sitting exactly at that motor's position
 ## (the mount pad). Tests assert against this rather than walking get_children().
@@ -91,17 +72,17 @@ func rebuild(frame: Dictionary, plate_gap_m: float = -1.0) -> void:
 	mount_points = mount_points_for(frame, plate_gap_m)
 
 
-## Standoff height when nobody has chosen one: the ratio above, applied to the plate thickness
-## Build already derives. Static so AssemblyTweaks can quote it as a default without building a
-## frame to ask.
+## Standoff height when nobody has chosen one. Forwards to MountLayout, which decides it — asking
+## a frame about its own standoffs is a reasonable thing to do, and these accessors stay so that
+## every existing caller keeps asking the question where it makes sense to ask it.
 static func default_plate_gap_m() -> float:
-	return Build.FRAME_PLATE_THICKNESS_M * PLATE_STACK_GAP_TO_THICKNESS_RATIO
+	return MountLayout.default_plate_gap_m()
 
 
 ## The shortest standoff that still leaves two plates: one plate thickness. Below that the gap is
 ## thinner than the parts either side of it and the stack reads as a single slab.
 static func min_plate_gap_m() -> float:
-	return Build.FRAME_PLATE_THICKNESS_M
+	return MountLayout.min_plate_gap_m()
 
 
 ## Height of the top plate's UPPER face above the airframe's origin — the surface anything strapped
@@ -114,83 +95,21 @@ func plate_top_face_m() -> float:
 	return plate_top.position.y + (plate_top.mesh as BoxMesh).size.y * 0.5
 
 
-## Every place on this frame where something attaches, derived from the frame's own specs and the
-## standoff height currently fitted. Static because the limits on the fit panel are needed before
-## anything is drawn (AssemblyTweaks.limits), and because a mount table that could only be obtained
-## by generating geometry would tempt somebody into writing a second one that could not.
-##
-## WHICH MOUNTS A FRAME HAS IS A PROPERTY OF THAT FRAME, not a constant this file knows. Every
-## frame has a centre-plate bolt pattern and a top-plate strap location — a pack goes on top of
-## even a 65 mm whoop. A BOTTOM-plate strap location has to be earned: the bottom plate is the one
-## the stack bolts down onto and the arms clamp against, so a pack underneath has to strap through
-## slots cut BESIDE the bolt pattern, and on a small frame the pattern has already eaten the plate.
-## A 3" toothpick carries a 25.5 pattern through a 41 mm plate and has 8 mm of carbon either side
-## of it; a 5" freestyle has 15 mm either side of a 30.5 pattern on a 60 mm plate. That is why the
-## toothpick offers two mounts and the freestyle three, and it is arithmetic rather than a policy.
+## Every place on this frame where something attaches. The table itself is MountLayout's, because
+## the MASS MODEL needs it too and Build must not instantiate a Node3D to find out where its own
+## pack is — see MountLayout for why the arithmetic moved down rather than being copied up.
 static func mount_points_for(frame: Dictionary, plate_gap_m: float) -> Array[MountPoint]:
-	var arm_m: float = float(frame.get("specs", {}).get("arm_mm", 0.0)) / 1000.0
-	var side: float = arm_m * CENTRE_PLATE_TO_ARM_RATIO
-	var thickness: float = Build.FRAME_PLATE_THICKNESS_M
-	var gap: float = plate_gap_m
-	if gap < 0.0:
-		gap = default_plate_gap_m()
-
-	var span := Vector2(side, side)
-	var reach := mount_reach_m(arm_m)
-	var pattern: String = String(frame.get("specs", {}).get("stack_mount", ""))
-	var pattern_m := MountPoint.parse_pattern_m(pattern)
-
-	var out: Array[MountPoint] = []
-
-	# The standoff stack. The seat is the bottom plate's UPPER face, which is where the standoffs
-	# start and where the lower board in a stack actually sits; the stack then grows upward into the
-	# gap between the plates — the gap the standoff tweak sets.
-	var stack := MountPoint.new()
-	stack.id = "stack"
-	stack.label = "the standoff stack"
-	stack.attachment = MountPoint.BOLT
-	stack.pattern = pattern
-	stack.pattern_m = pattern_m
-	stack.position = Vector3(0.0, -gap * 0.5 + thickness * 0.5, 0.0)
-	stack.normal = 1
-	stack.span_m = span
-	stack.reach_m = 0.0
-	out.append(stack)
-
-	var top := MountPoint.new()
-	top.id = "strap_top"
-	top.label = "the top plate"
-	top.attachment = MountPoint.STRAP
-	top.position = Vector3(0.0, gap * 0.5 + thickness * 0.5, 0.0)
-	top.normal = 1
-	top.span_m = span
-	top.reach_m = reach
-	out.append(top)
-
-	if side - pattern_m.x >= 2.0 * MIN_STRAP_SLOT_M:
-		var bottom := MountPoint.new()
-		bottom.id = "strap_bottom"
-		bottom.label = "the bottom plate"
-		bottom.attachment = MountPoint.STRAP
-		bottom.position = Vector3(0.0, -(gap * 0.5 + thickness * 0.5), 0.0)
-		bottom.normal = -1
-		bottom.span_m = span
-		bottom.reach_m = reach
-		out.append(bottom)
-
-	return out
+	return MountLayout.for_frame(frame, plate_gap_m)
 
 
 ## How far fore or aft anything mounted on this frame may be slid before it is inside a propeller
-## hub: the front motors' own forward extent, from the same MotorLayout table the physics reads.
-## Nothing may be positioned past it, and a component long enough to reach it at zero offset has no
-## travel at all — which is how a longer pack narrows its own range (AssemblyTweaks.limits).
+## hub. MountLayout's, for the same reason.
 static func mount_reach_m(arm_m: float) -> float:
-	return absf(MotorLayout.motor_position("M2", arm_m).z)
+	return MountLayout.reach_m(arm_m)
 
 
 static func max_plate_gap_m(arm_m: float) -> float:
-	return arm_m * CENTRE_PLATE_TO_ARM_RATIO * MAX_PLATE_GAP_TO_PLATE_SIDE_RATIO
+	return MountLayout.max_plate_gap_m(arm_m)
 
 
 ## One BoxMesh per motor, spanning from the centre to that motor's arm-tip position, plus

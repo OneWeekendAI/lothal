@@ -20,35 +20,45 @@ extends RefCounted
 ## of thing as a shim: it is what you did with the parts you have.
 ##
 ## ---------------------------------------------------------------------------
-## THE DECISION: THESE ARE GEOMETRY-BEARING, NOT PHYSICS-BEARING
+## THE DECISION: GEOMETRY ALWAYS, AND MASS WHERE THE TWEAK IS A POSITION
 ## ---------------------------------------------------------------------------
 ##
 ## Raising a prop 2 mm changes real-world clearance and changes nothing in this project's
-## dynamics. Both halves of that sentence needed a decision rather than a default, so:
+## dynamics. Where a 185 g pack is strapped changes where the aircraft's mass is. Those are not the
+## same kind of tweak, and this file used to treat them as one because when it was written there
+## was only the first kind.
 ##
-## **A tweak changes the assembled geometry, what clears what, and every measurement taken off
-## that geometry. It does not change mass, inertia, thrust, or any flight number.**
+## **A tweak that is a SHIM changes the assembled geometry, what clears what, and every measurement
+## taken off that geometry. It does not change mass, inertia, thrust, or any flight number.**
 ##
-## Three reasons, in the order they mattered.
+## **A tweak that is a POSITION — which mount the pack is on, how far along it is slid — does all of
+## that AND moves the mass. It reaches the centre of mass and the inertia tensor. It does not reach
+## the collective figures, because mass is mass wherever it sits.**
 ##
-## 1. *The physics has nowhere to put it.* physics.md's mass model is a lumped centre box plus
-##    four point masses; it has no term a 2 mm shim could enter. Feeding one in would mean
-##    inventing a moment arm the model does not claim to resolve — precision the numbers have not
-##    earned, which is the failure physics.md is written to prevent.
-## 2. *The oracles have to stay reproducible.* The reference build's 11.7:1 and 29% hover are the
-##    project's fixed points. If a slider on a panel could move them, then every figure Lothal
-##    reports would be a function of one user's saved file, and no two people could compare
-##    anything. tests/test_assembly_tweaks.gd asserts the numbers do not move with all three
-##    tweaks wound to their limits.
-## 3. *It is where the real consequence is anyway.* The thing a shim actually changes is fit —
-##    whether the blade roots clear the bell, whether the props clear the arms — and fit is what
-##    Lab measures off the generated geometry (labs-and-sim.md §2.2, "the render is the
-##    engineering check"). So the tweak lands exactly where its real effect is.
+## The original reasoning, and what happened to each part of it:
 ##
-## The door that leaves open: when the mass model grows a real centre-of-gravity term, or a
-## clearance warning starts reading the vertical gap, these values are already the single source
-## for it. Nothing has to be re-decided; a consumer is added. What must NOT happen is a second
-## copy of a shim height living in the physics.
+## 1. *The physics had nowhere to put it.* True when written: the mass model was a lumped centre
+##    box plus four point masses, with no term a 2 mm shim could enter. It now has one. Every
+##    mounted part sits where MountLayout seats it, so a mount offset has somewhere to go that is
+##    not invented — the pack's position is read from the same table that draws it.
+## 2. *The oracles have to stay reproducible.* Still true, and still asserted. All-up weight,
+##    thrust-to-weight and hover throttle do not move with any tweak wound to its limit; those are
+##    collective figures and none of them depends on where the mass sits. What DOES move is inertia
+##    and the centre of mass, which are properties of an aircraft's arrangement and are supposed to.
+##    tests/test_assembly_tweaks.gd asserts both halves — the collective figures pinned, the
+##    rotational ones moving — because an invariant with no counterpart would still pass if these
+##    tweaks were disconnected at the wall.
+## 3. *It is where the real consequence is anyway.* Half true, and the half that was wrong is why
+##    this changed. Fit IS the real consequence of a shim. But the real consequence of sliding a
+##    pack forward is a nose-heavy aircraft that needs differential thrust to hover level, and a
+##    workbench that showed the pack hanging over the nose while the physics flew a balanced quad
+##    was contradicting labs-and-sim.md §2.2 in the one place it is hardest to notice.
+##
+## The door this file left open is the one that got used: "when the mass model grows a real
+## centre-of-gravity term, these values are already the single source for it. Nothing has to be
+## re-decided; a consumer is added. What must NOT happen is a second copy of a shim height living
+## in the physics." That held exactly. Build.mass_parts() reads MountLayout — the same table
+## AirframeModel draws from — and there is no second copy of a mount position anywhere.
 ##
 ## ---------------------------------------------------------------------------
 ## THE FILE

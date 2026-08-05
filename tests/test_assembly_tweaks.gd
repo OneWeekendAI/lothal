@@ -12,11 +12,21 @@ extends RefCounted
 ##    of the same geometry that draws the hardware, and the checks below compare a big motor's
 ##    range against a small one's rather than against a number written down twice.
 ##
-## 2. THE TWEAKS ARE GEOMETRY-BEARING AND NOT PHYSICS-BEARING, and that is asserted rather than
-##    assumed. Winding all three to their limits must not move all-up weight, thrust-to-weight or
-##    hover throttle by so much as a milligram. If it ever does, the reference build's oracles
-##    have quietly become a function of a user setting, which would make every number this project
-##    reports unreproducible. See assembly_tweaks.gd's header for why that is the choice.
+## 2. THE TWEAKS DO NOT MOVE THE COLLECTIVE FIGURES, and that is asserted rather than assumed.
+##    Winding every tweak to its limit must not move all-up weight, thrust-to-weight or hover
+##    throttle by so much as a milligram. If it ever does, the reference build's oracles have
+##    quietly become a function of a user setting, which would make every number this project
+##    reports unreproducible.
+##
+##    THIS USED TO SAY "geometry-bearing and not physics-bearing", full stop, and that is no longer
+##    the whole truth. Where the pack is strapped and how far it is slid now reach the mass model,
+##    so they move the centre of mass and the inertia tensor — deliberately, since a mount system
+##    that moved the picture and not the physics was the gap that slice closed. What survives
+##    untouched is the COLLECTIVE half: mass is mass wherever it sits, and thrust-to-weight and
+##    hover throttle are figures about the whole aircraft against gravity. So the invariant is
+##    narrowed to what it is actually protecting, and the test below now asserts the other half
+##    too — that the inertia DOES move — because an invariant with no counterpart is an invariant
+##    that would still pass if the tweaks had been disconnected entirely.
 ##
 ## 3. THE FILE SURVIVES BEING WRONG. It is written by an earlier version of the app, hand-edited,
 ##    truncated by a full disk, or produced by a future version that knows fields this one does
@@ -372,11 +382,30 @@ static func _test_the_tweaks_do_not_move_the_physics(catalog: PartsCatalog) -> T
 		if before[i] != other_pack[i]:
 			comparison_works = true
 
+	# The other half, and the one that makes the invariant above mean something. Reading the five
+	# collective figures off a build that was never handed an assembly would pass this test with the
+	# tweaks disconnected at the wall. So the same wound-to-the-limit configuration is applied
+	# through the path Lab uses, and the ROTATIONAL properties are required to move: a pack slid to
+	# the end of its travel is mass at a distance, and pitch inertia has to hear about it.
+	var wound := _build(catalog)
+	var centred_pitch := wound.mass_properties.inertia.x.x
+	var centred_com := wound.mass_properties.com_m
+	var at_limits := AssemblyTweaks.new()
+	for key in AssemblyTweaks.KEYS:
+		at_limits.set_mm(key, limits[key]["max"])
+	wound.set_assembly(at_limits.resolved_m(wound))
+	var moved: bool = wound.mass_properties.inertia.x.x > centred_pitch * 1.001 \
+		and (wound.mass_properties.com_m - centred_com).length() > 1e-4
+
 	return TestResult.new(
-		"the tweaks are geometry, not physics: the build's numbers do not move",
-		unchanged and comparison_works,
-		"%.1f g / %.2f:1 / %.4f hover, unchanged by a saved file at every limit; a 6S pack does move it (%.4f hover)" % [
-			before[0], before[1], before[2], other_pack[2]]
+		"the tweaks move the rotational figures and not the collective ones",
+		unchanged and comparison_works and moved,
+		("%.1f g / %.2f:1 / %.4f hover, unchanged by a saved file at every limit; a 6S pack does "
+			+ "move it (%.4f hover); pitch inertia %.8f -> %.8f and the CoM %.1f mm with the pack "
+			+ "slid to its stop") % [
+			before[0], before[1], before[2], other_pack[2],
+			centred_pitch, wound.mass_properties.inertia.x.x,
+			(wound.mass_properties.com_m - centred_com).length() * 1000.0]
 	)
 
 

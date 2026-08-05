@@ -9,20 +9,25 @@ extends InstrumentPanel
 ## rate. So the two headline blocks are the felt quantities, and the three inertias are rows under
 ## them, present because they are the cause and readable because they are next to the effect.
 ##
-## Quoted in g*cm^2 rather than kg*m^2, which is the same decision. A catalog spanning a 65 mm
-## whoop and a 10" long-range covers roughly 0.00013 to 0.0053 kg*m^2, and a column of numbers that
-## all begin "0.00" cannot be compared at a glance. The same span in g*cm^2 is 1291 to 53265, which
-## can. The unit is stated in the caption so nobody has to guess.
+## Quoted in g*cm^2 rather than kg*m^2, which is the same decision. Carrying the reference pack and
+## powertrain, the catalog's frames span roughly 0.00023 to 0.0107 kg*m^2 from the 65 mm whoop to
+## the 10" long-range — a column of numbers that all begin "0.00" cannot be compared at a glance.
+## The same span in g*cm^2 is 2257 to 106714, which can. The unit is stated in the caption so
+## nobody has to guess.
+##
+## The span is illustrative of the UNIT choice and is not an oracle; it moved when the mounted parts
+## gained real positions and their m*d^2 terms entered the tensor, which is why it is quoted here on
+## a stated basis rather than as a bare pair of numbers.
 ##
 ## THE COMPARISON IS THE TEACHING, and it is in the top note rather than in a second column: the
 ## current build against the 5" reference, with the arm ratio, the leverage ratio and the
 ## acceleration ratio side by side. That is the arm/torque/inertia exponent argument written out for
 ## the exact aircraft on the bench, which no general statement about parallel axes achieves.
 ##
-## The bottom note carries the centre-of-mass caveat, which is the honest half. See
-## FrameBench.com_offset_m: the mass model lumps every centre-mounted part at the origin, so sliding
-## the pack moves the picture and the fit warnings and not the physics. A panel that showed a COM
-## row without saying so would be quoting a zero as though it were a measurement.
+## The bottom note reads the centre of mass off the build (com_note). It used to carry a hardcoded
+## caveat instead, because every centre-mounted part was pinned to the origin and the row could only
+## ever say zero — a panel row occupied by a limitation of the model. The pack now sits where it is
+## strapped, so the row is a measurement and the note explains what the measurement costs.
 
 const ROWS := [
 	{"key": "roll_inertia", "label": "Roll inertia"},
@@ -85,7 +90,7 @@ func render_build(bench: FrameBench, comparison: Dictionary) -> void:
 	set_value("com", "%.1f mm off centre" % reading["com_offset_mm"])
 	set_value_colour("com", MUTED_COLOUR)
 
-	set_notes(_comparison_text(reading, comparison), _com_caveat())
+	set_notes(_comparison_text(reading, comparison), com_note(bench.com_offset_m()))
 
 
 ## The arm/torque/inertia argument, for the aircraft actually on the bench.
@@ -122,10 +127,33 @@ func _comparison_text(reading: Dictionary, comparison: Dictionary) -> String:
 
 ## Said in words, because a "0.0 mm off centre" row is otherwise read as a measurement of a
 ## perfectly balanced aircraft rather than as a limit of the model.
-func _com_caveat() -> String:
-	return ("The centre of mass is the geometric centre for every build in the catalog: the mass "
-		+ "model lumps the pack, the stack and the electronics at the origin. Sliding the pack on "
-		+ "its mount moves the picture and the fit warnings and NOT this number.")
+## What the centre-of-mass row means, for THIS build.
+##
+## The sentence this replaces was hardcoded, and it was an apology: it told the reader that "the
+## centre of mass is the geometric centre for every build in the catalog", because the mass model
+## pinned the pack, the boards and the electronics at the origin and sliding the pack on its mount
+## moved the picture and not the physics. A panel row occupied by a limitation of the model.
+##
+## Now it is read off the build. A centred aircraft still says zero — but it says it as a
+## measurement, which is why the two branches have to say different things: "balanced" and "the
+## model cannot tell you" look identical in a number and must not look identical in words.
+##
+## Static because it is a pure function of the reading, which is what lets the tests hold it to
+## being one — a hardcoded sentence cannot fail a test that asks whether it varies.
+static func com_note(com_m: Vector3) -> String:
+	if com_m.length() < 1e-6:
+		return ("Balanced: the mass sits on the geometric centre. Slide the pack fore or aft, or "
+			+ "strap it underneath, and this row moves with it — and so does the inertia the "
+			+ "trace above is measuring.")
+
+	var fore_aft := "forward" if com_m.z < 0.0 else "aft"
+	return ("%.1f mm %s and %.1f mm %s of the geometric centre. The motors have to hold that "
+		+ "offset with differential thrust to hover level, which is thrust not being spent on "
+		+ "flying. The camera, VTX and receiver are still lumped at the centre, so the real "
+		+ "aircraft is a little further %s than this.") % [
+			absf(com_m.z) * 1000.0, fore_aft,
+			absf(com_m.y) * 1000.0, "up" if com_m.y > 0.0 else "down",
+			fore_aft]
 
 
 ## The live half, once per substep-batch during a run. Everything comes from the bench's own
