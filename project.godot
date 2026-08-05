@@ -14,8 +14,6 @@ config/name="Lothal"
 config/description="Build a drone from real parts. Fly it. Feel the difference."
 run/main_scene="res://src/scenes/root.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
-# Window/taskbar icon. The macOS bundle icon is icon.icns, set on the export preset;
-# both are generated from icon.svg by tools/render_icon.gd.
 config/icon="res://icon.svg"
 
 [debug]

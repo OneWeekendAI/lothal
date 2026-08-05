@@ -6,6 +6,15 @@ extends SceneTree
 ## Godot ships an SVG rasterizer (ThorVG), so this needs no rsvg/inkscape/imagemagick.
 ## Rendering each size from the vector — rather than downscaling one big PNG — is what
 ## keeps the 16px and 32px entries crisp; a resampled 1024 turns the arms to mush.
+##
+## WHERE THE OUTPUTS ARE WIRED UP, and why that is documented here rather than next to them:
+## icon.svg is the window/taskbar icon, set as `config/icon` in project.godot; icon.icns is the
+## macOS bundle icon, set on the export preset. Both used to be explained by a comment sitting
+## directly above `config/icon` — until an editor pass rewrote project.godot, stripped the spaces
+## out of that comment and joined it to the line below, leaving `config/icon` behind a `#` with the
+## window icon silently disabled. It did it twice. A comment in project.godot is not a safe place
+## to keep anything, and it is actively dangerous immediately above a setting that matters, so the
+## explanation lives here in a file the editor does not rewrite.
 
 const SRC := "res://icon.svg"
 const OUT_DIR := "res://build/icon.iconset"
