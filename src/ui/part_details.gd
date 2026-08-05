@@ -128,10 +128,10 @@ func render(part: Dictionary, build: Build) -> void:
 	# the consequence is the lesson, and the choice stays selectable.
 	_warnings.show_warnings(build.warnings())
 
-	_build_note.text = "Stats for %s / %s / %s / %s / %s." % [
+	_build_note.text = "Stats for %s / %s / %s / %s / %s / %s." % [
 		build.frame.get("name", "?"), build.motor.get("name", "?"),
 		build.propeller.get("name", "?"), build.battery.get("name", "?"),
-		build.esc.get("name", "?")]
+		build.esc.get("name", "?"), build.fc.get("name", "?")]
 
 
 ## Resolves a row key against the part dictionary and formats it for display. The default

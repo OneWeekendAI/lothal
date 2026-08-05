@@ -296,13 +296,21 @@ static func run() -> Array:
 		"panel text: %s" % text.replace("\n", " | ")
 	))
 
-	# The D-term row is the one that turns a spec sheet into a decision. PIDController has no
-	# D-term lowpass — the derivative acts on the raw measurement — so this is exactly
-	# derivable rather than estimated:
-	#   kd * (sigma / MAX_RATE_RAD_S) * sqrt(2) / T
+	# The D-term row is the one that turns a spec sheet into a decision, and it must be derived
+	# from the filter the model ACTUALLY HAS. PIDController has no D-term lowpass, so the
+	# derivative acts on whatever the gyro hands it — but what the gyro hands it has been through
+	# the PT1, so successive readings are correlated and the step between them is much smaller
+	# than two independent samples would give.
+	#
+	# This expectation is written out longhand rather than calling the panel's own helper,
+	# because a test that asked the code for the answer it is checking would pass on any
+	# formula at all. Treating the samples as independent reports six times this figure.
+	var t := 1.0 / Gyro.DEFAULT_SAMPLE_RATE_HZ
+	var rc := 1.0 / (TAU * Gyro.DEFAULT_CUTOFF_HZ)
+	var a := t / (rc + t)
 	var expected_d := RateModeController.ROLL_PITCH_KD \
-		* (Gyro.DEFAULT_NOISE_RAD_S / RateModeController.MAX_RATE_RAD_S) \
-		* sqrt(2.0) / (1.0 / Gyro.DEFAULT_SAMPLE_RATE_HZ)
+		* Gyro.DEFAULT_NOISE_RAD_S * sqrt(2.0 * a * a / (2.0 - a)) \
+		/ (t * RateModeController.MAX_RATE_RAD_S)
 	results.append(TestResult.new(
 		"the panel quotes what the noise floor costs at the installed D gain",
 		text.contains("%.1f%%" % (expected_d * 100.0)),

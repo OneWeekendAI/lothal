@@ -69,32 +69,49 @@ func _read(fc: Dictionary, key: String) -> String:
 ## What the noise floor becomes at the motors, as a fraction of full command, with the aircraft
 ## perfectly still.
 ##
-## THE ROW THAT TURNS A SPEC SHEET INTO A DECISION, and it is exactly derivable rather than
-## estimated: PIDController has no D-term lowpass — `derivative = -(measured - last)/dt` acts on
-## the raw measurement — so successive samples are independent, their difference carries sqrt(2)
-## times the per-sample sigma, and the derivative divides by the sample period.
+## THE ROW THAT TURNS A SPEC SHEET INTO A DECISION, and it is derived from the model that is
+## actually installed rather than from a convenient approximation of it.
 ##
-##   sigma_norm = noise / MAX_RATE_RAD_S        the loop's own normalised units
-##   d_rms      = kd * sigma_norm * sqrt(2) / T
+## PIDController has no D-term lowpass: `derivative = -(measured - last)/dt` acts directly on
+## whatever the gyro handed it. But what the gyro hands it is not the raw noise — it is the raw
+## noise THROUGH THE PT1, and that filter is right there in Gyro. Successive readings are
+## therefore CORRELATED, and the step between them is far smaller than two independent samples
+## would give.
 ##
-## Two honesty notes, the second of which is on screen rather than only here:
+## Getting this wrong is not academic. Treating the samples as independent (sqrt(2) * sigma over
+## the period) reports 9.4% of full command for the BMI270 board where the filtered model gives
+## 1.6% — an overstatement of six times, and it grows with sample rate, so it would have been
+## worst exactly on the boards a builder is most likely to be considering. It would also have
+## been a number derived from a filter the code does not have while a filter the code DOES have
+## sat one call away.
 ##
-##   IT SCALES AS 1/T. A FASTER loop amplifies gyro noise MORE, which is the real reason fast
-##   boards need better sensors — and it falls out of the arithmetic here rather than being
-##   asserted somewhere else. That is this slice's contribution to labs-and-sim.md §7, whose
-##   open question is what one fixed gain set can mean across the catalog.
+## For a PT1 with coefficient a = T/(RC+T), driven by white noise of standard deviation sigma:
 ##
-##   IT IS AN UPPER BOUND. Real Betaflight applies a D-term lowpass that Lothal does not model,
-##   so this is what the noise would cost with nothing filtering the D term at all — not a
-##   prediction of a real board's motor heat.
+##   var_out  = sigma^2 * a / (2 - a)        the filter's own noise reduction
+##   rho      = 1 - a                        correlation between successive outputs
+##   sd(step) = sigma * sqrt(2 * a^2 / (2 - a))
+##   d_rms    = kd * sd(step) / (T * MAX_RATE_RAD_S)
 ##
-## kd and MAX_RATE_RAD_S are read from the installed controller rather than restated here, so
-## this panel and the loop that is actually flying cannot come to different conclusions.
+## IT STILL SCALES ROUGHLY AS 1/T, which is the real reason fast boards need better sensors, and
+## it falls out of the arithmetic here rather than being asserted somewhere else. That is this
+## slice's contribution to labs-and-sim.md §7, whose open question is what one fixed gain set can
+## mean across the catalog: the achievable D is bounded by the BOARD as well as by the frame.
+##
+## Still quoted as an upper bound, for one remaining and honest reason: real Betaflight applies a
+## D-term lowpass on top of the gyro filter, and Lothal models no such stage. So this is what the
+## noise costs with the gyro's own filter and nothing further — not a prediction of a real board's
+## motor heat.
+##
+## kd and MAX_RATE_RAD_S are read from the installed controller rather than restated here, so this
+## panel and the loop that is actually flying cannot come to different conclusions.
 func _d_term_noise() -> String:
 	if _build == null:
 		return "—"
 	var gyro := _build.gyro()
-	var sigma_norm := gyro.noise_rad_s / RateModeController.MAX_RATE_RAD_S
 	var period := 1.0 / gyro.sample_rate_hz
-	var d_rms := RateModeController.ROLL_PITCH_KD * sigma_norm * sqrt(2.0) / period
+	var rc := 1.0 / (TAU * gyro.cutoff_hz)
+	var a := period / (rc + period)
+	var step_sd := gyro.noise_rad_s * sqrt(2.0 * a * a / (2.0 - a))
+	var d_rms := RateModeController.ROLL_PITCH_KD * step_sd \
+		/ (period * RateModeController.MAX_RATE_RAD_S)
 	return "%.1f%% of full command  (upper bound)" % (d_rms * 100.0)

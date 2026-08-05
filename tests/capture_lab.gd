@@ -12,6 +12,7 @@ extends SceneTree
 ##                                                 [motor_part_id] [prop_part_id]
 ##                                                 ["sim" | <panel name>] [battery_part_id]
 ##                                                 [resolution_WxH] [esc_part_id]
+##                                                 [fc_part_id]
 ##
 ## The pack argument comes last rather than next to the motor and prop, so that every invocation
 ## written before it existed still means what it meant. Pass "" for the sim/panel slot to reach it
@@ -89,6 +90,16 @@ func _init() -> void:
 	if args.size() > 10 and args[10] != "":
 		if not shell.lab.esc_picker.select_id(args[10]):
 			print("no such ESC in the visible list: %s" % args[10])
+			quit(1)
+			return
+
+	# The flight controller, last again and for the same reason. It matters to a photograph
+	# because the FC details panel is where a board's sensor stops being four numbers in a JSON
+	# file and becomes what it costs you in usable D — and a quiet board and a noisy one look
+	# identical from anywhere else on the screen.
+	if args.size() > 11 and args[11] != "":
+		if not shell.lab.fc_picker.select_id(args[11]):
+			print("no such flight controller in the visible list: %s" % args[11])
 			quit(1)
 			return
 
