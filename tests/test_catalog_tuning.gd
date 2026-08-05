@@ -54,6 +54,8 @@ const SETTLE_BAND_FRACTION := 0.05
 
 const OVERSHOOT_TOLERANCE := 0.20
 const SETTLE_TOLERANCE := 0.10
+## The outer loop is not scaled at all — see angle_mode_controller.gd. This is that claim's band.
+const OUTER_LOOP_TOLERANCE := 0.08
 
 const WHOOP := "frame_65mm_whoop"
 const LONG_RANGE := "frame_10in_long_range"
@@ -160,14 +162,22 @@ static func _recovers_to_level(build: Build, tune: RateTune) -> Dictionary:
 
 	rc.roll = 0.0
 	var worst_after_release := 0.0
+	# How long the OUTER loop takes to bring the aircraft back inside a degree of level. This is
+	# the figure that says whether AngleModeController's fixed LEVEL_P is safe: the outer loop
+	# closes on the inner one rather than on the airframe, and the inner one's time constant is
+	# what RateTune holds invariant, so this number should not depend on which frame is fitted.
+	var level_ms := -1.0
 	for i in 1200:
 		core.step(fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT), DT)
+		var bank := absf(core.rigid_body.orientation.get_euler(EULER_ORDER_YXZ).z)
+		if level_ms < 0.0 and bank < deg_to_rad(1.0):
+			level_ms = (i + 1) * DT * 1000.0
 		# Only the last third counts as "returned": the first two are the aircraft on its way back.
 		if i > 800:
-			worst_after_release = maxf(worst_after_release,
-				absf(core.rigid_body.orientation.get_euler(EULER_ORDER_YXZ).z))
+			worst_after_release = maxf(worst_after_release, bank)
 
-	return {"banked_deg": rad_to_deg(banked), "residual_deg": rad_to_deg(worst_after_release)}
+	return {"banked_deg": rad_to_deg(banked), "residual_deg": rad_to_deg(worst_after_release),
+		"level_ms": level_ms}
 
 
 static func run() -> Array:
@@ -207,6 +217,8 @@ static func run() -> Array:
 		ReferenceBuild.FC_ID)
 
 	# --- FLOWN ------------------------------------------------------------------------------
+	var reference_flight := _recovers_to_level(ReferenceBuild.build(),
+		RateTune.derive(ReferenceBuild.build()))
 	for pair in [["65 mm whoop", whoop], ["10\" long-range", long_range]]:
 		var name: String = pair[0]
 		var build: Build = pair[1]
@@ -215,5 +227,22 @@ static func run() -> Array:
 			"the %s banks on full stick and returns to level hands off" % name,
 			flown.banked_deg > 20.0 and flown.residual_deg < 1.0,
 			"banked %.1f deg, back to within %.2f deg" % [flown.banked_deg, flown.residual_deg]))
+
+		# AngleModeController's LEVEL_P is NOT scaled, on the argument that the outer loop closes on
+		# the inner one and the inner one's time constant is what RateTune holds invariant. This is
+		# that argument's test. If the law ever stops equalising the inner loop, the outer loop's
+		# recovery stops being comparable, and it shows up here before it shows up in the air.
+		#
+		# The band is 8%: the derived tune lands both extremes within 2% of the reference, and the
+		# FIXED gains put the whoop 10% out and the 10" 24% out. So it is four times the worst real
+		# case and still comfortably inside what it has to catch, rather than a width chosen to be
+		# comfortable.
+		var deviation: float = absf(flown.level_ms - reference_flight.level_ms) \
+			/ reference_flight.level_ms
+		results.append(TestResult.new(
+			"the %s returns to level in the reference build's own time, on an UNSCALED outer loop" % name,
+			flown.level_ms > 0.0 and deviation < OUTER_LOOP_TOLERANCE,
+			"%.0f ms against the reference's %.0f ms (%.0f%% apart)" % [
+				flown.level_ms, reference_flight.level_ms, deviation * 100.0]))
 
 	return results
