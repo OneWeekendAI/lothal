@@ -100,10 +100,19 @@ var charge_panel: PackChargePanel
 ## tests pass their own, so the suite never depends on or overwrites the packs of whoever runs it.
 var pack_charge: PackCharge
 var assembly_panel: AssemblyPanel
+var tune_panel: TunePanel
 ## The builder's fit adjustments, loaded from disk on the way in and saved on every change. Lab
 ## owns them because Lab is where the drone is assembled (labs-and-sim.md §1); Sim reads the same
 ## file and never writes it.
 var tweaks: AssemblyTweaks
+## The builder's PID gains, per build. Loaded here rather than in the panel for the same reason
+## `tweaks` is: Lab is the only writer, and a copy held by a widget would be a second place a gain
+## lives.
+var pid_tunes: PidTunes = PidTunes.load_from()
+## The tune in force for the current selection — derived from the plant, with anything saved on
+## THIS build laid over it. Held so that both the tuning panel and the FC panel are quoting one
+## object rather than each deriving their own.
+var tune: RateTune = null
 ## The whole generated aircraft. `frame_model` is kept as a name because it is what Lab's
 ## screenshot tooling and tests reach for, but it is the airframe's frame now, not a
 ## free-standing one.
@@ -258,6 +267,16 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	assembly_panel.tweaks_changed.connect(_on_tweaks_changed)
 	panels.add_child(assembly_panel)
 
+	# Tuning lives in Lab (labs-and-sim.md §7, resolved — see pid_tunes.gd for the argument), and it
+	# sits beside Fit for the same reason Fit does: there is nothing to browse, so there is no rail
+	# behind it. It goes LAST because it is the only tab that is meaningless until the aircraft is
+	# assembled — every other panel describes a part, and this one describes what the parts add up
+	# to.
+	tune_panel = TunePanel.new()
+	tune_panel.name = "Tune"
+	tune_panel.tune_changed.connect(_on_tune_changed)
+	panels.add_child(tune_panel)
+
 	# Working on a rail should show the panel for the part being chosen, so the two columns
 	# never describe different components.
 	rails.tab_changed.connect(func(index: int) -> void: panels.current_tab = index)
@@ -402,7 +421,13 @@ func _on_selection_changed() -> void:
 	propeller_details.render(build.propeller, build)
 	battery_details.render(build.battery, build)
 	esc_details.render(build.esc, build)
-	fc_details.render(build.fc, build)
+	# The tune is derived BEFORE the FC panel is rendered, because that panel quotes what the
+	# board's noise costs at the D gain actually installed — and "actually installed" is this
+	# object. Derived from scratch on every selection change rather than patched: a part change
+	# moves the plant, and a baseline that did not follow it would be the fixed-gain bug again in
+	# a smaller box.
+	tune = pid_tunes.tune_for(build)
+	fc_details.render(build.fc, build, tune)
 	charge_panel.render(build)
 	# The fit panel is re-rendered on a PART change too, not only on a fit change: the limits are
 	# derived from the parts, so a smaller motor has to narrow the shim slider then and there.
@@ -410,6 +435,7 @@ func _on_selection_changed() -> void:
 	# that was just rebuilt two lines above — so the overhang on the panel is the overhang on the
 	# screen, in the same call, and cannot describe a pack that is no longer fitted.
 	assembly_panel.render(build, airframe)
+	tune_panel.render(build, tune)
 
 
 ## A shim, a pad or a standoff moved. Same single path as a part change — the geometry, the panels
@@ -421,6 +447,19 @@ func _on_selection_changed() -> void:
 func _on_tweaks_changed() -> void:
 	_on_selection_changed()
 	tweaks.save()
+
+
+## A gain was edited or reverted. NOT the same path as a part change: re-deriving here would throw
+## away the edit that was just made, since the derivation knows nothing about what the builder
+## typed. So the tune the panel already holds is recorded as-is and written straight through, for
+## the reason a tweak is — there is no exit to save on.
+func _on_tune_changed() -> void:
+	pid_tunes.remember(current_build(), tune)
+	pid_tunes.save()
+	# The FC panel's noise row quotes the installed D gain, so it is the one other thing on screen
+	# that a tuning edit makes stale.
+	var build := current_build()
+	fc_details.render(build.fc, build, tune)
 
 
 ## The charger was started, stopped, or had its compression changed. Written straight through,

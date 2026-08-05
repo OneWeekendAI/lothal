@@ -72,6 +72,11 @@ var tweaks: AssemblyTweaks = AssemblyTweaks.load_from()
 ## into the garage. That is not Sim authoring anything — it is Sim reporting what happened, which
 ## is what §3 says the field is for.
 var pack_charge: PackCharge = PackCharge.load_from()
+## The builder's PID gains, read from the same file Lab writes — and READ ONLY. Sim flies the tune
+## the garage set and may not write one back (labs-and-sim.md §1, "Sim authors nothing"; §7's
+## corollary, which is what settled where tuning lives). There is no in-flight tuning control, and
+## the absence is the boundary rather than an omission.
+var pid_tunes: PidTunes = PidTunes.load_from()
 var hud: Hud
 ## The field, read from the library Lab writes. Read from disk rather than handed over with the
 ## selection, for exactly the reason `tweaks` above is: it is one file, Lab is the only writer, and
@@ -164,6 +169,11 @@ func _on_build_changed(new_build: Build) -> void:
 	# here: the pack drains as you fly and the aircraft drifts slowly down, which is the
 	# consequence, not a bug.
 	_hover_throttle = build.hover_throttle_for(core.powertrain.battery)
+	# The gains follow the aircraft. Adopted rather than reconstructed, so the integrator state
+	# holding the aircraft trimmed survives — and adopted HERE, on the one path every part change
+	# lands on, so there is no ordering in which the airframe on screen is one aircraft and the
+	# loop flying it is tuned for another.
+	fc.rate_loop.adopt_tune(pid_tunes.tune_for(build))
 	# One call, and the airframe on screen is the airframe being flown — frame, motors and
 	# props, all from this same Build. There is no second description of the aircraft to keep
 	# in step, which is what the old _fit_drone_mesh_to_arm was: a scale factor applied to a

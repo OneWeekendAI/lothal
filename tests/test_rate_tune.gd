@@ -88,7 +88,7 @@ static func run() -> Array:
 	results.append(TestResult.new(
 		"kp * plant acceleration is invariant across the catalog's extremes",
 		worst < 1e-6,
-		"worst relative deviation %.3e over a %.1fx plant spread" % [
+		"kp*alpha holds to %.9f relative, over a %.1fx yaw plant spread" % [
 			worst, whoop.plant_alpha.z / long_range.plant_alpha.z]))
 
 	# The whoop rolls harder than the reference, so it needs LESS gain, not more. Stated as a
@@ -115,7 +115,7 @@ static func run() -> Array:
 	results.append(TestResult.new(
 		"the integral time constant kp/ki is preserved on every axis of every build",
 		ratio_error < 1e-6,
-		"worst deviation %.3e from roll's %.1f s and yaw's %.1f s" % [
+		"kp/ki holds to %.9f relative, against roll's %.1f s and yaw's %.1f s" % [
 			ratio_error, ANCHOR_KP.x / ANCHOR_KI.x, ANCHOR_KP.z / ANCHOR_KI.z]))
 
 	# Yaw's kd is zero because yaw's plant is rotor-drag dominated and already damped, not because

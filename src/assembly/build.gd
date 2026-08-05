@@ -539,6 +539,21 @@ func hover_throttle(open_circuit_v: float = AT_NOMINAL) -> float:
 ## The sensor this aircraft flies, from the fitted board. The ONE answer to "what gyro is on
 ## this build" — the details panel and the flying aircraft read the same call, so they cannot
 ## come to describe different sensors.
+## The six part ids that make this build, joined — a stable name for THIS combination of parts.
+##
+## Used to key the builder's saved PID tunes, and it is all six rather than the frame alone because
+## the plant a tune is derived against is the whole aircraft: a 5" freestyle with 2807s on it is a
+## different thing to fly than the same frame with 2207s, and a tune that followed one to the other
+## would recreate the bug RateTune exists to fix. The ids rather than an index or a hash, so the
+## saved file stays readable and a part that is renamed in the catalog fails to match instead of
+## silently matching something else.
+func fingerprint() -> String:
+	var ids: Array[String] = []
+	for part in [frame, motor, propeller, battery, esc, fc]:
+		ids.append(String(part.get("part_id", "?")))
+	return "/".join(ids)
+
+
 func gyro() -> Gyro:
 	return Gyro.from_part(fc)
 
