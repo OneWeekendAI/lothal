@@ -284,4 +284,96 @@ static func run() -> Array:
 			% [ref.fc_mount_pattern(), ref.frame["specs"].get("stack_mount", "?")]
 	))
 
+	# --- The panel says what the sensor COSTS, not what it is ---
+	# "Noise floor 0.0028 rad/s" means nothing. What it costs you in usable D does.
+	var panel := FcDetails.new()
+	panel.render(ref.fc, ref)
+	var text := panel.rendered_text()
+	panel.free()
+	results.append(TestResult.new(
+		"the details panel states filter lag in ms and noise in deg/s, not raw units",
+		text.contains("ms") and text.contains("°/s") and not text.contains("rad/s"),
+		"panel text: %s" % text.replace("\n", " | ")
+	))
+
+	# The D-term row is the one that turns a spec sheet into a decision. PIDController has no
+	# D-term lowpass — the derivative acts on the raw measurement — so this is exactly
+	# derivable rather than estimated:
+	#   kd * (sigma / MAX_RATE_RAD_S) * sqrt(2) / T
+	var expected_d := RateModeController.ROLL_PITCH_KD \
+		* (Gyro.DEFAULT_NOISE_RAD_S / RateModeController.MAX_RATE_RAD_S) \
+		* sqrt(2.0) / (1.0 / Gyro.DEFAULT_SAMPLE_RATE_HZ)
+	results.append(TestResult.new(
+		"the panel quotes what the noise floor costs at the installed D gain",
+		text.contains("%.1f%%" % (expected_d * 100.0)),
+		"expected %.2f%% of motor command from noise alone; panel says: %s"
+			% [expected_d * 100.0, text.replace("\n", " | ")]
+	))
+
+	# A noisier board must read as costing more. If both boards printed the same figure the
+	# row would be decoration.
+	var loud_panel := FcDetails.new()
+	var loud_build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		"fc_f405_30x30_budget")
+	loud_panel.render(loud_build.fc, loud_build)
+	var loud_text := loud_panel.rendered_text()
+	loud_panel.free()
+	results.append(TestResult.new(
+		"a noisier board reads as costing more at the motors",
+		loud_text != text,
+		"budget board panel differs from the reference board's: %s" % (loud_text != text)
+	))
+
+	# Loop rate appears, labelled as carried-and-unmodelled, exactly as the ESC's burst
+	# rating is. Leaving it off the screen entirely would be its own kind of dishonesty.
+	results.append(TestResult.new(
+		"loop rate is shown and labelled as not modelled",
+		text.contains("not modelled"),
+		"panel text: %s" % text.replace("\n", " | ")
+	))
+
+	# The rail browses the three axes a builder actually decides along.
+	var rail := FcPicker.new(catalog)
+	rail.select_id("fc_h743_30x30")
+	var picked: Dictionary = rail.selected_part()
+	rail.free()
+	results.append(TestResult.new(
+		"the FC rail lists boards and selects by id",
+		str(picked.get("part_id", "")) == "fc_h743_30x30",
+		"selected %s" % str(picked.get("part_id", "none"))
+	))
+
+	# --- The field flies the board Lab shows ---
+	# The selection dictionary is what crosses the door out of the garage (labs-and-sim.md §4).
+	# A board that appeared on the rail but not in that dictionary would leave Lab describing
+	# one aircraft while the field flew another — the precise divergence §2.2 exists to forbid,
+	# and it would be invisible because both halves would produce plausible numbers.
+	var panel_ids := {"flight_controller": "fc_f405_30x30_budget"}
+	var field_panel := BuildPanel.new(catalog, panel_ids)
+	# _rebuild() directly rather than parenting into the tree, as test_build_panel.gd does:
+	# the panel is pure Control wiring and a headless SceneTree has no reason to be involved.
+	field_panel._rebuild()
+	var flown: Build = field_panel.build
+	field_panel.free()
+	results.append(TestResult.new(
+		"a board chosen in Lab is the board the field builds",
+		flown.fc.get("part_id", "") == "fc_f405_30x30_budget"
+			and flown.gyro().noise_rad_s == 0.0069,
+		"field built %s, flying a %.4f rad/s sensor"
+			% [str(flown.fc.get("part_id", "none")), flown.gyro().noise_rad_s]
+	))
+
+	# And a selection that predates the category still loads, rather than failing on a missing
+	# key deep inside Build. Saved configurations exist on disk from before this slice.
+	var legacy := BuildPanel.new(catalog, {"frame": ReferenceBuild.FRAME_ID})
+	legacy._rebuild()
+	var legacy_build: Build = legacy.build
+	legacy.free()
+	results.append(TestResult.new(
+		"a saved selection from before flight controllers existed still loads",
+		legacy_build.fc.get("part_id", "") == Build.DEFAULT_FC_ID,
+		"fell back to %s" % str(legacy_build.fc.get("part_id", "none"))
+	))
+
 	return results

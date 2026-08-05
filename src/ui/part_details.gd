@@ -147,5 +147,18 @@ func _read(part: Dictionary, key: String) -> String:
 	return _or_dash(str(part.get("catalog", {}).get(key, "")))
 
 
+## Every rendered row as one string, label and value, for tests.
+##
+## A TEST SEAM and nothing else: a panel's job is to put numbers on screen, and the only way to
+## check that it put the RIGHT numbers there is to read back what it rendered. Asserting against
+## the source dictionary instead would test the catalog twice and the panel not at all.
+func rendered_text() -> String:
+	var lines: Array[String] = []
+	for row in spec_rows:
+		var key: String = row["key"]
+		lines.append("%s: %s" % [row["label"], _detail_values[key].text])
+	return "\n".join(lines)
+
+
 static func _or_dash(value: String) -> String:
 	return value if value != "" else "—"

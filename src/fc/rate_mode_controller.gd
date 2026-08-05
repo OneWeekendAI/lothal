@@ -25,8 +25,15 @@ extends RefCounted
 
 const MAX_RATE_RAD_S := 13.962634   # 800 deg/s at full stick
 
-var pid_roll := PIDController.new(2.3, 0.15, 0.042)
-var pid_pitch := PIDController.new(2.3, 0.15, 0.042)
+## Roll and pitch's D gain, named rather than left as a literal in two constructors.
+##
+## A READ SEAM, not a tuning change: the value is exactly what it was. It is named because the
+## FC details panel quotes what a board's noise floor costs at the installed D gain, and a panel
+## that restated 0.042 would be a second opinion about the tune the day anyone changed it.
+const ROLL_PITCH_KD := 0.042
+
+var pid_roll := PIDController.new(2.3, 0.15, ROLL_PITCH_KD)
+var pid_pitch := PIDController.new(2.3, 0.15, ROLL_PITCH_KD)
 
 ## Yaw is NOT roll's gains, and sharing them was never a neutral choice.
 ##

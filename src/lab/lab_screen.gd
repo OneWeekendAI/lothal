@@ -86,11 +86,13 @@ var motor_picker: MotorPicker
 var propeller_picker: PropellerPicker
 var battery_picker: BatteryPicker
 var esc_picker: EscPicker
+var fc_picker: FcPicker
 var details: FrameDetails
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
 var battery_details: BatteryDetails
 var esc_details: EscDetails
+var fc_details: FcDetails
 ## The charger. Lab's, because charging is a garage activity — there is a charger in the garage
 ## and there is not one in the field (labs-and-sim.md §5).
 var charge_panel: PackChargePanel
@@ -176,6 +178,10 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	esc_picker.name = "ESC"
 	rails.add_child(esc_picker)
 
+	fc_picker = FcPicker.new(catalog)
+	fc_picker.name = "FC"
+	rails.add_child(fc_picker)
+
 	var viewport_container := SubViewportContainer.new()
 	viewport_container.stretch = true
 	viewport_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -240,6 +246,10 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	esc_details.name = "ESC"
 	panels.add_child(esc_details)
 
+	fc_details = FcDetails.new()
+	fc_details.name = "FC"
+	panels.add_child(fc_details)
+
 	# A panel with no rail behind it, because a fit adjustment is not a part choice: there is
 	# nothing to browse and nothing to filter. It sits with the other panels rather than becoming a
 	# fourth column, which would take screen space from the airframe — the thing being judged.
@@ -262,8 +272,9 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	propeller_picker.select_id(ReferenceBuild.PROPELLER_ID)
 	battery_picker.select_id(ReferenceBuild.BATTERY_ID)
 	esc_picker.select_id(ReferenceBuild.ESC_ID)
+	fc_picker.select_id(ReferenceBuild.FC_ID)
 
-	for rail in [picker, motor_picker, propeller_picker, battery_picker, esc_picker]:
+	for rail in [picker, motor_picker, propeller_picker, battery_picker, esc_picker, fc_picker]:
 		rail.part_selected.connect(_on_part_selected)
 
 	_on_selection_changed()
@@ -391,6 +402,7 @@ func _on_selection_changed() -> void:
 	propeller_details.render(build.propeller, build)
 	battery_details.render(build.battery, build)
 	esc_details.render(build.esc, build)
+	fc_details.render(build.fc, build)
 	charge_panel.render(build)
 	# The fit panel is re-rendered on a PART change too, not only on a fit change: the limits are
 	# derived from the parts, so a smaller motor has to narrow the shim slider then and there.
@@ -442,7 +454,8 @@ func current_build() -> Build:
 		motor_picker.selected_part()["part_id"],
 		propeller_picker.selected_part()["part_id"],
 		battery_picker.selected_part()["part_id"],
-		esc_picker.selected_part()["part_id"]
+		esc_picker.selected_part()["part_id"],
+		fc_picker.selected_part()["part_id"]
 	)
 
 
@@ -456,6 +469,7 @@ func selection() -> Dictionary:
 		"propeller": propeller_picker.selected_part()["part_id"],
 		"battery": battery_picker.selected_part()["part_id"],
 		"esc": esc_picker.selected_part()["part_id"],
+		"flight_controller": fc_picker.selected_part()["part_id"],
 	}
 
 

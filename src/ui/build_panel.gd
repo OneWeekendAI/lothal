@@ -15,6 +15,7 @@ const CATEGORY_ORDER := [
 	{"category": "propeller", "label": "Propeller"},
 	{"category": "battery", "label": "Battery"},
 	{"category": "esc", "label": "ESC"},
+	{"category": "flight_controller", "label": "Flight controller"},
 ]
 
 const STAT_ROWS := [
@@ -56,6 +57,7 @@ const CATEGORY_FALLBACKS := {
 	"propeller": ReferenceBuild.PROPELLER_ID,
 	"battery": ReferenceBuild.BATTERY_ID,
 	"esc": ReferenceBuild.ESC_ID,
+	"flight_controller": ReferenceBuild.FC_ID,
 }
 
 
@@ -161,7 +163,8 @@ func _rebuild() -> void:
 	build = Build.from_ids(
 		catalog,
 		selected_id("frame"), selected_id("motor"),
-		selected_id("propeller"), selected_id("battery"), selected_id("esc")
+		selected_id("propeller"), selected_id("battery"), selected_id("esc"),
+		selected_id("flight_controller")
 	)
 	_refresh_stats()
 	build_changed.emit(build)
