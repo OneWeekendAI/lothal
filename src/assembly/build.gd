@@ -751,14 +751,12 @@ func warnings() -> Array[BuildWarning]:
 						float(motor["specs"]["max_amps"]), throttle_cap * 100.0],
 					limit_values))
 
-	# The board has to bolt to the frame, which is the same check the motors already get and the
-	# same mistake someone makes exactly once: a 20x20 board and a 30.5x30.5 frame do not meet.
-	var frame_stack: String = str(frame["specs"].get("stack_mount", ""))
-	if frame_stack != "" and esc_mount_pattern() != frame_stack:
-		out.append(BuildWarning.impossible(&"stack_mount",
-			"%s is a %s board; the %s is drilled %s for its stack." % [
-				esc.get("name", "The ESC"), esc_mount_pattern(), frame["name"], frame_stack],
-			{"board_pattern": esc_mount_pattern(), "frame_pattern": frame_stack}))
+	# Both boards bolt to the frame through the same centre pattern, and either can be the wrong
+	# one. This is the same check the motors already get, and the same mistake someone makes
+	# exactly once: a 20x20 board and a 30.5x30.5 frame do not meet.
+	out.append_array(_stack_fit_warning(esc, esc_mount_pattern(), &"stack_mount", "The ESC"))
+	out.append_array(_stack_fit_warning(fc, fc_mount_pattern(), &"fc_stack_mount",
+		"The flight controller"))
 
 	# CHARACTERISTIC, and deliberately: labs-and-sim.md §2.1's rule is that where the physics has
 	# a hard boundary you warn, and where it has a continuum you describe. Four grams over a
@@ -788,6 +786,34 @@ func warnings() -> Array[BuildWarning]:
 				"reachable_twr": reachable_thrust_n / weight_n()}))
 
 	out.append_array(_flight_quality())
+	return out
+
+
+## One board's bolt pattern against the frame's, as a list so a caller can append it
+## unconditionally.
+##
+## One helper rather than two copies of the comparison: the ESC and the flight controller bolt
+## through the SAME holes, and two copies is how they come to disagree about what "fits" means.
+##
+## IMPOSSIBLE because there is a boundary in the geometry to point at — the holes either line up
+## or they do not. But IT STILL MOUNTS: labs-and-sim.md §2.6 is explicit that zip-tying a
+## mismatched board on is a thing real builders do on a Saturday afternoon, and the useful answer
+## is a sentence you can act on rather than a dropdown that has greyed itself out. Severity
+## changes how this is SAID, never whether the part can be chosen.
+##
+## Separate ids for the two boards rather than one shared id, because a build can get this wrong
+## twice independently, and two warnings answering to one name cannot be told apart by a test or
+## filtered by a panel.
+func _stack_fit_warning(board: Dictionary, board_pattern: String, id: StringName,
+		fallback_name: String) -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	var frame_stack: String = str(frame["specs"].get("stack_mount", ""))
+	if frame_stack == "" or board_pattern == frame_stack:
+		return out
+	out.append(BuildWarning.impossible(id,
+		"%s is a %s board; the %s is drilled %s for its stack." % [
+			board.get("name", fallback_name), board_pattern, frame["name"], frame_stack],
+		{"board_pattern": board_pattern, "frame_pattern": frame_stack}))
 	return out
 
 

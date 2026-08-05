@@ -237,4 +237,51 @@ static func run() -> Array:
 		"reference board is %.0f g against a %.0f g share" % [ref.fc_mass_g(), Build.FC_BUDGET_MASS_G]
 	))
 
+	# --- Fit ---
+	# A 20x20 board does not bolt to a 30.5x30.5 frame. §2.6's worked example: it still
+	# MOUNTS, because zip-tying a mismatched board on is a thing real builders do on a
+	# Saturday afternoon, and the useful answer is a sentence you can act on rather than a
+	# dropdown that has greyed itself out.
+	var mismatched := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		"fc_f405_20x20")
+	var fit: BuildWarning = null
+	var esc_fit_still_fine := true
+	for w in mismatched.warnings():
+		if w.id == &"fc_stack_mount":
+			fit = w
+		if w.id == &"stack_mount":
+			esc_fit_still_fine = false
+	results.append(TestResult.new(
+		"a 20x20 board on a 30.5x30.5 frame is impossible to bolt, and still mounts",
+		fit != null and fit.severity == BuildWarning.Severity.IMPOSSIBLE
+			and mismatched.mass_properties.total_mass_kg > 0.0
+			and mismatched.all_up_weight_g() > 0.0,
+		"warning: %s" % ("absent" if fit == null else fit.message)
+	))
+	results.append(TestResult.new(
+		"the FC's fit check is its own, and does not disturb the ESC's",
+		esc_fit_still_fine,
+		"the correctly-fitted ESC %s a mount warning"
+			% ("did not raise" if esc_fit_still_fine else "RAISED")
+	))
+	results.append(TestResult.new(
+		"the fit warning names both patterns, so it can be acted on",
+		fit != null and fit.values.get("board_pattern", "") == "20x20"
+			and fit.values.get("frame_pattern", "") == "30.5x30.5",
+		"values: %s" % ("none" if fit == null else str(fit.values))
+	))
+
+	# And the reference board on the reference frame says nothing.
+	var silent := true
+	for w in ref.warnings():
+		if w.id == &"fc_stack_mount":
+			silent = false
+	results.append(TestResult.new(
+		"a board that bolts down is not mentioned",
+		silent,
+		"reference board is %s on a %s frame"
+			% [ref.fc_mount_pattern(), ref.frame["specs"].get("stack_mount", "?")]
+	))
+
 	return results
