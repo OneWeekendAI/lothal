@@ -144,7 +144,10 @@ func _ready() -> void:
 	airframe = AirframeModel.new()
 	drone.add_child(airframe)
 
-	build_panel = BuildPanel.new(PartsCatalog.load_default(), _opening_selection())
+	# load_with_custom so a frame the builder entered in Lab can be FLOWN. Reading, not authoring:
+	# labs-and-sim.md's rule is that Lab authors and Sim does not, and nothing in this scene
+	# creates or edits a custom part — it resolves the ids it was handed.
+	build_panel = BuildPanel.new(PartsCatalog.load_with_custom(), _opening_selection())
 	build_panel.theme = theme
 	# This scene owns both, so this is where the two are told about each other rather than
 	# either one reaching across for the other's geometry.

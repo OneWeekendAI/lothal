@@ -18,6 +18,9 @@ static func run() -> Array:
 	results.append(_test_a_colliding_id_is_refused_and_the_catalog_survives())
 	results.append(_test_unknown_fields_survive_a_round_trip())
 	results.append(_test_a_custom_size_class_lands_in_the_catalogs_own_bucket())
+	results.append(_test_a_custom_frame_does_not_move_the_reference_build())
+	results.append(_test_a_custom_frame_is_selectable_and_flyable())
+	results.append(_test_camera_distance_accounts_for_a_bigger_custom_frame())
 	return results
 
 
@@ -245,3 +248,143 @@ static func _test_a_custom_size_class_lands_in_the_catalogs_own_bucket() -> Test
 	return TestResult.new(
 		"a custom frame's size_class matches a bucket the shipped catalog already uses",
 		ok, "derived \"%s\", catalog buckets: %s" % [derived, catalog_buckets.keys()])
+
+
+## THE test. Defining a custom frame — any custom frame, including an absurd one — must not move
+## 496 g / 11.69 : 1 / 29.6% by a gram or a point. Written with the file actually on disk at
+## CustomFrames.SAVE_PATH, not at a scratch path, because the real hazard is the real path.
+static func _test_a_custom_frame_does_not_move_the_reference_build() -> TestResult:
+	var previous := ""
+	if FileAccess.file_exists(CustomFrames.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(CustomFrames.SAVE_PATH)
+
+	var doc := CustomFrames.new()
+	doc.add(CustomFrames.make_record("Reference Impostor", 9999.0, 350.0, 13.0,
+		"25x25", "30.5x30.5", "carbon fibre", "invented to try to move the oracle"))
+	doc.save(CustomFrames.SAVE_PATH)
+
+	# The merged catalog really does have it — otherwise this test proves nothing about isolation,
+	# only that nothing happened.
+	var merged := PartsCatalog.load_with_custom()
+	var merged_has_it: bool = not merged.get_part("custom_reference_impostor").is_empty()
+
+	var build := ReferenceBuild.build()
+	var auw := build.all_up_weight_g()
+	var twr := build.thrust_to_weight()
+	var hover := build.hover_throttle()
+	var pinned := absf(auw - 496.0) < EPS and absf(twr - 11.69) < 0.01 and absf(hover - 0.296) < 0.001
+
+	# And the shipped frame count is unchanged in load_default(), so nothing leaked sideways.
+	var shipped_frames: int = PartsCatalog.load_default().list_category("frame").size()
+	var merged_frames: int = merged.list_category("frame").size()
+
+	_restore(CustomFrames.SAVE_PATH, previous)
+	return TestResult.new(
+		"a defined custom frame does not move the reference build's 496 g / 11.69 / 29.6%",
+		merged_has_it and pinned and merged_frames == shipped_frames + 1,
+		"merged sees it=%s, %d shipped vs %d merged frames, AUW %.2f g, TWR %.2f, hover %.1f%%" % [
+			merged_has_it, shipped_frames, merged_frames, auw, twr, hover * 100.0])
+
+
+## A custom frame is not a catalog entry that happens to load — it has to go all the way through
+## Build.from_ids to a flyable aircraft, and its arm_mm has to reach both the drawn geometry and
+## the mass model. The inertia half is isolated to the four motor/prop masses, whose parallel-axis
+## contribution scales EXACTLY as radius squared when nothing else about them changes; the frame's
+## own centre box grows too, which is real but would blur an exact ratio into a hand-wave.
+static func _test_a_custom_frame_is_selectable_and_flyable() -> TestResult:
+	var previous := ""
+	if FileAccess.file_exists(CustomFrames.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(CustomFrames.SAVE_PATH)
+
+	var doc := CustomFrames.new()
+	doc.add(CustomFrames.make_record("Shed 350", 340.0, 350.0, 13.0,
+		"25x25", "30.5x30.5", "carbon fibre", "measured on my kitchen scale"))
+	doc.save(CustomFrames.SAVE_PATH)
+	var catalog := PartsCatalog.load_with_custom()
+
+	var custom := Build.from_ids(catalog, "custom_shed_350", ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID)
+	var reference_build := ReferenceBuild.build()
+
+	# Geometry: the arms really are 350 mm long, measured off the generated pads.
+	var model := FrameModel.new()
+	model.rebuild(catalog.get_part("custom_shed_350"))
+	var tip_m: float = (model.arm_tips[MotorLayout.MOTOR_NAMES[0]] as Node3D).position.length()
+	var geometry_ok := absf(tip_m - 0.350) < 0.0005
+	model.free()
+
+	# Inertia: the parallel-axis ratio, on the terms that are purely parallel-axis.
+	var ratio_expected := pow(350.0 / 110.0, 2.0)
+	var ratio_actual := _motor_roll_inertia(custom) / _motor_roll_inertia(reference_build)
+	var inertia_ok := absf(ratio_actual - ratio_expected) < ratio_expected * 0.01
+
+	_restore(CustomFrames.SAVE_PATH, previous)
+	return TestResult.new(
+		"a 350 mm custom frame draws 350 mm arms and carries (350/110)^2 the motor roll inertia",
+		geometry_ok and inertia_ok,
+		"arm tip %.4f m (want 0.3500), motor roll inertia ratio %.3f (want %.3f)" % [
+			tip_m, ratio_actual, ratio_expected])
+
+
+## Roll inertia of the four motor+prop masses alone. Isolated by name because Build.mass_parts()
+## labels them "Motor + prop <name>" (build.gd:270) — if that label changes this returns zero and
+## the test fails loudly, which is the right failure. Roll is Z: test_mass_properties.gd's
+## coordinate contract has the vertical/yaw axis as Y, and its own pitch-vs-roll assertion names
+## X as pitch and Z as roll — confirmed by reading that file rather than assumed here.
+static func _motor_roll_inertia(build: Build) -> float:
+	var motor_parts: Array = []
+	for part in build.mass_parts():
+		if str(part.label).begins_with("Motor + prop"):
+			motor_parts.append(part)
+	if motor_parts.is_empty():
+		return 0.0
+	return MassProperties.compute(motor_parts).inertia.z.z
+
+
+## Lab's camera distance is a CATALOG-WIDE constant, computed from the largest arm and then held
+## for every frame so that switching frames does not zoom. A custom frame is selectable, so it
+## belongs in that maximum — a 350 mm frame framed for a 215 mm catalog renders off the edge, and
+## Lab deliberately has no way to zoom out at the time it happens.
+static func _test_camera_distance_accounts_for_a_bigger_custom_frame() -> TestResult:
+	var previous := ""
+	if FileAccess.file_exists(CustomFrames.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(CustomFrames.SAVE_PATH)
+
+	var without := PartsCatalog.load_default()
+	var largest_without := _largest_arm_m(without)
+
+	var doc := CustomFrames.new()
+	doc.add(CustomFrames.make_record("Shed 350", 340.0, 350.0, 13.0,
+		"25x25", "30.5x30.5", "carbon fibre", "measured on my kitchen scale"))
+	doc.save(CustomFrames.SAVE_PATH)
+	var with := PartsCatalog.load_with_custom()
+	var largest_with := _largest_arm_m(with)
+
+	_restore(CustomFrames.SAVE_PATH, previous)
+	return TestResult.new(
+		"the largest arm Lab frames for includes a custom frame bigger than the catalog's biggest",
+		absf(largest_without - 0.215) < 0.001 and absf(largest_with - 0.350) < 0.001,
+		"largest arm %.3f m without the custom frame, %.3f m with it" % [
+			largest_without, largest_with])
+
+
+## The same expression LabScreen._camera_distance_m and FrameBenchScreen._camera_distance_m open
+## with. Asserted against the CATALOG rather than by instantiating a screen, because what this test
+## is about is which frames are in the set — the trigonometry either side of it is already covered
+## by tests/test_lab.gd and is not what a custom frame can break.
+static func _largest_arm_m(catalog: PartsCatalog) -> float:
+	var largest := 0.0
+	for frame in catalog.list_category("frame"):
+		largest = maxf(largest, float(frame["specs"]["arm_mm"]) / 1000.0)
+	return largest
+
+
+## Puts back whatever was at a real user:// path before the test borrowed it, including putting
+## back "nothing". A test that leaves a custom frame defined would silently change what every
+## later suite in the same run is loading.
+static func _restore(path: String, previous: String) -> void:
+	if previous == "":
+		_wipe(path)
+		return
+	_write_raw(path, previous)

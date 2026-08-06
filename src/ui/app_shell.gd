@@ -139,8 +139,12 @@ func _add_tab(bar: HBoxContainer, text: String, handler: Callable) -> Button:
 
 ## Overridable seam for the catalog Lab reads. Kept as a method rather than inlined so a test
 ## or a later "load a different catalog" path has somewhere to stand.
+##
+## load_with_custom rather than load_default because LAB IS WHERE A BUILDER'S OWN FRAMES LIVE —
+## and because ReferenceBuild's catalog must stay the shipped one, which is why these are two
+## functions rather than one with an argument.
 func catalog_for_lab() -> PartsCatalog:
-	return PartsCatalog.load_default()
+	return PartsCatalog.load_with_custom()
 
 
 func showing_lab() -> bool:
