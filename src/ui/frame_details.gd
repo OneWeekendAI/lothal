@@ -12,6 +12,7 @@ const SPEC_ROWS := [
 	{"key": "arm_mm", "label": "Arm (centre→motor)"},
 	{"key": "max_prop_inches", "label": "Max prop"},
 	{"key": "motor_mount", "label": "Motor mount"},
+	{"key": "provenance", "label": "Provenance"},
 ]
 
 func _init() -> void:
@@ -29,4 +30,12 @@ func _read(frame: Dictionary, key: String) -> String:
 			return "%.1f\"" % float(specs.get("max_prop_inches", 0.0))
 		"motor_mount":
 			return _or_dash(str(specs.get("motor_mount", "")))
+		"provenance":
+			# Two words, not the source prose. The prose is long — the shipped catalog's sources run
+			# to a sentence and a builder's may too — and it already has a home in the build's
+			# warnings, where WarningList wraps it properly. What this row is for is the binary a
+			# builder needs at a glance: has anything checked this, or only me.
+			if PartsCatalog.is_custom(str(frame.get("part_id", ""))):
+				return "Custom (yours, unchecked)"
+			return "Catalog"
 	return super(frame, key)

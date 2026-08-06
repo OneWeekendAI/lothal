@@ -55,6 +55,8 @@ var _options: Dictionary = {}        # filter key -> Array[String], ALL first
 var _entries: Dictionary = {}        # filter key -> the filter entry dictionary it came from
 var _list: ItemList
 var _empty_hint: Label
+## Where a subclass puts its own controls under the list. See add_custom_buttons().
+var _button_slot: VBoxContainer
 var _visible_parts: Array = []
 ## Kept so that changing a filter does not throw away a selection that is still valid —
 ## narrowing the list by material should not silently move you to a different part.
@@ -124,6 +126,9 @@ func _init(p_catalog: PartsCatalog, p_category: String, p_title: String, p_noun:
 	_empty_hint.visible = false
 	root.add_child(_empty_hint)
 
+	_button_slot = VBoxContainer.new()
+	root.add_child(_button_slot)
+
 	# Silent: whoever constructed this connects to part_selected afterwards, so emitting from
 	# inside _init would fire into nothing. They call emit_current() once wired.
 	_refresh(false)
@@ -153,6 +158,20 @@ static func value_of(part: Dictionary, entry: Dictionary) -> String:
 		return ""
 	var format: String = entry.get("format", "")
 	return (format % raw) if format != "" else str(raw)
+
+
+## How a part reads in a rail row. Static and on PartPicker rather than on FramePicker, because
+## when motors and packs become enterable the mark has to look identical on every rail — and
+## because a test can then assert the marking without instantiating a Control.
+##
+## The mark is the id's own prefix rather than a field on the record: the id IS what makes a part
+## custom (PartsCatalog.CUSTOM_PREFIX), and a separate flag is a second answer to a question that
+## already has one.
+static func display_name(part: Dictionary) -> String:
+	var part_name := str(part.get("name", ""))
+	if PartsCatalog.is_custom(str(part.get("part_id", ""))):
+		return "%s  (custom)" % part_name
+	return part_name
 
 
 func no_match_text() -> String:
@@ -216,6 +235,11 @@ func emit_current() -> void:
 	if not part.is_empty():
 		part_selected.emit(part)
 
+## A place for a subclass to put controls under the list. A seam rather than a subclass reaching
+## into this one's node tree, so PartPicker stays free to rearrange its own layout.
+func add_custom_buttons(row: Control) -> void:
+	_button_slot.add_child(row)
+
 
 # ---------------------------------------------------------------------------
 # Internals
@@ -244,7 +268,7 @@ func _refresh(emit := true) -> void:
 
 	_empty_hint.visible = false
 	for part in _visible_parts:
-		_list.add_item("%s   %s g" % [part["name"], _format_mass(part)])
+		_list.add_item("%s   %s g" % [display_name(part), _format_mass(part)])
 
 	# Keep the highlighted part if the new filters still include it; otherwise fall back to the
 	# top of the list.

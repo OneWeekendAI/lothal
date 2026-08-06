@@ -24,6 +24,9 @@ static func run() -> Array:
 	results.append(_test_a_custom_build_says_it_is_custom_and_a_catalog_build_does_not())
 	results.append(_test_an_implausible_frame_still_flies())
 	results.append(_test_the_electronics_lump_names_itself_on_a_light_build())
+	results.append(_test_the_picker_marks_a_custom_frame())
+	results.append(_test_the_details_panel_names_the_provenance())
+	results.append(_test_the_dialog_saves_a_frame_and_refuses_a_bad_one())
 	return results
 
 
@@ -497,3 +500,95 @@ static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestRe
 			whoop.all_up_weight_g(), whoop.thrust_to_weight(), whoop.hover_throttle() * 100.0,
 			light != null, Build.ELECTRONICS_MASS_G / whoop.all_up_weight_g() * 100.0,
 			heavy != null, Build.ELECTRONICS_MASS_G / ReferenceBuild.build().all_up_weight_g() * 100.0])
+
+
+static func _test_the_picker_marks_a_custom_frame() -> TestResult:
+	var previous := ""
+	if FileAccess.file_exists(CustomFrames.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(CustomFrames.SAVE_PATH)
+
+	var doc := CustomFrames.new()
+	doc.add(CustomFrames.make_record("Shed 5", 112.0, 112.0, 5.1,
+		"16x16", "30.5x30.5", "carbon fibre", "measured on my kitchen scale"))
+	doc.save(CustomFrames.SAVE_PATH)
+	var catalog := PartsCatalog.load_with_custom()
+
+	var custom_row := PartPicker.display_name(catalog.get_part("custom_shed_5"))
+	var catalog_row := PartPicker.display_name(catalog.get_part("frame_5in_freestyle"))
+
+	_restore(CustomFrames.SAVE_PATH, previous)
+	return TestResult.new(
+		"a rail row says a custom frame is custom, and a catalog row says nothing extra",
+		custom_row.contains("custom") and custom_row.contains("Shed 5") \
+			and not catalog_row.to_lower().contains("custom"),
+		"custom row \"%s\", catalog row \"%s\"" % [custom_row, catalog_row])
+
+
+static func _test_the_details_panel_names_the_provenance() -> TestResult:
+	var previous := ""
+	if FileAccess.file_exists(CustomFrames.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(CustomFrames.SAVE_PATH)
+
+	var doc := CustomFrames.new()
+	doc.add(CustomFrames.make_record("Shed 5", 112.0, 112.0, 5.1,
+		"16x16", "30.5x30.5", "carbon fibre", "measured on my kitchen scale"))
+	doc.save(CustomFrames.SAVE_PATH)
+	var catalog := PartsCatalog.load_with_custom()
+
+	var panel := FrameDetails.new()
+	var custom_text := panel.detail_text(catalog.get_part("custom_shed_5"), "provenance")
+	var catalog_text := panel.detail_text(catalog.get_part("frame_5in_freestyle"), "provenance")
+	panel.free()
+
+	_restore(CustomFrames.SAVE_PATH, previous)
+	return TestResult.new(
+		"the frame panel has a provenance row that separates a custom frame from a catalog one",
+		custom_text.to_lower().contains("custom") and not catalog_text.to_lower().contains("custom"),
+		"custom \"%s\", catalog \"%s\"" % [custom_text, catalog_text])
+
+
+## The authoring surface, driven through its public methods rather than by synthesising input
+## events — the same way tests/test_lab.gd drives the rails. What is under test is that the dialog
+## goes through CustomFrames rather than writing a record of its own shape, and that a refusal
+## comes back to the builder instead of being swallowed.
+static func _test_the_dialog_saves_a_frame_and_refuses_a_bad_one() -> TestResult:
+	var previous := ""
+	if FileAccess.file_exists(CustomFrames.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(CustomFrames.SAVE_PATH)
+	_wipe(CustomFrames.SAVE_PATH)
+
+	var dialog := CustomFrameDialog.new()
+	dialog.set_fields("Shed 5", 112.0, 112.0, 5.1, "16x16", "30.5x30.5",
+		"carbon fibre", "measured on my kitchen scale")
+	var accepted := dialog.submit()
+	var on_disk: bool = not CustomFrames.load_from(CustomFrames.SAVE_PATH) \
+		.get_frame("custom_shed_5").is_empty()
+
+	# Now the two refusals a builder can actually produce from this form: no provenance, and an
+	# arm of zero. Both must come back as words, and neither may reach the file.
+	dialog.set_fields("No Source", 112.0, 112.0, 5.1, "16x16", "30.5x30.5", "carbon fibre", "  ")
+	var no_source := dialog.submit()
+	dialog.set_fields("No Arm", 112.0, 0.0, 5.1, "16x16", "30.5x30.5", "carbon fibre", "measured")
+	var no_arm := dialog.submit()
+	var count := CustomFrames.load_from(CustomFrames.SAVE_PATH).frames().size()
+	dialog.free()
+
+	_restore(CustomFrames.SAVE_PATH, previous)
+	# Not just THAT each was refused, but that it was refused for the field actually left broken —
+	# a refusal for the wrong reason is a passing test hiding a broken rule.
+	var no_source_names_source := false
+	for problem in no_source:
+		if problem.contains("source"):
+			no_source_names_source = true
+	var no_arm_names_arm := false
+	for problem in no_arm:
+		if problem.contains("arm_mm"):
+			no_arm_names_arm = true
+
+	return TestResult.new(
+		"the dialog saves a good frame and hands back words for the two it must refuse",
+		accepted.is_empty() and on_disk and not no_source.is_empty() and not no_arm.is_empty() \
+			and no_source_names_source and no_arm_names_arm and count == 1,
+		"accepted=%s, on disk=%s, refusals %d (names source=%s) / %d (names arm_mm=%s), %d frames in the file" % [
+			accepted, on_disk, no_source.size(), no_source_names_source,
+			no_arm.size(), no_arm_names_arm, count])

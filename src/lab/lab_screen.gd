@@ -123,6 +123,12 @@ var frame_model: FrameModel
 ## name — capture_lab.gd photographs it, and there is no other way to reach a tab from outside.
 var panels: TabContainer
 
+## The tabbed rail column. Held as a field, not a local of _init, because reload_catalog() needs
+## to swap its children (a new frame is a new catalog, and a rail built against the old one would
+## go on filtering and framing off stale options) without discarding the TabContainer itself —
+## the tab_changed wiring below is made once, against this node, and stays good across a reload.
+var _rails: TabContainer
+
 var _viewport: SubViewport
 ## The camera boom. Rotating this orbits the camera; the airframe itself never moves.
 var _orbit: Node3D
@@ -162,34 +168,12 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	# columns on screen and leave the airframe — the thing being judged — as a sliver in the
 	# middle, which inverts what this screen is for. Tabs also match how the decision is
 	# actually made: one component at a time, against a build that stays whole between visits.
-	var rails := TabContainer.new()
-	rails.custom_minimum_size = Vector2(292, 0)
-	rails.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	row.add_child(rails)
+	_rails = TabContainer.new()
+	_rails.custom_minimum_size = Vector2(292, 0)
+	_rails.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_child(_rails)
 
-	picker = FramePicker.new(catalog)
-	picker.name = "Frame"
-	rails.add_child(picker)
-
-	motor_picker = MotorPicker.new(catalog)
-	motor_picker.name = "Motor"
-	rails.add_child(motor_picker)
-
-	propeller_picker = PropellerPicker.new(catalog)
-	propeller_picker.name = "Prop"
-	rails.add_child(propeller_picker)
-
-	battery_picker = BatteryPicker.new(catalog)
-	battery_picker.name = "Pack"
-	rails.add_child(battery_picker)
-
-	esc_picker = EscPicker.new(catalog)
-	esc_picker.name = "ESC"
-	rails.add_child(esc_picker)
-
-	fc_picker = FcPicker.new(catalog)
-	fc_picker.name = "FC"
-	rails.add_child(fc_picker)
+	_build_rails()
 
 	var viewport_container := SubViewportContainer.new()
 	viewport_container.stretch = true
@@ -278,8 +262,9 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	panels.add_child(tune_panel)
 
 	# Working on a rail should show the panel for the part being chosen, so the two columns
-	# never describe different components.
-	rails.tab_changed.connect(func(index: int) -> void: panels.current_tab = index)
+	# never describe different components. Connected once, against the TabContainer itself, which
+	# survives a reload_catalog() even though its children (the rails) do not.
+	_rails.tab_changed.connect(func(index: int) -> void: panels.current_tab = index)
 
 	# Lab opens on the reference build rather than on whatever happens to be first in each
 	# catalog file — a 65 mm whoop frame under a 2807 and a 10" prop is a strange thing to
@@ -293,8 +278,89 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	esc_picker.select_id(ReferenceBuild.ESC_ID)
 	fc_picker.select_id(ReferenceBuild.FC_ID)
 
+	_on_selection_changed()
+
+
+## Picks the previous id back up if the rebuilt catalog still has it (the common case: an
+## unrelated frame was added, or a different one deleted), and falls back to the reference id
+## when it does not (the one case that changes it: the part just deleted was the one selected).
+func _reselect(rail: PartPicker, previous_id: String, fallback_id: String) -> void:
+	if previous_id == "" or not rail.select_id(previous_id):
+		rail.select_id(fallback_id)
+
+
+## The six rails, built fresh against `catalog`. Called once from _init and again from
+## reload_catalog() — the one seam a catalog reload rebuilds through, so there is exactly one
+## place that knows how a rail is made and wired.
+func _build_rails() -> void:
+	picker = FramePicker.new(catalog)
+	picker.name = "Frame"
+	_rails.add_child(picker)
+
+	motor_picker = MotorPicker.new(catalog)
+	motor_picker.name = "Motor"
+	_rails.add_child(motor_picker)
+
+	propeller_picker = PropellerPicker.new(catalog)
+	propeller_picker.name = "Prop"
+	_rails.add_child(propeller_picker)
+
+	battery_picker = BatteryPicker.new(catalog)
+	battery_picker.name = "Pack"
+	_rails.add_child(battery_picker)
+
+	esc_picker = EscPicker.new(catalog)
+	esc_picker.name = "ESC"
+	_rails.add_child(esc_picker)
+
+	fc_picker = FcPicker.new(catalog)
+	fc_picker.name = "FC"
+	_rails.add_child(fc_picker)
+
+	# A frame added or deleted changes the CATALOG, not just the rail — the camera distance is
+	# computed from the largest arm in it, so the whole screen is rebuilt rather than the list
+	# repopulated. Rebuilding is cheap here and a partially-refreshed Lab is the kind of state that
+	# takes an afternoon to explain.
+	picker.custom_frames_changed.connect(reload_catalog)
+
 	for rail in [picker, motor_picker, propeller_picker, battery_picker, esc_picker, fc_picker]:
 		rail.part_selected.connect(_on_part_selected)
+
+
+## Rebuilds Lab against a freshly-loaded catalog: a custom frame was just added or deleted on the
+## frame rail. Named and public because it is also the seam a future "reload the catalog from
+## disk" would use, and because the alternative — patching the rail in place — leaves the camera
+## framed for the frame set that existed a moment ago (see _camera_distance_m).
+##
+## The current selection is carried over rather than reset to the reference build — adding a
+## frame should not knock a builder off whatever they were looking at, and select_id() falling
+## back to the reference id covers the one case that changes: the frame just deleted was the one
+## selected.
+##
+## Old rail and world nodes are queue_free()'d rather than free()'d. This runs from inside a
+## signal a rail child emitted from its own method body (FramePicker._delete_selected), so freeing
+## that node immediately would free an object still executing on the call stack; queue_free() is
+## the form Godot documents as safe to call on a node from within its own code.
+func reload_catalog() -> void:
+	var previous := selection()
+	catalog = PartsCatalog.load_with_custom()
+
+	for child in _rails.get_children():
+		_rails.remove_child(child)
+		child.queue_free()
+	_build_rails()
+
+	for child in _viewport.get_children():
+		_viewport.remove_child(child)
+		child.queue_free()
+	_build_world()
+
+	_reselect(picker, previous.get("frame", ""), ReferenceBuild.FRAME_ID)
+	_reselect(motor_picker, previous.get("motor", ""), ReferenceBuild.MOTOR_ID)
+	_reselect(propeller_picker, previous.get("propeller", ""), ReferenceBuild.PROPELLER_ID)
+	_reselect(battery_picker, previous.get("battery", ""), ReferenceBuild.BATTERY_ID)
+	_reselect(esc_picker, previous.get("esc", ""), ReferenceBuild.ESC_ID)
+	_reselect(fc_picker, previous.get("flight_controller", ""), ReferenceBuild.FC_ID)
 
 	_on_selection_changed()
 

@@ -147,6 +147,13 @@ func _read(part: Dictionary, key: String) -> String:
 	return _or_dash(str(part.get("catalog", {}).get(key, "")))
 
 
+## One spec row's rendered text, for a caller that wants the value without reading a Label out of
+## the tree. The panel's own renderer goes through the same _read(), so a test asserting here is
+## asserting what is on screen and not a second formatting path.
+func detail_text(part: Dictionary, key: String) -> String:
+	return _read(part, key)
+
+
 ## Every rendered row as one string, label and value, for tests.
 ##
 ## A TEST SEAM and nothing else: a panel's job is to put numbers on screen, and the only way to
