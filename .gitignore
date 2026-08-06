@@ -17,3 +17,6 @@
 # Editors
 .vscode/
 .idea/
+
+# Python bytecode from tools/
+__pycache__/

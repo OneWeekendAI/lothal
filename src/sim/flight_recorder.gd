@@ -154,10 +154,14 @@ var _tick := 0
 
 var _build: Build
 var _tune: RateTune
+## The sensor that is actually flying, when the caller has one. Optional, and null falls back
+## to a fresh Gyro off the build — see _gyro_block().
+var _gyro: Gyro
 
-func _init(p_build: Build, p_decimation: int = 1, p_tune: RateTune = null) -> void:
+func _init(p_build: Build, p_decimation: int = 1, p_tune: RateTune = null, p_gyro: Gyro = null) -> void:
 	_build = p_build
 	_tune = p_tune
+	_gyro = p_gyro
 	decimation = maxi(1, p_decimation)
 
 
@@ -301,12 +305,46 @@ func _header() -> Dictionary:
 				+ " single free constant. Ratios are derived; absolute values are not sourced.",
 		},
 
+		# WHAT THE SENSOR DID TO THE SIGNAL BEFORE IT REACHED THE gyro_* COLUMNS. Added because
+		# the first real comparison could not be made without it: the analysis in
+		# tools/resonance_analysis.py refuses a Betaflight log whose gyro was recorded after the
+		# lowpass, since that lowpass attenuates exactly the resonance peak being hunted — and it
+		# could not apply the same refusal to a Lothal log, because a Lothal log did not say. A
+		# trace that cannot state its own filtering can be held to a standard the other side of
+		# the comparison is held to only by assumption, which is not a standard.
+		#
+		# Appending this does not bump SCHEMA: per the rule above, a reader selecting by name is
+		# unaffected by an addition.
+		#
+		# THE GYRO THAT FLEW, not a fresh one built from the same parts. Build.gyro() constructs
+		# a new Gyro on every call, so asking the BUILD would describe a sensor that was never in
+		# the aircraft — identical today, and silently wrong the moment anything adjusts the
+		# sensor on the way into a flight, which is exactly what tools/record_sweep.gd does when
+		# it disables the lowpass to take a measurement. A header that quietly reported the
+		# lowpass as still on would invalidate the one comparison this block was added for.
+		"gyro": _gyro_block(),
+
 		"tune": _tune_block(),
 
 		"columns": COLUMNS,
 		"units": UNITS,
 		"frames": "position/velocity are WORLD; accel and gyro/omega are BODY. Betaflight blackbox"
 			+ " is deg/s — these rates are rad/s and are NOT converted.",
+	}
+
+
+## What the sensor did to the signal before it reached the gyro_* columns.
+##
+## Falls back to the build's own gyro when the caller did not hand one over, which is right for
+## a flight that never touched the sensor and is the only case where the two agree by
+## construction. When they can differ, the one that flew wins.
+func _gyro_block() -> Dictionary:
+	var g := _gyro if _gyro != null else _build.gyro()
+	return {
+		"sample_rate_hz": g.sample_rate_hz,
+		"lowpass_hz": g.cutoff_hz,
+		"noise_rad_s": g.noise_rad_s,
+		"source": "the gyro that flew" if _gyro != null else "rebuilt from the build",
 	}
 
 

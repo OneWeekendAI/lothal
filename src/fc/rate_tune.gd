@@ -375,6 +375,16 @@ static func vibration_noise_fraction(p_build: Build, p_kd: float) -> float:
 ## WHAT WOULD CHANGE THIS: a measured resonance for one real frame. One would do. The scaling law
 ## carries it to the rest of the catalog, and this function's last line becomes the RMS sum that is
 ## already written out in vibration_noise_fraction's units.
+##
+## THAT MEASUREMENT WAS ATTEMPTED (LTHL-18) AND DID NOT SUCCEED, so this function is unchanged and
+## the reason is worth knowing before anyone tries again. The instrument exists and works —
+## tools/resonance_analysis.py, validated on synthetic modes to within 0.6% and end-to-end through
+## a Lothal sweep to +2.8% — and the bound was pre-registered at 25% before any data was read. What
+## could not be found was an admissible log. Public blackbox logs fail on one of two things: the
+## airframe is not named specifically enough to get an arm length from, or the flight is normal
+## flying, in which the 1x line moves 155-235 Hz WITHIN one analysis frame and no peak survives.
+## Both walls, and the five criteria a usable log has to meet, are written up in
+## landingpage/docs/lothal/validation.md 9.1.
 static func kd_ceiling_for(p_build: Build) -> float:
 	var per_unit_kd := d_noise_fraction(p_build, 1.0)
 	if per_unit_kd <= 0.0:

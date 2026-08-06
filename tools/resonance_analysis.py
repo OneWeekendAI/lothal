@@ -83,8 +83,23 @@ AGREEMENT_FRACTION = 0.25
      make a log usable would poison the result exactly as inventing a mass would have poisoned
      data/validation/builds.json.
   c. NAMED MOTORS AND PROPS, because tip mass is half the scaling law.
-  d. A THROTTLE SWEEP OR VARIED FLIGHT, not a static hover, because the discriminator in
-     section 3 needs the harmonics to move.
+  d. A SLOW THROTTLE SWEEP. This was pre-registered as "a throttle sweep or varied flight, not
+     a static hover, because the discriminator needs the harmonics to move" — and that turned
+     out to be badly underspecified in a way only real data revealed. The harmonics must move
+     SLOWLY: a harmonic has to be a LINE within one analysis frame for its magnitude to be
+     readable at all.
+
+     Measured on four real Betaflight logs from one freestyle session, the 1x line moves by a
+     median of 155-235 Hz WITHIN a single 1.024 s frame — 160 to 240 FFT bins. At that rate
+     the harmonic is not a line, it is a smear across half the band, and there is nothing for
+     order tracking to ride. Normal flying is therefore USELESS for this measurement no matter
+     how varied it is, and "varied flight" as an alternative to a sweep was simply wrong.
+
+     What is needed is a deliberate slow sweep, of the kind tools/record_sweep.gd flies: about
+     7 Hz/s of 1x drift rather than 200. That is a much heavier ask of a pilot than the
+     original wording implied, and it is the single most important thing to put in the request
+     if a log is ever commissioned rather than found. NOTE the direction this moved: it made
+     admissibility STRICTER after the data, never looser, and AGREEMENT_FRACTION was untouched.
   e. LOGGED RPM. Added when the statistic changed in section 3 and it is a real narrowing:
      order tracking needs to know where each harmonic WAS in each frame, and a throttle
      percentage does not say that. In Betaflight that means bidirectional DShot with
@@ -257,8 +272,16 @@ class Trace:
     sample_rate_hz: float
     roll_deg_s: "np.ndarray"
     pitch_deg_s: "np.ndarray"
-    #: Mechanical rotation frequency of the props, per sample. Order tracking needs an actual
-    #: frequency, not a throttle percentage — see pre-registration 2e.
+    #: Mechanical rotation frequency of the props, shape (samples, motors). Order tracking
+    #: needs an actual frequency, not a throttle percentage — see pre-registration 2e.
+    #:
+    #: PER MOTOR, NOT AVERAGED, and this was a real defect found on real data. Averaging the
+    #: four eRPM channels and tracking one nominal 1x line smears the harmonic, because in
+    #: flight the four motors genuinely run at different rpm — that difference IS the roll and
+    #: pitch command. Checking the tracked 1x against the gyro's own dominant line put the
+    #: ratio's mode at 0.875 rather than 1.0 with a long tail, which is the smear. Each motor
+    #: is tracked on its own eRPM instead, which is also the physically right thing: each arm
+    #: is a separate cantilever with its own shaker bolted to the end of it.
     rot_hz: "np.ndarray"
     blades: int
     unfiltered: bool
@@ -274,18 +297,28 @@ def load_lothal(path: str, blades: int) -> Trace:
     deliberately not used: comparing Lothal's ground truth against a real aircraft's sensor
     would compare two different quantities and flatter or damn the model for the wrong reason.
     """
+    # The JSON header is pretty-printed across SEVERAL '#' lines, not one — the same shape
+    # tests/test_flight_recorder.gd's _header() reads. Stripping one '#' per line and
+    # concatenating is the whole decode.
+    header_text, names, data_lines = "", None, []
     with open(path) as fh:
-        first = fh.readline()
-        if not first.startswith("#"):
-            raise ValueError(f"{path}: expected a '#' JSON header line")
-        header = json.loads(first[1:])
-        names = fh.readline().strip().split(",")
-        rows = np.loadtxt(fh, delimiter=",")
+        for line in fh:
+            if names is None and line.startswith("#"):
+                header_text += line[1:].rstrip("\n")
+                continue
+            if names is None:
+                names = line.strip().split(",")
+                continue
+            data_lines.append(line)
+    if names is None:
+        raise ValueError(f"{path}: no CSV header row found")
+    header = json.loads(header_text)
+    rows = np.loadtxt(data_lines, delimiter=",")
 
     col = {n: i for i, n in enumerate(names)}
-    rpm = np.mean([rows[:, col[f"m{i}_rpm"]] for i in (1, 2, 3, 4)], axis=0)
+    rpm = np.column_stack([rows[:, col[f"m{i}_rpm"]] for i in (1, 2, 3, 4)])
     return Trace(
-        name=header.get("build", {}).get("name", path),
+        name=header.get("aircraft", {}).get("fingerprint", path),
         source="lothal",
         sample_rate_hz=float(header.get("sample_rate_hz", 1000.0)),
         # THE one unit conversion. rad/s in the file, deg/s from here on.
@@ -337,7 +370,11 @@ def load_betaflight(path: str, arm_m: float, tip_mass_kg: float, blades: int, po
             f"{path}: no eRPM columns. Order tracking needs logged rpm (pre-registration 2e); "
             "this log was flown without bidirectional DShot and is inadmissible."
         )
-    erpm = np.mean([rows[:, col[k]] for k in erpm_keys], axis=0)
+    # The x100 is verified against the log itself rather than taken on trust: tracking the 1x
+    # line at this scaling puts the gyro's own dominant line at a ratio of ~1, where the
+    # x100/(2*pole_pairs) alternative would put it at ~1.8. See tools/ notes in the LTHL-18
+    # write-up.
+    erpm = np.column_stack([rows[:, col[k]] for k in erpm_keys])
     rot_hz = (erpm * 100.0 / pole_pairs) / 60.0
 
     return Trace(
@@ -440,10 +477,13 @@ def spectrogram(x, fs):
 
 
 def frame_rot_hz(rot_hz, fs, frame_count):
-    """Mean rotation frequency within each spectrogram frame."""
+    """Mean rotation frequency within each spectrogram frame, per motor.
+
+    Accepts (samples,) or (samples, motors) and returns (frames,) or (frames, motors).
+    """
     n = int(round(FRAME_SECONDS * fs))
     step = max(1, int(round(n * (1.0 - OVERLAP_FRACTION))))
-    return np.array([np.mean(rot_hz[i * step:i * step + n]) for i in range(frame_count)])
+    return np.array([np.mean(rot_hz[i * step:i * step + n], axis=0) for i in range(frame_count)])
 
 
 def order_samples(freqs, frames, rot_per_frame, order):
@@ -501,22 +541,26 @@ def order_curve(freqs, frames, rot_per_frame, orders):
     edges = np.arange(lo, hi + ORDER_GRID_HZ, ORDER_GRID_HZ)
     centres = 0.5 * (edges[:-1] + edges[1:])
 
+    rot_per_frame = np.atleast_2d(rot_per_frame.T).T  # (frames,) -> (frames, 1)
+    motor_count = rot_per_frame.shape[1]
+
     per_order, all_f = [], []
-    for k in orders:
-        f_s, m_s = order_samples(freqs, frames, rot_per_frame, k)
-        if len(f_s) == 0:
-            continue
-        all_f.append(f_s)
-        binned = _bin_to_grid(f_s, m_s, edges)
-        present = ~np.isnan(binned)
-        if present.sum() < TREND_MEDIAN_BINS // 2:
-            # Too few bins for this order to have a meaningful trend of its own; a trend
-            # fitted to a handful of points is the resonance itself and would divide it out.
-            continue
-        ratio = np.full_like(binned, np.nan)
-        y = binned[present]
-        ratio[present] = y / np.maximum(_running_median(y, TREND_MEDIAN_BINS), 1e-30)
-        per_order.append(ratio)
+    for motor in range(motor_count):
+        for k in orders:
+            f_s, m_s = order_samples(freqs, frames, rot_per_frame[:, motor], k)
+            if len(f_s) == 0:
+                continue
+            all_f.append(f_s)
+            binned = _bin_to_grid(f_s, m_s, edges)
+            present = ~np.isnan(binned)
+            if present.sum() < TREND_MEDIAN_BINS // 2:
+                # Too few bins for this track to have a meaningful trend of its own; a trend
+                # fitted to a handful of points is the resonance itself and would divide it out.
+                continue
+            ratio = np.full_like(binned, np.nan)
+            y = binned[present]
+            ratio[present] = y / np.maximum(_running_median(y, TREND_MEDIAN_BINS), 1e-30)
+            per_order.append(ratio)
 
     if not per_order:
         return centres[:0], centres[:0], np.array([])
