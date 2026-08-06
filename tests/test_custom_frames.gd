@@ -17,6 +17,7 @@ static func run() -> Array:
 	results.append(_test_a_frame_without_an_arm_is_refused())
 	results.append(_test_a_colliding_id_is_refused_and_the_catalog_survives())
 	results.append(_test_unknown_fields_survive_a_round_trip())
+	results.append(_test_a_custom_size_class_lands_in_the_catalogs_own_bucket())
 	return results
 
 
@@ -220,3 +221,27 @@ static func _test_unknown_fields_survive_a_round_trip() -> TestResult:
 	return TestResult.new(
 		"unknown top-level blocks and unknown record fields survive a save/load round trip",
 		kept_top and kept_field, "top-level kept=%s, record field kept=%s" % [kept_top, kept_field])
+
+
+## FramePicker's Size filter derives its options from the shipped catalog's own size_class
+## strings (PartPicker._derive_options). A custom frame whose size_class is spelled differently —
+## "5in" against the catalog's "5\"" — does not merely look inconsistent, it lands in a filter
+## bucket of one that nothing else can ever join, which is the exact failure size_class_for()'s own
+## doc comment claims not to happen. Derived rather than hardcoded against a literal like "5\"", so
+## this keeps checking the real thing (agreement with the catalog) rather than one snapshot of it.
+static func _test_a_custom_size_class_lands_in_the_catalogs_own_bucket() -> TestResult:
+	var catalog_buckets: Dictionary = {}
+	for frame in PartsCatalog.load_default().list_category("frame"):
+		var bucket := str((frame as Dictionary).get("catalog", {}).get("size_class", ""))
+		if bucket != "":
+			catalog_buckets[bucket] = true
+
+	var record := CustomFrames.make_record(
+		"Shed 510", 340.0, 210.0, 5.1, "25x25", "30.5x30.5", "carbon fibre",
+		"measured on my kitchen scale")
+	var derived := str(record["catalog"]["size_class"])
+	var ok := catalog_buckets.has(derived)
+
+	return TestResult.new(
+		"a custom frame's size_class matches a bucket the shipped catalog already uses",
+		ok, "derived \"%s\", catalog buckets: %s" % [derived, catalog_buckets.keys()])

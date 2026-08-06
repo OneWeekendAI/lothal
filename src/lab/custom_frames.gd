@@ -166,19 +166,27 @@ static func id_for(name: String) -> String:
 ## The picker's Size bucket, derived from max_prop_inches rather than asked for — see the header.
 ## The boundaries are the ones the shipped catalog already browses along (frames.json's
 ## size_class values), so a custom 5" frame lands in the same bucket as the catalog's 5" frames
-## instead of in a bucket of one.
+## instead of in a bucket of one. FramePicker's Size filter builds its options straight off these
+## strings (PartPicker._derive_options), so the SHAPE of the string is not decoration — a value
+## the catalog does not already use is a filter bucket with exactly one frame in it, forever.
+##
+## The mark is `"`, not the letters "in" — frames.json spells it 5", 3.5", 10". This is NOT fully
+## derivable in general: the catalog is inconsistent by hand (3.5" appears both as "3\"" and as
+## "3.5\"", and 1.6" is spelled "65mm", a diameter rather than a radius figure). No formula
+## reproduces that; a 3.5" custom frame lands in the "3.5\"" bucket, matching the more literal of
+## the catalog's two spellings, and a sub-2" custom frame gets an inch bucket rather than "65mm"
+## as there is nothing here to derive a millimetre figure from. Both are the honest limit of
+## deriving from one number, not a bug to chase further.
 static func size_class_for(max_prop_inches: float) -> String:
 	if max_prop_inches <= 0.0:
 		return "unspecified"
 	var rounded_inches := snappedf(max_prop_inches, 0.5)
-	# GDScript's %-formatting has no %g (unsupported format character, and an engine-level
-	# ERROR at that — see the header on why that is worse than it sounds here). str(float)
-	# always carries a decimal (13.0, 12.5); trimming a trailing ".0" gives the same shape %g
-	# would, matching the shipped catalog's own size_class values ("13in", not "13.0in").
+	# str(float) always carries a decimal (13.0, 12.5); trimming a trailing ".0" gives whole
+	# numbers their bare form ("13"), matching the shipped catalog's own size_class values.
 	var text := str(rounded_inches)
 	if text.ends_with(".0"):
 		text = text.trim_suffix(".0")
-	return "%sin" % text
+	return "%s\"" % text
 
 
 # ---------------------------------------------------------------------------
