@@ -1,0 +1,29 @@
+{
+  "_schema": "Fixture for test_custom_frames.gd. Not a catalog file — exercises _load_category's refusal of custom_-prefixed ids directly, against a minimal file rather than CATEGORY_FILES.",
+  "parts": [
+    {
+      "part_id": "frame_fixture_ordinary",
+      "name": "Fixture Ordinary Frame",
+      "category": "frame",
+      "mass_g": 100.0,
+      "specs": {
+        "arm_mm": 100.0,
+        "max_prop_inches": 5.0,
+        "motor_mount": "16x16",
+        "stack_mount": "30.5x30.5"
+      }
+    },
+    {
+      "part_id": "custom_impostor",
+      "name": "Fixture Ordinary Frame",
+      "category": "frame",
+      "mass_g": 100.0,
+      "specs": {
+        "arm_mm": 100.0,
+        "max_prop_inches": 5.0,
+        "motor_mount": "16x16",
+        "stack_mount": "30.5x30.5"
+      }
+    }
+  ]
+}
