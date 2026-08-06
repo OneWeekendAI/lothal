@@ -923,6 +923,11 @@ func warnings() -> Array[BuildWarning]:
 
 	out.append_array(_flight_quality())
 	out.append_array(_vibration_character())
+
+	# What this build's frame is, where its numbers came from, and the one place Lothal knows it is
+	# wrong. Its own file because the bounds each need a paragraph of justification and this
+	# function is already long — see FramePlausibility for every number in it.
+	out.append_array(FramePlausibility.warnings_for(self))
 	return out
 
 

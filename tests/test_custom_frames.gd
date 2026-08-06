@@ -21,6 +21,9 @@ static func run() -> Array:
 	results.append(_test_a_custom_frame_does_not_move_the_reference_build())
 	results.append(_test_a_custom_frame_is_selectable_and_flyable())
 	results.append(_test_camera_distance_accounts_for_a_bigger_custom_frame())
+	results.append(_test_a_custom_build_says_it_is_custom_and_a_catalog_build_does_not())
+	results.append(_test_an_implausible_frame_still_flies())
+	results.append(_test_the_electronics_lump_names_itself_on_a_light_build())
 	return results
 
 
@@ -388,3 +391,109 @@ static func _restore(path: String, previous: String) -> void:
 		_wipe(path)
 		return
 	_write_raw(path, previous)
+
+
+static func _find(warnings: Array, id: StringName) -> BuildWarning:
+	for warning in warnings:
+		if (warning as BuildWarning).id == id:
+			return warning
+	return null
+
+
+## Custom-ness is a CHARACTERISTIC warning, not a UI badge. The numbers behind a builder-entered
+## frame have been through no validation tier at all, and the build has to say so out loud in the
+## same list as everything else it says — the way the resonance warning does.
+static func _test_a_custom_build_says_it_is_custom_and_a_catalog_build_does_not() -> TestResult:
+	var previous := ""
+	if FileAccess.file_exists(CustomFrames.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(CustomFrames.SAVE_PATH)
+
+	var doc := CustomFrames.new()
+	doc.add(CustomFrames.make_record("Shed 5", 112.0, 112.0, 5.1,
+		"16x16", "30.5x30.5", "carbon fibre", "measured on my kitchen scale"))
+	doc.save(CustomFrames.SAVE_PATH)
+	var catalog := PartsCatalog.load_with_custom()
+
+	var custom := Build.from_ids(catalog, "custom_shed_5", ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID)
+	var custom_warning := _find(custom.warnings(), &"custom_frame")
+	var catalog_warning := _find(ReferenceBuild.build().warnings(), &"custom_frame")
+
+	# The sentence must carry the provenance the builder wrote, or it is a badge with extra steps.
+	var quotes_source: bool = custom_warning != null \
+		and custom_warning.message.contains("measured on my kitchen scale")
+	var is_characteristic: bool = custom_warning != null \
+		and custom_warning.severity == BuildWarning.Severity.CHARACTERISTIC
+
+	_restore(CustomFrames.SAVE_PATH, previous)
+	return TestResult.new(
+		"a custom-frame build carries the provenance warning; the reference build does not",
+		custom_warning != null and catalog_warning == null and quotes_source and is_characteristic,
+		"custom warning=%s, reference warning=%s, quotes source=%s" % [
+			custom_warning != null, catalog_warning != null, quotes_source])
+
+
+## Warn, never block, applied to the NUMBERS THEMSELVES. A 900 mm arm on a 40 g frame is an
+## aircraft nobody has built, and Lothal's answer is to fly it and say what it thinks — not to
+## refuse it. This test fails if the build is unflyable OR if it goes through silently.
+static func _test_an_implausible_frame_still_flies() -> TestResult:
+	var previous := ""
+	if FileAccess.file_exists(CustomFrames.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(CustomFrames.SAVE_PATH)
+
+	var doc := CustomFrames.new()
+	# 900 mm arm, 40 g, and a 60" prop clearance that four 60" props cannot geometrically occupy
+	# (adjacent motors on 900 mm arms are 900 * sqrt(2) / 25.4 = 50.1" apart).
+	doc.add(CustomFrames.make_record("Impossible Cross", 40.0, 900.0, 60.0,
+		"25x25", "30.5x30.5", "carbon fibre", "made up to see what Lothal says"))
+	doc.save(CustomFrames.SAVE_PATH)
+	var catalog := PartsCatalog.load_with_custom()
+
+	var build := Build.from_ids(catalog, "custom_impossible_cross", ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID)
+	var warnings := build.warnings()
+
+	var flies := build.all_up_weight_g() > 0.0 and build.thrust_to_weight() > 0.0 \
+		and build.build_drone_core() != null
+	var arm := _find(warnings, &"implausible_arm")
+	var mass := _find(warnings, &"implausible_frame_mass")
+	var overlap := _find(warnings, &"prop_overlap")
+	var all_characteristic: bool = arm != null and mass != null and overlap != null \
+		and arm.severity == BuildWarning.Severity.CHARACTERISTIC \
+		and mass.severity == BuildWarning.Severity.CHARACTERISTIC
+
+	_restore(CustomFrames.SAVE_PATH, previous)
+	return TestResult.new(
+		"a 900 mm 40 g frame still produces a flyable build, and says all three things about itself",
+		flies and all_characteristic,
+		"flies=%s, arm=%s, mass=%s, prop overlap=%s" % [
+			flies, arm != null, mass != null, overlap != null])
+
+
+## LTHL-11 made visible. ELECTRONICS_MASS_G is a flat 55 g on every aircraft, and on a build light
+## enough for that lump to be a quarter of all-up weight the number a builder is reading is mostly
+## Lothal's constant rather than their frame. The warning names the number and names the ticket.
+static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestResult:
+	var catalog := PartsCatalog.load_default()
+
+	# The catalog's own extreme, built out of whoop-class parts rather than the reference 5" stack
+	# — a whoop FRAME carrying a whoop, not a whoop frame carrying a 5" aircraft. This is what
+	# makes the honesty problem real without a custom frame: it was always there and custom frames
+	# only make it easy to notice.
+	var whoop := Build.from_ids(catalog, "frame_65mm_whoop", "motor_0802_19000kv",
+		"prop_16x12x4", "battery_1s_300", "esc_aio_5a_whoop", "fc_f411_25x25_whoop")
+	var light := _find(whoop.warnings(), &"electronics_lump")
+	var heavy := _find(ReferenceBuild.build().warnings(), &"electronics_lump")
+
+	var names_the_ticket: bool = light != null and light.message.contains("LTHL-11")
+	var names_the_number: bool = light != null and light.message.contains("55")
+
+	return TestResult.new(
+		"a build where the flat 55 g electronics lump dominates says so and names LTHL-11",
+		light != null and heavy == null and names_the_ticket and names_the_number,
+		"whoop AUW=%.1f g (want 85.8), TWR=%.2f (want 1.31), hover=%.1f%% (want 80.2), warns=%s (%.1f%% of AUW), reference warns=%s (%.1f%% of AUW)" % [
+			whoop.all_up_weight_g(), whoop.thrust_to_weight(), whoop.hover_throttle() * 100.0,
+			light != null, Build.ELECTRONICS_MASS_G / whoop.all_up_weight_g() * 100.0,
+			heavy != null, Build.ELECTRONICS_MASS_G / ReferenceBuild.build().all_up_weight_g() * 100.0])
