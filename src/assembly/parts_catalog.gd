@@ -17,12 +17,36 @@ const CATEGORY_FILES := {
 	"flight_controller": "res://data/parts/flight_controllers.json",
 }
 
+## The id prefix a builder-entered part MUST carry, and which a SHIPPED part may never carry.
+##
+## This is the whole of the collision defence, and it is deliberately structural rather than a
+## convention anyone has to remember. PartsCatalog.by_id is one flat dictionary, and load_default()
+## is what ReferenceBuild calls — so a custom frame that managed to call itself
+## "frame_5in_freestyle" would not merely shadow the catalog entry, it would BECOME the 496 g
+## oracle that six test files assert against, and every one of them would go on passing against a
+## number the builder typed. Two id spaces that cannot intersect is the only version of this that
+## does not depend on anybody being careful.
+##
+## Enforced from both ends: _load_category refuses it below, and CustomFrames requires it.
+const CUSTOM_PREFIX := "custom_"
+
+
+## Whether a part id belongs to a builder rather than to the catalog. The id IS the mark — there is
+## no `is_custom` FIELD on the record, because a field can be absent, mistyped or copied off, and
+## the thing asking is usually holding nothing but the id.
+static func is_custom(part_id: String) -> bool:
+	return part_id.begins_with(CUSTOM_PREFIX)
+
 ## category -> Array[Dictionary], in catalog file order (which is the dropdown order).
 var by_category: Dictionary = {}
 ## part_id -> Dictionary, for direct lookup.
 var by_id: Dictionary = {}
 var load_errors: Array[String] = []
 
+## The SHIPPED catalog, and nothing else. It cannot contain a builder's custom part — the prefix
+## rule above makes that a load error rather than a matter of trust — which is what lets
+## ReferenceBuild go on calling this and stay pinned at 496 g no matter what is in user://.
+## Lab and Sim call load_with_custom() instead.
 static func load_default() -> PartsCatalog:
 	var catalog := PartsCatalog.new()
 	for category in CATEGORY_FILES:
@@ -45,6 +69,10 @@ func _load_category(category: String, path: String) -> void:
 	for entry in parsed["parts"]:
 		if not entry is Dictionary or not entry.has("part_id") or not entry.has("mass_g"):
 			load_errors.append("%s: entry missing part_id or mass_g" % path)
+			continue
+		if is_custom(str(entry["part_id"])):
+			load_errors.append("%s: %s claims the reserved \"%s\" prefix, which only a builder's own parts may use" % [
+				path, entry["part_id"], CUSTOM_PREFIX])
 			continue
 		if entry.get("category", category) != category:
 			load_errors.append("%s: %s declares category %s" % [path, entry["part_id"], entry["category"]])
