@@ -20,3 +20,6 @@
 
 # Python bytecode from tools/
 __pycache__/
+
+# SDD scratch (subagent-driven development ledger and review packages)
+.superpowers/
