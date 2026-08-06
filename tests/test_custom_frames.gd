@@ -24,6 +24,7 @@ static func run() -> Array:
 	results.append(_test_a_custom_build_says_it_is_custom_and_a_catalog_build_does_not())
 	results.append(_test_an_implausible_frame_still_flies())
 	results.append(_test_the_electronics_lump_names_itself_on_a_light_build())
+	results.append(_test_the_long_range_rows_third_row_is_a_real_build())
 	results.append(_test_the_picker_marks_a_custom_frame())
 	results.append(_test_the_details_panel_names_the_provenance())
 	results.append(_test_the_dialog_saves_a_frame_and_refuses_a_bad_one())
@@ -500,6 +501,43 @@ static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestRe
 			whoop.all_up_weight_g(), whoop.thrust_to_weight(), whoop.hover_throttle() * 100.0,
 			light != null, Build.ELECTRONICS_MASS_G / whoop.all_up_weight_g() * 100.0,
 			heavy != null, Build.ELECTRONICS_MASS_G / ReferenceBuild.build().all_up_weight_g() * 100.0])
+
+
+## The third row of FramePlausibility's header table, docs/lothal/parts.md's quoted copy of it,
+## was never checked against a real build — a grep for 1220, 7.20 and 29.3 across tests/ found
+## nothing before this test existed. The whoop row is pinned by the test above (a whoop FRAME
+## carrying a whoop); the reference row is pinned by
+## _test_a_custom_frame_does_not_move_the_reference_build (496 / 11.69 / 29.6). This test is the
+## 10" row's turn: a 10" long-range FRAME carrying an actual 10" long-range aircraft, not the 10"
+## frame under the reference build's 5"-class stack (that mistake is exactly what happened to the
+## original whoop fixture in this file, before Task 4's coordinator caught it).
+##
+## Parts, and why: motor_2808_1300kv is the only motor in the catalog whose 19x19 mount_pattern
+## matches the frame's 19x19 motor_mount. prop_10x5x2 is the only propeller in the catalog whose
+## catalog.intended_use is literally "long-range", and its 10" diameter is exactly the frame's
+## max_prop_inches. battery_6s_4000_liion is the catalog's only long-range-class pack — a 6S
+## Li-ion brick built for endurance rather than punch, which is the point of this airframe class.
+## esc_4in1_80a_30x30 and fc_f405_30x30 both match the frame's 30.5x30.5 stack_mount; the 80A ESC
+## (rather than the catalog's 60A option) is headroom over the motor's 50 A max_amps rating, which
+## is the conventional margin an ESC is chosen with, not a number reached-for to hit a target mass.
+static func _test_the_long_range_rows_third_row_is_a_real_build() -> TestResult:
+	var catalog := PartsCatalog.load_default()
+	var long_range := Build.from_ids(catalog, "frame_10in_long_range", "motor_2808_1300kv",
+		"prop_10x5x2", "battery_6s_4000_liion", "esc_4in1_80a_30x30", "fc_f405_30x30")
+
+	var auw := long_range.all_up_weight_g()
+	var twr := long_range.thrust_to_weight()
+	var hover := long_range.hover_throttle() * 100.0
+
+	var matches_auw := absf(auw - 1220.0) < 0.05
+	var matches_twr := absf(twr - 7.20) < 0.005
+	var matches_hover := absf(hover - 29.3) < 0.05
+
+	return TestResult.new(
+		"the header table's 10\" long-range row is a real build, not an unchecked figure",
+		matches_auw and matches_twr and matches_hover,
+		"AUW=%.2f g (want 1220.0), TWR=%.3f (want 7.20), hover=%.2f%% (want 29.3)" % [
+			auw, twr, hover])
 
 
 static func _test_the_picker_marks_a_custom_frame() -> TestResult:
