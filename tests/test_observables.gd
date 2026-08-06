@@ -128,7 +128,91 @@ static func run() -> Array:
 		"published 800 Hz alongside 29,000 RPM (which would imply 1450 Hz); synth rendered %.0f Hz" % rendered
 	))
 
+	# --- The three quantities the flight recorder needed (LTHL-18) -------------------------
+	#
+	# Added to this layer rather than recovered by the recorder, because a recorder that
+	# re-derived reaction torque from k_q would be the SECOND expression of it in the project,
+	# and two expressions of one quantity is how a log and the flight it claims to describe
+	# start disagreeing. Each check below is written against the way a re-derivation would go
+	# subtly wrong, not merely against "the field exists".
+
+	# Simulated time, not wall clock, and not advanced by a republish. A recorder timestamping
+	# from Time.get_ticks_msec() would produce a trace whose sample spacing is the frame rate of
+	# the machine that ran it, which is worthless for a spectrum.
+	var clocked := build.build_drone_core()
+	clocked.prime_motors(build.hover_throttle())
+	var primed_at: float = clocked.observables.elapsed_s
+	for _i in 250:
+		clocked.step(_even_throttle(build.hover_throttle()), 0.001)
+	clocked._publish(Vector3.ZERO)
+	results.append(TestResult.new(
+		"elapsed time is accumulated SIMULATED time — priming starts a clock at zero and a republish does not advance it",
+		primed_at == 0.0 and absf(clocked.observables.elapsed_s - 0.25) < 1e-6,
+		"primed at %.6f s, %.6f s after 250 steps of 1 ms" % [primed_at, clocked.observables.elapsed_s]
+	))
+
+	# Per-motor current. The check that bites is the ASYMMETRIC one: a naive implementation
+	# publishing current_total_a/4 into each slot sums correctly and is wrong about the only
+	# thing this observable is for, which is which corner is working hardest.
+	var leaning := build.build_drone_core()
+	leaning.prime_motors(build.hover_throttle())
+	leaning.step({"M1": 0.9, "M2": 0.9, "M3": 0.2, "M4": 0.2}, 0.05)
+	var per_motor_sum := 0.0
+	for i in Observables.MOTOR_COUNT:
+		per_motor_sum += leaning.observables.current_a[i]
+	results.append(TestResult.new(
+		"per-motor current sums to the published pack current",
+		absf(per_motor_sum - leaning.observables.current_total_a) < 1e-4,
+		"sum %.3f A against pack %.3f A" % [per_motor_sum, leaning.observables.current_total_a]
+	))
+	results.append(TestResult.new(
+		"per-motor current is per MOTOR: the hard-working corner draws more than the idling one",
+		leaning.observables.current_a[0] > leaning.observables.current_a[2] * 1.5,
+		"M1 %.2f A at 90%% against M3 %.2f A at 20%%" % [
+			leaning.observables.current_a[0], leaning.observables.current_a[2]]
+	))
+
+	# Per-motor reaction torque, against the same law DroneCore integrates. Checked at an
+	# asymmetric rpm for the same reason as above, and against PropellerModel directly so that a
+	# published constant, or one computed from mean rpm, fails.
+	var torque_ok := true
+	for i in Observables.MOTOR_COUNT:
+		# Against the powertrain's own 64-bit rpm, not the published rpm beside it: that one is
+		# 32-bit for the audio path, and rounding it first would leave this check comparing the
+		# torque law to a slightly different motor.
+		var true_rpm: float = leaning.powertrain.motor_rpm[MotorLayout.MOTOR_NAMES[i]]
+		var expected := PropellerModel.reaction_torque_n_m(leaning.powertrain.k_q, true_rpm)
+		if absf(leaning.observables.reaction_torque_n_m[i] - expected) > 1e-12:
+			torque_ok = false
+	results.append(TestResult.new(
+		"per-motor reaction torque is published, per motor, and is k_q x omega^2 on that motor's own rpm",
+		torque_ok and leaning.observables.reaction_torque_n_m[0] > leaning.observables.reaction_torque_n_m[2],
+		"M1 %.6f N*m, M3 %.6f N*m" % [
+			leaning.observables.reaction_torque_n_m[0], leaning.observables.reaction_torque_n_m[2]]
+	))
+
+	# And the flight integrates the PUBLISHED torque rather than a second copy of the formula.
+	# An absence, so it is read from the source, in the shape test_pid_tunes.gd uses: a runtime
+	# check cannot see this, because two copies of a correct formula agree right up until one of
+	# them is edited.
+	var core_code := _code_only(FileAccess.get_file_as_string("res://src/sim/drone_core.gd"))
+	results.append(TestResult.new(
+		"the flight integrates the published reaction torque — the formula has ONE expression, in PropellerModel via Powertrain",
+		not core_code.contains("PropellerModel.reaction_torque_n_m")
+			and core_code.contains("observables.reaction_torque_n_m"),
+		"drone_core.gd reads the published value"
+	))
+
 	return results
+
+## Comments stripped, so that a file MENTIONING a call in prose does not read as making it.
+## Borrowed in shape from tests/test_pid_tunes.gd.
+static func _code_only(source: String) -> String:
+	var lines: PackedStringArray = []
+	for line in source.split("\n"):
+		var hash_index := line.find("#")
+		lines.append(line if hash_index < 0 else line.substr(0, hash_index))
+	return "\n".join(lines)
 
 ## Which of `candidates` carries the most energy in a rendered block, by Goertzel.
 static func _dominant_frequency(synth: RotorSynth, obs: Observables, candidates: Array) -> float:

@@ -97,6 +97,11 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 		observables.thrust_n[i] = PropellerModel.thrust_n(k_t, rpm)
 		total_current_a += current_at_rpm(rpm)
 
+	# The simulation's own clock. Here rather than in DroneCore because a BENCH runs a powertrain
+	# with no rigid body anywhere near it and still has an elapsed time, and two places advancing
+	# one clock is two places to forget to.
+	observables.elapsed_s += dt
+
 	battery.drain(total_current_a, dt)
 	last_current_total_a = total_current_a
 	# The live voltage the NEXT step's RPM ceiling is taken against. This one line is the
@@ -124,6 +129,11 @@ func publish() -> void:
 		observables.blade_pass_hz[i] = rev_per_s * blades
 		observables.electrical_hz[i] = rev_per_s * pole_pairs
 		observables.tip_speed_mps[i] = PropellerModel.rpm_to_rad_s(rpm) * prop_radius_m
+		# Recomputed from stored rpm like everything else in this function, so a republish is
+		# still idempotent. This is THE call site of the propeller's reaction law: DroneCore
+		# reads the published value rather than evaluating k_q x omega^2 a second time.
+		observables.reaction_torque_n_m[i] = PropellerModel.reaction_torque_n_m(k_q, rpm)
+		observables.current_a[i] = current_at_rpm(rpm)
 		total_thrust += observables.thrust_n[i]
 
 	observables.total_thrust_n = total_thrust

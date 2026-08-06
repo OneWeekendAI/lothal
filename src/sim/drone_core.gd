@@ -74,9 +74,12 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 
 	for i in MotorLayout.MOTOR_NAMES.size():
 		var name: String = MotorLayout.MOTOR_NAMES[i]
-		var rpm: float = powertrain.motor_rpm[name]
 		var thrust_n: float = powertrain.observables.thrust_n[i]
-		var reaction_n_m := PropellerModel.reaction_torque_n_m(powertrain.k_q, rpm)
+		# Read, not recomputed: the powertrain stepped and published a line above, so this is the
+		# reaction torque of THIS tick's rpm, and it is the same number any consumer reading the
+		# observables layer sees. A second k_q x omega^2 here would agree with it exactly until
+		# the day one of the two was edited.
+		var reaction_n_m: float = powertrain.observables.reaction_torque_n_m[i]
 
 		total_thrust_body_n += thrust_n
 

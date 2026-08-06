@@ -32,6 +32,19 @@ var electrical_hz := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
 ## — far more steeply than with thrust — which is why it is published separately rather
 ## than left for a consumer to recover from RPM and prop diameter.
 var tip_speed_mps := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
+## The torque the air puts BACK on the airframe through one rotor, N*m, always positive here —
+## the sign it acts with about the body's yaw axis is MotorLayout.SPIN's business and not this
+## layer's. k_q x omega^2, computed once in PropellerModel and published from Powertrain, which
+## is the same value DroneCore integrates. Published because a consumer that wanted it would
+## otherwise need k_q and the propeller law, i.e. a second copy of the physics.
+## 64-bit, unlike the four arrays above: those are read by the audio synthesiser every block and
+## sized for that, while these two exist to be RECORDED, and a log that has quietly rounded its
+## own physics to 7 digits is a log you cannot check a residual against.
+var reaction_torque_n_m := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+## What ONE motor is drawing, A. current_total_a below is the sum of these four and is kept
+## because it is what the pack and the ESC bench care about; this is the breakdown, and it is
+## the one that says which corner is working hardest — the number a total can never carry.
+var current_a := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
 
 # --- Whole aircraft ---
 var total_thrust_n: float = 0.0
@@ -39,6 +52,13 @@ var weight_n: float = 0.0
 var current_total_a: float = 0.0
 var voltage_live_v: float = 0.0
 var capacity_used_fraction: float = 0.0
+
+## SIMULATED time since this simulation was constructed, seconds — the sum of the dt's actually
+## stepped, and never a wall clock. A consumer timestamping from the wall clock instead would
+## record the frame rate of the machine that ran the flight rather than the rate the physics
+## ran at, which makes the trace's sample spacing an artefact of the hardware. Advanced by
+## Powertrain.step() only; prime() and publish() are state changes, not elapsed time.
+var elapsed_s: float = 0.0
 
 var position_m := Vector3.ZERO
 var velocity_mps := Vector3.ZERO
