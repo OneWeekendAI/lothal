@@ -264,7 +264,12 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	# Working on a rail should show the panel for the part being chosen, so the two columns
 	# never describe different components. Connected once, against the TabContainer itself, which
 	# survives a reload_catalog() even though its children (the rails) do not.
-	_rails.tab_changed.connect(func(index: int) -> void: panels.current_tab = index)
+	# Ignore the transient -1 TabContainer emits while reload_catalog() tears the rails down —
+	# panels does not allow deselection, and _build_rails() reselects a real tab right after.
+	_rails.tab_changed.connect(func(index: int) -> void:
+		if index < 0:
+			return
+		panels.current_tab = index)
 
 	# Lab opens on the reference build rather than on whatever happens to be first in each
 	# catalog file — a 65 mm whoop frame under a 2807 and a 10" prop is a strange thing to
