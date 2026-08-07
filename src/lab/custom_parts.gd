@@ -107,7 +107,16 @@ func get_record(part_id: String) -> Dictionary:
 ## — load_default() parses all six data/parts/ files, and a caller adding several records in a
 ## row (load_from) has no reason to pay that six times over.
 func add(record: Dictionary) -> Array[String]:
-	return _add_against(record, PartsCatalog.load_default())
+	return _add_against(record, _catalog_for_add())
+
+
+## The catalog THIS category's `add` checks a record against. Default is the shipped catalog, which
+## is right for every category whose records only cross-reference the shipped id space. The one
+## exception is CustomMotors, whose `thrust_test.prop_id` can name a custom PROPELLER — that
+## subclass overrides this to hand in a catalog that has the neighbouring custom props already
+## merged, or the dialog would refuse a motor citing a prop the very same file defines.
+func _catalog_for_add() -> PartsCatalog:
+	return PartsCatalog.load_default()
 
 
 func _add_against(record: Dictionary, catalog: PartsCatalog) -> Array[String]:
@@ -178,7 +187,7 @@ func save(path: String = SAVE_PATH) -> bool:
 ## RECORD does not take the good records down with it. Subclasses wrap this in a static
 ## `load_from` of their own type, because a static method in GDScript cannot ask what class it
 ## was called on.
-func read_from(path: String) -> void:
+func read_from(path: String, catalog: PartsCatalog = null) -> void:
 	# Missing, unreadable, invalid JSON, or JSON that is not an object: all handled in the one
 	# place, and all reported as warnings rather than errors.
 	var document := JsonStore.read_document(path)
@@ -193,8 +202,12 @@ func read_from(path: String) -> void:
 			path, array_key()])
 		return
 
-	# Loaded once for the whole file, not once per record — see the note on add().
-	var catalog := PartsCatalog.load_default()
+	# Loaded once for the whole file, not once per record — see the note on add(). Caller may hand
+	# in a catalog that already has neighbouring custom parts merged (PartsCatalog.load_with_custom
+	# does this for CustomMotors so that a motor citing a custom prop resolves), and if nothing is
+	# handed in, this subclass's own default answers the question.
+	if catalog == null:
+		catalog = _catalog_for_add()
 	for entry in (stored as Array):
 		if not (entry is Dictionary):
 			_rejections.append("an entry in \"%s\" is not an object" % array_key())

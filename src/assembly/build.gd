@@ -933,6 +933,21 @@ func warnings() -> Array[BuildWarning]:
 	# frame's surprising numbers are visible on screen, and a motor's are not. A thrust figure
 	# with a digit wrong draws an aircraft that looks entirely normal.
 	out.append_array(MotorPlausibility.warnings_for(self))
+
+	# How far this build extrapolates from the manufacturer's own thrust-test row — fired for
+	# catalog and custom builds alike, because whether the extrapolation is trustworthy is a
+	# question about the k_t scaling law and not about who typed the numbers in.
+	out.append_array(PropExtrapolation.warnings_for(self))
+
+	# What this build's custom prop is, when it has one — analogous to MotorPlausibility, and
+	# empty for a catalog prop.
+	out.append_array(PropPlausibility.warnings_for(self))
+
+	# And the same for the pack — empty for a catalog battery, and for a custom one it says the
+	# two things a builder needs to know: the derived internal resistance is a self-consistency
+	# assumption reproduced (not a measurement), and every flight-time figure carries an
+	# unvalidated multiplier named FLIGHT_CURRENT_TO_HOVER_RATIO.
+	out.append_array(BatteryPlausibility.warnings_for(self))
 	return out
 
 

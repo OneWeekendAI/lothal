@@ -62,9 +62,14 @@ func _init() -> void:
 	# typed the moment they forget the provenance field.
 	get_ok_button().pressed.connect(func() -> void: submit())
 
-	# The shipped catalog, because that is what the thrust test's prop is resolved against — see
-	# CustomMotors._thrust_test_problems for the note about custom props, when they arrive.
-	_catalog = PartsCatalog.load_default()
+	# Shipped catalog plus the custom props the builder has already defined — the dropdown must
+	# offer every prop this motor's thrust_test could legitimately name, or a builder who entered a
+	# custom prop for the express purpose of testing a custom motor against it would find it
+	# missing from the list.
+	_catalog = PartsCatalog.new()
+	for cat in PartsCatalog.CATEGORY_FILES:
+		_catalog._load_category(cat, PartsCatalog.CATEGORY_FILES[cat])
+	_catalog._merge_custom(CustomParts.SAVE_PATH, CustomPropellers.load_from())
 
 	var root := VBoxContainer.new()
 	add_child(root)

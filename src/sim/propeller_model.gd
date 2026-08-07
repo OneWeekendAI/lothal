@@ -19,6 +19,15 @@ const K_Q_REFERENCE_DIAMETER_M := 0.127   # 5 inches
 ## pitch have no such clean law — more blades add thrust with real diminishing returns from
 ## interference, and static thrust rises sub-linearly with pitch — so these two are
 ## documented rules of thumb, to be replaced when per-prop thrust tables are authored.
+##
+## THESE TWO REMAIN UNVALIDATED, and the shipped catalog cannot validate them. The only near-
+## matched motor pairs tested on different props (2207 1750KV vs XING2 2207 1750KV on 5x4.3x3 vs
+## 5.1x3.5x3; SpeedX GR2306 vs 2306 2450KV on 5x4.3x3 vs 5x5x2) cross two different manufacturers
+## whose motor-to-motor k_t disagreement on the SAME prop is 1.79x — larger than the ~30% effect
+## these exponents produce. So a validation from the catalog would be measuring the manufacturers'
+## own noise, not the exponents. Same shape as LTHL-18: instrument works, no admissible data.
+##
+## PropExtrapolation names the extrapolation distance rather than pretending it is small.
 const BLADE_COUNT_EXPONENT := 0.8
 const PITCH_EXPONENT := 0.5
 

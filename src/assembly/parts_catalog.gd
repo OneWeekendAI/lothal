@@ -69,8 +69,16 @@ static func load_default() -> PartsCatalog:
 ## before it reaches here.
 static func load_with_custom(path: String = CustomParts.SAVE_PATH) -> PartsCatalog:
 	var catalog := load_default()
+	# Propellers FIRST: a custom motor's thrust_test.prop_id may name a custom prop, and
+	# CustomMotors.read_from resolves it against a catalog whose props have already been merged.
+	# Reversed load order would refuse a motor citing a custom prop at load time, with a message
+	# saying the prop is not one Lothal knows about — a silent-fail via ordering, not via missing
+	# data. tests/test_custom_propellers.gd asserts the order from both sides.
+	var custom_props := CustomPropellers.load_from(path)
+	catalog._merge_custom(path, custom_props)
 	catalog._merge_custom(path, CustomFrames.load_from(path))
-	catalog._merge_custom(path, CustomMotors.load_from(path))
+	catalog._merge_custom(path, CustomMotors.load_from(path, catalog))
+	catalog._merge_custom(path, CustomBatteries.load_from(path))
 	return catalog
 
 

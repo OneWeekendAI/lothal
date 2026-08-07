@@ -70,10 +70,20 @@ func get_motor(part_id: String) -> Dictionary:
 	return get_record(part_id)
 
 
-static func load_from(path: String = SAVE_PATH) -> CustomMotors:
+static func load_from(path: String = SAVE_PATH, catalog: PartsCatalog = null) -> CustomMotors:
 	var doc := CustomMotors.new()
-	doc.read_from(path)
+	doc.read_from(path, catalog)
 	return doc
+
+
+## A merged catalog for `add`, so a dialog record whose `thrust_test.prop_id` names a custom prop
+## resolves rather than being refused as "not a propeller Lothal knows about". Shipped catalog plus
+## the neighbouring custom propellers, and nothing else — the CUSTOM MOTORS themselves stay out to
+## keep the same-file collision check straightforward and to avoid re-entry.
+func _catalog_for_add() -> PartsCatalog:
+	var catalog := PartsCatalog.load_default()
+	catalog._merge_custom(SAVE_PATH, CustomPropellers.load_from(SAVE_PATH))
+	return catalog
 
 
 ## A catalog-shaped record from what is printed on a product page, and nothing that is not.
@@ -190,10 +200,11 @@ func _category_problems(record: Dictionary, catalog: PartsCatalog) -> Array[Stri
 
 ## The column header of the manufacturer's table: which prop, and at what voltage.
 ##
-## The prop is resolved against the SHIPPED catalog, because that is what add() and read_from()
-## can pass without re-entering PartsCatalog.load_with_custom, which loads this document. When
-## the custom-propellers slice lands it will have to hand a merged catalog in here instead — the
-## seam is the `catalog` argument, and this comment is the note that it is load-bearing.
+## The prop is resolved against whatever catalog `_catalog_for_add()` returns for this document —
+## shipped plus the neighbouring custom propellers — because a custom motor's `thrust_test.prop_id`
+## may name a custom prop, and refusing that at load time would back-door the same silent-fail the
+## thrust_test refusal was written to prevent. See the class header for the ordering that makes
+## this work; tests/test_custom_propellers.gd asserts it from both sides.
 func _thrust_test_problems(record: Dictionary, catalog: PartsCatalog) -> Array[String]:
 	var problems: Array[String] = []
 
