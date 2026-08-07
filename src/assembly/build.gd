@@ -928,6 +928,11 @@ func warnings() -> Array[BuildWarning]:
 	# wrong. Its own file because the bounds each need a paragraph of justification and this
 	# function is already long — see FramePlausibility for every number in it.
 	out.append_array(FramePlausibility.warnings_for(self))
+
+	# And the same for the motor, which needs its own file for a reason the frame's does not: a
+	# frame's surprising numbers are visible on screen, and a motor's are not. A thrust figure
+	# with a digit wrong draws an aircraft that looks entirely normal.
+	out.append_array(MotorPlausibility.warnings_for(self))
 	return out
 
 

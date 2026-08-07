@@ -53,29 +53,38 @@ static func load_default() -> PartsCatalog:
 		catalog._load_category(category, CATEGORY_FILES[category])
 	return catalog
 
-## The catalog Lab and Sim read: everything shipped, plus the frames this builder entered.
+## The catalog Lab and Sim read: everything shipped, plus the parts this builder entered.
 ##
 ## A SECOND constructor rather than a flag on the first, and that is the load-bearing decision in
-## this whole slice. Forty-odd test files and ReferenceBuild call load_default(), and a flag
-## defaulting to "no custom parts" would put one boolean between a hand-edited file and the 496 g
-## oracle. Two functions cannot be got wrong by forgetting an argument.
+## the whole custom-parts feature. Forty-odd test files and ReferenceBuild call load_default(),
+## and a flag defaulting to "no custom parts" would put one boolean between a hand-edited file and
+## the 496 g oracle. Two functions cannot be got wrong by forgetting an argument.
 ##
-## Custom frames are APPENDED, so the catalog's own order — which is the dropdown order, and which
+## Custom parts are APPENDED, so the catalog's own order — which is the dropdown order, and which
 ## every category file is authored smallest-part-first to produce — is untouched and a builder's
-## own frames collect at the end of the rail where they can be found.
-static func load_with_custom(path: String = CustomFrames.SAVE_PATH) -> PartsCatalog:
+## own parts collect at the end of the rail where they can be found.
+##
+## One loop per category rather than one document read: each CustomParts subclass owns its own
+## array key and refuses records its category cannot use, so a motor with no thrust test is gone
+## before it reaches here.
+static func load_with_custom(path: String = CustomParts.SAVE_PATH) -> PartsCatalog:
 	var catalog := load_default()
-	for frame in CustomFrames.load_from(path).frames():
-		# Cannot collide: the prefix rule in _load_category refuses these ids in a shipped file and
-		# CustomFrames refuses anything without the prefix. Asserted rather than assumed, because
-		# "cannot happen" is exactly the class of thing that starts happening.
-		if catalog.by_id.has(frame["part_id"]):
-			catalog.load_errors.append("%s: custom frame %s collides with a shipped part" % [
-				path, frame["part_id"]])
-			continue
-		catalog.by_category["frame"].append(frame)
-		catalog.by_id[frame["part_id"]] = frame
+	catalog._merge_custom(path, CustomFrames.load_from(path))
+	catalog._merge_custom(path, CustomMotors.load_from(path))
 	return catalog
+
+
+func _merge_custom(path: String, document: CustomParts) -> void:
+	for record in document.records():
+		# Cannot collide: the prefix rule in _load_category refuses these ids in a shipped file and
+		# CustomParts refuses anything without the prefix. Asserted rather than assumed, because
+		# "cannot happen" is exactly the class of thing that starts happening.
+		if by_id.has(record["part_id"]):
+			load_errors.append("%s: %s %s collides with a shipped part" % [
+				path, document.category(), record["part_id"]])
+			continue
+		by_category[document.category()].append(record)
+		by_id[record["part_id"]] = record
 
 func _load_category(category: String, path: String) -> void:
 	by_category[category] = []

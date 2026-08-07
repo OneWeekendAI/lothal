@@ -15,7 +15,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh",
 	"yaw authority", "gyro", "motor mixer", "control path", "stick release", "warnings", "build warnings",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "flight recorder",
-	"custom frames"]
+	"custom frames", "custom motors"]
 
 func _init() -> void:
 	var total := 0
@@ -108,5 +108,6 @@ func _run_suite(suite_name: String) -> Array:
 		"catalog tuning": return TestCatalogTuning.run()
 		"pid tunes": return TestPidTunes.run()
 		"custom frames": return TestCustomFrames.run()
+		"custom motors": return TestCustomMotors.run()
 	push_error("unknown suite: %s" % suite_name)
 	return []

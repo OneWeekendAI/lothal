@@ -323,6 +323,11 @@ func _build_rails() -> void:
 	# takes an afternoon to explain.
 	picker.custom_frames_changed.connect(reload_catalog)
 
+	# A motor added or deleted needs the same rebuild, and for one reason beyond keeping the rail
+	# in step: the motor is what the drawn bell and the whole propulsion chain come from, so a
+	# repopulated list beside a stale aircraft would be showing the builder someone else's motor.
+	motor_picker.custom_motors_changed.connect(reload_catalog)
+
 	for rail in [picker, motor_picker, propeller_picker, battery_picker, esc_picker, fc_picker]:
 		rail.part_selected.connect(_on_part_selected)
 
