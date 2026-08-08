@@ -67,6 +67,20 @@ if grep -q '^encrypt_pck=true' export_presets.cfg; then
   echo "==> exporting with PCK encryption"
 fi
 
+# Native core: build the Rust GDExtension universal, BEFORE the suite runs — the suite
+# tests the classes the dylib provides, and running it first would test the GDScript
+# that is being replaced. The lipo'd universal dylib lands in build/, which the export
+# ships inside the .pck (res://build/liblothal_core.dylib).
+echo "==> building native core (universal)"
+(cd rust && \
+  cargo build --release --target aarch64-apple-darwin && \
+  cargo build --release --target x86_64-apple-darwin)
+lipo -create \
+  rust/target/aarch64-apple-darwin/release/liblothal_core.dylib \
+  rust/target/x86_64-apple-darwin/release/liblothal_core.dylib \
+  -output build/liblothal_core.dylib
+[ -f build/liblothal_core.dylib ] || { echo "error: native core build produced no dylib" >&2; exit 1; }
+
 # Regenerate the bundle icon whenever the vector source is newer than the .icns.
 if [ ! -f icon.icns ] || [ icon.svg -nt icon.icns ]; then
   echo "==> rendering icon.icns from icon.svg"

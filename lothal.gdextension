@@ -1,0 +1,8 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+reloadable = false
+
+[libraries]
+macos.debug   = "res://build/liblothal_core.dylib"
+macos.release = "res://build/liblothal_core.dylib"
