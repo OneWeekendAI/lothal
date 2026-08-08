@@ -23,5 +23,54 @@ const FILTER_KEYS := [
 	{"key": "connector", "label": "Connector"},
 ]
 
+signal custom_batteries_changed()
+
+var _delete_button: Button
+
 func _init(p_catalog: PartsCatalog) -> void:
 	super(p_catalog, "battery", "BATTERIES", "battery", FILTER_KEYS)
+
+	# The authoring entry point, on the pack rail for the same reason the frame and motor ones are
+	# on theirs (PartPicker's header, on parallel surfaces): a second place to browse packs from is
+	# a second thing that can disagree about what a pack is.
+	var buttons := HBoxContainer.new()
+	var new_button := Button.new()
+	new_button.text = "New custom pack…"
+	new_button.pressed.connect(_open_dialog)
+	buttons.add_child(new_button)
+	_delete_button = Button.new()
+	_delete_button.text = "Delete"
+	_delete_button.pressed.connect(_delete_selected)
+	buttons.add_child(_delete_button)
+	add_custom_buttons(buttons)
+	part_selected.connect(func(_pack: Dictionary) -> void: _refresh_delete_button())
+	_refresh_delete_button()
+
+
+## Delete is only meaningful on a pack the builder owns. Disabled rather than hidden on a catalog
+## pack, so the rail does not reflow every time the selection moves.
+##
+## No dependency check, unlike the propeller rail: nothing cross-references a battery id the way a
+## custom motor's `thrust_test.prop_id` names a prop, so a pack delete cannot take a neighbouring
+## record down with it.
+func _refresh_delete_button() -> void:
+	_delete_button.disabled = not PartsCatalog.is_custom(str(selected_part().get("part_id", "")))
+
+
+func _open_dialog() -> void:
+	var dialog := CustomBatteryDialog.new()
+	dialog.battery_saved.connect(func(_part_id: String) -> void:
+		dialog.queue_free()
+		custom_batteries_changed.emit())
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+func _delete_selected() -> void:
+	var part_id := str(selected_part().get("part_id", ""))
+	if not PartsCatalog.is_custom(part_id):
+		return
+	var document := CustomBatteries.load_from()
+	if document.remove(part_id):
+		document.save()
+		custom_batteries_changed.emit()

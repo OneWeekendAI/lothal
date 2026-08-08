@@ -32,7 +32,10 @@ var _last_problems: Array[String] = []
 func _init() -> void:
 	title = "New custom propeller"
 	ok_button_text = "Save propeller"
-	get_ok_button().pressed.connect(func() -> void: submit())
+	# `confirmed` rather than the OK button's `pressed`, and re-shown on a refusal — see
+	# _on_confirmed. The engine closes this window itself; nothing a `pressed` handler does stops
+	# it, which is how a refused part came to look exactly like a saved one.
+	confirmed.connect(_on_confirmed)
 
 	var root := VBoxContainer.new()
 	add_child(root)
@@ -110,3 +113,19 @@ func submit() -> Array[String]:
 	propeller_saved.emit(str(record["part_id"]))
 	hide()
 	return _last_problems
+
+
+## Save, and re-open the form if the record was refused.
+##
+## AcceptDialog hides itself the moment OK is pressed or Enter is hit, before `confirmed` reaches
+## us, and there is no hook that prevents it: `_ok_pressed` is a C++ callable bound to the button,
+## not a script virtual this class can override. So the honest form is to let it close and put it
+## straight back up, within the same handler — the window never repaints in between, and the
+## builder sees a form that simply did not go away, with every refusal listed on it.
+##
+## This is what a builder actually met before: a frame with the arm left at zero, or a part with no
+## source, closed the dialog exactly as a saved one does. Nothing was written, nothing said so, and
+## the part was missing the next time Lothal opened.
+func _on_confirmed() -> void:
+	if not submit().is_empty():
+		show()

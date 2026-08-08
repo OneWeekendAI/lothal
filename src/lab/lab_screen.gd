@@ -333,12 +333,26 @@ func _build_rails() -> void:
 	# repopulated list beside a stale aircraft would be showing the builder someone else's motor.
 	motor_picker.custom_motors_changed.connect(reload_catalog)
 
+	# A propeller added or deleted rebuilds for two reasons at once: the drawn disc comes from its
+	# diameter and blade count, and — the one that is not about this rail at all — a custom motor's
+	# thrust_test may name the prop that just appeared, so the MOTOR list is what a merge changes.
+	# PartsCatalog.load_with_custom merges props before motors precisely so that resolves.
+	propeller_picker.custom_propellers_changed.connect(reload_catalog)
+
+	# A pack added or deleted needs the same rebuild, and it is the category where a stale screen
+	# would mislead most: the pack is usually the largest single mass in the build, so mass, CG and
+	# every hover-throttle figure hanging off them move with it.
+	battery_picker.custom_batteries_changed.connect(reload_catalog)
+
 	for rail in [picker, motor_picker, propeller_picker, battery_picker, esc_picker, fc_picker]:
 		rail.part_selected.connect(_on_part_selected)
 
 
-## Rebuilds Lab against a freshly-loaded catalog: a custom frame was just added or deleted on the
-## frame rail. Named and public because it is also the seam a future "reload the catalog from
+## Rebuilds Lab against a freshly-loaded catalog: a custom part was just added or deleted on one
+## of the four authoring rails (frame, motor, propeller, pack). One seam for all four rather than
+## a per-category refresh, because the categories are not independent — a custom prop changes what
+## the motor rail can resolve — and a partially-refreshed Lab is the kind of state that takes an
+## afternoon to explain. Named and public because it is also the seam a future "reload the catalog from
 ## disk" would use, and because the alternative — patching the rail in place — leaves the camera
 ## framed for the frame set that existed a moment ago (see _camera_distance_m).
 ##

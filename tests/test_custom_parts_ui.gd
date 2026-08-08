@@ -1,0 +1,533 @@
+class_name TestCustomPartsUi
+extends RefCounted
+## The authoring surfaces themselves: the rails a builder actually reaches the custom-parts feature
+## through, and the pack dialog.
+##
+## This suite exists because of a specific way the feature failed. CustomPropellers, CustomBatteries
+## and their plausibility warnings were all written, tested and merged into the catalog by
+## PartsCatalog.load_with_custom — and none of it was reachable. The propeller DIALOG was finished
+## too; nothing constructed it. Every model-level test passed the whole time, because a model test
+## calls make_record directly and never asks whether a builder could have got there.
+##
+## So the assertions here are deliberately about REACHABILITY rather than about records:
+##
+##   Each authoring rail offers a way in, and a way back out for a part the builder owns.
+##   Each rail's change signal exists, so LabScreen has something to rebuild from.
+##   The pack dialog turns filled-in fields into a record CustomBatteries accepts.
+##   The prop rail's delete refuses a prop a custom motor is measured on — the one delete in the
+##   feature that can break a NEIGHBOURING document.
+##
+## A test that only checked "make_record produces a good record" would have gone on passing through
+## the entire period the buttons did not exist. These are the checks that would not have.
+
+const CATALOG_PROP_ID := "prop_5x43x3"
+
+
+static func run() -> Array:
+	var results: Array = []
+	results.append(_test_every_authoring_rail_offers_a_way_in())
+	results.append(_test_every_authoring_rail_has_a_change_signal())
+	results.append(_test_delete_is_disabled_on_a_catalog_part_and_enabled_on_your_own())
+	results.append(_test_pack_dialog_saves_a_record_the_model_accepts())
+	results.append(_test_pack_dialog_refuses_and_stays_open_without_a_source())
+	results.append(_test_pack_dialog_shows_derived_voltage_and_labels_derived_resistance())
+	results.append(_test_pack_dialog_defers_to_a_measured_resistance())
+	results.append(_test_the_save_button_does_not_close_a_dialog_on_a_refusal())
+	results.append(_test_prop_rail_refuses_to_delete_a_prop_a_motor_is_measured_on())
+	results.append(_test_prop_rail_deletes_an_independent_prop())
+	return results
+
+
+# ---------------------------------------------------------------------------
+# Fixtures and helpers
+# ---------------------------------------------------------------------------
+
+static func _wipe(path: String) -> void:
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+static func _write_raw(path: String, text: String) -> void:
+	var handle := FileAccess.open(path, FileAccess.WRITE)
+	handle.store_string(text)
+	handle.close()
+
+
+static func _restore(path: String, previous: String) -> void:
+	if previous == "":
+		_wipe(path)
+	else:
+		_write_raw(path, previous)
+
+
+## Same dance as tests/test_custom_propellers.gd — see its copy for why every test that touches the
+## real save path must restore it.
+static func _with_scratch_savepath(body: Callable) -> Variant:
+	var previous := ""
+	if FileAccess.file_exists(CustomParts.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(CustomParts.SAVE_PATH)
+	_wipe(CustomParts.SAVE_PATH)
+	var result = body.call()
+	_restore(CustomParts.SAVE_PATH, previous)
+	return result
+
+
+## The four rails that author parts, built against the merged catalog the way LabScreen builds
+## them. ESC and FC are deliberately absent: they have no custom-parts document, so a "New custom…"
+## button on them would be a button that could not work.
+static func _authoring_rails(catalog: PartsCatalog) -> Dictionary:
+	return {
+		"frame": FramePicker.new(catalog),
+		"motor": MotorPicker.new(catalog),
+		"propeller": PropellerPicker.new(catalog),
+		"battery": BatteryPicker.new(catalog),
+	}
+
+
+## Every Button anywhere under a rail, by text. The rails put their controls in an HBoxContainer
+## handed to PartPicker.add_custom_buttons, and this walks rather than reaching for a known path so
+## the test does not break the moment a rail rearranges its own row.
+static func _button_texts(node: Node) -> Array[String]:
+	var found: Array[String] = []
+	if node is Button:
+		found.append((node as Button).text)
+	for child in node.get_children():
+		found.append_array(_button_texts(child))
+	return found
+
+
+static func _find_button(node: Node, text: String) -> Button:
+	if node is Button and (node as Button).text == text:
+		return node as Button
+	for child in node.get_children():
+		var hit := _find_button(child, text)
+		if hit != null:
+			return hit
+	return null
+
+
+static func _free_rails(rails: Dictionary) -> void:
+	for rail in rails.values():
+		(rail as Node).free()
+
+
+## A pack off a real wrapper, as a builder would type it into the dialog.
+static func _fill_pack(dialog: CustomBatteryDialog, source: String) -> void:
+	dialog.set_fields("Shed 4S 1300", 4, "LiPo", 1300.0, 95.0, 152.0, 72.0, 35.0, 30.0,
+		"XT60", source)
+
+
+# ---------------------------------------------------------------------------
+# 1. Reachability: the check that would have caught the whole gap
+# ---------------------------------------------------------------------------
+
+## The regression test for this slice. Each of the four categories with a CustomParts document
+## behind it must offer a builder a way to author one, on the rail where that category is browsed.
+##
+## Asserted per-rail with the category named in the failure detail, rather than as one boolean over
+## all four, because "some rail is missing its button" is not an actionable failure message and the
+## whole point of this test is to name the rail that was forgotten.
+static func _test_every_authoring_rail_offers_a_way_in() -> TestResult:
+	var catalog := PartsCatalog.load_with_custom()
+	var rails := _authoring_rails(catalog)
+
+	var missing: Array[String] = []
+	for category in rails:
+		var texts := _button_texts(rails[category])
+		var has_new := false
+		for text in texts:
+			if text.begins_with("New custom"):
+				has_new = true
+		if not has_new or not texts.has("Delete"):
+			missing.append("%s (new=%s, delete=%s)" % [category, has_new, texts.has("Delete")])
+
+	_free_rails(rails)
+	return TestResult.new(
+		"every rail with a custom-parts document offers New and Delete",
+		missing.is_empty(),
+		"all four reachable" if missing.is_empty() else "unreachable: %s" % ", ".join(missing))
+
+
+## The signal LabScreen rebuilds from. A rail that had the button but no signal would save the part
+## and leave the screen showing the build from before it existed.
+static func _test_every_authoring_rail_has_a_change_signal() -> TestResult:
+	var catalog := PartsCatalog.load_with_custom()
+	var rails := _authoring_rails(catalog)
+	var expected := {
+		"frame": "custom_frames_changed",
+		"motor": "custom_motors_changed",
+		"propeller": "custom_propellers_changed",
+		"battery": "custom_batteries_changed",
+	}
+
+	var missing: Array[String] = []
+	for category in rails:
+		if not (rails[category] as Object).has_signal(expected[category]):
+			missing.append("%s.%s" % [category, expected[category]])
+
+	_free_rails(rails)
+	return TestResult.new(
+		"every authoring rail carries the change signal LabScreen reloads on",
+		missing.is_empty(),
+		"all four present" if missing.is_empty() else "missing: %s" % ", ".join(missing))
+
+
+## Delete must be dead on a shipped part and live on the builder's own — on the two rails this
+## slice added, checked against a catalog that actually holds one of each.
+static func _test_delete_is_disabled_on_a_catalog_part_and_enabled_on_your_own() -> TestResult:
+	var check := func() -> Dictionary:
+		var props := CustomPropellers.new()
+		props.add(CustomPropellers.make_record("Shed 5x4.3x3", 4.5, 5.0, 4.3, 3, "polycarbonate",
+			"measured on my scale"))
+		props.save(CustomParts.SAVE_PATH)
+
+		var packs := CustomBatteries.load_from()
+		packs.add(CustomBatteries.make_record("Shed 4S 1300", 4, "LiPo", 1300.0, 95.0, 152.0,
+			72.0, 35.0, 30.0, "XT60", "off the wrapper"))
+		packs.save(CustomParts.SAVE_PATH)
+
+		var catalog := PartsCatalog.load_with_custom()
+		var prop_rail := PropellerPicker.new(catalog)
+		var pack_rail := BatteryPicker.new(catalog)
+
+		prop_rail.select_id(CATALOG_PROP_ID)
+		var prop_catalog_disabled := _find_button(prop_rail, "Delete").disabled
+		prop_rail.select_id("custom_shed_5x4_3x3")
+		var prop_custom_enabled := not _find_button(prop_rail, "Delete").disabled
+
+		pack_rail.select_id(ReferenceBuild.BATTERY_ID)
+		var pack_catalog_disabled := _find_button(pack_rail, "Delete").disabled
+		pack_rail.select_id("custom_shed_4s_1300")
+		var pack_custom_enabled := not _find_button(pack_rail, "Delete").disabled
+
+		prop_rail.free()
+		pack_rail.free()
+		return {"prop_off": prop_catalog_disabled, "prop_on": prop_custom_enabled,
+			"pack_off": pack_catalog_disabled, "pack_on": pack_custom_enabled}
+
+	var out: Dictionary = _with_scratch_savepath(check)
+	return TestResult.new(
+		"Delete is disabled on a catalog prop and pack, enabled on the builder's own",
+		out["prop_off"] and out["prop_on"] and out["pack_off"] and out["pack_on"],
+		"prop: catalog disabled=%s custom enabled=%s; pack: catalog disabled=%s custom enabled=%s" % [
+			out["prop_off"], out["prop_on"], out["pack_off"], out["pack_on"]])
+
+
+# ---------------------------------------------------------------------------
+# 2. The pack dialog
+# ---------------------------------------------------------------------------
+
+## The dialog's whole job: fields in, a record CustomBatteries accepts on disk, and the id
+## announced so the rail can reload. Checked through submit() rather than by calling make_record,
+## because make_record already has its own tests and what is untested is the WIRING between the
+## controls and it — a dialog that read the C-rating box into the mAh argument would pass every
+## model test in the suite next door.
+static func _test_pack_dialog_saves_a_record_the_model_accepts() -> TestResult:
+	var check := func() -> Dictionary:
+		var dialog := CustomBatteryDialog.new()
+		# A Dictionary rather than a String, because a lambda capturing a local reassigns its own
+		# copy — GDScript treats that as an error, and it would silently read as "never emitted".
+		var seen := {"id": ""}
+		dialog.battery_saved.connect(func(part_id: String) -> void: seen["id"] = part_id)
+		_fill_pack(dialog, "off the wrapper, mass on my scale")
+
+		var refusals := dialog.submit()
+		var reloaded := CustomBatteries.load_from()
+		var stored := reloaded.get_battery("custom_shed_4s_1300")
+		var specs: Dictionary = stored.get("specs", {})
+		dialog.free()
+
+		return {
+			"problems": refusals,
+			"announced": seen["id"],
+			"stored": not stored.is_empty(),
+			# Each field read back individually, because the failure this catches is two controls
+			# swapped and a swap that lands on the right TOTAL is still wrong.
+			"cells": int(specs.get("cells", 0)),
+			"mah": float(specs.get("mah", 0.0)),
+			"c_rating": float(specs.get("c_rating", 0.0)),
+			"mass_g": float(stored.get("mass_g", 0.0)),
+			"length": float(specs.get("length_mm", 0.0)),
+			"width": float(specs.get("width_mm", 0.0)),
+			"height": float(specs.get("height_mm", 0.0)),
+			"nominal_v": float(specs.get("nominal_v", 0.0)),
+		}
+
+	var out: Dictionary = _with_scratch_savepath(check)
+	var fields_ok: bool = out["cells"] == 4 and is_equal_approx(out["mah"], 1300.0) \
+		and is_equal_approx(out["c_rating"], 95.0) and is_equal_approx(out["mass_g"], 152.0) \
+		and is_equal_approx(out["length"], 72.0) and is_equal_approx(out["width"], 35.0) \
+		and is_equal_approx(out["height"], 30.0) and is_equal_approx(out["nominal_v"], 14.8)
+	var passed: bool = (out["problems"] as Array).is_empty() and out["stored"] \
+		and out["announced"] == "custom_shed_4s_1300" and fields_ok
+	return TestResult.new(
+		"the pack dialog saves a record CustomBatteries accepts, with every field where it belongs",
+		passed,
+		"problems=%s, announced=%s, stored=%s, %dS %.0f mAh %.0fC %.0f g %.0fx%.0fx%.0f mm, nominal %.1f V" % [
+			out["problems"], out["announced"], out["stored"], out["cells"], out["mah"],
+			out["c_rating"], out["mass_g"], out["length"], out["width"], out["height"],
+			out["nominal_v"]])
+
+
+## A refused pack must not be written and must not close the dialog. The second half is the one
+## that matters to a builder: AcceptDialog's OK hides by default, so a form that let it would
+## throw away eleven filled-in fields over a missing source line.
+static func _test_pack_dialog_refuses_and_stays_open_without_a_source() -> TestResult:
+	var check := func() -> Dictionary:
+		var dialog := CustomBatteryDialog.new()
+		var seen := {"emitted": false}
+		dialog.battery_saved.connect(func(_part_id: String) -> void: seen["emitted"] = true)
+		_fill_pack(dialog, "")
+
+		var refusals := dialog.submit()
+		var on_disk := FileAccess.file_exists(CustomParts.SAVE_PATH)
+		# The fields the builder typed are still there to correct.
+		var kept := dialog.derived_text().contains("14.8")
+		dialog.free()
+
+		return {"problems": refusals, "announced": seen["emitted"], "on_disk": on_disk,
+			"kept": kept}
+
+	var out: Dictionary = _with_scratch_savepath(check)
+	var problems: Array = out["problems"]
+	var names_source := false
+	for problem in problems:
+		if str(problem).contains("source"):
+			names_source = true
+	var passed: bool = not problems.is_empty() and names_source and not out["announced"] \
+		and not out["on_disk"] and out["kept"]
+	return TestResult.new(
+		"a pack with no source is refused by name, nothing is written, and the form keeps what was typed",
+		passed,
+		"problems=%s, names source=%s, announced=%s, file written=%s, fields kept=%s" % [
+			problems, names_source, out["announced"], out["on_disk"], out["kept"]])
+
+
+## The refusal a builder actually meets, at the BUTTON rather than at submit().
+##
+## Every one of these dialogs is an AcceptDialog, and AcceptDialog hides itself the moment OK is
+## pressed or Enter is hit — before any handler runs, and with no hook that stops it. So a refused
+## record showed its problems on a window that was already gone: the form vanished exactly as it
+## does on success, nothing was written, and the builder found out only when they reopened Lothal
+## and the part was missing. Every one of the four dialogs did this.
+##
+## `_test_pack_dialog_refuses_and_stays_open_without_a_source` could not catch it, because it calls
+## submit() directly and never touches the button. This one presses the button, and asserts on
+## `visible` — which is the thing the builder is actually looking at — in both directions: a refused
+## record leaves the form up, and an accepted one takes it away.
+static func _test_the_save_button_does_not_close_a_dialog_on_a_refusal() -> TestResult:
+	# One refused record per category and one good one, differing only in the field that is wrong:
+	# the frame has no arm (the SpinBox's own starting value), the others no source.
+	var bad := {
+		"frame": func() -> AcceptDialog:
+			var d := CustomFrameDialog.new()
+			d.set_fields("Bad Frame", 118.0, 0.0, 5.0, "16x16", "30.5x30.5", "carbon fibre", "scale")
+			return d,
+		"motor": func() -> AcceptDialog:
+			var d := CustomMotorDialog.new()
+			d.set_fields("Bad Motor", 30.9, 22.0, 6.0, 2400.0, 1650.0, 40.0, 14, "16x16",
+				CATALOG_PROP_ID, 14.0, "")
+			return d,
+		"propeller": func() -> AcceptDialog:
+			var d := CustomPropellerDialog.new()
+			d.set_fields("Bad Prop", 4.5, 5.0, 4.3, 3, "polycarbonate", "")
+			return d,
+		"battery": func() -> AcceptDialog:
+			var d := CustomBatteryDialog.new()
+			_fill_pack(d, "")
+			return d,
+	}
+	var good := {
+		"frame": func() -> AcceptDialog:
+			var d := CustomFrameDialog.new()
+			d.set_fields("Good Frame", 118.0, 105.0, 5.0, "16x16", "30.5x30.5", "carbon fibre", "scale")
+			return d,
+		"motor": func() -> AcceptDialog:
+			var d := CustomMotorDialog.new()
+			d.set_fields("Good Motor", 30.9, 22.0, 6.0, 2400.0, 1650.0, 40.0, 14, "16x16",
+				CATALOG_PROP_ID, 14.0, "spec sheet")
+			return d,
+		"propeller": func() -> AcceptDialog:
+			var d := CustomPropellerDialog.new()
+			d.set_fields("Good Prop", 4.5, 5.0, 4.3, 3, "polycarbonate", "product page")
+			return d,
+		"battery": func() -> AcceptDialog:
+			var d := CustomBatteryDialog.new()
+			_fill_pack(d, "off the wrapper")
+			return d,
+	}
+
+	var check := func() -> Array:
+		var faults: Array[String] = []
+		for category in bad:
+			var refused_dialog: AcceptDialog = (bad[category] as Callable).call()
+			refused_dialog.get_ok_button().pressed.emit()
+			var refused: bool = not refused_dialog.call("problems").is_empty()
+			var stayed_open: bool = refused_dialog.visible
+			refused_dialog.free()
+
+			var saved_dialog: AcceptDialog = (good[category] as Callable).call()
+			saved_dialog.get_ok_button().pressed.emit()
+			var accepted: bool = saved_dialog.call("problems").is_empty()
+			var closed: bool = not saved_dialog.visible
+			saved_dialog.free()
+
+			# A fixture that stopped being a refusal (or stopped being acceptable) proves nothing,
+			# and passing quietly on it is how this test would rot into one that cannot fail.
+			if not refused or not accepted:
+				faults.append("%s (fixtures no longer refused/accepted: refused=%s accepted=%s)" % [
+					category, refused, accepted])
+				continue
+			if not stayed_open:
+				faults.append("%s (closed on a refusal)" % category)
+			if not closed:
+				faults.append("%s (stayed open after saving)" % category)
+		return faults
+
+	var wrong: Array = _with_scratch_savepath(check)
+	return TestResult.new(
+		"Save leaves a refused dialog open and closes an accepted one",
+		wrong.is_empty(),
+		"all four, both ways" if wrong.is_empty() else "; ".join(wrong))
+
+
+## The derived panel is the only place a builder ever sees the two numbers the sim will fly on that
+## they did not type. It must show them, and it must say the resistance is derived — CustomBatteries'
+## header is explicit that a derived resistance presented as a measurement is the failure mode.
+static func _test_pack_dialog_shows_derived_voltage_and_labels_derived_resistance() -> TestResult:
+	var dialog := CustomBatteryDialog.new()
+	_fill_pack(dialog, "off the wrapper")
+	var text := dialog.derived_text()
+	var expected_r := CustomBatteries.derived_internal_r_ohm_for(4, "LiPo", 1300.0, 95.0)
+	dialog.free()
+
+	# 4S LiPo is 14.8 V and not 4 V — the error CustomBatteries derives nominal_v to close.
+	var shows_voltage := text.contains("14.8")
+	var shows_resistance := text.contains("%.4f" % expected_r)
+	var says_derived := text.to_lower().contains("derived")
+	var carries_caveat := text.to_lower().contains("not measured")
+
+	return TestResult.new(
+		"the pack dialog shows derived nominal voltage and resistance, and says the resistance is derived",
+		shows_voltage and shows_resistance and says_derived and carries_caveat,
+		"voltage 14.8 V shown=%s, resistance %.4f Ω shown=%s, says derived=%s, carries caveat=%s" % [
+			shows_voltage, expected_r, shows_resistance, says_derived, carries_caveat])
+
+
+## A builder who measured their pack gets their measurement, not the fit. The panel must stop
+## claiming the value is derived, and the stored record must carry the measurement AND the
+## derivation flag that says a later save must not recompute over it.
+static func _test_pack_dialog_defers_to_a_measured_resistance() -> TestResult:
+	var measured := 0.0123
+	var check := func() -> Dictionary:
+		var dialog := CustomBatteryDialog.new()
+		dialog.set_fields("Shed 4S 1300", 4, "LiPo", 1300.0, 95.0, 152.0, 72.0, 35.0, 30.0,
+			"XT60", "measured with a meter", measured)
+		var panel_text := dialog.derived_text()
+		var refusals := dialog.submit()
+		var stored := CustomBatteries.load_from().get_battery("custom_shed_4s_1300")
+		dialog.free()
+		return {
+			"text": panel_text,
+			"problems": refusals,
+			"stored_r": float((stored.get("specs", {}) as Dictionary).get("internal_r_ohm", 0.0)),
+			"flag": bool((stored.get("derivation", {}) as Dictionary).get("internal_r_ohm", true)),
+		}
+
+	var out: Dictionary = _with_scratch_savepath(check)
+	var text: String = out["text"]
+	var shows_measurement := text.contains("%.4f" % measured)
+	var drops_the_caveat := not text.to_lower().contains("not measured")
+	var stored_ok: bool = is_equal_approx(out["stored_r"], measured)
+	var flagged_as_measured: bool = out["flag"] == false
+
+	return TestResult.new(
+		"a measured resistance overrides the derivation, in the panel and in the record",
+		(out["problems"] as Array).is_empty() and shows_measurement and drops_the_caveat
+			and stored_ok and flagged_as_measured,
+		"problems=%s, panel shows measurement=%s, caveat dropped=%s, stored=%.4f Ω, derivation flag=%s" % [
+			out["problems"], shows_measurement, drops_the_caveat, out["stored_r"], out["flag"]])
+
+
+# ---------------------------------------------------------------------------
+# 3. The delete that can break the document next door
+# ---------------------------------------------------------------------------
+
+## tests/test_custom_propellers.gd proves CustomPropellers.remove_or_refuse refuses. This proves the
+## RAIL asks it — the button is where a builder meets that rule, and a rail that called plain
+## remove() would satisfy every existing test while deleting the motor's thrust reference.
+##
+## Checked through the button's own pressed signal rather than by calling _delete_selected, so a
+## rail that wired Delete to nothing at all fails here.
+static func _test_prop_rail_refuses_to_delete_a_prop_a_motor_is_measured_on() -> TestResult:
+	var check := func() -> Dictionary:
+		var props := CustomPropellers.new()
+		props.add(CustomPropellers.make_record("Shed 5x4.3x3", 4.5, 5.0, 4.3, 3, "polycarbonate",
+			"measured on my scale"))
+		props.save(CustomParts.SAVE_PATH)
+
+		var motors := CustomMotors.load_from()
+		var motor_rejections := motors.add(CustomMotors.make_record("Shed Motor", 32.0, 22.0, 7.0,
+			1960.0, 1450.0, 32.0, 14, "16x16", "custom_shed_5x4_3x3", 14.8,
+			"manufacturer table on a prop I entered myself"))
+		motors.save(CustomParts.SAVE_PATH)
+
+		var catalog := PartsCatalog.load_with_custom()
+		var rail := PropellerPicker.new(catalog)
+		var seen := {"reloaded": false, "refusal": ""}
+		rail.custom_propellers_changed.connect(func() -> void: seen["reloaded"] = true)
+		rail.delete_refused.connect(func(message: String) -> void: seen["refusal"] = message)
+		rail.select_id("custom_shed_5x4_3x3")
+		_find_button(rail, "Delete").pressed.emit()
+
+		var survived: bool = not CustomPropellers.load_from().get_propeller(
+			"custom_shed_5x4_3x3").is_empty()
+		# And the motor is still loadable — the actual damage a cascade would have done.
+		var motor_survived: bool = not CustomMotors.load_from().get_motor(
+			"custom_shed_motor").is_empty()
+		# The refusal must have been ANNOUNCED, not merely decided. A rail that returned early
+		# without telling the builder anything would otherwise pass every assertion here — the
+		# prop survives and the motor survives whether or not anyone was told why.
+		var explained: bool = str(seen["refusal"]).contains("Shed Motor")
+		rail.free()
+
+		return {"motor_ok": motor_rejections.is_empty(), "survived": survived,
+			"motor_survived": motor_survived, "reloaded": seen["reloaded"],
+			"explained": explained}
+
+	var out: Dictionary = _with_scratch_savepath(check)
+	var passed: bool = out["motor_ok"] and out["survived"] and out["motor_survived"] \
+		and not out["reloaded"] and out["explained"]
+	return TestResult.new(
+		"the prop rail's Delete refuses a prop a custom motor is measured on, names it, and the motor survives",
+		passed,
+		"motor accepted=%s, prop survived=%s, motor survived=%s, reload emitted=%s (want false), refusal shown naming the motor=%s" % [
+			out["motor_ok"], out["survived"], out["motor_survived"], out["reloaded"],
+			out["explained"]])
+
+
+## The other side of the refusal. Without this, a rail whose Delete did nothing whatsoever would
+## pass the test above — the failure mode that test alone cannot distinguish from working.
+static func _test_prop_rail_deletes_an_independent_prop() -> TestResult:
+	var check := func() -> Dictionary:
+		var props := CustomPropellers.new()
+		props.add(CustomPropellers.make_record("Shed 7x4x3", 9.0, 7.0, 4.0, 3,
+			"glass-filled nylon", "off the product page"))
+		props.save(CustomParts.SAVE_PATH)
+
+		var catalog := PartsCatalog.load_with_custom()
+		var rail := PropellerPicker.new(catalog)
+		var seen := {"reloaded": false}
+		rail.custom_propellers_changed.connect(func() -> void: seen["reloaded"] = true)
+		rail.select_id("custom_shed_7x4x3")
+		_find_button(rail, "Delete").pressed.emit()
+
+		var gone: bool = CustomPropellers.load_from().get_propeller("custom_shed_7x4x3").is_empty()
+		rail.free()
+		return {"gone": gone, "reloaded": seen["reloaded"]}
+
+	var out: Dictionary = _with_scratch_savepath(check)
+	return TestResult.new(
+		"the prop rail's Delete removes a prop nothing depends on, and asks Lab to reload",
+		out["gone"] and out["reloaded"],
+		"prop removed=%s, catalog reload emitted=%s" % [out["gone"], out["reloaded"]])
