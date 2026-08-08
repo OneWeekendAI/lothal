@@ -1,0 +1,41 @@
+Lothal
+© 2026 Meetdev. All rights reserved.
+
+Lothal is proprietary software. No licence is granted, expressly or by implication, to use,
+copy, modify, distribute, sublicense or create derivative works from this software or its
+source code, except as set out below.
+
+PERMITTED USE OF THE RELEASED BINARIES
+
+  You may install and use the released Lothal binaries on machines you own or control, for
+  personal or internal business purposes.
+
+NOT PERMITTED
+
+  Redistribution of the binaries, in whole or in part, by any means.
+  Reverse engineering, decompilation or disassembly, except to the extent that this
+    restriction is prohibited by applicable law.
+  Removal or alteration of this notice or of any copyright or attribution notice.
+  Use of the Lothal name or marks to endorse or promote anything.
+
+NO WARRANTY
+
+  Lothal simulates the flight of aircraft you describe to it. Its physics, its component
+  models and its plausibility checks are approximations, and several of them are documented as
+  such inside the application itself. They are not engineering advice, and nothing in Lothal
+  should be treated as a substitute for building, testing and flying a real aircraft safely
+  and lawfully.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+  INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+  PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+  FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+  OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  DEALINGS IN THE SOFTWARE.
+
+THIRD-PARTY COMPONENTS
+
+  Lothal is built with the Godot Engine (https://godotengine.org), used under the MIT licence,
+  © 2014-present Godot Engine contributors, © 2007-2014 Juan Linietsky, Ariel Manzur.
+  Godot's own licence and the licences of its third-party components are reproduced in full
+  inside the application under the engine's licence dialog.

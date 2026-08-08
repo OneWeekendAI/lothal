@@ -6,10 +6,20 @@
 #   - Matching export templates  (~1 GB, installed to
 #     ~/Library/Application Support/Godot/export_templates/<version>/)
 #
-# The bundle is UNSIGNED. It runs fine on this Mac. On someone else's Mac
-# Gatekeeper will block it until they right-click -> Open, or run:
+# The bundle carries an AD-HOC signature and no Apple Developer ID.
+#
+# Ad-hoc is not optional and not cosmetic. Godot's export leaves the template's OWN signature
+# on the binary (identifier godot.macos.template_release.arm64, Godot's team id), and swapping
+# in Lothal's icon and Info.plist invalidates it — `codesign --verify` reports "code has no
+# resources but signature indicates they must be present". On Apple Silicon the kernel refuses
+# to run a binary whose signature is broken, and no amount of right-click -> Open or xattr will
+# rescue it: the app simply never opens, on every Mac that is not this one. Re-signing ad-hoc
+# below replaces that wreckage with a valid signature under Lothal's own identifier.
+#
+# What ad-hoc does NOT do is satisfy Gatekeeper, which wants a Developer ID. Downloaders still
+# need to right-click -> Open once, or run:
 #   xattr -dr com.apple.quarantine /Applications/Lothal.app
-# Signing properly needs an Apple Developer ID.
+# The difference is that after ad-hoc signing those instructions actually work.
 
 set -euo pipefail
 
@@ -41,6 +51,22 @@ HAVE=$("$GODOT" --version 2>/dev/null | head -1)
   exit 1
 }
 
+# Encryption guard. `encrypt_pck=true` against stock export templates produces a build that
+# exports without complaint and then cannot decrypt its own pack at startup — it dies on every
+# machine, including this one, with no useful error. The key has to be compiled INTO the
+# template, so the only safe combination is encryption plus templates from build_templates.sh.
+if grep -q '^encrypt_pck=true' export_presets.cfg; then
+  [ -f "$TEMPLATE_DIR/.lothal_encrypted" ] || {
+    echo "error: encrypt_pck=true but the installed export templates carry no encryption key." >&2
+    echo "       This export would produce a build that cannot start." >&2
+    echo "       Run ./release/build_templates.sh first, or set encrypt_pck=false." >&2
+    exit 1
+  }
+  SCRIPT_AES256_ENCRYPTION_KEY=$(tr -d '\n ' < "$TEMPLATE_DIR/.lothal_encrypted")
+  export SCRIPT_AES256_ENCRYPTION_KEY
+  echo "==> exporting with PCK encryption"
+fi
+
 # Regenerate the bundle icon whenever the vector source is newer than the .icns.
 if [ ! -f icon.icns ] || [ icon.svg -nt icon.icns ]; then
   echo "==> rendering icon.icns from icon.svg"
@@ -66,7 +92,21 @@ mkdir -p build
 BIN="$OUT/Contents/MacOS/Lothal"
 [ -f "$BIN" ] && chmod +x "$BIN"
 
+# Replace the export template's stale signature with a valid ad-hoc one. See the header.
+echo "==> ad-hoc signing"
+codesign --force --deep --sign - "$OUT"
+
+# The gate, not a courtesy: an invalidly signed bundle is the one defect that is invisible on
+# the machine that built it and total on every other Mac. Shipping it would mean a release that
+# does not start, discovered by users rather than here.
+codesign --verify --deep --strict "$OUT" 2>&1 | sed 's/^/  /'
+if ! codesign --verify --deep --strict "$OUT" >/dev/null 2>&1; then
+  echo "error: bundle signature does not verify — this build would not launch on any other Mac" >&2
+  exit 1
+fi
+
 echo
 echo "built: $(cd build && pwd)/Lothal.app  ($(du -sh "$OUT" | cut -f1))"
 lipo -archs "$BIN" 2>/dev/null | sed 's/^/archs: /' || true
+codesign -dv "$OUT" 2>&1 | grep -E "^(Identifier|Signature)" | sed 's/^/  /' || true
 echo "run:   open $OUT"

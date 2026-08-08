@@ -6,7 +6,7 @@ Build an FPV drone from real parts. Fly it. Feel the difference.
 
 ## What it does
 
-Lothal is an open-source drone design workbench and flight simulator. You assemble a
+Lothal is a drone design workbench and flight simulator. You assemble a
 quadcopter from a catalog of real components — frames, motors, propellers, batteries —
 and every choice changes the physics. Swap a 4S pack for 6S and the thrust-to-weight,
 hover throttle, and flight time all recompute; then you fly it and feel the difference.
@@ -173,20 +173,20 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=0.15 s (1707.5 files/s, 377500.0 lines/s)
+github.com/AlDanial/cloc v 2.10  T=0.10 s (2739.1 files/s, 599082.6 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-GDScript                       238           7531          16147          29620
+GDScript                       241           7656          16374          29943
 JSON                            11              0              0           2517
 Python                           2            125            283            382
-Markdown                         2             90              4            296
-XML                              2              3              0             74
+Bourne Shell                     6             80            167            352
+Markdown                         2             91              4            299
+XML                              3              3              0            224
 Godot Scene                      2             17             10             57
-Bourne Shell                     1             12             15             45
 SVG                              1              0              5             27
 -------------------------------------------------------------------------------
-SUM:                           259           7778          16464          33018
+SUM:                           268           7972          16843          33801
 -------------------------------------------------------------------------------
 ```
 
@@ -194,4 +194,9 @@ SUM:                           259           7778          16464          33018
 
 ## License
 
-MIT
+© 2026 Meetdev. All rights reserved. See [NOTICE](NOTICE).
+
+Lothal is proprietary. This repository is private and its source is not licensed for use,
+copying, modification or redistribution. The public distribution repo is
+[lothal-public](https://github.com/OneWeekendAI/lothal-public), which carries the binaries and
+documentation only.

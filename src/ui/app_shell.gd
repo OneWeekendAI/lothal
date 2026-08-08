@@ -122,6 +122,18 @@ func _init() -> void:
 	_sim_button = _add_tab(bar, "Sim", show_sim)
 	_refresh_tabs()
 
+	# The update bar rides the same high CanvasLayer as the tabs, for the same reason: Sim's HUD
+	# is on a layer of its own and would draw straight over anything sitting in the ordinary
+	# tree. Anchored to the bottom rather than the top so it never crowds the tab row, and it
+	# stays hidden unless a signed manifest offers something newer — see UpdateNotice.
+	var notice := UpdateNotice.new(LothalVersion.MANIFEST_URL)
+	notice.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	notice.anchor_top = 1.0
+	notice.anchor_right = 1.0
+	notice.anchor_bottom = 1.0
+	notice.offset_top = -UpdateNotice.BAR_HEIGHT
+	tab_layer.add_child(notice)
+
 func _ready() -> void:
 	if get_tree() != null and get_tree().root != null and settings != null:
 		get_tree().root.content_scale_factor = settings.ui_scale
