@@ -224,7 +224,11 @@ func _recompute() -> void:
 	var test_max_rpm: float = float(motor["specs"]["kv"]) * test_voltage
 	var k_t_at_test_prop := PropellerModel.fit_k_t(float(motor["specs"]["max_thrust_g"]), test_max_rpm)
 
-	k_t = PropellerModel.scale_k_t_to_prop(k_t_at_test_prop, _prop_geometry(test_prop), _prop_geometry(propeller))
+	var test_geom := _prop_geometry(test_prop)
+	var prop_geom := _prop_geometry(propeller)
+	k_t = PropellerModel.scale_k_t_to_prop(
+		k_t_at_test_prop, test_geom.diameter_m, test_geom.pitch_m, test_geom.blades,
+		prop_geom.diameter_m, prop_geom.pitch_m, prop_geom.blades)
 	k_q = PropellerModel.fit_k_q(k_t, _prop_geometry(propeller).diameter_m)
 
 	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop, _prop_geometry(test_prop).diameter_m)

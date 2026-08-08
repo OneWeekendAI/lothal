@@ -38,6 +38,10 @@ extends RefCounted
 
 const BAND_WIDENING_FACTOR := 2.0
 
+## Mirrors propeller.rs BLADE_COUNT_EXPONENT. Rust cannot export constants to GDScript;
+## keep in step with the Rust source of truth (enforced by the golden cross-check).
+const BLADE_COUNT_EXPONENT := 0.8
+
 ## The blade counts the catalog spans. Outside these is a fact about the aircraft, said out loud.
 const MIN_TYPICAL_BLADES := 2
 const MAX_TYPICAL_BLADES := 4
@@ -81,7 +85,7 @@ static func _blade_count(prop: Dictionary) -> Array[BuildWarning]:
 	out.append(BuildWarning.characteristic(&"implausible_blade_count",
 		"%d-blade props are outside the %d-%d range the catalog carries. The physics still runs — blades scale k_t through a documented rule of thumb (blades^%.1f) — but the exponent was fitted against tri- and bi-blade tables, and %d blades is extrapolation this file has no way to check." % [
 			blades, MIN_TYPICAL_BLADES, MAX_TYPICAL_BLADES,
-			PropellerModel.BLADE_COUNT_EXPONENT, blades],
+			BLADE_COUNT_EXPONENT, blades],
 		{"blades": blades, "min_typical": MIN_TYPICAL_BLADES, "max_typical": MAX_TYPICAL_BLADES}))
 	return out
 

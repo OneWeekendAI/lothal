@@ -1,4 +1,5 @@
 mod motor;
+mod propeller;
 
 use godot::prelude::*;
 

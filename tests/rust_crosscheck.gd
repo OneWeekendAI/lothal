@@ -6,8 +6,9 @@ extends SceneTree
 ##
 ## Each comparison block exists only while its reference twin is still in the tree —
 ## a comparison whose twin has been deleted asserts nothing. Discipline
-## (plans-that-cannot-fail): this harness is only trusted after being shown to FAIL on a
-## deliberate difference, per class, before that class is trusted.
+## (plans-that-cannot-fail): every block starts with a smoke guard (a call that must return
+## a finite number) so a broken class can never read as a pass, and each block is
+## mutation-tested before the class it guards is trusted.
 
 func _init() -> void:
 	var failures := 0

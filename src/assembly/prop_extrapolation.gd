@@ -63,6 +63,12 @@ const EXTRAPOLATION_BOUND := 2.0
 
 const NAME := &"prop_extrapolation"
 
+## Mirrors propeller.rs (BLADE_COUNT_EXPONENT/PITCH_EXPONENT). Rust cannot export constants
+## to GDScript, so the exponents keep a module const here; the value must agree with the
+## Rust source of truth, which the golden cross-check (tests/rust_crosscheck.gd) enforces.
+const BLADE_COUNT_EXPONENT := 0.8
+const PITCH_EXPONENT := 0.5
+
 
 ## Everything this file has to say about one build, in one list. Empty when the fitted prop is
 ## the motor's own test prop (correction 1.0) or when it is near enough.
@@ -82,8 +88,8 @@ static func warnings_for(build: Build) -> Array[BuildWarning]:
 		return out
 
 	var diameter_factor := pow(to_geom.diameter_m / from_geom.diameter_m, 4.0)
-	var blade_factor := pow(to_geom.blades / from_geom.blades, PropellerModel.BLADE_COUNT_EXPONENT)
-	var pitch_factor := pow(to_geom.pitch_m / from_geom.pitch_m, PropellerModel.PITCH_EXPONENT)
+	var blade_factor := pow(to_geom.blades / from_geom.blades, BLADE_COUNT_EXPONENT)
+	var pitch_factor := pow(to_geom.pitch_m / from_geom.pitch_m, PITCH_EXPONENT)
 	var combined := diameter_factor * blade_factor * pitch_factor
 
 	# Symmetric around 1.0: an aircraft flown on a prop that HALVES its k_t is extrapolating just
@@ -129,9 +135,9 @@ static func _dominant_term(diameter_f: float, blade_f: float, pitch_f: float) ->
 		{"term": "diameter", "factor": diameter_f, "what": "almost all diameter",
 			"how": "the exact D⁴ term"},
 		{"term": "blades", "factor": blade_f, "what": "mostly blade count",
-			"how": "the blades^%.1f rule of thumb" % PropellerModel.BLADE_COUNT_EXPONENT},
+			"how": "the blades^%.1f rule of thumb" % BLADE_COUNT_EXPONENT},
 		{"term": "pitch", "factor": pitch_f, "what": "mostly pitch",
-			"how": "the pitch^%.1f rule of thumb" % PropellerModel.PITCH_EXPONENT},
+			"how": "the pitch^%.1f rule of thumb" % PITCH_EXPONENT},
 	]
 	var winner: Dictionary = terms[0]
 	var best_distance := 0.0

@@ -245,7 +245,10 @@ static func implied_k_t_on(catalog: PartsCatalog, motor: Dictionary, to_geometry
 	if fit_rpm <= 0.0:
 		return 0.0
 	var k_t_at_fit := PropellerModel.fit_k_t(float(motor.get("specs", {}).get("max_thrust_g", 0.0)), fit_rpm)
-	return PropellerModel.scale_k_t_to_prop(k_t_at_fit, ThrustValidation.geometry_of(fit_prop), to_geometry)
+	var fit_geom := ThrustValidation.geometry_of(fit_prop)
+	return PropellerModel.scale_k_t_to_prop(
+		k_t_at_fit, fit_geom.diameter_m, fit_geom.pitch_m, fit_geom.blades,
+		to_geometry.diameter_m, to_geometry.pitch_m, to_geometry.blades)
 
 
 static func _thrust_coefficient(catalog: PartsCatalog, motor: Dictionary) -> Array[BuildWarning]:
