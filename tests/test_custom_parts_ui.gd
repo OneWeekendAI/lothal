@@ -35,6 +35,8 @@ static func run() -> Array:
 	results.append(_test_the_save_button_does_not_close_a_dialog_on_a_refusal())
 	results.append(_test_prop_rail_refuses_to_delete_a_prop_a_motor_is_measured_on())
 	results.append(_test_prop_rail_deletes_an_independent_prop())
+	results.append(_test_esc_dialog_saves_a_record_the_model_accepts())
+	results.append(_test_fc_dialog_derives_noise_and_labels_the_bias_illustrative())
 	return results
 
 
@@ -81,6 +83,8 @@ static func _authoring_rails(catalog: PartsCatalog) -> Dictionary:
 		"motor": MotorPicker.new(catalog),
 		"propeller": PropellerPicker.new(catalog),
 		"battery": BatteryPicker.new(catalog),
+		"esc": EscPicker.new(catalog),
+		"flight_controller": FcPicker.new(catalog),
 	}
 
 
@@ -145,7 +149,7 @@ static func _test_every_authoring_rail_offers_a_way_in() -> TestResult:
 	return TestResult.new(
 		"every rail with a custom-parts document offers New and Delete",
 		missing.is_empty(),
-		"all four reachable" if missing.is_empty() else "unreachable: %s" % ", ".join(missing))
+		"all six reachable" if missing.is_empty() else "unreachable: %s" % ", ".join(missing))
 
 
 ## The signal LabScreen rebuilds from. A rail that had the button but no signal would save the part
@@ -158,6 +162,8 @@ static func _test_every_authoring_rail_has_a_change_signal() -> TestResult:
 		"motor": "custom_motors_changed",
 		"propeller": "custom_propellers_changed",
 		"battery": "custom_batteries_changed",
+		"esc": "custom_escs_changed",
+		"flight_controller": "custom_flight_controllers_changed",
 	}
 
 	var missing: Array[String] = []
@@ -169,7 +175,7 @@ static func _test_every_authoring_rail_has_a_change_signal() -> TestResult:
 	return TestResult.new(
 		"every authoring rail carries the change signal LabScreen reloads on",
 		missing.is_empty(),
-		"all four present" if missing.is_empty() else "missing: %s" % ", ".join(missing))
+		"all six present" if missing.is_empty() else "missing: %s" % ", ".join(missing))
 
 
 ## Delete must be dead on a shipped part and live on the builder's own — on the two rails this
@@ -531,3 +537,76 @@ static func _test_prop_rail_deletes_an_independent_prop() -> TestResult:
 		"the prop rail's Delete removes a prop nothing depends on, and asks Lab to reload",
 		out["gone"] and out["reloaded"],
 		"prop removed=%s, catalog reload emitted=%s" % [out["gone"], out["reloaded"]])
+
+
+# ---------------------------------------------------------------------------
+# 4. The two stack dialogs (LTHL-25)
+# ---------------------------------------------------------------------------
+
+## The ESC form's whole job, checked through submit() rather than make_record for the reason the
+## pack dialog's copy gives: what is untested is the WIRING, and a form that read the burst box into
+## the continuous argument would pass every model test in the suite next door — while quadrupling
+## the board a builder flies on.
+static func _test_esc_dialog_saves_a_record_the_model_accepts() -> TestResult:
+	var check := func() -> Dictionary:
+		var dialog := CustomEscDialog.new()
+		var seen := {"id": ""}
+		dialog.esc_saved.connect(func(part_id: String) -> void: seen["id"] = part_id)
+		dialog.set_fields("Shed 60A 4in1", 60.0, 70.0, 4, 13.0, "30.5x30.5", "3-6S", "DShot600",
+			"off the product page")
+
+		var refusals := dialog.submit()
+		var stored := CustomEscs.load_from().get_esc("custom_shed_60a_4in1")
+		var specs: Dictionary = stored.get("specs", {})
+		dialog.free()
+
+		return {
+			"problems": refusals,
+			"announced": seen["id"],
+			"stored": not stored.is_empty(),
+			"continuous": float(specs.get("continuous_a", 0.0)),
+			"burst": float(specs.get("burst_a", 0.0)),
+			"channels": int(specs.get("channels", 0)),
+			"mass_g": float(stored.get("mass_g", 0.0)),
+			"pattern": str(stored.get("mounting", {}).get("pattern", "")),
+		}
+
+	var out: Dictionary = _with_scratch_savepath(check)
+	# Continuous and burst asserted separately and in the right order, because the failure this
+	# catches is precisely the two being swapped.
+	var fields_ok: bool = is_equal_approx(out["continuous"], 60.0) \
+		and is_equal_approx(out["burst"], 70.0) and out["channels"] == 4 \
+		and is_equal_approx(out["mass_g"], 13.0) and out["pattern"] == "30.5x30.5"
+	var passed: bool = (out["problems"] as Array).is_empty() and out["stored"] \
+		and out["announced"] == "custom_shed_60a_4in1" and fields_ok
+	return TestResult.new(
+		"the ESC dialog saves a record CustomEscs accepts, with continuous and burst the right way round",
+		passed,
+		"problems=%s, announced=%s, stored=%s, %.0f A continuous / %.0f A burst x%d, %.0f g, %s" % [
+			out["problems"], out["announced"], out["stored"], out["continuous"], out["burst"],
+			out["channels"], out["mass_g"], out["pattern"]])
+
+
+## The FC form's one job that no other dialog has: showing the builder the noise floor it derived
+## for them, naming the datasheet it came from, and saying in the same breath that the bias beside
+## it is nothing of the kind. A form that printed both as plain numbers would be the whole failure
+## this category is built to avoid.
+static func _test_fc_dialog_derives_noise_and_labels_the_bias_illustrative() -> TestResult:
+	var dialog := CustomFcDialog.new()
+	dialog.set_fields("Shed H743 Board", "ICM-42688-P", 8000.0, 12.0, "30.5x30.5", "H743", 8000,
+		"off the product page")
+	var text := dialog.derived_text()
+	var expected_noise := CustomFlightControllers.derived_noise_rad_s(
+		CustomFlightControllers.density_for("ICM-42688-P"), 8000.0)
+	dialog.free()
+
+	var shows_noise := text.contains("%.4f" % expected_noise)
+	var names_datasheet := text.contains("DS-000347")
+	var says_illustrative := text.to_lower().contains("illustrative")
+	var says_derived := text.to_lower().contains("derived")
+
+	return TestResult.new(
+		"the FC dialog shows the derived noise floor, names its datasheet, and calls the bias illustrative",
+		shows_noise and names_datasheet and says_illustrative and says_derived,
+		"noise %.4f shown=%s, datasheet named=%s, bias called illustrative=%s, says derived=%s" % [
+			expected_noise, shows_noise, names_datasheet, says_illustrative, says_derived])

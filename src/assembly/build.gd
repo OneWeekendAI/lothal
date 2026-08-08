@@ -948,6 +948,13 @@ func warnings() -> Array[BuildWarning]:
 	# assumption reproduced (not a measurement), and every flight-time figure carries an
 	# unvalidated multiplier named FLIGHT_CURRENT_TO_HOVER_RATIO.
 	out.append_array(BatteryPlausibility.warnings_for(self))
+
+	# And the two halves of the stack. The ESC's file exists for one check above all others — the
+	# per-board/per-channel confusion escs.json's schema puts in capitals — and the FC's exists to
+	# keep two derived numbers from being read as the same kind of number: its noise floor is
+	# datasheet-backed and its bias is illustrative.
+	out.append_array(EscPlausibility.warnings_for(self))
+	out.append_array(FcPlausibility.warnings_for(self))
 	return out
 
 

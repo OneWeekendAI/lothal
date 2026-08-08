@@ -344,6 +344,13 @@ func _build_rails() -> void:
 	# every hover-throttle figure hanging off them move with it.
 	battery_picker.custom_batteries_changed.connect(reload_catalog)
 
+	# The two halves of the stack. Neither rail cross-references anything else, so neither needs the
+	# ordering note the prop rail carries — but both reload for the same reason all six do: the
+	# categories are not independent on screen, and a build panel showing the aircraft from before a
+	# part existed is the failure this signal prevents.
+	esc_picker.custom_escs_changed.connect(reload_catalog)
+	fc_picker.custom_flight_controllers_changed.connect(reload_catalog)
+
 	for rail in [picker, motor_picker, propeller_picker, battery_picker, esc_picker, fc_picker]:
 		rail.part_selected.connect(_on_part_selected)
 

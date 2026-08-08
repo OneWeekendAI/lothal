@@ -79,6 +79,11 @@ static func load_with_custom(path: String = CustomParts.SAVE_PATH) -> PartsCatal
 	catalog._merge_custom(path, CustomFrames.load_from(path))
 	catalog._merge_custom(path, CustomMotors.load_from(path, catalog))
 	catalog._merge_custom(path, CustomBatteries.load_from(path))
+	# The two halves of the stack. Order between them does not matter — neither cross-references the
+	# other, and neither cross-references anything else — but they come after the four above so that
+	# the merged catalog is assembled in the same order the categories were built.
+	catalog._merge_custom(path, CustomEscs.load_from(path))
+	catalog._merge_custom(path, CustomFlightControllers.load_from(path))
 	return catalog
 
 

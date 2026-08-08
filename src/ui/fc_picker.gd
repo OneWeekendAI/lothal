@@ -18,5 +18,50 @@ const FILTER_KEYS := [
 	{"key": "imu", "label": "IMU"},
 ]
 
+signal custom_flight_controllers_changed()
+
+var _delete_button: Button
+
+
 func _init(p_catalog: PartsCatalog) -> void:
 	super(p_catalog, "flight_controller", "Flight controllers", "FC", FILTER_KEYS)
+
+	# The authoring entry point, on the FC rail for the same reason the other five are on theirs —
+	# see PartPicker's header on parallel surfaces.
+	var buttons := HBoxContainer.new()
+	var new_button := Button.new()
+	new_button.text = "New custom FC…"
+	new_button.pressed.connect(_open_dialog)
+	buttons.add_child(new_button)
+	_delete_button = Button.new()
+	_delete_button.text = "Delete"
+	_delete_button.pressed.connect(_delete_selected)
+	buttons.add_child(_delete_button)
+	add_custom_buttons(buttons)
+	part_selected.connect(func(_board: Dictionary) -> void: _refresh_delete_button())
+	_refresh_delete_button()
+
+
+## Delete is only meaningful on a board the builder owns. Disabled rather than hidden on a catalog
+## board, so the rail does not reflow every time the selection moves.
+func _refresh_delete_button() -> void:
+	_delete_button.disabled = not PartsCatalog.is_custom(str(selected_part().get("part_id", "")))
+
+
+func _open_dialog() -> void:
+	var dialog := CustomFcDialog.new()
+	dialog.fc_saved.connect(func(_part_id: String) -> void:
+		dialog.queue_free()
+		custom_flight_controllers_changed.emit())
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+func _delete_selected() -> void:
+	var part_id := str(selected_part().get("part_id", ""))
+	if not PartsCatalog.is_custom(part_id):
+		return
+	var document := CustomFlightControllers.load_from()
+	if document.remove(part_id):
+		document.save()
+		custom_flight_controllers_changed.emit()
