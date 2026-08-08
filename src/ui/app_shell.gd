@@ -70,6 +70,15 @@ var course_library := CourseLibrary.load_from()
 var pack_charge := PackCharge.load_from()
 
 var _host: Control
+## The CanvasLayer carrying the tab bar and the update notice. Held so the activation gate can
+## hide the entire app behind itself — see `_ready()`.
+var _tab_layer: CanvasLayer
+## "Activated — someone@example.com", sitting in the tab row. Permanently visible, and that is
+## the point: it is the whole of the anti-sharing mechanism, and a licence's owner being named
+## somewhere the borrower cannot help seeing is worth more than any check that could be removed
+## by decompiling. Empty and hidden until a licence has verified.
+var _account_label: Label
+var _activation_layer: CanvasLayer = null
 var _lab_button: Button
 var _bench_button: Button
 var _pack_bench_button: Button
@@ -108,6 +117,7 @@ func _init() -> void:
 	var tab_layer := CanvasLayer.new()
 	tab_layer.layer = 10
 	add_child(tab_layer)
+	_tab_layer = tab_layer
 
 	var bar := HBoxContainer.new()
 	bar.position = Vector2(LothalTheme.SPACE_2, 6)
@@ -120,6 +130,17 @@ func _init() -> void:
 	_frame_bench_button = _add_tab(bar, "Frame", show_frame_bench)
 	_field_button = _add_tab(bar, "Field", show_field_editor)
 	_sim_button = _add_tab(bar, "Sim", show_sim)
+
+	# The signed-in address rides at the end of the tab row rather than behind an About dialog.
+	# Hiding it would defeat its only purpose: a licence is a file and files get passed around,
+	# and what discourages that is the borrower seeing whose name is on it every time they fly.
+	_account_label = Label.new()
+	_account_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	_account_label.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
+	_account_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_account_label.visible = false
+	bar.add_child(_account_label)
+
 	_refresh_tabs()
 
 	# The update bar rides the same high CanvasLayer as the tabs, for the same reason: Sim's HUD
@@ -137,6 +158,67 @@ func _init() -> void:
 func _ready() -> void:
 	if get_tree() != null and get_tree().root != null and settings != null:
 		get_tree().root.content_scale_factor = settings.ui_scale
+
+	_apply_activation_gate()
+
+
+## Shows the app, or the activation screen, according to the licence on disk.
+##
+## Run from `_ready()` rather than `_init()` deliberately. The rooms are built in the constructor
+## and the suite drives them by calling `AppShell.new()` without ever entering a tree — gating in
+## the constructor would mean 838 tests exercising an app that had refused to build itself, and
+## the pressure to add a bypass for them would arrive immediately. A bypass is precisely what must
+## not exist: a seam that turns the gate off is a way in that needs no decompiler at all.
+##
+## The consequence is that the `capture_*` screenshot tools, which DO enter a tree, now need an
+## activated user:// on the machine running them. That is the maintainer's own machine and it has
+## one; a headless CI box would photograph the activation screen instead, which is the honest
+## result rather than a bug.
+##
+## Missing, malformed and tampered licences all land here identically. That is the whole design —
+## if a corrupt licence behaved differently from an absent one, the difference would eventually be
+## somebody's way through.
+func _apply_activation_gate() -> void:
+	var licence := LicenceCheck.verify_stored()
+	if licence.valid:
+		_show_activated(licence.email)
+		return
+
+	print_verbose("activation gate: %s" % licence.reason)
+
+	# Everything else is hidden rather than left underneath, and the screen goes on a layer above
+	# the tab bar's. Leaving the tabs reachable would make the gate a suggestion: Sim is one click
+	# away, and it neither knows nor cares whether a licence verified.
+	_host.visible = false
+	_tab_layer.visible = false
+
+	_activation_layer = CanvasLayer.new()
+	_activation_layer.layer = 20
+	add_child(_activation_layer)
+
+	var screen := ActivationScreen.new(LothalVersion.ACTIVATION_URL)
+	screen.activated.connect(_on_activated)
+	_activation_layer.add_child(screen)
+
+
+## Called when the activation screen accepts a licence. The app appears without a relaunch — a
+## restart here would be a second chance for something to go wrong immediately after the one step
+## the user was already unsure about.
+func _on_activated(email: String) -> void:
+	if _activation_layer != null:
+		_activation_layer.queue_free()
+		_activation_layer = null
+
+	_host.visible = true
+	_tab_layer.visible = true
+	_show_activated(email)
+
+
+func _show_activated(email: String) -> void:
+	if _account_label == null:
+		return
+	_account_label.text = "Activated — %s" % email
+	_account_label.visible = true
 
 
 func _add_tab(bar: HBoxContainer, text: String, handler: Callable) -> Button:

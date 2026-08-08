@@ -17,7 +17,7 @@ VERSION="${1:-}"
 [ -n "$VERSION" ] || { echo "usage: release/package.sh <version>   e.g. 0.1.0" >&2; exit 1; }
 
 PRIVATE_KEY="${LOTHAL_SIGNING_KEY:-$HOME/.lothal/update_private.pem}"
-BASE_URL="${LOTHAL_BASE_URL:-https://dl.lothal.app}"
+BASE_URL="${LOTHAL_BASE_URL:-https://dl.meetdev.in}"
 NOTES_URL="${LOTHAL_NOTES_URL:-https://github.com/OneWeekendAI/lothal-public/releases}"
 
 MAC_APP="build/Lothal.app"

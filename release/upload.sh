@@ -99,5 +99,5 @@ else
   echo "manifest:  $BUCKET/latest.json"
   echo
   echo "Verify the live manifest before announcing:"
-  echo "  curl -s https://dl.lothal.app/latest.json | python3 -m json.tool | head"
+  echo "  curl -s https://dl.meetdev.in/latest.json | python3 -m json.tool | head"
 fi

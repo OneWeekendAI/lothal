@@ -1,0 +1,32 @@
+# The download edge for Lothal: dl.meetdev.in in front of the GCS bucket.
+#
+# Deploy from this directory:
+#   wrangler deploy
+#
+# Declared as a CUSTOM DOMAIN rather than a route, and the difference is not cosmetic. A plain
+# route (`dl.meetdev.in/*`) only claims traffic for a hostname that ALREADY resolves — it does
+# not create the DNS record, so deploying one against a subdomain that does not exist yet
+# succeeds, reports the trigger, and then serves nothing at all. A custom domain creates the
+# proxied record as part of the deploy, which is what this hostname needs: it has never existed.
+
+name = "lothal-downloads"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+
+# Bound to the zone rather than a workers.dev subdomain, because this hostname is compiled into
+# every released binary as LothalVersion.MANIFEST_URL and can never change for installs that
+# predate the change. A workers.dev address would tie the update channel to an account-scoped
+# domain that Cloudflare, not Meetdev, controls the naming of.
+routes = [
+  { pattern = "dl.meetdev.in", zone_name = "meetdev.in", custom_domain = true }
+]
+
+# Download counting. Optional: the Worker checks for this binding and simply counts nothing when
+# it is absent, so a deploy without the namespace still serves files correctly.
+#
+# Create it once, then paste the id it prints:
+#   wrangler kv namespace create COUNTERS
+#
+# [[kv_namespaces]]
+# binding = "COUNTERS"
+# id = "<paste the id here>"

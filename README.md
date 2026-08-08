@@ -173,20 +173,23 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=0.10 s (2739.1 files/s, 599082.6 lines/s)
+github.com/AlDanial/cloc v 2.10  T=0.27 s (1041.1 files/s, 223872.2 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-GDScript                       241           7656          16374          29943
-JSON                            11              0              0           2517
+GDScript                       249           7930          17054          30944
+JSON                            13              0              0           2524
+Bourne Shell                     8            113            234            507
+Markdown                         3            137              6            457
 Python                           2            125            283            382
-Bourne Shell                     6             80            167            352
-Markdown                         2             91              4            299
 XML                              3              3              0            224
+JavaScript                       2             27             83            104
 Godot Scene                      2             17             10             57
 SVG                              1              0              5             27
+TOML                             1              3             23              6
+Text                             1              0              0              2
 -------------------------------------------------------------------------------
-SUM:                           268           7972          16843          33801
+SUM:                           285           8355          17698          35234
 -------------------------------------------------------------------------------
 ```
 

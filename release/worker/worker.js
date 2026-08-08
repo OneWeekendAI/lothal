@@ -1,9 +1,9 @@
 /**
- * dl.lothal.app — the download edge in front of the GCS bucket.
+ * dl.meetdev.in — the download edge in front of the GCS bucket.
  *
  * This exists instead of pointing a CNAME straight at Google's storage host, and the reason is
  * worth knowing before you change it. GCS's CNAME path requires the bucket to be NAMED for the
- * domain ("dl.lothal.app"), requires proving domain ownership in Google Search Console, and —
+ * domain ("dl.meetdev.in"), requires proving domain ownership in Google Search Console, and —
  * the part that actually rules it out — does not serve HTTPS on that leg. Cloudflare would then
  * be terminating TLS for the visitor and talking to the origin in the clear, which is precisely
  * the wire an attacker would want for a binary download.
@@ -66,6 +66,18 @@ export default {
     });
 
     const headers = new Headers(response.headers);
+
+    // Cache-Control is SET here, not inherited from the bucket. Cloudflare's zone-level Browser
+    // Cache TTL overrides whatever the origin sent — the bucket serves latest.json with
+    // max-age=300 and the edge was rewriting it to max-age=14400. Four hours is a long time to
+    // be unable to withdraw a bad manifest, and it delays every release announcement by up to
+    // the same. Setting the header on the response we return wins over the zone default.
+    headers.set(
+      "Cache-Control",
+      path === "latest.json"
+        ? "public, max-age=300, must-revalidate"
+        : "public, max-age=31536000, immutable"
+    );
     // The landing page reads latest.json from a different origin, so it needs CORS. Only this
     // one file: the zips are fetched by navigation, not by script, and a blanket wildcard would
     // be a permission granted for no reason.

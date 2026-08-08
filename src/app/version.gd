@@ -15,7 +15,29 @@ const CURRENT := "0.1.0"
 ## rather than the bucket's own URL, so the origin can be moved — to another bucket, another
 ## provider — without stranding every copy of Lothal already installed, which reads this string
 ## from a binary that was compiled before the move.
-const MANIFEST_URL := "https://dl.lothal.app/latest.json"
+##
+## CHANGING THIS STRANDS EVERY INSTALL THAT PREDATES THE CHANGE. It is compiled in, so an older
+## copy of Lothal goes on asking the old address for ever and simply stops being offered
+## updates — silently, because a failed check is indistinguishable from being up to date. The
+## download URLs are NOT like this: they live inside the manifest and are re-signed every
+## release, so payloads can move hosts freely. This one line is the only permanent commitment
+## in the update channel, which is why it points at a hostname on a domain rather than at a
+## bucket.
+const MANIFEST_URL := "https://dl.meetdev.in/latest.json"
+
+## Where a user goes to sign in and collect an activation key.
+##
+## Compiled in, and so carrying the same permanent commitment MANIFEST_URL does: an installed
+## copy opens this address for ever, and a build that shipped pointing somewhere since abandoned
+## sends its users to a dead page with no way to activate. Hence a hostname on a domain that is
+## ours rather than the Cloudflare Pages subdomain the site currently also answers on — the page
+## can move hosts freely, this string cannot.
+##
+## Opened with OS.shell_open, in the user's own browser. Never an embedded web view: sign-in
+## belongs somewhere the address bar is visible and a password manager can reach, and an in-app
+## window asking for a Google password is shaped exactly like the phishing people are taught to
+## refuse.
+const ACTIVATION_URL := "https://lothal.meetdev.in"
 
 
 ## Compares two dotted versions. Returns -1 if `a` is older, 0 if equal, 1 if `a` is newer.
