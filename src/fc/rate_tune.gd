@@ -304,9 +304,10 @@ static func vibration_step_noise_rad_s(p_build: Build) -> float:
 	gyro.bias_rad_s = Vector3.ZERO
 
 	var hover_rpm := p_build.rpm_at_throttle(p_build.hover_throttle())
-	var rpms := {}
+	# MotorLayout.MOTOR_NAMES order — set_rpm takes the typed array, not a dict.
+	var rpms := PackedFloat64Array()
 	for name in MotorLayout.MOTOR_NAMES:
-		rpms[name] = hover_rpm
+		rpms.append(hover_rpm)
 	gyro.vibration.set_rpm(rpms)
 
 	var dt := 1.0 / gyro.sample_rate_hz

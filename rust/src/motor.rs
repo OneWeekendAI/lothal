@@ -32,7 +32,7 @@ impl MotorModel {
     /// `_init`, so a static factory is the idiom. Every `MotorModel.new(...)` call site was
     /// renamed to `MotorModel.create(...)` in the same commit.
     #[func]
-    fn create(kv: f64, max_throttle: f64) -> Gd<Self> {
+    pub fn create(kv: f64, max_throttle: f64) -> Gd<Self> {
         Gd::from_object(Self {
             kv,
             max_throttle: max_throttle.clamp(0.0, 1.0),
@@ -40,13 +40,13 @@ impl MotorModel {
     }
 
     #[func]
-    fn max_rpm(&self, voltage_v: f64) -> f64 {
+    pub fn max_rpm(&self, voltage_v: f64) -> f64 {
         self.kv * voltage_v
     }
 
     /// Advances current RPM one dt toward the throttle-commanded target, via first-order lag.
     #[func]
-    fn step(&self, current_rpm: f64, throttle_cmd: f64, voltage_v: f64, dt: f64) -> f64 {
+    pub fn step(&self, current_rpm: f64, throttle_cmd: f64, voltage_v: f64, dt: f64) -> f64 {
         let target = throttle_cmd.clamp(0.0, self.max_throttle) * self.max_rpm(voltage_v);
         let alpha = 1.0 - (-dt / SPIN_UP_TAU_S).exp();
         current_rpm + (target - current_rpm) * alpha

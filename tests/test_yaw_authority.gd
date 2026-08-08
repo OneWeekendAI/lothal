@@ -72,7 +72,7 @@ static func run() -> Array:
 	var core := ReferenceBuild.build_drone_core()
 	var hover := ReferenceBuild.hover_throttle()
 	core.prime_motors(hover)
-	var hover_rpm: float = core.powertrain.motor_rpm["M1"]
+	var hover_rpm: float = core.powertrain.motor_rpm[0]
 
 	# Full yaw deflection moves one diagonal pair up by MIX_GAIN and the other down by it.
 	# RPM is proportional to throttle (max_rpm = KV * V), so the RPM either side of hover

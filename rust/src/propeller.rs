@@ -36,7 +36,7 @@ impl PropellerModel {
     /// k_t from a manufacturer's headline figure: max thrust at max RPM on the prop the
     /// figure was measured with.
     #[func]
-    fn fit_k_t(max_thrust_g: f64, max_rpm: f64) -> f64 {
+    pub fn fit_k_t(max_thrust_g: f64, max_rpm: f64) -> f64 {
         let max_thrust_n = (max_thrust_g / 1000.0) * 9.81;
         let max_omega = Self::rpm_to_rad_s(max_rpm);
         max_thrust_n / (max_omega * max_omega)
@@ -45,7 +45,7 @@ impl PropellerModel {
     /// Moves a k_t fitted on `from_prop` onto `to_prop`. Geometry is unpacked (three f64
     /// per side) rather than Dictionaries, per design §4.3.
     #[func]
-    fn scale_k_t_to_prop(
+    pub fn scale_k_t_to_prop(
         k_t_from: f64,
         from_d: f64,
         from_pitch: f64,
@@ -62,23 +62,23 @@ impl PropellerModel {
     }
 
     #[func]
-    fn fit_k_q(k_t: f64, diameter_m: f64) -> f64 {
+    pub fn fit_k_q(k_t: f64, diameter_m: f64) -> f64 {
         k_t * K_Q_TO_K_T_RATIO_AT_5IN * (diameter_m / K_Q_REFERENCE_DIAMETER_M)
     }
 
     #[func]
-    fn rpm_to_rad_s(rpm: f64) -> f64 {
+    pub fn rpm_to_rad_s(rpm: f64) -> f64 {
         rpm * std::f64::consts::TAU / 60.0
     }
 
     #[func]
-    fn thrust_n(k_t: f64, rpm: f64) -> f64 {
+    pub fn thrust_n(k_t: f64, rpm: f64) -> f64 {
         let omega = Self::rpm_to_rad_s(rpm);
         k_t * omega * omega
     }
 
     #[func]
-    fn reaction_torque_n_m(k_q: f64, rpm: f64) -> f64 {
+    pub fn reaction_torque_n_m(k_q: f64, rpm: f64) -> f64 {
         let omega = Self::rpm_to_rad_s(rpm);
         k_q * omega * omega
     }

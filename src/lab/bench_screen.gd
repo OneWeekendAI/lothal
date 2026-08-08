@@ -221,7 +221,7 @@ func _rebuild() -> void:
 	_build = Build.from_ids(catalog, ReferenceBuild.FRAME_ID, motor_id, propeller_id, battery_id)
 
 	var geometry := _build.prop_geometry()
-	powertrain = Powertrain.new(
+	powertrain = Powertrain.create(
 		_build.motor_model(), _build.k_t, _build.k_q, _build.battery_model(),
 		_build.effective_max_amps, _build.rated_rpm(),
 		_build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5
@@ -364,7 +364,7 @@ func advance(delta: float) -> void:
 
 	var substeps := clampi(int(ceil(delta * PHYSICS_HZ)), 1, MAX_SUBSTEPS)
 	var dt := delta / float(substeps)
-	var cmds := {"M1": throttle, "M2": throttle, "M3": throttle, "M4": throttle}
+	var cmds := PackedFloat64Array([throttle, throttle, throttle, throttle])
 	for _i in substeps:
 		powertrain.step(cmds, dt)
 

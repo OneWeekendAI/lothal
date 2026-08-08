@@ -71,7 +71,7 @@ static func _test_the_load_is_the_real_motors(catalog: PartsCatalog) -> Array:
 	# The bench's current must BE the powertrain's published current, not a figure that happens
 	# to resemble it. Read off the same Observables the HUD and the audio synthesiser read, so
 	# there is no second expression of what the pack is being asked for.
-	var published := bench.powertrain.observables.current_total_a
+	var published: float = bench.powertrain.observables.current_total_a
 	results.append(TestResult.new(
 		"the current the bench reports is the current the powertrain published, to the last digit",
 		published > 0.0 and absf(bench.readings()["current_a"] - published) < 1e-6,

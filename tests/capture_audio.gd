@@ -130,7 +130,7 @@ const BENCH_DISTANCE_M := 3.0
 
 func _render_bench(build: Build, synth: RotorSynth) -> PackedFloat32Array:
 	var geometry := build.prop_geometry()
-	var pt := Powertrain.new(
+	var pt := Powertrain.create(
 		build.motor_model(), build.k_t, build.k_q, build.battery_model(),
 		build.effective_max_amps, build.rated_rpm(),
 		build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5
@@ -147,7 +147,7 @@ func _render_bench(build: Build, synth: RotorSynth) -> PackedFloat32Array:
 	while elapsed < BENCH_DURATION_S:
 		var ramp := clampf(elapsed / (BENCH_DURATION_S * 0.5), 0.0, 1.0)
 		var throttle := BENCH_PEAK_THROTTLE * ramp
-		var cmds := {"M1": throttle, "M2": throttle, "M3": throttle, "M4": throttle}
+		var cmds := PackedFloat64Array([throttle, throttle, throttle, throttle])
 		for _i in PHYSICS_SUBSTEPS:
 			pt.step(cmds, substep)
 

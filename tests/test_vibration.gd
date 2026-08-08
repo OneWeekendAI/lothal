@@ -55,7 +55,7 @@ static func _trace(model: VibrationModel, rpms: Array, count: int = WINDOW,
 		cutoff_hz: float = 2000.0) -> PackedFloat64Array:
 	var gyro := Gyro.new(FS, cutoff_hz, 0.0, Vector3.ZERO)
 	gyro.vibration = model
-	model.set_rpm({"M1": rpms[0], "M2": rpms[1], "M3": rpms[2], "M4": rpms[3]})
+	model.set_rpm(PackedFloat64Array([rpms[0], rpms[1], rpms[2], rpms[3]]))
 	var out := PackedFloat64Array()
 	# A few hundred samples of settling before measuring, so the PT1's step response is not
 	# folded into the amplitude of the tone it is passing.

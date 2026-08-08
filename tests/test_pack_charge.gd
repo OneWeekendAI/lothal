@@ -325,7 +325,7 @@ static func _test_drain_runs_at_one_to_one(catalog: PartsCatalog) -> Array:
 	pt.prime(hover)
 	var seconds := 30.0
 	for _i in int(seconds / DT):
-		pt.step({"M1": hover, "M2": hover, "M3": hover, "M4": hover}, DT)
+		pt.step(PackedFloat64Array([hover, hover, hover, hover]), DT)
 
 	var expected_mah := hover_current_a * (seconds / 3600.0) * 1000.0
 	var actual_mah := pt.battery.used_mah
@@ -350,7 +350,7 @@ static func _test_drain_runs_at_one_to_one(catalog: PartsCatalog) -> Array:
 	var step := 0.05
 	var guard := 0
 	while runner.battery.remaining_fraction() > 0.0 and guard < 200000:
-		runner.step({"M1": hover, "M2": hover, "M3": hover, "M4": hover}, step)
+		runner.step(PackedFloat64Array([hover, hover, hover, hover]), step)
 		elapsed += step
 		guard += 1
 
@@ -381,7 +381,7 @@ static func _test_drain_runs_at_one_to_one(catalog: PartsCatalog) -> Array:
 
 static func _powertrain_for(build: Build) -> Powertrain:
 	var geometry := build.prop_geometry()
-	return Powertrain.new(
+	return Powertrain.create(
 		build.motor_model(), build.k_t, build.k_q, build.battery_model(),
 		build.effective_max_amps, build.rated_rpm(),
 		build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5)

@@ -96,7 +96,7 @@ impl BatteryModel {
     /// constructor arguments. `p_cells` defaults to whatever the nominal voltage implies at
     /// 3.7 V per cell, so a pack constructed directly still gets the right curve shape.
     #[func]
-    fn create(nominal_v: f64, internal_r_ohm: f64, capacity_mah: f64, cells: i64,
+    pub fn create(nominal_v: f64, internal_r_ohm: f64, capacity_mah: f64, cells: i64,
               chemistry: GString) -> Gd<Self> {
         let chem = chemistry.to_string();
         let cells = if cells > 0 {
@@ -123,14 +123,14 @@ impl BatteryModel {
     /// Where the pack sits with nothing drawing from it. Falls as the pack empties, passing
     /// THROUGH nominal_v partway down rather than starting there.
     #[func]
-    fn resting_voltage_v(&self) -> f64 {
+    pub fn resting_voltage_v(&self) -> f64 {
         self.nominal_v + self.soc_offset_v()
     }
 
     /// The state-of-charge term itself, in volts at the pack. POSITIVE above the nominal
     /// point and negative below it — the whole content of the change of datum.
     #[func]
-    fn soc_offset_v(&self) -> f64 {
+    pub fn soc_offset_v(&self) -> f64 {
         let cells = self.cells as f64;
         cells * (Self::cell_open_circuit_v(self.remaining_fraction(), self.chemistry.clone())
             - Self::nominal_cell_v(self.chemistry.clone()))
@@ -139,13 +139,13 @@ impl BatteryModel {
     /// The nominal resting voltage of one cell of a chemistry. Falls back to LiPo's alongside
     /// the curve, so an unrecognised chemistry gets a consistent pair rather than one of each.
     #[func]
-    fn nominal_cell_v(chemistry: GString) -> f64 {
+    pub fn nominal_cell_v(chemistry: GString) -> f64 {
         nominal_cell(&chemistry.to_string())
     }
 
     /// One cell's resting voltage at a state of charge, linearly interpolated between the knots.
     #[func]
-    fn cell_open_circuit_v(soc: f64, chemistry: GString) -> f64 {
+    pub fn cell_open_circuit_v(soc: f64, chemistry: GString) -> f64 {
         let curve = curve(&chemistry.to_string());
         let clamped = soc.clamp(0.0, 1.0);
 
@@ -168,7 +168,7 @@ impl BatteryModel {
 
     /// Puts this pack AT the nominal datum. This is the aircraft's reference operating point.
     #[func]
-    fn set_to_nominal_datum(&mut self) {
+    pub fn set_to_nominal_datum(&mut self) {
         let soc = Self::soc_at_nominal(self.chemistry.clone());
         self.used_mah = self.capacity_mah * (1.0 - soc);
     }
@@ -177,7 +177,7 @@ impl BatteryModel {
     /// Bisected on the curve rather than written down: about 30% for a LiPo, about 45% for a
     /// Li-ion, and a fourth hand-entered number would be a fourth thing to keep in step.
     #[func]
-    fn soc_at_nominal(chemistry: GString) -> f64 {
+    pub fn soc_at_nominal(chemistry: GString) -> f64 {
         let target = Self::nominal_cell_v(chemistry.clone());
         let mut low = 0.0;
         let mut high = 1.0;
@@ -195,7 +195,7 @@ impl BatteryModel {
     /// What one cell of this pack is resting at. Pack voltage means nothing without the cell
     /// count beside it.
     #[func]
-    fn resting_cell_v(&self) -> f64 {
+    pub fn resting_cell_v(&self) -> f64 {
         if self.cells <= 0 {
             return self.resting_voltage_v();
         }
@@ -203,17 +203,17 @@ impl BatteryModel {
     }
 
     #[func]
-    fn voltage_live(&self, current_total_a: f64) -> f64 {
+    pub fn voltage_live(&self, current_total_a: f64) -> f64 {
         self.resting_voltage_v() - current_total_a * self.internal_r_ohm
     }
 
     #[func]
-    fn drain(&mut self, current_total_a: f64, dt: f64) {
+    pub fn drain(&mut self, current_total_a: f64, dt: f64) {
         self.used_mah += current_total_a * (dt / 3600.0) * 1000.0;
     }
 
     #[func]
-    fn remaining_fraction(&self) -> f64 {
+    pub fn remaining_fraction(&self) -> f64 {
         (1.0 - self.used_mah / self.capacity_mah).clamp(0.0, 1.0)
     }
 }

@@ -1,5 +1,6 @@
 mod battery;
 mod motor;
+mod powertrain;
 mod propeller;
 
 use godot::prelude::*;

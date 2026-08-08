@@ -30,7 +30,7 @@ static func run() -> Array:
 	# asserting that the datum change did not happen.
 	var bench_rest_v := pt.battery.resting_voltage_v()
 	var expected_rpm := build.rpm_at_throttle(TEST_THROTTLE, bench_rest_v)
-	var actual_rpm: float = pt.motor_rpm["M1"]
+	var actual_rpm: float = pt.motor_rpm[0]
 	results.append(TestResult.new(
 		"a bench with no rigid body settles at the analytically predicted RPM",
 		absf(actual_rpm - expected_rpm) / expected_rpm < 0.01,
@@ -67,7 +67,7 @@ static func run() -> Array:
 	# DroneAudio/RotorSynth consume only Observables. If the bench fills these, the garage
 	# is audible with zero changes to the audio code — architecture.md's stated test that
 	# adding a consumer touches no physics.
-	var audio_fields_filled := (
+	var audio_fields_filled: bool = (
 		pt.observables.rpm[0] > 0.0
 		and pt.observables.blade_pass_hz[0] > 0.0
 		and pt.observables.electrical_hz[0] > 0.0
@@ -85,7 +85,7 @@ static func run() -> Array:
 	# --- The bench does not fly ---
 	# A bench that quietly integrated a rigid body would publish a position. This is the
 	# test that fails if someone later "helpfully" gives Powertrain a RigidBodyState.
-	var stationary := (
+	var stationary: bool = (
 		pt.observables.position_m == Vector3.ZERO
 		and pt.observables.velocity_mps == Vector3.ZERO
 		and pt.observables.airspeed_mps == 0.0
@@ -103,8 +103,8 @@ static func run() -> Array:
 	primed.prime(TEST_THROTTLE)
 	results.append(TestResult.new(
 		"priming reaches steady state without stepping",
-		absf(primed.motor_rpm["M1"] - expected_rpm) / expected_rpm < 0.01,
-		"primed %.0f RPM vs analytic %.0f RPM" % [primed.motor_rpm["M1"], expected_rpm]
+		absf(primed.motor_rpm[0] - expected_rpm) / expected_rpm < 0.01,
+		"primed %.0f RPM vs analytic %.0f RPM" % [primed.motor_rpm[0], expected_rpm]
 	))
 
 	# --- Sag is what separates a real bench from an arithmetic one ---
@@ -126,11 +126,12 @@ static func run() -> Array:
 ## DroneCore — constructing this without mass properties or a rigid body is the point.
 static func _bench(build: Build) -> Powertrain:
 	var geometry := build.prop_geometry()
-	return Powertrain.new(
+	return Powertrain.create(
 		build.motor_model(), build.k_t, build.k_q, build.battery_model(),
 		build.effective_max_amps, build.rated_rpm(),
 		build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5
 	)
 
-static func _even(throttle: float) -> Dictionary:
-	return {"M1": throttle, "M2": throttle, "M3": throttle, "M4": throttle}
+static func _even(throttle: float) -> PackedFloat64Array:
+	# MotorLayout.MOTOR_NAMES order — the powertrain's step takes a typed array, not a dict.
+	return PackedFloat64Array([throttle, throttle, throttle, throttle])
