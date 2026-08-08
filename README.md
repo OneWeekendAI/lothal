@@ -173,23 +173,23 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=0.27 s (1041.1 files/s, 223872.2 lines/s)
+github.com/AlDanial/cloc v 2.10  T=0.11 s (2048.6 files/s, 443742.0 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-GDScript                       249           7930          17054          30944
-JSON                            13              0              0           2524
-Bourne Shell                     8            113            234            507
-Markdown                         3            137              6            457
+GDScript                       196           6407          13681          24715
+JSON                            10              0              0           1633
 Python                           2            125            283            382
+Bourne Shell                     6             80            167            352
 XML                              3              3              0            224
-JavaScript                       2             27             83            104
+Markdown                         1             46              2            157
 Godot Scene                      2             17             10             57
+JavaScript                       1             14             44             55
 SVG                              1              0              5             27
 TOML                             1              3             23              6
 Text                             1              0              0              2
 -------------------------------------------------------------------------------
-SUM:                           285           8355          17698          35234
+SUM:                           224           6695          14215          27610
 -------------------------------------------------------------------------------
 ```
 
