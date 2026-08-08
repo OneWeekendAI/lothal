@@ -84,6 +84,11 @@ const DEFAULT_ESC_ID := "esc_4in1_45a_30x30"
 ## weighs 496 g — this board weighs exactly FC_BUDGET_MASS_G.
 const DEFAULT_FC_ID := "fc_f405_30x30"
 
+## Mirrors battery.rs DEFAULT_CHEMISTRY. Rust cannot export constants to GDScript, so an
+## unrecognised chemistry name falls back to this; the value must agree with the Rust source
+## of truth, which the golden cross-check enforces.
+const BATTERY_DEFAULT_CHEMISTRY := "LiPo"
+
 
 ## How the FC/ESC stack attaches, in the same shape MountPoint.mounting_of() returns for a catalog
 ## part. Here rather than in the catalog because the stack is not a catalog part yet — and stating
@@ -512,12 +517,12 @@ func motor_model() -> MotorModel:
 	return MotorModel.create(float(motor["specs"]["kv"]), max_throttle_fraction())
 
 func battery_model() -> BatteryModel:
-	return BatteryModel.new(
+	return BatteryModel.create(
 		float(battery["specs"]["nominal_v"]),
 		float(battery["specs"]["internal_r_ohm"]),
 		float(battery["specs"]["mah"]),
 		int(battery["specs"].get("cells", 0)),
-		str(battery["specs"].get("chemistry", BatteryModel.DEFAULT_CHEMISTRY))
+		str(battery["specs"].get("chemistry", BATTERY_DEFAULT_CHEMISTRY))
 	)
 
 func build_drone_core() -> DroneCore:

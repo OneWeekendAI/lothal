@@ -1,3 +1,4 @@
+mod battery;
 mod motor;
 mod propeller;
 

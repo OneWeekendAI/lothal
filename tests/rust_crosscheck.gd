@@ -17,3 +17,9 @@ func _init() -> void:
 	else:
 		print("%d RUST CROSSCHECK FAILURES" % failures)
 	quit(1 if failures > 0 else 0)
+
+func _cmp(got: float, want: float, label: String) -> int:
+	if absf(got - want) > 1e-9:
+		print("MISMATCH %s rust=%.10f ref=%.10f" % [label, got, want])
+		return 1
+	return 0

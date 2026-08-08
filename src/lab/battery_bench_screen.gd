@@ -220,7 +220,7 @@ func _configure_axis() -> void:
 ## A full pack with this one's electrical character, for asking where its discharge starts and
 ## ends without disturbing the pack actually on the bench.
 func _pack_like(pack: BatteryModel) -> BatteryModel:
-	return BatteryModel.new(pack.nominal_v, pack.internal_r_ohm, pack.capacity_mah,
+	return BatteryModel.create(pack.nominal_v, pack.internal_r_ohm, pack.capacity_mah,
 		pack.cells, pack.chemistry)
 
 
