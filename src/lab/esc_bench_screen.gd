@@ -206,7 +206,7 @@ func _rebuild() -> void:
 ## The motor model this bench sweeps, whose ceiling is the MOTORS' current limit and not the
 ## build's. See the header: a sweep clamped by the board under test cannot fail.
 func _motor_model_for_the_sweep() -> MotorModel:
-	return MotorModel.new(float(_build.motor["specs"]["kv"]), sweep_ceiling())
+	return MotorModel.create(float(_build.motor["specs"]["kv"]), sweep_ceiling())
 
 
 ## The ceiling the ramp runs to — what these MOTORS will ask for, and deliberately not

@@ -505,7 +505,7 @@ func limiting_component() -> Dictionary:
 	return binding
 
 func motor_model() -> MotorModel:
-	return MotorModel.new(float(motor["specs"]["kv"]), max_throttle_fraction())
+	return MotorModel.create(float(motor["specs"]["kv"]), max_throttle_fraction())
 
 func battery_model() -> BatteryModel:
 	return BatteryModel.new(

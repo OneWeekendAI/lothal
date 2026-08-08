@@ -1,3 +1,5 @@
+mod motor;
+
 use godot::prelude::*;
 
 struct LothalCore;
