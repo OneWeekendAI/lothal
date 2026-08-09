@@ -90,12 +90,10 @@ extends RefCounted
 ## understand refuses rather than reading the fields it happens to recognise.
 const SCHEMA := 1
 
-## `key_id` -> the public key that id names. Ids absent from this map are refused; see WHY THE
-## KEY IS NUMBERED. A second entry appears here on the day the first key is rotated, and old
-## licences keep verifying against key 1 for as long as it stays listed.
-const PUBLIC_KEYS := {
-	1: "res://keys/activation_public.pem",
-}
+## The `key_id` -> public key table lives in rust/src/licence.rs, baked in at compile time, and
+## is reached through `Licence.knows_key_id()`. It used to be a map to `res://keys/*.pem` here;
+## that made the trust anchor a swappable file in the pck, so it moved into the binary. Keeping
+## a second copy of the id list in GDScript would only create something to drift.
 
 ## Where the licence lives once accepted. Written byte-for-byte as it arrived — see `store()`.
 const LICENCE_PATH := "user://licence.json"
@@ -128,9 +126,11 @@ class Result extends RefCounted:
 ## rejected one on somebody else's machine.
 ##
 ## `key` overrides the shipped public key and exists so the suite can sign fixtures with a
-## throwaway pair. It defaults to null, which loads the real key: the injectable seam must never
-## be the path production takes by accident.
-static func verify(body: PackedByteArray, key: CryptoKey = null) -> Result:
+## throwaway pair. It accepts a CryptoKey (exported to PKCS#8 PEM here) or a PEM string; it
+## defaults to null, which loads the real key. The injectable seam must never be the path
+## production takes by accident, and it is not a bypass — it selects WHICH key verifies, never
+## whether one does. The verification arithmetic itself is compiled (rust/src/licence.rs).
+static func verify(body: PackedByteArray, key: Variant = null) -> Result:
 	if body.is_empty():
 		return Result.none("empty body")
 
@@ -166,7 +166,7 @@ static func verify(body: PackedByteArray, key: CryptoKey = null) -> Result:
 	if not licence.has("key_id"):
 		return Result.none("no key_id")
 	var key_id := int(licence["key_id"])
-	if not PUBLIC_KEYS.has(key_id):
+	if not Licence.knows_key_id(key_id):
 		return Result.none("unknown key_id %d" % key_id)
 
 	# The signed unit is the payload STRING, exactly as it sits in the envelope — never a
@@ -175,7 +175,8 @@ static func verify(body: PackedByteArray, key: CryptoKey = null) -> Result:
 	# service and Godot's JSON writer, which they do not reliably do. The failure mode of that
 	# mistake is a signature that verifies on the maintainer's machine and rejects every licence
 	# in the field. This rule is already load-bearing in update_check.gd for the same reason.
-	if not _verify_signature(payload_text, doc["signature"] as String, key_id, key):
+	if not _verify_signature(payload_text, doc["signature"] as String, key_id,
+			_resolve_key_pem(key)):
 		return Result.none("signature did not verify")
 
 	if int(licence.get("schema", 0)) != SCHEMA:
@@ -199,7 +200,7 @@ static func verify(body: PackedByteArray, key: CryptoKey = null) -> Result:
 ##
 ## A missing file returns the same shape of failure as a corrupt one, deliberately: the app's
 ## two states are "verified" and "not verified", and any third state is a door.
-static func verify_stored(key: CryptoKey = null) -> Result:
+static func verify_stored(key: Variant = null) -> Result:
 	if not FileAccess.file_exists(LICENCE_PATH):
 		return Result.none("no licence stored")
 
@@ -269,29 +270,39 @@ static func is_plausible_email(email: String) -> bool:
 	return domain.contains(".") and not domain.begins_with(".") and not domain.ends_with(".")
 
 
+## The public key PEM the verification runs against: an injected CryptoKey exported to PKCS#8
+## (the test suite's throwaway pairs), an injected PEM string, or empty to load the real shipped
+## key. Godot's CryptoKey.save writes the public half as PKCS#8, the same format as the shipped
+## activation_public.pem, so the Rust verifier parses both identically.
+static func _resolve_key_pem(key: Variant) -> String:
+	if typeof(key) == TYPE_STRING:
+		return key
+	if key is CryptoKey:
+		var path := "user://licence_verify_key.pub"
+		if key.save(path, true) != OK:
+			return ""
+		var pem := FileAccess.get_file_as_string(path)
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+		return pem
+	return ""
+
+
 ## RSA-PKCS#1 v1.5 over SHA-256 of the payload, against the public key `key_id` names.
 ##
-## Returns false on every failure including a missing or unreadable key file. A build whose key
-## did not export cannot verify anything, and the correct behaviour there is to activate nobody
-## rather than to fall back to trusting the document — the opposite choice turns a packaging
-## slip into an app that accepts any licence at all.
+## Both the arithmetic AND the key are compiled (rust/src/licence.rs). With no injected key
+## this calls `Licence.verify`, which reaches a PEM baked into the binary at compile time and
+## cannot be pointed anywhere else — no file is read, so there is no file to swap. That is the
+## whole change: the trust anchor used to be `res://keys/activation_public.pem` inside the pck,
+## and repacking the archive with a different PEM took over verification with no decompiler and
+## no code edit.
+##
+## `key_pem` is non-empty only when the suite injects a throwaway pair, and that path calls the
+## PEM-taking entry point instead. It is not reachable from any production call site — but be
+## clear-eyed about what it is: verifying against a caller-supplied key is not verification.
+## It survives because the alternative is a test suite that cannot sign its own fixtures, and
+## because anyone able to pass an argument here can already edit the GDScript that calls it.
 static func _verify_signature(payload: String, signature_b64: String, key_id: int,
-		key: CryptoKey = null) -> bool:
-	if key == null:
-		var path: String = PUBLIC_KEYS[key_id]
-		if not FileAccess.file_exists(path):
-			return false
-		key = CryptoKey.new()
-		if key.load(path, true) != OK:
-			return false
-
-	var signature := Marshalls.base64_to_raw(signature_b64)
-	if signature.is_empty():
-		return false
-
-	var hashing := HashingContext.new()
-	if hashing.start(HashingContext.HASH_SHA256) != OK:
-		return false
-	hashing.update(payload.to_utf8_buffer())
-
-	return Crypto.new().verify(HashingContext.HASH_SHA256, hashing.finish(), signature, key)
+		key_pem: String) -> bool:
+	if key_pem == "":
+		return Licence.verify(payload, signature_b64, key_id)
+	return Licence.verify_signature(payload, signature_b64, key_pem)

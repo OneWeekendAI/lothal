@@ -82,7 +82,9 @@ static func evaluate_motor(catalog: PartsCatalog, motor: Dictionary) -> Array:
 			continue
 
 		var geometry := geometry_of(prop)
-		var k_t := PropellerModel.scale_k_t_to_prop(k_t_at_fit_prop, fit_geometry, geometry)
+		var k_t := PropellerModel.scale_k_t_to_prop(
+			k_t_at_fit_prop, fit_geometry.diameter_m, fit_geometry.pitch_m, fit_geometry.blades,
+			geometry.diameter_m, geometry.pitch_m, geometry.blades)
 		var voltage_v: float = float(point.get("voltage_v", 0.0))
 		var predicted_n := PropellerModel.thrust_n(k_t, kv * voltage_v)
 		var predicted_g := predicted_n / GRAVITY_MPS2 * 1000.0

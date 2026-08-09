@@ -178,7 +178,7 @@ func _rebuild() -> void:
 	_build = Build.from_ids(catalog, ReferenceBuild.FRAME_ID, motor_id, propeller_id, battery_id)
 
 	var geometry := _build.prop_geometry()
-	powertrain = Powertrain.new(
+	powertrain = Powertrain.create(
 		_build.motor_model(), _build.k_t, _build.k_q, _build.battery_model(),
 		_build.effective_max_amps, _build.rated_rpm(),
 		_build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5
@@ -220,7 +220,7 @@ func _configure_axis() -> void:
 ## A full pack with this one's electrical character, for asking where its discharge starts and
 ## ends without disturbing the pack actually on the bench.
 func _pack_like(pack: BatteryModel) -> BatteryModel:
-	return BatteryModel.new(pack.nominal_v, pack.internal_r_ohm, pack.capacity_mah,
+	return BatteryModel.create(pack.nominal_v, pack.internal_r_ohm, pack.capacity_mah,
 		pack.cells, pack.chemistry)
 
 
@@ -284,7 +284,7 @@ func advance(delta: float) -> void:
 
 	var substeps := clampi(int(ceil(delta * PHYSICS_HZ)), 1, MAX_SUBSTEPS)
 	var dt := delta / float(substeps)
-	var cmds := {"M1": _throttle, "M2": _throttle, "M3": _throttle, "M4": _throttle}
+	var cmds := PackedFloat64Array([_throttle, _throttle, _throttle, _throttle])
 	for _i in substeps:
 		powertrain.step(cmds, dt)
 
@@ -333,8 +333,8 @@ func readings() -> Dictionary:
 	# "the bench and the field agree" structural. It is also the difference between this bench
 	# and a chart of an amp figure somebody typed in: this current is whatever the motors
 	# currently fitted actually pulled at this throttle against this pack's sag.
-	var current_a := powertrain.observables.current_total_a
-	var live_v := powertrain.observables.voltage_live_v
+	var current_a: float = powertrain.observables.current_total_a
+	var live_v: float = powertrain.observables.voltage_live_v
 	var remaining_mah := pack.capacity_mah * pack.remaining_fraction()
 
 	return {

@@ -182,7 +182,7 @@ func _rebuild() -> void:
 	_build = Build.from_ids(catalog, frame_id, motor_id, propeller_id, battery_id, esc_id)
 
 	var geometry := _build.prop_geometry()
-	powertrain = Powertrain.new(
+	powertrain = Powertrain.create(
 		_motor_model_for_the_sweep(), _build.k_t, _build.k_q, _build.battery_model(),
 		_build.effective_max_amps, _build.rated_rpm(),
 		_build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5
@@ -206,7 +206,7 @@ func _rebuild() -> void:
 ## The motor model this bench sweeps, whose ceiling is the MOTORS' current limit and not the
 ## build's. See the header: a sweep clamped by the board under test cannot fail.
 func _motor_model_for_the_sweep() -> MotorModel:
-	return MotorModel.new(float(_build.motor["specs"]["kv"]), sweep_ceiling())
+	return MotorModel.create(float(_build.motor["specs"]["kv"]), sweep_ceiling())
 
 
 ## The ceiling the ramp runs to — what these MOTORS will ask for, and deliberately not
@@ -269,7 +269,7 @@ func advance(delta: float) -> void:
 
 	var substeps := clampi(int(ceil(delta * PHYSICS_HZ)), 1, MAX_SUBSTEPS)
 	var dt := delta / float(substeps)
-	var cmds := {"M1": throttle, "M2": throttle, "M3": throttle, "M4": throttle}
+	var cmds := PackedFloat64Array([throttle, throttle, throttle, throttle])
 	for _i in substeps:
 		powertrain.step(cmds, dt)
 
@@ -311,7 +311,7 @@ func readings() -> Dictionary:
 	# four — and that is what the board's per-channel rating is a rating OF. Comparing the total
 	# against the per-channel rating instead would report every board in the catalog as the binding
 	# constraint on every build.
-	var draw_per_channel := powertrain.observables.current_total_a / 4.0
+	var draw_per_channel: float = powertrain.observables.current_total_a / 4.0
 
 	return {
 		"rating_a": _build.esc_continuous_a(),

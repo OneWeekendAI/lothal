@@ -75,7 +75,7 @@ static func run() -> Array:
 
 
 static func _pack(chemistry: String = "LiPo") -> BatteryModel:
-	return BatteryModel.new(14.8, 0.015, 1500.0, 4, chemistry)
+	return BatteryModel.create(14.8, 0.015, 1500.0, 4, chemistry)
 
 
 ## Puts a pack at a given state of charge, 1.0 = full.
@@ -183,7 +183,7 @@ static func _test_it_matches_the_published_tables() -> Array:
 		var worst_error := 0.0
 		var worst_soc := 0.0
 		for soc in table:
-			var pack := _at_soc(BatteryModel.new(label_v, 0.015, 1500.0, 4, chemistry), float(soc))
+			var pack := _at_soc(BatteryModel.create(label_v, 0.015, 1500.0, 4, chemistry), float(soc))
 			var expected_pack_v := float(table[soc]) * float(pack.cells)
 			var error_per_cell: float = absf(pack.resting_voltage_v() - expected_pack_v) / float(pack.cells)
 			if error_per_cell > worst_error:
@@ -344,7 +344,7 @@ static func _test_chemistry_changes_the_curve() -> Array:
 	# and to a CONSISTENT pair — LiPo's curve against LiPo's nominal cell voltage, not one of
 	# each. batteries.json is contributor-editable and a typo there must not silently delete the
 	# model or bend it.
-	var unknown := BatteryModel.new(14.8, 0.015, 1500.0, 4, "Unobtainium")
+	var unknown := BatteryModel.create(14.8, 0.015, 1500.0, 4, "Unobtainium")
 	var unknown_full := _at_soc(unknown, 1.0).resting_voltage_v()
 	var unknown_empty := _at_soc(unknown, 0.0).resting_voltage_v()
 	results.append(TestResult.new(

@@ -30,7 +30,7 @@ static func run() -> Array:
 	# for its inverse lands nowhere near.
 	var rpm := 29000.0
 	for name in MotorLayout.MOTOR_NAMES:
-		core.motor_rpm[name] = rpm
+		core.powertrain.set_motor_rpm_at(MotorLayout.MOTOR_NAMES.find(name), rpm)
 	core.powertrain.pole_pairs = 7.0
 	core.powertrain.blades = 3.0
 	core._publish(Vector3.ZERO)
@@ -114,7 +114,7 @@ static func run() -> Array:
 	# duplication this whole layer exists to forbid — produces 1450 Hz here and fails.
 	var divergent := build.build_drone_core()
 	for name in MotorLayout.MOTOR_NAMES:
-		divergent.motor_rpm[name] = 29000.0
+		divergent.powertrain.set_motor_rpm_at(MotorLayout.MOTOR_NAMES.find(name), 29000.0)
 	divergent._publish(Vector3.ZERO)
 	for i in Observables.MOTOR_COUNT:
 		divergent.observables.blade_pass_hz[i] = 800.0
@@ -180,7 +180,7 @@ static func run() -> Array:
 		# Against the powertrain's own 64-bit rpm, not the published rpm beside it: that one is
 		# 32-bit for the audio path, and rounding it first would leave this check comparing the
 		# torque law to a slightly different motor.
-		var true_rpm: float = leaning.powertrain.motor_rpm[MotorLayout.MOTOR_NAMES[i]]
+		var true_rpm: float = leaning.powertrain.motor_rpm[i]
 		var expected := PropellerModel.reaction_torque_n_m(leaning.powertrain.k_q, true_rpm)
 		if absf(leaning.observables.reaction_torque_n_m[i] - expected) > 1e-12:
 			torque_ok = false

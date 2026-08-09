@@ -23,3 +23,8 @@ __pycache__/
 
 # SDD scratch (subagent-driven development ledger and review packages)
 .superpowers/
+
+# Rust GDExtension
+rust/target/
+
+# Scratch reference copies from an external session — not part of the port.

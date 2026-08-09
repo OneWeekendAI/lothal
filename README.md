@@ -173,23 +173,27 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=0.20 s (1403.4 files/s, 304018.7 lines/s)
+github.com/AlDanial/cloc v 2.10  T=1.36 s (1252.5 files/s, 519197.8 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-GDScript                       247           7904          16954          30779
-JSON                            13              0              0           2524
+Rust                          1059          16981            233         575233
+JSON                           192              0              0          42202
+GDScript                       265           8579          18241          33454
+D                              153            442              0           6163
+Bourne Shell                     6             84            203            406
 Python                           2            125            283            382
-Bourne Shell                     6             80            167            352
-Markdown                         2             91              4            303
-XML                              3              3              0            224
+Markdown                         2             91              4            307
+XML                              3              3              0            233
+TOML                             3             57            246            164
+TypeScript                       1             30             52            139
+Text                             9              0              0             88
 Godot Scene                      2             17             10             57
 JavaScript                       1             14             44             55
 SVG                              1              0              5             27
-TOML                             1              3             23              6
-Text                             1              0              0              2
+SQL                              1              3             17             15
 -------------------------------------------------------------------------------
-SUM:                           279           8237          17490          34711
+SUM:                          1700          26426          19338         658925
 -------------------------------------------------------------------------------
 ```
 

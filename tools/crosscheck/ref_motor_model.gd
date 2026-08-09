@@ -1,4 +1,3 @@
-class_name MotorModel
 extends RefCounted
 ## RPM response of a single motor. Pure and engine-independent (physics.md §3).
 ## max_RPM = KV * live pack voltage — the same motor spins much faster on 6S than 4S,

@@ -38,6 +38,10 @@ extends RefCounted
 
 const BAND_WIDENING_FACTOR := 2.0
 
+## Mirrors propeller.rs BLADE_COUNT_EXPONENT. Rust cannot export constants to GDScript;
+## keep in step with the Rust source of truth (enforced by the golden cross-check).
+const BLADE_COUNT_EXPONENT := 0.8
+
 ## The blade counts the catalog spans. Outside these is a fact about the aircraft, said out loud.
 const MIN_TYPICAL_BLADES := 2
 const MAX_TYPICAL_BLADES := 4
@@ -81,7 +85,7 @@ static func _blade_count(prop: Dictionary) -> Array[BuildWarning]:
 	out.append(BuildWarning.characteristic(&"implausible_blade_count",
 		"%d-blade props are outside the %d-%d range the catalog carries. The physics still runs — blades scale k_t through a documented rule of thumb (blades^%.1f) — but the exponent was fitted against tri- and bi-blade tables, and %d blades is extrapolation this file has no way to check." % [
 			blades, MIN_TYPICAL_BLADES, MAX_TYPICAL_BLADES,
-			PropellerModel.BLADE_COUNT_EXPONENT, blades],
+			BLADE_COUNT_EXPONENT, blades],
 		{"blades": blades, "min_typical": MIN_TYPICAL_BLADES, "max_typical": MAX_TYPICAL_BLADES}))
 	return out
 
@@ -105,34 +109,11 @@ static func mass_law(catalog: PartsCatalog) -> Dictionary:
 		xs.append(log(diameter))
 		ys.append(log(mass))
 
-	if xs.size() < 3:
-		return {"exponent": 0.0, "coefficient": 0.0, "residual_high": 0.0, "count": xs.size()}
-
-	var mean_x := 0.0
-	var mean_y := 0.0
-	for i in xs.size():
-		mean_x += xs[i]
-		mean_y += ys[i]
-	mean_x /= xs.size()
-	mean_y /= ys.size()
-
-	var covariance := 0.0
-	var variance := 0.0
-	for i in xs.size():
-		covariance += (xs[i] - mean_x) * (ys[i] - mean_y)
-		variance += (xs[i] - mean_x) * (xs[i] - mean_x)
-	if variance <= 0.0:
-		return {"exponent": 0.0, "coefficient": 0.0, "residual_high": 0.0, "count": xs.size()}
-
-	var exponent := covariance / variance
-	var intercept := mean_y - exponent * mean_x
-
-	var residual_high := 1.0
-	for i in xs.size():
-		residual_high = maxf(residual_high, exp(absf(ys[i] - (intercept + exponent * xs[i]))))
-
-	return {"exponent": exponent, "coefficient": exp(intercept),
-		"residual_high": residual_high, "count": xs.size()}
+	# The regression itself lives in Rust (rust/src/plausibility.rs) — the same log-log fit
+	# behind kv_law and thrust_density_band, one copy in the codebase.
+	var fit: PackedFloat64Array = Plausibility.log_log_fit(PackedFloat64Array(xs), PackedFloat64Array(ys))
+	return {"exponent": fit[0], "coefficient": fit[1], "residual_high": fit[2],
+		"count": int(fit[3])}
 
 
 static func _mass_for_diameter(catalog: PartsCatalog, prop: Dictionary) -> Array[BuildWarning]:

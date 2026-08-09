@@ -362,12 +362,21 @@ static func _test_the_key_seam_defaults_to_the_real_key() -> Array:
 	# default-secure behaviour of the seam: forgetting to pass a key never means "skip the check".
 	var result := LicenceCheck.verify(_envelope(_payload(), key))
 
-	# And the shipped key must actually be present, or the whole gate is inert in the export. This
-	# is asserted separately so the case above cannot pass for the wrong reason.
-	var shipped_key_exists := FileAccess.file_exists(LicenceCheck.PUBLIC_KEYS[1])
+	# The case above would also pass if the build carried NO key at all — "nothing verifies"
+	# and "the right thing refuses a forgery" are the same observation from outside. So pin,
+	# separately, that key 1 exists in the compiled table. This is now a question for the crate
+	# rather than the filesystem: the PEM is baked in with include_str!, so a build that shipped
+	# without it would fail to compile rather than run inert.
+	var key_one_known: bool = Licence.knows_key_id(1)
+
+	# And the table must be a real whitelist, not "anything goes" — otherwise knows_key_id()
+	# above is satisfied by a function that returns true unconditionally.
+	var unknown_id_refused: bool = not Licence.knows_key_id(99)
 
 	return [
 		_refused("the injectable key seam defaults to the real key", result),
-		TestResult.new("the activation public key is present in the project", shipped_key_exists,
-			LicenceCheck.PUBLIC_KEYS[1]),
+		TestResult.new("the activation key is compiled into the crate, not read from the pck",
+			key_one_known, "Licence.knows_key_id(1) = %s" % key_one_known),
+		TestResult.new("the compiled key table refuses an id it does not carry",
+			unknown_id_refused, "Licence.knows_key_id(99) = %s" % (not unknown_id_refused)),
 	]

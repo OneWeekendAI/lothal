@@ -9,7 +9,7 @@ extends RefCounted
 ## constant matches the tag being packaged and refuses to build otherwise, so the two cannot
 ## drift apart silently.
 
-const CURRENT := "0.1.0"
+const CURRENT := "0.2.0"
 
 ## Where the signed release manifest lives. A Cloudflare hostname in front of the GCS bucket
 ## rather than the bucket's own URL, so the origin can be moved — to another bucket, another

@@ -31,15 +31,11 @@ var drag_coefficient: float
 ## cannot tell which half published what. Refilled at the end of every step(); no consumer
 ## should read physics internals directly.
 var observables: Observables
-## Aliases the powertrain's dictionary. Dictionaries are reference types in GDScript, so
-## writing through either name reaches the same storage.
-var motor_rpm: Dictionary
 
 func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m: float, p_k_t: float, p_k_q: float, p_battery: BatteryModel, p_motor_max_amps: float, p_rated_rpm: float, p_drag_coefficient: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635, p_gyro: Gyro = null) -> void:
-	powertrain = Powertrain.new(p_motor_model, p_k_t, p_k_q, p_battery, p_motor_max_amps,
+	powertrain = Powertrain.create(p_motor_model, p_k_t, p_k_q, p_battery, p_motor_max_amps,
 		p_rated_rpm, p_pole_pairs, p_blades, p_prop_radius_m)
 	observables = powertrain.observables
-	motor_rpm = powertrain.motor_rpm
 	mass_properties = p_mass_properties
 	arm_m = p_arm_m
 	drag_coefficient = p_drag_coefficient
@@ -65,8 +61,13 @@ func prime_motors(throttle: float) -> void:
 ## motor_throttle_cmds = {"M1": 0..1, "M2": 0..1, "M3": 0..1, "M4": 0..1}
 func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# The powertrain advances first: the forces below are built from the RPM this produces,
-	# which is the same ordering the single fused loop had.
-	powertrain.step(motor_throttle_cmds, dt)
+	# which is the same ordering the single fused loop had. Across the FFI the powertrain's
+	# step takes the commands as a typed array (MotorLayout.MOTOR_NAMES order), so the
+	# string-keyed Dictionary is unpacked here, once, rather than carried across the boundary.
+	var cmds := PackedFloat64Array()
+	for name in MotorLayout.MOTOR_NAMES:
+		cmds.append(motor_throttle_cmds.get(name, 0.0))
+	powertrain.step(cmds, dt)
 
 	var total_force := Vector3(0, -GRAVITY_MPS2 * mass_properties.total_mass_kg, 0)
 	var total_torque := Vector3.ZERO

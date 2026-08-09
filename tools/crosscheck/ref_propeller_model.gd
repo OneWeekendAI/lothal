@@ -1,4 +1,3 @@
-class_name PropellerModel
 extends RefCounted
 ## Thrust and reaction torque from motor RPM (physics.md §4): T = k_t * omega^2,
 ## Q = k_q * omega^2. Coefficients are fit from the manufacturer thrust-table figure

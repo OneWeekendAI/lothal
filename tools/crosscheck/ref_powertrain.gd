@@ -1,5 +1,7 @@
-class_name Powertrain
 extends RefCounted
+const RMotor = preload("res://tools/crosscheck/ref_motor_model.gd")
+const RBatt = preload("res://tools/crosscheck/ref_battery_model.gd")
+const RProp = preload("res://tools/crosscheck/ref_propeller_model.gd")
 ## Motors, propellers and the pack — the electro-mechanical half of the simulation, with
 ## no rigid body anywhere in it. This is what Lothal Labs runs: a thrust stand.
 ##
@@ -16,8 +18,8 @@ extends RefCounted
 ## drag. tests/test_powertrain.gd asserts the consequence (a bench never moves); the
 ## absence itself is the design.
 
-var motor_model: MotorModel
-var battery: BatteryModel
+var motor_model: RMotor
+var battery: RBatt
 var k_t: float
 var k_q: float
 
@@ -39,7 +41,7 @@ var last_current_total_a: float = 0.0
 ## this — there is exactly one instance per simulation, bench or flight.
 var observables := Observables.new()
 
-func _init(p_motor_model: MotorModel, p_k_t: float, p_k_q: float, p_battery: BatteryModel, p_motor_max_amps: float, p_rated_rpm: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635) -> void:
+func _init(p_motor_model: RMotor, p_k_t: float, p_k_q: float, p_battery: RBatt, p_motor_max_amps: float, p_rated_rpm: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635) -> void:
 	motor_model = p_motor_model
 	k_t = p_k_t
 	k_q = p_k_q
@@ -94,7 +96,7 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 		var name: String = MotorLayout.MOTOR_NAMES[i]
 		var rpm: float = motor_model.step(motor_rpm[name], motor_throttle_cmds[name], last_voltage_v, dt)
 		motor_rpm[name] = rpm
-		observables.thrust_n[i] = PropellerModel.thrust_n(k_t, rpm)
+		observables.thrust_n[i] = RProp.thrust_n(k_t, rpm)
 		total_current_a += current_at_rpm(rpm)
 
 	# The simulation's own clock. Here rather than in DroneCore because a BENCH runs a powertrain
@@ -128,11 +130,11 @@ func publish() -> void:
 		observables.rpm[i] = rpm
 		observables.blade_pass_hz[i] = rev_per_s * blades
 		observables.electrical_hz[i] = rev_per_s * pole_pairs
-		observables.tip_speed_mps[i] = PropellerModel.rpm_to_rad_s(rpm) * prop_radius_m
+		observables.tip_speed_mps[i] = RProp.rpm_to_rad_s(rpm) * prop_radius_m
 		# Recomputed from stored rpm like everything else in this function, so a republish is
 		# still idempotent. This is THE call site of the propeller's reaction law: DroneCore
 		# reads the published value rather than evaluating k_q x omega^2 a second time.
-		observables.reaction_torque_n_m[i] = PropellerModel.reaction_torque_n_m(k_q, rpm)
+		observables.reaction_torque_n_m[i] = RProp.reaction_torque_n_m(k_q, rpm)
 		observables.current_a[i] = current_at_rpm(rpm)
 		total_thrust += observables.thrust_n[i]
 

@@ -147,7 +147,7 @@ static func for_build(p_build: Build, p_airframe: AirframeModel = null) -> Frame
 ## aircraft cannot reach.
 static func _powertrain_for(p_build: Build) -> Powertrain:
 	var geometry := p_build.prop_geometry()
-	return Powertrain.new(
+	return Powertrain.create(
 		p_build.motor_model(), p_build.k_t, p_build.k_q, p_build.battery_model(),
 		p_build.effective_max_amps, p_build.rated_rpm(),
 		p_build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5)
@@ -274,10 +274,14 @@ func _take_settled_figures() -> void:
 	# the whole reason this figure exists separately from the trace.
 	var settled_collective := build.hover_throttle()
 	scratch.prime(settled_collective)
-	var cmds := MotorMixer.mix(settled_collective,
+	# MotorLayout.MOTOR_NAMES order — the powertrain's step takes a typed array, not a dict.
+	var mix: Dictionary = MotorMixer.mix(settled_collective,
 		1.0 if axis == AXIS_ROLL else 0.0,
 		1.0 if axis == AXIS_PITCH else 0.0,
 		1.0 if axis == AXIS_YAW else 0.0)
+	var cmds := PackedFloat64Array()
+	for name in MotorLayout.MOTOR_NAMES:
+		cmds.append(mix.get(name, 0.0))
 	var dt := 1.0 / PHYSICS_HZ
 	for _i in int(SETTLE_SECONDS * PHYSICS_HZ):
 		scratch.step(cmds, dt)
@@ -291,11 +295,16 @@ func _take_settled_figures() -> void:
 ## actually installed. Not a hand-written motor pattern: MotorMixer is where airmode decides what to
 ## sacrifice when the deltas do not fit, and a bench that mixed its own commands would be reporting
 ## the authority of an aircraft with a different mixer in it.
-func commands() -> Dictionary:
-	return MotorMixer.mix(collective,
+func commands() -> PackedFloat64Array:
+	# MotorLayout.MOTOR_NAMES order — the powertrain's step takes a typed array, not a dict.
+	var mix: Dictionary = MotorMixer.mix(collective,
 		1.0 if axis == AXIS_ROLL else 0.0,
 		1.0 if axis == AXIS_PITCH else 0.0,
 		1.0 if axis == AXIS_YAW else 0.0)
+	var cmds := PackedFloat64Array()
+	for name in MotorLayout.MOTOR_NAMES:
+		cmds.append(mix.get(name, 0.0))
+	return cmds
 
 
 ## The torque the four motors are producing RIGHT NOW about roll, pitch and yaw, from the thrust the
@@ -306,7 +315,7 @@ func torque_n_m(source: Powertrain = null) -> Vector3:
 	var total := Vector3.ZERO
 	for i in MotorLayout.MOTOR_NAMES.size():
 		var name: String = MotorLayout.MOTOR_NAMES[i]
-		var rpm: float = from.motor_rpm[name]
+		var rpm: float = from.motor_rpm[i]
 		var contribution := MotorLayout.torque_from_motor(
 			name,
 			from.observables.thrust_n[i],

@@ -325,9 +325,10 @@ func mount_transmissibility(hz: float) -> float:
 ## Adopts the powertrain's current motor speeds. Called by DroneCore every step: the four rpms are
 ## the model's only input, and the fact that they differ under manoeuvre is what makes the output a
 ## beating signal rather than a single sine.
-func set_rpm(motor_rpm: Dictionary) -> void:
+func set_rpm(motor_rpm: PackedFloat64Array) -> void:
+	# MotorLayout.MOTOR_NAMES order — the powertrain's array, no string lookup needed.
 	for i in MotorLayout.MOTOR_NAMES.size():
-		rpm[i] = float(motor_rpm.get(MotorLayout.MOTOR_NAMES[i], 0.0))
+		rpm[i] = motor_rpm[i]
 
 
 ## The body-axis angular rate the airframe is shaking the sensor with at this instant, rad/s.

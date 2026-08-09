@@ -1,4 +1,3 @@
-class_name BatteryModel
 extends RefCounted
 ## Voltage sag, capacity drain, and how far the pack has fallen as it empties (physics.md §5).
 ## Small, and it is what makes battery choice feel real instead of cosmetic: punch throttle ->

@@ -67,6 +67,20 @@ if grep -q '^encrypt_pck=true' export_presets.cfg; then
   echo "==> exporting with PCK encryption"
 fi
 
+# Native core: build the Rust GDExtension universal, BEFORE the suite runs — the suite
+# tests the classes the dylib provides, and running it first would test the GDScript
+# that is being replaced. The lipo'd universal dylib lands in build/, which the export
+# ships inside the .pck (res://build/liblothal_core.dylib).
+echo "==> building native core (universal)"
+(cd rust && \
+  cargo build --release --target aarch64-apple-darwin && \
+  cargo build --release --target x86_64-apple-darwin)
+lipo -create \
+  rust/target/aarch64-apple-darwin/release/liblothal_core.dylib \
+  rust/target/x86_64-apple-darwin/release/liblothal_core.dylib \
+  -output build/liblothal_core.dylib
+[ -f build/liblothal_core.dylib ] || { echo "error: native core build produced no dylib" >&2; exit 1; }
+
 # Regenerate the bundle icon whenever the vector source is newer than the .icns.
 if [ ! -f icon.icns ] || [ icon.svg -nt icon.icns ]; then
   echo "==> rendering icon.icns from icon.svg"
@@ -78,6 +92,35 @@ fi
 if [ "${SKIP_TESTS:-0}" != "1" ]; then
   echo "==> running test suite"
   "$GODOT" --headless --script res://tests/run_tests.gd
+
+  # The golden cross-checks compare the Rust crate against the GDScript it replaced. The
+  # unit suite CANNOT stand in for them: a 1% error in plausibility.rs's log_log_fit passes
+  # all 911 tests and is caught only here. They are not in run_tests.gd's SUITES because a
+  # full catalog sweep costs seconds rather than milliseconds, so the build is where they run.
+  #
+  # Both are gated on their success SENTINEL, not on the exit code, because
+  # `godot --headless --script` exits 0 on a parse error — measured, not assumed. An
+  # exit-code-only gate would wave through a cross-check that failed to compile, which is
+  # precisely how tests/rust_crosscheck.gd spent its life reporting success for work it
+  # never did.
+  run_crosscheck() {
+    local label="$1" script="$2" sentinel="$3" out
+    echo "==> $label"
+    out="$("$GODOT" --headless --script "$script" 2>&1)" || true
+    printf '%s\n' "$out" | tail -n 4
+    if ! printf '%s\n' "$out" | grep -q "$sentinel"; then
+      echo "error: $label did not report \"$sentinel\" — the Rust core disagrees with its" >&2
+      echo "       GDScript reference, or the cross-check itself failed to run." >&2
+      exit 1
+    fi
+  }
+  run_crosscheck "tier 1 cross-check (sim core)" \
+    res://tools/crosscheck/run_crosscheck.gd "RUST CROSSCHECK OK"
+  run_crosscheck "tier 2 cross-check (fitting pipeline)" \
+    res://tests/rust_crosscheck_tier2.gd "TIER2 CROSSCHECK OK"
+else
+  echo "WARNING: SKIP_TESTS=1 — suite AND both golden cross-checks skipped." >&2
+  echo "         Nothing has verified the Rust core against its GDScript reference." >&2
 fi
 
 echo "==> exporting $OUT"

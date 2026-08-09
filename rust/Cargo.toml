@@ -1,0 +1,21 @@
+[package]
+name = "lothal_core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+godot = { version = "0.5.4", features = ["api-4-7"] }
+# Licence gate (design §5(a)): RSA PKCS#1 v1.5 verification in the compiled core. The "pem"
+# feature enables PEM decoding; PKCS#8 parsing comes from the pkcs8 crate rsa re-exports.
+rsa = { version = "0.9", features = ["pem"] }
+sha2 = { version = "0.10", features = ["oid"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"      # a panic across the FFI boundary is UB; abort instead
+strip = "symbols"    # remove the symbol table — this is the point of the exercise

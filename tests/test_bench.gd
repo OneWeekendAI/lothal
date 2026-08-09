@@ -145,11 +145,20 @@ static func _off_axis_deg(camera: Transform3D, point: Vector3) -> float:
 ## DroneCore constantly, because explaining which half lives where is most of why their headers
 ## exist. A check that forbade the prose would quietly pressure the next person to delete the
 ## explanation rather than to keep the separation.
+##
+## Handles BOTH comment syntaxes, because the powertrain is Rust now and its header explains the
+## split at length — "DroneCore adds the flight half to the SAME Observables" is exactly the
+## prose this must not read as a violation. Stripping only `#` scanned those lines as code and
+## failed the check on its own documentation. `//` is not an operator in GDScript, so applying
+## the Rust rule to the .gd files as well costs nothing.
 static func _code_only(source: String) -> String:
 	var lines: PackedStringArray = []
 	for line in source.split("\n"):
-		var hash_index := line.find("#")
-		lines.append(line if hash_index < 0 else line.substr(0, hash_index))
+		var cut := line.find("#")
+		var slashes := line.find("//")
+		if slashes >= 0 and (cut < 0 or slashes < cut):
+			cut = slashes
+		lines.append(line if cut < 0 else line.substr(0, cut))
 	return "\n".join(lines)
 
 
@@ -191,18 +200,33 @@ static func _test_it_does_not_fly(catalog: PartsCatalog) -> Array:
 	# still look exactly right — which is why the test has to be about the text.
 	var forbidden := ["DroneCore", "RigidBodyState", "MassProperties",
 		"AngleModeController", "RateModeController"]
+	# The powertrain is Rust now, so its path is rust/src/powertrain.rs rather than the
+	# res://src/sim/powertrain.gd this list used to name. That stale entry is why this check
+	# has to count what it read: FileAccess.get_file_as_string returns "" for a missing file,
+	# the contains() scan finds nothing in an empty string, and the test reported success for
+	# a file it never opened — while its own detail line printed a hardcoded "checked 4 files".
+	# A guarantee that evaporates when a file is renamed is not a guarantee.
+	var paths := ["res://src/lab/bench_screen.gd", "res://src/lab/bench_stand.gd",
+		"res://src/lab/bench_instruments.gd", "res://rust/src/powertrain.rs"]
 	var offences: PackedStringArray = []
-	for path in ["res://src/lab/bench_screen.gd", "res://src/lab/bench_stand.gd",
-			"res://src/lab/bench_instruments.gd", "res://src/sim/powertrain.gd"]:
-		var code := _code_only(FileAccess.get_file_as_string(path))
+	var read_count := 0
+	for path in paths:
+		var raw := FileAccess.get_file_as_string(path)
+		if raw.is_empty():
+			offences.append("%s could not be read — this check was silently scanning nothing"
+				% path)
+			continue
+		read_count += 1
+		var code := _code_only(raw)
 		for name in forbidden:
 			if code.contains(name):
 				offences.append("%s names %s" % [path.get_file(), name])
 
 	results.append(TestResult.new(
 		"nothing in the bench or the powertrain so much as names the flight half",
-		offences.is_empty(),
-		"checked %d files for %s%s" % [4, ", ".join(forbidden),
+		offences.is_empty() and read_count == paths.size(),
+		"read %d of %d files, scanned for %s%s" % [read_count, paths.size(),
+			", ".join(forbidden),
 			"" if offences.is_empty() else " — " + "; ".join(offences)]
 	))
 
