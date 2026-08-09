@@ -467,10 +467,9 @@ func pack_throttle_limit() -> float:
 ## One expression, used by both limits, so the pack limit cannot end up meaning something subtly
 ## different from the motor limit that has been in the project since day one.
 func throttle_limit_for(total_amps: float) -> float:
-	var full_throttle_amps := 4.0 * effective_max_amps
-	if full_throttle_amps <= 0.0 or total_amps <= 0.0:
-		return 1.0
-	return clampf(sqrt(total_amps / full_throttle_amps), 0.0, 1.0)
+	# The arithmetic lives in Rust (rust/src/fitting.rs) — the current-limit expression, one
+	# copy in the codebase, and the part of the fitting pipeline the compiled core exists for.
+	return Fitting.throttle_limit_for(total_amps, 4.0 * effective_max_amps)
 
 
 ## WHICH component is holding this build back, by name, with the ceiling it imposes.
@@ -507,11 +506,10 @@ func limiting_component() -> Dictionary:
 			"throttle": esc_throttle_limit(),
 		},
 	]
-	var binding: Dictionary = candidates[0]
-	for candidate in candidates:
-		if candidate["throttle"] < binding["throttle"]:
-			binding = candidate
-	return binding
+	# The tie-break decision lives in Rust (rust/src/fitting.rs): strict minimum wins and ties
+	# keep the earlier candidate, so an unrated part's zero limit is never reported as binding.
+	return candidates[Fitting.limiting_index(
+		candidates[0]["throttle"], candidates[1]["throttle"], candidates[2]["throttle"])]
 
 func motor_model() -> MotorModel:
 	return MotorModel.create(float(motor["specs"]["kv"]), max_throttle_fraction())
@@ -593,28 +591,23 @@ func resolve_open_circuit_v(open_circuit_v: float) -> float:
 
 
 func rpm_at_throttle(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
-	var t := clampf(throttle, 0.0, max_throttle_fraction())
+	# The 12-iteration sag fixed point lives in Rust (rust/src/fitting.rs) — it is the same
+	# convergence Powertrain reaches dynamically by integrating the lag.
 	var kv: float = float(motor["specs"]["kv"])
 	var rest_v := resolve_open_circuit_v(open_circuit_v)
 	var internal_r: float = float(battery["specs"]["internal_r_ohm"])
-
-	var voltage_v := rest_v
-	var rpm := 0.0
-	for _i in 12:
-		rpm = t * kv * voltage_v
-		voltage_v = maxf(rest_v - current_at_rpm(rpm) * 4.0 * internal_r, 0.0)
-	return rpm
+	return Fitting.rpm_at_throttle(throttle, max_throttle_fraction(), kv, rest_v,
+		internal_r, effective_max_amps, rated_rpm())
 
 ## Current drawn by one motor at a given RPM — see DroneCore.current_at_rpm, which this
 ## must agree with exactly, or the HUD's numbers and the flight model's numbers diverge.
 func current_at_rpm(rpm: float) -> float:
-	var fraction := rpm / rated_rpm()
-	return effective_max_amps * fraction * fraction
+	return Fitting.current_at_rpm(rpm, effective_max_amps, rated_rpm())
 
 ## The RPM at which this motor draws its rated amps with the prop actually fitted: KV times
 ## the pack voltage the manufacturer's amp figure was measured at.
 func rated_rpm() -> float:
-	return float(motor["specs"]["kv"]) * float(motor["thrust_test"]["voltage_v"])
+	return Fitting.rated_rpm(float(motor["specs"]["kv"]), float(motor["thrust_test"]["voltage_v"]))
 
 ## Throttle at which sagged thrust peaks, and that peak. Everything above this throttle is
 ## the pack losing the argument with the motors.

@@ -87,21 +87,26 @@ static func warnings_for(build: Build) -> Array[BuildWarning]:
 	if from_geom.is_empty() or to_geom.is_empty():
 		return out
 
-	var diameter_factor := pow(to_geom.diameter_m / from_geom.diameter_m, 4.0)
-	var blade_factor := pow(to_geom.blades / from_geom.blades, BLADE_COUNT_EXPONENT)
-	var pitch_factor := pow(to_geom.pitch_m / from_geom.pitch_m, PITCH_EXPONENT)
-	var combined := diameter_factor * blade_factor * pitch_factor
+	# The factors, their product, the magnitude and the dominant-term ranking all live in Rust
+	# (rust/src/plausibility.rs) — the same D^4/blades^0.8/pitch^0.5 arithmetic one copy of.
+	var factors: PackedFloat64Array = Plausibility.extrapolation_factors(
+		from_geom.diameter_m, from_geom.pitch_m, from_geom.blades,
+		to_geom.diameter_m, to_geom.pitch_m, to_geom.blades)
+	var diameter_factor := factors[0]
+	var blade_factor := factors[1]
+	var pitch_factor := factors[2]
+	var combined := factors[3]
+	var magnitude := factors[4]
 
 	# Symmetric around 1.0: an aircraft flown on a prop that HALVES its k_t is extrapolating just
 	# as far as one that DOUBLES it, and the reader deserves the same sentence either way.
-	var magnitude: float = maxf(combined, 1.0 / combined)
 	if magnitude <= EXTRAPOLATION_BOUND:
 		return out
 
 	# Which of the three ratios is doing the work — reported as the dominant term rather than as a
 	# split, because a builder acting on the warning wants to know what to change and a split is
-	# usually one term with two rounding companions.
-	var dominant := _dominant_term(diameter_factor, blade_factor, pitch_factor)
+	# usually one term with two rounding companions. The ranking is Rust's; this maps it to words.
+	var dominant := _dominant_term(int(factors[5]))
 
 	out.append(BuildWarning.characteristic(NAME,
 		"%s on a motor thrust-tested with %s puts the reported thrust %.1fx off the manufacturer's own bench — that difference is %s, computed by %s. Only the diameter term is exact (T ∝ D⁴, dimensional); the blade and pitch exponents are documented rules of thumb, so an extrapolation this far is worth more scepticism than the number itself carries." % [
@@ -127,23 +132,17 @@ static func _geometry(prop: Dictionary) -> Dictionary:
 	return {"diameter_m": diameter_in, "pitch_m": pitch_in, "blades": blades}
 
 
-## The biggest offender by log-distance from 1.0, and the sentence for it. Log-distance because
-## the three factors combine multiplicatively — a 1.5x diameter factor beside a 0.8x pitch factor
-## are pulling equally hard in opposite directions, and log|f| ranks them honestly.
-static func _dominant_term(diameter_f: float, blade_f: float, pitch_f: float) -> Dictionary:
+## The sentence for the dominant term, by the index Rust ranked (0=diameter, 1=blades, 2=pitch).
+## Log-distance because the three factors combine multiplicatively — a 1.5x diameter factor
+## beside a 0.8x pitch factor are pulling equally hard in opposite directions, and log|f| ranks
+## them honestly. The ranking itself moved to Rust; this maps the winner back to words.
+static func _dominant_term(dominant_idx: int) -> Dictionary:
 	var terms := [
-		{"term": "diameter", "factor": diameter_f, "what": "almost all diameter",
+		{"term": "diameter", "what": "almost all diameter",
 			"how": "the exact D⁴ term"},
-		{"term": "blades", "factor": blade_f, "what": "mostly blade count",
+		{"term": "blades", "what": "mostly blade count",
 			"how": "the blades^%.1f rule of thumb" % BLADE_COUNT_EXPONENT},
-		{"term": "pitch", "factor": pitch_f, "what": "mostly pitch",
+		{"term": "pitch", "what": "mostly pitch",
 			"how": "the pitch^%.1f rule of thumb" % PITCH_EXPONENT},
 	]
-	var winner: Dictionary = terms[0]
-	var best_distance := 0.0
-	for term in terms:
-		var d := absf(log(float(term["factor"])))
-		if d > best_distance:
-			best_distance = d
-			winner = term
-	return winner
+	return terms[clampi(dominant_idx, 0, 2)]

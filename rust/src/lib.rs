@@ -1,5 +1,7 @@
 mod battery;
+mod fitting;
 mod motor;
+mod plausibility;
 mod powertrain;
 mod propeller;
 
