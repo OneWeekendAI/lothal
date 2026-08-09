@@ -68,6 +68,22 @@ openssl rsa -in "$PRIVATE_KEY" -pubout 2>/dev/null | diff -q - keys/update_publi
 [ -d "$MAC_APP" ] || { echo "error: no macOS build at $MAC_APP — run ./build_macos.sh" >&2; exit 1; }
 if [ "$MACOS_ONLY" = "0" ]; then
   [ -f "$WIN_DIR/Lothal.exe" ] || { echo "error: no Windows build at $WIN_DIR — run ./build_windows.sh" >&2; exit 1; }
+
+  # Refuse to package Windows while the native core is macOS-only. Without this, forgetting
+  # --macos-only silently zips whatever stale build sits in build/windows/ — and the only one
+  # that exists is from before the Rust port, so it carries motor_model.gdc, propeller_model.gdc,
+  # battery_model.gdc and powertrain.gdc: the exact GDScript the port exists to remove, in the
+  # form that decompiles in ten minutes. That is a moat breach dressed as a successful release,
+  # and it nearly shipped. The check is on the .gdextension rather than on the .dll because the
+  # gdextension is what decides whether the exported build can load a native core at all.
+  grep -q '^windows' lothal.gdextension || {
+    echo "error: lothal.gdextension declares no windows library, so a Windows export has" >&2
+    echo "       neither the Rust core nor the GDScript physics it replaced — and the build" >&2
+    echo "       sitting in $WIN_DIR predates the port, so packaging it would ship the" >&2
+    echo "       decompilable physics the port removed." >&2
+    echo "       Use: release/package.sh $VERSION --macos-only" >&2
+    exit 1
+  }
 fi
 
 # Re-check the bundle here as well as in build_macos.sh. This is the last point before the

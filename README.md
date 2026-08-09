@@ -173,7 +173,7 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=2.02 s (834.7 files/s, 328430.1 lines/s)
+github.com/AlDanial/cloc v 2.10  T=2.02 s (835.1 files/s, 328598.4 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
@@ -181,16 +181,16 @@ Rust                          1059          16981            233         575233
 GDScript                       263           8577          18235          33429
 D                              153            442              0           6163
 JSON                           189              0              0           2700
+Bourne Shell                     6             83            196            398
 Python                           2            125            283            382
-Bourne Shell                     6             82            181            379
-Markdown                         2             91              4            305
+Markdown                         2             91              4            304
 Text                             8              0              0             87
 Godot Scene                      2             17             10             57
 JavaScript                       1             14             44             55
 SVG                              1              0              5             27
 TOML                             2              6             25             22
 -------------------------------------------------------------------------------
-SUM:                          1688          26335          19020         618839
+SUM:                          1688          26336          19035         618857
 -------------------------------------------------------------------------------
 ```
 
