@@ -173,26 +173,27 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=2.17 s (782.1 files/s, 306524.9 lines/s)
+github.com/AlDanial/cloc v 2.10  T=1.36 s (1252.5 files/s, 519197.8 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
 Rust                          1059          16981            233         575233
-GDScript                       264           8577          18239          33447
+JSON                           192              0              0          42202
+GDScript                       265           8579          18241          33454
 D                              153            442              0           6163
-JSON                           191              0              0           2702
 Bourne Shell                     6             84            203            406
 Python                           2            125            283            382
-Markdown                         2             91              4            304
+Markdown                         2             91              4            307
 XML                              3              3              0            233
-TypeScript                       1             29             46            138
+TOML                             3             57            246            164
+TypeScript                       1             30             52            139
 Text                             9              0              0             88
 Godot Scene                      2             17             10             57
 JavaScript                       1             14             44             55
 SVG                              1              0              5             27
-TOML                             2              6             25             22
+SQL                              1              3             17             15
 -------------------------------------------------------------------------------
-SUM:                          1696          26369          19092         619257
+SUM:                          1700          26426          19338         658925
 -------------------------------------------------------------------------------
 ```
 

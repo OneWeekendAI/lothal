@@ -132,6 +132,42 @@ async function verifyGoogleIdToken(token: string, clientId: string): Promise<Goo
   return claims;
 }
 
+/** Verifies an ACCESS token by asking Google about it, and returns the same claim shape.
+ *
+ *  This path exists for one reason and it is a visual one: obtaining an ID token in the browser
+ *  requires google.accounts.id.renderButton, which draws Google's own button inside a
+ *  cross-origin iframe (accounts.google.com/gsi/button) whose white background cannot be styled
+ *  from this side. An access token can be requested from ANY button, so the page keeps its own.
+ *
+ *  The security-critical line is the `aud` check below. An access token is a bearer credential
+ *  that says nothing about who it was minted for until you ask — without that comparison, a token
+ *  issued to any other Google application would be accepted here and would mint a real licence
+ *  for its holder. Google's tokeninfo endpoint is what turns an opaque string into the two facts
+ *  that matter: which client it belongs to, and whose verified address it speaks for. */
+async function verifyGoogleAccessToken(token: string, clientId: string): Promise<GoogleClaims> {
+  if (!token) throw new Error("empty access token");
+
+  const res = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`,
+  );
+  if (!res.ok) throw new Error("Google did not recognise this sign-in");
+
+  const info = await res.json();
+
+  if (info.aud !== clientId && info.azp !== clientId) {
+    throw new Error("token was not issued for this app");
+  }
+  if (!info.email) {
+    throw new Error("sign-in did not include an email address");
+  }
+  // tokeninfo returns email_verified as the STRING "true", not a boolean, unlike the ID token's
+  // claims. Comparing with === true silently rejects every legitimate user.
+  const verified = info.email_verified === true || info.email_verified === "true";
+  if (!verified) throw new Error("email is not verified on this Google account");
+
+  return { email: String(info.email), email_verified: true, aud: clientId };
+}
+
 async function signPayload(payload: string, pkcs8Pem: string): Promise<string> {
   const body = pkcs8Pem
     .replace(/-----BEGIN PRIVATE KEY-----/, "")
@@ -169,18 +205,22 @@ Deno.serve(async (req: Request) => {
     return json({ error: "issuer is not configured" }, 500, origin);
   }
 
-  let idToken: string;
+  let idToken = "";
+  let accessToken = "";
   try {
     const body = await req.json();
     idToken = String(body.id_token ?? "");
-    if (!idToken) throw new Error("no id_token");
+    accessToken = String(body.access_token ?? "");
+    if (!idToken && !accessToken) throw new Error("neither token present");
   } catch {
-    return json({ error: "expected {\"id_token\": \"...\"}" }, 400, origin);
+    return json({ error: "expected {\"access_token\": \"...\"} or {\"id_token\": \"...\"}" }, 400, origin);
   }
 
   let claims: GoogleClaims;
   try {
-    claims = await verifyGoogleIdToken(idToken, clientId);
+    claims = idToken
+      ? await verifyGoogleIdToken(idToken, clientId)
+      : await verifyGoogleAccessToken(accessToken, clientId);
   } catch (e) {
     return json({ error: `sign-in could not be verified: ${(e as Error).message}` }, 401, origin);
   }
