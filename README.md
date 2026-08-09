@@ -173,23 +173,24 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=0.20 s (1403.4 files/s, 304018.7 lines/s)
+github.com/AlDanial/cloc v 2.10  T=2.02 s (834.7 files/s, 328430.1 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-GDScript                       247           7904          16954          30779
-JSON                            13              0              0           2524
+Rust                          1059          16981            233         575233
+GDScript                       263           8577          18235          33429
+D                              153            442              0           6163
+JSON                           189              0              0           2700
 Python                           2            125            283            382
-Bourne Shell                     6             80            167            352
-Markdown                         2             91              4            303
-XML                              3              3              0            224
+Bourne Shell                     6             82            181            379
+Markdown                         2             91              4            305
+Text                             8              0              0             87
 Godot Scene                      2             17             10             57
 JavaScript                       1             14             44             55
 SVG                              1              0              5             27
-TOML                             1              3             23              6
-Text                             1              0              0              2
+TOML                             2              6             25             22
 -------------------------------------------------------------------------------
-SUM:                           279           8237          17490          34711
+SUM:                          1688          26335          19020         618839
 -------------------------------------------------------------------------------
 ```
 

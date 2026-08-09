@@ -90,12 +90,10 @@ extends RefCounted
 ## understand refuses rather than reading the fields it happens to recognise.
 const SCHEMA := 1
 
-## `key_id` -> the public key that id names. Ids absent from this map are refused; see WHY THE
-## KEY IS NUMBERED. A second entry appears here on the day the first key is rotated, and old
-## licences keep verifying against key 1 for as long as it stays listed.
-const PUBLIC_KEYS := {
-	1: "res://keys/activation_public.pem",
-}
+## The `key_id` -> public key table lives in rust/src/licence.rs, baked in at compile time, and
+## is reached through `Licence.knows_key_id()`. It used to be a map to `res://keys/*.pem` here;
+## that made the trust anchor a swappable file in the pck, so it moved into the binary. Keeping
+## a second copy of the id list in GDScript would only create something to drift.
 
 ## Where the licence lives once accepted. Written byte-for-byte as it arrived — see `store()`.
 const LICENCE_PATH := "user://licence.json"
@@ -168,7 +166,7 @@ static func verify(body: PackedByteArray, key: Variant = null) -> Result:
 	if not licence.has("key_id"):
 		return Result.none("no key_id")
 	var key_id := int(licence["key_id"])
-	if not PUBLIC_KEYS.has(key_id):
+	if not Licence.knows_key_id(key_id):
 		return Result.none("unknown key_id %d" % key_id)
 
 	# The signed unit is the payload STRING, exactly as it sits in the envelope — never a
@@ -291,18 +289,20 @@ static func _resolve_key_pem(key: Variant) -> String:
 
 ## RSA-PKCS#1 v1.5 over SHA-256 of the payload, against the public key `key_id` names.
 ##
-## The verification itself is compiled — `Licence.verify_signature` in rust/src/licence.rs —
-## and this resolves which PEM to feed it. Returns false on every failure including a missing
-## or unreadable key file. A build whose key did not export cannot verify anything, and the
-## correct behaviour there is to activate nobody rather than to fall back to trusting the
-## document — the opposite choice turns a packaging slip into an app that accepts any licence.
+## Both the arithmetic AND the key are compiled (rust/src/licence.rs). With no injected key
+## this calls `Licence.verify`, which reaches a PEM baked into the binary at compile time and
+## cannot be pointed anywhere else — no file is read, so there is no file to swap. That is the
+## whole change: the trust anchor used to be `res://keys/activation_public.pem` inside the pck,
+## and repacking the archive with a different PEM took over verification with no decompiler and
+## no code edit.
+##
+## `key_pem` is non-empty only when the suite injects a throwaway pair, and that path calls the
+## PEM-taking entry point instead. It is not reachable from any production call site — but be
+## clear-eyed about what it is: verifying against a caller-supplied key is not verification.
+## It survives because the alternative is a test suite that cannot sign its own fixtures, and
+## because anyone able to pass an argument here can already edit the GDScript that calls it.
 static func _verify_signature(payload: String, signature_b64: String, key_id: int,
 		key_pem: String) -> bool:
 	if key_pem == "":
-		var path: String = PUBLIC_KEYS[key_id]
-		if not FileAccess.file_exists(path):
-			return false
-		key_pem = FileAccess.get_file_as_string(path)
-		if key_pem.is_empty():
-			return false
+		return Licence.verify(payload, signature_b64, key_id)
 	return Licence.verify_signature(payload, signature_b64, key_pem)

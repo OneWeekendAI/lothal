@@ -186,6 +186,12 @@ impl Powertrain {
         let mut reaction = Vec::with_capacity(4);
         let mut current = Vec::with_capacity(4);
 
+        // Read ONCE, outside the loop. thrust_n is written by step() before publish() runs, and
+        // nothing in this loop writes it, so fetching it per-iteration crossed the FFI boundary
+        // four times for one unchanging array — on the 1 kHz flight tick that is three wasted
+        // Variant round-trips per publish.
+        let thrust_arr: PackedFloat32Array = self.observables.get("thrust_n").to();
+
         let mut total_thrust = 0.0;
         for i in 0..4 {
             let rpm = self.motor_rpm[i];
@@ -199,7 +205,6 @@ impl Powertrain {
             current.push(self.current_at_rpm(rpm));
             // Recomputed from stored rpm like everything else in this function, so a republish
             // is still idempotent — the value step() published this tick, read back the same.
-            let thrust_arr: PackedFloat32Array = self.observables.get("thrust_n").to();
             total_thrust += thrust_arr[i] as f64;
         }
 

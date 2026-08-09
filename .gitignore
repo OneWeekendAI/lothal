@@ -28,4 +28,3 @@ __pycache__/
 rust/target/
 
 # Scratch reference copies from an external session — not part of the port.
-tools/crosscheck_scratch/

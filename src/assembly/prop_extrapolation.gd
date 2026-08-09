@@ -65,7 +65,10 @@ const NAME := &"prop_extrapolation"
 
 ## Mirrors propeller.rs (BLADE_COUNT_EXPONENT/PITCH_EXPONENT). Rust cannot export constants
 ## to GDScript, so the exponents keep a module const here; the value must agree with the
-## Rust source of truth, which the golden cross-check (tests/rust_crosscheck.gd) enforces.
+## Rust source of truth. Two things enforce that, and neither is optional: the Tier 2 golden
+## cross-check (tests/rust_crosscheck_tier2.gd) hardcodes 0.8/0.5 rather than referencing
+## these consts, so it pins the Rust; and test_rust_constants.gd asserts the copy below
+## equals what the Rust reports, so the two cannot drift apart silently.
 const BLADE_COUNT_EXPONENT := 0.8
 const PITCH_EXPONENT := 0.5
 
