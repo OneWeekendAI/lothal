@@ -1,0 +1,141 @@
+name: windows-build
+
+# Produces the Windows half of a release: the Rust core compiled for Windows, and the Godot
+# export that loads it. It uploads an artifact and stops there.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS EXISTS AT ALL, WHEN build_windows.sh ALREADY CROSS-EXPORTS FROM A MAC
+# ---------------------------------------------------------------------------
+#
+# Godot exports Windows from any host, so the .exe was never the problem. The Rust core is.
+# rust/ compiles to a cdylib that owns the powertrain, the battery and motor models, and the
+# licence gate, and the GDScript implementations of all of it were deleted when the port landed.
+# There is no "Windows build minus the native core" that is worth shipping — it is an app with
+# no physics that also cannot be activated.
+#
+# That .dll could in principle be cross-compiled from macOS via mingw. The reason it is not is
+# that nothing on a Mac can RUN the result. The test suite is the only thing standing between a
+# refactor and a silently wrong thrust curve, and a cross-compiled artifact that has never
+# executed its own tests is exactly the kind of unverified output the release scripts are
+# written to refuse. A windows-latest runner compiles with the same MSVC toolchain users' own
+# machines expect and runs the suite natively before anything is packaged.
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS DELIBERATELY DOES NOT DO
+# ---------------------------------------------------------------------------
+#
+# It does not sign the manifest and it does not touch the bucket. release/package.sh signs with
+# a private key that lives on one machine and is deliberately not a CI secret, and
+# release/upload.sh is the only thing that writes to the public bucket. Splitting those two off
+# from the build is the existing design; putting the update-signing key into a GitHub secret
+# would undo it, because a compromised workflow would then be able to sign a release. CI hands
+# back a zip; a human runs package.sh and upload.sh.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version being built, e.g. 0.3.0 (labels the artifact only)"
+        required: true
+        default: "0.0.0-dev"
+  push:
+    tags:
+      - "v*"
+
+env:
+  GODOT_VERSION: "4.7.1"
+  GODOT_RELEASE: "4.7.1-stable"
+  GODOT_TEMPLATE_DIR: "4.7.1.stable"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- Rust core -----------------------------------------------------
+      # The runner ships a Rust toolchain and the MSVC build tools already; pinning the
+      # toolchain file rather than a version here keeps CI and the Mac on the same compiler.
+      - name: Install Rust (MSVC)
+        run: rustup target add x86_64-pc-windows-msvc
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Build lothal_core.dll
+        working-directory: rust
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      # The .gdextension points at res://build/lothal_core.dll. Copying rather than symlinking
+      # because the export reads it as a project resource.
+      - name: Stage the .dll where the extension expects it
+        shell: bash
+        run: |
+          mkdir -p build
+          cp rust/target/x86_64-pc-windows-msvc/release/lothal_core.dll build/
+          ls -l build/lothal_core.dll
+
+      # ---- Godot ---------------------------------------------------------
+      - name: Install Godot and export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}"
+          curl -fsSLO "$BASE/Godot_v${GODOT_RELEASE}_win64.exe.zip"
+          curl -fsSLO "$BASE/Godot_v${GODOT_RELEASE}_export_templates.tpz"
+          7z x "Godot_v${GODOT_RELEASE}_win64.exe.zip" -o"$HOME/godot" >/dev/null
+          TEMPLATES="$APPDATA/Godot/export_templates/${GODOT_TEMPLATE_DIR}"
+          mkdir -p "$TEMPLATES"
+          7z x "Godot_v${GODOT_RELEASE}_export_templates.tpz" -o"$HOME/tpz" >/dev/null
+          cp "$HOME"/tpz/templates/* "$TEMPLATES/"
+          echo "$HOME/godot" >> "$GITHUB_PATH"
+
+      # Import once before anything else touches the project. A cold checkout has no .godot/
+      # cache, and both the test run and the export will otherwise operate on a project whose
+      # resources have not been imported yet.
+      - name: Import resources
+        shell: bash
+        run: |
+          "Godot_v${GODOT_RELEASE}_win64.exe" --headless --import || true
+
+      # The whole reason this job runs on Windows rather than cross-compiling. If the native
+      # core misbehaves under MSVC, it fails here rather than on a user's machine.
+      - name: Run the test suite on Windows
+        shell: bash
+        run: |
+          "Godot_v${GODOT_RELEASE}_win64.exe" --headless --script res://tests/run_tests.gd
+
+      - name: Export Windows build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/windows
+          "Godot_v${GODOT_RELEASE}_win64.exe" --headless \
+            --export-release "Windows Desktop" build/windows/Lothal.exe
+          test -f build/windows/Lothal.exe || { echo "export produced no executable"; exit 1; }
+          ls -l build/windows
+
+      # Assert the core actually travelled with the export. The failure this catches is a build
+      # that starts and then has no powertrain — which looks like a working download right up
+      # until someone tries to fly.
+      - name: Verify the native core shipped
+        shell: bash
+        run: |
+          if ! ls build/windows | grep -qi 'lothal_core.dll'; then
+            echo "error: lothal_core.dll is not beside the .exe — the export dropped the GDExtension" >&2
+            ls -R build/windows >&2
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lothal-windows-x64-${{ github.event.inputs.version || github.ref_name }}
+          path: build/windows/
+          if-no-files-found: error

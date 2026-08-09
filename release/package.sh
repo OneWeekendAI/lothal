@@ -49,6 +49,26 @@ IN_CODE=$(sed -n 's/^const CURRENT := "\(.*\)"$/\1/p' src/app/version.gd)
   exit 1
 }
 
+# The SAME check against export_presets.cfg, which is a third hand writing the number and was
+# missed by the check above — v0.2.0 shipped with a bundle still declaring 0.1.0 because of it.
+#
+# This one does not break the update channel, so nothing fails loudly: the app reports the right
+# version to the user and the wrong one to the operating system. The costs are quiet and awkward
+# to undo — the Finder's Get Info and Windows' file properties both name the old release, and
+# macOS refuses to install a bundle over one whose CFBundleShortVersionString is not lower, so a
+# genuinely newer build can be declined as already-present.
+#
+# All three keys are checked, not just the first: short_version is what people read, version is
+# what macOS compares, and product_version is the Windows resource. They drift independently.
+for key in short_version version product_version; do
+  found=$(sed -n "s|^application/$key=\"\(.*\)\"$|\1|p" export_presets.cfg | sort -u)
+  [ "$found" = "$VERSION" ] || {
+    echo "error: export_presets.cfg has application/$key = \"$found\", but packaging \"$VERSION\"." >&2
+    echo "       Update it and re-export — the bundle would declare the wrong version to the OS." >&2
+    exit 1
+  }
+done
+
 [ -f "$PRIVATE_KEY" ] || {
   echo "error: no signing key at $PRIVATE_KEY" >&2
   echo "       Run release/keygen.sh once, or point LOTHAL_SIGNING_KEY at your backup." >&2
@@ -74,14 +94,35 @@ if [ "$MACOS_ONLY" = "0" ]; then
   # that exists is from before the Rust port, so it carries motor_model.gdc, propeller_model.gdc,
   # battery_model.gdc and powertrain.gdc: the exact GDScript the port exists to remove, in the
   # form that decompiles in ten minutes. That is a moat breach dressed as a successful release,
-  # and it nearly shipped. The check is on the .gdextension rather than on the .dll because the
-  # gdextension is what decides whether the exported build can load a native core at all.
-  grep -q '^windows' lothal.gdextension || {
-    echo "error: lothal.gdextension declares no windows library, so a Windows export has" >&2
-    echo "       neither the Rust core nor the GDScript physics it replaced — and the build" >&2
-    echo "       sitting in $WIN_DIR predates the port, so packaging it would ship the" >&2
-    echo "       decompilable physics the port removed." >&2
-    echo "       Use: release/package.sh $VERSION --macos-only" >&2
+  # and it nearly shipped.
+  #
+  # This used to check `grep -q '^windows' lothal.gdextension`, on the reasoning that the
+  # gdextension is what decides whether an export can load a native core. That guard silently
+  # disarmed itself the moment the windows.* entries were ADDED to the gdextension in
+  # preparation for the CI build — declaring the library is a statement of intent that costs one
+  # line, while producing the .dll requires a Windows runner, so the declaration necessarily
+  # lands first and the guard would wave through every release in the gap. A check that stops
+  # protecting you exactly when you start doing the risky thing is worse than no check, because
+  # it reads as protection.
+  #
+  # So the guard is on the artifact, and specifically on the EXPORT OUTPUT rather than on the
+  # source tree. Godot copies a GDExtension's declared library in beside the executable, so a
+  # Windows export that loaded the core has lothal_core.dll sitting in $WIN_DIR and one that did
+  # not, does not. That makes the check a direct test of the hazard — "does this exact build
+  # carry a physics engine" — rather than a proxy for it.
+  #
+  # A timestamp comparison was tried here first and is not sufficient: it can only order the
+  # files, and the pre-port export is a self-consistent set of files that happens to be wrong.
+  # Freshly rebuilding the stale Windows tree would satisfy any mtime rule while still shipping
+  # the deleted GDScript. Presence of the core is not orderable and not fakeable by rebuilding.
+  [ -f "$WIN_DIR/lothal_core.dll" ] || {
+    echo "error: $WIN_DIR/Lothal.exe has no lothal_core.dll beside it, so this export never" >&2
+    echo "       loaded the native core. The Rust core owns the powertrain and the licence" >&2
+    echo "       gate and the GDScript versions were deleted in the port, so this build has" >&2
+    echo "       no physics and cannot be activated — and if it predates the port it carries" >&2
+    echo "       the decompilable GDScript physics the port exists to remove." >&2
+    echo "       Build Windows via the windows-build workflow, or use:" >&2
+    echo "       release/package.sh $VERSION --macos-only" >&2
     exit 1
   }
 fi

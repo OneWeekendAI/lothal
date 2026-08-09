@@ -1,28 +1,29 @@
 // Lothal's licence issuer.
 //
-// Takes a Google ID token from the activation page, proves it is genuine, and returns a licence
+// Takes a Firebase ID token from the activation page, proves it is genuine, and returns a licence
 // signed with the RSA key whose public half is compiled into every Lothal binary
 // (rust/src/licence.rs, ACTIVATION_PUBLIC_KEYS). The app verifies that signature offline and
 // never calls this function — or anything else — again. This is a one-time issuing service, not
 // a launch-time dependency: it can vanish and every existing install keeps working.
 //
-// WHY NOT SUPABASE AUTH'S GOOGLE PROVIDER
-// It would work, and it needs a Google OAuth client SECRET pasted into the project dashboard.
-// Verifying the ID token here directly needs only the client ID, which is public and already
-// sits in the page's config.js. Fewer secrets is the whole reason to prefer it; the security is
-// identical, because in both cases the thing being trusted is Google's signature over the token.
+// THE FLOW
+//   [Continue with Google] → Firebase popup → Firebase Auth records the user (email, uid)
+//                          → page gets an ID token → POST here → licence printed on screen
 //
 // WHAT IS TRUSTED, AND WHERE
-// The browser proves nothing. A page can claim any address it likes, so the address that ends up
-// in the signed payload is read out of Google's own token AFTER its signature has been checked
-// here, against Google's published keys. `email_verified` is required too: a Google account can
-// carry an unverified address, and issuing against one would put an address in the signed licence
-// that nobody has ever demonstrated control of.
+// The browser proves nothing. A page can claim any address or uid it likes, so the address that
+// ends up in the signed payload is read out of Firebase's own token AFTER its signature has been
+// checked (firebase_token.ts), never out of the request body. There is deliberately no lookup
+// against Firebase: the signature IS the proof, so no service-account credential lives here and
+// no outage of Firebase's API can block an activation.
+//
+// WHERE THE EMAIL LIST LIVES
+// In Firebase Auth. Its user records hold email and uid as a side effect of signing in, so there
+// is nothing to write here — an earlier design carried a Postgres table that was written on every
+// issue and read by nothing, and it was removed rather than kept as a second copy of a list
+// Firebase already keeps.
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
-
-const GOOGLE_CERTS = "https://www.googleapis.com/oauth2/v3/certs";
-const GOOGLE_ISSUERS = ["accounts.google.com", "https://accounts.google.com"];
+import { verifyFirebaseIdToken } from "./firebase_token.ts";
 
 // The key that signs licences. key_id 1 is the only entry in the app's compiled table; when it
 // rotates, the app must ship the NEW public key first and only then may this start issuing
@@ -56,7 +57,7 @@ function json(body: unknown, status: number, origin: string | null): Response {
   });
 }
 
-function b64urlToBytes(input: string): Uint8Array {
+function b64urlToBytes(input: string): Uint8Array<ArrayBuffer> {
   const padded = input.replace(/-/g, "+").replace(/_/g, "/")
     .padEnd(input.length + ((4 - (input.length % 4)) % 4), "=");
   const binary = atob(padded);
@@ -70,102 +71,6 @@ function bytesToB64(bytes: ArrayBuffer): string {
   let binary = "";
   for (let i = 0; i < view.length; i++) binary += String.fromCharCode(view[i]);
   return btoa(binary);
-}
-
-/** Google's signing keys, cached for an hour. Fetching them per request would make every
- *  activation depend on a second network round trip that almost never changes its answer. */
-let certsCache: { keys: JsonWebKey[]; fetchedAt: number } | null = null;
-
-async function googleKeys(): Promise<JsonWebKey[]> {
-  const HOUR = 60 * 60 * 1000;
-  if (certsCache && Date.now() - certsCache.fetchedAt < HOUR) return certsCache.keys;
-  const res = await fetch(GOOGLE_CERTS);
-  if (!res.ok) throw new Error(`google certs ${res.status}`);
-  const body = await res.json();
-  certsCache = { keys: body.keys ?? [], fetchedAt: Date.now() };
-  return certsCache.keys;
-}
-
-type GoogleClaims = { email?: string; email_verified?: boolean; aud?: string; iss?: string; exp?: number };
-
-/** Verifies a Google ID token end to end and returns its claims, or throws. Every failure path
- *  throws rather than returning a partial result, so there is no shape of "sort of verified"
- *  for a caller to mishandle. */
-async function verifyGoogleIdToken(token: string, clientId: string): Promise<GoogleClaims> {
-  const parts = token.split(".");
-  if (parts.length !== 3) throw new Error("malformed token");
-
-  const header = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[0])));
-  if (header.alg !== "RS256") throw new Error("unexpected alg");
-
-  const jwk = (await googleKeys()).find((k) => (k as { kid?: string }).kid === header.kid);
-  if (!jwk) throw new Error("unknown signing key");
-
-  const key = await crypto.subtle.importKey(
-    "jwk",
-    jwk,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["verify"],
-  );
-
-  const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
-  const ok = await crypto.subtle.verify(
-    "RSASSA-PKCS1-v1_5",
-    key,
-    b64urlToBytes(parts[2]),
-    signed,
-  );
-  if (!ok) throw new Error("bad signature");
-
-  const claims: GoogleClaims = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[1])));
-
-  // Order matters only for the error messages; all four must hold.
-  if (!claims.iss || !GOOGLE_ISSUERS.includes(claims.iss)) throw new Error("bad issuer");
-  // Without this, a token minted for ANY other Google app would verify here — the signature is
-  // Google's either way. `aud` is what ties the token to this application.
-  if (claims.aud !== clientId) throw new Error("token was not issued for this app");
-  if (!claims.exp || claims.exp * 1000 <= Date.now()) throw new Error("token expired");
-  if (!claims.email) throw new Error("token carries no email");
-  if (claims.email_verified !== true) throw new Error("email is not verified on this Google account");
-
-  return claims;
-}
-
-/** Verifies an ACCESS token by asking Google about it, and returns the same claim shape.
- *
- *  This path exists for one reason and it is a visual one: obtaining an ID token in the browser
- *  requires google.accounts.id.renderButton, which draws Google's own button inside a
- *  cross-origin iframe (accounts.google.com/gsi/button) whose white background cannot be styled
- *  from this side. An access token can be requested from ANY button, so the page keeps its own.
- *
- *  The security-critical line is the `aud` check below. An access token is a bearer credential
- *  that says nothing about who it was minted for until you ask — without that comparison, a token
- *  issued to any other Google application would be accepted here and would mint a real licence
- *  for its holder. Google's tokeninfo endpoint is what turns an opaque string into the two facts
- *  that matter: which client it belongs to, and whose verified address it speaks for. */
-async function verifyGoogleAccessToken(token: string, clientId: string): Promise<GoogleClaims> {
-  if (!token) throw new Error("empty access token");
-
-  const res = await fetch(
-    `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`,
-  );
-  if (!res.ok) throw new Error("Google did not recognise this sign-in");
-
-  const info = await res.json();
-
-  if (info.aud !== clientId && info.azp !== clientId) {
-    throw new Error("token was not issued for this app");
-  }
-  if (!info.email) {
-    throw new Error("sign-in did not include an email address");
-  }
-  // tokeninfo returns email_verified as the STRING "true", not a boolean, unlike the ID token's
-  // claims. Comparing with === true silently rejects every legitimate user.
-  const verified = info.email_verified === true || info.email_verified === "true";
-  if (!verified) throw new Error("email is not verified on this Google account");
-
-  return { email: String(info.email), email_verified: true, aud: clientId };
 }
 
 async function signPayload(payload: string, pkcs8Pem: string): Promise<string> {
@@ -196,9 +101,9 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(origin) });
   if (req.method !== "POST") return json({ error: "POST only" }, 405, origin);
 
-  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const projectId = Deno.env.get("FIREBASE_PROJECT_ID");
   const privateKey = Deno.env.get("ACTIVATION_PRIVATE_KEY");
-  if (!clientId || !privateKey) {
+  if (!projectId || !privateKey) {
     // Refuse loudly rather than issuing something unverifiable. A misconfigured deploy that
     // signed with a missing key would produce licences that verify nowhere, and the only symptom
     // would be users reporting that a key they were just given does not work.
@@ -206,48 +111,29 @@ Deno.serve(async (req: Request) => {
   }
 
   let idToken = "";
-  let accessToken = "";
   try {
     const body = await req.json();
     idToken = String(body.id_token ?? "");
-    accessToken = String(body.access_token ?? "");
-    if (!idToken && !accessToken) throw new Error("neither token present");
+    if (!idToken) throw new Error("no token");
   } catch {
-    return json({ error: "expected {\"access_token\": \"...\"} or {\"id_token\": \"...\"}" }, 400, origin);
+    return json({ error: 'expected {"id_token": "..."}' }, 400, origin);
   }
 
-  let claims: GoogleClaims;
+  let claims;
   try {
-    claims = idToken
-      ? await verifyGoogleIdToken(idToken, clientId)
-      : await verifyGoogleAccessToken(accessToken, clientId);
+    claims = await verifyFirebaseIdToken(idToken, projectId);
   } catch (e) {
     return json({ error: `sign-in could not be verified: ${(e as Error).message}` }, 401, origin);
   }
 
-  const email = claims.email!.toLowerCase();
   const issued = new Date().toISOString().slice(0, 10);
 
   // The payload is signed AS THIS EXACT STRING and returned as this exact string. The app stores
   // it verbatim and verifies over the bytes it received — it never re-serialises the dictionary,
   // because key order and number formatting do not survive a round trip through two different
   // JSON writers, and a signature that depended on them would verify here and fail in the field.
-  const payload = JSON.stringify({ schema: SCHEMA, email, issued, key_id: KEY_ID });
+  const payload = JSON.stringify({ schema: SCHEMA, email: claims.email, issued, key_id: KEY_ID });
   const signature = await signPayload(payload, privateKey);
-
-  // The email list. Firebase Auth used to BE the list; on Supabase the equivalent is one table,
-  // written here and read by nobody at runtime — the app never asks whether an address is still
-  // present, so a failure to record must not deny a licence the user has already earned.
-  try {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
-    await supabase.from("activations")
-      .upsert({ email, last_issued: new Date().toISOString() }, { onConflict: "email" });
-  } catch (e) {
-    console.error("activation not recorded", (e as Error).message);
-  }
 
   // The envelope is composed HERE and handed over as one finished string, rather than returning
   // the two halves for the page to assemble. The payload must reach the app byte-identical, and
@@ -257,5 +143,5 @@ Deno.serve(async (req: Request) => {
   // so envelope formatting is free.
   const licence = JSON.stringify({ payload, signature }, null, 2);
 
-  return json({ licence, email }, 200, origin);
+  return json({ licence, email: claims.email }, 200, origin);
 });

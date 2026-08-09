@@ -6,3 +6,10 @@ reloadable = false
 [libraries]
 macos.debug   = "res://build/liblothal_core.dylib"
 macos.release = "res://build/liblothal_core.dylib"
+# Built on a Windows CI runner, not here — see .github/workflows/windows.yml. The Rust core owns
+# the powertrain and the licence gate, and the GDScript versions of both were deleted in the
+# port, so a Windows export WITHOUT this .dll is not a degraded build, it is a build with no
+# physics and no activation. If the file is absent the export still succeeds and fails at
+# startup, which is why the workflow asserts the .dll exists before it calls Godot.
+windows.debug.x86_64   = "res://build/lothal_core.dll"
+windows.release.x86_64 = "res://build/lothal_core.dll"
