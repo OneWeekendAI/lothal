@@ -1,5 +1,6 @@
 mod battery;
 mod fitting;
+mod licence;
 mod motor;
 mod plausibility;
 mod powertrain;
