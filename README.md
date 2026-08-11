@@ -173,27 +173,26 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=1.36 s (1252.5 files/s, 519197.8 lines/s)
+github.com/AlDanial/cloc v 2.10  T=0.41 s (761.2 files/s, 260130.1 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-Rust                          1059          16981            233         575233
-JSON                           192              0              0          42202
-GDScript                       265           8579          18241          33454
-D                              153            442              0           6163
-Bourne Shell                     6             84            203            406
+JSON                            15              0              0          42025
+GDScript                       264           8577          18238          33436
+Rust                             8             85            233            613
+Bourne Shell                     6             85            233            416
 Python                           2            125            283            382
-Markdown                         2             91              4            307
+Markdown                         2             91              4            306
+TypeScript                       3             50             91            264
 XML                              3              3              0            233
 TOML                             3             57            246            164
-TypeScript                       1             30             52            139
-Text                             9              0              0             88
+YAML                             1             15             46             87
 Godot Scene                      2             17             10             57
 JavaScript                       1             14             44             55
 SVG                              1              0              5             27
-SQL                              1              3             17             15
+Text                             1              0              0              2
 -------------------------------------------------------------------------------
-SUM:                          1700          26426          19338         658925
+SUM:                           312           9119          19433          78067
 -------------------------------------------------------------------------------
 ```
 

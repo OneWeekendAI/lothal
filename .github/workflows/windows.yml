@@ -104,6 +104,13 @@ jobs:
         run: |
           "Godot_v${GODOT_RELEASE}_win64.exe" --headless --import || true
 
+      # Diagnostic: prints the feature tags Godot reports, so a failing .gdextension library
+      # match can be read off the log (every tag in "windows.debug.x86_64" must be reported).
+      - name: Diagnostic - Godot feature tags
+        shell: bash
+        run: |
+          "Godot_v${GODOT_RELEASE}_win64.exe" --headless --path . --script res://tools/print_features.gd || true
+
       # The whole reason this job runs on Windows rather than cross-compiling. If the native
       # core misbehaves under MSVC, it fails here rather than on a user's machine.
       - name: Run the test suite on Windows
