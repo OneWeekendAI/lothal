@@ -50,6 +50,12 @@ env:
 jobs:
   build:
     runs-on: windows-latest
+    # A job that hangs rather than fails burns the 6-hour default before anyone sees it, and
+    # this pipeline has a known way to hang: with the GDExtension unloaded the test runner
+    # dies inside its own reporting loop without reaching quit(). The "Assert the Rust core
+    # loaded" step below catches that specific case in seconds; this is the backstop for the
+    # ones nobody has met yet. A cold cargo build plus a full suite is ~15 min.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -67,6 +73,10 @@ jobs:
             ~/.cargo/git
             rust/target
           key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          # Without this a lockfile bump throws away the whole cache and rebuilds every
+          # dependency from scratch — rsa and the godot bindings are most of the ~7 min.
+          restore-keys: |
+            cargo-${{ runner.os }}-
 
       - name: Build lothal_core.dll
         working-directory: rust
@@ -94,36 +104,58 @@ jobs:
           mkdir -p "$TEMPLATES"
           7z x "Godot_v${GODOT_RELEASE}_export_templates.tpz" -o"$HOME/tpz" >/dev/null
           cp "$HOME"/tpz/templates/* "$TEMPLATES/"
-          echo "$HOME/godot" >> "$GITHUB_PATH"
+          # Export the binary as an absolute path rather than putting $HOME/godot on
+          # $GITHUB_PATH. $HOME here is an MSYS path (/c/Users/runneradmin), and $GITHUB_PATH
+          # entries are spliced into the *native* Windows PATH, where that form does not
+          # resolve — it happens to work from `shell: bash` steps and silently would not from
+          # any other shell. One variable, used verbatim below, has no such edge.
+          echo "GODOT=$HOME/godot/Godot_v${GODOT_RELEASE}_win64_console.exe" >> "$GITHUB_ENV"
+          ls -l "$HOME/godot"
 
       # Import once before anything else touches the project. A cold checkout has no .godot/
       # cache, and both the test run and the export will otherwise operate on a project whose
       # resources have not been imported yet.
       - name: Import resources
         shell: bash
+        timeout-minutes: 15
         run: |
-          "Godot_v${GODOT_RELEASE}_win64.exe" --headless --import || true
+          "$GODOT" --headless --import || true
 
       # Diagnostic: prints the feature tags Godot reports, so a failing .gdextension library
       # match can be read off the log (every tag in "windows.debug.x86_64" must be reported).
       - name: Diagnostic - Godot feature tags
         shell: bash
+        timeout-minutes: 5
         run: |
-          "Godot_v${GODOT_RELEASE}_win64.exe" --headless --path . --script res://tools/print_features.gd || true
+          "$GODOT" --headless --path . --script res://tools/print_features.gd || true
+
+      # The gate the suite below CANNOT be: if the extension did not load, run_tests.gd does
+      # not fail, it hangs. The missing types come back as parse errors, a suite returns null,
+      # and the runner dies inside its own reporting loop without ever reaching quit() — the
+      # job then sits there until a timeout, which reads like a CI flake rather than a missing
+      # .dll. This exits 1 in seconds and names the cause. It goes BEFORE the suite so a
+      # broken core is one red step, not forty minutes of nothing.
+      - name: Assert the Rust core loaded
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          "$GODOT" --headless --path . --script res://tools/assert_core_loaded.gd
 
       # The whole reason this job runs on Windows rather than cross-compiling. If the native
       # core misbehaves under MSVC, it fails here rather than on a user's machine.
       - name: Run the test suite on Windows
         shell: bash
+        timeout-minutes: 20
         run: |
-          "Godot_v${GODOT_RELEASE}_win64.exe" --headless --script res://tests/run_tests.gd
+          "$GODOT" --headless --script res://tests/run_tests.gd
 
       - name: Export Windows build
         shell: bash
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           mkdir -p build/windows
-          "Godot_v${GODOT_RELEASE}_win64.exe" --headless \
+          "$GODOT" --headless \
             --export-release "Windows Desktop" build/windows/Lothal.exe
           test -f build/windows/Lothal.exe || { echo "export produced no executable"; exit 1; }
           ls -l build/windows
@@ -131,11 +163,18 @@ jobs:
       # Assert the core actually travelled with the export. The failure this catches is a build
       # that starts and then has no powertrain — which looks like a working download right up
       # until someone tries to fly.
-      - name: Verify the native core shipped
+      #
+      # The .pck is checked on the same grounds: this preset does not embed it, so an .exe that
+      # travels alone starts and then dies complaining about a missing main scene. Both files
+      # have to be in the artifact for the zip a human packages from it to be a working build.
+      - name: Verify the native core and the pack shipped
         shell: bash
         run: |
-          if ! ls build/windows | grep -qi 'lothal_core.dll'; then
-            echo "error: lothal_core.dll is not beside the .exe — the export dropped the GDExtension" >&2
+          missing=()
+          ls build/windows | grep -qi 'lothal_core.dll' || missing+=("lothal_core.dll — the export dropped the GDExtension")
+          ls build/windows | grep -qi 'Lothal.pck'      || missing+=("Lothal.pck — the .exe cannot start without its pack")
+          if [ ${#missing[@]} -ne 0 ]; then
+            printf 'error: missing beside the .exe: %s\n' "${missing[@]}" >&2
             ls -R build/windows >&2
             exit 1
           fi
