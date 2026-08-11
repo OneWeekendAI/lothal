@@ -19,3 +19,6 @@ windows.release.x86_64 = "res://build/lothal_core.dll"
 ; the most tags that ALL match, the specific debug/release keys above still win when their
 ; feature is reported. The .dll is x86_64-only, so no arch-unqualified fallback exists.
 windows.x86_64         = "res://build/lothal_core.dll"
+linux.debug.x86_64     = "res://build/liblothal_core.so"
+linux.release.x86_64   = "res://build/liblothal_core.so"
+linux.x86_64           = "res://build/liblothal_core.so"
