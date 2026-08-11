@@ -1,0 +1,107 @@
+name: linux-build
+
+# Linux counterpart to windows.yml. Builds the Rust core for Linux, runs the test suite under
+# Godot on a Linux runner, and uploads the exported build as an artifact. Signing and bucket
+# upload stay out of CI for the same reasons documented in windows.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version being built, e.g. 0.3.0 (labels the artifact only)"
+        required: true
+        default: "0.0.0-dev"
+  push:
+    branches:
+      - main
+      - "linux-**"
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+
+env:
+  GODOT_VERSION: "4.7.1"
+  GODOT_RELEASE: "4.7.1-stable"
+  GODOT_TEMPLATE_DIR: "4.7.1.stable"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- Rust core -----------------------------------------------------
+      - name: Install Rust
+        run: rustup target add x86_64-unknown-linux-gnu
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Build liblothal_core.so
+        working-directory: rust
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      # The .gdextension points at res://build/liblothal_core.so. Copy rather than symlink so
+      # the export reads it as a project resource.
+      - name: Stage the .so where the extension expects it
+        run: |
+          mkdir -p build
+          cp rust/target/x86_64-unknown-linux-gnu/release/liblothal_core.so build/
+          ls -l build/liblothal_core.so
+
+      # ---- Godot ---------------------------------------------------------
+      - name: Install Godot and export templates
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}"
+          curl -fsSLO "$BASE/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
+          curl -fsSLO "$BASE/Godot_v${GODOT_RELEASE}_export_templates.tpz"
+          unzip -q "Godot_v${GODOT_RELEASE}_linux.x86_64.zip" -d "$HOME/godot"
+          chmod +x "$HOME/godot/Godot_v${GODOT_RELEASE}_linux.x86_64"
+          ln -sf "$HOME/godot/Godot_v${GODOT_RELEASE}_linux.x86_64" "$HOME/godot/godot"
+          TEMPLATES="$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_DIR}"
+          mkdir -p "$TEMPLATES"
+          unzip -q "Godot_v${GODOT_RELEASE}_export_templates.tpz" -d "$HOME/tpz"
+          cp "$HOME"/tpz/templates/* "$TEMPLATES/"
+          echo "$HOME/godot" >> "$GITHUB_PATH"
+
+      - name: Import resources
+        run: godot --headless --import || true
+
+      - name: Diagnostic - Godot feature tags
+        run: godot --headless --path . --script res://tools/print_features.gd || true
+
+      - name: Run the test suite on Linux
+        run: godot --headless --script res://tests/run_tests.gd
+
+      - name: Export Linux build
+        run: |
+          set -euo pipefail
+          mkdir -p build/linux
+          godot --headless --export-release "Linux" build/linux/Lothal.x86_64 || \
+            godot --headless --export-release "Linux/X11" build/linux/Lothal.x86_64
+          test -f build/linux/Lothal.x86_64 || { echo "export produced no executable"; exit 1; }
+          ls -l build/linux
+
+      - name: Verify the native core shipped
+        run: |
+          if ! ls build/linux | grep -qi 'liblothal_core.so'; then
+            echo "error: liblothal_core.so is not beside the executable — the export dropped the GDExtension" >&2
+            ls -R build/linux >&2
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lothal-linux-x64-${{ github.event.inputs.version || github.ref_name }}
+          path: build/linux/
+          if-no-files-found: error
