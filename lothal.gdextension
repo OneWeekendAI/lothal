@@ -6,16 +6,16 @@ reloadable = false
 [libraries]
 macos.debug   = "res://build/liblothal_core.dylib"
 macos.release = "res://build/liblothal_core.dylib"
-# Built on a Windows CI runner, not here — see .github/workflows/windows.yml. The Rust core owns
-# the powertrain and the licence gate, and the GDScript versions of both were deleted in the
-# port, so a Windows export WITHOUT this .dll is not a degraded build, it is a build with no
-# physics and no activation. If the file is absent the export still succeeds and fails at
-# startup, which is why the workflow asserts the .dll exists before it calls Godot.
+; Built on a Windows CI runner, not here — see .github/workflows/windows.yml. The Rust core owns
+; the powertrain and the licence gate, and the GDScript versions of both were deleted in the
+; port, so a Windows export WITHOUT this .dll is not a degraded build, it is a build with no
+; physics and no activation. If the file is absent the export still succeeds and fails at
+; startup, which is why the workflow asserts the .dll exists before it calls Godot.
 windows.debug.x86_64   = "res://build/lothal_core.dll"
 windows.release.x86_64 = "res://build/lothal_core.dll"
-# Arch-only fallback: the debug/release tags require Godot to report the matching feature,
-# which differs between run modes (a plain --import and an --export-release report different
-# sets). This key matches on ANY Windows x86_64 run, and because find_extension_library picks
-# the most tags that ALL match, the specific debug/release keys above still win when their
-# feature is reported. The .dll is x86_64-only, so no arch-unqualified fallback exists.
+; Arch-only fallback: the debug/release tags require Godot to report the matching feature,
+; which differs between run modes (a plain --import and an --export-release report different
+; sets). This key matches on ANY Windows x86_64 run, and because find_extension_library picks
+; the most tags that ALL match, the specific debug/release keys above still win when their
+; feature is reported. The .dll is x86_64-only, so no arch-unqualified fallback exists.
 windows.x86_64         = "res://build/lothal_core.dll"
