@@ -181,24 +181,26 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=0.13 s (2480.4 files/s, 832559.1 lines/s)
+github.com/AlDanial/cloc v 2.10  T=1.69 s (964.2 files/s, 419778.9 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-JSON                            18              0              0          42364
+Rust                          1059          16981            233         575233
+JSON                           146              0              0          42492
 GDScript                       284           9216          19803          35823
+D                              108            308              0           4145
 Bourne Shell                     7            117            296            622
-Rust                             8             85            233            613
 Python                           2            125            283            382
-Markdown                         2             92              4            313
+Markdown                         2             92              4            311
 TypeScript                       3             50             91            264
 YAML                             2             31             75            188
 TOML                             3             57            246            164
+Text                             6              0              0             61
 Godot Scene                      2             17             10             57
 JavaScript                       1             14             47             57
 SVG                              1              0              5             27
 -------------------------------------------------------------------------------
-SUM:                           333           9804          21093          80874
+SUM:                          1626          27008          21093         659826
 -------------------------------------------------------------------------------
 ```
 
