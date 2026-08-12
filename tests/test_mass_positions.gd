@@ -37,8 +37,16 @@ static func _build(offset_mm: float, mount := "strap_top") -> Build:
 ## The reference build's centre of mass is LATERALLY exact and 11.6 mm up.
 ##
 ## The lateral half is the load-bearing check: the reference pack is centred on its mount and every
-## other part is on the centreline or symmetric about it, so X and Z must come out at EXACTLY zero.
-## A drift there would mean the mount resolution or the frame's mass distribution is wrong.
+## other part is on the centreline, so X must come out at EXACTLY zero. A drift there would mean
+## the mount resolution or the frame's mass distribution is wrong.
+##
+## Z WAS EXACTLY ZERO TOO UNTIL LTHL-11, and is now 0.18 mm aft. The camera sits at the front edge
+## of the centre plate and the VTX and antenna at the rear, so 21 g of the aircraft is genuinely
+## not at the origin fore and aft — which is a property of a real quad, and the reason those
+## components were given real bays instead of being left in a lump. The claim that survives
+## unchanged is asserted against the same build with its bays empty, which still comes out at
+## exactly zero and still catches the failure the old line was worth having. tests/
+## test_mass_properties.gd pins the fitted offset against the components' own moment.
 ##
 ## The vertical half is a real measurement and was a surprise worth recording. "Centred on its
 ## mount" constrains fore/aft and lateral only — the mount is the TOP PLATE, 12.5 mm above the
@@ -60,13 +68,14 @@ static func _reference_is_unmoved() -> Array:
 	var com := build.mass_properties.com_m
 
 	out.append(TestResult.new(
-		"the reference build's centre of mass is laterally exact: no X, no Z",
-		absf(com.x) < EPSILON and absf(com.z) < EPSILON,
-		"got %s" % com
+		"the reference build's centre of mass is laterally exact, and fore/aft exact with its bays empty",
+		absf(com.x) < EPSILON
+			and absf(ReferenceBuild.fore_aft_symmetric().mass_properties.com_m.z) < EPSILON,
+		"fitted %s, bays empty %s" % [com, ReferenceBuild.fore_aft_symmetric().mass_properties.com_m]
 	))
 	out.append(TestResult.new(
-		"and sits 11.6 mm up, because the pack is strapped to the top plate",
-		absf(com.y - 0.011633) < 1e-5,
+		"and sits 12.0 mm up, because the pack is strapped to the top plate",
+		absf(com.y - 0.011971) < 1e-5,
 		"got %.4f mm up" % (com.y * 1000.0)
 	))
 	out.append(TestResult.new(
@@ -115,14 +124,19 @@ static func _sliding_moves_the_com() -> Array:
 
 	var pack_fraction: float = (float(centred.battery["mass_g"]) / 1000.0) \
 		/ centred.mass_properties.total_mass_kg
-	# Forward is -Z (physics.md §1), so a positive offset moves the CoM to negative Z.
-	var expected_z := -(offset_mm / 1000.0) * pack_fraction
+	# Forward is -Z (physics.md §1), so a positive offset moves the CoM to negative Z — FROM WHERE
+	# IT ALREADY WAS. That baseline was zero until LTHL-11 gave the camera, VTX and antenna real
+	# bays, and it is 0.18 mm aft now; the claim being tested is the DISPLACEMENT, so what changed
+	# here is that the displacement is measured from the aircraft's own starting point instead of
+	# from an origin it no longer sits on. The bound is unchanged at 1e-9.
+	var baseline_z: float = centred.mass_properties.com_m.z
+	var expected_z := baseline_z - (offset_mm / 1000.0) * pack_fraction
 	var actual := forward.mass_properties.com_m
 
 	out.append(TestResult.new(
 		"sliding the pack forward moves the centre of mass forward",
-		actual.z < -1e-4,
-		"com %s" % actual
+		actual.z < baseline_z - 1e-4,
+		"com %s, from a baseline of %.6f m" % [actual, baseline_z]
 	))
 	out.append(TestResult.new(
 		"the centre of mass moves by the offset times the pack's mass fraction",
@@ -140,11 +154,13 @@ static func _sliding_moves_the_com() -> Array:
 
 	# Aft is the same fact with the sign reversed, and it is worth its own line: a model that took
 	# absf() of the offset somewhere would pass every forward test in this file.
+	# Symmetric ABOUT THE BASELINE rather than about zero, for the reason given above.
 	var aft := _build(-offset_mm)
 	out.append(TestResult.new(
 		"sliding the pack aft moves the centre of mass aft",
-		absf(aft.mass_properties.com_m.z + actual.z) < EPSILON and aft.mass_properties.com_m.z > 0.0,
-		"com %s" % aft.mass_properties.com_m
+		absf((aft.mass_properties.com_m.z - baseline_z) + (actual.z - baseline_z)) < EPSILON
+			and aft.mass_properties.com_m.z > baseline_z,
+		"com %s, from a baseline of %.6f m" % [aft.mass_properties.com_m, baseline_z]
 	))
 
 	# The pack on the BOTTOM plate hangs below the airframe, so the centre of mass drops. This is

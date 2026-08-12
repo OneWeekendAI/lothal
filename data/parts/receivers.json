@@ -1,0 +1,85 @@
+{
+  "_schema": "The radio receiver — the fourth and last component LTHL-11 unbundled out of Build.ELECTRONICS_MASS_G's 35 g remainder. Two tiers, as everywhere else: `specs` is physics-bearing and `catalog` is browsing metadata only. Colour, price and vendor links are banned by name, from either block. WHAT THE PHYSICS READS IS THE THREE DIMENSIONS AND THE MASS. Protocol and band are in `catalog`: Lothal's control path takes stick positions from an input device, not from a modelled radio link, so nothing here reaches the dynamics through anything but mass and a position. IT IS THE SMALLEST OF THE FOUR AND IT IS UNBUNDLED ANYWAY, for one reason worth stating: 2 g out of a 20 g whoop is 10% of the aircraft, and the whole point of this slice is that the small end is where a flat allowance does the damage. MASS COMES OUT OF THE BUDGET, NEVER ADDED BESIDE IT — Build.RECEIVER_BUDGET_MASS_G (2 g). The default entry weighs exactly that, so the reference build is unmoved at 496.0 g. OMITTING IT COSTS ZERO GRAMS: a whoop AIO has the receiver on the board, which is the single most common reason a real small build has no separate receiver at all. 'mounting' says TRAY — a receiver is taped or zip-tied under the top plate, at no spacing any frame publishes — and its bay is on the CENTRELINE, so a receiver contributes nothing fore or aft to the centre of mass no matter which one is fitted. Entries are ordered by mass. THE MASSES HERE ARE CLASS-TYPICAL RATHER THAN RE-SOURCED FROM ONE TEST REGIME, and each entry's `source` says so.",
+  "parts": [
+    {
+      "part_id": "rx_elrs_2400_nano",
+      "name": "ExpressLRS 2.4 GHz nano",
+      "category": "receiver",
+      "mass_g": 1.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 12.0,
+        "width_mm": 8.0,
+        "height_mm": 3.0
+      },
+      "catalog": {
+        "protocol": "ExpressLRS",
+        "band": "2.4 GHz",
+        "antenna_type": "ceramic"
+      },
+      "source": "representative nano 2.4 GHz receiver with a ceramic antenna, the class fitted to whoops and toothpicks; class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "rx_elrs_2400",
+      "name": "ExpressLRS 2.4 GHz",
+      "category": "receiver",
+      "mass_g": 2.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 16.0,
+        "width_mm": 11.0,
+        "height_mm": 4.0
+      },
+      "catalog": {
+        "protocol": "ExpressLRS",
+        "band": "2.4 GHz",
+        "antenna_type": "T-antenna"
+      },
+      "source": "representative 2.4 GHz receiver with a T-antenna on a pigtail — the 5\" freestyle class's default, and the reference build's. Its mass is exactly Build.RECEIVER_BUDGET_MASS_G so the reference build is unmoved. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "rx_elrs_900",
+      "name": "ExpressLRS 900 MHz",
+      "category": "receiver",
+      "mass_g": 3.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 22.0,
+        "width_mm": 13.0,
+        "height_mm": 5.0
+      },
+      "catalog": {
+        "protocol": "ExpressLRS",
+        "band": "900 MHz",
+        "antenna_type": "dipole"
+      },
+      "source": "representative sub-GHz receiver of the class flown on long-range builds — a longer board and a longer antenna than the 2.4 GHz entry, which is where the extra gram is. Class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "rx_diversity_900",
+      "name": "Diversity 900 MHz",
+      "category": "receiver",
+      "mass_g": 5.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 30.0,
+        "width_mm": 15.0,
+        "height_mm": 6.0
+      },
+      "catalog": {
+        "protocol": "Crossfire",
+        "band": "900 MHz",
+        "antenna_type": "dual dipole"
+      },
+      "source": "representative sub-GHz diversity receiver carrying two antennas, the class flown where link reliability rather than mass is the binding constraint; class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    }
+  ]
+}

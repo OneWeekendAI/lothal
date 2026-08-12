@@ -1,0 +1,85 @@
+{
+  "_schema": "The video transmitter — the second component LTHL-11 unbundled out of Build.ELECTRONICS_MASS_G's 35 g remainder. Two tiers, as everywhere else: `specs` is physics-bearing and `catalog` is browsing metadata only. Colour, price and vendor links are banned by name, from either block. WHAT THE PHYSICS READS IS THE THREE DIMENSIONS AND THE MASS. Output power is in `catalog`, not `specs`, and that is deliberate: Lothal has no radio model, nothing computes a link budget, and a spec block is a claim that the sim reads the number. It is carried because it is the first thing a builder compares two boards on. MASS COMES OUT OF THE BUDGET, NEVER ADDED BESIDE IT — Build.VTX_BUDGET_MASS_G (6 g), carved out of ELECTRONICS_MASS_G exactly as the FC's and the ESC's were. The default entry weighs exactly that, so the reference build is unmoved at 496.0 g, and a 1.6 W board costs the aircraft only the excess. THE VTX IS OPTIONAL AND OMITTING IT COSTS ZERO GRAMS: a whoop AIO carries its transmitter on the flight controller, so 'no separate VTX' is the normal build at that size and must weigh the budget less this whole share. 'mounting' says TRAY rather than BOLT even though a 30.5x30.5 VTX genuinely exists: what this file describes is where the board SITS, and Lothal's frames publish exactly one bolt pattern (`stack_mount`) which the FC and the ESC already claim. Declaring a second occupant of that pattern would assert a stack height nobody has measured. A VTX in the back of the plate stack, held by whatever fits, is the honest description and the one the mass model uses. Entries are ordered by mass. THE MASSES HERE ARE CLASS-TYPICAL RATHER THAN RE-SOURCED FROM ONE TEST REGIME, and each entry's `source` says so.",
+  "parts": [
+    {
+      "part_id": "vtx_analog_25mw_whoop",
+      "name": "25 mW analog (whoop)",
+      "category": "vtx",
+      "mass_g": 1.5,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 15.0,
+        "width_mm": 12.0,
+        "height_mm": 4.0
+      },
+      "catalog": {
+        "signal": "analog",
+        "power_class": "25 mW",
+        "band": "5.8 GHz"
+      },
+      "source": "representative standalone 25 mW 5.8 GHz board of the class fitted to 1S micros that do not have one on the AIO; class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "vtx_analog_400mw",
+      "name": "400 mW analog (20x20)",
+      "category": "vtx",
+      "mass_g": 6.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 30.0,
+        "width_mm": 20.0,
+        "height_mm": 6.0
+      },
+      "catalog": {
+        "signal": "analog",
+        "power_class": "400 mW",
+        "band": "5.8 GHz"
+      },
+      "source": "representative switchable 25-400 mW 5.8 GHz board on a 20x20 footprint — the 5\" freestyle class's default, and the reference build's. Its mass is exactly Build.VTX_BUDGET_MASS_G so the reference build is unmoved. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "vtx_analog_1w6",
+      "name": "1.6 W analog (30.5x30.5)",
+      "category": "vtx",
+      "mass_g": 9.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 32.0,
+        "width_mm": 32.0,
+        "height_mm": 8.0
+      },
+      "catalog": {
+        "signal": "analog",
+        "power_class": "1.6 W",
+        "band": "5.8 GHz"
+      },
+      "source": "representative long-range analog board with a heatsink, on a full-size footprint; class-typical, not a specific product. The heatsink is most of the difference in mass from the 400 mW entry. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "vtx_digital_hd",
+      "name": "HD digital transmitter",
+      "category": "vtx",
+      "mass_g": 20.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 32.0,
+        "width_mm": 30.0,
+        "height_mm": 12.0
+      },
+      "catalog": {
+        "signal": "digital",
+        "power_class": "700 mW",
+        "band": "5.8 GHz"
+      },
+      "source": "representative transmitter half of an HD digital FPV system — the board and its heatsink, with the camera half counted once in cameras.json rather than twice here. Class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    }
+  ]
+}

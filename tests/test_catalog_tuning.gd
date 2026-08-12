@@ -64,13 +64,26 @@ const LONG_RANGE := "frame_10in_long_range"
 ## Every frame in the catalog under ONE carried build, so the frame is the only thing that differs
 ## and any spread in the results is attributable to it. This is the same fixture labs-and-sim.md §7
 ## measured the 41x roll inertia on.
+## NOTHING FITTED IN THE FOUR OPTIONAL BAYS, and that is what keeps "the frame is the only thing
+## that differs" true after LTHL-11. A camera, a VTX and an antenna sit at the edges of the centre
+## plate, and the centre plate scales with arm length — so a carried set of components lands at a
+## DIFFERENT distance from the origin on every frame, and each build acquires its own centre-of-
+## mass offset and therefore its own constant disturbance torque. That is a real property of a real
+## aircraft, and it is a second thing varying across the sweep in a file whose whole claim is that
+## RateTune equalises the response when only the frame changes. The anchor below omits them too, so
+## the comparison is like for like.
+##
+## What it leaves uncovered is worth naming rather than hiding: RateTune's scaling law is derived
+## from inertia and thrust and knows nothing about where the mass sits, so it does not equalise
+## across CoM offsets. Nothing asserted that before this slice, because before this slice every
+## build in the catalog was symmetric.
 static func _frame_builds() -> Array:
 	var catalog := PartsCatalog.load_default()
 	var out: Array = []
 	for frame in catalog.list_category("frame"):
 		out.append(Build.from_ids(catalog, frame["part_id"], ReferenceBuild.MOTOR_ID,
 			ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
-			ReferenceBuild.FC_ID))
+			ReferenceBuild.FC_ID, Build.no_components()))
 	return out
 
 
@@ -117,10 +130,11 @@ static func _step_response(build: Build, axis: int, tune: RateTune) -> Dictionar
 ## The worst relative distance from the reference build's own response, over every frame and every
 ## axis, on the tune `derived` selects. Returns [worst_overshoot_ratio, worst_settle_ratio, label].
 static func _worst_deviation(derived: bool) -> Array:
+	# The symmetric reference, matching _frame_builds() — see the note there.
 	var anchor: Array = []
 	for axis in 3:
-		anchor.append(_step_response(ReferenceBuild.build(), axis,
-			RateTune.derive(ReferenceBuild.build()) if derived else null))
+		anchor.append(_step_response(ReferenceBuild.fore_aft_symmetric(), axis,
+			RateTune.derive(ReferenceBuild.fore_aft_symmetric()) if derived else null))
 
 	var worst_over := 0.0
 	var worst_settle := 0.0

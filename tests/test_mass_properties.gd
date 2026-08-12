@@ -28,23 +28,58 @@ static func run() -> Array:
 	#
 	# The two halves are asserted separately because they mean different things. X and Z at exactly
 	# zero is the symmetry check this line was always worth. Y is a measurement.
+	# X IS STILL EXACTLY ZERO AND Z IS NO LONGER, and the split is LTHL-11's. Every part on this
+	# aircraft is on the centreline or symmetric about it, so a lateral drift still means the mount
+	# resolution or the frame's mass distribution is wrong — that half of the check is untouched,
+	# at the same bound.
+	#
+	# Fore and aft, the camera now sits at the front edge of the centre plate and the VTX and the
+	# antenna at the rear, so the build carries a real 0.18 mm aft offset. That is a fact about a
+	# real quad rather than a defect: the four components weigh 21 g between them and they are not
+	# in the same place. What is asserted instead is that the offset is EXACTLY the moment those
+	# components make — the same aircraft with nothing in its bays comes out at exactly zero, which
+	# is the version of the old claim that is still true and still catches an asymmetric arm.
 	results.append(TestResult.new(
-		"COM of a symmetric build is laterally exact: no X, no Z",
-		absf(mp.com_m.x) < EPSILON and absf(mp.com_m.z) < EPSILON,
-		"got %s" % mp.com_m
+		"COM of a symmetric build is laterally exact: no X, and no Z once the bays are empty",
+		absf(mp.com_m.x) < EPSILON
+			and absf(ReferenceBuild.fore_aft_symmetric().mass_properties.com_m.z) < EPSILON
+			and absf(ReferenceBuild.fore_aft_symmetric().mass_properties.com_m.x) < EPSILON,
+		"fitted %s, bays empty %s" % [mp.com_m, ReferenceBuild.fore_aft_symmetric().mass_properties.com_m]
 	))
 	results.append(TestResult.new(
+		"and the fitted build's 0.18 mm aft offset is exactly the four components' own moment",
+		absf(mp.com_m.z - _component_moment_z(ReferenceBuild.build())) < 1e-9,
+		"com.z = %.9f m, the components' moment / total mass = %.9f m" % [
+			mp.com_m.z, _component_moment_z(ReferenceBuild.build())]
+	))
+	# 11.633 mm until LTHL-11, and 11.971 now. The four components sit on and between the plates
+	# rather than at the origin, and three of the four are above the plate midplane — so taking
+	# 21 g out of a box at y = 0 and putting it where it actually lives raises the whole aircraft's
+	# centre of mass by a third of a millimetre. The bound is unchanged.
+	results.append(TestResult.new(
 		"COM sits above the plates, because the pack is strapped on top of them",
-		absf(mp.com_m.y - 0.011633) < 1e-5,
+		absf(mp.com_m.y - 0.011971) < 1e-5,
 		"got %.5f m up" % mp.com_m.y
 	))
 
+	# DIAGONAL WHEN THE BAYS ARE EMPTY, AND OFF-DIAGONAL IN ONE TERM WHEN THEY ARE NOT — which is
+	# the same partition as the centre-of-mass check above, and for the same reason. A product of
+	# inertia needs mass that is off-axis in TWO axes at once: the camera is forward AND low, the
+	# antenna is aft AND high, so they make an I_yz and nothing else. I_xy and I_xz must still be
+	# exactly zero, because nothing on this aircraft is off-centre laterally, and that is the half
+	# of the claim that would catch a crossed axis.
 	var i := mp.inertia
-	var off_diag_max: float = max(absf(i.x.y), max(absf(i.x.z), absf(i.y.z)))
+	var symmetric := ReferenceBuild.fore_aft_symmetric().mass_properties.inertia
+	var symmetric_max: float = max(absf(symmetric.x.y), max(absf(symmetric.x.z), absf(symmetric.y.z)))
 	results.append(TestResult.new(
 		"inertia tensor of a symmetric X-quad is diagonal",
-		off_diag_max < 1e-9,
-		"max off-diagonal = %.12f" % off_diag_max
+		symmetric_max < 1e-9,
+		"max off-diagonal = %.12f with the bays empty" % symmetric_max
+	))
+	results.append(TestResult.new(
+		"and with the bays filled the only off-diagonal term is I_yz, the camera against the antenna",
+		absf(i.x.y) < 1e-12 and absf(i.x.z) < 1e-12 and absf(i.y.z) > 1e-9,
+		"I_xy = %.12f, I_xz = %.12f, I_yz = %.12f" % [i.x.y, i.x.z, i.y.z]
 	))
 
 	var i_xx := i.x.x
@@ -68,12 +103,34 @@ static func run() -> Array:
 	# identically to I_xx and I_zz, and so do the square centre plate and the electronics box. So
 	# the whole difference must be the pack's own, to numerical precision — an assertion that fails
 	# if an arm term ever stops being symmetric, which "within 5%" could never have noticed.
-	var pack := _battery_inertia(ReferenceBuild.build())
+	# The pack was the WHOLE of this difference until LTHL-11, and it is now the larger of two
+	# terms: the four unbundled components lie fore-and-aft too, so they contribute the same way a
+	# pack does. The claim is unchanged in kind and is now stated as a PARTITION — every part that
+	# is symmetric in X and Z contributes exactly nothing, and the parts that do contribute account
+	# for the total to numerical precision. That is strictly stronger than the old form, which
+	# asserted a single term and could not have noticed a fifth one appearing.
+	var contributions := _pitch_minus_roll_contributions(ReferenceBuild.build())
+	# The symmetric parts contribute 9.7e-9, not zero, and it is worth being exact about why rather
+	# than loosening a bound around it. A part that is symmetric in the AIRFRAME is not symmetric
+	# about a centre of mass 0.18 mm behind the airframe's origin: the front motors end up 0.18 mm
+	# further from the pitch axis than the rear ones, and the algebra collapses to one term —
+	# com.z^2 times the mass of everything symmetric. It is second order in a fifth of a
+	# millimetre, which is why it is 0.011% of the difference it sits inside, and it is asserted at
+	# its predicted value rather than as "small".
+	var symmetric_mass := 0.0
+	var component_labels := _component_labels(ReferenceBuild.build())
+	for part in ReferenceBuild.build().mass_parts():
+		if (part as PartMass).label != "Pack" and not component_labels.has((part as PartMass).label):
+			symmetric_mass += (part as PartMass).mass_kg
+	var predicted_residue: float = mp.com_m.z * mp.com_m.z * symmetric_mass
+
 	results.append(TestResult.new(
-		"pitch inertia exceeds roll inertia, and the pack lying fore-and-aft is the whole of it",
-		i_xx > i_zz and absf((i_xx - i_zz) - (pack.x - pack.z)) < 1e-9,
-		"I_xx - I_zz = %.9f, of which the pack's own box accounts for %.9f" % [
-			i_xx - i_zz, pack.x - pack.z]
+		"pitch inertia exceeds roll inertia, and the parts lying fore-and-aft are the whole of it",
+		i_xx > i_zz and absf((i_xx - i_zz) - contributions["total"]) < 1e-9
+			and absf(contributions["symmetric_parts"] - predicted_residue) < 1e-10,
+		"I_xx - I_zz = %.9f, of which the pack accounts for %.9f and the camera, VTX and antenna for %.9f; the %.0f g of symmetric parts add %.12f against a predicted com.z^2 * m of %.12f" % [
+			i_xx - i_zz, contributions["pack"], contributions["components"],
+			symmetric_mass * 1000.0, contributions["symmetric_parts"], predicted_residue]
 	))
 
 	results.append_array(_pack_inertia_comes_from_the_catalog(ReferenceBuild.build()))
@@ -150,3 +207,61 @@ static func _battery_inertia(build: Build) -> Vector3:
 		if absf(part.mass_kg - mass_kg) < 1e-9 and (part.position_m - seated).length() < 1e-9:
 			return part.local_inertia_diag
 	return Vector3.ZERO
+
+
+## The four optional components' fore/aft moment, divided by the whole aircraft's mass — which is
+## where the centre of mass sits when nothing else is off the origin fore or aft, and the empty-bay
+## build above is what establishes that nothing else is.
+static func _component_moment_z(build: Build) -> float:
+	var moment := 0.0
+	for category in Build.OPTIONAL_COMPONENTS:
+		if not build.components.has(category):
+			continue
+		var component: Dictionary = build.components[category]
+		var seat := MountLayout.seated_centre_m(
+			MountLayout.by_id(build.mount_points(), String(Build.COMPONENT_MOUNTS[category])),
+			Build.component_size_of(component))
+		moment += float(component["mass_g"]) / 1000.0 * seat.z
+	return moment / build.mass_properties.total_mass_kg
+
+
+## Each part's own contribution to I_xx - I_zz, taken about the build's centre of mass and summed
+## into three buckets: the pack, the four unbundled components, and everything else.
+##
+## Hand-derived rather than read off MassProperties, which is the point of it as a cross-check. For
+## a part at displacement d from the centre of mass, the parallel-axis term adds m*(d.y^2 + d.z^2)
+## to I_xx and m*(d.x^2 + d.y^2) to I_zz, so the difference is m*(d.z^2 - d.x^2) plus whatever its
+## own box already differs by. Anything on the centreline with d.z = d.x contributes zero, which is
+## every motor pair, the frame, the boards, the receiver and the wiring.
+static func _pitch_minus_roll_contributions(build: Build) -> Dictionary:
+	var com := build.mass_properties.com_m
+	var out := {"pack": 0.0, "components": 0.0, "symmetric_parts": 0.0, "total": 0.0}
+	var component_names: Array[String] = []
+	for category in Build.OPTIONAL_COMPONENTS:
+		if build.components.has(category):
+			component_names.append(str(build.components[category]["name"]))
+
+	for part in build.mass_parts():
+		var entry := part as PartMass
+		var d: Vector3 = entry.position_m - com
+		var contribution: float = entry.local_inertia_diag.x - entry.local_inertia_diag.z \
+			+ entry.mass_kg * (d.z * d.z - d.x * d.x)
+		out["total"] += contribution
+		if entry.label == "Pack":
+			out["pack"] += contribution
+		elif component_names.has(entry.label):
+			out["components"] += contribution
+		else:
+			out["symmetric_parts"] += contribution
+	return out
+
+
+## The labels of the optional components fitted to this build, for telling them apart from the
+## symmetric entries in the mass list. The label rather than the category, because a PartMass
+## carries the part's own name and nothing else that identifies it.
+static func _component_labels(build: Build) -> Array[String]:
+	var out: Array[String] = []
+	for category in Build.OPTIONAL_COMPONENTS:
+		if build.components.has(category):
+			out.append(str(build.components[category]["name"]))
+	return out

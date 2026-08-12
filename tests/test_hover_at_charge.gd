@@ -131,8 +131,16 @@ static func _test_the_stick_the_field_actually_rests_at() -> Array:
 ##
 ## `for_the_pack` picks which throttle is commanded: the flying figure solved for this pack's own
 ## state, as scenes/main.gd does at spawn, or the quoted nominal-datum figure off the stats panel.
+## THE BUILD IS THE FORE/AFT SYMMETRIC REFERENCE, and it is here for exactly the reason the file's
+## header gives for having no flight controller. Since LTHL-11 the fitted camera, VTX and antenna
+## put the reference build's centre of mass 0.18 mm behind the origin — correct, and enough that
+## four equal motor commands produce a constant pitch torque, which integrates twice and lays the
+## aircraft over inside three seconds. That is a true fact about untrimmed aircraft and it is not
+## what this file is asking about. Removing the controller and then flying an aircraft that needs
+## one would measure the wrong thing; ReferenceBuild.fore_aft_symmetric() is the same aircraft with
+## nothing fitted in the four optional bays, which is a real build and is symmetric by construction.
 static func _altitude_change_m(soc: float, for_the_pack: bool = false) -> float:
-	var build := ReferenceBuild.build()
+	var build := ReferenceBuild.fore_aft_symmetric()
 	var core := build.build_drone_core()
 
 	# Seeded the way scenes/main.gd seeds it — through the pack the powertrain is already holding,

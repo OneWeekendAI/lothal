@@ -21,10 +21,27 @@ extends RefCounted
 ## grows a real centre-of-gravity term these positions are already the single source for it; what
 ## must not happen is a second copy of a mount position living inside the physics.
 
-## How a component is held on. Two, because there are two in a real build: things that bolt through
-## a pattern of holes, and things a strap goes round.
+## How a component is held on. Three, because there are three in a real build: things that bolt
+## through a pattern of holes, things a strap goes round, and things that sit in a space the frame
+## provides and are held by whatever suits — a bracket, a screw through a side plate, tape, a zip
+## tie.
+##
+## TRAY IS NOT A WEAKER BOLT AND IT IS NOT A STRAP, and the distinction is what keeps the fit check
+## honest for the four components LTHL-11 unbundled. A camera, a VTX, an antenna and a receiver all
+## attach at spacings NO FRAME IN THIS CATALOG PUBLISHES: frames.json carries one bolt pattern,
+## `stack_mount`, and the FC and the ESC already claim it. Calling a camera bay BOLT would mean
+## inventing a pattern for it, and MountPoint's own rule is that a fabricated spacing reads as a
+## pattern that agrees with nothing. Calling it STRAP would be worse than untidy — AssemblyTweaks
+## reads the STRAP mounts off a frame as the places a PACK can go, so a camera bay declared STRAP
+## would appear in the builder's battery-mount dropdown.
+##
+## What TRAY says is exactly what is known: there is a place for it, its position is derived from
+## the frame's own geometry, and there is no spacing to check. fit_warnings() therefore has nothing
+## to complain about between a TRAY component and a TRAY mount, which is the correct answer rather
+## than a suppressed one.
 const BOLT := "bolt"
 const STRAP := "strap"
+const TRAY := "tray"
 
 ## Stable identifier, used by the saved configuration and by the panel. Not a label.
 var id := ""
@@ -98,6 +115,14 @@ func fit_warnings(part_name: String, mounting: Dictionary, size_m: Vector3 = Vec
 			out.append(BuildWarning.impossible(&"mount_attachment",
 				"%s bolts through a %s pattern, and %s has nothing to bolt into — it would have to be zip-tied or trayed." % [
 					part_name, mounting.get("pattern", "?"), label],
+				{"wants": wants, "offers": attachment, "mount": label}))
+		elif wants == TRAY:
+			# A trayed component asked of a bolt pattern or a strap. It still mounts — a camera
+			# cable-tied to a top plate is a real Saturday afternoon — so this is the same
+			# never-block rule stated for the third attachment kind rather than a new policy.
+			out.append(BuildWarning.impossible(&"mount_attachment",
+				"%s sits in a bay, and %s is not one — it would have to be adapted or held on some other way." % [
+					part_name, label],
 				{"wants": wants, "offers": attachment, "mount": label}))
 		else:
 			out.append(BuildWarning.impossible(&"mount_attachment",

@@ -15,6 +15,13 @@ const CATEGORY_FILES := {
 	"battery": "res://data/parts/batteries.json",
 	"esc": "res://data/parts/escs.json",
 	"flight_controller": "res://data/parts/flight_controllers.json",
+	# The four LTHL-11 unbundled out of Build.ELECTRONICS_MASS_G. Unlike the six above, a build
+	# may fit NONE of these — see Build.OPTIONAL_COMPONENTS — so their presence in this table is
+	# what makes them selectable, not what makes them required.
+	"camera": "res://data/parts/cameras.json",
+	"vtx": "res://data/parts/vtxs.json",
+	"antenna": "res://data/parts/antennas.json",
+	"receiver": "res://data/parts/receivers.json",
 }
 
 ## The id prefix a builder-entered part MUST carry, and which a SHIPPED part may never carry.
@@ -84,6 +91,13 @@ static func load_with_custom(path: String = CustomParts.SAVE_PATH) -> PartsCatal
 	# the merged catalog is assembled in the same order the categories were built.
 	catalog._merge_custom(path, CustomEscs.load_from(path))
 	catalog._merge_custom(path, CustomFlightControllers.load_from(path))
+	# The four LTHL-11 unbundled. Last, in the order Build.OPTIONAL_COMPONENTS weighs them, and
+	# order among them does not matter for the same reason it does not for the stack's two: none of
+	# them cross-references anything.
+	catalog._merge_custom(path, CustomCameras.load_from(path))
+	catalog._merge_custom(path, CustomVtxs.load_from(path))
+	catalog._merge_custom(path, CustomAntennas.load_from(path))
+	catalog._merge_custom(path, CustomReceivers.load_from(path))
 	return catalog
 
 

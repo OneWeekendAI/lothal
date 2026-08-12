@@ -1,0 +1,85 @@
+{
+  "_schema": "The video antenna — the third component LTHL-11 unbundled out of Build.ELECTRONICS_MASS_G's 35 g remainder. Two tiers, as everywhere else: `specs` is physics-bearing and `catalog` is browsing metadata only. Colour, price and vendor links are banned by name, from either block. WHAT THE PHYSICS READS IS THE THREE DIMENSIONS AND THE MASS. Gain and polarisation are in `catalog`: Lothal has no radio model and nothing computes a link budget, so a gain figure in `specs` would be a claim that the sim reads it. THE ANTENNA IS THE MOST OFTEN FORGOTTEN MASS ON A BUILD AND THE ONE FURTHEST FROM THE CENTRE. An SMA whip on a rear mast is 8 g sitting a plate-length behind the centre of mass, and it is the largest single fore/aft moment among the four components this slice unbundled — which is precisely why giving it a real mount was worth doing rather than leaving it in a lump at the origin. MASS COMES OUT OF THE BUDGET, NEVER ADDED BESIDE IT — Build.ANTENNA_BUDGET_MASS_G (5 g). The default entry weighs exactly that, so the reference build is unmoved at 496.0 g. OMITTING IT COSTS ZERO GRAMS, and a build with a VTX and no antenna is a real (if unwise) build rather than an impossible one; Lothal warns and never blocks, and this file does not even warn — it simply weighs what is fitted. 'mounting' says TRAY: an antenna is held by a bracket, a mast or a zip tie, at no spacing any frame publishes. Entries are ordered by mass. THE MASSES HERE ARE CLASS-TYPICAL RATHER THAN RE-SOURCED FROM ONE TEST REGIME, and each entry's `source` says so.",
+  "parts": [
+    {
+      "part_id": "antenna_dipole_ufl_nano",
+      "name": "Nano dipole (u.FL)",
+      "category": "antenna",
+      "mass_g": 2.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 40.0,
+        "width_mm": 4.0,
+        "height_mm": 4.0
+      },
+      "catalog": {
+        "polarisation": "linear",
+        "connector": "u.FL",
+        "gain_class": "1.9 dBi"
+      },
+      "source": "representative u.FL linear dipole of the class fitted to whoops and toothpicks — a length of coax and a whip, with no connector body. Class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "antenna_rhcp_ufl",
+      "name": "RHCP u.FL (5.8 GHz)",
+      "category": "antenna",
+      "mass_g": 5.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 55.0,
+        "width_mm": 15.0,
+        "height_mm": 15.0
+      },
+      "catalog": {
+        "polarisation": "RHCP",
+        "connector": "u.FL",
+        "gain_class": "2.0 dBi"
+      },
+      "source": "representative circularly-polarised u.FL antenna on a short pigtail — the 5\" freestyle class's default, and the reference build's. Its mass is exactly Build.ANTENNA_BUDGET_MASS_G so the reference build is unmoved. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "antenna_rhcp_sma",
+      "name": "RHCP SMA (5.8 GHz)",
+      "category": "antenna",
+      "mass_g": 8.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 70.0,
+        "width_mm": 18.0,
+        "height_mm": 18.0
+      },
+      "catalog": {
+        "polarisation": "RHCP",
+        "connector": "SMA",
+        "gain_class": "2.5 dBi"
+      },
+      "source": "representative circularly-polarised antenna with an SMA connector body and a rear mast mount; the connector and the mast are most of the difference in mass from the u.FL entry. Class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "antenna_rhcp_sma_long_range",
+      "name": "RHCP SMA long-range (5.8 GHz)",
+      "category": "antenna",
+      "mass_g": 12.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 95.0,
+        "width_mm": 22.0,
+        "height_mm": 22.0
+      },
+      "catalog": {
+        "polarisation": "RHCP",
+        "connector": "SMA",
+        "gain_class": "4.0 dBi"
+      },
+      "source": "representative higher-gain circularly-polarised airborne antenna of the class flown on long-range builds; class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    }
+  ]
+}

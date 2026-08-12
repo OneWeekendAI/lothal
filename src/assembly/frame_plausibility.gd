@@ -157,11 +157,17 @@ static func _electronics_lump(build: Build) -> Array[BuildWarning]:
 	var auw := build.all_up_weight_g()
 	if auw <= 0.0:
 		return out
-	var fraction := Build.ELECTRONICS_MASS_G / auw
+	# The build's ACTUAL electronics mass, not the flat budget. LTHL-11 unbundled the camera, VTX,
+	# antenna and receiver into parts that can be omitted, so a build that omits them genuinely
+	# carries less — and a warning still quoting 55 g would be overstating the problem it exists to
+	# name. What it quotes now moves when the builder changes something, which is the difference
+	# between a warning about the aircraft and a warning about Lothal.
+	var electronics_g := build.electronics_mass_g()
+	var fraction := electronics_g / auw
 	if fraction < ELECTRONICS_LUMP_FRACTION:
 		return out
 	out.append(BuildWarning.characteristic(&"electronics_lump",
-		"%.0f%% of this aircraft's %.0f g is Lothal's flat %.0f g electronics allowance — camera, VTX, antenna, receiver and wiring, the same figure on every build regardless of size. At this weight you are mostly reading that constant rather than your own parts, and a real aircraft this light carries far less. Tracked as LTHL-11; until it is fixed, treat everything derived from all-up weight here as an upper bound." % [
-			fraction * 100.0, auw, Build.ELECTRONICS_MASS_G],
-		{"electronics_g": Build.ELECTRONICS_MASS_G, "all_up_g": auw, "fraction": fraction}))
+		"%.0f%% of this aircraft's %.0f g is its electronics: %.0f g of stack, camera, VTX, antenna, receiver and wiring, against Lothal's %.0f g allowance for all of it. The wiring share of that is a flat figure on every build regardless of size, so at this weight you are partly reading a constant rather than your own parts, and a real aircraft this light carries less. Tracked as LTHL-11; until the wiring term scales, treat everything derived from all-up weight here as an upper bound." % [
+			fraction * 100.0, auw, electronics_g, Build.ELECTRONICS_MASS_G],
+		{"electronics_g": electronics_g, "all_up_g": auw, "fraction": fraction}))
 	return out

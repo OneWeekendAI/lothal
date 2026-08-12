@@ -173,26 +173,26 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=0.41 s (761.2 files/s, 260130.1 lines/s)
+github.com/AlDanial/cloc v 2.10  T=0.23 s (1444.4 files/s, 479212.8 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-JSON                            15              0              0          42025
-GDScript                       264           8577          18238          33436
+JSON                            20              0              0          42366
+GDScript                       272           8755          18725          34179
+Bourne Shell                     7            117            296            622
 Rust                             8             85            233            613
-Bourne Shell                     6             85            233            416
 Python                           2            125            283            382
 Markdown                         2             91              4            306
 TypeScript                       3             50             91            264
 XML                              3              3              0            233
+YAML                             2             31             75            188
 TOML                             3             57            246            164
-YAML                             1             15             46             87
 Godot Scene                      2             17             10             57
-JavaScript                       1             14             44             55
+JavaScript                       1             14             47             57
 SVG                              1              0              5             27
-Text                             1              0              0              2
+Text                             2              0              0              5
 -------------------------------------------------------------------------------
-SUM:                           312           9119          19433          78067
+SUM:                           328           9345          20015          79463
 -------------------------------------------------------------------------------
 ```
 
