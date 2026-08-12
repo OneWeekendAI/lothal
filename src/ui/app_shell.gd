@@ -73,10 +73,7 @@ var _host: Control
 ## The CanvasLayer carrying the tab bar and the update notice. Held so the activation gate can
 ## hide the entire app behind itself — see `_ready()`.
 var _tab_layer: CanvasLayer
-## "Activated — someone@example.com", sitting in the tab row. Permanently visible, and that is
-## the point: it is the whole of the anti-sharing mechanism, and a licence's owner being named
-## somewhere the borrower cannot help seeing is worth more than any check that could be removed
-## by decompiling. Empty and hidden until a licence has verified.
+## "Activated" tag sitting in the tab row once a licence has verified. Hidden until then.
 var _account_label: Label
 var _activation_layer: CanvasLayer = null
 var _lab_button: Button
@@ -131,9 +128,6 @@ func _init() -> void:
 	_field_button = _add_tab(bar, "Field", show_field_editor)
 	_sim_button = _add_tab(bar, "Sim", show_sim)
 
-	# The signed-in address rides at the end of the tab row rather than behind an About dialog.
-	# Hiding it would defeat its only purpose: a licence is a file and files get passed around,
-	# and what discourages that is the borrower seeing whose name is on it every time they fly.
 	_account_label = Label.new()
 	_account_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	_account_label.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
@@ -214,10 +208,10 @@ func _on_activated(email: String) -> void:
 	_show_activated(email)
 
 
-func _show_activated(email: String) -> void:
+func _show_activated(_email: String) -> void:
 	if _account_label == null:
 		return
-	_account_label.text = "Activated — %s" % email
+	_account_label.text = "Activated"
 	_account_label.visible = true
 
 
