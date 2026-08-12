@@ -40,6 +40,12 @@ var battery_offset_m := 0.0
 ## for the same reason the motors hang off the arm-tip pads: the mount's height is FrameModel's, the
 ## standoff tweak moves it, and a frame rebuild frees it rather than leaving a stale board behind.
 var stack_mesh: StackMesh
+## The optional components that are FITTED, by category — camera, VTX, antenna, receiver. A category
+## absent from this dictionary is a component not fitted, which is exactly what it means in
+## Build.components: there is no placeholder and nothing greyed out, because a whoop on an AIO
+## carries none of the four and the empty frame IS the picture. Parented onto the frame like the
+## pack and the stack, so a frame rebuild — which frees the pads — takes them with it.
+var component_meshes: Dictionary = {}
 ## Arm length of the build currently drawn, kept so clearance can be reported against the
 ## geometry actually on screen rather than against whatever Build was asked about last.
 var arm_m := 0.0
@@ -107,6 +113,33 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		stack_mesh.position = stack_mount.position
 	frame_model.add_child(stack_mesh)
 
+	# The four components LTHL-11 unbundled, each in its own bay. This loop is the whole of the gap
+	# that made them 25 g of mass at four specific places with nothing on screen: everything it needs
+	# already existed — the bays are MountLayout's, the mapping is Build.COMPONENT_MOUNTS, the size
+	# is the part's own, and the seat is the SAME seated_centre_m() call Build.mass_parts() makes.
+	# That last point is the one that matters: the moment this is a second sum, the picture and the
+	# tensor can drift, and an inertia tensor does not appear on screen to say so.
+	#
+	# A category absent from build.components draws nothing, and that is all. Not fitted is a real
+	# build rather than an incomplete one.
+	component_meshes.clear()
+	for category in Build.OPTIONAL_COMPONENTS:
+		if not build.components.has(category):
+			continue
+		var bay := mount_point(String(Build.COMPONENT_MOUNTS[category]))
+		# A frame that does not publish this bay skips the component rather than seating it at the
+		# origin, which is where a null mount would put it — inside the stack, weighed nowhere near
+		# there. Every frame in the catalog publishes all four today, so this guards a future frame
+		# rather than a live case; the pack's own `battery_mount == null` fallback is the precedent.
+		if bay == null:
+			continue
+		var component := ComponentMesh.new()
+		component.name = "Component_%s" % category
+		component.rebuild(category, build.components[category])
+		component.position = MountLayout.seated_centre_m(bay, component.size_m)
+		frame_model.add_child(component)
+		component_meshes[category] = component
+
 	for motor_name in MotorLayout.MOTOR_NAMES:
 		var pad: Node3D = frame_model.arm_tips[motor_name]
 
@@ -158,6 +191,17 @@ func set_rates_rpm(rpm: PackedFloat32Array) -> void:
 func set_all_rates_rpm(rpm: float) -> void:
 	for motor_name in MotorLayout.MOTOR_NAMES:
 		(propeller_meshes[motor_name] as PropellerMesh).set_rate_rpm(rpm)
+
+
+## The fitted camera's lens, as a node in the world — what a view taken through the camera is taken
+## from — or null when no camera is fitted, which is a real build rather than a missing one.
+##
+## Named accessor rather than callers walking into component_meshes, for the same reason
+## mount_point() exists: the airframe stays the one place that knows what is mounted where.
+func camera_eye() -> Node3D:
+	if not component_meshes.has("camera"):
+		return null
+	return (component_meshes["camera"] as ComponentMesh).get_node_or_null("Eye")
 
 
 ## One of the frame's mount points by id, or null. Named accessor rather than callers walking
@@ -254,17 +298,37 @@ func battery_prop_clearance_m() -> float:
 	# Where the pack's centre actually is along the aircraft, which is what makes this measurement
 	# follow the pack rather than describe where it used to live. Forward is -Z.
 	var centre_z := -battery_offset_m
+	return footprint_prop_clearance_m(Rect2(
+		-half_x, centre_z - half_z, half_x * 2.0, half_z * 2.0))
+
+
+## The narrowest gap in PLAN VIEW between an arbitrary footprint and any propeller's swept disc, in
+## metres. Negative means the footprint is inside a disc.
+##
+## `footprint` is a rectangle in the airframe's own XZ plane: x across, y along Z, forward being -Z.
+##
+## The pack's check above and every component's check below are one implementation, because they are
+## one question. It was the pack's alone until four more objects grew a place on the aircraft, and
+## the alternative — a second copy of this loop for components — is the divergence this file's own
+## header was written about, in miniature: two clearance checks that agree until one of them learns
+## something the other does not.
+func footprint_prop_clearance_m(footprint: Rect2) -> float:
+	if propeller_meshes.is_empty():
+		return 0.0
+
+	var centre := footprint.get_center()
+	var half := footprint.size * 0.5
 	var narrowest := INF
 
 	for motor_name in MotorLayout.MOTOR_NAMES:
 		var propeller: PropellerMesh = propeller_meshes[motor_name]
 		var hub := MotorLayout.motor_position(motor_name, arm_m)
-		# Distance from the hub to the nearest point of the pack's rectangle. Zero on each axis the
-		# hub is already inside, which is what makes this correct for a pack the props sit over as
+		# Distance from the hub to the nearest point of the rectangle. Zero on each axis the hub is
+		# already inside, which is what makes this correct for a footprint the props sit over as
 		# well as for one they sit clear of.
 		var gap := Vector2(
-			maxf(absf(hub.x) - half_x, 0.0),
-			maxf(absf(hub.z - centre_z) - half_z, 0.0)).length()
+			maxf(absf(hub.x - centre.x) - half.x, 0.0),
+			maxf(absf(hub.z - centre.y) - half.y, 0.0)).length()
 		narrowest = minf(narrowest, gap - propeller.radius_m)
 
 	return narrowest
@@ -305,3 +369,141 @@ func battery_fit_warnings() -> Array[BuildWarning]:
 			{"intrusion_mm": -clearance * 1000.0}))
 
 	return out
+
+
+# ---------------------------------------------------------------------------
+# Do the components fit?
+# ---------------------------------------------------------------------------
+
+## Where a fitted component's DRAWN silhouette lands in plan view, in the airframe's own XZ plane,
+## or a zero rectangle if that category is not fitted.
+##
+## The mesh's own footprint, offset by where it was seated — so an antenna leaning aft of its box
+## and a camera lens past its nose are measured where they actually are. This is the same posture
+## battery_overhang_m() takes and for the same reason (labs-and-sim.md §2.2): a figure recomputed
+## from the published dimensions would be a second opinion that agrees with the render right up
+## until a silhouette stops being a box, which for the antenna it already has.
+func component_bounds_m(category: String) -> Rect2:
+	if not component_meshes.has(category):
+		return Rect2()
+	var box := component_aabb_m(category)
+	return Rect2(box.position.x, box.position.z, box.size.x, box.size.z)
+
+
+## The same component's whole drawn box, seated where it sits. The plan view above throws the height
+## away, which is right for a propeller disc — a rotor is a disc and what matters is the airspace
+## under it — and wrong for asking whether two components are in each other's way, because three of
+## the four bays are on DIFFERENT FACES of the plate stack.
+func component_aabb_m(category: String) -> AABB:
+	if not component_meshes.has(category):
+		return AABB()
+	var mesh: ComponentMesh = component_meshes[category]
+	var box := mesh.drawn_aabb_m()
+	box.position += mesh.position
+	return box
+
+
+## What is wrong with where the fitted components ended up, in words, measured off the geometry
+## drawn above. Empty for a build whose components fit — including the reference build.
+##
+## The same split as everything else here: Build.warnings() is what the parts DECLARE about each
+## other, mount_warnings() is what the mount system says about how each attaches, and this is what
+## the assembled geometry DOES. Three conditions, each of which became visible only once the four
+## components had a picture, and each of which a builder currently cannot see at all:
+##
+##   - a component reaching into a propeller disc. The antenna is the case that motivates it: it is
+##     the furthest-out mass on the aircraft and it stands up into exactly the airspace a rotor
+##     sweeps. Same measurement as the pack's, from footprint_prop_clearance_m().
+##   - a component larger than the plate it sits on. A full-size 26 mm camera on a 65 mm whoop
+##     whose centre plate is 17.6 mm square is a real thing to try, and nothing is wrong with
+##     building it — it should simply be obvious, on screen and in words, that it is absurd.
+##   - two components occupying the same air. The camera bay and the VTX bay are opposite edges of
+##     one face, which is comfortable at 5" and is the same 17.6 mm of plate at 65 mm.
+##
+## NOTHING HERE BLOCKS. Every one of these is a warning, in the manner of the whole app: a build
+## Lothal will not let you assemble is a question you cannot ask.
+func component_fit_warnings() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+
+	for category in Build.OPTIONAL_COMPONENTS:
+		if not component_meshes.has(category):
+			continue
+		var label := _component_label(category)
+		var bounds := component_bounds_m(category)
+
+		var clearance := footprint_prop_clearance_m(bounds)
+		if clearance < 0.0:
+			out.append(BuildWarning.impossible(&"component_in_prop_disc",
+				"The %s reaches %.0f mm into the propeller discs — the props would strike it." % [
+					label, -clearance * 1000.0],
+				{"component": category, "intrusion_mm": -clearance * 1000.0}))
+
+		var bay := mount_point(String(Build.COMPONENT_MOUNTS[category]))
+		if bay != null and bay.span_m != Vector2.ZERO:
+			# Against the part's own SEAT rather than the drawn silhouette, which is the opposite
+			# choice from the clearance above and is deliberate. What is being asked here is "is
+			# this object bigger than the plate it sits on" — a question about what rests on the
+			# bay — and the antenna's silhouette answers a different one: it stands up and leans a
+			# long way aft on purpose, and an antenna standing out past the back of the aircraft is
+			# what an antenna does. Reaching into a rotor is a fit failure; reaching into open air
+			# aft is a mount. See ComponentMesh.seat_footprint_m().
+			var seat: Vector2 = (component_meshes[category] as ComponentMesh).seat_footprint_m()
+			var over := maxf(seat.x - bay.span_m.x, seat.y - bay.span_m.y)
+			if over > 0.0005:
+				out.append(BuildWarning.limiting(&"component_larger_than_plate",
+					"The %s is %.0f mm across and %s offers %.0f mm — it is bigger than the plate it sits on." % [
+						label, maxf(seat.x, seat.y) * 1000.0, bay.label,
+						minf(bay.span_m.x, bay.span_m.y) * 1000.0],
+					{"component": category, "over_mm": over * 1000.0}))
+
+	out.append_array(_bay_overlap_warnings())
+	return out
+
+
+## Components whose drawn geometry occupies the same air. Every unordered pair, tested as whole
+## boxes — pairwise rather than per-bay, because the pairs that collide are a property of the parts
+## and the frame together and not of the bay table: the camera bay and the VTX bay are opposite
+## edges of one face, and they touch only when the plate between them has run out.
+##
+## IN ALL THREE DIMENSIONS, AND THE PLAN-VIEW VERSION OF THIS CHECK WAS WRONG. Plan view is right
+## for a propeller disc — a rotor is a disc, and its airspace is the whole column under it — and it
+## is wrong here, because MountLayout puts the four bays on three different FACES on purpose: the
+## antenna stands on the top plate's upper face and the VTX hangs under the lower one at the same
+## rear edge, directly above and below each other by design. Projected into plan they overlap
+## completely, so the plan-view test reported three collisions on the reference build, which is a
+## build that fits. What makes two components a problem is sharing the same space, and the plate
+## stack between them is exactly what stops them.
+##
+## Limiting rather than impossible: a real builder solves this with a shim, a bracket and a zip tie.
+func _bay_overlap_warnings() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	var fitted: Array = []
+	for category in Build.OPTIONAL_COMPONENTS:
+		if component_meshes.has(category):
+			fitted.append(category)
+
+	for i in fitted.size():
+		for j in range(i + 1, fitted.size()):
+			var first := component_aabb_m(String(fitted[i]))
+			var second := component_aabb_m(String(fitted[j]))
+			var overlap := first.intersection(second)
+			if overlap.size.x <= 0.0005 or overlap.size.y <= 0.0005 or overlap.size.z <= 0.0005:
+				continue
+			out.append(BuildWarning.limiting(&"components_overlap",
+				"The %s and the %s occupy the same %.0f x %.0f mm of the airframe — they will not both fit where they are meant to go." % [
+					_component_label(String(fitted[i])), _component_label(String(fitted[j])),
+					overlap.size.x * 1000.0, overlap.size.z * 1000.0],
+				{"first": fitted[i], "second": fitted[j],
+					"overlap_mm3": overlap.size.x * overlap.size.y * overlap.size.z * 1e9}))
+	return out
+
+
+## What a builder calls each of the four. Here rather than in the catalog entry's name because the
+## warning reads better as "the camera" than as "the Foxeer Razer Micro", and the part is already
+## named in the rail the builder just chose it from.
+static func _component_label(category: String) -> String:
+	match category:
+		"vtx": return "video transmitter"
+		"receiver": return "receiver"
+		"antenna": return "antenna"
+		_: return "camera"

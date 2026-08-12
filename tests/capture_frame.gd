@@ -3,16 +3,21 @@ extends SceneTree
 ## PNG of the framebuffer. This is how the UI gets looked at on a machine where the shell has
 ## no screen-recording permission — Godot captures its own viewport, so the OS is not involved.
 ##
-##   godot --script res://tests/capture_frame.gd -- <out.png> [settle_frames] [overview] [resolution_WxH]
+##   godot --script res://tests/capture_frame.gd -- <out.png> [settle_frames] [overview|fpv] [resolution_WxH]
 ##
 ## Passing "overview" detaches the chase cam and shoots the whole circuit from above, which
 ## is the only way to check the course as a shape rather than one gate at a time.
+##
+## Passing "fpv" presses C for you — the whole screen becomes the fitted camera's feed, with the
+## chase view demoted to the inset. It goes through FpvView.toggle_main() rather than faking an
+## input, so what is photographed is the state the key produces and not a second way of reaching it.
 
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var out_path: String = args[0] if args.size() > 0 else "user://frame.png"
 	var settle: int = int(args[1]) if args.size() > 1 else 30
 	var overview: bool = args.size() > 2 and args[2] == "overview"
+	var fpv: bool = args.size() > 2 and args[2] == "fpv"
 
 	if args.size() > 3 and args[3] != "":
 		var res_parts := args[3].split("x")
@@ -27,6 +32,13 @@ func _init() -> void:
 
 	for i in settle:
 		await process_frame
+
+	if fpv:
+		# After the settle, not before it: adding the scene from a SceneTree script does not run
+		# _ready synchronously, so fpv_view does not exist yet at the point the scene is added.
+		scene.fpv_view.toggle_main()
+		for i in 4:
+			await process_frame
 
 	if overview:
 		# A second camera, made current, so the scene's own chase cam keeps running
