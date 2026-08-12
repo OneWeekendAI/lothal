@@ -31,6 +31,20 @@ static func build() -> Build:
 	return Build.from_ids(PartsCatalog.load_default(), FRAME_ID, MOTOR_ID, PROPELLER_ID,
 		BATTERY_ID, ESC_ID, FC_ID)
 
+## The reference build with none of the four optional components fitted — 475 g, and symmetric fore
+## and aft because the camera, VTX and antenna are what put the fitted build's centre of mass
+## 0.18 mm behind the origin (LTHL-11).
+##
+## NOT A LESSER REFERENCE BUILD. It is what a fixture flies when it needs four equal motor commands
+## to hold an aircraft level with no flight controller in the path — a constant torque about the
+## centre of mass integrates twice, so any real CoM offset tips an untrimmed quad over, and a suite
+## asking a question about the PACK must not have that in the way of the answer. See
+## Build.no_components() for the full argument, and tests/test_hover_at_charge.gd for the fixture
+## that needed it.
+static func fore_aft_symmetric() -> Build:
+	return Build.from_ids(PartsCatalog.load_default(), FRAME_ID, MOTOR_ID, PROPELLER_ID,
+		BATTERY_ID, ESC_ID, FC_ID, Build.no_components())
+
 static func arm_m() -> float:
 	return build().arm_m
 

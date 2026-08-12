@@ -1,0 +1,85 @@
+{
+  "_schema": "The FPV camera — the first of the four components LTHL-11 unbundled out of Build.ELECTRONICS_MASS_G's 35 g remainder. Two tiers, as in every other category file: `specs` is physics-bearing and `catalog` is browsing metadata only. Colour, price and vendor links are banned by name, from either block. WHAT THE PHYSICS READS HERE IS THE THREE DIMENSIONS AND THE MASS, AND NOTHING ELSE. A camera does not enter the dynamics through a coefficient the way a prop does; it enters as a lump of mass in a place, so `specs` carries length_mm, width_mm and height_mm (the box the inertia tensor is built from, published in the part's own frame exactly as batteries.json publishes a pack's) and everything a builder browses on — sensor, signal, size class — sits in `catalog` where an unread field belongs. Resolution and lens FOV are NOT in `specs`: nothing in Lothal renders through this camera, and a spec block is a claim that the sim reads the number. MASS COMES OUT OF THE BUDGET, NEVER ADDED BESIDE IT. The camera's share is Build.CAMERA_BUDGET_MASS_G (8 g), carved out of ELECTRONICS_MASS_G exactly as the FC's and the ESC's were; the default entry weighs exactly that, so the reference build still weighs 496.0 g to the gram, and a heavier camera costs the aircraft only the excess. THE CAMERA IS OPTIONAL AND OMITTING IT COSTS ZERO GRAMS. A whoop's AIO board carries the camera on the board itself, so \"no camera fitted\" is a real and common build, and it must weigh the budget minus this whole share rather than silently keeping a default. 'mounting' says TRAY: a camera is held in a bay by screws through the frame's side plates or by a printed bracket, at no spacing any frame in this catalog publishes — which is why it is not BOLT (there is no pattern to compare and a fabricated one would agree with nothing) and not STRAP (nothing passes round it). Entries are ordered by mass, which gives the picker an ascending order without anything sorting it. THE MASSES HERE ARE CLASS-TYPICAL RATHER THAN RE-SOURCED FROM ONE TEST REGIME, and each entry's `source` says so; re-sourcing the catalog's small-part masses is tracked separately and is not what LTHL-11 fixed.",
+  "parts": [
+    {
+      "part_id": "cam_nano_analog",
+      "name": "Nano analog (14 mm)",
+      "category": "camera",
+      "mass_g": 3.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 14.0,
+        "width_mm": 14.0,
+        "height_mm": 15.0
+      },
+      "catalog": {
+        "signal": "analog",
+        "size_class": "nano",
+        "sensor": "CMOS 1/3\""
+      },
+      "source": "representative 14x14 nano analog camera of the class fitted to whoops and toothpicks; class-typical, not a specific product. Mass is the camera with its lens and pigtail, in the 2-3 g band this class is sold in. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "cam_micro_analog",
+      "name": "Micro analog (19 mm)",
+      "category": "camera",
+      "mass_g": 8.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 19.0,
+        "width_mm": 19.0,
+        "height_mm": 21.0
+      },
+      "catalog": {
+        "signal": "analog",
+        "size_class": "micro",
+        "sensor": "CMOS 1/1.8\""
+      },
+      "source": "representative 19x19 micro analog camera — the 5\" freestyle class's default, and the reference build's. Mass is the camera with its bracket, in the 8-9 g band this class is sold in, and it is exactly Build.CAMERA_BUDGET_MASS_G so the reference build is unmoved. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "cam_fullsize_analog",
+      "name": "Full-size analog (26 mm)",
+      "category": "camera",
+      "mass_g": 12.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 26.0,
+        "width_mm": 26.0,
+        "height_mm": 26.0
+      },
+      "catalog": {
+        "signal": "analog",
+        "size_class": "full-size",
+        "sensor": "CMOS 1/1.8\""
+      },
+      "source": "representative 26x26 full-size analog camera, the long-range and cinematic class; class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "cam_digital_hd",
+      "name": "HD digital camera module",
+      "category": "camera",
+      "mass_g": 15.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 19.0,
+        "width_mm": 19.0,
+        "height_mm": 24.0
+      },
+      "catalog": {
+        "signal": "digital",
+        "size_class": "micro",
+        "sensor": "CMOS 1/1.8\""
+      },
+      "source": "representative camera half of an HD digital FPV system — the camera, its board and the coax to the transmitter, which is a separate entry in vtxs.json rather than being counted twice here. Class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    }
+  ]
+}

@@ -228,23 +228,24 @@ static func _test_the_mass_came_out_of_the_lump(catalog: PartsCatalog) -> Array:
 	results.append(TestResult.new(
 		"the reference build still weighs 496 g to the gram with the ESC unbundled",
 		absf(built.all_up_weight_g() - 496.0) < 0.5,
-		"%.1f g (FC %.0f g + ESC %.0f g + %.0f g still lumped = %.0f g of electronics)" % [
+		"%.1f g (FC %.0f g + ESC %.0f g + %.0f g of camera, VTX, antenna and receiver + %.0f g of wiring = %.0f g of electronics)" % [
 			built.all_up_weight_g(), Build.FC_BUDGET_MASS_G, built.esc_mass_g(),
-			Build.ELECTRONICS_MASS_G - Build.FC_BUDGET_MASS_G - Build.ESC_BUDGET_MASS_G,
-			Build.ELECTRONICS_MASS_G]
+			built.electronics_mass_g() - built.fc_mass_g() - built.esc_mass_g()
+				- Build.wiring_mass_g(),
+			Build.wiring_mass_g(), built.electronics_mass_g()]
 	))
 
-	# The budget is spent, not exceeded: the three parts of the electronics package still sum to
-	# the constant they always did, for the board the budget was sized around.
+	# The budget is spent, not exceeded: the parts of the electronics package still sum to the
+	# constant they always did, for the boards the budget was sized around. The identity used to be
+	# written out here as FC + ESC + remainder, which was a restatement of arithmetic this file
+	# performed itself; since LTHL-11 carved four more shares out of the same budget it is asked of
+	# the BUILD instead, which is the same claim about a number that now has six terms in it.
 	results.append(TestResult.new(
 		"the electronics package still sums to its budget rather than growing beside it",
-		is_equal_approx(Build.FC_BUDGET_MASS_G + Build.ESC_BUDGET_MASS_G
-			+ (Build.ELECTRONICS_MASS_G - Build.FC_BUDGET_MASS_G - Build.ESC_BUDGET_MASS_G),
-			Build.ELECTRONICS_MASS_G)
+		is_equal_approx(built.electronics_mass_g(), Build.ELECTRONICS_MASS_G)
 			and is_equal_approx(built.esc_mass_g(), Build.ESC_BUDGET_MASS_G),
-		"%.0f + %.0f + %.0f = %.0f g" % [Build.FC_BUDGET_MASS_G, Build.ESC_BUDGET_MASS_G,
-			Build.ELECTRONICS_MASS_G - Build.FC_BUDGET_MASS_G - Build.ESC_BUDGET_MASS_G,
-			Build.ELECTRONICS_MASS_G]
+		"%.1f g of fitted electronics against a %.1f g budget, ESC at its %.0f g share" % [
+			built.electronics_mass_g(), Build.ELECTRONICS_MASS_G, Build.ESC_BUDGET_MASS_G]
 	))
 
 	# ...and a heavier board makes a heavier aircraft. Without this the unbundling would be

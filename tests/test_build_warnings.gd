@@ -325,8 +325,16 @@ static func _test_hover_throttle_and_thrust_to_weight_are_one_fact(catalog: Part
 ##
 ## Four motors commanded directly, no flight controller, for the reason that file gives: a
 ## controller between the command and the motors is a second thing that could hold the aircraft up.
+##
+## The cinelifter with nothing in its four optional bays, for the reason tests/test_hover_at_charge
+## .gd gives at the same fixture: since LTHL-11 a fitted camera, VTX and antenna put the centre of
+## mass a fraction of a millimetre off the origin, and four equal commands on an aircraft with any
+## CoM offset produce a constant torque that lays it over — correctly. This check is about the
+## throttle the panel quotes, so the aircraft it flies is symmetric by construction and the only
+## thing that can move it vertically is thrust against weight.
 static func _test_the_readout_is_accountable_to_the_sim(catalog: PartsCatalog) -> TestResult:
-	var build := _build(catalog, CINELIFTER)
+	var build := Build.from_ids(catalog, CINELIFTER[0], CINELIFTER[1], CINELIFTER[2],
+		CINELIFTER[3], CINELIFTER[4], Build.DEFAULT_FC_ID, Build.no_components())
 	var core := build.build_drone_core()
 	var throttle := build.hover_throttle_for(core.powertrain.battery)
 	core.prime_motors(throttle)

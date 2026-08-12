@@ -127,6 +127,8 @@ static func for_frame(frame: Dictionary, plate_gap_m: float) -> Array[MountPoint
 	top.reach_m = reach
 	out.append(top)
 
+	out.append_array(_component_bays(side, gap, thickness, span))
+
 	if side - pattern_m.x >= 2.0 * MIN_STRAP_SLOT_M:
 		var bottom := MountPoint.new()
 		bottom.id = "strap_bottom"
@@ -139,6 +141,64 @@ static func for_frame(frame: Dictionary, plate_gap_m: float) -> Array[MountPoint
 		out.append(bottom)
 
 	return out
+
+
+## Where the four components LTHL-11 unbundled out of the electronics lump actually sit.
+##
+## THIS IS THE PART OF THE SLICE THAT MOVES THE CENTRE OF MASS, so every term below comes from the
+## frame's own geometry and none of it is authored. There are exactly two lengths in play — the
+## centre plate's own side, and the standoff gap the builder set — and each bay is named for the
+## face and the edge it sits on:
+##
+##   camera_bay      the bottom plate's upper face, at the plate's FRONT edge. A real FPV camera
+##                   straddles that edge: the body is between the plates and the lens pokes out
+##                   the front of them, which is why the seat is the edge itself rather than a
+##                   position inset from it by a number nobody measured.
+##   vtx_bay         the same face, at the REAR edge. The back of the plate stack is where a
+##                   transmitter goes on every build big enough to have a back.
+##   antenna_mount   the top plate's upper face, at the rear edge — an antenna stands proud of the
+##                   airframe and points up and back, and this is the furthest-out mass of the
+##                   four.
+##   rx_bay          under the top plate, ON THE CENTRELINE. A receiver is taped wherever it fits;
+##                   there is no edge it belongs to, so it is given none, and it contributes
+##                   nothing fore or aft to the centre of mass whichever one is fitted.
+##
+## Every frame offers all four, unconditionally, and that is the difference between these and the
+## bottom strap mount above: a strap slot has to be CUT into carbon that may not be there, whereas
+## a bay is space, and there is always somewhere on an aircraft to put a camera. Whether a build
+## fits anything into them is the build's business — omitting all four is a whoop, and costs the
+## aircraft the whole of their share of the electronics budget (Build.mass_parts).
+##
+## TRAY rather than BOLT or STRAP throughout; see MountPoint.TRAY for why, and for the specific
+## accident — a camera bay turning up in the battery-mount dropdown — that naming them STRAP would
+## have caused.
+static func _component_bays(side: float, gap: float, thickness: float, span: Vector2) -> Array[MountPoint]:
+	var front := -side * 0.5
+	var rear := side * 0.5
+	var lower_face := -gap * 0.5 + thickness * 0.5
+	var upper_face := gap * 0.5 + thickness * 0.5
+
+	return [
+		_bay("camera_bay", "the camera bay", Vector3(0.0, lower_face, front), 1, span),
+		_bay("vtx_bay", "the transmitter bay", Vector3(0.0, lower_face, rear), 1, span),
+		_bay("antenna_mount", "the antenna mount", Vector3(0.0, upper_face, rear), 1, span),
+		_bay("rx_bay", "under the top plate", Vector3(0.0, gap * 0.5 - thickness * 0.5, 0.0), -1, span),
+	] as Array[MountPoint]
+
+
+## One bay. A bay has no fore/aft travel — `reach_m` is zero — because nothing in Lothal offers to
+## slide a camera, and a non-zero reach would be an offer the UI does not make.
+static func _bay(id: String, label: String, position: Vector3, normal: int,
+		span: Vector2) -> MountPoint:
+	var mount := MountPoint.new()
+	mount.id = id
+	mount.label = label
+	mount.attachment = MountPoint.TRAY
+	mount.position = position
+	mount.normal = normal
+	mount.span_m = span
+	mount.reach_m = 0.0
+	return mount
 
 
 ## One mount by id from a table, or null. Here rather than in each caller because both Lab and the

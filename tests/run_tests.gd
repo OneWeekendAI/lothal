@@ -15,7 +15,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh",
 	"yaw authority", "gyro", "motor mixer", "control path", "stick release", "warnings", "build warnings",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "flight recorder",
-	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "custom parts ui", "update check", "licence check", "activation gate", "rust constants"]
+	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "custom parts ui", "update check", "licence check", "activation gate", "rust constants"]
 
 func _init() -> void:
 	var total := 0
@@ -113,6 +113,7 @@ func _run_suite(suite_name: String) -> Array:
 		"custom batteries": return TestCustomBatteries.run()
 		"custom escs": return TestCustomEscs.run()
 		"custom flight controllers": return TestCustomFlightControllers.run()
+		"electronics parts": return TestElectronicsParts.run()
 		"custom parts ui": return TestCustomPartsUi.run()
 		"update check": return TestUpdateCheck.run()
 		"licence check": return TestLicenceCheck.run()

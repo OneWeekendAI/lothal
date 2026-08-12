@@ -33,9 +33,11 @@ const SAG_WORTH_NAMING := 0.75
 ## visible would silently move two of the project's three fixed points for what was meant to be a
 ## change to the picture.
 const ELECTRONICS_MASS_G := 55.0
-## The part of the lump still lumped: camera, VTX, antenna, receiver and wiring, as one box at the
-## origin. Its SIZE stayed as it was rather than shrinking with the mass — an inertia box is linear
-## in mass, and the stack's own box below carries the difference honestly.
+## The part of the lump still lumped: WIRING AND STRAPS, as one box at the origin. Its SIZE stayed
+## as it was rather than shrinking with the mass — an inertia box is linear in mass, and the
+## boards' own boxes below carry the difference honestly.
+##
+## It used to be camera, VTX, antenna, receiver and wiring; LTHL-11 took the first four out of it.
 const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
 
 ## The FC/ESC stack's share of that budget, straight off parts.md's published breakdown of the
@@ -64,6 +66,107 @@ const ESC_BUDGET_MASS_G := 12.0
 ## Kept as the sum of the two, because several places still speak of "the stack" as one object —
 ## it is still one object on the aircraft, bolted through one pattern.
 const STACK_MASS_G := FC_BUDGET_MASS_G + ESC_BUDGET_MASS_G
+
+## The CAMERA's budgeted share, and the three that follow it: the same shape FC_BUDGET_MASS_G and
+## ESC_BUDGET_MASS_G have, for the same reason, and taken OUT of ELECTRONICS_MASS_G rather than
+## added beside it. The default part in each category weighs exactly its share, so the reference
+## build is unchanged at 496.0 g to the gram; fit a heavier one and the aircraft gains exactly the
+## excess, which is the pattern the H743's 4 g overage already established.
+##
+## The four numbers are a breakdown of the 35 g that was left after the stack came out, and they
+## are the class-typical masses of the parts a 5" freestyle actually carries: an 8 g micro camera,
+## a 6 g 400 mW transmitter, a 5 g u.FL antenna and a 2 g receiver. Each has a default entry in its
+## own category file that weighs it, and each of those entries states its provenance.
+const CAMERA_BUDGET_MASS_G := 8.0
+const VTX_BUDGET_MASS_G := 6.0
+const ANTENNA_BUDGET_MASS_G := 5.0
+const RECEIVER_BUDGET_MASS_G := 2.0
+
+## Every share carved out of the budget, by the category that carved it. ONE TABLE RATHER THAN SIX
+## CONSTANTS READ SIX PLACES, so "does the budget still balance" is a question with an arithmetic
+## answer instead of an inspection: wiring_mass_g() is the remainder, and a share that grew past
+## what the budget has left makes it negative rather than making the aircraft heavier.
+const CARVED_SHARES := {
+	"flight_controller": FC_BUDGET_MASS_G,
+	"esc": ESC_BUDGET_MASS_G,
+	"camera": CAMERA_BUDGET_MASS_G,
+	"vtx": VTX_BUDGET_MASS_G,
+	"antenna": ANTENNA_BUDGET_MASS_G,
+	"receiver": RECEIVER_BUDGET_MASS_G,
+}
+
+## The four components that come out of the lump and MAY BE OMITTED, in the order they are weighed.
+## The stack's two are not here: a quad without a flight controller is not a build with something
+## missing, it is not an aircraft.
+const OPTIONAL_COMPONENTS := ["camera", "vtx", "antenna", "receiver"]
+
+## Which mount each optional component sits on. The ids are MountLayout's, and this table is the
+## only place a component is associated with a place — no component carries an offset of its own,
+## and nothing here is a coordinate.
+const COMPONENT_MOUNTS := {
+	"camera": "camera_bay",
+	"vtx": "vtx_bay",
+	"antenna": "antenna_mount",
+	"receiver": "rx_bay",
+}
+
+## The part each category gets when a selection does not name one. Every Build call site written
+## before these categories existed still means what it meant, and the reference build still weighs
+## 496 g — each of these weighs exactly its share above. An EMPTY string means "not fitted", which
+## is what a whoop passes.
+const DEFAULT_COMPONENT_IDS := {
+	"camera": "cam_micro_analog",
+	"vtx": "vtx_analog_400mw",
+	"antenna": "antenna_rhcp_ufl",
+	"receiver": "rx_elrs_2400",
+}
+
+## What is left of the budget once every share above has been taken out of it: WIRING, connectors,
+## solder, heat-shrink, the battery strap, and the double-sided tape holding the receiver on. 14 g
+## on the reference build.
+##
+## IT IS FLAT, AND FLAT IS A DECISION HERE RATHER THAN THE LEFTOVER IT LOOKS LIKE. Wiring mass on a
+## real aircraft scales with something — arm length, current, cell count, how many things are
+## soldered to how many other things — and every one of those is a plausible-sounding law with
+## nothing behind it. Lothal has no measurements of harness mass at any size, so any exponent put
+## here would be invented, and physics.md is written to keep invented laws out. A flat remainder is
+## wrong in a way that is stated and bounded; a scaled one would be wrong in a way that looked
+## derived. When somebody weighs the harnesses off three builds at three sizes, this becomes a
+## function of something and the argument changes.
+##
+## THIS IS THE DOMINANT TERM AT THE SMALL END and this slice does not fix it: it is more than the
+## whole of a real whoop's wiring, and it is the largest single piece of the residual error the
+## unbundling leaves behind. See docs/lothal/parts.md for the measured before/after span.
+static func wiring_mass_g() -> float:
+	return ELECTRONICS_MASS_G - carved_total_g()
+
+
+## Every optional component omitted, in the shape from_ids takes. What a whoop on an AIO passes,
+## and what a fixture passes when it needs an aircraft that is FORE/AFT SYMMETRIC.
+##
+## That second use is not a test convenience and it is worth stating where the mechanism lives.
+## The four components sit at real places, so a fitted build's centre of mass is 0.18 mm behind the
+## origin — small, correct, and enough to tip an aircraft over in three seconds if it is flown with
+## four equal motor commands and no flight controller, because a constant torque integrates twice.
+## Two suites do exactly that on purpose, to ask a question about the PACK with no controller in
+## the path to answer it for them, and one asks whether RateTune's scaling law equalises the
+## response across frames. All three need the confound gone rather than compensated, and a build
+## with nothing fitted is the honest way to say so: it is a real aircraft, it is symmetric by
+## construction, and it needs no new machinery to express.
+static func no_components() -> Dictionary:
+	var out := {}
+	for category in OPTIONAL_COMPONENTS:
+		out[category] = ""
+	return out
+
+
+## The sum of every carved share. Computed rather than written down, which is the whole reason
+## CARVED_SHARES is a table: a seventh component added to it cannot fail to appear here.
+static func carved_total_g() -> float:
+	var total := 0.0
+	for category in CARVED_SHARES:
+		total += float(CARVED_SHARES[category])
+	return total
 
 ## The FC/ESC stack's own bolt pattern. 30.5x30.5 is the full-size standard, and it is a property
 ## of the STACK rather than of the frame — which is the whole reason a fit check is worth having.
@@ -135,6 +238,12 @@ var propeller: Dictionary
 var battery: Dictionary
 var esc: Dictionary
 var fc: Dictionary
+## The optional components, by category — camera, VTX, antenna, receiver. A category ABSENT from
+## this dictionary is a component not fitted, which is a real build rather than an incomplete one,
+## and it costs the aircraft nothing. Held as one dictionary rather than four fields because
+## everything that reads them reads all four the same way (mass_parts, electronics_mass_g), and
+## four near-identical fields is four places a fifth component would have to be added.
+var components: Dictionary = {}
 var catalog: PartsCatalog
 
 var arm_m: float
@@ -179,9 +288,18 @@ const DEFAULT_ASSEMBLY := {
 	"prop_imbalance_g": VibrationModel.DEFAULT_IMBALANCE_KG * 1000.0,
 }
 
+## `component_ids` names the optional components — camera, VTX, antenna, receiver — and anything it
+## leaves out gets DEFAULT_COMPONENT_IDS, so every call site written before these categories
+## existed builds exactly the aircraft it used to. AN EMPTY STRING MEANS NOT FITTED, and it is the
+## only way to say so: a whoop passes {"camera": "", "vtx": "", "receiver": ""} and gets an
+## aircraft that is lighter by the whole of those three shares.
+##
+## A DICTIONARY rather than four more positional parameters, and the reason is the omission case:
+## four trailing defaults would make "" and "left out" look identical at a call site, and the
+## difference between them is 21 g.
 static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String,
 		battery_id: String, esc_id: String = DEFAULT_ESC_ID,
-		fc_id: String = DEFAULT_FC_ID) -> Build:
+		fc_id: String = DEFAULT_FC_ID, component_ids: Dictionary = {}) -> Build:
 	var b := Build.new()
 	b.catalog = p_catalog
 	b.frame = p_catalog.get_part(frame_id)
@@ -190,6 +308,17 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 	b.battery = p_catalog.get_part(battery_id)
 	b.esc = p_catalog.get_part(esc_id)
 	b.fc = p_catalog.get_part(fc_id)
+	for category in OPTIONAL_COMPONENTS:
+		var part_id := String(component_ids.get(category, DEFAULT_COMPONENT_IDS[category]))
+		if part_id == "":
+			continue
+		var part: Dictionary = p_catalog.get_part(part_id)
+		# An id that resolves to nothing is a typo or a part removed from the catalog. It is left
+		# UNFITTED rather than fitted as a massless ghost, which is the same answer the mass model
+		# would have given and is at least visible in the details panel as a missing component.
+		if part.is_empty():
+			continue
+		b.components[category] = part
 	b._recompute()
 	return b
 
@@ -354,26 +483,79 @@ func mass_parts() -> Array:
 		stack_position + Vector3(0.0, StackMesh.esc_centre_height_m(), 0.0),
 		InertiaPrimitives.box(esc_mass_kg, StackMesh.size_m(esc_mount_pattern())), "ESC"))
 
-	# THE LOOSE 35 g STAYS AT THE ORIGIN, and this is a decision rather than the one entry that got
-	# forgotten while the others were given positions.
+	# The four components LTHL-11 took out of the lump: camera, VTX, antenna, receiver, each at its
+	# OWN catalog mass, in its OWN bay, and each of them omittable.
 	#
-	# It is camera, VTX, antenna, receiver and wiring, and the honest thing to say about where they
-	# are is that this project does not know. The camera and VTX are forward and high on a real
-	# quad; the receiver is wherever it fits; the wiring is everywhere by definition. Splitting one
-	# lump into three or four invented positions would be exactly the precision-not-yet-earned that
-	# physics.md is written to prevent — worse here than elsewhere, because those positions would
-	# then be moving the centre of mass, and the number this slice exists to make trustworthy would
-	# be carrying a guess.
+	# THIS IS THE LOOP THAT MOVES THE CENTRE OF MASS, and it is the reason the previous comment
+	# here refused to do it. What changed is not the appetite for precision but where the positions
+	# come from: every one of them is MountLayout's, resolved through the same seated_centre_m()
+	# call the pack goes through, from the frame's own plate geometry. Nothing below carries an
+	# offset of its own, and COMPONENT_MOUNTS is the whole of what this file knows about where a
+	# camera lives — the name of a place, not a coordinate.
 	#
-	# The right fix is LTHL-11, which unbundles the lump into parts that declare their own mounting.
-	# When a camera is a catalog part with a mount, its position comes from the same MountLayout
-	# call the pack's does and nothing here has to be re-decided. Until then: at the origin, said
-	# out loud.
-	var loose_mass_kg := (ELECTRONICS_MASS_G - FC_BUDGET_MASS_G - ESC_BUDGET_MASS_G) / 1000.0
+	# A component not fitted contributes nothing and costs nothing. That is the entire point at the
+	# small end: a whoop's AIO board has the camera and the receiver on it and carries no separate
+	# transmitter, so the aircraft must be lighter by their whole share of the budget rather than
+	# quietly keeping a default.
+	var mounts := mount_points()
+	for category in OPTIONAL_COMPONENTS:
+		if not components.has(category):
+			continue
+		var component: Dictionary = components[category]
+		var component_mass_kg := float(component.get("mass_g", 0.0)) / 1000.0
+		var component_size := component_size_of(component)
+		var bay := MountLayout.by_id(mounts, String(COMPONENT_MOUNTS[category]))
+		parts.append(PartMass.new(component_mass_kg,
+			MountLayout.seated_centre_m(bay, component_size),
+			InertiaPrimitives.box(component_mass_kg, component_size),
+			str(component.get("name", category))))
+
+	# WHAT IS STILL LUMPED AT THE ORIGIN IS THE WIRING, and it is the honest remainder rather than
+	# the entry that got forgotten. A harness is everywhere on the aircraft by definition — that is
+	# what makes the origin the right place for it and not a shrug — and its mass is what the
+	# budget has left once every share is carved out. See wiring_mass_g() for why it does not
+	# scale, and for the fact that it is the dominant term at the small end and this slice did not
+	# fix it.
+	var loose_mass_kg := wiring_mass_g() / 1000.0
 	parts.append(PartMass.new(loose_mass_kg, Vector3.ZERO,
-		InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M), "Wiring and electronics"))
+		InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M), "Wiring"))
 
 	return parts
+
+
+## A component's box in BODY axes: width across X, height up Y, length along Z — the same
+## reordering Build.battery_size_of does, and for the same reason, because these category files
+## publish dimensions in the part's own frame the way batteries.json does.
+##
+## The fallback is a 10 mm cube, for an entry whose contributor has not published dimensions yet.
+## It is wrong in a small way rather than absent in a large one: an inertia box is linear in mass
+## and quadratic in size, so a 15 g antenna with no dimensions is placed correctly and spun
+## slightly wrong, where a zero size would make it a point mass and a mass-scaled guess would be a
+## dimension this project computed instead of read. Every shipped entry carries real dimensions.
+static func component_size_of(part: Dictionary) -> Vector3:
+	var specs: Dictionary = part.get("specs", {})
+	var length: float = float(specs.get("length_mm", 0.0))
+	var width: float = float(specs.get("width_mm", 0.0))
+	var height: float = float(specs.get("height_mm", 0.0))
+	if length > 0.0 and width > 0.0 and height > 0.0:
+		return Vector3(width, height, length) / 1000.0
+	return Vector3.ONE * 0.010
+
+
+## What this build's electronics actually weigh: the two stack boards at their own masses, every
+## optional component that is fitted at its own mass, and the wiring remainder.
+##
+## Exactly ELECTRONICS_MASS_G when the default part is fitted in every category, which is what
+## keeps the reference build at 496 g. It is LOWER when something is omitted and HIGHER when a
+## heavier-than-budget part is fitted, and both of those are the point — this is the number that
+## replaced a flat 55 g in the one place that was quoting it at the builder
+## (FramePlausibility._electronics_lump).
+func electronics_mass_g() -> float:
+	var total := fc_mass_g() + esc_mass_g() + wiring_mass_g()
+	for category in OPTIONAL_COMPONENTS:
+		if components.has(category):
+			total += float(components[category].get("mass_g", 0.0))
+	return total
 
 
 ## The fitted pack as a box in BODY axes: width across X, height up Y, length along Z — because

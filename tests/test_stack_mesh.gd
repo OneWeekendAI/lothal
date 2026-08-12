@@ -149,9 +149,10 @@ static func _test_the_electronics_budget_still_totals_the_lump(_catalog: PartsCa
 	return TestResult.new(
 		"the electronics still weigh exactly what the lump always did",
 		passed,
-		"%.4f g of electronics (budget %.1f g): %.1f g given form as the stack, %.1f g still lumped" % [
+		"%.4f g of electronics (budget %.1f g): %.1f g given form as the stack, %.1f g as the four LTHL-11 unbundled, %.1f g of wiring still lumped" % [
 			electronics_g, Build.ELECTRONICS_MASS_G, Build.STACK_MASS_G,
-			Build.ELECTRONICS_MASS_G - Build.STACK_MASS_G])
+			Build.ELECTRONICS_MASS_G - Build.STACK_MASS_G - Build.wiring_mass_g(),
+			Build.wiring_mass_g()])
 
 
 ## The three fixed points, restated here rather than only in test_validation.gd, because this is
