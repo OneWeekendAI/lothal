@@ -181,26 +181,24 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=0.22 s (1567.7 files/s, 517732.8 lines/s)
+github.com/AlDanial/cloc v 2.10  T=0.13 s (2480.4 files/s, 832559.1 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-JSON                            20              0              0          42366
-GDScript                       283           9209          19787          35787
+JSON                            18              0              0          42364
+GDScript                       284           9216          19803          35823
 Bourne Shell                     7            117            296            622
 Rust                             8             85            233            613
 Python                           2            125            283            382
 Markdown                         2             92              4            313
 TypeScript                       3             50             91            264
-XML                              3              3              0            233
 YAML                             2             31             75            188
 TOML                             3             57            246            164
 Godot Scene                      2             17             10             57
 JavaScript                       1             14             47             57
 SVG                              1              0              5             27
-Text                             2              0              0              5
 -------------------------------------------------------------------------------
-SUM:                           339           9800          21077          81078
+SUM:                           333           9804          21093          80874
 -------------------------------------------------------------------------------
 ```
 
