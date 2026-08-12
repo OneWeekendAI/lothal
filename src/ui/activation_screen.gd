@@ -199,7 +199,7 @@ func submit(body: PackedByteArray) -> bool:
 			+ "its settings folder, then try again.")
 		return false
 
-	_message.text = "Activated — %s" % result.email
+	_message.text = "Activated"
 	_message.add_theme_color_override("font_color", LothalTheme.SUCCESS)
 	_message.visible = true
 
