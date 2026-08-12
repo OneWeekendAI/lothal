@@ -30,9 +30,9 @@ export default {
     let path = url.pathname.replace(/^\/+/, "");
 
     // Stable aliases the README and landing page can link to without knowing the version.
-    // /latest/macos and /latest/windows resolve through the manifest, so a published release
-    // updates every download link on the internet at once.
-    if (path === "latest/macos" || path === "latest/windows") {
+    // /latest/macos, /latest/windows and /latest/linux resolve through the manifest, so a
+    // published release updates every download link on the internet at once.
+    if (path === "latest/macos" || path === "latest/windows" || path === "latest/linux") {
       const platform = path.split("/")[1];
       const manifest = await fetch(`${ORIGIN}/latest.json`, { cf: { cacheTtl: 300 } });
       if (!manifest.ok) return new Response("No current release", { status: 503 });
@@ -86,8 +86,13 @@ export default {
     }
     headers.set("X-Content-Type-Options", "nosniff");
 
+    // Named platforms only. A two-way ternary here silently filed every Linux download under
+    // "windows" the moment a third platform existed, and a counter that lies is worse than one
+    // that abstains — so an unrecognised zip counts as "unknown" rather than as the last branch.
     if (response.ok && path.endsWith(".zip")) {
-      ctx.waitUntil(count(env, path.includes("macos") ? "macos" : "windows", "direct"));
+      const platform =
+        ["macos", "windows", "linux"].find((p) => path.includes(p)) ?? "unknown";
+      ctx.waitUntil(count(env, platform, "direct"));
     }
 
     return new Response(response.body, { status: response.status, headers });
