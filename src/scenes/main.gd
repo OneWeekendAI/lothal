@@ -198,7 +198,13 @@ func _opening_selection() -> Dictionary:
 		"esc": ReferenceBuild.ESC_ID,
 		"flight_controller": ReferenceBuild.FC_ID,
 	}
+	# The optional components join the same table, from Build's own defaults. Merged rather than
+	# written out, so a fifth component cannot be added to the mass model and left off the one
+	# aircraft that loads without Lab in front of it.
+	defaults.merge(Build.DEFAULT_COMPONENT_IDS)
 	for category in defaults:
+		# has() rather than get(category, default), because "" is a real hand-over here — an empty
+		# bay — and a value-based fallback would quietly refit a camera the builder took off.
 		if initial_selection.has(category):
 			defaults[category] = initial_selection[category]
 	return defaults

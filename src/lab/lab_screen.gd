@@ -87,12 +87,14 @@ var propeller_picker: PropellerPicker
 var battery_picker: BatteryPicker
 var esc_picker: EscPicker
 var fc_picker: FcPicker
+var electronics_picker: ElectronicsPicker
 var details: FrameDetails
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
 var battery_details: BatteryDetails
 var esc_details: EscDetails
 var fc_details: FcDetails
+var electronics_details: ElectronicsDetails
 ## The charger. Lab's, because charging is a garage activity — there is a charger in the garage
 ## and there is not one in the field (labs-and-sim.md §5).
 var charge_panel: PackChargePanel
@@ -243,6 +245,10 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	fc_details.name = "FC"
 	panels.add_child(fc_details)
 
+	electronics_details = ElectronicsDetails.new()
+	electronics_details.name = "Electronics"
+	panels.add_child(electronics_details)
+
 	# A panel with no rail behind it, because a fit adjustment is not a part choice: there is
 	# nothing to browse and nothing to filter. It sits with the other panels rather than becoming a
 	# fourth column, which would take screen space from the airframe — the thing being judged.
@@ -322,6 +328,14 @@ func _build_rails() -> void:
 	fc_picker.name = "FC"
 	_rails.add_child(fc_picker)
 
+	electronics_picker = ElectronicsPicker.new(catalog)
+	electronics_picker.name = "Electronics"
+	_rails.add_child(electronics_picker)
+	# The one rail whose signal is not part_selected, because it does not select a part — it
+	# emits the whole payload at once. Same destination as all six others: one handler rebuilds
+	# the aircraft, so a bay emptied here cannot leave a panel describing a camera that is off.
+	electronics_picker.components_changed.connect(_on_selection_changed)
+
 	# A frame added or deleted changes the CATALOG, not just the rail — the camera distance is
 	# computed from the largest arm in it, so the whole screen is rebuilt rather than the list
 	# repopulated. Rebuilding is cheap here and a partially-refreshed Lab is the kind of state that
@@ -392,6 +406,15 @@ func reload_catalog() -> void:
 	_reselect(battery_picker, previous.get("battery", ""), ReferenceBuild.BATTERY_ID)
 	_reselect(esc_picker, previous.get("esc", ""), ReferenceBuild.ESC_ID)
 	_reselect(fc_picker, previous.get("flight_controller", ""), ReferenceBuild.FC_ID)
+	# The payload restores by a different route than _reselect, and the difference is "": an empty
+	# bay is a VALID previous selection here, where on every other rail an empty id means "nothing
+	# was chosen, fall back". So the fallback is only taken when the id no longer resolves — a
+	# custom camera deleted out from under the rail — and never merely because it is empty.
+	for category in Build.OPTIONAL_COMPONENTS:
+		var previous_id := str(previous.get(category, Build.DEFAULT_COMPONENT_IDS[category]))
+		if not electronics_picker.select_component(category, previous_id):
+			electronics_picker.select_component(
+				category, str(Build.DEFAULT_COMPONENT_IDS[category]))
 
 	_on_selection_changed()
 
@@ -531,6 +554,7 @@ func _on_selection_changed() -> void:
 	tune = pid_tunes.tune_for(build)
 	fc_details.render(build.fc, build, tune)
 	charge_panel.render(build)
+	electronics_details.render_components(build)
 	# The fit panel is re-rendered on a PART change too, not only on a fit change: the limits are
 	# derived from the parts, so a smaller motor has to narrow the shim slider then and there.
 	# The airframe goes in as well as the build, because the fit rows are measured off the geometry
@@ -596,7 +620,8 @@ func current_build() -> Build:
 		propeller_picker.selected_part()["part_id"],
 		battery_picker.selected_part()["part_id"],
 		esc_picker.selected_part()["part_id"],
-		fc_picker.selected_part()["part_id"]
+		fc_picker.selected_part()["part_id"],
+		electronics_picker.component_ids()
 	)
 
 
@@ -604,7 +629,7 @@ func current_build() -> Build:
 ## and into the field. Assembled here rather than at each door, so a fifth category cannot be
 ## added to the rails and forgotten by one of the two things that reads them.
 func selection() -> Dictionary:
-	return {
+	var out := {
 		"frame": picker.selected_part()["part_id"],
 		"motor": motor_picker.selected_part()["part_id"],
 		"propeller": propeller_picker.selected_part()["part_id"],
@@ -612,6 +637,11 @@ func selection() -> Dictionary:
 		"esc": esc_picker.selected_part()["part_id"],
 		"flight_controller": fc_picker.selected_part()["part_id"],
 	}
+	# Merged rather than listed, for the reason this function exists at all: the payload is
+	# already a category -> id dictionary in exactly this shape, and copying its four keys out by
+	# hand would be the fifth place a component category has to be remembered.
+	out.merge(electronics_picker.component_ids())
+	return out
 
 
 # ---------------------------------------------------------------------------

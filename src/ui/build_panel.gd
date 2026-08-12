@@ -16,7 +16,22 @@ const CATEGORY_ORDER := [
 	{"category": "battery", "label": "Battery"},
 	{"category": "esc", "label": "ESC"},
 	{"category": "flight_controller", "label": "Flight controller"},
+	{"category": "camera", "label": "Camera"},
+	{"category": "vtx", "label": "Video TX"},
+	{"category": "antenna", "label": "Antenna"},
+	{"category": "receiver", "label": "Receiver"},
 ]
+
+## The four categories whose lists carry a "Not fitted" row, and the only ones that may resolve to
+## "". Derived from Build rather than listed, so this panel cannot know about a different set of
+## optional components than the mass model does.
+##
+## Their dropdowns are the reason _ids below exists. A component list is the catalog plus one row
+## the catalog does not have, so the old `list_category(category)[selector.selected]` is off by one
+## for the whole of these four — and off by one over a shelf of similar 2 g boards fits the wrong
+## part without ever looking wrong on screen.
+const OPTIONAL := Build.OPTIONAL_COMPONENTS
+const NOT_FITTED := "Not fitted"
 
 const STAT_ROWS := [
 	{"key": "weight", "label": "All-up weight"},
@@ -39,6 +54,9 @@ var top_inset := 0.0
 var bottom_reserve := 0.0
 
 var _selectors: Dictionary = {}   # category -> OptionButton
+## category -> Array[String] of part ids, parallel to that selector's items. The selector's index
+## is an index into THIS and never into the catalog; see OPTIONAL above for why that matters.
+var _ids: Dictionary = {}
 var _stat_values: Dictionary = {} # key -> Label
 var _warnings: WarningList
 var _scroll: ScrollContainer
@@ -98,11 +116,27 @@ func _init(p_catalog: PartsCatalog, initial_ids: Dictionary) -> void:
 
 		var selector := OptionButton.new()
 		selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var parts := catalog.list_category(category)
-		for i in parts.size():
-			selector.add_item(parts[i]["name"], i)
-			if parts[i]["part_id"] == initial_ids.get(category, CATEGORY_FALLBACKS.get(category, "")):
-				selector.select(i)
+		# Clipped, because "RHCP SMA long-range (5.8 GHz)" would otherwise set this floating
+		# panel's width from its longest catalog string and cover a third of the flight view.
+		selector.clip_text = true
+
+		var ids: Array = []
+		if OPTIONAL.has(category):
+			selector.add_item(NOT_FITTED)
+			ids.append("")
+		for part in catalog.list_category(category):
+			selector.add_item(str(part["name"]))
+			ids.append(str(part["part_id"]))
+		_ids[category] = ids
+
+		# An id the catalog does not have falls back rather than leaving the dropdown on -1, which
+		# is a selector with nothing chosen and a selected_id() that cannot answer. "" is a real
+		# answer for the four optional categories and resolves to the "Not fitted" row above.
+		var wanted := str(initial_ids.get(category, _fallback_id(category)))
+		var index: int = ids.find(wanted)
+		if index < 0:
+			index = maxi(ids.find(_fallback_id(category)), 0)
+		selector.select(index)
 		selector.item_selected.connect(_on_selection_changed.bind(category))
 		grid.add_child(selector)
 		_selectors[category] = selector
@@ -157,14 +191,33 @@ func _on_selection_changed(_index: int, _category: String) -> void:
 
 func selected_id(category: String) -> String:
 	var selector: OptionButton = _selectors[category]
-	return catalog.list_category(category)[selector.selected]["part_id"]
+	return str(_ids[category][selector.selected])
+
+
+## What a category opens on when the hand-over does not name it. The optional components fall back
+## to Build's own defaults, so a caller that predates these four categories — scenes/main.gd loaded
+## directly, or a test naming only the pack — still builds the aircraft it used to.
+static func _fallback_id(category: String) -> String:
+	if CATEGORY_FALLBACKS.has(category):
+		return str(CATEGORY_FALLBACKS[category])
+	return str(Build.DEFAULT_COMPONENT_IDS.get(category, ""))
+
+
+## The payload, in the shape Build.from_ids takes. Every category present, "" for an empty bay —
+## an ABSENT key would mean "fit the default" to Build, which is the one thing a bay the pilot
+## emptied must not turn back into.
+func component_ids() -> Dictionary:
+	var out := {}
+	for category in OPTIONAL:
+		out[category] = selected_id(category)
+	return out
 
 func _rebuild() -> void:
 	build = Build.from_ids(
 		catalog,
 		selected_id("frame"), selected_id("motor"),
 		selected_id("propeller"), selected_id("battery"), selected_id("esc"),
-		selected_id("flight_controller")
+		selected_id("flight_controller"), component_ids()
 	)
 	_refresh_stats()
 	build_changed.emit(build)

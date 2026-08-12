@@ -60,6 +60,14 @@ thread as that shaft has and no further, and your configuration is saved to `use
 still there next time. Those are fit adjustments: they change what clears what, and they
 deliberately do not move any flight number.
 
+An **Electronics** rail carries the camera, the video transmitter, the antenna and the
+receiver. Each of those was a share of a flat 55 g electronics budget until it became a part,
+so the rail is where you find out what the payload is actually costing you — and every one of
+them can be set to **Not fitted**, which is how you describe an AIO whoop that carries none of
+the four. Taking one off makes the aircraft lighter by what that part really weighs and moves
+the centre of mass by where it really sat. The same four dropdowns are on Sim's build panel, so
+a bay you empty in the garage is empty in the field.
+
 Because the render is built from the real dimensions, it doubles as the fit check. Put 7"
 props on a 3" frame and you can see them intersect each other and the arms — the warning in
 the panel and the picture are the same fact. Zoom in on a motor and the prop is on the shaft
@@ -173,12 +181,12 @@ architecture is arranged so that adding one touches no physics code.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=0.23 s (1444.4 files/s, 479212.8 lines/s)
+github.com/AlDanial/cloc v 2.10  T=0.47 s (714.5 files/s, 235957.7 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
 JSON                            20              0              0          42366
-GDScript                       272           8755          18725          34179
+GDScript                       277           8912          19125          34776
 Bourne Shell                     7            117            296            622
 Rust                             8             85            233            613
 Python                           2            125            283            382
@@ -192,7 +200,7 @@ JavaScript                       1             14             47             57
 SVG                              1              0              5             27
 Text                             2              0              0              5
 -------------------------------------------------------------------------------
-SUM:                           328           9345          20015          79463
+SUM:                           333           9502          20415          80060
 -------------------------------------------------------------------------------
 ```
 
