@@ -44,10 +44,10 @@ const SCHEMA := 1
 
 const PUBLIC_KEY_PATH := "res://keys/update_public.pem"
 
-## Platform keys used in the manifest's `downloads` block. Linux is absent because Lothal
-## ships macOS and Windows only; a manifest listing it is not an error, it is just ignored.
+## Platform keys used in the manifest's `downloads` block. All three are shipped as of 0.2.0.
 const PLATFORM_MACOS := "macos"
 const PLATFORM_WINDOWS := "windows"
+const PLATFORM_LINUX := "linux"
 
 
 ## What a completed check found. `available` is the only field a caller needs to branch on,
@@ -71,11 +71,23 @@ class Result extends RefCounted:
 
 ## The platform string for the machine this is running on, or "" where Lothal does not ship.
 static func current_platform() -> String:
-	match OS.get_name():
+	return platform_for_os_name(OS.get_name())
+
+
+## The manifest key for an `OS.get_name()` value, or "" where Lothal does not ship.
+##
+## Split out from `current_platform` so the mapping is testable: read straight from OS, it can
+## only ever be exercised for the machine running the suite, so the Linux arm would have been
+## asserted by nothing until a Linux user reported that updates said "unsupported platform" —
+## which is exactly how it was missing from 0.2.0's release despite a Linux build existing.
+static func platform_for_os_name(os_name: String) -> String:
+	match os_name:
 		"macOS":
 			return PLATFORM_MACOS
 		"Windows":
 			return PLATFORM_WINDOWS
+		"Linux":
+			return PLATFORM_LINUX
 		_:
 			return ""
 

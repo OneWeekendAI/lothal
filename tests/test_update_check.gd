@@ -57,6 +57,7 @@ static func run() -> Array:
 	results.append_array(_test_a_plain_http_download_is_refused())
 	results.append_array(_test_a_missing_digest_is_refused())
 	results.append_array(_test_a_platform_without_a_build_is_not_offered())
+	results.append_array(_test_every_shipped_os_name_maps_to_its_manifest_key())
 	results.append_array(_test_a_missing_key_verifies_nothing())
 
 	return results
@@ -97,6 +98,11 @@ static func _payload_dict(version := "0.2.0") -> Dictionary:
 				"url": "https://dl.lothal.example/v%s/Lothal-%s-windows-x64.zip" % [version, version],
 				"size": 73400320,
 				"sha256": "b" .repeat(64),
+			},
+			"linux": {
+				"url": "https://dl.lothal.example/v%s/Lothal-%s-linux-x64.zip" % [version, version],
+				"size": 31457280,
+				"sha256": "c" .repeat(64),
 			},
 		},
 	}
@@ -288,19 +294,43 @@ static func _test_a_missing_digest_is_refused() -> Array:
 	return results
 
 
+## The mapping from `OS.get_name()` to a manifest key, asserted for every platform Lothal
+## publishes rather than only for the one running the suite. A build can exist in the bucket,
+## be listed in a signed manifest, download correctly by hand — and still be invisible to the
+## in-app update check, because the check asks for a key this function declined to produce.
+## That is a silent no-op on the user's machine, not a crash, so nothing else catches it.
+static func _test_every_shipped_os_name_maps_to_its_manifest_key() -> Array:
+	var results := []
+	for pair in [["macOS", "macos"], ["Windows", "windows"], ["Linux", "linux"]]:
+		var got := UpdateCheck.platform_for_os_name(pair[0])
+		results.append(TestResult.new("%s maps to \"%s\"" % [pair[0], pair[1]], got == pair[1], got))
+
+	# And the fallback still declines rather than guessing, so adding an arm never turns the
+	# default into "whatever the last case was".
+	var unknown := UpdateCheck.platform_for_os_name("FreeBSD")
+	results.append(TestResult.new("an unshipped OS maps to nothing", unknown == "", unknown))
+	return results
+
+
 static func _test_a_platform_without_a_build_is_not_offered() -> Array:
 	var key := Crypto.new().generate_rsa(KEY_BITS)
 	var envelope := _envelope(_payload("0.2.0"), key)
 
-	# Lothal ships macOS and Windows. Anything else gets no offer rather than the first entry
-	# in the downloads block, which would hand a Linux user a .app bundle.
-	var linux := UpdateCheck.parse_manifest(envelope, "", "0.1.0", key)
+	# Lothal ships macOS, Windows and Linux. Anything else gets no offer rather than the first
+	# entry in the downloads block, which would hand a BSD user a .app bundle. Each shipped
+	# platform is asserted against its OWN filename, not merely against `available` — the bug
+	# this guards is a platform resolving to some other platform's build, which is available
+	# and wrong.
+	var unshipped := UpdateCheck.parse_manifest(envelope, "", "0.1.0", key)
 	var windows := UpdateCheck.parse_manifest(envelope, "windows", "0.1.0", key)
+	var linux := UpdateCheck.parse_manifest(envelope, "linux", "0.1.0", key)
 
 	return [
-		TestResult.new("an unshipped platform is offered nothing", not linux.available, linux.reason),
+		TestResult.new("an unshipped platform is offered nothing", not unshipped.available, unshipped.reason),
 		TestResult.new("windows is offered the windows build",
 			windows.available and windows.download_url.ends_with("windows-x64.zip"), windows.download_url),
+		TestResult.new("linux is offered the linux build",
+			linux.available and linux.download_url.ends_with("linux-x64.zip"), linux.download_url),
 	]
 
 
