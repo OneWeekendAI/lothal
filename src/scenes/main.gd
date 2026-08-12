@@ -9,7 +9,8 @@ extends Node3D
 ## Keyboard:  Arrows = pitch/roll   A/D = yaw   W/S = throttle trim   Space = mode toggle
 ## Gamepad:   right stick = pitch/roll   left stick = yaw/throttle   button A = mode toggle
 ## Tab hides the build panel; parts are picked with the mouse. L swaps the listener between
-## the pilot's position on the ground and the chase camera.
+## the pilot's position on the ground and the chase camera. C swaps the FPV feed between the
+## corner inset and the whole screen.
 
 const SUBSTEPS := 8   # 120 Hz physics_process x 8 = 1 kHz dynamics (physics.md §6)
 const STICK_DEADZONE := 0.08
@@ -90,7 +91,12 @@ var course: GateCourse = course_library.selected()
 var lap_timer := LapTimer.new(course.fingerprint())
 var course_renderer: CourseRenderer
 var drone_audio: DroneAudio
+## The feed from the fitted camera — inset by default, whole screen on C. See FpvView: the swap
+## moves the PLACEMENT between two permanent cameras rather than moving a camera between viewports,
+## so there is no state in which a viewport has none.
+var fpv_view: FpvView
 var _l_was_pressed := false
+var _c_was_pressed := false
 ## One control path. The mode switch changes what produces the rate setpoints and nothing
 ## else — see src/fc/flight_controller.gd.
 var fc := FlightController.new()
@@ -101,6 +107,9 @@ var _tab_was_pressed := false
 ## travelled rather than against a single sample (see GateCourse.segment_passes_gate).
 var _previous_position := SPAWN_POSITION
 var _last_heading := Basis.IDENTITY
+## Where the chase view is, independent of which camera node is currently rendering it. See
+## _update_camera for why this cannot live on the node.
+var _chase_transform := Transform3D.IDENTITY
 ## Cached per build: hover_throttle() sweeps the thrust curve to find its peak, which is
 ## far too much work to redo on every input frame.
 var _hover_throttle := 0.0
@@ -140,6 +149,19 @@ func _ready() -> void:
 	hud = Hud.new()
 	hud.theme = theme
 	ui_layer.add_child(hud)
+
+	# Bottom right, which is the one corner of this screen nothing else claims — the build panel is
+	# top left, the lap block top right, and the HUD's flight readouts bottom left.
+	var fpv_overlay := MarginContainer.new()
+	fpv_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	fpv_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fpv_overlay.add_theme_constant_override("margin_right", 12)
+	fpv_overlay.add_theme_constant_override("margin_bottom", 12)
+	ui_layer.add_child(fpv_overlay)
+
+	fpv_view = FpvView.new()
+	fpv_view.theme = theme
+	fpv_overlay.add_child(fpv_view)
 
 	airframe = AirframeModel.new()
 	drone.add_child(airframe)
@@ -182,6 +204,11 @@ func _on_build_changed(new_build: Build) -> void:
 	# in step, which is what the old _fit_drone_mesh_to_arm was: a scale factor applied to a
 	# box, correcting a 110 mm arm that had been baked into the scene file.
 	airframe.rebuild(build, tweaks)
+	# Re-pointed on every rebuild, and it has to be: a rebuild frees the old ComponentMesh, so a
+	# lens held across one is a freed node. Handed the airframe's own answer to where its camera is
+	# rather than looking one up here.
+	if fpv_view != null:
+		fpv_view.attach(airframe.camera_eye())
 	# A lap time belongs to a build. Swapping a part mid-lap starts the attempt over rather
 	# than letting a 6S pack finish a lap a 4S one started.
 	_restart_course()
@@ -269,8 +296,11 @@ func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 	drone.position = position
 	drone.quaternion = core.rigid_body.orientation
 	_last_heading = Basis.IDENTITY
-	camera.global_position = position + _drone_heading() * CAMERA_OFFSET
-	camera.look_at(position + Vector3.UP * CAMERA_LOOK_AHEAD_UP, Vector3.UP)
+	_chase_transform.origin = position + _drone_heading() * CAMERA_OFFSET
+	_chase_transform = _chase_transform.looking_at(
+		position + Vector3.UP * CAMERA_LOOK_AHEAD_UP, Vector3.UP)
+	# The FPV lens needs no snap: it is bolted to the airframe, which has already been moved.
+	fpv_view.place_lenses(camera, _chase_transform)
 
 ## Writes the pack's state back to the shared store. Called on landing, and by AppShell on the
 ## way out of the field — walking back to the garage is the other way a flight ends.
@@ -291,6 +321,11 @@ func _physics_process(delta: float) -> void:
 		_l_was_pressed = Input.is_key_pressed(KEY_L)
 		if _l_was_pressed:
 			_toggle_listener()
+
+	if Input.is_key_pressed(KEY_C) != _c_was_pressed:
+		_c_was_pressed = Input.is_key_pressed(KEY_C)
+		if _c_was_pressed:
+			_toggle_fpv()
 
 	if Input.get_connected_joypads().is_empty():
 		_read_keyboard()
@@ -323,7 +358,9 @@ func _physics_process(delta: float) -> void:
 	# Audio and the HUD are handed the same published observables and nothing else — the
 	# property architecture.md calls the test of the design. Adding this consumer changed
 	# no physics.
-	drone_audio.update(core.observables, camera.global_position)
+	# The CHASE listener is the chase VIEW's position, which after a C press is no longer the scene
+	# camera's — reading the node here would put the ears wherever the FPV lens is and call it chase.
+	drone_audio.update(core.observables, _chase_transform.origin)
 
 	hud.render(core, build, course, lap_timer, fc.is_rate_mode())
 	hud.tick_banner(delta)
@@ -338,6 +375,15 @@ func _toggle_listener() -> void:
 	drone_audio.set_listener(next, course.start_position())
 	hud.show_banner("EARS: %s" % ("PILOT" if next == DroneAudio.Listener.PILOT_GROUND else "CHASE"))
 
+## Swaps the FPV feed between the corner inset and the whole screen. Says so in the banner either
+## way, including when the build has no camera to fly off — a key that silently does nothing reads
+## as a broken key rather than as an aircraft without a camera on it.
+func _toggle_fpv() -> void:
+	if not fpv_view.is_fitted():
+		hud.show_banner("VIEW: no camera fitted")
+		return
+	hud.show_banner("VIEW: %s" % ("FPV" if fpv_view.toggle_main() else "CHASE"))
+
 ## Chase cam. The offset is rotated by the drone's HEADING, not left in world space: with a
 ## fixed world offset the camera keeps facing -Z no matter which way the drone is pointed,
 ## so turning the drone swings the target out of frame instead of the camera following it
@@ -345,7 +391,14 @@ func _toggle_listener() -> void:
 ## meant to fly at spends most of the lap off-screen.
 ##
 ## Yaw only, deliberately. Rolling the camera with the airframe is what an FPV feed actually
-## looks like, and it is also what makes people put the controller down after ten seconds.
+## looks like, and it is also what makes people put the controller down after ten seconds. Now that
+## an actual FPV feed exists, that sentence is a division of labour rather than a compromise: this
+## view stays watchable and FpvView rolls.
+##
+## THE CHASE PLACEMENT IS HELD IN A FIELD RATHER THAN ON A CAMERA NODE, because after a C press the
+## node it lands on is the inset's, not the scene's. Easing off `camera.global_position` would read
+## its state back off whichever camera happened to be wearing the chase view last frame, so a swap
+## would make the chase view jump from wherever the OTHER view was standing.
 func _update_camera(delta: float) -> void:
 	var heading := _drone_heading()
 	var target_position := drone.position + heading * CAMERA_OFFSET
@@ -353,8 +406,12 @@ func _update_camera(delta: float) -> void:
 	# Eased rather than snapped, so the camera lags the airframe slightly through a fast
 	# rotation instead of pivoting rigidly with it.
 	var blend := clampf(delta * CAMERA_FOLLOW_RATE, 0.0, 1.0)
-	camera.global_position = camera.global_position.lerp(target_position, blend)
-	camera.look_at(drone.position + Vector3.UP * CAMERA_LOOK_AHEAD_UP, Vector3.UP)
+	_chase_transform.origin = _chase_transform.origin.lerp(target_position, blend)
+	_chase_transform = _chase_transform.looking_at(
+		drone.position + Vector3.UP * CAMERA_LOOK_AHEAD_UP, Vector3.UP)
+
+	# One call places both lenses. Which node ends up with which view is FpvView's business.
+	fpv_view.place_lenses(camera, _chase_transform)
 
 ## The drone's yaw as a basis, with pitch and roll flattened out. Falls back to the last
 ## heading when the drone is pointed straight up or down, where yaw is undefined.

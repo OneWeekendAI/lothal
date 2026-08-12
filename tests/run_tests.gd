@@ -12,7 +12,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"gate course", "course library", "course warnings", "field editor", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
-	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh",
+	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
 	"yaw authority", "gyro", "motor mixer", "control path", "stick release", "warnings", "build warnings",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "flight recorder",
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants"]
@@ -94,6 +94,8 @@ func _run_suite(suite_name: String) -> Array:
 		"frame bench": return TestFrameBench.run()
 		"pack charge": return TestPackCharge.run()
 		"battery mesh": return TestBatteryMesh.run()
+		"component mesh": return TestComponentMesh.run()
+		"fpv view": return TestFpvView.run()
 		"yaw authority": return TestYawAuthority.run()
 		"gyro": return TestGyro.run()
 		"vibration": return TestVibration.run()

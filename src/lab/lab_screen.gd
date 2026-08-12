@@ -419,6 +419,13 @@ func reload_catalog() -> void:
 	_on_selection_changed()
 
 
+## The viewport the airframe is drawn in. Named accessor because the screenshot tooling and the
+## tests reach for it, and because its World3D does not exist until this screen is inside the tree —
+## a caller that needs the world has to be handed the viewport and resolve it later.
+func viewport() -> SubViewport:
+	return _viewport
+
+
 ## Lab's private 3D world: a turntable pivot holding the generated airframe, a camera at a
 ## fixed distance, and enough light to read carbon against nylon.
 func _build_world() -> void:
