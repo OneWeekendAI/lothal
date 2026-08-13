@@ -67,11 +67,16 @@
         Description="FPV drone design workbench and flight simulator"
         BackgroundColor="transparent"
         Square150x150Logo="assets\Square150x150Logo.png"
-        Square44x44Logo="assets\Square44x44Logo.png">
-        <uap:DefaultTile
-          Square71x71Logo="assets\Square71x71Logo.png"
-          Square310x310Logo="assets\Square310x310Logo.png" />
-      </uap:VisualElements>
+        Square44x44Logo="assets\Square44x44Logo.png" />
+      <!--
+        No uap:DefaultTile. The two logos above are the only ones MSIX actually requires, and
+        every DefaultTile attribute is documented as optional — but MakeAppx enforces a rule the
+        schema does not state: specifying Square310x310Logo without Wide310x150Logo is a hard
+        validation failure. A wide tile needs a 310x150 letterboxed asset that a square app icon
+        does not crop to, and the only thing bought by producing one is a larger Start tile, which
+        is cosmetic and barely surfaced on Windows 11. Dropping the element removes the whole
+        class of cross-attribute constraint from this manifest.
+      -->
     </Application>
   </Applications>
 
