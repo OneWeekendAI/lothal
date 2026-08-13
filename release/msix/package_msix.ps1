@@ -123,23 +123,30 @@ Write-Host "==> staged $stage (version $packageVersion)"
 if ($StageOnly) { return }
 
 # ---- Pack ----------------------------------------------------------------------------------
-$makeappx = Get-Command makeappx.exe -ErrorAction SilentlyContinue
+# Resolved to a plain string, not left as whatever object each lookup happens to return.
+# Get-Command yields a CommandInfo (path in .Source) and Get-ChildItem yields a FileInfo (path in
+# .FullName); reading one property off both gives $null on the branch that does not have it, and
+# `& $null` fails with a message about pipeline elements that says nothing about makeappx. The
+# PATH branch is also the one that never runs on the GitHub runner, so the difference only shows
+# up in CI.
+$makeappx = (Get-Command makeappx.exe -ErrorAction SilentlyContinue).Source
 if (-not $makeappx) {
     # The SDK is not on PATH by default; the newest installed version is the right one to use.
-    $candidates = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter 'makeappx.exe' `
+    $makeappx = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter 'makeappx.exe' `
         -Recurse -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -like '*\x64\*' } |
-        Sort-Object FullName -Descending
-    if (-not $candidates) {
-        throw 'makeappx.exe not found. Install the Windows 10/11 SDK (App Certification Kit component).'
-    }
-    $makeappx = $candidates[0]
+        Sort-Object FullName -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
 }
+if (-not $makeappx) {
+    throw 'makeappx.exe not found on PATH or under the Windows Kits directory. Install the Windows 10/11 SDK (App Certification Kit component).'
+}
+Write-Host "==> makeappx: $makeappx"
 
 New-Item -ItemType Directory -Path (Split-Path $outMsix) -Force | Out-Null
 if (Test-Path $outMsix) { Remove-Item $outMsix -Force }
 
-& $makeappx.Source pack /d $stage /p $outMsix /o
+& $makeappx pack /d $stage /p $outMsix /o
 if ($LASTEXITCODE -ne 0) { throw "makeappx failed with exit code $LASTEXITCODE" }
 
 Write-Host "built: $outMsix"
