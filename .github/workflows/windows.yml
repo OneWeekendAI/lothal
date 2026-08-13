@@ -182,3 +182,56 @@ jobs:
           name: lothal-windows-x64-${{ github.event.inputs.version || github.ref_name }}
           path: build/windows/
           if-no-files-found: error
+
+      # ---- Microsoft Store package ---------------------------------------
+      # A second export rather than a repackaging of the first. The "Windows Store" preset sets
+      # custom_features="store", and that tag is what removes the update bar from the build —
+      # a Store app that points users at the dl.meetdev.in download is a certification failure.
+      # Reusing build/windows/ here would ship the direct-download build with a Store identity
+      # stamped on it, which is the one combination that fails review for a reason no log
+      # explains.
+      #
+      # The whole Store half is skipped when the identity variables are absent, so the ordinary
+      # Windows build still runs to completion on a fork or before Partner Center is set up.
+      # The three values come from the product's Product Identity page and go in as repository
+      # variables (Settings -> Secrets and variables -> Actions -> Variables). They are not
+      # secrets — they are readable inside every copy of the installed package — but they are
+      # account-specific, so they are not committed.
+      - name: Export Windows Store build
+        if: vars.MSIX_IDENTITY_NAME != ''
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          mkdir -p build/store
+          "$GODOT" --headless \
+            --export-release "Windows Store" build/store/Lothal.exe
+          test -f build/store/Lothal.exe || { echo "store export produced no executable"; exit 1; }
+          # Same two files, same reasons as the direct-download build above. package_msix.ps1
+          # checks them again before it packs; this is the earlier of the two so the failure
+          # names the export rather than the packaging step.
+          ls build/store | grep -qi 'lothal_core.dll' || { echo "store export dropped the GDExtension"; exit 1; }
+          ls build/store | grep -qi 'Lothal.pck'      || { echo "store export dropped the pack"; exit 1; }
+          ls -l build/store
+
+      # Produces an UNSIGNED .msix. That is what Partner Center wants: Microsoft signs Store
+      # packages with their own certificate at ingestion, which is the reason this project can
+      # ship a trusted Windows build without owning a code-signing certificate. The artifact
+      # cannot be installed by double-clicking it; see the note in package_msix.ps1.
+      - name: Package MSIX
+        if: vars.MSIX_IDENTITY_NAME != ''
+        shell: pwsh
+        timeout-minutes: 10
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_IDENTITY_PUBLISHER: ${{ vars.MSIX_IDENTITY_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: ./release/msix/package_msix.ps1
+
+      - name: Upload MSIX artifact
+        if: vars.MSIX_IDENTITY_NAME != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: lothal-msix-${{ github.event.inputs.version || github.ref_name }}
+          path: build/msix/Lothal.msix
+          if-no-files-found: error

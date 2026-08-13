@@ -179,28 +179,35 @@ architecture is arranged so that adding one touches no physics code.
 
 ## Project Statistics
 
+Counted with `cloc --vcs=git`, which is the only invocation that gives an honest
+number here: a plain `cloc .` also counts `rust/target` (half a million lines of
+vendored crates), the Supabase temp catalog, and any leftover `.claude/worktrees`
+clone of this same repo.
+
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=1.69 s (964.2 files/s, 419778.9 lines/s)
+github.com/AlDanial/cloc v 2.10  T=1.17 s (1395.9 files/s, 606636.0 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
 Rust                          1059          16981            233         575233
 JSON                           146              0              0          42492
-GDScript                       284           9216          19803          35823
+GDScript                       284           9216          19804          35824
 D                              108            308              0           4145
 Bourne Shell                     7            117            296            622
 Python                           2            125            283            382
-Markdown                         2             92              4            311
+Markdown                         2             93              4            319
 TypeScript                       3             50             91            264
-YAML                             2             31             75            188
+XML                              3              3              0            233
+YAML                             2             34             96            205
 TOML                             3             57            246            164
+PowerShell                       1             21             51             77
 Text                             6              0              0             61
 Godot Scene                      2             17             10             57
 JavaScript                       1             14             47             57
 SVG                              1              0              5             27
 -------------------------------------------------------------------------------
-SUM:                          1626          27008          21093         659826
+SUM:                          1630          27036          21166         660162
 -------------------------------------------------------------------------------
 ```
 
