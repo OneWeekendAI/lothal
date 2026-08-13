@@ -85,14 +85,19 @@
     which for a Store submission means it is granted on the strength of the account rather than
     needing separate approval, and every Desktop Bridge package declares it.
 
-    internetClient covers the two outbound calls Lothal makes: activation against the licence
-    issuer, and the update check — which is compiled out of this build (see app_shell.gd) but
-    the capability stays, because activation alone needs it. No other capability is declared:
-    Lothal reads no documents library, no camera, no location, and asking for capabilities an
-    app does not exercise is a certification finding rather than a harmless over-request.
+    runFullTrust is the ONLY capability, because a Store build of Lothal makes no network
+    requests at all. That is worth stating plainly, because it is surprising: HTTPRequest appears
+    in exactly one file, update_notice.gd, and the "store" feature tag compiles it out of this
+    build. Activation is not an exception — the licence is verified offline against a public key
+    baked into the binary, and the activation page is opened in the user's own browser with
+    OS.shell_open, which is the shell's network use and not the app's.
+
+    So internetClient was declared here and then removed. An unused capability is a certification
+    finding, and it is also a lie told to the user: the Store listing renders it as "Uses your
+    internet connection" on an app that does not. If a future build ever makes a request from
+    inside the process, this is where that has to be declared again.
   -->
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
-    <Capability Name="internetClient" />
   </Capabilities>
 </Package>

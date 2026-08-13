@@ -90,7 +90,14 @@ if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 
 Copy-Item (Join-Path $export '*') $stage -Recurse
-Copy-Item (Join-Path $msixDir 'assets') $stage -Recurse
+
+# The logos live inside the Godot project tree, so the editor generates a .import sidecar next to
+# each one. Those are editor metadata: they are meaningless at runtime, and copying the directory
+# wholesale ships three files of Godot bookkeeping inside a Microsoft Store package. Filtering on
+# extension rather than excluding '*.import' by name so anything else the editor decides to leave
+# there is excluded too.
+New-Item -ItemType Directory -Path (Join-Path $stage 'assets') -Force | Out-Null
+Copy-Item (Join-Path $msixDir 'assets\*.png') (Join-Path $stage 'assets')
 
 # ---- Manifest ------------------------------------------------------------------------------
 $manifest = Get-Content (Join-Path $msixDir 'AppxManifest.xml.in') -Raw
