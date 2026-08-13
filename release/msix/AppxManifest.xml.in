@@ -2,14 +2,17 @@
 <!--
   Lothal, packaged for the Microsoft Store.
 
-  This is a template, not a manifest: package_msix.ps1 substitutes the @UPPERCASE@ placeholders
-  and writes the real AppxManifest.xml into the staging directory. Nothing here should be
+  This is a template, not a manifest: package_msix.ps1 substitutes the at-sign-delimited
+  upper-case placeholders below and writes the real AppxManifest.xml into the staging directory.
+  Do not write one of those placeholder tokens out in full anywhere in this comment block — the
+  script's "nothing was left unsubstituted" guard scans the whole file and cannot tell prose
+  from markup, so a token quoted in a comment fails the build. Nothing here should be
   hand-edited with real values, because three of them are account secrets-by-convention that
   live in Partner Center and CI variables rather than in a public repo.
 
-  ---------------------------------------------------------------------------
+  ===========================================================================
   THE THREE IDENTITY FIELDS
-  ---------------------------------------------------------------------------
+  ===========================================================================
 
   Identity/@Name, Identity/@Publisher and PublisherDisplayName are not descriptive. They are
   matched byte-for-byte against the values on the product's "Product Identity" page in Partner
@@ -17,9 +20,9 @@
   with an error that names the field but not the difference. Copy them from that page; do not
   retype them, and do not guess the CN= string from the company name — Microsoft assigns it.
 
-  ---------------------------------------------------------------------------
+  ===========================================================================
   WHY FULL TRUST AND NOT A REAL UWP APP
-  ---------------------------------------------------------------------------
+  ===========================================================================
 
   Godot 4 has no UWP export, and Lothal could not use one if it did: the Rust core is a plain
   MSVC cdylib and the licence check reads a file from an ordinary user directory. This is a

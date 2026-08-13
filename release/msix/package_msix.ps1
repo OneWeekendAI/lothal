@@ -103,6 +103,16 @@ if ($manifest -match '@[A-Z_]+@') {
     throw "Unsubstituted placeholder left in manifest: $($Matches[0])"
 }
 
+# Parse it before handing it to MakeAppx. Its complaint about malformed XML is a COM HRESULT
+# with no line number, whereas this reports the position — which matters because the manifest is
+# heavily commented and XML comments cannot contain a double hyphen, so an innocuous-looking
+# horizontal rule in a comment block is enough to make the whole file invalid.
+try {
+    [xml]$manifest | Out-Null
+} catch {
+    throw "Manifest is not well-formed XML: $($_.Exception.Message)"
+}
+
 # UTF-8 without a BOM. MakeAppx reads a BOM'd manifest as malformed XML.
 [System.IO.File]::WriteAllText(
     (Join-Path $stage 'AppxManifest.xml'),
