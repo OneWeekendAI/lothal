@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lothal, packaged for the Microsoft Store.
+
+  This is a template, not a manifest: package_msix.ps1 substitutes the @UPPERCASE@ placeholders
+  and writes the real AppxManifest.xml into the staging directory. Nothing here should be
+  hand-edited with real values, because three of them are account secrets-by-convention that
+  live in Partner Center and CI variables rather than in a public repo.
+
+  ---------------------------------------------------------------------------
+  THE THREE IDENTITY FIELDS
+  ---------------------------------------------------------------------------
+
+  Identity/@Name, Identity/@Publisher and PublisherDisplayName are not descriptive. They are
+  matched byte-for-byte against the values on the product's "Product Identity" page in Partner
+  Center, and a package whose identity differs by so much as a space is rejected at ingestion
+  with an error that names the field but not the difference. Copy them from that page; do not
+  retype them, and do not guess the CN= string from the company name — Microsoft assigns it.
+
+  ---------------------------------------------------------------------------
+  WHY FULL TRUST AND NOT A REAL UWP APP
+  ---------------------------------------------------------------------------
+
+  Godot 4 has no UWP export, and Lothal could not use one if it did: the Rust core is a plain
+  MSVC cdylib and the licence check reads a file from an ordinary user directory. This is a
+  Desktop Bridge package — a normal Win32 .exe inside an MSIX container, which is what
+  runFullTrust declares. It is a fully supported Store submission, not a workaround.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="@IDENTITY_NAME@"
+    Publisher="@IDENTITY_PUBLISHER@"
+    Version="@PACKAGE_VERSION@"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Lothal</DisplayName>
+    <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
+    <Logo>assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <!--
+    10.0.17763.0 (Windows 10 1809) is the floor because it is the oldest release still taking
+    Store updates, not because anything here needs it. Raising it silently removes machines from
+    the listing, so it moves only on purpose.
+  -->
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Lothal" Executable="Lothal.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Lothal"
+        Description="FPV drone design workbench and flight simulator"
+        BackgroundColor="transparent"
+        Square150x150Logo="assets\Square150x150Logo.png"
+        Square44x44Logo="assets\Square44x44Logo.png">
+        <uap:DefaultTile
+          Square71x71Logo="assets\Square71x71Logo.png"
+          Square310x310Logo="assets\Square310x310Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <!--
+    runFullTrust is the capability that makes a packaged Win32 app legal; it is "restricted",
+    which for a Store submission means it is granted on the strength of the account rather than
+    needing separate approval, and every Desktop Bridge package declares it.
+
+    internetClient covers the two outbound calls Lothal makes: activation against the licence
+    issuer, and the update check — which is compiled out of this build (see app_shell.gd) but
+    the capability stays, because activation alone needs it. No other capability is declared:
+    Lothal reads no documents library, no camera, no location, and asking for capabilities an
+    app does not exercise is a certification finding rather than a harmless over-request.
+  -->
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <Capability Name="internetClient" />
+  </Capabilities>
+</Package>

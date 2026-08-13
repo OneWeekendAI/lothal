@@ -141,13 +141,21 @@ func _init() -> void:
 	# is on a layer of its own and would draw straight over anything sitting in the ordinary
 	# tree. Anchored to the bottom rather than the top so it never crowds the tab row, and it
 	# stays hidden unless a signed manifest offers something newer — see UpdateNotice.
-	var notice := UpdateNotice.new(LothalVersion.MANIFEST_URL)
-	notice.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	notice.anchor_top = 1.0
-	notice.anchor_right = 1.0
-	notice.anchor_bottom = 1.0
-	notice.offset_top = -UpdateNotice.BAR_HEIGHT
-	tab_layer.add_child(notice)
+	#
+	# Not built at all in Store builds. The bar's only action is to open the dl.meetdev.in
+	# download page, and an app distributed through the Microsoft Store that points its users at
+	# an installer from somewhere else fails certification — Store copies update through the
+	# Store, so the bar would also be offering a route that is simply wrong for that install.
+	# The `store` feature comes from the "Windows Store" export preset's custom_features, so it
+	# is false in the editor and in every direct-download build.
+	if not OS.has_feature("store"):
+		var notice := UpdateNotice.new(LothalVersion.MANIFEST_URL)
+		notice.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		notice.anchor_top = 1.0
+		notice.anchor_right = 1.0
+		notice.anchor_bottom = 1.0
+		notice.offset_top = -UpdateNotice.BAR_HEIGHT
+		tab_layer.add_child(notice)
 
 func _ready() -> void:
 	if get_tree() != null and get_tree().root != null and settings != null:
