@@ -24,6 +24,26 @@ extends Control
 ## its size against some other layout. So the camera frames whatever course is open.
 ##
 ## ---------------------------------------------------------------------------
+## THE FIELD IS MORE THAN THE GATES
+## ---------------------------------------------------------------------------
+##
+## A course also has AIR — an elevation and a temperature, from which density is derived
+## (air_density.gd). That belongs here for exactly the reason the gates do: §1's rule asks whether
+## a thing changes what the world IS, and where the world sits above sea level plainly does. A quad
+## does not carry its atmosphere with it, and being flown in thin air is not something that
+## HAPPENS to an aircraft the way a gust is; it is a fact about the place.
+##
+## It lives on the COURSE rather than app-wide, because a course is a place. The whoop box in a
+## garage and the bando forty minutes up the road are different fields, and a builder who has laid
+## out both should not have to retype the altitude when they switch between them.
+##
+## Its two controls are TYPED rather than dragged, which departs from this screen's own rule that
+## the only controls are the three things a drag cannot express. That rule is about a gate, whose
+## height and heading are judged by eye. An elevation is not judged, it is looked up — parts.md's
+## "ask for what they can look up" decides it — and hunting for 920 on a slider would turn an exact
+## known fact into an approximate gesture.
+##
+## ---------------------------------------------------------------------------
 ## WHAT THIS ROOM COSTS
 ## ---------------------------------------------------------------------------
 ##
@@ -72,6 +92,13 @@ const HEIGHT_STEP_M := 0.1
 const RADIUS_STEP_M := 0.05
 const HEADING_STEP_DEG := 1.0
 
+## The air inputs step in units a builder actually knows their field in. A metre of elevation and a
+## degree of temperature are both finer than anybody can state their own site to, which is the
+## point: the control should not be the thing that limits the answer's precision, and it should not
+## pretend to a precision the builder does not have either.
+const ELEVATION_STEP_M := 1.0
+const TEMPERATURE_STEP_C := 1.0
+
 const VIEWPORT_SIZE := Vector2i(1280, 720)
 
 signal course_changed
@@ -96,6 +123,9 @@ var _start_marker: Node3D
 var _course_list: ItemList
 var _name_field: LineEdit
 var _delete_button: Button
+var _elevation_field: SpinBox
+var _temperature_field: SpinBox
+var _air_readout: Label
 var _gate_label: Label
 var _position_label: Label
 var _height_slider: HSlider
@@ -201,7 +231,79 @@ func _build_course_rail() -> Control:
 	_delete_button.pressed.connect(func() -> void: delete_course())
 	column.add_child(_delete_button)
 
+	column.add_child(HSeparator.new())
+	_build_air_section(column)
+
 	return panel
+
+
+## Where you fly, and what it does to the air.
+##
+## IN THE COURSE RAIL RATHER THAN THE GATE PANEL, because air is a property of the COURSE and not
+## of a gate — the same reason the course's name is here. Selecting a different course changes the
+## field; selecting a different gate does not.
+##
+## TYPED RATHER THAN DRAGGED, and this is a deliberate departure from §2.4's "the only controls are
+## the three things a drag cannot express". That rule is about a gate, whose height and heading are
+## JUDGED — you move them until the line looks right. Elevation is not judged, it is LOOKED UP: a
+## builder knows their field is at 920 m, and hunting for 920 on a slider would make an exact known
+## fact into an approximate gesture. parts.md's rule decides it — ask for what can be looked up.
+##
+## The derived density is shown back because it is the whole justification for asking. A builder
+## who types 920 and 35 and sees "16.3% below sea level" has learnt the thing this feature exists
+## to teach, before a single number on the build has moved.
+func _build_air_section(column: VBoxContainer) -> void:
+	var title := Label.new()
+	title.text = "THE FIELD"
+	title.theme_type_variation = &"TitleLabel"
+	column.add_child(title)
+
+	var note := Label.new()
+	note.text = "Where this course is. Thinner air is less thrust, and every figure on the build knows it."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.custom_minimum_size = Vector2(260, 0)
+	note.theme_type_variation = &"MutedLabel"
+	column.add_child(note)
+
+	_elevation_field = _add_field(column, "Elevation", "m",
+		AirDensity.MIN_ELEVATION_M, AirDensity.MAX_ELEVATION_M, ELEVATION_STEP_M,
+		func(v: float) -> void: set_field_elevation_m(v))
+	_temperature_field = _add_field(column, "Temperature", "°C",
+		AirDensity.MIN_TEMPERATURE_C, AirDensity.MAX_TEMPERATURE_C, TEMPERATURE_STEP_C,
+		func(v: float) -> void: set_field_temperature_c(v))
+
+	_air_readout = Label.new()
+	_air_readout.theme_type_variation = &"ReadoutLabel"
+	_air_readout.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_air_readout.custom_minimum_size = Vector2(260, 0)
+	column.add_child(_air_readout)
+
+
+## A labelled numeric entry. The sibling of _add_slider, and separate from it because a SpinBox is
+## for a number you KNOW and a slider is for one you are choosing by eye.
+func _add_field(column: VBoxContainer, label_text: String, suffix: String,
+		minimum: float, maximum: float, step: float, on_change: Callable) -> SpinBox:
+	var row := HBoxContainer.new()
+	var label := Label.new()
+	label.text = label_text
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+
+	var field := SpinBox.new()
+	field.min_value = minimum
+	field.max_value = maximum
+	field.step = step
+	field.suffix = suffix
+	field.select_all_on_focus = true
+	# A SpinBox is a Range, so the same rule the sliders live under applies: value_changed does not
+	# fire for a value set from code, and the guard stops the panel writing its own controls from
+	# reading back as the builder having typed something.
+	field.value_changed.connect(func(v: float) -> void:
+		if not _updating:
+			on_change.call(v))
+	row.add_child(field)
+	column.add_child(row)
+	return field
 
 
 func _build_gate_panel() -> Control:
@@ -513,6 +615,24 @@ func new_course(p_name: String) -> void:
 	_changed()
 
 
+## Where this course is, in metres above sea level.
+##
+## A NEW AirDensity RATHER THAN A MUTATED ONE, deliberately. AirDensity clamps in its constructor,
+## so building a fresh one is what applies the domain guard; assigning to elevation_m on the
+## existing object would slip past it and let a hand-driven caller put 10^9 m into the barometric
+## formula, which is NaN and then "nan g" on the stats panel.
+func set_field_elevation_m(elevation_m: float) -> void:
+	var air := course().air
+	course().air = AirDensity.new(elevation_m, air.temperature_c)
+	_changed()
+
+
+func set_field_temperature_c(temperature_c: float) -> void:
+	var air := course().air
+	course().air = AirDensity.new(air.elevation_m, temperature_c)
+	_changed()
+
+
 ## Renames without changing the id, so nothing that pointed at the course — a saved selection, a
 ## best lap — is orphaned by a typo being fixed.
 func rename_course(p_name: String) -> void:
@@ -587,6 +707,35 @@ func _render_course_list() -> void:
 	# The last course cannot be deleted — there has to be somewhere to fly — so the button says so
 	# by being unavailable rather than by refusing after the fact.
 	_delete_button.disabled = ids.size() <= 1
+	_render_air()
+
+
+## The field's own readout. Written from the model on every change like every other control here,
+## so switching courses shows the NEW course's field rather than leaving the last one's numbers
+## sitting under a different name.
+func _render_air() -> void:
+	if _elevation_field == null:
+		return
+	var air := course().air
+
+	_updating = true
+	_elevation_field.value = air.elevation_m
+	_temperature_field.value = air.temperature_c
+	_updating = false
+
+	# Standard air gets a sentence rather than "0.0% below sea level", which reads like a
+	# measurement of nothing. A course at sea level should say what it is, once, and stop.
+	if air.is_standard():
+		_air_readout.text = "%.3f kg/m³ — standard sea-level air." % air.kgm3()
+		return
+
+	# Both densities, and the comparison in the units a pilot already thinks in. The percentage is
+	# the number that means something; the kg/m³ is there because it is what the physics uses and a
+	# builder should be able to see the quantity the app is actually reasoning about.
+	var fraction := air.fraction_below_standard()
+	_air_readout.text = "%.3f kg/m³ — %.1f%% %s sea-level air (%.3f)." % [
+		air.kgm3(), absf(fraction) * 100.0,
+		"below" if fraction > 0.0 else "above", AirDensity.standard_kgm3()]
 
 
 func _render_panel() -> void:

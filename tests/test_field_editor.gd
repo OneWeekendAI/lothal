@@ -17,6 +17,7 @@ static func run() -> Array:
 	results.append_array(_courses())
 	results.append_array(_it_writes_what_sim_flies())
 	results.append_array(_it_costs_nothing())
+	results.append_array(_the_field_itself())
 	return results
 
 
@@ -263,6 +264,99 @@ static func _it_writes_what_sim_flies() -> Array:
 		editor.course().fingerprint() != before_edit,
 		"fingerprint went from %s to %s" % [before_edit, editor.course().fingerprint()]
 	))
+
+	editor.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# Where the course IS — elevation, temperature, and the air they imply
+# ---------------------------------------------------------------------------
+
+## Air is a property of the world, so it is authored here beside the gates (labs-and-sim.md §1).
+## What is worth asserting is the same set of things the gates get: that it is written straight
+## through to disk, that it belongs to a COURSE rather than to the editor, and that the readout
+## the builder judges by is the derivation the physics runs on rather than a second copy of it.
+static func _the_field_itself() -> Array:
+	var results: Array = []
+	var editor := _editor()
+
+	results.append(TestResult.new(
+		"a fresh course opens at standard sea-level air",
+		editor.course().air.is_standard(),
+		"%.4f kg/m3 at %.0f m, %.0f C" % [editor.course().air.kgm3(),
+			editor.course().air.elevation_m, editor.course().air.temperature_c]))
+
+	editor.set_field_elevation_m(920.0)
+	editor.set_field_temperature_c(35.0)
+
+	var expected := AirDensity.new(920.0, 35.0).kgm3()
+	results.append(TestResult.new(
+		"typing an elevation and a temperature derives the density the physics uses",
+		absf(editor.course().air.kgm3() - expected) < 1.0e-12,
+		"%.4f kg/m3, %.1f%% below standard" % [
+			editor.course().air.kgm3(), editor.course().air.fraction_below_standard() * 100.0]))
+
+	# The readout is what the builder judges by, and it has to be the SAME number — a panel that
+	# formatted its own estimate would be a second source of truth for the one quantity this whole
+	# screen exists to communicate.
+	results.append(TestResult.new(
+		"the readout quotes the derived density, not a second copy of it",
+		editor._air_readout.text.contains("%.3f" % expected)
+			and editor._air_readout.text.contains("16.2%"),
+		"readout says: %s" % editor._air_readout.text))
+
+	# Written through immediately, like every other edit here — there is no exit to save on.
+	var from_disk := CourseLibrary.load_from(LIBRARY_PATH)
+	results.append(TestResult.new(
+		"the field is on disk immediately",
+		absf(from_disk.selected().air.kgm3() - expected) < 1.0e-12,
+		"%.4f m, %.1f C on disk" % [from_disk.selected().air.elevation_m,
+			from_disk.selected().air.temperature_c]))
+
+	# THE FIELD BELONGS TO THE COURSE, NOT TO THE EDITOR. This is the check that would catch air
+	# being stored on the screen or in a single app-wide setting: a second course must have its own
+	# air, and switching back must bring the first one's field back with it.
+	editor.new_course("Sea level bando")
+	results.append(TestResult.new(
+		"a new course has its own field and does not inherit the last one's",
+		editor.course().air.is_standard(),
+		"%.4f kg/m3" % editor.course().air.kgm3()))
+	results.append(TestResult.new(
+		"and the readout followed the course rather than staying on the old numbers",
+		editor._air_readout.text.contains("standard sea-level air"),
+		"readout says: %s" % editor._air_readout.text))
+
+	# AND THE SECOND COURSE IS GIVEN A DIFFERENT FIELD BEFORE SWITCHING BACK. Without this line the
+	# section passes against an implementation that keeps ONE app-wide air on the editor — measured,
+	# it did — because a freshly created course reads as standard under both designs and nothing
+	# else ever writes the second course. Two courses with two different fields, both surviving a
+	# switch, is the only arrangement the two designs disagree about.
+	editor.set_field_elevation_m(1610.0)
+	editor.set_field_temperature_c(30.0)
+	var denver := AirDensity.new(1610.0, 30.0).kgm3()
+
+	editor.choose_course("default_circuit")
+	results.append(TestResult.new(
+		"switching back brings the first course's field back with it",
+		absf(editor.course().air.kgm3() - expected) < 1.0e-12,
+		"%.0f m, %.0f C" % [editor.course().air.elevation_m, editor.course().air.temperature_c]))
+
+	editor.choose_course("sea_level_bando")
+	results.append(TestResult.new(
+		"and the second course kept its own, so the two fields are not one shared setting",
+		absf(editor.course().air.kgm3() - denver) < 1.0e-12
+			and absf(denver - expected) > 0.01,
+		"course A %.4f kg/m3, course B %.4f kg/m3" % [expected, editor.course().air.kgm3()]))
+	editor.choose_course("default_circuit")
+
+	# The domain guard, driven the way a hand-written caller would drive it rather than through a
+	# SpinBox that would have clamped first. NaN on the stats panel is the failure being prevented.
+	editor.set_field_elevation_m(1.0e9)
+	results.append(TestResult.new(
+		"an absurd elevation is clamped rather than turning the whole readout into NaN",
+		not is_nan(editor.course().air.kgm3()) and editor.course().air.kgm3() > 0.0,
+		"%.4f kg/m3 at %.0f m" % [editor.course().air.kgm3(), editor.course().air.elevation_m]))
 
 	editor.free()
 	return results
