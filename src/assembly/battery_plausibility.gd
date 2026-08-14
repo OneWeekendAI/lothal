@@ -17,11 +17,11 @@ extends RefCounted
 ##   - `internal_r_ohm` was DERIVED from mAh and C when it was not overridden, and that derivation
 ##     is a self-consistency fit against the shipped catalog's own representative figures. It is
 ##     not a measurement; a real pack may sag more or less than this predicts.
-##   - Flight time carries `Build.FLIGHT_CURRENT_TO_HOVER_RATIO`, an admitted guess with no
-##     independent validation. Every flight-time number this build reports rides on it. Custom
-##     packs make this urgent because capacity is the whole reason someone enters a custom pack —
-##     they are chasing flight time, and flight time is the number they will check against a
-##     stopwatch.
+##   - Flight time is averaged over `Build.FREESTYLE_FLIGHT_PROFILE`, an assumption about how the
+##     pack gets spent. The current at each point of that profile is modelled; the MIX is the
+##     guess, and it is the guess a builder is most entitled to disagree with. Custom packs make
+##     this urgent because capacity is the whole reason someone enters a custom pack — they are
+##     chasing flight time, and flight time is the number they will check against a stopwatch.
 ##
 ## ---------------------------------------------------------------------------
 ## THE TWO CROSS-CHECKS, AND WHY EACH IS WHERE IT IS
@@ -96,9 +96,14 @@ static func warnings_for(build: Build) -> Array[BuildWarning]:
 
 ## Custom-pack provenance, in one sentence that says both things: the derived resistance is an
 ## assumption reproduced (not a measurement), and every flight-time figure this build shows is
-## multiplied by FLIGHT_CURRENT_TO_HOVER_RATIO, which is an admitted guess. The name of the
-## constant appears literally in the message — a builder chasing an unexpected flight time can
-## grep for it.
+## averaged over FREESTYLE_FLIGHT_PROFILE, which is an assumption about how someone flies. The name
+## of the constant appears literally in the message — a builder chasing an unexpected flight time
+## can grep for it.
+##
+## It used to name FLIGHT_CURRENT_TO_HOVER_RATIO, a bare multiplier over hover current. That
+## constant is gone (2026-08-14): the current at each point of the profile is now computed by the
+## forward-flight propeller model rather than assumed. What is still assumed is the mix, so this
+## warning did not go away — it moved to naming the thing that is actually still a guess.
 static func _provenance(pack: Dictionary) -> BuildWarning:
 	var source := str(pack.get("source", "")).strip_edges()
 	var derivation: Dictionary = pack.get("derivation", {})
@@ -107,10 +112,10 @@ static func _provenance(pack: Dictionary) -> BuildWarning:
 		if derived_r \
 		else "internal resistance was your own measurement, kept as entered"
 	return BuildWarning.characteristic(&"custom_battery",
-		"The %s is a pack you entered yourself (%s). Its %s. Flight time here carries Build.FLIGHT_CURRENT_TO_HOVER_RATIO — an unvalidated multiplier over hover current — so every minute figure on this build is exactly as good as that constant, and a stopwatch is the only thing that will settle it." % [
+		"The %s is a pack you entered yourself (%s). Its %s. Flight time here is averaged over Build.FREESTYLE_FLIGHT_PROFILE — the current at each airspeed is modelled, but how much of a pack you spend cruising rather than punching is an assumption about your flying — so every minute figure on this build is exactly as good as that profile, and a stopwatch is the only thing that will settle it." % [
 			pack.get("name", pack.get("part_id", "?")), source, r_clause],
 		{"part_id": str(pack.get("part_id", "")), "source": source, "derived_r": derived_r,
-			"flight_current_to_hover_ratio": Build.FLIGHT_CURRENT_TO_HOVER_RATIO})
+			"flight_profile": Build.FREESTYLE_FLIGHT_PROFILE})
 
 
 ## Mass against energy, per chemistry. A pack that agrees with neither end of its own chemistry's

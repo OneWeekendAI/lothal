@@ -32,9 +32,9 @@ var drag_coefficient: float
 ## should read physics internals directly.
 var observables: Observables
 
-func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m: float, p_k_t: float, p_k_q: float, p_battery: BatteryModel, p_motor_max_amps: float, p_rated_rpm: float, p_drag_coefficient: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635, p_gyro: Gyro = null) -> void:
+func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m: float, p_k_t: float, p_k_q: float, p_battery: BatteryModel, p_motor_max_amps: float, p_rated_rpm: float, p_drag_coefficient: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635, p_gyro: Gyro = null, p_prop_pitch_m: float = 0.10922) -> void:
 	powertrain = Powertrain.create(p_motor_model, p_k_t, p_k_q, p_battery, p_motor_max_amps,
-		p_rated_rpm, p_pole_pairs, p_blades, p_prop_radius_m)
+		p_rated_rpm, p_pole_pairs, p_blades, p_prop_radius_m, p_prop_pitch_m)
 	observables = powertrain.observables
 	mass_properties = p_mass_properties
 	arm_m = p_arm_m
@@ -67,7 +67,16 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	var cmds := PackedFloat64Array()
 	for name in MotorLayout.MOTOR_NAMES:
 		cmds.append(motor_throttle_cmds.get(name, 0.0))
-	powertrain.step(cmds, dt)
+	# The powertrain is told how the aircraft is MOVING, not just what the sticks asked for. Without
+	# this line the propeller behaves identically parked and at 120 km/h: no unloading at speed, and
+	# no translational lift, so forward flight costs the same current as hovering. Both halves
+	# matter and they pull opposite ways — see PropellerModel's forward-flight block.
+	#
+	# In the BODY frame, because that is where the rotor axis is: thrust is along body +Y, so the
+	# component of velocity that unloads the prop is simply .y, and nothing has to decide what a
+	# lean angle's sign convention is. Taken BEFORE integration, so it is the velocity this tick's
+	# forces are being built at, which is the same convention every other term here uses.
+	powertrain.step_in_flight(cmds, dt, rigid_body.orientation.inverse() * rigid_body.velocity_mps)
 
 	var total_force := Vector3(0, -GRAVITY_MPS2 * mass_properties.total_mass_kg, 0)
 	var total_torque := Vector3.ZERO

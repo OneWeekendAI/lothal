@@ -43,6 +43,12 @@ pub struct Powertrain {
     pub blades: f64,
     #[var]
     pub prop_radius_m: f64,
+    /// Prop pitch, needed only by the forward-flight model (PropellerModel::j_zero). A bench never
+    /// reads it, and it is required at construction anyway rather than settable afterwards: a
+    /// powertrain that flew with an unset pitch would silently be the static model, which is the
+    /// one failure this whole slice exists to make impossible.
+    #[var]
+    pub prop_pitch_m: f64,
     /// MotorLayout.MOTOR_NAMES order (M1..M4). Was a Dictionary in the GDScript; the array is
     /// the same storage the cross-check verified against before the twin was deleted.
     #[var]
@@ -51,6 +57,12 @@ pub struct Powertrain {
     pub last_voltage_v: f64,
     #[var]
     pub last_current_total_a: f64,
+    /// The aircraft's velocity in the BODY frame as of the last step, kept so publish() can be
+    /// idempotent: it recomputes reaction torque and per-motor current from stored state, and
+    /// those are now functions of airspeed as well as rpm. Vector3::ZERO on a bench, for ever,
+    /// which is the static path exactly (PropellerModel's forward-flight block).
+    #[var]
+    pub last_body_velocity_mps: Vector3,
     /// The published observables layer. Created here and shared with DroneCore when one wraps
     /// this — exactly one instance per simulation, bench or flight.
     #[var]
@@ -71,6 +83,21 @@ impl Powertrain {
             .try_to::<Gd<godot::classes::RefCounted>>()
             .expect("instantiated script should be a RefCounted")
     }
+
+    /// The stored body velocity split into the two components the propeller model asks for.
+    /// Thrust is along body +Y (physics.md §1), so `.y` IS the axial component — positive when
+    /// climbing or leaning into forward flight, which is the direction that unloads the prop.
+    ///
+    /// All four rotors are given the same velocity. A rotating aircraft has a different local
+    /// velocity at each rotor and in a fast roll that difference is real; carrying it would need
+    /// the rotor POSITIONS in here, which are the mass model's business and not the electrical
+    /// model's. Named as a simplification rather than left to be discovered.
+    fn airspeed_components(&self) -> (f64, f64) {
+        let v = self.last_body_velocity_mps;
+        let axial = v.y as f64;
+        let edge = ((v.x as f64) * (v.x as f64) + (v.z as f64) * (v.z as f64)).sqrt();
+        (axial, edge)
+    }
 }
 
 #[godot_api]
@@ -78,7 +105,7 @@ impl Powertrain {
     #[func]
     fn create(motor_model: Gd<MotorModel>, k_t: f64, k_q: f64, battery: Gd<BatteryModel>,
               motor_max_amps: f64, rated_rpm: f64, pole_pairs: f64, blades: f64,
-              prop_radius_m: f64) -> Gd<Self> {
+              prop_radius_m: f64, prop_pitch_m: f64) -> Gd<Self> {
         let last_voltage_v = battery.bind().nominal_v;
         let observables = Self::make_observables();
         let mut pt = Gd::from_object(Self {
@@ -91,9 +118,11 @@ impl Powertrain {
             pole_pairs,
             blades,
             prop_radius_m,
+            prop_pitch_m,
             motor_rpm: PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0]),
             last_voltage_v,
             last_current_total_a: 0.0,
+            last_body_velocity_mps: Vector3::ZERO,
             observables,
         });
         pt.bind_mut().publish();
@@ -113,6 +142,22 @@ impl Powertrain {
         self.motor_max_amps * rpm_fraction * rpm_fraction
     }
 
+    /// The same current, at airspeed. Current tracks shaft TORQUE, and shaft torque is shaft power
+    /// over omega, so the forward-flight power factor is exactly the factor current carries — the
+    /// same one reaction torque carries, because they are the same quantity read two ways. One
+    /// factor rather than two is what stops the yaw authority the mixer sees and the current the
+    /// pack sees disagreeing about what the rotor is doing.
+    #[func]
+    fn current_in_flight_at_rpm(&self, rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
+        self.current_at_rpm(rpm) * PropellerModel::power_factor(
+            self.k_t, rpm, self.prop_diameter_m(), self.prop_pitch_m, v_axial_mps, v_edge_mps)
+    }
+
+    #[func]
+    fn prop_diameter_m(&self) -> f64 {
+        self.prop_radius_m * 2.0
+    }
+
     /// Places all four motors at the steady-state RPM for a given throttle, and the pack at
     /// the voltage that draws. Motors otherwise start dead.
     #[func]
@@ -128,16 +173,50 @@ impl Powertrain {
         }
         self.last_current_total_a = 4.0 * self.current_at_rpm(rpm);
         self.last_voltage_v = voltage_v;
+        // Priming means "standing still at this throttle". A respawn after a fast flight must not
+        // inherit that flight's airspeed into its first published tick.
+        self.last_body_velocity_mps = Vector3::ZERO;
         for i in 0..4 {
             self.motor_rpm[i] = rpm;
         }
         self.publish();
     }
 
-    /// Advances every motor one dt, drains the pack, and republishes.
+    /// Advances every motor one dt, drains the pack, and republishes — STANDING STILL.
     /// `motor_throttle_cmds` is MotorLayout.MOTOR_NAMES order (M1..M4), values 0..1.
+    ///
+    /// This is the bench's step and it is not a special case of the flight one dressed up: it takes
+    /// the static path exactly, because the forward-flight terms short-circuit at zero velocity
+    /// rather than evaluating to something very close to 1. Every bench call site predates the
+    /// forward-flight model and is unchanged by it, which is the property that keeps 496.0 g,
+    /// 11.69:1 and 29.6% bit-identical.
+    ///
+    /// (gdext registers no default arguments, so the airspeed-aware form is a second method rather
+    /// than a third parameter with a default. The guarantee is the same one and it is stronger for
+    /// being a distinct name: a caller cannot fly forward by forgetting an argument.)
     #[func]
     fn step(&mut self, motor_throttle_cmds: PackedFloat64Array, dt: f64) {
+        self.step_in_flight(motor_throttle_cmds, dt, Vector3::ZERO);
+    }
+
+    /// The same step, told how the aircraft is moving.
+    ///
+    /// `body_velocity_mps` is the aircraft's velocity in the BODY frame. Body frame, and one vector
+    /// rather than a world velocity plus an attitude, because in the body frame the geometry is
+    /// already resolved: thrust is along body +Y, so the axial component IS `.y` and the edgewise
+    /// component is the length of the other two. No lean angle is ever materialised, no Basis
+    /// crosses the FFI boundary, and there is exactly one place where the sign convention could be
+    /// got wrong instead of two.
+    ///
+    /// Handed in rather than held as a reference to the rigid body, because a BENCH runs a
+    /// powertrain with no rigid body at all — the split this class's header describes. A held
+    /// reference would give every bench a stationary aircraft to invent.
+    #[func]
+    fn step_in_flight(&mut self, motor_throttle_cmds: PackedFloat64Array, dt: f64,
+                      body_velocity_mps: Vector3) {
+        self.last_body_velocity_mps = body_velocity_mps;
+        let (v_axial, v_edge) = self.airspeed_components();
+
         let mut total_current_a = 0.0;
         let mut thrusts = [0.0f64; 4];
 
@@ -149,9 +228,10 @@ impl Powertrain {
                 dt,
             );
             self.motor_rpm[i] = rpm;
-            let thrust = PropellerModel::thrust_n(self.k_t, rpm);
+            let thrust = PropellerModel::thrust_n_in_flight(
+                self.k_t, rpm, self.prop_diameter_m(), self.prop_pitch_m, v_axial);
             thrusts[i] = thrust;
-            total_current_a += self.current_at_rpm(rpm);
+            total_current_a += self.current_in_flight_at_rpm(rpm, v_axial, v_edge);
         }
         self.observables.set(
             "thrust_n",
@@ -192,6 +272,14 @@ impl Powertrain {
         // Variant round-trips per publish.
         let thrust_arr: PackedFloat32Array = self.observables.get("thrust_n").to();
 
+        // Reaction torque and current are functions of AIRSPEED as well as rpm now, so the velocity
+        // this tick was stepped at is read back from storage here — the same reason rpm is. A
+        // republish still recomputes from stored state and integrates nothing, so it is still
+        // idempotent, which is what tests/test_observables.gd writes rpm directly to check.
+        let (v_axial, v_edge) = self.airspeed_components();
+        let power_factor_at = |rpm: f64| PropellerModel::power_factor(
+            self.k_t, rpm, self.prop_diameter_m(), self.prop_pitch_m, v_axial, v_edge);
+
         let mut total_thrust = 0.0;
         for i in 0..4 {
             let rpm = self.motor_rpm[i];
@@ -200,9 +288,10 @@ impl Powertrain {
             blade_pass.push((rev_per_s * self.blades) as f32);
             electrical.push((rev_per_s * self.pole_pairs) as f32);
             tip_speed.push((PropellerModel::rpm_to_rad_s(rpm) * self.prop_radius_m) as f32);
-            let reaction_nm = PropellerModel::reaction_torque_n_m(self.k_q, rpm);
+            let reaction_nm = PropellerModel::reaction_torque_n_m(self.k_q, rpm)
+                * power_factor_at(rpm);
             reaction.push(reaction_nm);
-            current.push(self.current_at_rpm(rpm));
+            current.push(self.current_at_rpm(rpm) * power_factor_at(rpm));
             // Recomputed from stored rpm like everything else in this function, so a republish
             // is still idempotent — the value step() published this tick, read back the same.
             total_thrust += thrust_arr[i] as f64;

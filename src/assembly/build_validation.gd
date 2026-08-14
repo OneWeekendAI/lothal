@@ -45,10 +45,11 @@ extends RefCounted
 ## builds.json's `_schema` for what would have to be published for it to become possible.
 ##
 ## FLIGHT TIME IS NOT VALIDATED EITHER, for a different and more permanent reason:
-## Build.FLIGHT_CURRENT_TO_HOVER_RATIO is an admitted guess and REFERENCE_DRAG_AREA_M2 is one
-## fixed number with no moment arm (LTHL-16). A flight-time miss could come from the mass
-## model or from either of those, and a number that cannot say which half is wrong is not
-## evidence about either.
+## Build.FREESTYLE_FLIGHT_PROFILE is an assumed mission mix, the forward-flight propeller model
+## under it is characteristic and quotes no error bar, and REFERENCE_DRAG_AREA_M2 is one fixed
+## number with no moment arm (LTHL-16). A flight-time miss could come from the mass model or from
+## any of those, and a number that cannot say which part is wrong is not evidence about any of
+## them.
 
 ## Error bound, as a fraction of the reported dry mass. FIXED IN ADVANCE of running it against
 ## a single real aircraft, and committed before the data was, so the git history shows the

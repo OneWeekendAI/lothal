@@ -278,10 +278,23 @@ static func _four_s_to_six_s(catalog: PartsCatalog) -> Array:
 	#
 	# The bound was 1.25 while a full pack rested at nominal voltage, where the measured ratio was
 	# 1.292. Moving the datum to nominal (physics.md §5) means a full pack now rests above it, both
-	# builds climb harder, and the ratio measures 1.246 — because these are drag-terminal climb
-	# rates after 2 s, and drag goes as v^2, so a faster pair is a compressed pair. The two builds
-	# did not become more alike; the yardstick did. 1.2 keeps the same distance from the 1.00 that
-	# would mean voltage had stopped reaching the RPM ceiling.
+	# builds climb harder, and the ratio measured 1.246 — because drag goes as v^2, so a faster pair
+	# is a compressed pair. The two builds did not become more alike; the yardstick did. 1.2 keeps
+	# the same distance from the 1.00 that would mean voltage had stopped reaching the RPM ceiling.
+	#
+	# THE BOUND HAS NOT MOVED SINCE. The window has, from 2 s to 0.5 s, and the forward-flight prop
+	# model (2026-08-14) is what exposed why it had to. There is no flight controller in this
+	# fixture and the centre of mass is not at the frame's origin, so four equal thrusts are a
+	# constant uncorrected pitch torque: by 2 s the aircraft is not climbing at all, it is tumbling
+	# at over 4 rad/s, and `velocity_mps.y` is sampling a phase of that tumble. Both figures were
+	# NEGATIVE, and `climb_6s > climb_4s * 1.2` on two negative numbers asserts the opposite of what
+	# it reads as — it passed because 6S happened to be the less negative one. Changing the prop
+	# model shifted the tumble's phase, the sign relationship inverted, and a test that had never
+	# measured a climb rate finally said so.
+	#
+	# At 0.5 s both builds are genuinely climbing, and the ratio measures 1.344 against the same
+	# 1.2. Note the direction: the window narrowed to make the test measure the quantity it names,
+	# and the bound it is held to was not touched.
 	var climb_4s := _climb_rate_at_throttle(four_s, 0.5)
 	var climb_6s := _climb_rate_at_throttle(six_s, 0.5)
 	results.append(TestResult.new(
@@ -292,13 +305,16 @@ static func _four_s_to_six_s(catalog: PartsCatalog) -> Array:
 	return results
 
 
-## Vertical speed after 2 s at a fixed throttle, motors pre-spun so this measures the
-## build and not the spin-up lag.
+## Vertical speed after CLIMB_WINDOW_S at a fixed throttle, motors pre-spun so this measures the
+## build and not the spin-up lag. Short enough that the aircraft is still climbing rather than
+## tumbling — see the argument at the call site, which is the whole reason for the constant.
+const CLIMB_WINDOW_S := 0.5
+
 static func _climb_rate_at_throttle(build: Build, throttle: float) -> float:
 	var core := build.build_drone_core()
 	core.prime_motors(throttle)
 	var cmds := {"M1": throttle, "M2": throttle, "M3": throttle, "M4": throttle}
-	for i in int(2.0 / DT):
+	for i in int(CLIMB_WINDOW_S / DT):
 		core.step(cmds, DT)
 	return core.rigid_body.velocity_mps.y
 

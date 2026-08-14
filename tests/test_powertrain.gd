@@ -129,7 +129,7 @@ static func _bench(build: Build) -> Powertrain:
 	return Powertrain.create(
 		build.motor_model(), build.k_t, build.k_q, build.battery_model(),
 		build.effective_max_amps, build.rated_rpm(),
-		build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5
+		build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, geometry.pitch_m
 	)
 
 static func _even(throttle: float) -> PackedFloat64Array:

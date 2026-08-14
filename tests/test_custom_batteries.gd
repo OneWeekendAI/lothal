@@ -444,9 +444,9 @@ static func _test_unknown_fields_survive_a_round_trip() -> TestResult:
 # The custom-provenance warning
 # ---------------------------------------------------------------------------
 
-## The one warning every custom pack carries, and it MUST name FLIGHT_CURRENT_TO_HOVER_RATIO by
-## its own constant name — a builder chasing an unexpected flight time reads Lothal's warnings
-## and greps the source for that string, and paraphrasing it here would mean the search misses.
+## The one warning every custom pack carries, and it MUST name FREESTYLE_FLIGHT_PROFILE by its own
+## constant name — a builder chasing an unexpected flight time reads Lothal's warnings and greps
+## the source for that string, and paraphrasing it here would mean the search misses.
 ##
 ## Also checks: quotes the builder's own source, is CHARACTERISTIC (not LIMITING — a custom pack
 ## does not bind the aircraft), and is absent from a catalog-pack build.
@@ -467,7 +467,7 @@ static func _test_a_custom_pack_names_itself_and_the_flight_time_multiplier() ->
 	var catalog_warning := _find(ReferenceBuild.build().warnings(), &"custom_battery")
 
 	var names_constant: bool = custom_warning != null \
-		and custom_warning.message.contains("FLIGHT_CURRENT_TO_HOVER_RATIO")
+		and custom_warning.message.contains("FREESTYLE_FLIGHT_PROFILE")
 	var quotes_source: bool = custom_warning != null \
 		and custom_warning.message.contains("kitchen scale")
 	var is_characteristic: bool = custom_warning != null \

@@ -357,11 +357,21 @@ static func _test_the_hud_shows_charge_and_time_left(_catalog: PartsCatalog) -> 
 
 	# Fly for a while. Both figures have to move, and the minutes have to move DOWN — a flight
 	# time that stood still would be the stats panel's constant wearing a countdown's clothes.
+	#
+	# 90 s rather than the 60 s this was written with. There is no flight controller in this
+	# fixture, so what it actually does is spin up at hover throttle and then tumble, and since the
+	# forward-flight prop model landed (2026-08-14) a tumbling aircraft spends much of its time with
+	# a large axial inflow, where the prop unloads and draws less. The pack therefore drains more
+	# slowly than it used to and 60 s no longer clears the 0.5 min threshold below.
+	#
+	# The THRESHOLD is untouched: what a reader of this test is owed is that the countdown moves
+	# down by an amount a pilot would notice, and 0.5 min is that claim. Widening it to fit the new
+	# model would have been describing the model rather than checking it. Flying longer is not.
 	var commands: Dictionary = {}
 	for name in MotorLayout.MOTOR_NAMES:
 		commands[name] = throttle
 	var minutes_at_spawn := build.remaining_flight_time_min(core.powertrain.battery)
-	for _i in 30000:
+	for _i in 45000:
 		core.step(commands, 1.0 / 500.0)
 	hud.render(core, build, course, timer, true)
 	var after: String = hud._pack_label.text
