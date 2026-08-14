@@ -2,11 +2,12 @@ class_name TestRustConstants
 extends RefCounted
 ## Guards the constants that had to be DUPLICATED when the physics moved into the Rust crate.
 ##
-## Rust cannot export consts to GDScript, so three values that used to have exactly one
+## Rust cannot export consts to GDScript, so four values that used to have exactly one
 ## definition now have two: the blade-count and pitch exponents (propeller.rs vs
-## prop_extrapolation.gd and prop_plausibility.gd) and the default battery chemistry
-## (battery.rs vs build.gd). Nothing structural keeps the copies equal — they agree today
-## because they were written together, which is not a mechanism.
+## prop_extrapolation.gd and prop_plausibility.gd), the default battery chemistry
+## (battery.rs vs build.gd), and air density (propeller.rs vs build.gd). Nothing structural
+## keeps the copies equal — they agree today because they were written together, which is
+## not a mechanism.
 ##
 ## That matters more than it looks. prop_extrapolation.gd PRINTS its copy of the exponent to
 ## the user ("the blades^0.8 rule of thumb") while the Rust copy is what actually scales k_t.
@@ -20,6 +21,12 @@ extends RefCounted
 ## prove Rust can report a number; this proves Rust USES it.
 
 const EXPONENT_TOL := 1.0e-12
+
+## Looser than EXPONENT_TOL because rho is recovered through a square root and a squaring rather
+## than read back directly, so it carries a few ulps of round trip. Still nine orders of magnitude
+## tighter than any drift worth having a test about: the smallest difference anyone would plausibly
+## introduce is 1.225 vs 1.2250001.
+const AIR_DENSITY_TOL := 1.0e-9
 
 
 static func run() -> Array:
@@ -90,6 +97,30 @@ static func run() -> Array:
 		"LiPo and Li-ion have different nominal voltages, so the fallback check can fail",
 		absf(lipo - liion) > 0.01,
 		"LiPo %.2f V/cell vs Li-ion %.2f V/cell" % [lipo, liion]
+	))
+
+	# --- Air density, derived the same way: from what Rust COMPUTES with it ---
+	# propeller.rs's copy of rho was documented as pinned to Build.AIR_DENSITY_KGM3 by this file
+	# for a fortnight before the pin was actually written. It was not. The two could have drifted
+	# at any point and every other test would still have passed, because each side is
+	# self-consistent — the airframe would have been dragged through one atmosphere while its own
+	# rotors hovered in another.
+	#
+	# There is no accessor for rho and there should not be one; an accessor proves Rust can report
+	# a number, not that it uses it. Instead invert the hover branch of Glauert's inflow. At
+	# V_axial = V_edge = 0 the fixed point is seeded at v_h and stays there, so
+	#
+	#     v_i = v_h = sqrt( T / (2*rho*A) )    =>    rho = T / (2*A*v_i^2)
+	#
+	# recovers exactly the rho that induced_velocity_mps — and therefore power_factor, and
+	# therefore every flight-time and top-speed figure downstream of it — actually applied.
+	var disc_area: float = PropellerModel.disc_area_m2(1.0)
+	var v_hover: float = PropellerModel.induced_velocity_mps(1.0, 1.0, 0.0, 0.0)
+	var rust_rho: float = 1.0 / (2.0 * disc_area * v_hover * v_hover)
+	results.append(TestResult.new(
+		"the air density Rust APPLIES in Glauert inflow equals Build.AIR_DENSITY_KGM3",
+		absf(rust_rho - Build.AIR_DENSITY_KGM3) < AIR_DENSITY_TOL,
+		"rust applies %.12f kg/m3, build.gd states %.12f kg/m3" % [rust_rho, Build.AIR_DENSITY_KGM3]
 	))
 
 	return results
