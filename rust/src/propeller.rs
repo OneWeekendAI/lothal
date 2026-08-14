@@ -33,9 +33,25 @@ pub const PITCH_EXPONENT: f64 = 0.5;
 
 /// Sea-level standard air. The SAME number as Build.AIR_DENSITY_KGM3, and tests/test_rust_constants.gd
 /// pins them together — a rotor disc and an airframe's drag area must not be told two different
-/// things about the air they are both moving through. The pin does not read this const: it inverts
-/// the hover branch of induced_velocity_mps to recover the rho actually applied there.
+/// things about the air they are both moving through.
+///
+/// Since the air-density slice this is no longer "the density". It is the DEFAULT and the ORACLE's
+/// value: every function below takes rho as a runtime parameter, because a builder in Bangalore
+/// flies in 16% less air than this, and a non-positive or unsupplied rho falls back here. That
+/// demotion changed what the pin can prove — inverting Glauert now recovers whatever the caller
+/// passed in — so the pin was split, and this const is guarded by the half that calls the DEFAULT
+/// path rather than by one that hands a value in. See tests/test_rust_constants.gd.
 pub const AIR_DENSITY_KGM3: f64 = 1.225;
+
+/// Guards every rho that enters the model. Zero or negative air is not a thin atmosphere, it is a
+/// division by zero followed by NaN or a negative induced velocity propagating into thrust,
+/// current and the flight-time countdown. GDScript clamps elevation and temperature to a physical
+/// domain before it ever gets here (air_density.gd), so this is the second line rather than the
+/// first — but a #[func] is callable from any GDScript, and one that returns NaN for an input it
+/// could have refused is a landmine for whoever calls it next.
+fn air_density_or_default(rho: f64) -> f64 {
+    if rho > 0.0 { rho } else { AIR_DENSITY_KGM3 }
+}
 
 /// FIGURE OF MERIT, AND IT IS A GUESS. No source. There is no source: nobody publishes a figure of
 /// merit for an FPV propeller, and the manufacturer tables the rest of this file is fitted from are
@@ -176,6 +192,14 @@ impl PropellerModel {
     ///   than confidently pulling the aircraft backwards at speed.
     /// - the CEILING, because a descending prop loads up (J < 0 gives 1 - J/J0 > 1) and that is the
     ///   vortex-ring regime, where the linear fit has no standing. Static thrust stays the maximum.
+    ///
+    /// TAKES NO AIR DENSITY, DELIBERATELY. Everything else in this file gained a rho parameter and
+    /// a reader who has just watched that happen will assume this one was missed. It was not, for
+    /// two independent reasons. J = V/(nD) is pure kinematics — an airspeed, a rotation rate and a
+    /// length, with no mass flow anywhere in it. And this is a RATIO anchored at 1.0 rather than a
+    /// thrust: whatever density scales the static thrust scales the airspeed thrust identically,
+    /// so rho appears in both halves and cancels exactly. Air reaches thrust through k_t, which is
+    /// where the density belongs, and reaches power through power_factor above.
     #[func]
     pub fn thrust_factor(rpm: f64, diameter_m: f64, pitch_m: f64, v_axial_mps: f64) -> f64 {
         if v_axial_mps == 0.0 {
@@ -217,12 +241,14 @@ impl PropellerModel {
         diameter_m: f64,
         v_axial_mps: f64,
         v_edge_mps: f64,
+        air_density_kgm3: f64,
     ) -> f64 {
         let area = Self::disc_area_m2(diameter_m);
         if thrust_n <= 0.0 || area <= 0.0 {
             return 0.0;
         }
-        let v_h_squared = thrust_n / (2.0 * AIR_DENSITY_KGM3 * area);
+        let rho = air_density_or_default(air_density_kgm3);
+        let v_h_squared = thrust_n / (2.0 * rho * area);
         let mut v_i = v_h_squared.sqrt();
         for _ in 0..INFLOW_ITERATIONS {
             let axial = v_axial_mps + v_i;
@@ -272,17 +298,19 @@ impl PropellerModel {
         pitch_m: f64,
         v_axial_mps: f64,
         v_edge_mps: f64,
+        air_density_kgm3: f64,
     ) -> f64 {
         if (v_axial_mps == 0.0 && v_edge_mps == 0.0) || v_axial_mps < 0.0 {
             return 1.0;
         }
+        let rho = air_density_or_default(air_density_kgm3);
         let area = Self::disc_area_m2(diameter_m);
         let thrust_static = Self::thrust_n(k_t, rpm);
         if area <= 0.0 || thrust_static <= 0.0 {
             return 1.0;
         }
 
-        let v_h_static = (thrust_static / (2.0 * AIR_DENSITY_KGM3 * area)).sqrt();
+        let v_h_static = (thrust_static / (2.0 * rho * area)).sqrt();
         let power_profile = thrust_static * v_h_static * (1.0 / FIGURE_OF_MERIT - 1.0);
         let power_static = thrust_static * v_h_static + power_profile;
         if power_static <= 0.0 {
@@ -291,7 +319,7 @@ impl PropellerModel {
 
         let thrust = thrust_static
             * Self::thrust_factor(rpm, diameter_m, pitch_m, v_axial_mps);
-        let v_i = Self::induced_velocity_mps(thrust, diameter_m, v_axial_mps, v_edge_mps);
+        let v_i = Self::induced_velocity_mps(thrust, diameter_m, v_axial_mps, v_edge_mps, rho);
         let power = thrust * (v_axial_mps + v_i) + power_profile;
 
         power / power_static

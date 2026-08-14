@@ -56,6 +56,14 @@ var gates: Array[Dictionary] = []
 var course_id := DEFAULT_ID
 var course_name := DEFAULT_NAME
 
+## The air this course is flown in (air_density.gd). A property of the WORLD, not of the aircraft
+## and not of a flight — labs-and-sim.md §1 puts it in Lab beside the gates, and Sim receives it
+## inside the finished field exactly as it receives them.
+##
+## Standard until a builder says otherwise, which is the correct reading of every course saved
+## before this existed rather than a fallback: 1.225 is precisely what those courses were flown in.
+var air := AirDensity.standard()
+
 var next_gate_index := 0
 ## Where to put the drone back after a crash: the gate it most recently flew through,
 ## facing the way it was going. -1 until the first gate is taken.
@@ -229,6 +237,9 @@ const FINGERPRINT_PRECISION_M := 0.001
 ## coarse enough that a round trip through the file is not. A ten-thousandth of a unit normal is
 ## about 0.006 deg.
 const FINGERPRINT_PRECISION_NORMAL := 0.0001
+## Air quantises on the same idea. A thousandth of a kg/m3 is 0.08% of standard air — far finer
+## than any effect on a lap time, and far coarser than a float's round trip through JSON.
+const FINGERPRINT_PRECISION_RHO := 0.001
 
 ## What a best lap is set ON: the geometry, not the id and not the name.
 ##
@@ -253,6 +264,21 @@ func fingerprint() -> String:
 			roundi(normal.z / FINGERPRINT_PRECISION_NORMAL),
 			roundi(float(gate["radius"]) / FINGERPRINT_PRECISION_M),
 		])
+	# THE AIR IS PART OF THE TRACK, and leaving it out would be this function's own bug arriving
+	# through a new door. The header says a lap time is a fact about a track and that nudging a
+	# gate 20 cm retires the record; a lap flown in 36% thinner air at Leh differs from a sea-level
+	# lap on the same rings by very much more than 20 cm of gate, and reporting one as the other is
+	# exactly the record that quietly means nothing.
+	#
+	# Fingerprinted on RHO rather than on elevation and temperature, because rho is what changes
+	# the lap — and because it means a thermometer read 0.1 C differently does not retire a record.
+	#
+	# Appended ONLY when the air is non-standard, which is not a special case bolted on: it is the
+	# same rule the file follows, where what was never authored is not represented. It also has to
+	# be true — appending a standard-air term unconditionally would change every existing course's
+	# hash and orphan every best lap ever set.
+	if not air.is_standard():
+		parts.append("rho=%d" % roundi(air.kgm3() / FINGERPRINT_PRECISION_RHO))
 	# Hashed rather than stored whole, so the best-lap file stays a short readable table instead of
 	# growing a copy of every course anyone has ever flown. Truncated to 16 hex characters: the file
 	# holds a handful of courses, and a collision there needs 2^32 of them.

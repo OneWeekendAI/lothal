@@ -49,6 +49,16 @@ pub struct Powertrain {
     /// one failure this whole slice exists to make impossible.
     #[var]
     pub prop_pitch_m: f64,
+    /// The air this powertrain is running in — a property of the FIELD, handed in by whoever
+    /// built it (labs-and-sim.md §1). Required at construction for exactly prop_pitch_m's reason:
+    /// a powertrain that flew with an unset density would silently be a sea-level powertrain, and
+    /// on a 3500 m field that is a 36% error in thrust reported with total confidence.
+    ///
+    /// A bench runs at the selected field's air too. A thrust stand is in the same garage, in the
+    /// same atmosphere, as the flying — a bench that reported sea-level thrust while the flight
+    /// model used the field's would be two answers to one question.
+    #[var]
+    pub air_density_kgm3: f64,
     /// MotorLayout.MOTOR_NAMES order (M1..M4). Was a Dictionary in the GDScript; the array is
     /// the same storage the cross-check verified against before the twin was deleted.
     #[var]
@@ -105,7 +115,7 @@ impl Powertrain {
     #[func]
     fn create(motor_model: Gd<MotorModel>, k_t: f64, k_q: f64, battery: Gd<BatteryModel>,
               motor_max_amps: f64, rated_rpm: f64, pole_pairs: f64, blades: f64,
-              prop_radius_m: f64, prop_pitch_m: f64) -> Gd<Self> {
+              prop_radius_m: f64, prop_pitch_m: f64, air_density_kgm3: f64) -> Gd<Self> {
         let last_voltage_v = battery.bind().nominal_v;
         let observables = Self::make_observables();
         let mut pt = Gd::from_object(Self {
@@ -119,6 +129,7 @@ impl Powertrain {
             blades,
             prop_radius_m,
             prop_pitch_m,
+            air_density_kgm3,
             motor_rpm: PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0]),
             last_voltage_v,
             last_current_total_a: 0.0,
@@ -150,7 +161,8 @@ impl Powertrain {
     #[func]
     fn current_in_flight_at_rpm(&self, rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
         self.current_at_rpm(rpm) * PropellerModel::power_factor(
-            self.k_t, rpm, self.prop_diameter_m(), self.prop_pitch_m, v_axial_mps, v_edge_mps)
+            self.k_t, rpm, self.prop_diameter_m(), self.prop_pitch_m, v_axial_mps, v_edge_mps,
+            self.air_density_kgm3)
     }
 
     #[func]
@@ -278,7 +290,8 @@ impl Powertrain {
         // idempotent, which is what tests/test_observables.gd writes rpm directly to check.
         let (v_axial, v_edge) = self.airspeed_components();
         let power_factor_at = |rpm: f64| PropellerModel::power_factor(
-            self.k_t, rpm, self.prop_diameter_m(), self.prop_pitch_m, v_axial, v_edge);
+            self.k_t, rpm, self.prop_diameter_m(), self.prop_pitch_m, v_axial, v_edge,
+            self.air_density_kgm3);
 
         let mut total_thrust = 0.0;
         for i in 0..4 {
