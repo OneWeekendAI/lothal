@@ -32,9 +32,10 @@ var drag_coefficient: float
 ## should read physics internals directly.
 var observables: Observables
 
-func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m: float, p_k_t: float, p_k_q: float, p_battery: BatteryModel, p_motor_max_amps: float, p_rated_rpm: float, p_drag_coefficient: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635, p_gyro: Gyro = null, p_prop_pitch_m: float = 0.10922) -> void:
+func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m: float, p_k_t: float, p_k_q: float, p_battery: BatteryModel, p_motor_max_amps: float, p_rated_rpm: float, p_drag_coefficient: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635, p_gyro: Gyro = null, p_prop_pitch_m: float = 0.10922,
+		p_air_density_kgm3: float = AirDensity.standard_kgm3()) -> void:
 	powertrain = Powertrain.create(p_motor_model, p_k_t, p_k_q, p_battery, p_motor_max_amps,
-		p_rated_rpm, p_pole_pairs, p_blades, p_prop_radius_m, p_prop_pitch_m)
+		p_rated_rpm, p_pole_pairs, p_blades, p_prop_radius_m, p_prop_pitch_m, p_air_density_kgm3)
 	observables = powertrain.observables
 	mass_properties = p_mass_properties
 	arm_m = p_arm_m

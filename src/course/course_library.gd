@@ -20,12 +20,16 @@ extends RefCounted
 ##       "selected": "default_circuit",
 ##       "courses": [
 ##         {"id": "default_circuit", "name": "Circuit",
+##          "air": {"elevation_m": 920.0, "temperature_c": 35.0},
 ##          "gates": [{"position": [18, 2.5, 0], "normal": [0, 0, 1], "radius": 1.5}, ...]}
 ##       ]
 ##     }
 ##
 ## - **Only what was authored is stored.** A fresh install has no file at all and gets the default
 ##   circuit from GateCourse.build_gates(), which is the same arithmetic that used to be the world.
+##   The `air` block obeys this too: it is absent until a builder says where they fly, and an
+##   absent block reads as standard sea-level air — which is exactly what every course saved
+##   before air existed was flown in, so old files keep their numbers to the bit.
 ## - **Unknown fields are kept, not dropped** — at the top level (a later version's `weather`
 ##   block) and inside each course (a later version's `surface`). A gate's own unknown fields are
 ##   not preserved, and that is the one deliberate exception: gates are rewritten wholesale every
@@ -90,8 +94,17 @@ static func load_from(path: String = SAVE_PATH) -> CourseLibrary:
 			if id == "" or gates.is_empty():
 				push_warning("%s: skipping a course with no readable gates" % path)
 				continue
-			library._courses[id] = GateCourse.new(gates, id, String(record.get("name", id)))
-			library._unknown_course[id] = JsonStore.unknown_fields(record, ["id", "name", "gates"])
+			var loaded := GateCourse.new(gates, id, String(record.get("name", id)))
+			# An absent `air` block is standard air, and that is the CORRECT reading rather than a
+			# fallback: a course saved before this existed was flown at 1.225, so reading it that
+			# way leaves its numbers bit-identical. There is deliberately no migration — stamping
+			# 0 m / 15 C into a record whose author never said it would be manufacturing an
+			# authored fact, which is what the "only what was authored is stored" rule above
+			# exists to prevent. See the air-density design §2.1.
+			loaded.air = AirDensity.from_data(record.get("air"))
+			library._courses[id] = loaded
+			library._unknown_course[id] = JsonStore.unknown_fields(
+					record, ["id", "name", "gates", "air"])
 
 	if library._courses.is_empty():
 		return with_default()
@@ -110,6 +123,14 @@ func save(path: String = SAVE_PATH) -> bool:
 		record["id"] = entry_course.course_id
 		record["name"] = entry_course.course_name
 		record["gates"] = GateCourse.gates_to_data(entry_course.gates)
+		# Written only when it is not standard air, which is the "only what was authored is
+		# stored" rule applied to the new block: a course nobody has told about its field must
+		# round-trip to a file byte-identical to the one it came from, or this slice would rewrite
+		# every course file on first launch to say something none of their authors said.
+		if entry_course.air.is_standard():
+			record.erase("air")
+		else:
+			record["air"] = entry_course.air.to_data()
 		courses.append(record)
 
 	var document := _unknown_top.duplicate(true)

@@ -154,7 +154,7 @@ static func _thrust_falls_with_airspeed(build: Build) -> Array:
 	var beyond := PropellerModel.thrust_n_in_flight(
 		build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, far_past)
 	var factor := PropellerModel.power_factor(
-		build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, far_past, 0.0)
+		build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, far_past, 0.0, build.air.kgm3())
 	results.append(TestResult.new(
 		"past the geometric advance the model reports zero thrust, never negative and never NaN",
 		beyond == 0.0 and not is_nan(factor) and factor > 0.0,
@@ -201,7 +201,8 @@ static func _descent_is_declined_rather_than_guessed(build: Build) -> TestResult
 	for i in range(1, 61):
 		var descending := -float(i)
 		var factor := PropellerModel.power_factor(
-			build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, descending, 0.0)
+			build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, descending, 0.0,
+			build.air.kgm3())
 		worst = minf(worst, factor)
 	return TestResult.new(
 		"no descent, however fast, produces negative power (a pack that charges itself)",
@@ -216,7 +217,7 @@ static func _a_bench_is_the_static_path(build: Build) -> TestResult:
 	var geometry := build.prop_geometry()
 	var pt := Powertrain.create(build.motor_model(), build.k_t, build.k_q, build.battery_model(),
 		build.effective_max_amps, build.rated_rpm(), build.pole_pairs(), geometry.blades,
-		geometry.diameter_m * 0.5, geometry.pitch_m)
+		geometry.diameter_m * 0.5, geometry.pitch_m, build.air.kgm3())
 	for _i in 500:
 		pt.step(PackedFloat64Array([0.5, 0.5, 0.5, 0.5]), 0.001)
 	var rpm: float = pt.motor_rpm[0]

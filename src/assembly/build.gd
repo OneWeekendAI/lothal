@@ -10,6 +10,10 @@ extends RefCounted
 
 const INCH_M := 0.0254
 const GRAVITY_MPS2 := 9.81
+## Standard sea-level air, and no longer "the air". It is the DEFAULT and the ORACLE's value —
+## what a Build is flown in when nobody says where they fly, which is what keeps ReferenceBuild
+## at 496.0 g / 11.69:1 / 29.6% for ever. Derived through AirDensity rather than written as 1.225
+## so the two cannot drift; the Rust copy is pinned to this one by tests/test_rust_constants.gd.
 const AIR_DENSITY_KGM3 := 1.225
 
 ## How far the reachable thrust may fall below the bench figure before warnings() names the pack.
@@ -298,6 +302,22 @@ var fc: Dictionary
 var components: Dictionary = {}
 var catalog: PartsCatalog
 
+## THE AIR THIS BUILD IS FLOWN IN, and the line that makes a Build an aircraft AT A PLACE rather
+## than an aircraft.
+##
+## That is a real change in what this object means, and it is the honest one. Thrust-to-weight was
+## never a property of a parts list; it was a property of a parts list in air, and the old code got
+## away with the elision only because there was exactly one atmosphere. Two identical parts lists
+## at two different fields are now two different objects with different TWR, which is correct.
+##
+## Standard by DEFAULT, and that default is load-bearing rather than convenient: ReferenceBuild
+## calls the defaulted constructor and therefore cannot see user state BY CONSTRUCTION rather than
+## by remembering to. It is the same discipline as PartsCatalog's two constructors — there, a
+## boolean defaulting to "no custom parts" would have put one forgettable flag between the oracle
+## and a file in the user's writable directory; here the forgettable thing is an omitted argument,
+## and omitting it lands on standard air, which is where the oracle must be.
+var air := AirDensity.standard()
+
 var arm_m: float
 var mass_properties: MassProperties
 var k_t: float
@@ -351,8 +371,14 @@ const DEFAULT_ASSEMBLY := {
 ## difference between them is 21 g.
 static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String,
 		battery_id: String, esc_id: String = DEFAULT_ESC_ID,
-		fc_id: String = DEFAULT_FC_ID, component_ids: Dictionary = {}) -> Build:
+		fc_id: String = DEFAULT_FC_ID, component_ids: Dictionary = {},
+		p_air: AirDensity = null) -> Build:
 	var b := Build.new()
+	# `null` rather than AirDensity.standard() as the default value, because a GDScript default
+	# argument is evaluated once and shared: a literal object default would hand every Build in the
+	# process the SAME AirDensity instance, and one caller mutating its elevation would move the
+	# oracle. The null is the language's shape, not an admission that air is optional.
+	b.air = p_air if p_air != null else AirDensity.standard()
 	b.catalog = p_catalog
 	b.frame = p_catalog.get_part(frame_id)
 	b.motor = p_catalog.get_part(motor_id)
@@ -415,13 +441,36 @@ func _recompute() -> void:
 	k_t = PropellerModel.scale_k_t_to_prop(
 		k_t_at_test_prop, test_geom.diameter_m, test_geom.pitch_m, test_geom.blades,
 		prop_geom.diameter_m, prop_geom.pitch_m, prop_geom.blades)
+	# --- And then moved to the AIR THIS BUILD IS FLOWN IN ---
+	# T = C_T * rho * n^2 * D^4, so k_t is linear in density. Without this line the whole air slice
+	# is decoration: thrust_n is k_t * omega^2 with no rho in it, and fit_k_t has none either, so
+	# density would reach flight time and top speed through drag and induced power and leave
+	# thrust-to-weight at 11.69:1 in Leh. Lothal would ask a builder where they fly, appear to
+	# account for it, and still tell a marginal cinelifter it was fine.
+	#
+	# THE DENOMINATOR IS AN ASSUMPTION, and it is stated rather than hidden: that the manufacturer's
+	# thrust table was measured in standard air. It almost certainly was not — manufacturers publish
+	# thrust and current at a stand and state no conditions, not the elevation, not the temperature,
+	# not the day. A table measured at 300 m on a warm afternoon puts perhaps 5% into k_t.
+	#
+	# That is real, and it is worth sizing against the error it sits inside rather than worrying at
+	# on its own: labs-and-sim.md §1 records that fifteen manufacturers' tables disagree with each
+	# other by 1.79x on one shared prop. A 5% uncertainty about the air a published figure was
+	# measured in is roughly a twentieth of the spread the catalog already concedes. It does not
+	# make this ratio wrong; it makes it a correction applied to a number that was never precise.
+	#
+	# The alternative — leaving k_t alone and letting only power respond to air — is worse, and not
+	# by a little. It would be a SILENT assumption that thrust does not depend on air density, which
+	# is false as physics rather than merely uncertain as data.
+	k_t *= air.kgm3() / AirDensity.standard_kgm3()
+
 	k_q = PropellerModel.fit_k_q(k_t, _prop_geometry(propeller).diameter_m)
 
 	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop, _prop_geometry(test_prop).diameter_m)
 	effective_max_amps = float(motor["specs"]["max_amps"]) * (k_q / k_q_at_test_prop)
 
 	var drag_area_m2: float = REFERENCE_DRAG_AREA_M2 * pow(arm_m / REFERENCE_ARM_M, 2.0)
-	drag_coefficient = 0.5 * AIR_DENSITY_KGM3 * drag_area_m2
+	drag_coefficient = 0.5 * air.kgm3() * drag_area_m2
 
 	mass_properties = MassProperties.compute(mass_parts())
 
@@ -761,7 +810,8 @@ func build_drone_core() -> DroneCore:
 	var geometry := _prop_geometry(propeller)
 	return DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
 		effective_max_amps, rated_rpm(), drag_coefficient,
-		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m)
+		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m,
+		air.kgm3())
 
 ## Electrical frequency is per POLE PAIR, not per pole — a 14-pole motor turns through
 ## seven electrical cycles per revolution, not fourteen. Getting this wrong is a factor of
@@ -1072,7 +1122,7 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 	# hold itself up, rather than a number quietly clamped into looking achievable.
 	var rpm := rpm_at_throttle(high, open_circuit_v)
 	return 4.0 * current_at_rpm(rpm) * PropellerModel.power_factor(
-		k_t, rpm, diameter_m, pitch_m, v_axial, v_edge)
+		k_t, rpm, diameter_m, pitch_m, v_axial, v_edge, air.kgm3())
 
 
 ## The current a pack actually sees over a flight: the model's answer at each row of
