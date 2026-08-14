@@ -344,6 +344,33 @@ def _lothal_unfiltered(header: dict) -> bool:
 #: which is exactly how a filtered log gets mistaken for an unfiltered one.
 PREFILTER_DEBUG_MODES = {"GYRO_SCALED", "GYRO_RAW", "GYRO_SAMPLE"}
 
+#: The same modes as blackbox enum ORDINALS, because a real log carries the number, not the name.
+#: This cost a whole afternoon: `H debug_mode:6` is what Betaflight writes and what
+#: blackbox_decode passes through, so the name set above never matched anything ever logged, and
+#: _choose_gyro_columns returned "POST-filter" for every real file handed to it.
+#:
+#: AND THIS TABLE IS NOT TRUSTWORTHY EITHER, which is the important part. The debug_mode enum is
+#: an ordered C enum in Betaflight's debug.h; entries have been inserted into the middle of it
+#: across releases, so ordinal 6 is GYRO_SCALED on 4.3 and is not guaranteed to be on 4.1 or 5.x.
+#: It is used ONLY to pick which columns to TEST. The evidence that a channel is pre-filter comes
+#: from the data, in _looks_prefilter() — never from this table and never from the header alone.
+PREFILTER_DEBUG_ORDINALS = {6}
+
+#: Header keys carrying the gyro lowpass cutoff, newest naming first. Betaflight 4.3 renamed
+#: gyro_lowpass_hz -> gyro_lpf1_static_hz, so the old-name-only lookup silently found nothing on
+#: every modern log and fell through to "filtered".
+GYRO_LPF_HZ_KEYS = ("gyro_lpf1_static_hz", "gyro_lowpass_hz", "gyro_lowpass_hz_roll")
+GYRO_LPF_TYPE_KEYS = ("gyro_lpf1_type", "gyro_lowpass_type")
+
+#: How much more high-band power a channel must carry than gyroADC before it is accepted as
+#: pre-filter. Measured on Oscar Liang's 4.3.1 practice log, debug[0] carries 13x gyroADC[0] in
+#: 100-300 Hz and far more above that, so 3x is comfortably below a real separation while being
+#: far above anything two copies of the same filtered signal could differ by.
+PREFILTER_POWER_RATIO = 3.0
+#: Band the comparison is made over. Above the structural modes being hunted (so a real resonance
+#: does not itself decide the test) and inside where Betaflight's notches and lowpass both act.
+PREFILTER_TEST_BAND_HZ = (100.0, 800.0)
+
 
 def load_betaflight(path: str, arm_m: float, tip_mass_kg: float, blades: int, pole_pairs: int) -> Trace:
     """A blackbox log already decoded to CSV by `blackbox_decode`.
@@ -356,19 +383,40 @@ def load_betaflight(path: str, arm_m: float, tip_mass_kg: float, blades: int, po
     header, names, rows = _read_bbl_csv(path)
     col = {n: i for i, n in enumerate(names)}
 
-    unfiltered, evidence, roll_key, pitch_key = _choose_gyro_columns(header, col)
-
     t_us = rows[:, col["time (us)"]] if "time (us)" in col else rows[:, 0]
     dt = np.median(np.diff(t_us)) * 1e-6
+
+    # Sample rate first: deciding whether a channel is pre-filter is a spectral question, so it
+    # cannot be answered before we know what the sample rate is.
+    unfiltered, evidence, roll_key, pitch_key = _choose_gyro_columns(header, col, rows, 1.0 / dt)
 
     # Bidirectional DShot only. eRPM is ELECTRICAL rpm; mechanical is eRPM / pole_pairs, and
     # blackbox scales it by 100. Getting this factor wrong scales every measured frequency by
     # an integer, which is the second easiest way to ruin this comparison after deg/s.
     erpm_keys = [k for k in ("eRPM[0]", "eRPM[1]", "eRPM[2]", "eRPM[3]") if k in col]
     if not erpm_keys:
+        # DO NOT infer that bidirectional DShot was off. It usually is not the cause, and saying so
+        # sends the pilot to fix a setting that is already correct. Oscar Liang's 4.3.1 practice
+        # log has dshot_bidir:1 and rpm_filter_harmonics:3 — bidir DShot fully enabled — and still
+        # logs no eRPM, because debug[] was carrying pre-filter gyro instead. On that firmware
+        # criteria 2a and 2e COMPETE for the same four debug channels, which is a real constraint
+        # on what can be asked of a pilot and is why this message states the fact and not a cause.
+        bidir = str(header.get("dshot_bidir", "")).strip()
+        if bidir and bidir not in ("0", "OFF", "FALSE"):
+            hint = (
+                f"NOTE: this log has dshot_bidir = {bidir}, so bidirectional DShot WAS enabled — "
+                "the rpm exists on the flight controller and simply was not written to the log. "
+                "Re-log with eRPM recorded; on firmware where debug[] carries eRPM this conflicts "
+                "with debug_mode = GYRO_SCALED, so both criteria may not be satisfiable at once."
+            )
+        else:
+            hint = (
+                "dshot_bidir is not set in this log's header, so bidirectional DShot was probably "
+                "off. Enable it and re-log."
+            )
         raise ValueError(
-            f"{path}: no eRPM columns. Order tracking needs logged rpm (pre-registration 2e); "
-            "this log was flown without bidirectional DShot and is inadmissible."
+            f"{path}: no eRPM columns. Order tracking needs logged rpm (pre-registration 2e), "
+            f"so this log is inadmissible.\n  {hint}"
         )
     # The x100 is verified against the log itself rather than taken on trust: tracking the 1x
     # line at this scaling puts the gyro's own dominant line at a ratio of ~1, where the
@@ -391,32 +439,101 @@ def load_betaflight(path: str, arm_m: float, tip_mass_kg: float, blades: int, po
     )
 
 
-def _choose_gyro_columns(header, col):
+def _band_power_fraction(x, fs, lo, hi):
+    """Fraction of a signal's AC power falling in [lo, hi). Scale-invariant on purpose: the two
+    channels being compared are the same gyro in different units, so an absolute comparison would
+    measure the unit conversion instead of the filtering."""
+    x = np.asarray(x, dtype=float)
+    n = min(len(x), 32768)
+    x = x[len(x) // 2 - n // 2 : len(x) // 2 + n // 2]
+    if len(x) < 1024:
+        return 0.0
+    spectrum = np.abs(np.fft.rfft((x - x.mean()) * np.hanning(len(x)))) ** 2
+    freqs = np.fft.rfftfreq(len(x), 1.0 / fs)
+    total = spectrum.sum()
+    if total <= 0:
+        return 0.0
+    return float(spectrum[(freqs >= lo) & (freqs < hi)].sum() / total)
+
+
+def _looks_prefilter(candidate, reference, fs):
+    """Is `candidate` measurably less filtered than `reference`? Returns (verdict, ratio).
+
+    THIS, NOT THE HEADER, IS THE EVIDENCE. A header states intent; a filter leaves a fingerprint.
+    The two come apart in at least three ways that have all been seen or are known to be live:
+    debug_mode is logged as an enum ordinal whose meaning moves between firmware releases, the
+    lowpass key was renamed in 4.3, and a pilot can set debug_mode without the log actually
+    carrying what they think it does.
+
+    A gyro lowpass and Betaflight's notches both remove high-band power. So if the candidate is
+    genuinely pre-filter it carries visibly more of it, and if it is another copy of the same
+    filtered stream the ratio sits at ~1.
+    """
+    lo, hi = PREFILTER_TEST_BAND_HZ
+    hi = min(hi, fs * 0.45)
+    cand = _band_power_fraction(candidate, fs, lo, hi)
+    ref = _band_power_fraction(reference, fs, lo, hi)
+    if ref <= 0.0:
+        return cand > 0.0, float("inf") if cand > 0 else 0.0
+    ratio = cand / ref
+    return ratio >= PREFILTER_POWER_RATIO, ratio
+
+
+def _choose_gyro_columns(header, col, rows, fs):
     """Decide whether this log's gyro is pre-filter, and say on what evidence.
 
     Returns (unfiltered, evidence, roll_key, pitch_key). The evidence string is printed with
     every result, because "the peak was at 180 Hz" means nothing without "and the gyro was
     logged before the lowpass".
-    """
-    debug_mode = str(header.get("debug_mode", "")).strip().upper()
-    if debug_mode in PREFILTER_DEBUG_MODES and "debug[0]" in col:
-        return True, f"debug_mode = {debug_mode}; using debug[0..1]", "debug[0]", "debug[1]"
 
-    lp_type = str(header.get("gyro_lowpass_type", "")).strip().upper()
-    lp_hz = header.get("gyro_lowpass_hz", header.get("gyro_lowpass_hz_roll"))
+    The header selects WHICH columns to test. The data decides. See _looks_prefilter.
+    """
+    debug_mode_raw = str(header.get("debug_mode", "")).strip()
+    debug_mode = debug_mode_raw.upper()
+    named = debug_mode in PREFILTER_DEBUG_MODES
+    ordinal = debug_mode_raw.isdigit() and int(debug_mode_raw) in PREFILTER_DEBUG_ORDINALS
+
+    if (named or ordinal) and "debug[0]" in col and "gyroADC[0]" in col:
+        verdict, ratio = _looks_prefilter(
+            rows[:, col["debug[0]"]], rows[:, col["gyroADC[0]"]], fs
+        )
+        band = f"{PREFILTER_TEST_BAND_HZ[0]:.0f}-{min(PREFILTER_TEST_BAND_HZ[1], fs * 0.45):.0f} Hz"
+        if verdict:
+            return (
+                True,
+                f"debug_mode = {debug_mode_raw}, and debug[0] carries {ratio:.1f}x gyroADC[0]'s "
+                f"power in {band} — measured, not assumed; using debug[0..1]",
+                "debug[0]",
+                "debug[1]",
+            )
+        # Header claimed pre-filter and the data disagrees. Refuse rather than fall back
+        # quietly: a log whose header lies is exactly the case this check exists for.
+        return (
+            False,
+            f"debug_mode = {debug_mode_raw} CLAIMS pre-filter gyro, but debug[0] carries only "
+            f"{ratio:.2f}x gyroADC[0]'s power in {band} (need {PREFILTER_POWER_RATIO:.0f}x). "
+            "Either debug[] is not gyro on this firmware, or both channels are filtered",
+            "gyroADC[0]",
+            "gyroADC[1]",
+        )
+
+    lp_type = next(
+        (str(header[k]).strip().upper() for k in GYRO_LPF_TYPE_KEYS if k in header), ""
+    )
+    lp_hz = next((header[k] for k in GYRO_LPF_HZ_KEYS if k in header), None)
     lp_off = lp_type in ("OFF", "NONE", "0") or (lp_hz is not None and float(lp_hz) == 0)
     if lp_off and "gyroADC[0]" in col:
         return (
             True,
-            f"gyro_lowpass_type = {lp_type or 'unset'}, gyro_lowpass_hz = {lp_hz}; using gyroADC[0..1]",
+            f"gyro lowpass is off (type = {lp_type or 'unset'}, hz = {lp_hz}); using gyroADC[0..1]",
             "gyroADC[0]",
             "gyroADC[1]",
         )
 
     return (
         False,
-        f"gyroADC is POST-filter (debug_mode = {debug_mode or 'unset'}, "
-        f"gyro_lowpass_type = {lp_type or 'unset'}, gyro_lowpass_hz = {lp_hz})",
+        f"gyroADC is POST-filter (debug_mode = {debug_mode_raw or 'unset'}, "
+        f"gyro lowpass type = {lp_type or 'unset'}, hz = {lp_hz})",
         "gyroADC[0]",
         "gyroADC[1]",
     )
