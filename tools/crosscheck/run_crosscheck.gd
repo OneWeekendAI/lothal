@@ -365,8 +365,17 @@ func _run_powertrain_pair(tag: String, kv: float, k_t: float, k_q: float, max_am
 
 	var r_motor: MotorModel = MotorModel.create(kv, 1.0)
 	var r_batt: BatteryModel = BatteryModel.create(nv, r, mah, cells, chem)
+	# STANDARD AIR, and it has to be: the GDScript twin below is the pre-port implementation, which
+	# was written when there was one atmosphere and hardcodes 1.225. Handing Rust a field's air here
+	# would make the two sides disagree for a correct reason and report it as a port defect.
+	#
+	# Build.AIR_DENSITY_KGM3 rather than AirDensity.standard_kgm3(), deliberately: the twin's literal
+	# is 1.225, and the derivation is 1.2249781. Nothing in this cross-check reads rho today — the
+	# body velocity is zero throughout, so power_factor short-circuits to 1.0 — so the two are
+	# indistinguishable here, which is exactly why the choice should be made on principle now rather
+	# than discovered later. A golden cross-check must be handed the constant its ORACLE holds.
 	var rust: Powertrain = Powertrain.create(r_motor, k_t, k_q, r_batt, max_amps, rated_rpm,
-		pole_pairs, blades, prop_radius_m, prop_pitch_m)
+		pole_pairs, blades, prop_radius_m, prop_pitch_m, Build.AIR_DENSITY_KGM3)
 
 	var g_motor: RMotor = RMotor.new(kv, 1.0)
 	var g_batt: RBatt = RBatt.new(nv, r, mah, cells, chem)
