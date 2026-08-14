@@ -22,6 +22,18 @@ const AIR_DENSITY_KGM3 := 1.225
 ## printed in the sentence — so a builder reading it can see the continuum the constant sits on.
 const SAG_WORTH_NAMING := 0.75
 
+## The same kind of constant, for the same kind of statement: the fraction of static thrust a prop
+## must still be making at the build's own top speed before Lothal stops to mention the pitch.
+##
+## A PICKED CONSTANT, and a round one. Unloading is a continuum too — every prop is somewhere on it
+## the moment the aircraft moves — and half is a reader's threshold, not a boundary in the physics.
+## It is also the level at which the answer to "why is this thing slow?" changes: below it, the
+## limit is the propeller rather than the airframe, and that is a different part to go and swap.
+## Stated for the record because it is the sort of number that gets fitted after the fact: the
+## reference build sits at 0.60 and therefore does not warn, and that is where it landed rather
+## than where it was aimed.
+const UNLOADING_WORTH_NAMING := 0.50
+
 ## Fixed electronics package (parts.md): FC+ESC stack, camera, VTX, antenna, receiver,
 ## wiring. Not selectable in v1, but it is 55 g of real mass, so it stays in the
 ## mass-properties calculation. A constant, not an omission.
@@ -211,10 +223,22 @@ const FRAME_PLATE_THICKNESS_M := 0.010
 const REFERENCE_DRAG_AREA_M2 := 0.009
 const REFERENCE_ARM_M := 0.110
 
-## Top speed is quoted at a sustained 45-degree lean. Not the geometric maximum — at an
-## 11:1 thrust-to-weight the geometric maximum is an 85-degree lean, which no pilot holds
-## and which this model (no prop unloading at speed) would badly over-predict. 45 degrees
-## is the lean a speed run actually sits at.
+## Top speed is quoted at a sustained 45-degree lean: the lean a speed run actually sits at.
+##
+## This constant's ORIGINAL justification has expired and is worth recording, because the obvious
+## reading of the new physics is the wrong one. It used to say that the geometric maximum lean was
+## about 85 degrees and that a model with no prop unloading would badly over-predict there — the
+## implication being that once unloading existed the lean could be computed rather than assumed.
+##
+## It can be, and it was, and the answer is 66.6 degrees at 163 km/h for the reference build
+## (2026-08-14): full throttle, lean free, limited by the airspeed at which the prop can no longer
+## make the thrust that lean needs. That is ABOVE physics.md §8's 100-130 km/h band, while the
+## fixed 45 degrees gives 107 km/h inside it.
+##
+## So 45 degrees was never standing in for missing propeller physics. It is a statement about what a
+## PILOT holds, which is a different kind of claim and one the propeller model has nothing to say
+## about. It stays. What the model adds is a ceiling it can now be checked against, and an honest
+## thrust cap below.
 const TOP_SPEED_LEAN_RAD := 0.7853982
 
 ## Passed as `open_circuit_v` to mean "at the pack's NOMINAL voltage" — the datum every figure on
@@ -227,9 +251,37 @@ const TOP_SPEED_LEAN_RAD := 0.7853982
 ## rests at a negative voltage, so it cannot collide with a real reading.
 const AT_NOMINAL := -1.0
 
-## Hover is the cheapest thing a quad ever does. Real flying averages well above it, and
-## packs are landed with reserve rather than run flat.
-const FLIGHT_CURRENT_TO_HOVER_RATIO := 1.6
+## How a freestyle pilot actually spends a pack, as fractions of flying time. Every current figure
+## the app quotes for a FLIGHT rather than a hover is the model's own answer at each of these
+## points, time-weighted — see average_flight_current_a().
+##
+## THIS REPLACED A SCALAR, AND IT IS STILL A GUESS. Until 2026-08-14 this was
+## `FLIGHT_CURRENT_TO_HOVER_RATIO := 1.6`, a multiplier over hover current with no mechanism under
+## it, which battery_plausibility.gd told builders to their face could only be settled with a
+## stopwatch. It could not be validated because there was nothing to validate.
+##
+## What changed is not that the guessing stopped. It is WHERE the guess sits. The current at each
+## row below is computed — trimmed by the forward-flight propeller model at that airspeed and load
+## factor, through the same sag and the same current law the hover figure uses. What is assumed is
+## only the MIX: how much of an evening is spent cruising versus punching. That is a claim about a
+## pilot, stated in units a pilot can disagree with, and a builder who flies gentle cruise lines
+## and one who flies bandos disagree about it out loud. The scalar could not express that
+## disagreement, which is exactly why it could never be checked.
+##
+## Named FREESTYLE deliberately. A racer and a long-range cruiser fly different profiles, and the
+## day either is offered this constant is the thing that grows a sibling rather than a fudge.
+##
+## Steady cruise ALONE was considered and rejected: it is cheaper than hovering (translational lift
+## is real), so averaging over it predicts about eight minutes for the reference build and busts the
+## 4-6 min band in physics.md §8. A model that is honest per-term and dishonest overall is worse
+## than the scalar it replaced.
+const FREESTYLE_FLIGHT_PROFILE: Array[Dictionary] = [
+	{"name": "hover / slow", "fraction": 0.15, "airspeed_mps": 2.0, "load_factor": 1.0},
+	{"name": "cruise", "fraction": 0.40, "airspeed_mps": 12.0, "load_factor": 1.0},
+	{"name": "fast", "fraction": 0.25, "airspeed_mps": 22.0, "load_factor": 1.0},
+	{"name": "manoeuvre", "fraction": 0.15, "airspeed_mps": 15.0, "load_factor": 2.0},
+	{"name": "punch", "fraction": 0.05, "airspeed_mps": 10.0, "load_factor": 3.0},
+]
 const USABLE_CAPACITY_FRACTION := 0.80
 
 var frame: Dictionary
@@ -709,7 +761,7 @@ func build_drone_core() -> DroneCore:
 	var geometry := _prop_geometry(propeller)
 	return DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
 		effective_max_amps, rated_rpm(), drag_coefficient,
-		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro())
+		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m)
 
 ## Electrical frequency is per POLE PAIR, not per pole — a 14-pole motor turns through
 ## seven electrical cycles per revolution, not fourteen. Getting this wrong is a factor of
@@ -747,8 +799,14 @@ func weight_n() -> float:
 ## builder finds out that the bench figure is not the flying figure. Naming the gap is worth more
 ## than hiding it inside a single number that then explains nothing.
 func max_total_thrust_n() -> float:
-	var max_rpm: float = float(motor["specs"]["kv"]) * float(battery["specs"]["nominal_v"]) * motor_throttle_limit()
-	return 4.0 * PropellerModel.thrust_n(k_t, max_rpm)
+	return 4.0 * PropellerModel.thrust_n(k_t, max_rpm_at_nominal())
+
+
+## The RPM behind the bench figure above: KV at nominal volts, capped by what the motors' own
+## current limit lets them reach. Factored out because top_speed_kmh() asks the same question at a
+## non-zero airspeed, and two spellings of one RPM ceiling is one edit away from two answers.
+func max_rpm_at_nominal() -> float:
+	return float(motor["specs"]["kv"]) * float(battery["specs"]["nominal_v"]) * motor_throttle_limit()
 
 func thrust_to_weight() -> float:
 	return max_total_thrust_n() / weight_n()
@@ -973,11 +1031,69 @@ func hover_current_a(throttle: float, open_circuit_v: float = AT_NOMINAL) -> flo
 func hover_throttle_for(pack: BatteryModel) -> float:
 	return hover_throttle(pack.resting_voltage_v())
 
+## Total pack current holding a trimmed flight at one airspeed and load factor.
+##
+## The aircraft leans until the horizontal component of thrust balances drag, so both the lean and
+## the thrust needed fall out of the airspeed rather than being chosen: total thrust is the
+## hypotenuse of the lift it must hold and the drag it must beat. The throttle that produces that
+## thrust is then bisected on the RISING branch, capped at the peak-thrust throttle, for the same
+## reason hover_throttle() is — on a high-resistance pack thrust is not monotonic in throttle, and
+## a fixed point would diverge on exactly the packs the catalog carries to be interesting.
+##
+## The lean is what puts the freestream on the rotor axis, so it is also what decides how much of
+## the airspeed unloads the prop and how much of it is the edgewise flow that makes the rotor
+## cheaper. Both come out of the one angle; neither is a separate assumption.
+func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceiling: float,
+		open_circuit_v: float = AT_NOMINAL) -> float:
+	var geometry := prop_geometry()
+	var diameter_m: float = geometry.diameter_m
+	var pitch_m: float = geometry.pitch_m
+
+	var lift_n := load_factor * weight_n()
+	var drag_n := drag_coefficient * airspeed_mps * airspeed_mps
+	var lean_rad := atan2(drag_n, lift_n)
+	var v_axial := airspeed_mps * sin(lean_rad)
+	var v_edge := airspeed_mps * cos(lean_rad)
+	var target_n := sqrt(lift_n * lift_n + drag_n * drag_n)
+
+	var low := 0.0
+	var high := throttle_ceiling
+	for _i in 40:
+		var mid := (low + high) * 0.5
+		var thrust_n := 4.0 * PropellerModel.thrust_n_in_flight(
+			k_t, rpm_at_throttle(mid, open_circuit_v), diameter_m, pitch_m, v_axial)
+		if thrust_n < target_n:
+			low = mid
+		else:
+			high = mid
+
+	# `high` is the ceiling itself when this segment is unreachable, which reads as "flat out and
+	# still not holding it" — the same convention hover_throttle() uses for a build that cannot
+	# hold itself up, rather than a number quietly clamped into looking achievable.
+	var rpm := rpm_at_throttle(high, open_circuit_v)
+	return 4.0 * current_at_rpm(rpm) * PropellerModel.power_factor(
+		k_t, rpm, diameter_m, pitch_m, v_axial, v_edge)
+
+
+## The current a pack actually sees over a flight: the model's answer at each row of
+## FREESTYLE_FLIGHT_PROFILE, weighted by how much of the time is spent there.
+func average_flight_current_a(open_circuit_v: float = AT_NOMINAL) -> float:
+	# One peak solve for all five segments. It is 400 thrust evaluations and it does not depend on
+	# airspeed, so paying for it per segment would quintuple the cost of every stats-panel refresh
+	# for an identical answer.
+	var ceiling: float = peak_thrust(open_circuit_v)["throttle"]
+	var total := 0.0
+	for segment in FREESTYLE_FLIGHT_PROFILE:
+		total += float(segment["fraction"]) * flight_current_at_a(
+			float(segment["airspeed_mps"]), float(segment["load_factor"]), ceiling, open_circuit_v)
+	return total
+
+
 ## Zero for a build that cannot hover — there is no flight to put a time on.
 func flight_time_min() -> float:
 	if not can_hover():
 		return 0.0
-	var average_current_a := hover_current_a(hover_throttle()) * FLIGHT_CURRENT_TO_HOVER_RATIO
+	var average_current_a := average_flight_current_a()
 	if average_current_a <= 0.0:
 		return 0.0
 	var usable_mah: float = float(battery["specs"]["mah"]) * USABLE_CAPACITY_FRACTION
@@ -985,8 +1101,8 @@ func flight_time_min() -> float:
 
 ## How much flying is LEFT in a pack in the state it is actually in, in minutes.
 ##
-## The same convention as flight_time_min() — average current is hover current times
-## FLIGHT_CURRENT_TO_HOVER_RATIO, and only USABLE_CAPACITY_FRACTION of the pack is flown — so the
+## The same convention as flight_time_min() — average current is the model's own answer over
+## FREESTYLE_FLIGHT_PROFILE, and only USABLE_CAPACITY_FRACTION of the pack is flown — so the
 ## HUD's countdown and the stats panel's estimate are the same claim about the same aircraft, and
 ## a pilot who reads 4.1 minutes in the garage and 4.1 minutes at spawn is not being told two
 ## different things by two different formulas.
@@ -999,7 +1115,7 @@ func remaining_flight_time_min(pack: BatteryModel) -> float:
 	var rest_v := pack.resting_voltage_v()
 	if not can_hover(rest_v):
 		return 0.0
-	var average_current_a := hover_current_a(hover_throttle(rest_v), rest_v) * FLIGHT_CURRENT_TO_HOVER_RATIO
+	var average_current_a := average_flight_current_a(rest_v)
 	if average_current_a <= 0.0:
 		return 0.0
 	var usable_mah := pack.capacity_mah * USABLE_CAPACITY_FRACTION - pack.used_mah
@@ -1009,10 +1125,36 @@ func remaining_flight_time_min(pack: BatteryModel) -> float:
 
 
 ## Terminal speed at the reference lean: horizontal thrust balances aerodynamic drag.
+##
+## The thrust ceiling is evaluated AT THE SPEED BEING SOLVED FOR, which is why this bisects rather
+## than evaluating one expression. A leaned rotor at speed has the freestream partly along its own
+## axis and makes less thrust than the same rotor on a stand, so "can this aircraft hold 45 degrees
+## at 40 m/s" is a question about 40 m/s and not about a bench.
+##
+## For the reference build this changes NOTHING — 107 km/h before and after — because at a fixed 45
+## degrees the thrust required is weight over cos(45), 6.9 N against 34 N still available. That is
+## the honest result and it is worth saying plainly rather than implying the correction earned its
+## place here. It earns it on builds the reference build cannot exercise: a heavy or low-TWR
+## aircraft, or a high-pitch prop whose thrust runs out early, is where the cap actually binds, and
+## for those the previous figure was an over-estimate.
 func top_speed_kmh() -> float:
-	var horizontal_thrust_n := weight_n() * tan(TOP_SPEED_LEAN_RAD)
-	horizontal_thrust_n = minf(horizontal_thrust_n, max_total_thrust_n() * sin(TOP_SPEED_LEAN_RAD))
-	return sqrt(horizontal_thrust_n / drag_coefficient) * 3.6
+	var lean_horizontal_n := weight_n() * tan(TOP_SPEED_LEAN_RAD)
+	var geometry := prop_geometry()
+	var max_rpm := max_rpm_at_nominal()
+
+	# The drag-only answer, which is an upper bound: unloading can only ever take thrust away.
+	var high := sqrt(lean_horizontal_n / drag_coefficient)
+	var low := 0.0
+	for _i in 40:
+		var mid := (low + high) * 0.5
+		var available_n := 4.0 * PropellerModel.thrust_n_in_flight(k_t, max_rpm,
+			geometry.diameter_m, geometry.pitch_m, mid * sin(TOP_SPEED_LEAN_RAD))
+		var horizontal_n := minf(lean_horizontal_n, available_n * sin(TOP_SPEED_LEAN_RAD))
+		if drag_coefficient * mid * mid < horizontal_n:
+			low = mid
+		else:
+			high = mid
+	return low * 3.6
 
 
 # ---------------------------------------------------------------------------
@@ -1106,6 +1248,7 @@ func warnings() -> Array[BuildWarning]:
 				"reachable_twr": reachable_thrust_n / weight_n()}))
 
 	out.append_array(_flight_quality())
+	out.append_array(_prop_unloading())
 	out.append_array(_vibration_character())
 
 	# What this build's frame is, where its numbers came from, and the one place Lothal knows it is
@@ -1129,8 +1272,8 @@ func warnings() -> Array[BuildWarning]:
 
 	# And the same for the pack — empty for a catalog battery, and for a custom one it says the
 	# two things a builder needs to know: the derived internal resistance is a self-consistency
-	# assumption reproduced (not a measurement), and every flight-time figure carries an
-	# unvalidated multiplier named FLIGHT_CURRENT_TO_HOVER_RATIO.
+	# assumption reproduced (not a measurement), and every flight-time figure is averaged over an
+	# assumed mission profile named FREESTYLE_FLIGHT_PROFILE.
 	out.append_array(BatteryPlausibility.warnings_for(self))
 
 	# And the two halves of the stack. The ESC's file exists for one check above all others — the
@@ -1294,6 +1437,47 @@ func _stack_fit_warning(board: Dictionary, board_pattern: String, id: StringName
 ## honestly — the TWR at which climb margin no longer arrests a descent — depends on the descent
 ## rate being arrested, which is a pilot's choice and not a property of the parts. Rather than
 ## assert one, the margin itself is printed and the reader can do what they like with it.
+## What the propeller's own pitch costs this build at speed.
+##
+## A prop stops making thrust at an advance ratio near its geometric pitch over its diameter, so a
+## high-pitch prop on a low-revving motor runs out of blade before it runs out of drag: the aircraft
+## is not slow because it is draggy, it is slow because the propeller has nothing left to push
+## against. That is a genuinely different diagnosis from "too heavy" or "not enough thrust", it is
+## invisible on any static figure the stats panel shows, and before the forward-flight model
+## (2026-08-14) Lothal could not tell a builder about it at all.
+##
+## CHARACTERISTIC, and warn-never-block as always: a high-pitch prop is a legitimate choice with a
+## consequence, which is exactly the case this severity exists for.
+##
+## Quotes no error bar and must not grow one. The model under it is characteristic
+## (validation.md) — there is no published C_T(J) for any FPV propeller — so what is trustworthy
+## here is the ranking and the mechanism, not the metre per second.
+func _prop_unloading() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	if not can_hover():
+		return out
+
+	var geometry := prop_geometry()
+	var top_mps := top_speed_kmh() / 3.6
+	var v_axial := top_mps * sin(TOP_SPEED_LEAN_RAD)
+	var max_rpm := max_rpm_at_nominal()
+	var remaining := PropellerModel.thrust_factor(max_rpm, geometry.diameter_m, geometry.pitch_m, v_axial)
+
+	if remaining >= UNLOADING_WORTH_NAMING:
+		return out
+
+	out.append(BuildWarning.characteristic(&"prop_unloading",
+		"The %s is steep for these motors — at its own top speed this build's props are down to %.0f%% of the thrust they make on a stand, because the aircraft is flying at %.0f%% of the speed the blade would screw itself forward at. A lower-pitch prop, or more RPM, buys back the top end." % [
+			propeller["name"], remaining * 100.0,
+			PropellerModel.advance_ratio(max_rpm, geometry.diameter_m, v_axial)
+				/ PropellerModel.j_zero(geometry.diameter_m, geometry.pitch_m) * 100.0],
+		{"thrust_fraction_at_top_speed": remaining,
+			"advance_ratio": PropellerModel.advance_ratio(max_rpm, geometry.diameter_m, v_axial),
+			"j_zero": PropellerModel.j_zero(geometry.diameter_m, geometry.pitch_m),
+			"top_speed_kmh": top_speed_kmh()}))
+	return out
+
+
 func _flight_quality() -> Array[BuildWarning]:
 	var out: Array[BuildWarning] = []
 

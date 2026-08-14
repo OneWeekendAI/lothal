@@ -338,11 +338,15 @@ static func _test_drain_runs_at_one_to_one(catalog: PartsCatalog) -> Array:
 
 	# --- The whole-pack one, run to empty ---
 	#
-	# Build.flight_time_min() is quoted on 80% of the pack at 1.6x hover current, because real
-	# flying averages above hover and packs are landed with reserve. Undoing both factors gives
-	# the time to empty AT hover current, which is what the dynamic run below actually does.
+	# Build.flight_time_min() is quoted on 80% of the pack at the current the model averages over
+	# FREESTYLE_FLIGHT_PROFILE, because real flying is not hovering and packs are landed with
+	# reserve. Undoing both factors gives the time to empty AT hover current, which is what the
+	# dynamic run below actually does. The flight-to-hover ratio is READ from the two functions
+	# rather than written down: it is a derived consequence of the profile now, not a constant, and
+	# a copy of it here would be a second answer to what flying costs.
+	var flight_to_hover := build.average_flight_current_a() / build.hover_current_a(build.hover_throttle())
 	var analytic_s := build.flight_time_min() * 60.0 \
-		* (1.0 / Build.USABLE_CAPACITY_FRACTION) * Build.FLIGHT_CURRENT_TO_HOVER_RATIO
+		* (1.0 / Build.USABLE_CAPACITY_FRACTION) * flight_to_hover
 
 	var runner := _powertrain_for(build)
 	runner.prime(hover)
@@ -384,7 +388,7 @@ static func _powertrain_for(build: Build) -> Powertrain:
 	return Powertrain.create(
 		build.motor_model(), build.k_t, build.k_q, build.battery_model(),
 		build.effective_max_amps, build.rated_rpm(),
-		build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5)
+		build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, geometry.pitch_m)
 
 
 # ---------------------------------------------------------------------------

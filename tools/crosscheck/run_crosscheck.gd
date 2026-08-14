@@ -348,7 +348,7 @@ func _check_powertrain(motors: Array, props: Array, packs: Array, catalog: Parts
 				_run_powertrain_pair(
 					"%s|%s|%s" % [m["part_id"], p["part_id"], bp["part_id"]],
 					kv, k_t, k_q, max_amps, rated_rpm, poles * 0.5, tg["blades"],
-					tg["diameter_m"] * 0.5, sp, steps)
+					tg["diameter_m"] * 0.5, tg["pitch_m"], sp, steps)
 
 	print("powertrain: %d combos (%d at %d steps, rest at %d)"
 		% [combo, long_runs, PT_LONG_STEPS, PT_SHORT_STEPS])
@@ -356,7 +356,7 @@ func _check_powertrain(motors: Array, props: Array, packs: Array, catalog: Parts
 
 func _run_powertrain_pair(tag: String, kv: float, k_t: float, k_q: float, max_amps: float,
 		rated_rpm: float, pole_pairs: float, blades: float, prop_radius_m: float,
-		sp: Dictionary, steps: int) -> void:
+		prop_pitch_m: float, sp: Dictionary, steps: int) -> void:
 	var nv := float(sp["nominal_v"])
 	var r := float(sp["internal_r_ohm"])
 	var mah := float(sp["mah"])
@@ -366,7 +366,7 @@ func _run_powertrain_pair(tag: String, kv: float, k_t: float, k_q: float, max_am
 	var r_motor: MotorModel = MotorModel.create(kv, 1.0)
 	var r_batt: BatteryModel = BatteryModel.create(nv, r, mah, cells, chem)
 	var rust: Powertrain = Powertrain.create(r_motor, k_t, k_q, r_batt, max_amps, rated_rpm,
-		pole_pairs, blades, prop_radius_m)
+		pole_pairs, blades, prop_radius_m, prop_pitch_m)
 
 	var g_motor: RMotor = RMotor.new(kv, 1.0)
 	var g_batt: RBatt = RBatt.new(nv, r, mah, cells, chem)

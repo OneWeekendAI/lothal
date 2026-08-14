@@ -133,7 +133,7 @@ func _render_bench(build: Build, synth: RotorSynth) -> PackedFloat32Array:
 	var pt := Powertrain.create(
 		build.motor_model(), build.k_t, build.k_q, build.battery_model(),
 		build.effective_max_amps, build.rated_rpm(),
-		build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5
+		build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, geometry.pitch_m
 	)
 
 	var out := PackedFloat32Array()
