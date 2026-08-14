@@ -33,7 +33,8 @@ pub const PITCH_EXPONENT: f64 = 0.5;
 
 /// Sea-level standard air. The SAME number as Build.AIR_DENSITY_KGM3, and tests/test_rust_constants.gd
 /// pins them together — a rotor disc and an airframe's drag area must not be told two different
-/// things about the air they are both moving through.
+/// things about the air they are both moving through. The pin does not read this const: it inverts
+/// the hover branch of induced_velocity_mps to recover the rho actually applied there.
 pub const AIR_DENSITY_KGM3: f64 = 1.225;
 
 /// FIGURE OF MERIT, AND IT IS A GUESS. No source. There is no source: nobody publishes a figure of
