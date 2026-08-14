@@ -107,6 +107,9 @@ func _init() -> void:
 	add_child(_host)
 
 	lab = LabScreen.new(catalog_for_lab(), null, pack_charge)
+	# The garage quotes its numbers in the air of the course that is selected to be flown. Set here
+	# rather than read by Lab, so there is one owner of the library and one reader of it.
+	lab.air = course_library.selected().air
 	_host.add_child(lab)
 
 	# The tab bar sits on a high CanvasLayer so it stays reachable over Sim, whose HUD is
@@ -361,6 +364,12 @@ func show_frame_bench() -> void:
 func show_field_editor() -> void:
 	_close_rooms()
 	field_editor = FieldEditorScreen.new(course_library, lab.current_build())
+	# Editing the field changes what the aircraft next door CAN DO, so Lab's readout has to follow
+	# it. Without this the builder types 3500 m, walks back to the garage and reads a
+	# thrust-to-weight for a place they are not — which is the exact stale reading this feature
+	# exists to remove, reintroduced one room over.
+	field_editor.course_changed.connect(func() -> void:
+		lab.set_air(course_library.selected().air))
 	_host.add_child(field_editor)
 	_showing_lab = false
 	lab.visible = false

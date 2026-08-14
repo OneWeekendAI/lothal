@@ -38,6 +38,7 @@ static func run() -> Array:
 	results.append(_test_manoeuvre_headroom_comes_from_the_mixer(catalog))
 	results.append(_test_both_facts_are_told_every_time(catalog))
 	results.append(_test_hover_throttle_and_thrust_to_weight_are_one_fact(catalog))
+	results.append_array(_test_the_field_is_described_and_only_physics_warns(catalog))
 	results.append(_test_the_readout_is_accountable_to_the_sim(catalog))
 	results.append_array(_test_the_panels_show_severity(catalog))
 	results.append_array(_test_vibration_is_described_never_blocked(catalog))
@@ -483,3 +484,112 @@ static func _test_vibration_is_described_never_blocked(_catalog: PartsCatalog) -
 		"\"%s\"" % found.message))
 
 	return out
+
+
+## ---------------------------------------------------------------------------
+## Where you fly, in the same vocabulary
+## ---------------------------------------------------------------------------
+
+## Air density is the newest thing that moves every headline number, and it is the easiest place to
+## reintroduce the exact mistake this file exists to prevent: an altitude at which Lothal starts
+## telling a builder they have a problem. There is no such altitude. 900 m is not a different kind
+## of place from 800 m, and any threshold between them would describe the taste of whoever typed it.
+##
+## So the field itself is CHARACTERISTIC and silent at sea level, and the only thing that changes
+## severity is the boundary that was already there — peak thrust against weight.
+static func _test_the_field_is_described_and_only_physics_warns(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+
+	var at_sea_level := _at(catalog, CINELIFTER, AirDensity.standard())
+	results.append(TestResult.new(
+		"a course at standard air says nothing about the air — the list is not a status bar",
+		_find(at_sea_level.warnings(), &"field_air") == null,
+		"%d warnings, none of them about the field" % at_sea_level.warnings().size()))
+
+	# A real field, warm and up a bit. Everything about it is a description with units.
+	var bangalore := _at(catalog, CINELIFTER, AirDensity.new(920.0, 35.0))
+	var field := _find(bangalore.warnings(), &"field_air")
+	results.append(TestResult.new(
+		"a real field is described, with its elevation, its temperature and its density",
+		field != null and field.severity == BuildWarning.Severity.CHARACTERISTIC
+			and field.message.contains("920 m") and field.message.contains("35 °C")
+			and field.message.contains("1.026 kg/m³"),
+		"" if field == null else "severity %d: %s" % [field.severity, field.message]))
+
+	# THE HEADROOM SENTENCE FOLLOWS THE FIELD, which is the whole product in one line: the same
+	# aircraft, described at two places, and the difference is in the numbers rather than in a
+	# change of tone.
+	var thin := _at(catalog, CINELIFTER, AirDensity.new(3500.0, 35.0))
+	var here := _find(thin.warnings(), &"manoeuvre_headroom")
+	var there := _find(at_sea_level.warnings(), &"manoeuvre_headroom")
+	results.append(TestResult.new(
+		"the manoeuvre headroom is quoted at the field, and it is still a description",
+		here != null and there != null and here.message != there.message
+			and here.severity == BuildWarning.Severity.CHARACTERISTIC,
+		"sea level: %s\n            3500 m: %s" % [
+			"" if there == null else there.message, "" if here == null else here.message]))
+
+	# ...and it is still not impossible at 3500 m, where it hovers at 98% with almost nothing left.
+	# A build with 3% of a stick demand in hand is in real trouble and Lothal still does not call
+	# it broken, because it is not: it flies, and the numbers say exactly how well.
+	results.append(TestResult.new(
+		"at 3500 m it hovers on almost nothing and is STILL not called impossible",
+		thin.can_hover() and _find(thin.warnings(), &"cannot_hover") == null,
+		"%.2f:1, %.0f%% hover, %.0f%% of a full demand in hand" % [
+			thin.thrust_to_weight(), thin.hover_throttle() * 100.0,
+			thin.attitude_demand_at_hover() * 100.0]))
+
+	# The boundary, when it is finally crossed, is the one that was already there — and the sentence
+	# says WHERE, because "it will not leave the ground" would send this builder to buy motors for
+	# an aircraft that is fine 5000 m lower.
+	var too_high := _at(catalog, CINELIFTER, AirDensity.new(5000.0, 35.0))
+	var refused := _find(too_high.warnings(), &"cannot_hover")
+	results.append(TestResult.new(
+		"past the boundary it is impossible, and the sentence names the field rather than the parts",
+		refused != null and refused.severity == BuildWarning.Severity.IMPOSSIBLE
+			and refused.message.contains("AT THIS FIELD")
+			and refused.message.contains("It is the field, not the parts")
+			and refused.values.has("twr_at_sea_level"),
+		"" if refused == null else refused.message))
+
+	# And the comparison it quotes has to be real rather than rhetorical: the sea-level twin it
+	# names must be an aircraft that actually hovers.
+	results.append(TestResult.new(
+		"and the sea-level figure it quotes is a build that really does hover",
+		refused != null and float(refused.values.get("twr_at_sea_level", 0.0)) > 1.0
+			and absf(float(refused.values.get("twr_at_sea_level", 0.0))
+				- _at(catalog, CINELIFTER, AirDensity.standard()).thrust_to_weight()) < 1.0e-9,
+		"" if refused == null else "quotes %.3f:1 at sea level" % float(refused.values.get("twr_at_sea_level", 0.0))))
+
+	# NO NEW PICKED CONSTANT. Swept across the whole troposphere, the severity of this build changes
+	# exactly once, and it changes where can_hover() does. If anybody ever adds "warn above 2000 m",
+	# this is the check that fails.
+	var flips := 0
+	var previous := true
+	var flip_elevation := -1.0
+	for step in 51:
+		var elevation := float(step) * 100.0
+		var build := _at(catalog, CINELIFTER, AirDensity.new(elevation, 35.0))
+		var impossible := _find(build.warnings(), &"cannot_hover") != null
+		if step > 0 and impossible != previous:
+			flips += 1
+			flip_elevation = elevation
+		previous = impossible
+	results.append(TestResult.new(
+		"across 0-5000 m the severity changes exactly once, and only where the physics does",
+		flips == 1 and _at(catalog, CINELIFTER, AirDensity.new(flip_elevation, 35.0)).can_hover() == false
+			and _at(catalog, CINELIFTER, AirDensity.new(flip_elevation - 100.0, 35.0)).can_hover(),
+		"%d severity change(s), at %.0f m" % [flips, flip_elevation]))
+	return results
+
+
+static func _at(catalog: PartsCatalog, ids: Array, air: AirDensity) -> Build:
+	return Build.from_ids(catalog, ids[0], ids[1], ids[2], ids[3], ids[4],
+		Build.DEFAULT_FC_ID, {}, air)
+
+
+static func _find(warnings: Array[BuildWarning], id: StringName) -> BuildWarning:
+	for warning in warnings:
+		if warning.id == id:
+			return warning
+	return null
