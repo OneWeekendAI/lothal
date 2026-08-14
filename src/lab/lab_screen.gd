@@ -80,6 +80,16 @@ const DRAG_DEG_PER_PIXEL := 0.4
 ## threshold the blades are replaced by a blur disc.
 const HAND_SPIN_RPM := 150.0
 
+## The air the garage quotes its numbers in — the SELECTED course's field (air_density.gd).
+##
+## Lab holds it rather than reaching for CourseLibrary itself, for the same reason it is handed a
+## PackCharge rather than loading one: the shell owns the state two rooms touch, and a second
+## reader would be a second copy that could go stale the moment the field editor changed it.
+##
+## Standard until the shell says otherwise, which is what keeps a LabScreen built in a test — or
+## before any library is loaded — quoting the same figures it always has.
+var air := AirDensity.standard()
+
 var catalog: PartsCatalog
 var picker: FramePicker
 var motor_picker: MotorPicker
@@ -533,6 +543,14 @@ func _on_part_selected(_part: Dictionary) -> void:
 	_on_selection_changed()
 
 
+## The air the garage quotes in, changed. One method rather than a bare property assignment,
+## because setting the air without re-deriving leaves five stats and every warning describing the
+## previous field — and the whole point of this feature is that those numbers follow the place.
+func set_air(p_air: AirDensity) -> void:
+	air = p_air
+	_on_selection_changed()
+
+
 ## The single path from a selection to everything that shows it. Geometry, all three panels'
 ## spec rows and the five derived stats are rebuilt from ONE Build in ONE call, so there is no
 ## ordering in which a panel could be showing one component while the viewport shows another —
@@ -628,7 +646,8 @@ func current_build() -> Build:
 		battery_picker.selected_part()["part_id"],
 		esc_picker.selected_part()["part_id"],
 		fc_picker.selected_part()["part_id"],
-		electronics_picker.component_ids()
+		electronics_picker.component_ids(),
+		air
 	)
 
 

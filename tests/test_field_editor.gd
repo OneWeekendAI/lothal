@@ -359,6 +359,74 @@ static func _the_field_itself() -> Array:
 		"%.4f kg/m3 at %.0f m" % [editor.course().air.kgm3(), editor.course().air.elevation_m]))
 
 	editor.free()
+
+	results.append_array(_the_garage_follows_the_field())
+	return results
+
+
+## The half of this that a builder actually notices: change the field, walk back to the garage, and
+## the five derived stats are for the place you are going to fly.
+##
+## Through the shell rather than through the editor alone, because the wiring IS the feature here.
+## Lab holds its own air and the shell keeps it in step; a test that only checked the editor's
+## model would pass against a build where the two rooms never spoke.
+static func _the_garage_follows_the_field() -> Array:
+	var results: Array = []
+
+	# AppShell owns the REAL library, so this section edits `user://courses.json` — the builder's
+	# own courses. Everything below puts it back. A test that quietly left somebody's home field at
+	# 3500 m would be a worse bug than any it could catch, and it would also poison every later
+	# suite that reads the default circuit.
+	var real_path := CourseLibrary.SAVE_PATH
+	var had_file := FileAccess.file_exists(real_path)
+	var saved_contents := FileAccess.get_file_as_string(real_path) if had_file else ""
+
+	var shell := AppShell.new()
+
+	var before := shell.lab.current_build().thrust_to_weight()
+	shell.show_field_editor()
+	shell.field_editor.set_field_elevation_m(3500.0)
+	shell.field_editor.set_field_temperature_c(30.0)
+	shell.show_lab()
+	var after := shell.lab.current_build().thrust_to_weight()
+
+	var expected := Build.from_ids(shell.lab.catalog,
+		shell.lab.selection()["frame"], shell.lab.selection()["motor"],
+		shell.lab.selection()["propeller"], shell.lab.selection()["battery"],
+		shell.lab.selection()["esc"], shell.lab.selection()["flight_controller"],
+		{}, AirDensity.new(3500.0, 30.0)).thrust_to_weight()
+
+	results.append(TestResult.new(
+		"editing the field moves the garage's thrust-to-weight to the field's own figure",
+		absf(after - expected) < 0.01 and absf(after - before) > 0.5,
+		"%.2f:1 at sea level, %.2f:1 at 3500 m (expected %.2f:1)" % [before, after, expected]))
+
+	# And the build that walks through the door into Sim is the one quoted in the garage, or the
+	# field would fly an aircraft the readout never described.
+	results.append(TestResult.new(
+		"and the build handed to Sim carries the same air",
+		absf(shell.lab.current_build().air.kgm3()
+			- shell.course_library.selected().air.kgm3()) < 1.0e-12,
+		"garage %.4f kg/m3, selected course %.4f kg/m3" % [
+			shell.lab.current_build().air.kgm3(),
+			shell.course_library.selected().air.kgm3()]))
+
+	shell.free()
+
+	if had_file:
+		var restore := FileAccess.open(real_path, FileAccess.WRITE)
+		restore.store_string(saved_contents)
+		restore.close()
+	else:
+		DirAccess.remove_absolute(real_path)
+
+	results.append(TestResult.new(
+		"and the builder's own courses are put back the way they were found",
+		FileAccess.file_exists(real_path) == had_file
+			and (not had_file or FileAccess.get_file_as_string(real_path) == saved_contents),
+		"%s on the way in, %s on the way out" % [
+			"a file" if had_file else "no file",
+			"a file" if FileAccess.file_exists(real_path) else "no file"]))
 	return results
 
 

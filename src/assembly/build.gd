@@ -400,6 +400,31 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 	b._recompute()
 	return b
 
+## The same aircraft, at a different field.
+##
+## This exists because "it cannot hover HERE" is a very different statement from "it cannot hover",
+## and telling them apart needs the build's own sea-level twin to compare against. Rebuilt from the
+## catalog rather than copied and rescaled: the density ratio moves k_t exactly, but it also moves
+## k_q and therefore the current the pack is asked for, so the throttle a current limit binds at
+## does NOT follow a clean ratio. Recomputing is the only way to get that right, and the warning
+## path is the only caller — this is not on the per-frame road.
+##
+## The assembly comes with it. A twin that forgot where the pack was strapped would answer a
+## question about a different aircraft.
+func at_air(p_air: AirDensity) -> Build:
+	var ids := {}
+	for category in OPTIONAL_COMPONENTS:
+		if components.has(category):
+			ids[category] = str((components[category] as Dictionary)["part_id"])
+		else:
+			ids[category] = ""
+	var twin := Build.from_ids(catalog, str(frame["part_id"]), str(motor["part_id"]),
+		str(propeller["part_id"]), str(battery["part_id"]), str(esc["part_id"]),
+		str(fc["part_id"]), ids, p_air)
+	twin.set_assembly(assembly)
+	return twin
+
+
 ## Adopts an assembly configuration and recomputes. The mass properties are the only thing that
 ## changes: nothing here touches thrust, current or any collective figure, which is why the
 ## project's three fixed points survive a pack slid to the end of its travel.
@@ -1297,6 +1322,10 @@ func warnings() -> Array[BuildWarning]:
 			{"usable_fraction": usable_fraction, "bench_twr": thrust_to_weight(),
 				"reachable_twr": reachable_thrust_n / weight_n()}))
 
+	# The field comes FIRST of the three, deliberately. It is the frame every number below it is
+	# quoted in, and a reader who meets "cannot hover" before they have been told they are at
+	# 3500 m has been handed the conclusion before the premise.
+	out.append_array(_field_air())
 	out.append_array(_flight_quality())
 	out.append_array(_prop_unloading())
 	out.append_array(_vibration_character())
@@ -1532,10 +1561,27 @@ func _flight_quality() -> Array[BuildWarning]:
 	var out: Array[BuildWarning] = []
 
 	if not can_hover():
-		out.append(BuildWarning.impossible(&"cannot_hover",
-			"This build cannot lift its own %.0f g — it will not leave the ground." % all_up_weight_g(),
-			{"all_up_weight_g": all_up_weight_g(), "twr": thrust_to_weight(),
-				"reachable_twr": peak_thrust()["thrust_n"] / weight_n()}))
+		# WHERE it cannot hover matters, and saying only "it will not leave the ground" to a builder
+		# whose design is fine at sea level would be the cinelifter bug in a new place: a true
+		# sentence that leads to the wrong action. They would go and buy different motors when what
+		# they have is a perfectly good aircraft for a lower field.
+		#
+		# The twin is built ONLY on this branch and only when the air is non-standard, so the common
+		# path costs nothing. It cannot recurse: the twin is at standard air, and this block is the
+		# only caller of at_air().
+		var ground := "This build cannot lift its own %.0f g — it will not leave the ground." % all_up_weight_g()
+		var detail := {"all_up_weight_g": all_up_weight_g(), "twr": thrust_to_weight(),
+			"reachable_twr": peak_thrust()["thrust_n"] / weight_n()}
+		if not air.is_standard():
+			var sea_level := at_air(AirDensity.standard())
+			if sea_level.can_hover():
+				ground = "This build cannot lift its own %.0f g AT THIS FIELD — %.0f m and %.0f °C is %.3f kg/m³, %.1f%% less air than sea level. The same aircraft hovers at %.0f%% throttle at sea level, %.1f:1. It is the field, not the parts." % [
+					all_up_weight_g(), air.elevation_m, air.temperature_c, air.kgm3(),
+					air.fraction_below_standard() * 100.0,
+					sea_level.hover_throttle() * 100.0, sea_level.thrust_to_weight()]
+				detail["twr_at_sea_level"] = sea_level.thrust_to_weight()
+				detail["hover_throttle_at_sea_level"] = sea_level.hover_throttle()
+		out.append(BuildWarning.impossible(&"cannot_hover", ground, detail))
 		# Climb margin and headroom are statements about flight, and there is none. Printing
 		# "climbs at -2 m/s^2" beneath "it will not leave the ground" would be arithmetic, not
 		# information.
@@ -1560,6 +1606,36 @@ func _flight_quality() -> Array[BuildWarning]:
 	out.append(BuildWarning.characteristic(&"manoeuvre_headroom", headroom,
 		{"hover_throttle": hover_throttle(), "attitude_demand_fraction": demand}))
 
+	return out
+
+
+## What the air at this field is, and what it costs — with units, and no judgement.
+##
+## CHARACTERISTIC, and it could not honestly be anything else. There is no boundary in air density:
+## 900 m is not a different kind of place from 800 m, and any elevation at which Lothal started
+## calling a field a problem would be a picked constant describing the taste of whoever typed it
+## rather than the aircraft — the 2.0:1 thrust-to-weight mistake relocated to geography. Everything
+## that BINDS is already reported by the branches above, evaluated at this air: a build that cannot
+## hover here says so, and one whose hover throttle has eaten its attitude headroom says that.
+## This warning's whole job is to make the reason legible.
+##
+## Silent at standard air. A course at sea level saying "0.0% below sea level" is a line of text
+## that reports nothing, and the warning list is not a status bar.
+func _field_air() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	if air.is_standard():
+		return out
+
+	var fraction := air.fraction_below_standard()
+	# Thrust is linear in density (T = C_T·ρ·n²·D⁴), so the thrust statement is exactly the density
+	# statement and is quoted as the same number rather than as a second calculation.
+	out.append(BuildWarning.characteristic(&"field_air",
+		"This course is at %.0f m and %.0f °C — %.3f kg/m³, %.1f%% %s sea-level air. Thrust is linear in air density, so every figure here is quoted %.1f%% %s than the same build at sea level." % [
+			air.elevation_m, air.temperature_c, air.kgm3(),
+			absf(fraction) * 100.0, "below" if fraction > 0.0 else "above",
+			absf(fraction) * 100.0, "lower" if fraction > 0.0 else "higher"],
+		{"elevation_m": air.elevation_m, "temperature_c": air.temperature_c,
+			"air_density_kgm3": air.kgm3(), "fraction_below_standard": fraction}))
 	return out
 
 
