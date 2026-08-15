@@ -263,6 +263,111 @@ def resonance_hz_for(arm_m: float, tip_mass_kg: float) -> float:
 # ---------------------------------------------------------------------------
 
 
+#: How far one inter-sample interval may exceed the log's median interval before the log is
+#: refused as non-uniformly sampled.
+#:
+#: THIS NUMBER WAS FIXED BEFORE IT WAS RUN AGAINST ANY FILE, and the argument is the whole of
+#: its justification:
+#:
+#:   * what is being detected is a MISSING SAMPLE. A dropped frame leaves a hole of at least
+#:     two loop periods where one should be, i.e. a ratio of >= 2.0. A stall (see betaflight
+#:     #10945, recording stops after 10-30 s) leaves a hole orders of magnitude larger. So the
+#:     limit has to sit BELOW 2.0 to catch the smallest real defect.
+#:   * what must NOT be detected is SCHEDULER JITTER. The gyro loop is not a metronome and
+#:     diff(t) is never exactly constant; a limit tight enough to catch that rejects every log
+#:     ever written.
+#:
+#: 1.5 is the midpoint of the only gap those two arguments leave, in ratio terms. It is not
+#: derived from any file and must not be moved to make one pass. (Reported after the fact, as
+#: a sanity reading only: Oscar Liang's 4.3.1 log jitters by 2.7% worst-case, 500 us nominal,
+#: min 487 max 512 over 194087 rows. That is 20x of headroom below the limit and 33x below a
+#: dropped frame — but the limit would be 1.5 whatever that file had said.)
+GAP_RATIO_LIMIT = 1.5
+
+
+def check_uniform_sampling(t, name, unit_to_s):
+    """Refuse a gapped log. Returns (dt_seconds, evidence). Raises ValueError on a gap.
+
+    EVERY loader in this tool and in impact_analysis takes its sample rate from
+    `median(diff(t))` and then hands the samples to an FFT as if they were contiguous. A log
+    with dropped frames still yields a perfectly plausible median — the survivors are evenly
+    spaced, there are just fewer of them than the elapsed time accounts for. The time axis then
+    silently compresses at every hole, and the tool returns a frequency that looks entirely
+    normal and is wrong by however much time went missing. That frequency is the one number
+    these tools exist to produce, so a silent wrong answer here is worse than no answer at all.
+
+    This is not an exotic failure. betaflight#11690 ("Zeez F7 write blackbox with gaps on BF
+    4.3") is real dropped frames on shipping hardware, closed without a fix; #10945 and #13870
+    are the same family. Roughly a fifth of the INAV logs in ~/Downloads/logs are truncated.
+
+    It is WORSE in impact_analysis than here. That tool takes damping from the decay envelope
+    of a ringdown, and a hole punched in a decaying exponential does not merely shift the
+    frequency — it changes the apparent decay rate. The result is a wrong measured zeta
+    replacing DEFAULT_DAMPING_RATIO, which is half of what LTHL-49 was for.
+
+    Backwards or duplicate timestamps are refused too: a non-positive interval is corruption
+    (betaflight#13870), and `median` will happily absorb a few of them.
+    """
+    t = np.asarray(t, dtype=float)
+    if len(t) < 3:
+        raise ValueError(f"{name}: {len(t)} samples is not a log")
+    d = np.diff(t)
+    med = float(np.median(d))
+    if med <= 0.0:
+        raise ValueError(f"{name}: median sample interval is {med}; the time column is not time")
+    worst = float(d.max()) / med
+    if d.min() <= 0.0:
+        raise ValueError(
+            f"{name}: time does not increase monotonically — {int((d <= 0).sum())} of "
+            f"{len(d)} intervals are <= 0 (min {d.min() * unit_to_s * 1e6:.0f} us). "
+            "The log is corrupt; the FFT would treat it as contiguous anyway. Re-log."
+        )
+    evidence = (
+        f"uniform sampling: worst gap {worst:.3f}x the median interval "
+        f"({med * unit_to_s * 1e6:.0f} us), limit {GAP_RATIO_LIMIT:.1f}x"
+    )
+    if worst >= GAP_RATIO_LIMIT:
+        n_gaps = int((d >= GAP_RATIO_LIMIT * med).sum())
+        missing_s = float((d[d >= GAP_RATIO_LIMIT * med] - med).sum()) * unit_to_s
+        raise ValueError(
+            f"{name}: NON-UNIFORM SAMPLING — {n_gaps} of {len(d)} intervals are >= "
+            f"{GAP_RATIO_LIMIT:.1f}x the median; worst is {worst:.1f}x "
+            f"({d.max() * unit_to_s * 1e6:.0f} us against a median of "
+            f"{med * unit_to_s * 1e6:.0f} us), and {missing_s * 1000:.0f} ms of samples are "
+            "missing in total.\n"
+            "  Every frequency here is derived from the median interval applied to samples "
+            "treated as contiguous, so the time axis compresses at each gap and the answer "
+            "would be wrong by an amount nothing in the output would reveal.\n"
+            "  This is betaflight#11690 / #10945 territory: dropped blackbox frames. Re-log, "
+            "or use a card that keeps up (lower blackbox_sample_rate / p_denom)."
+        )
+    return med * unit_to_s, evidence
+
+
+#: Above this |Pearson r| two gyro columns are taken to be THE SAME PHYSICAL AXIS, and the log
+#: is refused rather than analysed as roll and pitch.
+#:
+#: Why the guard exists: `debug[]` does not always carry roll and pitch. Dual-gyro boards are
+#: common enough to have their own firmware defects (betaflight#7886, "RPM filter does not work
+#: when gyro_to_use = BOTH" on the iFlight SucceX F7 TwinG) and they use debug_mode = DUAL_GYRO,
+#: where debug[] carries gyro1 and gyro2 — the SAME axis from two sensors. debug[0] then passes
+#: the band-power test completely honestly, because it really is unfiltered gyro, and the tool
+#: analyses roll twice while labelling one of them pitch, quoting a real measured ratio the
+#: whole time. Betaflight's exact DUAL_GYRO column layout is NOT confirmed here and no claim
+#: about it is made: the point of the guard is that the question stops mattering. Two columns
+#: that are the same axis are refused whatever the firmware meant by them.
+#:
+#: Where 0.90 comes from, measured on Oscar Liang's 4.3.1 log rather than assumed:
+#:   * genuinely different axes (gyroADC[0] vs gyroADC[1], roll vs pitch on a real airframe in
+#:     real flight): r = 0.053. Also debug[0] vs debug[1]: r = 0.053.
+#:   * the same axis twice (debug[0] vs gyroADC[0] — pre- and post-filter copies of one
+#:     channel): r = 0.9985, and 0.9989 for axis 1.
+#: The same-axis pair there is the HARDER case than two sensors, since a filter genuinely
+#: changes the signal and two gyros bolted to one board do not, and it still sat above 0.998.
+#: 0.90 is placed in the middle of a gap that spans more than an order of magnitude.
+AXIS_DISTINCTNESS_LIMIT = 0.90
+
+
 @dataclass
 class Trace:
     """A gyro trace, whatever produced it. Everything below this is source-blind."""
@@ -286,6 +391,10 @@ class Trace:
     blades: int
     unfiltered: bool
     unfiltered_evidence: str
+    #: What check_uniform_sampling measured, carried the same way unfiltered_evidence is and
+    #: printed with every result. A guard whose evidence never reaches the reader is a guard
+    #: nobody can audit.
+    sampling_evidence: str = "n/a (not loaded from a timestamped file)"
     header: dict = field(default_factory=dict)
 
 
@@ -316,6 +425,10 @@ def load_lothal(path: str, blades: int) -> Trace:
     rows = np.loadtxt(data_lines, delimiter=",")
 
     col = {n: i for i, n in enumerate(names)}
+    # A Lothal log takes its rate from the header rather than from diff(t), but the header
+    # states intent and the rows are what gets FFT'd — the same gap between claim and data that
+    # _looks_prefilter exists for. t_s is in SECONDS here, not microseconds.
+    _, sampling_evidence = check_uniform_sampling(rows[:, col["t_s"]], path, 1.0)
     rpm = np.column_stack([rows[:, col[f"m{i}_rpm"]] for i in (1, 2, 3, 4)])
     return Trace(
         name=header.get("aircraft", {}).get("fingerprint", path),
@@ -330,6 +443,7 @@ def load_lothal(path: str, blades: int) -> Trace:
         # comparable one. The header records the cutoff, so this is checked, not assumed.
         unfiltered=_lothal_unfiltered(header),
         unfiltered_evidence=f"header gyro lowpass: {header.get('gyro', {}).get('lowpass_hz', 'absent')}",
+        sampling_evidence=sampling_evidence,
         header=header,
     )
 
@@ -384,7 +498,8 @@ def load_betaflight(path: str, arm_m: float, tip_mass_kg: float, blades: int, po
     col = {n: i for i, n in enumerate(names)}
 
     t_us = rows[:, col["time (us)"]] if "time (us)" in col else rows[:, 0]
-    dt = np.median(np.diff(t_us)) * 1e-6
+    # Before the median is trusted, prove the median means something. See the function.
+    dt, sampling_evidence = check_uniform_sampling(t_us, path, 1e-6)
 
     # Sample rate first: deciding whether a channel is pre-filter is a spectral question, so it
     # cannot be answered before we know what the sample rate is.
@@ -435,6 +550,7 @@ def load_betaflight(path: str, arm_m: float, tip_mass_kg: float, blades: int, po
         blades=blades,
         unfiltered=unfiltered,
         unfiltered_evidence=evidence,
+        sampling_evidence=sampling_evidence,
         header=dict(header, arm_m=arm_m, tip_mass_kg=tip_mass_kg),
     )
 
@@ -479,6 +595,22 @@ def _looks_prefilter(candidate, reference, fs):
     return ratio >= PREFILTER_POWER_RATIO, ratio
 
 
+def _same_axis(a, b):
+    """Are these two columns the same physical axis? Returns (verdict, |r|).
+
+    Two gyros bolted to one board see one motion and correlate near 1. Roll and pitch on a
+    real airframe are separate mechanical degrees of freedom and do not. See
+    AXIS_DISTINCTNESS_LIMIT for the measured numbers this sits between.
+    """
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    if a.std() <= 0.0 or b.std() <= 0.0:
+        # A dead-flat channel is not a second axis either, whatever it correlates to.
+        return True, float("nan")
+    r = abs(float(np.corrcoef(a, b)[0, 1]))
+    return r >= AXIS_DISTINCTNESS_LIMIT, r
+
+
 def _choose_gyro_columns(header, col, rows, fs):
     """Decide whether this log's gyro is pre-filter, and say on what evidence.
 
@@ -493,16 +625,55 @@ def _choose_gyro_columns(header, col, rows, fs):
     named = debug_mode in PREFILTER_DEBUG_MODES
     ordinal = debug_mode_raw.isdigit() and int(debug_mode_raw) in PREFILTER_DEBUG_ORDINALS
 
-    if (named or ordinal) and "debug[0]" in col and "gyroADC[0]" in col:
+    have_debug = all(k in col for k in ("debug[0]", "debug[1]", "gyroADC[0]", "gyroADC[1]"))
+    if (named or ordinal) and have_debug:
         verdict, ratio = _looks_prefilter(
             rows[:, col["debug[0]"]], rows[:, col["gyroADC[0]"]], fs
         )
         band = f"{PREFILTER_TEST_BAND_HZ[0]:.0f}-{min(PREFILTER_TEST_BAND_HZ[1], fs * 0.45):.0f} Hz"
         if verdict:
+            # debug[0] passing says nothing about debug[1], and BOTH get analysed. Two separate
+            # questions, asked separately, because a dual-gyro log answers them differently:
+            # is debug[1] pre-filter, and is it a DIFFERENT AXIS from debug[0]?
+            verdict1, ratio1 = _looks_prefilter(
+                rows[:, col["debug[1]"]], rows[:, col["gyroADC[1]"]], fs
+            )
+            same, r = _same_axis(rows[:, col["debug[0]"]], rows[:, col["debug[1]"]])
+            # THE AXIS QUESTION IS ASKED FIRST, and the order was chosen from real data rather
+            # than for tidiness. Injecting the dual-gyro case into Oscar's log (debug[1] :=
+            # debug[0] + noise) trips the pre-filter test too, at 0.42x — but only incidentally,
+            # because debug[1] is now roll while gyroADC[1] is still pitch, and their high-band
+            # power fractions simply differ. Reporting "debug[1] is filtered" there would send
+            # the pilot to fix a filter setting that is not the problem. Same-axis is the more
+            # specific diagnosis and it is the true one, so it wins when both fire.
+            if same:
+                return (
+                    False,
+                    f"debug_mode = {debug_mode_raw}, and both debug channels ARE pre-filter "
+                    f"({ratio:.1f}x gyroADC[0] in {band}) — but debug[0] and "
+                    f"debug[1] correlate at r = {r:.3f} (limit {AXIS_DISTINCTNESS_LIMIT:.2f}), "
+                    "so they are ONE physical axis, not roll and pitch. On a dual-gyro board "
+                    "debug[] carries gyro1 and gyro2 (betaflight#7886); analysing this would "
+                    "measure roll twice and label one of them pitch",
+                    "gyroADC[0]",
+                    "gyroADC[1]",
+                )
+            if not verdict1:
+                return (
+                    False,
+                    f"debug_mode = {debug_mode_raw}, and debug[0] IS pre-filter ({ratio:.1f}x "
+                    f"gyroADC[0] in {band}) — but debug[1] carries only {ratio1:.2f}x "
+                    f"gyroADC[1] (need {PREFILTER_POWER_RATIO:.0f}x), so the two debug channels "
+                    "are not the same kind of signal and the pitch axis would be filtered",
+                    "gyroADC[0]",
+                    "gyroADC[1]",
+                )
             return (
                 True,
                 f"debug_mode = {debug_mode_raw}, and debug[0] carries {ratio:.1f}x gyroADC[0]'s "
-                f"power in {band} — measured, not assumed; using debug[0..1]",
+                f"power in {band} (debug[1]: {ratio1:.1f}x gyroADC[1]) — measured, not assumed; "
+                f"debug[0] vs debug[1] correlate at r = {r:.3f}, so they are separate axes; "
+                "using debug[0..1]",
                 "debug[0]",
                 "debug[1]",
             )
@@ -776,6 +947,7 @@ def report(result: Result, arm_m: float, tip_mass_kg: float) -> bool:
     print(f"\n{result.trace.name}  [{result.trace.source}, {result.axis}]")
     print(f"  gyro filtering : {result.trace.unfiltered_evidence}")
     print(f"  sample rate    : {result.trace.sample_rate_hz:.1f} Hz")
+    print(f"  sampling       : {result.trace.sampling_evidence}")
     print(f"  window         : Hann, {FRAME_SECONDS} s frames, {OVERLAP_FRACTION:.0%} overlap")
     print(f"  build          : arm {arm_m*1000:.0f} mm, tip mass {tip_mass_kg*1000:.1f} g")
     print(f"  orders swept   : {result.swept_range[0]:.0f}-{result.swept_range[1]:.0f} Hz "
