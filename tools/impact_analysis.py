@@ -381,6 +381,7 @@ from resonance_analysis import (  # noqa: E402
     REFERENCE_TIP_MASS_KG,
     _choose_gyro_columns,
     _read_bbl_csv,
+    check_uniform_sampling,
     _running_median,
     resonance_hz_for,
 )
@@ -407,6 +408,11 @@ class Recording:
     props: bool = True
     unfiltered: bool = True
     unfiltered_evidence: str = "n/a (acoustic)"
+    #: What check_uniform_sampling measured, carried and printed exactly as the filtering
+    #: evidence is. It matters MORE here than in resonance_analysis: damping comes from the
+    #: decay envelope, and a hole in a decaying exponential changes the apparent decay rate,
+    #: not just the frequency.
+    sampling_evidence: str = "n/a (constant-rate stream)"
     header: dict = field(default_factory=dict)
 
 
@@ -441,7 +447,8 @@ def load_betaflight_impact(path: str, axis: str = "roll", **meta) -> Recording:
     header, names, rows = _read_bbl_csv(path)
     col = {n: i for i, n in enumerate(names)}
     t_us = rows[:, col["time (us)"]] if "time (us)" in col else rows[:, 0]
-    fs = 1.0 / (np.median(np.diff(t_us)) * 1e-6)
+    dt, sampling_evidence = check_uniform_sampling(t_us, path, 1e-6)
+    fs = 1.0 / dt
     unfiltered, evidence, roll_key, pitch_key = _choose_gyro_columns(header, col, rows, fs)
     key = roll_key if axis == "roll" else pitch_key
     return Recording(
@@ -451,6 +458,7 @@ def load_betaflight_impact(path: str, axis: str = "roll", **meta) -> Recording:
         signal=rows[:, col[key]],
         unfiltered=unfiltered,
         unfiltered_evidence=evidence,
+        sampling_evidence=sampling_evidence,
         header=header,
         **meta,
     )
@@ -473,6 +481,9 @@ def load_lothal_impact(path: str, axis: str = "roll", **meta) -> Recording:
     header = json.loads(header_text)
     rows = np.loadtxt(data_lines, delimiter=",")
     col = {n: i for i, n in enumerate(names)}
+    # Header-stated rate, row-measured uniformity. t_s is in SECONDS. Same reasoning as
+    # resonance_analysis.load_lothal.
+    _, sampling_evidence = check_uniform_sampling(rows[:, col["t_s"]], path, 1.0)
     key = "gyro_x_rad_s" if axis == "roll" else "gyro_z_rad_s"
     lp = header.get("gyro", {}).get("lowpass_hz")
     return Recording(
@@ -482,6 +493,7 @@ def load_lothal_impact(path: str, axis: str = "roll", **meta) -> Recording:
         signal=rows[:, col[key]] * RAD_TO_DEG,
         unfiltered=lp is None or float(lp) <= 0.0 or float(lp) >= 500.0,
         unfiltered_evidence=f"header gyro lowpass: {lp if lp is not None else 'absent'}",
+        sampling_evidence=sampling_evidence,
         header=header,
         **meta,
     )
@@ -979,6 +991,7 @@ def main(argv=None):
         print(f"{os.path.basename(path):32s} arm {arm} {direction:8s} "
               f"props {'on ' if props else 'off'} : {strikes} strikes, "
               f"{len(groups)} recurring modes  [{rec.unfiltered_evidence}]")
+        print(f"{'':32s}   [{rec.sampling_evidence}]")
         for g in groups:
             print(f"    {g.hz:7.1f} Hz  zeta {g.zeta:.4f}  prom {g.prominence:4.1f}x  "
                   f"seen in {g.strikes}/{g.of_strikes} strikes  spread {g.hz_spread:.1f} Hz")
