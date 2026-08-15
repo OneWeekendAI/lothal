@@ -399,7 +399,7 @@ class Recording:
     """One recording of one configuration. Everything below this is source-blind."""
 
     name: str
-    source: str  # "wav" | "betaflight" | "lothal" | "synthetic"
+    source: str  # "wav" | "betaflight" | "lothal" | "inav" | "synthetic"
     sample_rate_hz: float
     signal: "np.ndarray"
     #: What was struck and how, so a result can never be quoted without its conditions.

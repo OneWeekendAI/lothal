@@ -373,7 +373,7 @@ class Trace:
     """A gyro trace, whatever produced it. Everything below this is source-blind."""
 
     name: str
-    source: str  # "betaflight" | "lothal"
+    source: str  # "betaflight" | "lothal" | "inav" (see tools/inav_log.py) | "synthetic"
     sample_rate_hz: float
     roll_deg_s: "np.ndarray"
     pitch_deg_s: "np.ndarray"
