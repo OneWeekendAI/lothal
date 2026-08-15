@@ -22,6 +22,26 @@
       "source": "representative u.FL linear dipole of the class fitted to whoops and toothpicks — a length of coax and a whip, with no connector body. Class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
     },
     {
+      "part_id": "antenna_dji_o4_pro",
+      "name": "DJI O4 Air Unit Pro antennas (pair)",
+      "category": "antenna",
+      "mass_g": 4.2,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 110.0,
+        "width_mm": 10.0,
+        "height_mm": 10.0
+      },
+      "catalog": {
+        "polarisation": "linear",
+        "connector": "u.FL",
+        "gain_class": "not published"
+      },
+      "source": "DJI 'O4 Air Unit Series' specifications page (dji.com/o4-air-unit/specs), O4 Air Unit Pro column: 'Antenna: Approx. 2.1 g/pcs' and 'Antenna: 110 mm'. THIS ENTRY IS THE PAIR, AND THAT IS A DEPARTURE FROM THE REST OF THIS FILE, which weighs one antenna per entry. The O4 Air Unit Pro is a dual-antenna system — DJI's own 15 km transmission figure is quoted for the pair — so an aircraft carrying it carries two, and 2 x 2.1 = 4.2 g. The alternative was two fitted antennas, which the mass model has no category for, or one, which would under-weigh every O4 aircraft by 2.1 g. The cost is that the inertia box is one 110 mm stick where the aircraft has two, which is the smaller error of the two available and is written down here rather than left to be discovered. Gain is 'not published' rather than a number, since DJI states none and this file's _schema keeps unread claims out of `catalog` as firmly as out of `specs`."
+    },
+    {
       "part_id": "antenna_rhcp_ufl",
       "name": "RHCP u.FL (5.8 GHz)",
       "category": "antenna",

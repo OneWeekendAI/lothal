@@ -80,6 +80,26 @@
         "sensor": "CMOS 1/1.8\""
       },
       "source": "representative camera half of an HD digital FPV system — the camera, its board and the coax to the transmitter, which is a separate entry in vtxs.json rather than being counted twice here. Class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+    },
+    {
+      "part_id": "cam_dji_o4_pro",
+      "name": "DJI O4 Air Unit Pro camera module",
+      "category": "camera",
+      "mass_g": 16.4,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 25.55,
+        "width_mm": 20.0,
+        "height_mm": 23.3
+      },
+      "catalog": {
+        "signal": "digital",
+        "size_class": "micro",
+        "sensor": "CMOS 1/1.3\""
+      },
+      "source": "DJI 'O4 Air Unit Series' specifications page (dji.com/o4-air-unit/specs), O4 Air Unit Pro column. THE MASS IS A DIFFERENCE OF TWO PUBLISHED FIGURES, NOT A FIGURE: DJI publishes 'Air Unit (camera module included): Approx. 32 g' and 'Air Unit (camera module excluded): Approx. 15.6 g', and 32 - 15.6 = 16.4 g is the camera module with its coaxial cable. The subtraction is stated here rather than done silently because the split between this entry and vtx_dji_o4_pro is derived while their SUM (32 g) is what DJI actually published — an aircraft carrying both is right to the gram, and either one alone inherits the split's uncertainty. Dimensions are the published camera module L x W x H. The antennas are NOT in the 32 g: DJI lists them separately at 2.1 g each, and they are antenna_dji_o4_pro. First entry in this file sourced from a named product rather than a class."
     }
   ]
 }
