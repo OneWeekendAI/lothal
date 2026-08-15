@@ -200,6 +200,42 @@
       "source": "iFlight 'Nazgul F5 Tri-blade Prop' product page (shop.iflight.com, product 964): diameter 5.1 inch, pitch 3.5, 3 blades, 3.9 g each, polycarbonate, 5 mm centre hole. A NAMED PRODUCT rather than a class-typical entry, because it is the prop the held-out builds in data/validation/builds.json actually fly AND the prop iFlight's own XING2 2207 datasheet quotes a thrust row on — one prop, one source, both sides."
     },
     {
+      "part_id": "prop_hq_ethix_s5_5x4x3",
+      "name": "HQProp Ethix S5 5x4x3",
+      "category": "propeller",
+      "mass_g": 3.7,
+      "specs": {
+        "diameter_inches": 5.0,
+        "pitch_inches": 4.0,
+        "blades": 3
+      },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "5\"",
+        "intended_use": "freestyle",
+        "material": "polycarbonate"
+      },
+      "source": "GEPRC 'HQ Ethix S5 5X4X3 Propeller' product page (geprc.com/product/hq-ethix-s5-5x4x3-propeller/), Specifications block: 'Propeller Size: 5″', 'Pitch: 4″', 'Blades: 3', 'Material: Polycarbonate', 'Weight: 3.7g', 'Shaft: 5mm'. Here because it is the prop GEPRC's OWN SPEEDX2 2107.5 motor data table quotes the headline thrust row on — one vendor, one bench, both sides of the k_t fit — not because any validation aircraft flies it."
+    },
+    {
+      "part_id": "prop_gemfan_vannystyle_5136x3",
+      "name": "Gemfan Vannystyle 5136-3",
+      "category": "propeller",
+      "mass_g": 4.3,
+      "specs": {
+        "diameter_inches": 5.15,
+        "pitch_inches": 3.6,
+        "blades": 3
+      },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "5\"",
+        "intended_use": "freestyle",
+        "material": "polycarbonate"
+      },
+      "source": "GEPRC 'GEMFAN Vannystyle 5136-3 Propellers' product page (geprc.com/product/gemfan-vannystyle-5136-3-propellers/), Specification block: 'Inch: 5.15in', 'Weight: 4.3g', 'Material: PC', 'Pitch: 3.6in', 'Mount: M5', 'Quad weight: 450g-600g'. The '5136' the GEPRC MARK5 O4 Pro spec block names as its prop, published by the vendor that ships the aircraft."
+    },
+    {
       "part_id": "prop_6x4x2",
       "name": "6x4.0x2",
       "category": "propeller",

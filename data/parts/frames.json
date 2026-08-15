@@ -164,6 +164,24 @@
       "source": "iFlight 'Nazgul Evoque F5 V3 Frame Kit' product page (shop.iflight.com, product 2407): weight 256±10 g, wheelbase 236 mm (DeadCat default) / 239 mm (True X), 6 mm arms, 20x20/O3.0 mm stack, 16x16 mm motor mount. arm_mm is the DeadCat wheelbase halved; same approximation note as the V2 above."
     },
     {
+      "part_id": "frame_geprc_mk5_o4_pro_wide_x",
+      "name": "GEP-MK5 O4 Pro Wide X",
+      "category": "frame",
+      "mass_g": 165.1,
+      "specs": {
+        "arm_mm": 112.5,
+        "max_prop_inches": 5.0,
+        "motor_mount": "16x16",
+        "stack_mount": "30.5x30.5"
+      },
+      "catalog": {
+        "frame_type": "freestyle",
+        "material": "carbon fibre 3K",
+        "size_class": "5\""
+      },
+      "source": "GEPRC 'GEP-MK5 O4 Pro Wide X Frame' product page (geprc.com/product/gep-mk5-o4-pro-wide-x-frame/), 'Wide X Specifications' block: 'Weight: 165.1g ± 10g', 'Wheelbase: 225mm', 'Arm Thickness: 5.0mm', 'FC Mounting Pattern: 30.5mm * 30.5mm', 'Motor Mounting Pattern: 16mm * 16mm / 19mm * 19mm', 'Recommended Prop：5-inch', '3K carbon fiber frame'. arm_mm is the published wheelbase halved, which is the motor radius. motor_mount is the SMALLER of the two published patterns, which is the one the SPEEDX2 2107.5's Φ26.83 mm base can carry — a 19x19 pattern has a 26.87 mm diagonal, wider than the motor's own base. WHAT THE 165.1 g INCLUDES IS NOT STATED, and that omission is the point: the page's 'Includes' list carries '1 x GEP-MK5 O4 Pro Frame' as one line and then '1 x 3D printouts pack', '1 x Screw pack', the Velcro and rubber straps and the anti-slip pads as SEPARATE lines, which reads as the weight being the frame proper. iFlight state their Evoque frame-kit weights the same way — one number, no inventory — and the two vendors' numbers are 84 g apart for the same size class."
+    },
+    {
       "part_id": "frame_5in_cinewhoop",
       "name": "5\" Cinewhoop",
       "category": "frame",
