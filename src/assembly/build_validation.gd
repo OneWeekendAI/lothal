@@ -120,6 +120,17 @@ static func evaluate(catalog: PartsCatalog, entry: Dictionary) -> Dictionary:
 	if catalog.get_part(PACK_ID).is_empty():
 		return {}
 
+	# A component id that resolves to nothing is left UNFITTED by Build.from_ids — which is the
+	# right answer for the app (a missing part is visible in the details panel) and the wrong one
+	# here, because an unfitted component weighs zero and a typo would quietly make an aircraft
+	# lighter and its error better. So a named component that does not exist fails the whole entry,
+	# the same way a named frame does. An empty string is not a typo: it is "not fitted", said
+	# deliberately, and it is allowed through.
+	for category in Build.OPTIONAL_COMPONENTS:
+		var component_id := String((entry.get("components", {}) as Dictionary).get(category, ""))
+		if component_id != "" and catalog.get_part(component_id).is_empty():
+			return {}
+
 	var reported: float = float(entry.get("reported_dry_mass_g", 0.0))
 	if reported <= 0.0:
 		return {}
@@ -129,10 +140,21 @@ static func evaluate(catalog: PartsCatalog, entry: Dictionary) -> Dictionary:
 	# computed. Picking the board that flattered the number afterwards would be fitting the model
 	# to the data it is being measured against. An entry that names neither gets Build's defaults,
 	# which is the full-size 30.5x30.5 pair.
+	#
+	# THE FOUR OPTIONAL COMPONENTS GO THROUGH THE SAME RULE AND THE SAME SENTENCE, and this call
+	# site not passing them was a real defect rather than an omission: every entry in this dataset
+	# names a DJI O4 Air Unit Pro in its `source`, and every one of them was silently modelled on
+	# Build's defaults — an 8 g analog camera and a 6 g 400 mW transmitter, 14 g standing in for a
+	# digital HD air unit. There was no way to say otherwise, so every number this file ever
+	# produced was computed on a wrong input. `components` is that way. An entry that omits it, or
+	# omits a category within it, still gets Build's defaults and still builds the aircraft it used
+	# to; an empty string is NOT FITTED, which is how an entry says its air unit's antennas are
+	# already counted somewhere else.
 	var build := Build.from_ids(catalog, String(entry["frame_id"]), String(entry["motor_id"]),
 		String(entry["propeller_id"]), PACK_ID,
 		String(entry.get("esc_id", Build.DEFAULT_ESC_ID)),
-		String(entry.get("fc_id", Build.DEFAULT_FC_ID)))
+		String(entry.get("fc_id", Build.DEFAULT_FC_ID)),
+		entry.get("components", {}))
 	var predicted := predicted_dry_mass_g(build)
 	var error_fraction := (predicted - reported) / reported
 

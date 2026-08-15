@@ -42,16 +42,23 @@ extends RefCounted
 ## If the reason is that the model is wrong, the fix is the model.
 const KNOWN_MISSES := {
 	"iflight_nazgul_evoque_f5_v3_o4_6s": {
-		"error_fraction": -0.104,
+		"error_fraction": -0.070,
 		"tolerance": 0.015,
 		"why": "iFlight publishes the V3 as 56 g heavier than the V2 while publishing its frame "
 			+ "kit as only 7 g heavier. Same motors, same propellers, same O4 air unit, same "
-			+ "20x20 stack class — the ~49 g gap is in neither spec sheet and lands entirely on "
-			+ "the 35 g loose-electronics lump. The V2 entry, built from the same constants, "
-			+ "comes in at -0.6%: a constant large enough to explain the V3 would throw the V2 "
-			+ "out by the same 50 g the other way. That is a fact about two product pages, not "
-			+ "a fact about Build.mass_parts(), and it stands as this dataset's finding until "
-			+ "LTHL-11 unbundles the electronics budget or somebody weighs a V3 themselves.",
+			+ "20x20 stack class — the ~49 g gap is in neither spec sheet, and it is a fact "
+			+ "about two product pages rather than a fact about Build.mass_parts(). "
+			+ "REWRITTEN 2026-08-16, and what changed is worth reading before trusting the "
+			+ "number above. The recorded error was -10.4% while every entry in the dataset was "
+			+ "modelled with an 8 g analog camera and a 6 g 400 mW VTX standing in for the "
+			+ "digital O4 air unit all three aircraft actually carry — a wrong input worth 17 g "
+			+ "on every point. Naming the real parts moved this build to -7.0%, so about a "
+			+ "third of the recorded miss was the model being fed the wrong aircraft and two "
+			+ "thirds is the published gap. The finding survives with its magnitude cut and its "
+			+ "argument sharpened: the V2, built from the same constants and the same air unit, "
+			+ "now comes in at +3.4%, so a constant large enough to close the V3's 34 g would "
+			+ "push the V2 to about +11% — further out than the V3 is now, and in the opposite "
+			+ "direction. It stands until somebody weighs a V3 themselves.",
 	},
 }
 
@@ -64,6 +71,7 @@ static func run() -> Array:
 	results.append_array(_test_the_error_is_reported_with_its_sign(catalog))
 	results.append_array(_test_the_data_is_genuinely_held_out())
 	results.append_array(_test_the_pack_cancels(catalog))
+	results.append_array(_test_the_entry_chooses_its_components(catalog))
 	results.append_array(_test_the_check_can_actually_fail())
 
 	return results
@@ -329,6 +337,75 @@ static func _test_the_pack_cancels(catalog: PartsCatalog) -> Array:
 		"dry %.3f g either way, while all-up differs by %.0f g" % [
 			a, absf(with_lipo.all_up_weight_g() - with_liion.all_up_weight_g())]
 	)]
+
+
+## An entry's `components` must actually reach the aircraft, and a component it names that does
+## not exist must sink the entry rather than weigh nothing.
+##
+## THIS IS THE TEST THAT WOULD HAVE CAUGHT THE ORIGINAL DEFECT. Every entry in this dataset names
+## a DJI O4 Air Unit Pro in its `source`, and for as long as BuildValidation.evaluate() dropped
+## the seventh argument to Build.from_ids they were all silently modelled on an 8 g analog camera
+## and a 6 g 400 mW transmitter — 17 g of wrong input on every point the dataset had ever
+## produced, with every assertion above staying green throughout. Nothing here reads the shipped
+## entries: it builds its own two-entry dataset so the check keeps its teeth if the real file
+## changes, and it asserts on the DIFFERENCE between two predictions, which is a fact about the
+## pass-through rather than about any aircraft's mass.
+##
+## FAILS IF: the `components` argument is dropped again (both predictions become the default
+## build's and the difference goes to zero), or if a misspelt component id is fitted as a
+## massless ghost instead of failing the entry.
+static func _test_the_entry_chooses_its_components(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+
+	var base := {
+		"build_id": "fixture", "name": "fixture",
+		"frame_id": "frame_5in_race", "motor_id": "motor_2207_1750kv",
+		"propeller_id": "prop_5x45x3", "reported_dry_mass_g": 400.0,
+		"source": "a fixture, not a real aircraft — asserts on a difference, never on a mass",
+	}
+	var defaulted := base.duplicate()
+	var named := base.duplicate()
+	named["components"] = {"camera": "cam_dji_o4_pro"}
+
+	var a := BuildValidation.evaluate(catalog, defaulted)
+	var b := BuildValidation.evaluate(catalog, named)
+
+	# Predicted from the catalog rather than read off the run: swapping one component changes the
+	# aircraft by the difference of the two parts' own masses, and by nothing else.
+	var expected := float(catalog.get_part("cam_dji_o4_pro")["mass_g"]) \
+		- float(catalog.get_part(String(Build.DEFAULT_COMPONENT_IDS["camera"]))["mass_g"])
+	var moved := float(b["predicted_dry_mass_g"]) - float(a["predicted_dry_mass_g"])
+
+	results.append(TestResult.new(
+		"an entry's named component reaches the aircraft, by exactly its mass difference",
+		not a.is_empty() and not b.is_empty() and absf(moved - expected) < 1e-6 and expected > 1.0,
+		"naming cam_dji_o4_pro moved the prediction %+.3f g against a predicted %+.3f g" % [
+			moved, expected]
+	))
+
+	var typo := base.duplicate()
+	typo["components"] = {"camera": "cam_dji_o4_prro"}
+	results.append(TestResult.new(
+		"and a component id the catalog does not have fails the entry rather than weighing zero",
+		BuildValidation.evaluate(catalog, typo).is_empty(),
+		"a misspelt component id yields no point, so it is reported as unresolved"
+	))
+
+	var unfitted := base.duplicate()
+	unfitted["components"] = {"camera": ""}
+	var c := BuildValidation.evaluate(catalog, unfitted)
+	var default_camera := float(catalog.get_part(
+		String(Build.DEFAULT_COMPONENT_IDS["camera"]))["mass_g"])
+	results.append(TestResult.new(
+		"while an empty string is 'not fitted' said deliberately, and costs the camera's own mass",
+		not c.is_empty()
+			and absf((float(a["predicted_dry_mass_g"]) - float(c["predicted_dry_mass_g"]))
+				- default_camera) < 1e-6,
+		"omitting the camera took off %.3f g against the part's own %.3f g" % [
+			float(a["predicted_dry_mass_g"]) - float(c["predicted_dry_mass_g"]), default_camera]
+	))
+
+	return results
 
 
 # ---------------------------------------------------------------------------

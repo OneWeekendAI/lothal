@@ -62,6 +62,26 @@
       "source": "representative long-range analog board with a heatsink, on a full-size footprint; class-typical, not a specific product. The heatsink is most of the difference in mass from the 400 mW entry. NOT re-sourced from one test regime — see _schema."
     },
     {
+      "part_id": "vtx_dji_o4_pro",
+      "name": "DJI O4 Air Unit Pro transmission module",
+      "category": "vtx",
+      "mass_g": 15.6,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 33.5,
+        "width_mm": 33.5,
+        "height_mm": 13.0
+      },
+      "catalog": {
+        "signal": "digital",
+        "power_class": "1.2 W EIRP",
+        "band": "5.8 GHz"
+      },
+      "source": "DJI 'O4 Air Unit Series' specifications page (dji.com/o4-air-unit/specs), O4 Air Unit Pro column: 'Air Unit (camera module excluded): Approx. 15.6 g'. That is this board with its cables and no camera; the camera module is cam_dji_o4_pro at the 16.4 g the same page's two weight lines differ by, and the pair sums to DJI's published 32 g rather than to anything derived. Dimensions are the published transmission module L x W x H. THE ANTENNAS ARE NOT IN THIS FIGURE — DJI lists them on their own line at 2.1 g each, and the dual-antenna pair is antenna_dji_o4_pro; fitting this module without one is an aircraft with a transmitter and no antenna, not a saving. 'mounting' stays TRAY rather than BOLT even though DJI publishes a 20x20 and 25.5x25.5 pattern for it, because this file's mounting field is not the stack's and no frame in the catalog publishes a VTX bolt spacing to compare it against. First entry in this file sourced from a named product rather than a class."
+    },
+    {
       "part_id": "vtx_digital_hd",
       "name": "HD digital transmitter",
       "category": "vtx",
