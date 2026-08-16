@@ -478,7 +478,15 @@ static func _test_screen() -> Array:
 ## THIS IS WHAT TASK 1's TEST GOT WRONG AND TASK 7 LEFT WRONG: it summed direct children of a fixed
 ## nesting depth, which was the report's row shape before the collapsible block existed and stopped
 ## being the report's row shape the day _declared was added — see the Important 3 finding.
-static func _widest_row(node: Node, usable: float) -> Dictionary:
+## An invisible Control contributes nothing: a collapsed _declared block reserves no layout space
+## for its rows, so a row hiding inside it is not a row that can force the pane wider TODAY,
+## whatever it would do once expanded. Without this check the collapsed and expanded assertions in
+## _test_report_fits are identical by construction — the walker cannot tell the two states apart —
+## which is exactly the "check that cannot fail independently" this suite exists to catch.
+static func _widest_row(node: Node) -> Dictionary:
+	if node is Control and not (node as Control).visible:
+		return {"demanded": 0.0, "offender": ""}
+
 	var worst := 0.0
 	var offender := ""
 
@@ -508,7 +516,7 @@ static func _widest_row(node: Node, usable: float) -> Dictionary:
 			offender = str(node.name)
 
 	for child in node.get_children():
-		var sub := _widest_row(child, usable)
+		var sub := _widest_row(child)
 		if sub["demanded"] > worst:
 			worst = sub["demanded"]
 			offender = sub["offender"]
@@ -525,7 +533,7 @@ static func _test_report_fits() -> Array:
 	studio.select("flight-20260816-120000.csv")
 
 	var usable := StudioScreen.usable_report_width()
-	var worst := _widest_row(studio._report, usable)
+	var worst := _widest_row(studio._report)
 	results.append(TestResult.new(
 		"no report row demands more width than the pane can give it, collapsed",
 		float(worst["demanded"]) <= usable,
@@ -546,7 +554,7 @@ static func _test_report_fits() -> Array:
 	offending_grid.add_child(wide_key)
 	offending_grid.add_child(wide_value)
 	studio._report.add_child(offending_grid)
-	var caught := _widest_row(studio._report, usable)
+	var caught := _widest_row(studio._report)
 	results.append(TestResult.new(
 		"the check still catches a row whose labels sum past the usable width",
 		float(caught["demanded"]) > usable and str(caught["offender"]).contains("PlantedOffender"),
@@ -560,18 +568,33 @@ static func _test_report_fits() -> Array:
 	# old shape) would add this note's forced width to every other row already in that block — a
 	# perfectly fine layout reading as a violation. _add_report_note's own minimum width is exactly
 	# usable_report_width(), which the row-level walk must accept on its own, unsummed with its
-	# vertically-stacked siblings, in both the collapsed and expanded state.
+	# vertically-stacked siblings.
+	#
+	# COLLAPSED AND EXPANDED ARE ASSERTED SEPARATELY, AND GENUINELY DIFFER: _widest_row skips an
+	# invisible Control, so the collapsed pass never even reaches the planted note (0 px, found
+	# nothing) while the expanded pass walks into _declared and finds it (usable_report_width() px,
+	# found and accepted). Both must stay <= usable, but for different reasons — collapsed because
+	# the row is not counted at all, expanded because the row-level walk correctly does not sum it
+	# with its siblings. A walker blind to `visible` would make these the same assertion twice; this
+	# one is not.
 	studio._begin_declared()
 	studio._add_report_note("x".repeat(400))
-	for expanded in [false, true]:
-		studio.set_declared_expanded(expanded)
-		var declared_check := _widest_row(studio._report, usable)
-		results.append(TestResult.new(
-			"a wide note inside the declared block is not summed with its row siblings (expanded=%s)"
-				% expanded,
-			float(declared_check["demanded"]) <= usable,
-			"widest row with a planted wide note, expanded=%s: %.0f px of %.0f (%s)" % [
-				expanded, declared_check["demanded"], usable, declared_check["offender"]]))
+	studio.set_declared_expanded(false)
+	var collapsed_check := _widest_row(studio._report)
+	results.append(TestResult.new(
+		"collapsed: the hidden declared block (with its planted wide note) demands nothing",
+		is_zero_approx(float(collapsed_check["demanded"])),
+		"widest row while collapsed: %.0f px of %.0f (%s)" % [
+			collapsed_check["demanded"], usable, collapsed_check["offender"]]))
+
+	studio.set_declared_expanded(true)
+	var expanded_check := _widest_row(studio._report)
+	results.append(TestResult.new(
+		"expanded: a wide note inside the declared block is not summed with its row siblings",
+		float(expanded_check["demanded"]) <= usable
+			and float(expanded_check["demanded"]) > 0.0,
+		"widest row while expanded: %.0f px of %.0f (%s)" % [
+			expanded_check["demanded"], usable, expanded_check["offender"]]))
 
 	studio._render_report()
 
@@ -851,6 +874,16 @@ static func _test_trace_decimation() -> Array:
 	results.append(TestResult.new(
 		"the legend readout for a wholly unparseable channel never prints \"nan\"",
 		not legend_value.to_lower().contains("nan"),
+		"legend value: \"%s\"" % legend_value))
+
+	# "0.000 … 0.000" is a plausible-looking reading the file never contained — the exact
+	# "plausible zero" LogReader writes NAN rather than 0.0 to avoid, and this suite already
+	# asserts that rule for the parser. "—" is the readout's existing idiom for "no value here"
+	# (see the cursor path above), so a wholly unparseable channel must read that, not a fabricated
+	# zero. lanes()'s separate 0.0 … 1.0 AXIS fallback is a different concern and is untouched.
+	results.append(TestResult.new(
+		"a wholly unparseable channel's readout is \"—\", never a fabricated zero",
+		legend_value == "—" and not legend_value.contains("0.000"),
 		"legend value: \"%s\"" % legend_value))
 
 	narrow.free()

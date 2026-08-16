@@ -179,8 +179,33 @@ func _readout_for(channel: String) -> String:
 		if is_finite(here):
 			return _format_y(here)
 		return "—"
+	# channel_extent() ZERO-FALLS-BACK for a wholly unparseable channel (Important 1), which is the
+	# right contract for a caller that needs a number to scale an axis against. It is the WRONG
+	# contract here: "0.000 … 0.000" is a plausible-looking reading the file never contained — the
+	# exact "plausible zero" LogReader writes NAN rather than 0.0 to avoid, and this suite already
+	# asserts that rule for the parser. So the readout checks the buckets directly rather than
+	# trusting the already-collapsed extent, and falls back to "—" — this function's existing idiom
+	# for an absent value on the cursor path above — rather than inventing a reading.
+	if not _channel_has_finite_data(channel):
+		return "—"
 	var extent := channel_extent(channel)
 	return "%s … %s" % [_format_y(extent.x), _format_y(extent.y)]
+
+
+## Whether any bucket of `channel` carries a finite value. Distinct from channel_extent() on
+## purpose: that function's return is already collapsed to Vector2.ZERO for a wholly unparseable
+## channel (a fine contract for an axis that needs a range), so a caller asking "did this channel
+## have any real data" cannot answer that question from the extent alone.
+func _channel_has_finite_data(channel: String) -> bool:
+	_rebuild_buckets()
+	if not _buckets.has(channel):
+		return false
+	var pair: Dictionary = _buckets[channel]
+	var lo: PackedFloat64Array = pair["lo"]
+	for value in lo:
+		if not is_nan(value):
+			return true
+	return false
 
 
 ## The value of a channel at a time, by NEAREST SAMPLE rather than by interpolation.
