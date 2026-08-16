@@ -68,6 +68,13 @@ const MARGIN_TOP := 68.0
 const LEGEND_MAX_ROWS := 3
 const MARGIN_BOTTOM := 26.0
 
+## Stacked lanes, one per unit. Three is a chart; four is a strip of chart-shaped bands too short
+## for an axis to be readable, so the picker refuses a fourth unit rather than drawing one.
+const MAX_LANES := 3
+
+## Vertical gap between stacked lanes, so two traces do not read as one.
+const LANE_GAP := 10.0
+
 ## Per-channel colours, in the order channels are added. Six, because a builder watching more than
 ## six lines at once is not reading a chart any more — and the seventh wraps rather than being
 ## refused, since refusing to draw a channel is worse than drawing two in one colour.
@@ -145,16 +152,25 @@ func unit_of(channel: String) -> String:
 ## control, not a legend plus a separate cursor panel.
 func legend_entries() -> Array:
 	var out: Array = []
-	var index := 0
 	for channel in _channels:
 		out.append({
 			"name": channel,
 			"unit": unit_of(channel),
-			"colour": SERIES_COLOURS[index % SERIES_COLOURS.size()],
+			"colour": _colour_of(channel),
 			"value": _readout_for(channel),
 		})
-		index += 1
 	return out
+
+
+## The colour a channel is drawn in, keyed on its position in _channels rather than on its position
+## within a lane. The legend reads the same function, so a swatch and a line cannot disagree.
+func _colour_of(channel: String) -> Color:
+	var index := 0
+	for channel_name in _channels:
+		if channel_name == channel:
+			return SERIES_COLOURS[index % SERIES_COLOURS.size()]
+		index += 1
+	return SERIES_COLOURS[0]
 
 
 func _readout_for(channel: String) -> String:
@@ -275,6 +291,46 @@ func channel_extent(channel: String) -> Vector2:
 	return Vector2(low, high)
 
 
+## Channels grouped by their declared unit, in first-appearance order, each with its own y range.
+##
+## GROUPING BY UNIT AND NOT BY A USER ASSIGNMENT is what keeps the header-driven picker free: the
+## lanes come from the header's `units` map, so LTHL-52's twenty-one control-side columns land in
+## correct lanes on the day they appear, with no change here and no control to configure.
+##
+## A channel with no declared unit gets a lane keyed on its own name rather than being pooled with
+## the other unlabelled ones — pooling would be the chart asserting that two things it knows
+## nothing about are comparable.
+func lanes() -> Array:
+	var order: Array = []
+	var by_key: Dictionary = {}
+	for channel in _channels:
+		var unit := unit_of(channel)
+		var key: String = unit if not unit.is_empty() else " " + channel
+		if not by_key.has(key):
+			by_key[key] = {"unit": unit, "channels": PackedStringArray()}
+			order.append(key)
+		var names: PackedStringArray = by_key[key]["channels"]
+		names.append(channel)
+		by_key[key]["channels"] = names
+
+	var out: Array = []
+	for key: String in order:
+		var lane: Dictionary = by_key[key]
+		var y_min := INF
+		var y_max := -INF
+		for channel in PackedStringArray(lane["channels"]):
+			var extent := channel_extent(channel)
+			y_min = minf(y_min, extent.x)
+			y_max = maxf(y_max, extent.y)
+		if not is_finite(y_min) or not is_finite(y_max) or is_equal_approx(y_min, y_max):
+			y_min -= 1.0
+			y_max += 1.0
+		lane["y_min"] = y_min
+		lane["y_max"] = y_max
+		out.append(lane)
+	return out
+
+
 func span_s() -> float:
 	if times.size() < 2:
 		return 0.0
@@ -378,35 +434,44 @@ func _draw() -> void:
 	_rebuild_buckets()
 	_draw_legend(font, plot)
 
-	# ONE SHARED Y AXIS, scaled to every visible channel together. Per-channel axes would let a
-	# builder put rpm next to a rate and read them as comparable, which is the chart lying about
-	# the relationship between two lines it drew side by side.
-	var y_min := INF
-	var y_max := -INF
-	for channel in _channels:
-		var extent := channel_extent(channel)
-		y_min = minf(y_min, extent.x)
-		y_max = maxf(y_max, extent.y)
-	if not is_finite(y_min) or not is_finite(y_max) or is_equal_approx(y_min, y_max):
-		y_min -= 1.0
-		y_max += 1.0
-
-	var y_step := _nice_step((y_max - y_min) / 5.0)
-	var value := ceilf(y_min / y_step) * y_step
-	while value <= y_max:
-		var y := _y_pixel(value, y_min, y_max, plot)
-		draw_line(Vector2(plot.position.x, y), Vector2(plot.end.x, y), GRID_COLOUR, 1.0)
-		draw_string(font, Vector2(6.0, y + 4.0), _format_y(value),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, AXIS_TEXT)
-		value += y_step
-
-	var axis_unit := ""
-	for channel in _channels:
-		axis_unit = unit_of(channel)
-		break
-	_draw_axis_unit(font, plot, axis_unit)
+	# ONE LANE PER UNIT, each with its own y scale. A single shared axis let a builder put rpm next
+	# to a rate and read one of them as a flat line at zero — the chart claiming to show two
+	# channels while showing one. Same-unit channels still share a lane, which is what keeps gyro
+	# against omega comparable.
+	var lane_list := lanes()
+	if lane_list.is_empty():
+		return
+	var lane_height := (plot.size.y - LANE_GAP * float(lane_list.size() - 1)) \
+		/ float(lane_list.size())
 
 	var span := span_s()
+	var lane_index := 0
+	for lane in lane_list:
+		var lane_rect := Rect2(
+			plot.position.x,
+			plot.position.y + (lane_height + LANE_GAP) * float(lane_index),
+			plot.size.x, lane_height)
+		var y_min: float = lane["y_min"]
+		var y_max: float = lane["y_max"]
+
+		var y_step := _nice_step((y_max - y_min) / 3.0)
+		var value := ceilf(y_min / y_step) * y_step
+		while value <= y_max:
+			var y := _y_pixel(value, y_min, y_max, lane_rect)
+			draw_line(Vector2(lane_rect.position.x, y), Vector2(lane_rect.end.x, y),
+				GRID_COLOUR, 1.0)
+			draw_string(font, Vector2(6.0, y + 4.0), _format_y(value),
+				HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, AXIS_TEXT)
+			value += y_step
+
+		_draw_axis_unit(font, lane_rect, str(lane["unit"]))
+
+		for channel in PackedStringArray(lane["channels"]):
+			_draw_channel(channel, _colour_of(channel), y_min, y_max, lane_rect)
+		lane_index += 1
+
+	# The x axis is the log's clock and is shared by every lane, so it is drawn once, under the
+	# bottom one.
 	var x_step := _nice_step(span / 5.0)
 	var x := x_step
 	while x <= span + x_step * 0.001:
@@ -415,11 +480,6 @@ func _draw() -> void:
 		draw_string(font, Vector2(px - 14.0, plot.end.y + 18.0), Duration.fine(x),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, AXIS_TEXT)
 		x += x_step
-
-	var index := 0
-	for channel in _channels:
-		_draw_channel(channel, SERIES_COLOURS[index % SERIES_COLOURS.size()], y_min, y_max, plot)
-		index += 1
 
 	if cursor_t >= 0.0 and span_s() > 0.0:
 		var cx := plot.position.x + plot.size.x * clampf(

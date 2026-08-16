@@ -95,6 +95,7 @@ static func run() -> Array:
 	results.append_array(_test_trace_decimation())
 	results.append_array(_test_trace_legend())
 	results.append_array(_test_channel_picker())
+	results.append_array(_test_trace_lanes())
 	_clean()
 	return results
 
@@ -856,4 +857,77 @@ static func _test_shell_room() -> Array:
 		"no pack write-back on the Studio path"))
 
 	shell.free()
+	return results
+
+
+## ONE SHARED Y AXIS WAS A LIE THE CHART TOLD ABOUT ITS OWN CONTENTS. gyro_x spans about ±4 rad/s
+## and m1_rpm about 30 000; scaled together the gyro collapses to a flat line at zero — not
+## clipped, not warned about, just silently unreadable while the chart claims to show both.
+##
+## THE FIXTURE'S TWO CHANNELS DIFFER BY FOUR ORDERS OF MAGNITUDE ON PURPOSE. Two similar-ranged
+## channels pass on a shared axis by luck, which would make this a check that cannot fail.
+static func _test_trace_lanes() -> Array:
+	var results: Array = []
+
+	var times := PackedFloat64Array()
+	var gyro := PackedFloat64Array()
+	var rpm := PackedFloat64Array()
+	var thrust := PackedFloat64Array()
+	for i in 500:
+		times.append(float(i) * 0.001)
+		gyro.append(sin(float(i) * 0.05) * 4.0)
+		rpm.append(28000.0 + sin(float(i) * 0.03) * 900.0)
+		thrust.append(3.0 + sin(float(i) * 0.02) * 0.4)
+
+	var view := TraceView.new()
+	view.size = Vector2(700, 400)
+	view.show_log(times, {"gyro_x_rad_s": gyro, "m1_rpm": rpm},
+		{"gyro_x_rad_s": "rad/s", "m1_rpm": "rpm"})
+
+	var lanes := view.lanes()
+	var separated := lanes.size() == 2
+	if separated:
+		# Each lane scaled to ITS OWN channels. A shared axis gives both lanes the rpm range, and
+		# the gyro lane's span would come back at ~30 000 instead of ~8.
+		separated = absf(float(lanes[0]["y_max"]) - float(lanes[0]["y_min"])) < 20.0 \
+			and absf(float(lanes[1]["y_max"]) - float(lanes[1]["y_min"])) > 100.0
+	results.append(TestResult.new(
+		"channels in different units get their own lane and their own scale",
+		separated,
+		"%d lanes; spans %s" % [lanes.size(),
+			", ".join(lanes.map(func(l): return "%.1f" % (
+				float(l["y_max"]) - float(l["y_min"]))))]))
+
+	results.append(TestResult.new(
+		"a lane carries the unit its channels declared, in first-appearance order",
+		lanes.size() == 2 and str(lanes[0]["unit"]) == "rad/s"
+			and str(lanes[1]["unit"]) == "rpm",
+		"lane units: %s" % ", ".join(lanes.map(func(l): return str(l["unit"])))))
+
+	# Same unit stays on ONE axis, and that is the whole point: gyro against omega is comparable
+	# only because they share a scale, and the gap between them is the room's headline.
+	var paired := TraceView.new()
+	paired.size = Vector2(700, 400)
+	paired.show_log(times, {"gyro_x_rad_s": gyro, "omega_x_rad_s": gyro},
+		{"gyro_x_rad_s": "rad/s", "omega_x_rad_s": "rad/s"})
+	results.append(TestResult.new(
+		"two channels in the SAME unit share one axis, so they stay comparable",
+		paired.lanes().size() == 1
+			and PackedStringArray(paired.lanes()[0]["channels"]).size() == 2,
+		"%d lane for two rad/s channels" % paired.lanes().size()))
+
+	# A channel with no declared unit is its own lane rather than being pooled with rad/s, because
+	# pooling would be the chart guessing that two unlabelled things are comparable.
+	var mixed := TraceView.new()
+	mixed.size = Vector2(700, 400)
+	mixed.show_log(times, {"gyro_x_rad_s": gyro, "m1_rpm": rpm, "m1_thrust_n": thrust},
+		{"gyro_x_rad_s": "rad/s", "m1_rpm": "rpm", "m1_thrust_n": "N"})
+	results.append(TestResult.new(
+		"three units make three lanes, and MAX_LANES is not exceeded",
+		mixed.lanes().size() == 3 and mixed.lanes().size() <= TraceView.MAX_LANES,
+		"%d lanes for three units" % mixed.lanes().size()))
+
+	view.free()
+	paired.free()
+	mixed.free()
 	return results
