@@ -483,6 +483,16 @@ static func _test_screen() -> Array:
 ## whatever it would do once expanded. Without this check the collapsed and expanded assertions in
 ## _test_report_fits are identical by construction — the walker cannot tell the two states apart —
 ## which is exactly the "check that cannot fail independently" this suite exists to catch.
+##
+## A CONTROL THAT IS NOT IN A ROW IS STILL A ROW OF ONE. _add_report_note and _add_report_warning
+## parent a forced-width Label straight to a VBox, and such a label widens the pane by exactly as
+## much as a one-column grid row would — the layout engine does not care which container the
+## minimum came through. Counting only Grid and HBox descendants left the walker blind to that
+## whole shape, which is most of what the report actually puts on screen; a note wider than the
+## pane would have sailed past this check. It is measured against `usable` on its own and never
+## summed with the siblings it stacks above, which is the distinction this walker exists to draw.
+## Children of a Grid or an HBox are skipped here, because those have already been counted as part
+## of their row and would otherwise be measured twice.
 static func _widest_row(node: Node) -> Dictionary:
 	if node is Control and not (node as Control).visible:
 		return {"demanded": 0.0, "offender": ""}
@@ -514,6 +524,14 @@ static func _widest_row(node: Node) -> Dictionary:
 		if demanded > worst:
 			worst = demanded
 			offender = str(node.name)
+	elif node is Control:
+		var parent := node.get_parent()
+		var counted_by_its_row := parent is GridContainer or parent is HBoxContainer
+		if not counted_by_its_row:
+			var demanded := (node as Control).custom_minimum_size.x
+			if demanded > worst:
+				worst = demanded
+				offender = str(node.name)
 
 	for child in node.get_children():
 		var sub := _widest_row(child)
@@ -563,6 +581,24 @@ static func _test_report_fits() -> Array:
 	studio._report.remove_child(offending_grid)
 	offending_grid.queue_free()
 
+	# THE SHAPE THE WALKER USED TO BE BLIND TO, planted so the one-Control branch is load-bearing
+	# rather than decorative: a single over-wide Label parented straight to a VBox, which is what
+	# every note and warning in this report actually is. Before that branch existed this walked
+	# past silently, and both assertions below would have read 0 px and called it a pass.
+	var offending_note := Label.new()
+	offending_note.name = "PlantedLoneNote"
+	offending_note.custom_minimum_size = Vector2(usable * 1.2, 0)
+	studio._report.add_child(offending_note)
+	var caught_lone := _widest_row(studio._report)
+	results.append(TestResult.new(
+		"the check catches a lone over-wide label that is in no row at all",
+		float(caught_lone["demanded"]) > usable
+			and str(caught_lone["offender"]).contains("PlantedLoneNote"),
+		"planted a %.0f px label against a %.0f px usable pane, caught: %s (%.0f px)" % [
+			usable * 1.2, usable, caught_lone["offender"], caught_lone["demanded"]]))
+	studio._report.remove_child(offending_note)
+	offending_note.queue_free()
+
 	# THE FALSE POSITIVE THIS TEST WAS PRODUCING, reproduced and shown gone: a wide note living
 	# INSIDE the collapsible declared block. Summing "direct children of each child of _report" (the
 	# old shape) would add this note's forced width to every other row already in that block — a
@@ -577,10 +613,18 @@ static func _test_report_fits() -> Array:
 	# the row is not counted at all, expanded because the row-level walk correctly does not sum it
 	# with its siblings. A walker blind to `visible` would make these the same assertion twice; this
 	# one is not.
+	#
+	# THE PAIR IS MEASURED ON _declared, NOT ON _report, and the difference is the whole point of
+	# the "demands nothing" clause. The report ALREADY carries real full-width notes outside the
+	# collapsible block, so a report-wide walk reads usable_report_width() in both states and the
+	# collapsed assertion would be measuring those rather than this one — true, and silent about
+	# whether the hidden block contributed. Walking the block itself is the only scope in which
+	# "hidden, therefore nothing" is a claim about the thing under test. The report-wide bound is
+	# asserted above, and again below once the block is open.
 	studio._begin_declared()
 	studio._add_report_note("x".repeat(400))
 	studio.set_declared_expanded(false)
-	var collapsed_check := _widest_row(studio._report)
+	var collapsed_check := _widest_row(studio._declared)
 	results.append(TestResult.new(
 		"collapsed: the hidden declared block (with its planted wide note) demands nothing",
 		is_zero_approx(float(collapsed_check["demanded"])),
@@ -588,13 +632,22 @@ static func _test_report_fits() -> Array:
 			collapsed_check["demanded"], usable, collapsed_check["offender"]]))
 
 	studio.set_declared_expanded(true)
-	var expanded_check := _widest_row(studio._report)
+	var expanded_check := _widest_row(studio._declared)
 	results.append(TestResult.new(
 		"expanded: a wide note inside the declared block is not summed with its row siblings",
 		float(expanded_check["demanded"]) <= usable
 			and float(expanded_check["demanded"]) > 0.0,
 		"widest row while expanded: %.0f px of %.0f (%s)" % [
 			expanded_check["demanded"], usable, expanded_check["offender"]]))
+
+	# And the pane as a whole still fits with the block open — the state a builder actually reads
+	# the file's own fields in. Without this the expanded case is only ever asserted on a subtree.
+	var expanded_report := _widest_row(studio._report)
+	results.append(TestResult.new(
+		"no report row demands more width than the pane can give it, expanded",
+		float(expanded_report["demanded"]) <= usable,
+		"widest row demands %.0f px of a usable %.0f (%s)" % [
+			expanded_report["demanded"], usable, expanded_report["offender"]]))
 
 	studio._render_report()
 
