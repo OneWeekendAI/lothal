@@ -927,7 +927,58 @@ static func _test_trace_lanes() -> Array:
 		mixed.lanes().size() == 3 and mixed.lanes().size() <= TraceView.MAX_LANES,
 		"%d lanes for three units" % mixed.lanes().size()))
 
+	# A channel that is entirely unparseable is what LogReader writes for a wholly malformed
+	# column — a truncated log, a hand-edited file, a column of empty strings. channel_extent()
+	# returns (NAN, NAN) for it, and minf/maxf against NAN propagate NaN rather than ignoring it,
+	# so the naive guard's "-= 1.0 / += 1.0" on an already-NaN bound is still NaN. A lane must
+	# never ship a non-finite range: _y_pixel() divides by (y_max - y_min), and NaN there
+	# unscales the whole axis silently.
+	var all_nan := PackedFloat64Array()
+	for i in 500:
+		all_nan.append(NAN)
+	var nan_view := TraceView.new()
+	nan_view.size = Vector2(700, 400)
+	nan_view.show_log(times, {"bad_channel": all_nan}, {"bad_channel": "V"})
+	var nan_lanes := nan_view.lanes()
+	var nan_ok := nan_lanes.size() == 1 \
+		and is_finite(float(nan_lanes[0]["y_min"])) \
+		and is_finite(float(nan_lanes[0]["y_max"])) \
+		and float(nan_lanes[0]["y_max"]) > float(nan_lanes[0]["y_min"])
+	results.append(TestResult.new(
+		"a wholly unparseable channel still gets a finite lane range",
+		nan_ok,
+		"y_min=%s y_max=%s" % [
+			str(nan_lanes[0]["y_min"]) if not nan_lanes.is_empty() else "?",
+			str(nan_lanes[0]["y_max"]) if not nan_lanes.is_empty() else "?"]))
+
+	# A widget too short for its lane count must still produce lane rects with positive height and
+	# no overlap. lane_height's arithmetic has no floor of its own: with 3 lanes and LANE_GAP = 10,
+	# a plot shorter than 20 px drives it negative, which is an inverted Rect2 — lanes overlapping
+	# and drawing upward, not merely cramped.
+	var short := TraceView.new()
+	short.size = Vector2(700, 90)
+	short.show_log(times, {"gyro_x_rad_s": gyro, "m1_rpm": rpm, "m1_thrust_n": thrust},
+		{"gyro_x_rad_s": "rad/s", "m1_rpm": "rpm", "m1_thrust_n": "N"})
+	var short_rects: Array = short.lane_rects(short.lanes().size())
+	var heights_ok := short_rects.size() == 3
+	for r in short_rects:
+		if float((r as Rect2).size.y) <= 0.0:
+			heights_ok = false
+	var no_overlap := true
+	for i in short_rects.size() - 1:
+		var a: Rect2 = short_rects[i]
+		var b: Rect2 = short_rects[i + 1]
+		if a.position.y + a.size.y > b.position.y + 0.001:
+			no_overlap = false
+	results.append(TestResult.new(
+		"a widget too short for its lanes still gives every lane a positive, non-overlapping rect",
+		heights_ok and no_overlap,
+		"heights_ok=%s no_overlap=%s rects=%s" % [heights_ok, no_overlap,
+			", ".join(short_rects.map(func(r): return str(r)))]))
+
 	view.free()
 	paired.free()
 	mixed.free()
+	nan_view.free()
+	short.free()
 	return results
