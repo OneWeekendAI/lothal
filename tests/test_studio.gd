@@ -465,6 +465,57 @@ static func _test_screen() -> Array:
 ## "... rad/" with the rest past the pane edge. The check is on the WIDTHS, not on pixels, because
 ## the suite renders no frames — and on the sum per row, because each label is individually under
 ## the pane width and only their sum is not.
+## Walks the pane recursively, exactly the shape _labels_under already uses for text, and asserts
+## on each ROW-LEVEL CONTAINER'S OWN CHILDREN rather than on an arbitrary nesting level.
+##
+## "Row-level" means a container that lays its own children out HORIZONTALLY, so their minimum
+## widths actually compete for the same span: a GridContainer's row (bucketed by its own `columns`,
+## since a grid's rows stack vertically but its columns sit side by side) or an HBoxContainer's
+## full child list. A VBoxContainer (the report itself, and the collapsible declared block) stacks
+## its children vertically and demands nothing by summing across them — each child is its own
+## concern, found by recursing rather than by adding siblings that never share a row.
+##
+## THIS IS WHAT TASK 1's TEST GOT WRONG AND TASK 7 LEFT WRONG: it summed direct children of a fixed
+## nesting depth, which was the report's row shape before the collapsible block existed and stopped
+## being the report's row shape the day _declared was added — see the Important 3 finding.
+static func _widest_row(node: Node, usable: float) -> Dictionary:
+	var worst := 0.0
+	var offender := ""
+
+	if node is GridContainer:
+		var columns: int = (node as GridContainer).columns
+		var kids := node.get_children()
+		var row_index := 0
+		var i := 0
+		while i < kids.size():
+			var demanded := 0.0
+			for j in range(i, mini(i + columns, kids.size())):
+				var child = kids[j]
+				if child is Control:
+					demanded += (child as Control).custom_minimum_size.x
+			if demanded > worst:
+				worst = demanded
+				offender = "%s row %d" % [str(node.name), row_index]
+			i += columns
+			row_index += 1
+	elif node is HBoxContainer:
+		var demanded := 0.0
+		for child in node.get_children():
+			if child is Control:
+				demanded += (child as Control).custom_minimum_size.x
+		if demanded > worst:
+			worst = demanded
+			offender = str(node.name)
+
+	for child in node.get_children():
+		var sub := _widest_row(child, usable)
+		if sub["demanded"] > worst:
+			worst = sub["demanded"]
+			offender = sub["offender"]
+
+	return {"demanded": worst, "offender": offender}
+
+
 static func _test_report_fits() -> Array:
 	var results: Array = []
 	_fresh_dir()
@@ -474,25 +525,55 @@ static func _test_report_fits() -> Array:
 	studio.select("flight-20260816-120000.csv")
 
 	var usable := StudioScreen.usable_report_width()
-	var widest := 0.0
-	var offender := ""
-	for section in studio._report.get_children():
-		var demanded := 0.0
-		var _labels := 0
-		for child in section.get_children():
-			if child is Control:
-				demanded += (child as Control).custom_minimum_size.x
-				_labels += 1
-		if section is Control and section.get_child_count() == 0:
-			demanded = (section as Control).custom_minimum_size.x
-		if demanded > widest:
-			widest = demanded
-			offender = str(section.name)
-
+	var worst := _widest_row(studio._report, usable)
 	results.append(TestResult.new(
-		"no report row demands more width than the pane can give it",
-		widest <= usable,
-		"widest row demands %.0f px of a usable %.0f (%s)" % [widest, usable, offender]))
+		"no report row demands more width than the pane can give it, collapsed",
+		float(worst["demanded"]) <= usable,
+		"widest row demands %.0f px of a usable %.0f (%s)" % [
+			worst["demanded"], usable, worst["offender"]]))
+
+	# THE DEFECT THIS TEST WAS WRITTEN FOR, reproduced directly rather than trusted to still be
+	# caught: a row whose two labels carry forced minimum widths summing past the usable width. The
+	# old crop was 120 + 190 = 310 against panes narrower than that; this plants the same shape
+	# inside a fresh grid row and checks _widest_row actually flags it.
+	var offending_grid := GridContainer.new()
+	offending_grid.name = "PlantedOffender"
+	offending_grid.columns = 2
+	var wide_key := Label.new()
+	wide_key.custom_minimum_size = Vector2(usable * 0.6, 0)
+	var wide_value := Label.new()
+	wide_value.custom_minimum_size = Vector2(usable * 0.6, 0)
+	offending_grid.add_child(wide_key)
+	offending_grid.add_child(wide_value)
+	studio._report.add_child(offending_grid)
+	var caught := _widest_row(studio._report, usable)
+	results.append(TestResult.new(
+		"the check still catches a row whose labels sum past the usable width",
+		float(caught["demanded"]) > usable and str(caught["offender"]).contains("PlantedOffender"),
+		"planted a %.0f px row against a %.0f px usable pane, caught: %s (%.0f px)" % [
+			usable * 1.2, usable, caught["offender"], caught["demanded"]]))
+	studio._report.remove_child(offending_grid)
+	offending_grid.queue_free()
+
+	# THE FALSE POSITIVE THIS TEST WAS PRODUCING, reproduced and shown gone: a wide note living
+	# INSIDE the collapsible declared block. Summing "direct children of each child of _report" (the
+	# old shape) would add this note's forced width to every other row already in that block — a
+	# perfectly fine layout reading as a violation. _add_report_note's own minimum width is exactly
+	# usable_report_width(), which the row-level walk must accept on its own, unsummed with its
+	# vertically-stacked siblings, in both the collapsed and expanded state.
+	studio._begin_declared()
+	studio._add_report_note("x".repeat(400))
+	for expanded in [false, true]:
+		studio.set_declared_expanded(expanded)
+		var declared_check := _widest_row(studio._report, usable)
+		results.append(TestResult.new(
+			"a wide note inside the declared block is not summed with its row siblings (expanded=%s)"
+				% expanded,
+			float(declared_check["demanded"]) <= usable,
+			"widest row with a planted wide note, expanded=%s: %.0f px of %.0f (%s)" % [
+				expanded, declared_check["demanded"], usable, declared_check["offender"]]))
+
+	studio._render_report()
 
 	# A long value must WRAP, not force the row wider. autowrap alone does not do this while a
 	# custom_minimum_size.x is set — the label wins and the pane clips.
@@ -743,9 +824,39 @@ static func _test_trace_decimation() -> Array:
 		absf(nan_extent.y - SPIKE) < 1e-6 and is_finite(nan_extent.x),
 		"extent with a NaN present: %.4f to %.4f" % [nan_extent.x, nan_extent.y]))
 
+	# channel_extent() SEEDED FROM index 0 rather than the first FINITE entry: bucket 0 being NaN
+	# (a truncated or hand-edited log's leading cells) must not leave low/high stuck at NaN. Godot's
+	# minf/maxf self-heal a NaN FIRST argument (minf(NAN, x) == x), so a channel that goes on to have
+	# real data anywhere else already recovers via the loop below regardless of the seed — that is
+	# not what exposes the bug. What the seed alone controls is a channel with NO finite bucket at
+	# all: the loop then never touches low/high again, and the unfixed seed leaks (NAN, NAN) straight
+	# out of channel_extent() — which is exactly what legend_entries()/_readout_for() renders, since
+	# that path reads channel_extent() directly and never goes through lanes()'s is_finite() fallback.
+	# That is the concrete "legend reads nan … nan" failure the finding describes.
+	var all_nan := PackedFloat64Array()
+	all_nan.resize(SAMPLES)
+	for i in SAMPLES:
+		all_nan[i] = NAN
+	var all_nan_view := TraceView.new()
+	all_nan_view.size = Vector2(500, 300)
+	all_nan_view.show_log(times, {"gyro_x_rad_s": all_nan})
+	var all_nan_extent := all_nan_view.channel_extent("gyro_x_rad_s")
+	results.append(TestResult.new(
+		"a channel with no finite bucket returns a finite extent, not a leaked NaN seed",
+		is_finite(all_nan_extent.x) and is_finite(all_nan_extent.y),
+		"channel_extent() for an entirely unparseable channel: %s" % str(all_nan_extent)))
+
+	var legend := all_nan_view.legend_entries()
+	var legend_value := str(legend[0]["value"]) if not legend.is_empty() else ""
+	results.append(TestResult.new(
+		"the legend readout for a wholly unparseable channel never prints \"nan\"",
+		not legend_value.to_lower().contains("nan"),
+		"legend value: \"%s\"" % legend_value))
+
 	narrow.free()
 	wide.free()
 	nan_view.free()
+	all_nan_view.free()
 	return results
 
 
@@ -1331,6 +1442,41 @@ static func _test_picker_filter() -> Array:
 			and str(studio._available_channels[0]) == str(FlightRecorder.COLUMNS[1]),
 		"%d channels restored, first is %s" % [
 			studio._channel_list.item_count, studio._available_channels[0]]))
+
+	# A builder's own selection must survive a filter keystroke (Important 2), which used to
+	# unconditionally call _select_default_channels() on every call. Two channels that are neither
+	# the DEFAULT_CHANNELS pair nor matched by the "gyro" filter used earlier in this test, so this
+	# scenario cannot be confused with the filter-narrowing one above.
+	var m1_rpm_index := Array(studio._visible_channels).find("m1_rpm")
+	var m1_thrust_index := Array(studio._visible_channels).find("m1_thrust_n")
+	studio._channel_list.select(m1_rpm_index, true)
+	studio._channel_list.select(m1_thrust_index, false)
+	var selected_before := studio.selected_channels()
+	results.append(TestResult.new(
+		"setup: two non-default channels are actually selected before the filter runs",
+		selected_before.size() == 2, "selected before filter: %s" % str(selected_before)))
+
+	studio.set_channel_filter("m1_")
+	var selected_after := studio.selected_channels()
+	results.append(TestResult.new(
+		"a filter that still matches the selection keeps both channels selected",
+		selected_after.size() == 2 and Array(selected_after).has("m1_rpm")
+			and Array(selected_after).has("m1_thrust_n"),
+		"selected after a still-matching filter: %s" % str(selected_after)))
+	results.append(TestResult.new(
+		"the chart keeps drawing the preserved selection rather than resetting to the defaults",
+		Array(studio._trace.channel_names()).has("m1_rpm")
+			and Array(studio._trace.channel_names()).has("m1_thrust_n"),
+		"trace channels: %s" % str(studio._trace.channel_names())))
+
+	# A filter matching NO channel in the log at all (the zero-match branch) must clear the trace,
+	# not leave it drawing the selection from before the keystroke while the list and note say
+	# nothing is offered.
+	studio.set_channel_filter("nope_not_a_real_channel")
+	results.append(TestResult.new(
+		"a filter matching no channel at all clears the trace, not just the list",
+		studio._trace.channel_names().is_empty(),
+		"trace channels after a zero-match filter: %s" % str(studio._trace.channel_names())))
 
 	# A filter matching nothing says so rather than looking like a broken screen.
 	studio.set_channel_filter("zzzz")
