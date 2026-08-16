@@ -305,6 +305,9 @@ func lanes() -> Array:
 	var by_key: Dictionary = {}
 	for channel in _channels:
 		var unit := unit_of(channel)
+		# The leading space is what makes this key collision-proof against a real declared unit:
+		# no unit string out of a log header starts with whitespace, so " " + channel can never
+		# collide with an actual unit's key.
 		var key: String = unit if not unit.is_empty() else " " + channel
 		if not by_key.has(key):
 			by_key[key] = {"unit": unit, "channels": PackedStringArray()}
@@ -322,9 +325,13 @@ func lanes() -> Array:
 			var extent := channel_extent(channel)
 			y_min = minf(y_min, extent.x)
 			y_max = maxf(y_max, extent.y)
+		# A channel that is entirely unparseable makes channel_extent() return (NAN, NAN), and
+		# minf/maxf against NAN propagate it rather than ignoring it. Adjusting a NaN can never
+		# produce a number, so a non-finite (or degenerate) bound gets FIXED FALLBACKS rather than
+		# an offset from itself.
 		if not is_finite(y_min) or not is_finite(y_max) or is_equal_approx(y_min, y_max):
-			y_min -= 1.0
-			y_max += 1.0
+			y_min = 0.0
+			y_max = 1.0
 		lane["y_min"] = y_min
 		lane["y_max"] = y_max
 		out.append(lane)
@@ -419,6 +426,28 @@ func _plot_rect() -> Rect2:
 		maxf(size.y - MARGIN_TOP - MARGIN_BOTTOM, 1.0))
 
 
+## The stacked rect for each of `count` lanes, queryable without rendering a frame.
+##
+## LANE HEIGHT IS CLAMPED TO A MINIMUM OF 1.0, matching what _plot_rect() already does for its own
+## dimensions. Unclamped, (plot.size.y - LANE_GAP * (count - 1)) / count goes negative once the
+## widget is too short for its lane count — an inverted Rect2, with lanes overlapping and drawing
+## upward. A cramped chart is an acceptable failure mode; a rect whose geometry no longer means
+## what the rest of the code assumes is not.
+func lane_rects(count: int) -> Array:
+	var out: Array = []
+	if count <= 0:
+		return out
+	var plot := _plot_rect()
+	var lane_height := maxf(
+		(plot.size.y - LANE_GAP * float(count - 1)) / float(count), 1.0)
+	for i in count:
+		out.append(Rect2(
+			plot.position.x,
+			plot.position.y + (lane_height + LANE_GAP) * float(i),
+			plot.size.x, lane_height))
+	return out
+
+
 func _draw() -> void:
 	var plot := _plot_rect()
 	draw_rect(Rect2(Vector2.ZERO, size), BACKGROUND, true)
@@ -441,16 +470,12 @@ func _draw() -> void:
 	var lane_list := lanes()
 	if lane_list.is_empty():
 		return
-	var lane_height := (plot.size.y - LANE_GAP * float(lane_list.size() - 1)) \
-		/ float(lane_list.size())
+	var lane_rect_list := lane_rects(lane_list.size())
 
 	var span := span_s()
 	var lane_index := 0
 	for lane in lane_list:
-		var lane_rect := Rect2(
-			plot.position.x,
-			plot.position.y + (lane_height + LANE_GAP) * float(lane_index),
-			plot.size.x, lane_height)
+		var lane_rect: Rect2 = lane_rect_list[lane_index]
 		var y_min: float = lane["y_min"]
 		var y_max: float = lane["y_max"]
 
