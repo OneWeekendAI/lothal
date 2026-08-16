@@ -35,9 +35,12 @@ extends Control
 ## WHAT IS DELIBERATELY NOT HERE YET
 ## ===========================================================================
 ##
-## No plot and no analysis. The trace column is built and left empty, which is not an oversight:
-## it establishes the geometry LTHL-55 fills, and this slice is worth shipping without it because
-## it is the first time a builder can see that flying produced anything at all.
+## No ANALYSIS. LTHL-55 filled the trace column with channels; the spectrum, the gyro-vs-omega
+## figure and what the D gain costs are LTHL-20, and they land in the report pane beside the
+## header fields that are there now.
+##
+## The division that keeps this file honest: Studio shows what is IN a log. Anything computed
+## FROM a log is a figure with a provenance and a caveat, and those arrive together or not at all.
 
 ## The three columns, in the widths LabScreen already proves. The rail matches the field editor's
 ## 292 and the report pane matches the parts details' 336, so a builder moving between rooms is
@@ -45,10 +48,25 @@ extends Control
 const RAIL_WIDTH := 292.0
 const REPORT_WIDTH := 336.0
 
-## What the trace column says while LTHL-55 is unbuilt. Stated rather than left blank: an empty
-## panel reads as a broken screen, and a panel that says what belongs there reads as a screen with
-## a next step.
-const TRACE_PLACEHOLDER := "The trace goes here.\n\nChannels, plotted over the flight's own clock."
+## How much of the trace column the channel picker claims.
+const CHANNEL_LIST_HEIGHT := 132.0
+
+## The clock every channel is drawn against. Requested alongside whatever the builder picked, and
+## never itself offered as a channel — plotting time against time is a diagonal line.
+const TIME_COLUMN := "t_s"
+
+## What a log opens showing, when it carries them.
+##
+## THE GAP BETWEEN THESE TWO IS THE PRODUCT'S WHOLE ARGUMENT. omega is what the aircraft did and
+## gyro is what the flight controller was told, and no real drone can produce the difference about
+## itself. Opening on anything else would bury the one thing this viewer can show that a Betaflight
+## log viewer cannot, behind a builder knowing to go looking for it.
+const DEFAULT_CHANNELS := ["omega_x_rad_s", "gyro_x_rad_s"]
+
+## Columns a builder is unlikely to want first and which would crowd the top of the picker. Not
+## hidden — the list is the header's, in the header's order, and filtering it would be this screen
+## having an opinion about a log's contents. Only the DEFAULT selection is opinionated.
+const MAX_CHANNELS := 6
 
 var library: FlightLogLibrary
 ## Which log the builder is looking at. Held HERE and not in the library, because a selected log is
@@ -58,6 +76,12 @@ var selected_id := ""
 var _list: ItemList
 var _delete_button: Button
 var _report: VBoxContainer
+var _trace: TraceView
+var _channel_list: ItemList
+var _channel_note: Label
+## The channel names offered by the log currently selected, in the header's own order. Empty when
+## nothing is selected or the header could not be read.
+var _available_channels := PackedStringArray()
 
 
 ## Takes the library rather than building one, so a test can hand over a directory that is not the
@@ -117,19 +141,35 @@ func _build_flight_rail() -> Control:
 	return panel
 
 
-## Empty in this slice, on purpose — see the class header.
+## The trace, and under it the channels to draw (LTHL-55).
 func _build_trace_column() -> Control:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	var label := Label.new()
-	label.text = TRACE_PLACEHOLDER
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.theme_type_variation = &"MutedLabel"
-	panel.add_child(label)
+	var column := VBoxContainer.new()
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_child(column)
+
+	_trace = TraceView.new()
+	_trace.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_trace.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(_trace)
+
+	_channel_note = Label.new()
+	_channel_note.theme_type_variation = &"MutedLabel"
+	column.add_child(_channel_note)
+
+	# AN ItemList RATHER THAN A ROW OF CHECKBOXES, because the list is not a fixed set: it is
+	# whatever the log's header says, which is 55 names today and 76 after LTHL-52. A wrapped row
+	# of that many boxes is a wall; a multi-select list is scrollable and stays one control.
+	_channel_list = ItemList.new()
+	_channel_list.select_mode = ItemList.SELECT_MULTI
+	_channel_list.max_columns = 0
+	_channel_list.custom_minimum_size = Vector2(0, CHANNEL_LIST_HEIGHT)
+	_channel_list.multi_selected.connect(_on_channel_toggled)
+	column.add_child(_channel_list)
 
 	return panel
 
@@ -161,7 +201,130 @@ func _build_report_pane() -> Control:
 func render() -> void:
 	_render_list()
 	_render_report()
+	_render_channels()
 	_delete_button.disabled = selected_id.is_empty()
+
+
+## ---------------------------------------------------------------------------
+## The channels, and where the list of them comes from
+## ---------------------------------------------------------------------------
+##
+## THE PICKER IS THE HEADER'S `columns` ARRAY, not a list written here.
+##
+## This is what makes LTHL-52 free: its twenty-one control-side columns — rcCommand, the setpoint,
+## the separated P, I and D terms, the motor commands, the mode — appear in Studio on the day they
+## appear in a log, with no change to this file. A hardcoded picker would mean LTHL-52 carried a
+## hidden Studio task inside it, discovered late.
+##
+## It also means old logs open with no special-casing: a file written before those columns existed
+## simply offers fewer channels. That is the SCHEMA-stays-at-1 rule paying out in the one place a
+## builder would notice it failing.
+func _render_channels() -> void:
+	_channel_list.clear()
+	_available_channels = PackedStringArray()
+
+	var head := library.header(selected_id) if not selected_id.is_empty() else {}
+	if head.is_empty():
+		_trace.clear()
+		_channel_note.text = ""
+		return
+
+	var units: Dictionary = head.get("units", {})
+	for column_name in head.get("columns", []):
+		if str(column_name) == TIME_COLUMN:
+			continue
+		_available_channels.append(str(column_name))
+		# THE UNIT COMES FROM THE FILE AND IS DISPLAYED, NEVER CONVERTED. Lothal is rad/s and
+		# Betaflight is deg/s; a viewer that helpfully showed degrees because degrees are more
+		# familiar would undo the entire discipline the UNITS table exists to enforce.
+		var unit := str(units.get(column_name, ""))
+		_channel_list.add_item(str(column_name) if unit.is_empty()
+			else "%s  (%s)" % [column_name, unit])
+
+	_select_default_channels()
+	_load_selected_channels()
+
+
+## Selects the opening channels, falling back when a log does not carry them. A pre-LTHL-51 log has
+## no electrical_hz; a hypothetical future one might drop something else. Either way the viewer
+## opens showing SOMETHING, because a chart that opens blank reads as a broken chart.
+func _select_default_channels() -> void:
+	var chosen := 0
+	for wanted in DEFAULT_CHANNELS:
+		var index := Array(_available_channels).find(wanted)
+		if index >= 0:
+			_channel_list.select(index, false)
+			chosen += 1
+	if chosen == 0 and _channel_list.item_count > 0:
+		_channel_list.select(0, false)
+
+
+func selected_channels() -> PackedStringArray:
+	var out := PackedStringArray()
+	for index in _channel_list.get_selected_items():
+		if index >= 0 and index < _available_channels.size():
+			out.append(_available_channels[index])
+	return out
+
+
+## Reads the picked channels out of the file and hands them to the trace.
+##
+## THE PARSE IS THE RUST CORE'S. A three-minute log is ~180 000 rows of 55 columns, and doing that
+## in GDScript would be seconds of main thread every time a builder clicks a flight. LogReader
+## takes the names so only the picked columns are turned into floats — two channels cost a
+## twenty-seventh of parsing everything.
+##
+## A failed or truncated read is a note under the chart, never a crash: json_store.gd's rule, and
+## the reason LogReader returns a reason string instead of aborting. A truncated log still draws
+## the rows it had, because the flight that ended badly is usually the interesting one.
+func _load_selected_channels() -> void:
+	var picked := selected_channels()
+	if picked.is_empty():
+		_trace.clear()
+		_channel_note.text = "Pick a channel."
+		return
+
+	var request := PackedStringArray([TIME_COLUMN])
+	request.append_array(picked)
+	var result: Dictionary = LogReader.read_columns(library.path_of(selected_id), request)
+
+	if not bool(result.get("ok", false)):
+		_trace.clear()
+		_channel_note.text = "Could not read this log: %s" % result.get("reason", "unknown")
+		return
+
+	var columns: Dictionary = result.get("columns", {})
+	var times: PackedFloat64Array = columns.get(TIME_COLUMN, PackedFloat64Array())
+	var series: Dictionary = {}
+	for channel in picked:
+		if columns.has(channel):
+			series[channel] = columns[channel]
+
+	_trace.show_log(times, series)
+
+	var note := "%d rows" % int(result.get("rows", 0))
+	# Both of these are the file telling on itself, and both are worth saying out loud rather than
+	# quietly drawing a shorter trace. A builder who cannot see that a log stopped early will read
+	# the end of the chart as the end of the flight.
+	var bad := int(result.get("bad_cells", 0))
+	if bad > 0:
+		note += "  ·  %d unreadable cells, drawn as gaps" % bad
+	var reason := str(result.get("reason", ""))
+	if not reason.is_empty():
+		note += "  ·  " + reason
+	_channel_note.text = note
+
+
+func _on_channel_toggled(_index: int, _selected: bool) -> void:
+	# Guarded rather than left to the builder's judgement, because the cost is not obvious from the
+	# UI: each channel is another column parsed out of a file that may be 197 MB, and a builder who
+	# selects all 55 to see what happens should get a refusal rather than a freeze.
+	var picked := selected_channels()
+	if picked.size() > MAX_CHANNELS:
+		_channel_list.deselect(_index)
+		_channel_note.text = "Six channels at a time. Deselect one first."
+		return
+	_load_selected_channels()
 
 
 func _render_list() -> void:

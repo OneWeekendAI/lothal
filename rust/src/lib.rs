@@ -1,6 +1,7 @@
 mod battery;
 mod fitting;
 mod licence;
+mod log_reader;
 mod motor;
 mod plausibility;
 mod powertrain;

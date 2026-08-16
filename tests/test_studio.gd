@@ -90,6 +90,9 @@ static func run() -> Array:
 	results.append_array(_test_bad_files())
 	results.append_array(_test_screen())
 	results.append_array(_test_shell_room())
+	results.append_array(_test_log_reader())
+	results.append_array(_test_trace_decimation())
+	results.append_array(_test_channel_picker())
 	_clean()
 	return results
 
@@ -307,6 +310,284 @@ static func _test_screen() -> Array:
 		"empty state: %s" % empty_studio._list.get_item_text(0)))
 	empty_studio.free()
 
+	return results
+
+
+## ---------------------------------------------------------------------------
+## The Rust reader (LTHL-55)
+## ---------------------------------------------------------------------------
+##
+## The crate is panic = "abort", so a single unwrap on a malformed CSV takes the whole application
+## down while a builder is browsing. Every case below is a file a builder could plausibly have on
+## disk, and the assertion is always the same: a reason, not a crash. If any of these panics, the
+## test runner dies rather than reporting a failure — which is itself the loudest possible signal.
+static func _test_log_reader() -> Array:
+	var results: Array = []
+	_fresh_dir()
+	var good := _write_log("flight-20260816-120000.csv", 200)
+
+	var read: Dictionary = LogReader.read_columns(good,
+		PackedStringArray(["t_s", "gyro_x_rad_s", "m1_rpm"]))
+	var columns: Dictionary = read.get("columns", {})
+	var times: PackedFloat64Array = columns.get("t_s", PackedFloat64Array())
+	var gyro: PackedFloat64Array = columns.get("gyro_x_rad_s", PackedFloat64Array())
+
+	results.append(TestResult.new(
+		"the Rust reader returns the requested columns, with one value per row",
+		bool(read.get("ok", false)) and int(read.get("rows", 0)) == 200
+			and times.size() == 200 and gyro.size() == 200 and columns.size() == 3,
+		"ok=%s, %d rows, %d columns" % [
+			read.get("ok"), read.get("rows"), columns.size()]))
+
+	# The values must be the FILE's, not merely the right shape. Checked against the same dumb CSV
+	# reader test_flight_recorder.gd uses, which knows nothing about the Rust path and so cannot
+	# agree with it about a shared mistake.
+	var oracle := TestFlightRecorder._column(good, "gyro_x_rad_s")
+	var matches := oracle.size() == gyro.size()
+	if matches:
+		for i in gyro.size():
+			if absf(gyro[i] - oracle[i]) > 1e-12:
+				matches = false
+				break
+	results.append(TestResult.new(
+		"the Rust reader's floats are the file's floats, checked against an independent reader",
+		matches,
+		"%d values agree with a GDScript parse of the same column" % gyro.size()))
+
+	# A name the file does not carry is absent, not fatal. This is what lets Studio open a log
+	# written before LTHL-52 without special-casing it.
+	var partial: Dictionary = LogReader.read_columns(good,
+		PackedStringArray(["t_s", "axisP_roll", "gyro_x_rad_s"]))
+	var partial_columns: Dictionary = partial.get("columns", {})
+	results.append(TestResult.new(
+		"a column the log does not carry comes back absent rather than failing the read",
+		bool(partial.get("ok", false)) and partial_columns.size() == 2
+			and not partial_columns.has("axisP_roll"),
+		"asked for 3, got %d, no axisP_roll" % partial_columns.size()))
+
+	# --- Every way a file on disk can be wrong ---------------------------------------------
+	var truncated_path := "%s/truncated.csv" % TEST_DIR
+	var handle := FileAccess.open(truncated_path, FileAccess.WRITE)
+	handle.store_line("#{\"schema\": 1}")
+	handle.store_line("t_s,gyro_x_rad_s,m1_rpm")
+	handle.store_line("0.001,0.5,1000")
+	handle.store_line("0.002,0.6,1100")
+	handle.store_line("0.003,0.7")          # the half-written last row of a log that died
+	handle.close()
+
+	var cut: Dictionary = LogReader.read_columns(truncated_path, PackedStringArray(["t_s"]))
+	# A TRUNCATED FILE IS A SUCCESSFUL READ OF WHAT WAS THERE. Returning a failure would throw
+	# away a flight because its last line was half written — and the flight that ended by the app
+	# dying is usually the one worth looking at.
+	results.append(TestResult.new(
+		"a log truncated mid-row keeps the rows it had, and says where it stopped",
+		bool(cut.get("ok", false)) and int(cut.get("rows", 0)) == 2
+			and str(cut.get("reason", "")).contains("truncated"),
+		"%d rows, reason: %s" % [cut.get("rows"), cut.get("reason")]))
+
+	var junk_path := "%s/junk.csv" % TEST_DIR
+	var junk := FileAccess.open(junk_path, FileAccess.WRITE)
+	junk.store_line("this is not a log at all")
+	junk.close()
+
+	var empty_path := "%s/empty.csv" % TEST_DIR
+	FileAccess.open(empty_path, FileAccess.WRITE).close()
+
+	var junk_read: Dictionary = LogReader.read_columns(junk_path, PackedStringArray(["t_s"]))
+	var empty_read: Dictionary = LogReader.read_columns(empty_path, PackedStringArray(["t_s"]))
+	var missing_read: Dictionary = LogReader.read_columns("user://no_such_log.csv",
+		PackedStringArray(["t_s"]))
+
+	results.append(TestResult.new(
+		"garbage, empty and missing files each return a reason rather than aborting the process",
+		not bool(junk_read.get("ok", true)) and not bool(empty_read.get("ok", true))
+			and not bool(missing_read.get("ok", true))
+			and not str(junk_read.get("reason", "")).is_empty()
+			and not str(missing_read.get("reason", "")).is_empty(),
+		"junk: %s | empty: %s | missing: %s" % [
+			junk_read.get("reason"), empty_read.get("reason"), missing_read.get("reason")]))
+
+	# A cell that will not parse becomes NaN and is COUNTED, rather than becoming zero. Zero is a
+	# plausible reading — it looks like a moment the aircraft was still — and NaN is visibly absent.
+	var bad_path := "%s/bad_cell.csv" % TEST_DIR
+	var bad := FileAccess.open(bad_path, FileAccess.WRITE)
+	bad.store_line("#{\"schema\": 1}")
+	bad.store_line("t_s,gyro_x_rad_s")
+	bad.store_line("0.001,0.5")
+	bad.store_line("0.002,not-a-number")
+	bad.close()
+	var bad_read: Dictionary = LogReader.read_columns(bad_path,
+		PackedStringArray(["gyro_x_rad_s"]))
+	var bad_values: PackedFloat64Array = bad_read.get("columns", {}).get(
+		"gyro_x_rad_s", PackedFloat64Array())
+	results.append(TestResult.new(
+		"an unparseable cell reads as NaN and is counted, never as a plausible zero",
+		int(bad_read.get("bad_cells", 0)) == 1 and bad_values.size() == 2
+			and is_nan(bad_values[1]),
+		"bad_cells=%s, %d values back" % [bad_read.get("bad_cells"), bad_values.size()]))
+
+	# --- Only the requested columns are parsed -----------------------------------------------
+	#
+	# Measured against the cost of the alternative in the same run, never against a declared
+	# number — see LISTING_BUDGET_MS for what happened the one time this suite used a number.
+	var wide := _write_log("flight-20260816-130000.csv", FIXTURE_ROWS)
+	var all_names := PackedStringArray()
+	for column_name in FlightRecorder.COLUMNS:
+		all_names.append(str(column_name))
+
+	var all_start := Time.get_ticks_usec()
+	LogReader.read_columns(wide, all_names)
+	var all_us := Time.get_ticks_usec() - all_start
+
+	var two_start := Time.get_ticks_usec()
+	LogReader.read_columns(wide, PackedStringArray(["t_s", "gyro_x_rad_s"]))
+	var two_us := Time.get_ticks_usec() - two_start
+
+	results.append(TestResult.new(
+		"reading two columns costs less than half of reading all %d" % all_names.size(),
+		two_us * 2 < all_us,
+		"2 columns in %d us against %d columns in %d us" % [
+			two_us, all_names.size(), all_us]))
+
+	# The §7 rule reaches Rust too. The GDScript readers are grepped by
+	# tests/test_flight_recorder.gd; this file is not GDScript, so it is checked here.
+	var rust_source := FileAccess.get_file_as_string("res://rust/src/log_reader.rs")
+	results.append(TestResult.new(
+		"the Rust reader cannot reconstruct a build, and does not unwrap on a builder's file",
+		not rust_source.is_empty()
+			and not rust_source.contains("Build::")
+			and not rust_source.contains(".unwrap()")
+			and not rust_source.contains(".expect("),
+		"log_reader.rs: no Build, no unwrap, no expect"))
+
+	return results
+
+
+## ---------------------------------------------------------------------------
+## Min/max decimation — this slice's axisI
+## ---------------------------------------------------------------------------
+##
+## THE FIXTURE IS ADVERSARIAL ON PURPOSE. A one-sample spike placed anywhere convenient passes for
+## every-Nth decimation too, whenever the spike happens to land on a kept index — which makes the
+## check a test that cannot fail. The spike below sits at an index no every-Nth stride at either
+## width would keep, and the assertion is that both widths report the SAME extent and that the
+## extent is the true one.
+##
+## Verified by mutation: swapping TraceView's bucketing for drop-decimation makes this go red.
+static func _test_trace_decimation() -> Array:
+	var results: Array = []
+
+	const SAMPLES := 10000
+	const SPIKE_AT := 4517       # prime-ish index, divisible by neither stride below
+	const SPIKE := 0.4
+	const BASELINE := 0.01
+
+	var times := PackedFloat64Array()
+	var values := PackedFloat64Array()
+	for i in SAMPLES:
+		times.append(float(i) * 0.001)
+		values.append(SPIKE if i == SPIKE_AT else BASELINE)
+
+	var narrow := TraceView.new()
+	narrow.size = Vector2(500, 300)
+	narrow.show_log(times, {"gyro_x_rad_s": values})
+	var narrow_extent := narrow.channel_extent("gyro_x_rad_s")
+
+	var wide := TraceView.new()
+	wide.size = Vector2(740, 300)
+	wide.show_log(times, {"gyro_x_rad_s": values})
+	var wide_extent := wide.channel_extent("gyro_x_rad_s")
+
+	results.append(TestResult.new(
+		"a one-sample spike survives decimation, and reads the SAME at two window widths",
+		absf(narrow_extent.y - SPIKE) < 1e-6 and absf(wide_extent.y - SPIKE) < 1e-6,
+		"peak drawn: %.4f at 500 px, %.4f at 740 px (true peak %.4f)" % [
+			narrow_extent.y, wide_extent.y, SPIKE]))
+
+	# The bucket the spike lands in must carry it as an EXTENT, not as a midpoint. A polyline
+	# through bucket midpoints would draw [-0.4, 0.4] as a flat line through zero, which is the
+	# tempting simplification this widget exists to refuse.
+	var spike_bucket := int(times[SPIKE_AT] / (times[SAMPLES - 1] - times[0])
+		* float(narrow.bucket_count() - 1))
+	var extent := narrow.bucket_extent("gyro_x_rad_s", spike_bucket)
+	results.append(TestResult.new(
+		"the spike's bucket draws a vertical extent from baseline to peak, not a midpoint",
+		absf(extent.y - SPIKE) < 1e-6 and absf(extent.x - BASELINE) < 1e-6,
+		"bucket %d spans %.4f to %.4f" % [spike_bucket, extent.x, extent.y]))
+
+	# A NaN from an unparseable cell must not blank the axis: min/max against NaN propagates in
+	# GDScript, so one bad cell in a 180 000-row log would leave the whole channel unscaled.
+	var with_nan := values.duplicate()
+	with_nan[10] = NAN
+	var nan_view := TraceView.new()
+	nan_view.size = Vector2(500, 300)
+	nan_view.show_log(times, {"gyro_x_rad_s": with_nan})
+	var nan_extent := nan_view.channel_extent("gyro_x_rad_s")
+	results.append(TestResult.new(
+		"one NaN cell does not blank the channel's range",
+		absf(nan_extent.y - SPIKE) < 1e-6 and is_finite(nan_extent.x),
+		"extent with a NaN present: %.4f to %.4f" % [nan_extent.x, nan_extent.y]))
+
+	narrow.free()
+	wide.free()
+	nan_view.free()
+	return results
+
+
+## The picker is the header's `columns` array, which is what makes LTHL-52 free.
+static func _test_channel_picker() -> Array:
+	var results: Array = []
+	_fresh_dir()
+	_write_log("flight-20260816-120000.csv", 50)
+
+	var studio := StudioScreen.new(FlightLogLibrary.load_from(TEST_DIR))
+	studio.select("flight-20260816-120000.csv")
+
+	# One entry per column in the header, minus t_s, which is the clock rather than a channel.
+	var expected := FlightRecorder.COLUMNS.size() - 1
+	results.append(TestResult.new(
+		"the picker offers exactly the channels the header lists, less the clock",
+		studio._channel_list.item_count == expected,
+		"%d channels offered against %d columns in the header" % [
+			studio._channel_list.item_count, FlightRecorder.COLUMNS.size()]))
+
+	# A COLUMN THE PICKER WAS NEVER TOLD ABOUT. This is the LTHL-52 case in miniature: a log
+	# carrying a name no version of this screen has heard of must still offer it. A hardcoded
+	# picker fails here, and it is the only check that distinguishes the two designs.
+	var future_path := "%s/flight-20270101-000000.csv" % TEST_DIR
+	var future := FileAccess.open(future_path, FileAccess.WRITE)
+	future.store_line("#" + JSON.stringify({
+		"schema": 1,
+		"columns": ["t_s", "axisP_roll", "gyro_x_rad_s"],
+		"units": {"t_s": "s", "axisP_roll": "unit", "gyro_x_rad_s": "rad/s"},
+		"aircraft": {"fingerprint": "a/b/c/d/e/f"},
+	}))
+	future.store_line("t_s,axisP_roll,gyro_x_rad_s")
+	future.store_line("0.001,12.5,0.5")
+	future.store_line("0.002,12.6,0.6")
+	future.close()
+
+	studio.library.refresh()
+	studio.select("flight-20270101-000000.csv")
+	var offered := PackedStringArray()
+	for i in studio._channel_list.item_count:
+		offered.append(studio._channel_list.get_item_text(i))
+
+	results.append(TestResult.new(
+		"a column no version of this screen has heard of is still offered — LTHL-52 costs Studio nothing",
+		studio._channel_list.item_count == 2
+			and str(offered[0]).begins_with("axisP_roll"),
+		"offered: %s" % ", ".join(offered)))
+
+	# THE UNIT IS THE FILE'S AND IS SHOWN, NEVER CONVERTED. Lothal is rad/s and Betaflight is
+	# deg/s; a viewer that helpfully showed degrees would undo the discipline the UNITS table
+	# exists to enforce.
+	results.append(TestResult.new(
+		"the picker shows each channel's unit as the file states it, with no conversion",
+		str(offered[1]).contains("rad/s") and not str(offered[1]).contains("deg"),
+		"gyro channel reads: %s" % offered[1]))
+
+	studio.free()
 	return results
 
 
