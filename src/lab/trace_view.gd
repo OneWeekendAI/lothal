@@ -101,12 +101,17 @@ var _units: Dictionary = {}
 var _buckets: Dictionary = {}
 var _bucket_width := -1.0
 
+## Where the reader is pointing, in the log's own seconds. Negative means no cursor, which is the
+## state the widget opens in and returns to when the pointer leaves.
+var cursor_t := -1.0
+
 
 func _init() -> void:
-	# Unlike BandTrace, this one takes input: a viewer wants a cursor. Nothing reads it yet, and
-	# the filter is set here rather than left to LTHL-20 so the widget's intent is stated once.
+	# Unlike BandTrace, this one takes input: a viewer wants a cursor, and legend_entries() is what
+	# reads it.
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	resized.connect(_invalidate)
+	mouse_exited.connect(_clear_cursor)
 
 
 ## Replaces everything. One call, so there is no arrangement in which the clock belongs to one
@@ -153,8 +158,60 @@ func legend_entries() -> Array:
 
 
 func _readout_for(channel: String) -> String:
+	if cursor_t >= 0.0:
+		var here := value_at(channel, cursor_t)
+		if is_finite(here):
+			return _format_y(here)
+		return "—"
 	var extent := channel_extent(channel)
 	return "%s … %s" % [_format_y(extent.x), _format_y(extent.y)]
+
+
+## The value of a channel at a time, by NEAREST SAMPLE rather than by interpolation.
+##
+## Interpolating would invent a reading between two samples, which is exactly the thing the min/max
+## decimation refuses to do to the drawn trace and should not be reintroduced in the readout. Binary
+## search rather than a scan, because this runs per legend entry per mouse move over 180 000 rows.
+func value_at(channel: String, t: float) -> float:
+	if not _channels.has(channel) or times.size() < 2:
+		return NAN
+	if t < times[0] or t > times[times.size() - 1]:
+		return NAN
+	var values: PackedFloat64Array = _channels[channel]
+	var lo := 0
+	var hi := mini(values.size(), times.size()) - 1
+	while lo < hi:
+		@warning_ignore("integer_division")
+		var mid := (lo + hi) / 2
+		if times[mid] < t:
+			lo = mid + 1
+		else:
+			hi = mid
+	if lo > 0 and absf(times[lo - 1] - t) < absf(times[lo] - t):
+		lo -= 1
+	return values[lo] if lo < values.size() else NAN
+
+
+## Maps a pixel on the plot to a time on the log's clock. Outside the plot clears the cursor rather
+## than clamping to an edge, so a reader who slides off the chart is not shown a value.
+func set_cursor_at_pixel(px: float) -> void:
+	var plot := _plot_rect()
+	if px < plot.position.x or px > plot.end.x or times.size() < 2:
+		_clear_cursor()
+		return
+	var fraction := (px - plot.position.x) / maxf(plot.size.x, 1.0)
+	cursor_t = times[0] + span_s() * fraction
+	queue_redraw()
+
+
+func _clear_cursor() -> void:
+	cursor_t = -1.0
+	queue_redraw()
+
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		set_cursor_at_pixel((event as InputEventMouseMotion).position.x)
 
 
 func channel_names() -> PackedStringArray:
@@ -363,6 +420,12 @@ func _draw() -> void:
 	for channel in _channels:
 		_draw_channel(channel, SERIES_COLOURS[index % SERIES_COLOURS.size()], y_min, y_max, plot)
 		index += 1
+
+	if cursor_t >= 0.0 and span_s() > 0.0:
+		var cx := plot.position.x + plot.size.x * clampf(
+			(cursor_t - times[0]) / span_s(), 0.0, 1.0)
+		draw_line(Vector2(cx, plot.position.y), Vector2(cx, plot.end.y),
+			LothalTheme.BORDER_FOCUS, 1.0)
 
 
 ## The legend text for one entry — name, its unit if the header declared one, and the value

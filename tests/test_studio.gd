@@ -690,6 +690,50 @@ static func _test_trace_legend() -> Array:
 		rows.size() <= TraceView.LEGEND_MAX_ROWS and accounted.size() == 6,
 		"%d rows, %d distinct channel indices accounted for" % [rows.size(), accounted.size()]))
 
+	# THE LEGEND IS THE CURSOR READOUT. TraceView's own _init has said "a viewer wants a cursor.
+	# Nothing reads it yet" since it was written; this is the thing that reads it.
+	#
+	# The fixture is a RAMP rather than the sine above, because a sine takes the same value at many
+	# times and a wrong lookup could land on a right answer.
+	var ramp_times := PackedFloat64Array()
+	var ramp := PackedFloat64Array()
+	for i in 1000:
+		ramp_times.append(float(i) * 0.001)
+		ramp.append(float(i) * 0.25)
+
+	var cursored := TraceView.new()
+	cursored.size = Vector2(700, 300)
+	cursored.show_log(ramp_times, {"gyro_x_rad_s": ramp}, {"gyro_x_rad_s": "rad/s"})
+
+	results.append(TestResult.new(
+		"the cursor reads the channel's value at its own time, not at an index",
+		absf(cursored.value_at("gyro_x_rad_s", 0.400) - 100.0) < 0.26,
+		"value at t=0.400 s reads %.3f, true 100.000" % cursored.value_at(
+			"gyro_x_rad_s", 0.400)))
+
+	cursored.cursor_t = 0.400
+	var cursor_entry: Dictionary = cursored.legend_entries()[0]
+	results.append(TestResult.new(
+		"with a cursor set, the legend shows the value there rather than the channel's range",
+		str(cursor_entry["value"]).contains("100") and not str(cursor_entry["value"]).contains("…"),
+		"legend under cursor reads: %s" % cursor_entry["value"]))
+
+	cursored.cursor_t = -1.0
+	results.append(TestResult.new(
+		"with no cursor, the legend falls back to the channel's drawn range",
+		str(cursored.legend_entries()[0]["value"]).contains("…"),
+		"legend with no cursor reads: %s" % cursored.legend_entries()[0]["value"]))
+
+	# Off the end of the log is not a number, not the last sample — a readout that clamped would
+	# report a value for a time the flight did not have.
+	results.append(TestResult.new(
+		"a cursor time outside the log's span reads as absent rather than clamping",
+		is_nan(cursored.value_at("gyro_x_rad_s", 99.0))
+			and is_nan(cursored.value_at("no_such_channel", 0.4)),
+		"off-span and unknown-channel both read NaN"))
+
+	cursored.free()
+
 	view.free()
 	bare.free()
 	wide.free()
