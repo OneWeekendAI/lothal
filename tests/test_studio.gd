@@ -99,6 +99,7 @@ static func run() -> Array:
 	results.append_array(_test_gap_view())
 	results.append_array(_test_verdict())
 	results.append_array(_test_report_split())
+	results.append_array(_test_picker_filter())
 	_clean()
 	return results
 
@@ -1215,3 +1216,71 @@ static func _labels_under(node: Node) -> String:
 	for child in node.get_children():
 		out += _labels_under(child)
 	return out
+
+
+## max_columns = 0 wrapped 55 header names into a fixed 132 px block with near-invisible selection
+## state. One column and a filter make it a list; the filter is what keeps it usable at the 76
+## columns LTHL-52 brings.
+##
+## THE FILTER MUST NOT TOUCH THE SOURCE OF TRUTH. selected_channels() maps list indices back into
+## _available_channels, so an implementation that filtered that array in place would silently map
+## a builder's click onto a different channel — a bug that draws the wrong trace with no error.
+static func _test_picker_filter() -> Array:
+	var results: Array = []
+	_fresh_dir()
+	_write_log("flight-20260816-120000.csv", 50)
+
+	var studio := StudioScreen.new(FlightLogLibrary.load_from(TEST_DIR))
+	studio.select("flight-20260816-120000.csv")
+	studio.set_view_mode(StudioScreen.ViewMode.EXPLORE)
+
+	var all_channels := studio._available_channels.size()
+	results.append(TestResult.new(
+		"the picker is one scrollable column, not a wrapped wall",
+		studio._channel_list.max_columns == 1,
+		"max_columns = %d" % studio._channel_list.max_columns))
+
+	studio.set_channel_filter("gyro")
+	var shown := studio._channel_list.item_count
+	var only_gyro := shown > 0 and shown < all_channels
+	for i in shown:
+		if not studio._channel_list.get_item_text(i).contains("gyro"):
+			only_gyro = false
+	results.append(TestResult.new(
+		"typing a filter narrows the list to matching channels",
+		only_gyro,
+		"%d of %d channels shown for \"gyro\"" % [shown, all_channels]))
+
+	results.append(TestResult.new(
+		"the filter narrows the VIEW and never the header-ordered source array",
+		studio._available_channels.size() == all_channels,
+		"_available_channels still holds %d entries while %d are shown" % [
+			studio._available_channels.size(), shown]))
+
+	# The mapping from a clicked row back to a channel name must follow the FILTER, or a builder
+	# picking the third visible row gets the third channel in the file instead.
+	studio._channel_list.select(0, true)
+	var picked := studio.selected_channels()
+	results.append(TestResult.new(
+		"a click on a filtered row selects the channel that row is showing",
+		picked.size() == 1 and str(picked[0]).contains("gyro"),
+		"first filtered row selects: %s" % ("" if picked.is_empty() else picked[0])))
+
+	studio.set_channel_filter("")
+	results.append(TestResult.new(
+		"clearing the filter restores every channel, in the header's own order",
+		studio._channel_list.item_count == all_channels
+			and str(studio._available_channels[0]) == str(FlightRecorder.COLUMNS[1]),
+		"%d channels restored, first is %s" % [
+			studio._channel_list.item_count, studio._available_channels[0]]))
+
+	# A filter matching nothing says so rather than looking like a broken screen.
+	studio.set_channel_filter("zzzz")
+	results.append(TestResult.new(
+		"a filter matching nothing explains itself rather than showing an empty box",
+		studio._channel_list.item_count == 0
+			and studio._channel_note.text.to_lower().contains("no channel"),
+		"empty filter note: %s" % studio._channel_note.text))
+
+	studio.free()
+	return results

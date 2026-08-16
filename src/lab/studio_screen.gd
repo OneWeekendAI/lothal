@@ -150,6 +150,14 @@ var _axis_bar: HBoxContainer
 ## nothing is selected or the header could not be read.
 var _available_channels := PackedStringArray()
 
+## What the list is currently SHOWING, which is _available_channels narrowed by the filter.
+##
+## TWO ARRAYS AND NOT ONE, deliberately. selected_channels() maps a list index back to a name, so
+## filtering _available_channels in place would map a builder's click onto whichever channel now
+## sits at that index — the wrong trace, drawn confidently, with no error anywhere.
+var _visible_channels := PackedStringArray()
+var _channel_filter: LineEdit = null
+
 ## The header's units map for the selected log, held so the trace can label its axis and legend.
 var _channel_units: Dictionary = {}
 
@@ -276,9 +284,18 @@ func _build_trace_column() -> Control:
 	# AN ItemList RATHER THAN A ROW OF CHECKBOXES, because the list is not a fixed set: it is
 	# whatever the log's header says, which is 55 names today and 76 after LTHL-52. A wrapped row
 	# of that many boxes is a wall; a multi-select list is scrollable and stays one control.
+	# A FILTER, because the list is the header's: 55 names today and 76 after LTHL-52. Typing
+	# "gyro" is faster than scrolling, and it is one LineEdit over the same header-derived array.
+	_channel_filter = LineEdit.new()
+	_channel_filter.placeholder_text = "Filter channels"
+	_channel_filter.text_changed.connect(set_channel_filter)
+	column.add_child(_channel_filter)
+
+	# ONE COLUMN. max_columns = 0 wrapped the names into a block in which selection was nearly
+	# invisible and which read as log output rather than as a control.
 	_channel_list = ItemList.new()
 	_channel_list.select_mode = ItemList.SELECT_MULTI
-	_channel_list.max_columns = 0
+	_channel_list.max_columns = 1
 	_channel_list.custom_minimum_size = Vector2(0, CHANNEL_LIST_HEIGHT)
 	_channel_list.multi_selected.connect(_on_channel_toggled)
 	column.add_child(_channel_list)
@@ -335,6 +352,7 @@ func render() -> void:
 func _render_channels() -> void:
 	_channel_list.clear()
 	_available_channels = PackedStringArray()
+	_visible_channels = PackedStringArray()
 	_channel_units = {}
 
 	var head := library.header(selected_id) if not selected_id.is_empty() else {}
@@ -342,24 +360,21 @@ func _render_channels() -> void:
 		_trace.clear()
 		_channel_note.text = ""
 		_channel_list.visible = false
+		_channel_filter.visible = false
 		_axis_bar.visible = false
 		return
 
 	_channel_units = head.get("units", {})
-	var units: Dictionary = _channel_units
 	for column_name in head.get("columns", []):
 		if str(column_name) == TIME_COLUMN:
 			continue
 		_available_channels.append(str(column_name))
-		# THE UNIT COMES FROM THE FILE AND IS DISPLAYED, NEVER CONVERTED. Lothal is rad/s and
-		# Betaflight is deg/s; a viewer that helpfully showed degrees because degrees are more
-		# familiar would undo the entire discipline the UNITS table exists to enforce.
-		var unit := str(units.get(column_name, ""))
-		_channel_list.add_item(str(column_name) if unit.is_empty()
-			else "%s  (%s)" % [column_name, unit])
+
+	_rebuild_channel_list()
 
 	var exploring := view_mode == ViewMode.EXPLORE
 	_channel_list.visible = exploring
+	_channel_filter.visible = exploring
 	_axis_bar.visible = not exploring
 
 	if exploring:
@@ -369,13 +384,43 @@ func _render_channels() -> void:
 		_load_gap_view()
 
 
+## Fills the list from _available_channels, narrowed by the filter. _visible_channels is rebuilt
+## alongside so index-to-name stays exact.
+func _rebuild_channel_list() -> void:
+	var needle := "" if _channel_filter == null else _channel_filter.text.to_lower()
+	_channel_list.clear()
+	_visible_channels = PackedStringArray()
+
+	for channel in _available_channels:
+		if not needle.is_empty() and not channel.to_lower().contains(needle):
+			continue
+		_visible_channels.append(channel)
+		# THE UNIT COMES FROM THE FILE AND IS DISPLAYED, NEVER CONVERTED. Lothal is rad/s and
+		# Betaflight is deg/s; a viewer that helpfully showed degrees because degrees are more
+		# familiar would undo the entire discipline the UNITS table exists to enforce.
+		var unit := str(_channel_units.get(channel, ""))
+		_channel_list.add_item(channel if unit.is_empty() else "%s  (%s)" % [channel, unit])
+
+
+func set_channel_filter(text: String) -> void:
+	if _channel_filter != null and _channel_filter.text != text:
+		_channel_filter.text = text
+	_rebuild_channel_list()
+	if _channel_list.item_count == 0:
+		# An explanation rather than an empty box, following the flight list's empty case.
+		_channel_note.text = "No channel in this log matches \"%s\"." % text
+	else:
+		_select_default_channels()
+		_load_selected_channels()
+
+
 ## Selects the opening channels, falling back when a log does not carry them. A pre-LTHL-51 log has
 ## no electrical_hz; a hypothetical future one might drop something else. Either way the viewer
 ## opens showing SOMETHING, because a chart that opens blank reads as a broken chart.
 func _select_default_channels() -> void:
 	var chosen := 0
 	for wanted in DEFAULT_CHANNELS:
-		var index := Array(_available_channels).find(wanted)
+		var index := Array(_visible_channels).find(wanted)
 		if index >= 0:
 			_channel_list.select(index, false)
 			chosen += 1
@@ -386,8 +431,8 @@ func _select_default_channels() -> void:
 func selected_channels() -> PackedStringArray:
 	var out := PackedStringArray()
 	for index in _channel_list.get_selected_items():
-		if index >= 0 and index < _available_channels.size():
-			out.append(_available_channels[index])
+		if index >= 0 and index < _visible_channels.size():
+			out.append(_visible_channels[index])
 	return out
 
 
