@@ -57,8 +57,15 @@ const AXIS_TEXT := LothalTheme.TEXT_MUTED
 
 const MARGIN_LEFT := 54.0
 const MARGIN_RIGHT := 12.0
-## Room at the top for the legend row. Before it, this was 14 and the chart named nothing.
-const MARGIN_TOP := 34.0
+## Room at the top for the legend, up to LEGEND_MAX_ROWS rows. Before the legend existed this was
+## 14. One row needed 34; wrapping to up to three rows (LTHL-63) needs more.
+const MARGIN_TOP := 68.0
+
+## The picker caps a selection at six channels (studio_screen.gd's MAX_CHANNELS), so the legend has
+## a bounded worst case. Three rows is enough to name all six at ordinary panel widths without the
+## legend eating the whole chart; anything that still would not fit on row three is folded into a
+## "+N more" chip rather than silently dropped (LTHL-63).
+const LEGEND_MAX_ROWS := 3
 const MARGIN_BOTTOM := 26.0
 
 ## Per-channel colours, in the order channels are added. Six, because a builder watching more than
@@ -358,24 +365,83 @@ func _draw() -> void:
 		index += 1
 
 
-## A row of swatch + name + value above the plot. Left to right in draw order, so the colour a
-## reader sees on the chart is the colour beside the name.
-func _draw_legend(font: Font, plot: Rect2) -> void:
+## The legend text for one entry — name, its unit if the header declared one, and the value
+## readout. Shared between layout (which must measure it without drawing) and drawing itself, so
+## the two never disagree about how wide an entry is.
+func _legend_text(entry: Dictionary) -> String:
+	var unit: String = entry["unit"]
+	var text: String = str(entry["name"]) if unit.is_empty() \
+		else "%s (%s)" % [entry["name"], unit]
+	return text + "  " + str(entry["value"])
+
+
+## Packs legend entries left to right, wrapping to a new row when the next entry would run past
+## the plot's right edge. NEVER DROPS AN ENTRY: once LEGEND_MAX_ROWS - 1 rows are full, every
+## remaining index is forced onto the final row regardless of width, so the row itself accounts for
+## every channel even when the drawing later has to fold the overflow into a "+N more" chip. That
+## split — the model never loses a channel, only the pixels are compacted — is what makes
+## legend_rows() a check a reader can trust and _draw_legend() free to compact for space.
+func _legend_layout(font: Font, plot: Rect2) -> Array:
+	var entries := legend_entries()
+	var rows: Array = []
+	var current: Array = []
 	var x := plot.position.x
-	var y := 20.0
-	for entry in legend_entries():
-		var colour: Color = entry["colour"]
-		draw_rect(Rect2(x, y - 8.0, 8.0, 8.0), colour, true)
-		x += 13.0
-		var unit: String = entry["unit"]
-		var text: String = str(entry["name"]) if unit.is_empty() \
-			else "%s (%s)" % [entry["name"], unit]
-		text += "  " + str(entry["value"])
-		draw_string(font, Vector2(x, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
-			colour)
-		x += font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 18.0
-		if x > plot.end.x - 40.0:
-			return
+	for i in entries.size():
+		if rows.size() >= LEGEND_MAX_ROWS - 1:
+			# On the last allowed row: everything remaining lands here, full stop.
+			current.append(i)
+			continue
+		var width := 13.0 + font.get_string_size(
+			_legend_text(entries[i]), HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 18.0
+		if x + width > plot.end.x - 40.0 and not current.is_empty():
+			rows.append(current)
+			current = []
+			x = plot.position.x
+		current.append(i)
+		x += width
+	rows.append(current)
+	return rows
+
+
+## The legend's row layout as entry indices — queryable without rendering a frame, so a test can
+## assert every channel is accounted for on some row rather than trusting that the pixels drawn
+## happen to match the model.
+func legend_rows() -> Array:
+	return _legend_layout(ThemeDB.fallback_font, _plot_rect())
+
+
+## A row of swatch + name + value above the plot. Left to right in draw order, wrapping to up to
+## LEGEND_MAX_ROWS rows, so the colour a reader sees on the chart is the colour beside the name —
+## for every channel, not just however many fit on one line.
+func _draw_legend(font: Font, plot: Rect2) -> void:
+	var rows := _legend_layout(font, plot)
+	var entries := legend_entries()
+	var row_height := 16.0
+	for row_index in rows.size():
+		var indices: Array = rows[row_index]
+		var is_last_row := row_index == rows.size() - 1
+		var x := plot.position.x
+		var y := 20.0 + float(row_index) * row_height
+		var drawn := 0
+		for list_pos in indices.size():
+			var idx: int = indices[list_pos]
+			var entry: Dictionary = entries[idx]
+			var text := _legend_text(entry)
+			var width := 13.0 + font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 18.0
+			var remaining := indices.size() - list_pos
+			# The forced last row can still overflow the plot. Rather than draw past the edge — or
+			# silently drop, the bug this exists to fix — the rest becomes one compact chip that
+			# still names a count, so the legend never claims fewer channels than it drew.
+			if is_last_row and drawn > 0 and x + width > plot.end.x - 20.0 and remaining > 0:
+				draw_string(font, Vector2(x, y), "+%d more" % remaining,
+					HORIZONTAL_ALIGNMENT_LEFT, -1, 11, AXIS_TEXT)
+				break
+			var colour: Color = entry["colour"]
+			draw_rect(Rect2(x, y - 8.0, 8.0, 8.0), colour, true)
+			x += 13.0
+			draw_string(font, Vector2(x, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, colour)
+			x += font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 18.0
+			drawn += 1
 
 
 ## The unit at the head of the y axis. Without it the axis reads "4.0 / 2.0 / 0.000" and a builder

@@ -658,8 +658,41 @@ static func _test_trace_legend() -> Array:
 		bare.legend_entries().size() == 1 and bare.unit_of("gyro_x_rad_s").is_empty(),
 		"unnamed-unit channel: %d entries" % bare.legend_entries().size()))
 
+	# ADVERSARIAL: six channels, long names — the picker's cap (MAX_CHANNELS in studio_screen.gd)
+	# is the worst case the legend must survive at ordinary panel widths. A legend that drops
+	# entries past whatever fit on one row is worse than none: a reader matches the wrong colour
+	# to the wrong channel. legend_entries() alone cannot catch that bug — the drop lived in
+	# drawing, not in the model — so this asserts on legend_rows(), the drawn layout as data.
+	var wide := TraceView.new()
+	wide.size = Vector2(700, 300)
+	var many_channels: Dictionary = {}
+	var long_names := [
+		"gyro_x_rad_s", "omega_x_rad_s", "gyro_y_rad_s", "omega_y_rad_s",
+		"gyro_z_rad_s", "omega_z_rad_s",
+	]
+	for name in long_names:
+		many_channels[name] = gyro
+	wide.show_log(times, many_channels)
+
+	var wide_entries := wide.legend_entries()
+	results.append(TestResult.new(
+		"every one of six selected channels is named, not just however many fit on one row",
+		wide_entries.size() == 6,
+		"%d legend entries for 6 channels" % wide_entries.size()))
+
+	var rows := wide.legend_rows()
+	var accounted := {}
+	for row in rows:
+		for idx in row:
+			accounted[int(idx)] = true
+	results.append(TestResult.new(
+		"the drawn legend layout accounts for all six channels across its rows, none dropped",
+		rows.size() <= TraceView.LEGEND_MAX_ROWS and accounted.size() == 6,
+		"%d rows, %d distinct channel indices accounted for" % [rows.size(), accounted.size()]))
+
 	view.free()
 	bare.free()
+	wide.free()
 	return results
 
 
