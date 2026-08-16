@@ -24,9 +24,11 @@ const STICK_THROTTLE_TRIM := 0.3
 const KEYBOARD_CLIMB_G := 0.25
 const MODE_TOGGLE_BUTTON := JOY_BUTTON_A
 
-## Where flight logs land. One directory, created on first write, and the same one Studio will
-## read — a log the app cannot find again is a log that was not really written.
-const LOG_DIR := "user://logs"
+## Where flight logs land, taken from the library that reads them rather than spelled out again
+## here. A writer and a reader that each declare the directory separately agree right up until one
+## of them is edited — and the symptom would be Studio listing an empty room while the logs pile up
+## somewhere else.
+const LOG_DIR := FlightLogLibrary.LOG_DIR
 
 @onready var drone: Node3D = $Drone
 @onready var camera: Camera3D = $Camera3D
