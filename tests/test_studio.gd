@@ -1080,8 +1080,13 @@ static func _test_verdict() -> Array:
 	var results: Array = []
 
 	# Every ratio across the plausible range, including the reference sweep's ~7x and a clean
-	# flight's ~1.0x. A stub that returned a word for any of them fails here.
-	var probed := [0.5, 1.0, 1.14, 1.16, 1.5, 1.99, 2.01, 3.0, 4.99, 5.01, 7.0, 9.0, 100.0]
+	# flight's ~1.0x — plus both ends pushed past anything a real flight produces, so a threshold
+	# planted above the last drafted boundary or below 1.0 cannot hide past the last probe.
+	# -1.0 is in here too: verdict_for is a public static taking any float, and both its real
+	# inputs are standard deviations, so a negative ratio should never occur — but silence on it
+	# is still part of the contract this function makes.
+	var probed := [-1.0, 0.0, 0.01, 0.5, 1.0, 1.14, 1.16, 1.5, 1.99, 2.01, 3.0, 4.99, 5.01, 7.0,
+		9.0, 100.0, 1000.0, 1e6]
 	var silent := true
 	var spoke := ""
 	for ratio in probed:
@@ -1093,7 +1098,7 @@ static func _test_verdict() -> Array:
 	results.append(TestResult.new(
 		"no ratio produces a verdict word, because Lothal has not decided where the bands are",
 		silent,
-		"13 ratios from 0.5 to 100 all produce no verdict" if silent
+		"%d ratios from -1.0 to 1e6 all produce no verdict" % probed.size() if silent
 			else "a threshold was invented: %s" % spoke))
 
 	results.append(TestResult.new(
