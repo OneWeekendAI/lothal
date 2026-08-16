@@ -100,6 +100,7 @@ static func run() -> Array:
 	results.append_array(_test_verdict())
 	results.append_array(_test_report_split())
 	results.append_array(_test_picker_filter())
+	results.append_array(_test_rail_wrap_and_note_width())
 	_clean()
 	return results
 
@@ -1196,6 +1197,53 @@ static func _test_verdict() -> Array:
 			and StudioScreen.format_ratio(7.0) == "7.0x",
 		"inf -> %s, 7.0 -> %s" % [
 			StudioScreen.format_ratio(INF), StudioScreen.format_ratio(7.0)]))
+
+	studio.free()
+	return results
+
+
+## TWO DEFECTS A HEADLESS SUITE COULD NOT SEE, until a capture script put the pixels in front of a
+## human: the rail's two-line row rendering as one ellipsised line, and the gap view's note pushing
+## the report pane past a narrow window's edge. Neither shows up as a crash or a wrong value — both
+## are ItemList/Label defaults that render exactly as configured, just not as intended. This test
+## pins the mechanism each fix actually relies on, so a future edit that quietly drops
+## max_text_lines or an autowrap_mode goes red here rather than shipping silent again.
+static func _test_rail_wrap_and_note_width() -> Array:
+	var results: Array = []
+	_fresh_dir()
+	_write_log("flight-20260816-120000.csv", 30, 2)
+
+	var studio := StudioScreen.new(FlightLogLibrary.load_from(TEST_DIR))
+	studio.select("flight-20260816-120000.csv")
+
+	# _render_list emits "%s  %s %s\n%s" — a timestamp/duration line, then the fingerprint on its
+	# own line. Measured empirically (see the task-9 fix report): ItemList only honours that "\n"
+	# as a line break in ICON_MODE_TOP, and only draws a second line at all when fixed_column_width
+	# gives the wrap a width to break against and auto_height lets the row grow to fit it.
+	# max_text_lines alone — the first thing tried — left the row exactly as cropped as before,
+	# which is why all four are pinned together rather than just the one that looks central.
+	results.append(TestResult.new(
+		"the flight rail's ItemList is configured to actually draw a two-line row, not just permit one",
+		studio._list.icon_mode == ItemList.ICON_MODE_TOP
+			and studio._list.fixed_column_width > 0
+			and studio._list.auto_height
+			and studio._list.max_text_lines >= 2,
+		"icon_mode=%d, fixed_column_width=%d, auto_height=%s, max_text_lines=%d" % [
+			studio._list.icon_mode, studio._list.fixed_column_width, studio._list.auto_height,
+			studio._list.max_text_lines]))
+
+	# A Label with autowrap off reports its UNWRAPPED text as its minimum width. The gap view's
+	# note is a long sentence, and left unwrapped that minimum, added to the rail's and the report
+	# pane's fixed widths, exceeds a narrow window — and since HBoxContainer does not reorder
+	# children to compensate, the report pane (last in the row) is what runs past the visible
+	# edge. Wrapping here is what lets the trace column yield before the report pane does.
+	studio.set_view_mode(StudioScreen.ViewMode.GAP)
+	results.append(TestResult.new(
+		"the gap view's note wraps instead of demanding its full sentence as a minimum width",
+		studio._channel_note.autowrap_mode != TextServer.AUTOWRAP_OFF
+			and is_zero_approx(studio._channel_note.custom_minimum_size.x),
+		"autowrap=%d, min width=%.0f" % [
+			studio._channel_note.autowrap_mode, studio._channel_note.custom_minimum_size.x]))
 
 	studio.free()
 	return results

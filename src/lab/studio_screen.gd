@@ -228,6 +228,21 @@ func _build_flight_rail() -> Control:
 
 	_list = ItemList.new()
 	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# A ROW IS TWO LINES — see _render_list — and getting ItemList to actually DRAW a second line
+	# takes four properties together, not max_text_lines alone. Measured empirically (probes in
+	# the task-9 fix report): ItemList only wraps/breaks item text in ICON_MODE_TOP; in the
+	# default LEFT mode an embedded "\n" is inert and the row stays one line, ellipsised, no
+	# matter what max_text_lines or auto_height are set to — which is why the fix shipped inert
+	# the first time, at max_text_lines = 2 alone. fixed_column_width is what gives the wrap a
+	# width to break against (same_column_width defaults to sizing the column to the content's
+	# own unwrapped width, which never needs to wrap); auto_height is what lets the row grow past
+	# one line's height instead of clipping the second line it now has. The one cost is that
+	# ICON_MODE_TOP centers each line rather than left-aligning it — a cosmetic difference from
+	# the rest of the rail, and a smaller one than the crop it replaces.
+	_list.icon_mode = ItemList.ICON_MODE_TOP
+	_list.fixed_column_width = 260
+	_list.max_text_lines = 2
+	_list.auto_height = true
 	_list.item_selected.connect(_on_row_selected)
 	column.add_child(_list)
 
@@ -257,6 +272,15 @@ func _build_trace_column() -> Control:
 
 	_channel_note = Label.new()
 	_channel_note.theme_type_variation = &"MutedLabel"
+	# WITHOUT AUTOWRAP THIS LABEL IS THE THING THAT PUSHES THE REPORT PANE OFF SCREEN. A Label
+	# with autowrap off reports its UNWRAPPED text width as its minimum size, and the gap view's
+	# note ("3000 rows · gyro_x_rad_s against omega_x_rad_s, and what the sensor added") is wide
+	# enough that the row's total minimum — rail + this + the report's fixed 420 — exceeds a
+	# narrow window. The HBoxContainer does not reorder its children to compensate: the report
+	# pane, being last, is what runs past the visible edge. Wrapping here is what lets the trace
+	# column yield before the report pane does, matching the report pane's own notes (see
+	# _add_report_note) rather than fighting them for width.
+	_channel_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(_channel_note)
 
 	# The axis selector, which belongs to the gap view and is hidden in the explorer.

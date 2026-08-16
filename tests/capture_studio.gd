@@ -4,10 +4,16 @@ extends SceneTree
 ## has to cross the door into Sim; a log never crosses anywhere), and writes two PNGs so a human can
 ## look at the redesigned room. The companion to capture_lab.gd and capture_field_editor.gd.
 ##
-##   godot --script res://tests/capture_studio.gd -- <gap.png> <explore.png>
+##   godot --script res://tests/capture_studio.gd -- <gap.png> <explore.png> [resolution_WxH]
 ##
 ## Note: no --headless. This captures Godot's own framebuffer, which the dummy driver does not
 ## have, so a headless run HANGS silently rather than failing.
+##
+## resolution_WxH matches capture_lab.gd's argument of the same name and exists for the same
+## reason: a capture at one convenient window size is how the report pane getting pushed off a
+## NARROW window went unnoticed. Take one shot near the project's declared minimum
+## (window/size/min_size in project.godot, currently 1024x600) alongside the default/wide one —
+## the report pane's right edge is the thing to check in the narrow shot.
 ##
 ## The two logs are written through FlightRecorder, the same way tests/test_studio.gd's
 ## _write_log helper does it, so the header on screen is a real one rather than a hand-written
@@ -20,6 +26,14 @@ func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var gap_path: String = args[0] if args.size() > 0 else "user://studio_gap.png"
 	var explore_path: String = args[1] if args.size() > 1 else "user://studio_explore.png"
+
+	if args.size() > 2 and args[2] != "":
+		var res_parts := args[2].split("x")
+		if res_parts.size() == 2:
+			var w := int(res_parts[0])
+			var h := int(res_parts[1])
+			DisplayServer.window_set_size(Vector2i(w, h))
+			root.size = Vector2i(w, h)
 
 	_fresh_dir()
 	var newer_id := _write_log("flight-20260816-140000.csv", 3000, 2)
