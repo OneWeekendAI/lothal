@@ -60,6 +60,29 @@ const KNOWN_MISSES := {
 			+ "push the V2 to about +11% — further out than the V3 is now, and in the opposite "
 			+ "direction. It stands until somebody weighs a V3 themselves.",
 	},
+	"geprc_mark5_o4_pro_wide_x_6s": {
+		"error_fraction": -0.098,
+		"tolerance": 0.015,
+		"why": "GEPRC publish 165.1 g for the MK5 O4 Pro Wide X frame and publish the aircraft's "
+			+ "fitted hardware as SEPARATE lines of the same page's 'Includes' list: a 3D "
+			+ "printouts pack, a screw pack, Velcro and rubber battery straps, and anti-slip "
+			+ "pads. None of that is inside the 165.1 g, none of it is a part this catalog can "
+			+ "name, and all of it is bolted to the aircraft GEPRC weighed at 414 g. Build's 14 g "
+			+ "wiring lump is the only place it could land and it is not big enough — the gap is "
+			+ "41 g. That is a claim about what a frame-kit weight includes, not about "
+			+ "mass_parts(): the prediction is the exact sum of nine catalog masses, 165.1 + 118 "
+			+ "(4 x 29.5) + 17.2 (4 x 4.3) + 12 + 9 + 36.2 + 2 + 14 = 373.5 g, and every one of "
+			+ "those figures is vendor-published. WHY THE ANSWER IS NOT A BIGGER CONSTANT, which "
+			+ "is the tempting fix and the wrong one: the V2 above is built from these same "
+			+ "constants and comes in at +3.4%, OVER its reported mass. A constant large enough "
+			+ "to find this aircraft's 41 g would throw the V2 out by about +13% in the opposite "
+			+ "direction. The two vendors state their frame weights 84 g apart in the same size "
+			+ "class and neither states an inventory, which is the same disease the V3 entry "
+			+ "above documents from the other end. It stands until either GEPRC itemise the "
+			+ "165.1 g or somebody weighs a MARK5 themselves. The real fix is LTHL-11 unbundling "
+			+ "frame hardware into parts that can be named, at which point this entry should "
+			+ "fail as stale — which is exactly what the drift check below is for.",
+	},
 }
 
 
