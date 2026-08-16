@@ -57,7 +57,8 @@ const AXIS_TEXT := LothalTheme.TEXT_MUTED
 
 const MARGIN_LEFT := 54.0
 const MARGIN_RIGHT := 12.0
-const MARGIN_TOP := 14.0
+## Room at the top for the legend row. Before it, this was 14 and the chart named nothing.
+const MARGIN_TOP := 34.0
 const MARGIN_BOTTOM := 26.0
 
 ## Per-channel colours, in the order channels are added. Six, because a builder watching more than
@@ -83,6 +84,10 @@ var times := PackedFloat64Array()
 ## the bucket count is the widget's pixel width and that changes on every resize.
 var _channels: Dictionary = {}
 
+## name -> unit string, as the log's header declared it. DISPLAYED, NEVER CONVERTED. Absent for a
+## column the header carried no unit for, which is an empty label rather than a guessed one.
+var _units: Dictionary = {}
+
 ## The decimation, rebuilt when the width changes or a channel is added. name -> {lo, hi}, each of
 ## bucket_count() entries. Cached because a resize should not re-walk 180 000 samples per channel
 ## per frame, and invalidated on width change because that is exactly when it must.
@@ -99,9 +104,11 @@ func _init() -> void:
 
 ## Replaces everything. One call, so there is no arrangement in which the clock belongs to one
 ## flight and a channel to another.
-func show_log(p_times: PackedFloat64Array, p_channels: Dictionary) -> void:
+func show_log(p_times: PackedFloat64Array, p_channels: Dictionary,
+		p_units: Dictionary = {}) -> void:
 	times = p_times
 	_channels = p_channels.duplicate()
+	_units = p_units.duplicate()
 	_invalidate()
 	queue_redraw()
 
@@ -109,8 +116,38 @@ func show_log(p_times: PackedFloat64Array, p_channels: Dictionary) -> void:
 func clear() -> void:
 	times = PackedFloat64Array()
 	_channels = {}
+	_units = {}
 	_invalidate()
 	queue_redraw()
+
+
+func unit_of(channel: String) -> String:
+	return str(_units.get(channel, ""))
+
+
+## The legend, as data rather than as pixels — which is what lets a test assert that every drawn
+## channel is named without rendering a frame.
+##
+## The value column is the channel's standard deviation with no cursor, and the value under the
+## cursor when there is one (Task 3). A swatch, a name and a number is the whole readout: one
+## control, not a legend plus a separate cursor panel.
+func legend_entries() -> Array:
+	var out: Array = []
+	var index := 0
+	for channel in _channels:
+		out.append({
+			"name": channel,
+			"unit": unit_of(channel),
+			"colour": SERIES_COLOURS[index % SERIES_COLOURS.size()],
+			"value": _readout_for(channel),
+		})
+		index += 1
+	return out
+
+
+func _readout_for(channel: String) -> String:
+	var extent := channel_extent(channel)
+	return "%s … %s" % [_format_y(extent.x), _format_y(extent.y)]
 
 
 func channel_names() -> PackedStringArray:
@@ -275,6 +312,7 @@ func _draw() -> void:
 		return
 
 	_rebuild_buckets()
+	_draw_legend(font, plot)
 
 	# ONE SHARED Y AXIS, scaled to every visible channel together. Per-channel axes would let a
 	# builder put rpm next to a rate and read them as comparable, which is the chart lying about
@@ -298,6 +336,12 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, AXIS_TEXT)
 		value += y_step
 
+	var axis_unit := ""
+	for channel in _channels:
+		axis_unit = unit_of(channel)
+		break
+	_draw_axis_unit(font, plot, axis_unit)
+
 	var span := span_s()
 	var x_step := _nice_step(span / 5.0)
 	var x := x_step
@@ -312,6 +356,35 @@ func _draw() -> void:
 	for channel in _channels:
 		_draw_channel(channel, SERIES_COLOURS[index % SERIES_COLOURS.size()], y_min, y_max, plot)
 		index += 1
+
+
+## A row of swatch + name + value above the plot. Left to right in draw order, so the colour a
+## reader sees on the chart is the colour beside the name.
+func _draw_legend(font: Font, plot: Rect2) -> void:
+	var x := plot.position.x
+	var y := 20.0
+	for entry in legend_entries():
+		var colour: Color = entry["colour"]
+		draw_rect(Rect2(x, y - 8.0, 8.0, 8.0), colour, true)
+		x += 13.0
+		var unit: String = entry["unit"]
+		var text: String = str(entry["name"]) if unit.is_empty() \
+			else "%s (%s)" % [entry["name"], unit]
+		text += "  " + str(entry["value"])
+		draw_string(font, Vector2(x, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
+			colour)
+		x += font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 18.0
+		if x > plot.end.x - 40.0:
+			return
+
+
+## The unit at the head of the y axis. Without it the axis reads "4.0 / 2.0 / 0.000" and a builder
+## cannot tell rad/s from rpm from newtons.
+func _draw_axis_unit(font: Font, plot: Rect2, unit: String) -> void:
+	if unit.is_empty():
+		return
+	draw_string(font, Vector2(6.0, plot.position.y - 4.0), unit,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 10, AXIS_TEXT)
 
 
 ## One vertical segment per pixel column, from the bucket's minimum to its maximum.

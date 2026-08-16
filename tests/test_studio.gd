@@ -93,6 +93,7 @@ static func run() -> Array:
 	results.append_array(_test_shell_room())
 	results.append_array(_test_log_reader())
 	results.append_array(_test_trace_decimation())
+	results.append_array(_test_trace_legend())
 	results.append_array(_test_channel_picker())
 	_clean()
 	return results
@@ -600,6 +601,65 @@ static func _test_trace_decimation() -> Array:
 	narrow.free()
 	wide.free()
 	nan_view.free()
+	return results
+
+
+## A CHART THAT NAMES NOTHING IS THE EXPENSIVE BUG, not a missing nicety. TraceView opens on
+## omega_x and gyro_x deliberately — the gap between them is the figure no real drone can produce
+## about itself — and drawn as two anonymous overlapping lines that gap is invisible at every
+## ratio. So: every drawn channel is named on screen, and its unit is the file's.
+static func _test_trace_legend() -> Array:
+	var results: Array = []
+
+	var times := PackedFloat64Array()
+	var gyro := PackedFloat64Array()
+	var rpm := PackedFloat64Array()
+	for i in 400:
+		times.append(float(i) * 0.001)
+		gyro.append(sin(float(i) * 0.05) * 0.5)
+		rpm.append(28000.0 + float(i))
+
+	var view := TraceView.new()
+	view.size = Vector2(700, 300)
+	view.show_log(times, {"gyro_x_rad_s": gyro, "m1_rpm": rpm},
+		{"gyro_x_rad_s": "rad/s", "m1_rpm": "rpm"})
+
+	var entries := view.legend_entries()
+	var named := entries.size() == 2
+	if named:
+		named = str(entries[0]["name"]) == "gyro_x_rad_s" and str(entries[1]["name"]) == "m1_rpm"
+
+	results.append(TestResult.new(
+		"every drawn channel is named on screen, in draw order",
+		named,
+		"%d legend entries for 2 channels" % entries.size()))
+
+	# Distinct colours, or the legend names two channels a reader still cannot tell apart.
+	results.append(TestResult.new(
+		"each channel's legend swatch is the colour it is actually drawn in, and they differ",
+		entries.size() == 2 and Color(entries[0]["colour"]) != Color(entries[1]["colour"])
+			and Color(entries[0]["colour"]) == TraceView.SERIES_COLOURS[0],
+		"swatches: %s, %s" % [entries[0]["colour"], entries[1]["colour"]]))
+
+	# THE FILE'S UNIT, UNCONVERTED. A viewer that helpfully showed degrees because degrees are more
+	# familiar would undo the discipline the UNITS table exists to enforce.
+	results.append(TestResult.new(
+		"the unit shown is the one the file declared, with no conversion",
+		view.unit_of("gyro_x_rad_s") == "rad/s" and view.unit_of("m1_rpm") == "rpm"
+			and not view.unit_of("gyro_x_rad_s").contains("deg"),
+		"gyro reads %s, rpm reads %s" % [view.unit_of("gyro_x_rad_s"), view.unit_of("m1_rpm")]))
+
+	# A log whose header carries no unit for a column must still draw and still be named.
+	var bare := TraceView.new()
+	bare.size = Vector2(700, 300)
+	bare.show_log(times, {"gyro_x_rad_s": gyro})
+	results.append(TestResult.new(
+		"a channel with no declared unit is still named, with an empty unit rather than a guess",
+		bare.legend_entries().size() == 1 and bare.unit_of("gyro_x_rad_s").is_empty(),
+		"unnamed-unit channel: %d entries" % bare.legend_entries().size()))
+
+	view.free()
+	bare.free()
 	return results
 
 

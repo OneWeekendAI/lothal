@@ -99,6 +99,9 @@ var _channel_note: Label
 ## nothing is selected or the header could not be read.
 var _available_channels := PackedStringArray()
 
+## The header's units map for the selected log, held so the trace can label its axis and legend.
+var _channel_units: Dictionary = {}
+
 ## What FlightAnalysis made of the selected log. Null when nothing is selected, and rebuilt on
 ## selection rather than lazily: every figure in it comes from one pass over the file, and the
 ## alternative is that pass happening once per figure.
@@ -249,6 +252,7 @@ func render() -> void:
 func _render_channels() -> void:
 	_channel_list.clear()
 	_available_channels = PackedStringArray()
+	_channel_units = {}
 
 	var head := library.header(selected_id) if not selected_id.is_empty() else {}
 	if head.is_empty():
@@ -256,7 +260,8 @@ func _render_channels() -> void:
 		_channel_note.text = ""
 		return
 
-	var units: Dictionary = head.get("units", {})
+	_channel_units = head.get("units", {})
+	var units: Dictionary = _channel_units
 	for column_name in head.get("columns", []):
 		if str(column_name) == TIME_COLUMN:
 			continue
@@ -327,7 +332,7 @@ func _load_selected_channels() -> void:
 		if columns.has(channel):
 			series[channel] = columns[channel]
 
-	_trace.show_log(times, series)
+	_trace.show_log(times, series, _channel_units)
 
 	var note := "%d rows" % int(result.get("rows", 0))
 	# Both of these are the file telling on itself, and both are worth saying out loud rather than
