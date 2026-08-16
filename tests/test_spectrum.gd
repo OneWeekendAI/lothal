@@ -531,7 +531,7 @@ static func _test_report_pane() -> Array:
 	var text := "\n".join(labels)
 
 	results.append(TestResult.new("the gap is on the pane, in the units it was measured in",
-		text.contains("SENSOR vs AIRCRAFT") and text.contains("rad/s sd"),
+		text.contains("THE VERDICT") and text.contains("rad/s sd"),
 		"pane has %d labels" % labels.size()))
 	results.append(TestResult.new("what the D gain cost is on the pane",
 		text.contains("WHAT D COST"), "found" if text.contains("WHAT D COST") else "absent"))

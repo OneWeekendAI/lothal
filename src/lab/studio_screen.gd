@@ -104,6 +104,35 @@ var gap_axis := 0
 ## having an opinion about a log's contents. Only the DEFAULT selection is opinionated.
 const MAX_CHANNELS := 6
 
+## The verdict for a ratio — and it is always empty, deliberately.
+##
+## THIS STUB IS THE DECISION, NOT AN UNFINISHED FEATURE. A band table was drafted: clean below
+## 1.15, "some invented motion" to 2, "significant" to 5, "severe" above. Every one of those
+## boundaries was a guess. The reference sweep reads about 7x and a clean flight about 1.0x, and
+## where a builder should START DOING SOMETHING between them is a judgement nobody has made — so a
+## pane that printed "significant" would be reporting an opinion Lothal does not hold, about a
+## number it measured honestly.
+##
+## That is the same failure the spectrum's admissibility refusal exists to prevent, and it would be
+## harder to see here because a verdict word looks like helpfulness rather than like a claim.
+##
+## The function exists as the NAMED SEAM a defended table lands in, and tests/test_studio.gd probes
+## thirteen ratios asserting every one of them is silent — so filling this in requires deleting a
+## check that says out loud why it is empty.
+static func verdict_for(_ratio: float) -> String:
+	return ""
+
+
+## The ratio as it is printed. INF is a WORD rather than a number: it is what a perfectly still
+## axis honestly produces, and "inf x" reads as a broken formatter while "no motion" reads as the
+## answer it is — there was no motion to compare the noise against.
+##
+## Not a verdict. This is the ratio's own rendering, and it says nothing about whether the ratio is
+## good.
+static func format_ratio(ratio: float) -> String:
+	return ("%.1fx" % ratio) if is_finite(ratio) else "no motion"
+
+
 var library: FlightLogLibrary
 ## Which log the builder is looking at. Held HERE and not in the library, because a selected log is
 ## where an eye happens to be and persisting it would be inventing a preference nobody expressed.
@@ -636,7 +665,7 @@ func _render_report() -> void:
 ## tuning is done by ear, and it is the one figure in this whole product that justifies simulating
 ## a drone instead of flying one.
 func _render_gap() -> void:
-	_add_report_title("SENSOR vs AIRCRAFT")
+	_add_report_title("THE VERDICT")
 	if analysis == null or not analysis.ok:
 		_add_report_note(analysis.reason if analysis != null else "Not analysed.")
 		return
@@ -650,13 +679,23 @@ func _render_gap() -> void:
 		var figures: Dictionary = analysis.gap[axis]
 		var ratio := float(figures["ratio"])
 		var hero := Label.new()
-		# The largest text on the pane, per the design. INF is printed as a word rather than as a
-		# number, because it is what a perfectly still axis honestly produces and "inf x" reads as
-		# the answer it is: there was no motion to compare the noise against.
-		hero.text = ("%s  %s" % [str(figures["label"]),
-			("%.1fx" % ratio) if is_finite(ratio) else "no motion"])
+		# The largest text on the pane.
+		hero.text = "%s  %s" % [str(figures["label"]), format_ratio(ratio)]
 		hero.theme_type_variation = &"SubHeroReadoutLabel"
 		_report.add_child(hero)
+		_report_grid = null
+
+		# The seam a defended verdict table lands in. Empty today, on purpose — see verdict_for.
+		var verdict := verdict_for(ratio)
+		if not verdict.is_empty():
+			var band := Label.new()
+			band.text = verdict
+			band.theme_type_variation = &"MutedLabel"
+			_report.add_child(band)
+
+		# WHAT ACTUALLY ANCHORS THE HEADLINE, in the absence of a band. Both spreads, side by side,
+		# so 0.90023 against 0.90049 reads as "these are the same" without the pane having to name a
+		# word for it — and the note below the axes says what the comparison is.
 		_add_report_row("  sensor / actual", "%.5f / %.5f rad/s sd" % [
 			float(figures["sensor_sd"]), float(figures["truth_sd"])])
 
