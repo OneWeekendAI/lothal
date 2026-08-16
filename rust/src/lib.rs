@@ -6,6 +6,7 @@ mod motor;
 mod plausibility;
 mod powertrain;
 mod propeller;
+mod spectrum;
 
 use godot::prelude::*;
 

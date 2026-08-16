@@ -331,8 +331,33 @@ static func vibration_step_noise_rad_s(p_build: Build) -> float:
 ## arithmetic as d_noise_fraction, on the other half of what the sensor reads.
 static func vibration_noise_fraction(p_build: Build, p_kd: float) -> float:
 	var gyro := p_build.gyro()
-	var period := 1.0 / gyro.sample_rate_hz
-	return p_kd * vibration_step_noise_rad_s(p_build) / (period * RateModeController.MAX_RATE_RAD_S)
+	return noise_fraction_for(vibration_step_noise_rad_s(p_build), gyro.sample_rate_hz, p_kd)
+
+
+## The arithmetic above, separated from where the noise figure came from (LTHL-20).
+##
+## D differentiates: it multiplies the CHANGE between successive readings by kd and divides by
+## the sample period, so a step of `p_step_noise_rad_s` on a sensor sampled every `period`
+## seconds asks the motors for `kd * step / period` rad/s of correction. Over MAX_RATE_RAD_S that
+## is a fraction of full stick, and the fraction is what a builder can judge.
+##
+## EXTRACTED RATHER THAN COPIED INTO STUDIO, and that is the whole point of it existing. Studio
+## has something this file cannot get: the step noise a real flight actually produced, measured
+## from the gap between the gyro and omega columns, instead of the modelled figure
+## vibration_step_noise_rad_s derives by running the sensor at hover. Two numbers, one law — and
+## a Studio that spelled the law out again would be the second implementation logs.md exists to
+## refuse, in the one place where it would look like reasonable UI code.
+##
+## What Studio measures is NOT the same quantity, and the pane says so: the log's gyro-minus-omega
+## carries the board's white noise and bias as well as vibration, which this function's caller
+## above deliberately strips. The measured figure is therefore the whole sensor path, an upper
+## bound on the vibration part. It is also the one that actually reached the motors.
+static func noise_fraction_for(p_step_noise_rad_s: float, p_sample_rate_hz: float,
+		p_kd: float) -> float:
+	if p_sample_rate_hz <= 0.0:
+		return 0.0
+	var period := 1.0 / p_sample_rate_hz
+	return p_kd * p_step_noise_rad_s / (period * RateModeController.MAX_RATE_RAD_S)
 
 
 ## The largest kd the fitted board can carry inside D_NOISE_BUDGET — the above, inverted. A board

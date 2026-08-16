@@ -32,15 +32,18 @@ extends Control
 ## them is the entire cost — which is the cost that keeps one parts catalog instead of two.
 ##
 ## ===========================================================================
-## WHAT IS DELIBERATELY NOT HERE YET
+## WHAT IS SHOWN, AND WHAT IS COMPUTED (LTHL-20)
 ## ===========================================================================
 ##
-## No ANALYSIS. LTHL-55 filled the trace column with channels; the spectrum, the gyro-vs-omega
-## figure and what the D gain costs are LTHL-20, and they land in the report pane beside the
-## header fields that are there now.
-##
-## The division that keeps this file honest: Studio shows what is IN a log. Anything computed
+## The division that keeps this file honest: Studio shows what is IN a log, and anything computed
 ## FROM a log is a figure with a provenance and a caveat, and those arrive together or not at all.
+##
+## The arithmetic is all in FlightAnalysis and none of it is here. This file decides ORDER, which
+## is its own decision and the one the design argued about: the gyro-vs-omega gap goes first and
+## largest, above the header fields, because it is the number no real drone can produce about
+## itself and it is the reason for simulating one.
+##
+## WHAT IS STILL NOT HERE: the export button, which is LTHL-56 along with the landing invitation.
 
 ## The three columns, in the widths LabScreen already proves. The rail matches the field editor's
 ## 292 and the report pane matches the parts details' 336, so a builder moving between rooms is
@@ -82,6 +85,12 @@ var _channel_note: Label
 ## The channel names offered by the log currently selected, in the header's own order. Empty when
 ## nothing is selected or the header could not be read.
 var _available_channels := PackedStringArray()
+
+## What FlightAnalysis made of the selected log. Null when nothing is selected, and rebuilt on
+## selection rather than lazily: every figure in it comes from one pass over the file, and the
+## alternative is that pass happening once per figure.
+var analysis: FlightAnalysis = null
+var _spectrum: SpectrumView = null
 
 
 ## Takes the library rather than building one, so a test can hand over a directory that is not the
@@ -200,6 +209,7 @@ func _build_report_pane() -> Control:
 ## — listing is one line of I/O per file.
 func render() -> void:
 	_render_list()
+	_analyse_selected()
 	_render_report()
 	_render_channels()
 	_delete_button.disabled = selected_id.is_empty()
@@ -356,7 +366,27 @@ func _render_list() -> void:
 		_list.select(index)
 
 
+## The one expensive thing Studio does, and it happens once per flight picked.
+##
+## Roughly eleven columns of a file that may be 197 MB, plus an FFT over every analysis frame of
+## it. All of it is in the native core; what is here is the decision to do it EAGERLY, on
+## selection, rather than when each figure is first drawn. Lazily, a builder scrolling the report
+## pane would pay for the same pass three times and feel it as the pane stuttering.
+func _analyse_selected() -> void:
+	analysis = null
+	if selected_id.is_empty():
+		return
+	var head := library.header(selected_id)
+	if head.is_empty():
+		return
+	analysis = FlightAnalysis.of(library.path_of(selected_id), head)
+
+
 func _render_report() -> void:
+	# The spectrum widget lives in the pane and the pane is rebuilt wholesale, so the handle has
+	# to be dropped before the node behind it is freed. A stale _spectrum is not a crash in
+	# GDScript, it is a silently ignored draw call on an orphan.
+	_spectrum = null
 	for child in _report.get_children():
 		child.queue_free()
 		_report.remove_child(child)
@@ -376,6 +406,14 @@ func _render_report() -> void:
 		return
 
 	var aircraft: Dictionary = head.get("aircraft", {})
+
+	# MEASURED FROM THIS FLIGHT FIRST, DECLARED BY THE FILE SECOND. The rail already says which
+	# aircraft this is, so leading with the fingerprint would spend the top of the pane repeating
+	# the row the builder just clicked. What they cannot get anywhere else goes where the eye
+	# lands.
+	_render_gap()
+	_render_d_cost()
+	_render_spectrum(head)
 
 	_add_report_title("THE AIRCRAFT")
 	# The FULL six-part fingerprint here, against the rail's truncation. The pane has the width for
@@ -432,11 +470,117 @@ func _render_report() -> void:
 	else:
 		_add_report_note("Not recorded.")
 
-	# The caveat travels with the vibration numbers, in the pane, not in a tooltip — validation.md
-	# §9 makes this a tier-three characteristic model and LTHL-18 could not promote it. The ranking
-	# between builds is trustworthy; the absolute frequency is not.
+
+## ---------------------------------------------------------------------------
+## The figures, and the thing each of them is allowed to claim
+## ---------------------------------------------------------------------------
+##
+## THE HEADLINE. A physical quad has exactly one angular rate — whatever its gyro says — and no
+## way to find out how much of that was the airframe. Here omega is what the aircraft did, gyro is
+## what the flight controller was told, and the ratio between their spreads is the amount of
+## motion the sensor invented. That is what the D term amplifies into the motors, it is why FPV
+## tuning is done by ear, and it is the one figure in this whole product that justifies simulating
+## a drone instead of flying one.
+func _render_gap() -> void:
+	_add_report_title("SENSOR vs AIRCRAFT")
+	if analysis == null or not analysis.ok:
+		_add_report_note(analysis.reason if analysis != null else "Not analysed.")
+		return
+	if analysis.gap.is_empty():
+		_add_report_note("This log carries no gyro/omega pair to compare.")
+		return
+
+	for axis in FlightAnalysis.AXES:
+		if not analysis.gap.has(axis):
+			continue
+		var figures: Dictionary = analysis.gap[axis]
+		var ratio := float(figures["ratio"])
+		var hero := Label.new()
+		# The largest text on the pane, per the design. INF is printed as a word rather than as a
+		# number, because it is what a perfectly still axis honestly produces and "inf x" reads as
+		# the answer it is: there was no motion to compare the noise against.
+		hero.text = ("%s  %s" % [str(figures["label"]),
+			("%.1fx" % ratio) if is_finite(ratio) else "no motion"])
+		hero.theme_type_variation = &"SubHeroReadoutLabel"
+		_report.add_child(hero)
+		_add_report_row("  sensor / actual", "%.5f / %.5f rad/s sd" % [
+			float(figures["sensor_sd"]), float(figures["truth_sd"])])
+
+	_add_report_note("How much more motion the gyro reported than the aircraft had. Ground truth"
+		+ " is not measurable on a real quad; it is measurable here, and that is the whole reason"
+		+ " to fly one of these.")
+
+
+## What that noise cost, in the units a builder acts on: fraction of full stick spent correcting
+## motion that never happened. RateTune's own arithmetic, fed this flight's measured noise rather
+## than the modelled figure — see RateTune.noise_fraction_for.
+func _render_d_cost() -> void:
+	if analysis == null or not analysis.ok:
+		return
+	_add_report_title("WHAT D COST")
+	if analysis.d_cost.is_empty():
+		_add_report_note(analysis.d_cost_reason if not analysis.d_cost_reason.is_empty()
+			else "No D gain on any axis.")
+		return
+	for axis in FlightAnalysis.AXES:
+		if not analysis.d_cost.has(axis):
+			continue
+		var figures: Dictionary = analysis.d_cost[axis]
+		_add_report_row(str(figures["label"]), "%.2f%% of full command  (D %.4f)" % [
+			float(figures["fraction"]) * 100.0, float(figures["kd"])])
+	# STATED, not implied. The modelled figure strips the board's own white noise and bias so it
+	# measures vibration alone; this one is the whole sensor path, because a log cannot separate
+	# them. It is an upper bound on the vibration part and the number that actually reached the
+	# motors, and calling it "vibration" would be the more flattering of two wrong labels.
+	_add_report_note("RMS, from the gyro-minus-omega noise this flight actually had. That is the"
+		+ " whole sensor path — vibration plus the board's own noise — so it is an upper bound on"
+		+ " what vibration alone cost.")
+
+
+## The spectrum, its marks, and the sentence that says what it is allowed to mean.
+##
+## The vibration model block follows IMMEDIATELY and that placement is the requirement, not a
+## layout preference: the dashed "model" line on the chart is anchored on one guessed constant,
+## and the caveat explaining that has to be in the same pane as the mark it is about. A tooltip
+## or a footnote would be a caveat nobody reads attached to a number everybody does.
+func _render_spectrum(p_head: Dictionary) -> void:
+	_add_report_title("THE SPECTRUM")
+	_spectrum = SpectrumView.new()
+	_spectrum.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_report.add_child(_spectrum)
+
+	if analysis == null or not analysis.ok or analysis.mags.is_empty():
+		var why := analysis.spectrum_reason if analysis != null else ""
+		_spectrum.clear(why if not why.is_empty() else "No spectrum for this flight.")
+	else:
+		var marks: Array = []
+		for harmonic in analysis.harmonics:
+			marks.append({
+				"hz": float(harmonic["hz"]),
+				"label": "%dx" % int(harmonic["order"]),
+				"dashed": false,
+			})
+		if analysis.modelled_resonance_hz > 0.0:
+			marks.append({
+				"hz": analysis.modelled_resonance_hz,
+				"label": "model",
+				"dashed": true,
+			})
+		_spectrum.show_spectrum(analysis.mags, analysis.bin_hz, marks)
+		_add_report_row("channel", FlightAnalysis.SPECTRUM_CHANNEL)
+		_add_report_row("frames", "%d x %.3f s, Hann, 75%% overlap" % [
+			analysis.frames, FlightAnalysis.FRAME_SECONDS])
+
+	if analysis != null and not analysis.admissibility.is_empty():
+		# The LTHL-18 refusal, carried into the UI. A curve drawn for a log the method cannot
+		# analyse is worse than no curve, because it looks exactly like one that means something.
+		if analysis.admissible:
+			_add_report_note(analysis.admissibility)
+		else:
+			_add_report_warning(analysis.admissibility)
+
 	_add_report_title("THE VIBRATION MODEL")
-	var vibration: Dictionary = head.get("vibration_model", {})
+	var vibration: Dictionary = p_head.get("vibration_model", {})
 	_add_report_row("resonance", "%.1f Hz" % float(vibration.get("resonance_hz", 0.0)))
 	_add_report_row("damping", "%.4f" % float(vibration.get("damping_ratio", 0.0)))
 	_add_report_row("imbalance", "%.4f kg" % float(vibration.get("imbalance_kg", 0.0)))

@@ -12,6 +12,10 @@ godot = { version = "0.5.4", features = ["api-4-7"] }
 # feature enables PEM decoding; PKCS#8 parsing comes from the pkcs8 crate rsa re-exports.
 rsa = { version = "0.9", features = ["pem"] }
 sha2 = { version = "0.10", features = ["oid"] }
+# The spectrum (LTHL-20). Any frame length, not just powers of two: the frame is
+# round(1.024 s * fs), which is 1024 at 1 kHz and 8192 at 8 kHz but nothing so tidy at the rates
+# a Betaflight log arrives at. A hand-rolled radix-2 would have to reject those.
+rustfft = "6.4"
 
 [profile.release]
 opt-level = 3

@@ -372,12 +372,17 @@ static func run() -> Array:
 	# EVERY FILE THAT READS A LOG, not just the recorder. Until Studio this check named one file,
 	# because one file was all there was; the moment a second reader appeared, a check still
 	# grepping only the first would have gone on passing while the guarantee it describes quietly
-	# stopped holding. THE LIST GROWS WITH EVERY NEW READER — LTHL-55's Rust LogReader binding
-	# joins it next.
+	# stopped holding. THE LIST GROWS WITH EVERY NEW READER.
+	#
+	# FlightAnalysis (LTHL-20) is the one where the rule is hardest to keep, because every figure
+	# it computes is the kind of thing the Lab computes from a Build and the fingerprint is right
+	# there in the header it was handed. The Rust side is grepped separately, in test_spectrum.gd,
+	# because it is not GDScript and _code_only cannot strip its comments.
 	var readers := [
 		"res://src/sim/flight_recorder.gd",
 		"res://src/sim/flight_log_library.gd",
 		"res://src/lab/studio_screen.gd",
+		"res://src/lab/flight_analysis.gd",
 	]
 	var builders: PackedStringArray = []
 	var missing: PackedStringArray = []
