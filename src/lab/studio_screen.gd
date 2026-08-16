@@ -163,6 +163,16 @@ var _spectrum: SpectrumView = null
 ## column sizing and one long key does not widen the key column of a section three headings away.
 var _report_grid: GridContainer = null
 
+## The header fields, in a container that can be folded away. Collapsed by default, because what a
+## builder cannot get anywhere else goes where the eye lands and a transcription of the file does
+## not qualify.
+var _declared: VBoxContainer = null
+var _declared_toggle: Button = null
+
+## Where subsequent rows go. Everything measured from this flight goes into the pane directly;
+## everything the file merely declares goes into the collapsible block.
+var _sink: VBoxContainer = null
+
 
 ## Takes the library rather than building one, so a test can hand over a directory that is not the
 ## builder's real flight history. Same seam, and for the same reason, as the field editor's
@@ -566,9 +576,38 @@ func _analyse_selected() -> void:
 func _render_report_reset() -> void:
 	_spectrum = null
 	_report_grid = null
+	_declared = null
+	_declared_toggle = null
+	_sink = null
 	for child in _report.get_children():
 		child.queue_free()
 		_report.remove_child(child)
+
+
+## Everything measured from this flight goes into the pane directly; everything the file merely
+## declares goes into this collapsible block, folded away by default.
+func _begin_declared() -> void:
+	_declared_toggle = Button.new()
+	_declared_toggle.text = "▸  WHAT THE FILE SAYS"
+	_declared_toggle.toggle_mode = true
+	_declared_toggle.toggled.connect(set_declared_expanded)
+	_report.add_child(_declared_toggle)
+
+	_declared = VBoxContainer.new()
+	_declared.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_declared.visible = false
+	_report.add_child(_declared)
+	_sink = _declared
+	_report_grid = null
+
+
+func set_declared_expanded(expanded: bool) -> void:
+	if _declared == null:
+		return
+	_declared.visible = expanded
+	if _declared_toggle != null:
+		_declared_toggle.text = ("▾  WHAT THE FILE SAYS" if expanded
+			else "▸  WHAT THE FILE SAYS")
 
 
 func _render_report() -> void:
@@ -589,14 +628,28 @@ func _render_report() -> void:
 		return
 
 	var aircraft: Dictionary = head.get("aircraft", {})
+	_sink = null
 
-	# MEASURED FROM THIS FLIGHT FIRST, DECLARED BY THE FILE SECOND. The rail already says which
-	# aircraft this is, so leading with the fingerprint would spend the top of the pane repeating
-	# the row the builder just clicked. What they cannot get anywhere else goes where the eye
-	# lands.
+	# ---- MEASURED FROM THIS FLIGHT. Always expanded, and first, because it is what the builder
+	# cannot get anywhere else. The rail already says which aircraft this is; leading with the
+	# fingerprint would spend the top of the pane repeating the row they just clicked.
 	_render_gap()
 	_render_d_cost()
+
+	# THE DISCONTINUITY WARNING MOVES UP HERE, beside the figure it invalidates. It used to sit in
+	# THE RECORDING among the header fields — which is now collapsed by default, and a warning a
+	# builder must expand something to see arrives too late to change the decision it informs.
+	var jumps := int(head.get("discontinuities", 0))
+	if jumps > 0:
+		_add_report_warning("%d respawn teleport%s in this recording. The rows they happened on"
+			% [jumps, "" if jumps == 1 else "s"]
+			+ " are not marked, so position and velocity jump. Differencing across one gives an"
+			+ " acceleration that never happened.")
+
 	_render_spectrum(head)
+
+	# ---- WHAT THE FILE SAYS. Everything below is a header field displayed as text it was given.
+	_begin_declared()
 
 	_add_report_title("THE AIRCRAFT")
 	# The FULL six-part fingerprint here, against the rail's truncation. The pane has the width for
@@ -614,19 +667,7 @@ func _render_report() -> void:
 	_add_report_row("duration", Duration.clock(round(float(head.get("duration_s", 0.0)))))
 	_add_report_row("sample rate", "%.0f Hz" % float(head.get("sample_rate_hz", 0.0)))
 	_add_report_row("decimation", str(head.get("decimation", 1)))
-
-	# THE DISCONTINUITY BLOCK, and it is a warning rather than a row when it is nonzero. LTHL-51
-	# put the count in the header precisely so a reader could not compute a spectrum across a
-	# teleport without being told, and a count rendered as one more grey number beside "rows" is a
-	# count that has been told to nobody.
-	var jumps := int(head.get("discontinuities", 0))
-	if jumps > 0:
-		_add_report_warning("%d respawn teleport%s in this recording. The rows they happened on"
-			% [jumps, "" if jumps == 1 else "s"]
-			+ " are not marked, so position and velocity jump. Differencing across one gives an"
-			+ " acceleration that never happened.")
-	else:
-		_add_report_row("continuous", "yes")
+	_add_report_row("continuous", "yes" if jumps == 0 else "no — see the warning above")
 
 	_add_report_title("THE SENSOR")
 	var gyro: Dictionary = head.get("gyro", {})
@@ -652,6 +693,8 @@ func _render_report() -> void:
 				"  (overridden)" if bool(gains.get("overridden", false)) else ""])
 	else:
 		_add_report_note("Not recorded.")
+
+	_sink = null
 
 
 ## ---------------------------------------------------------------------------
@@ -785,7 +828,7 @@ func _add_report_title(text: String) -> void:
 	var label := Label.new()
 	label.text = text
 	label.theme_type_variation = &"TitleLabel"
-	_report.add_child(label)
+	(_sink if _sink != null else _report).add_child(label)
 
 
 ## A two-column grid rather than an HBox of two fixed-width labels.
@@ -798,7 +841,7 @@ func _add_report_row(key: String, value: String) -> void:
 		_report_grid = GridContainer.new()
 		_report_grid.columns = 2
 		_report_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_report.add_child(_report_grid)
+		(_sink if _sink != null else _report).add_child(_report_grid)
 
 	var name_label := Label.new()
 	name_label.text = key
@@ -819,7 +862,7 @@ func _add_report_note(text: String) -> void:
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.custom_minimum_size = Vector2(usable_report_width(), 0)
 	label.theme_type_variation = &"MutedLabel"
-	_report.add_child(label)
+	(_sink if _sink != null else _report).add_child(label)
 
 
 func _add_report_warning(text: String) -> void:
@@ -828,7 +871,7 @@ func _add_report_warning(text: String) -> void:
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.custom_minimum_size = Vector2(usable_report_width(), 0)
 	label.theme_type_variation = &"WarnLabel"
-	_report.add_child(label)
+	(_sink if _sink != null else _report).add_child(label)
 
 
 ## ---------------------------------------------------------------------------

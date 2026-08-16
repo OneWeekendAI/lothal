@@ -98,8 +98,80 @@ static func run() -> Array:
 	results.append_array(_test_trace_lanes())
 	results.append_array(_test_gap_view())
 	results.append_array(_test_verdict())
+	results.append_array(_test_report_split())
 	_clean()
 	return results
+
+
+## The pane's own docstring already states the division that matters — Studio shows what is IN a
+## log, and anything computed FROM a log is a figure with a provenance and a caveat. Nine identical
+## headings in one scroll made measured figures and transcribed header fields look the same.
+##
+## Two things must survive the split, and both are load-bearing rather than tidy:
+static func _test_report_split() -> Array:
+	var results: Array = []
+	_fresh_dir()
+	_write_log("flight-20260816-130000.csv", 300, 2)
+
+	var studio := StudioScreen.new(FlightLogLibrary.load_from(TEST_DIR))
+	studio.select("flight-20260816-130000.csv")
+
+	results.append(TestResult.new(
+		"the header fields start collapsed, so the measured figures are what the pane opens on",
+		studio._declared != null and not studio._declared.visible,
+		"declared block visible=%s" % (studio._declared != null and studio._declared.visible)))
+
+	# THE CAVEAT MUST BE ADJACENT **AND EXPANDED**. The old check asserted only that the caveat and
+	# the figure shared a pane, and would have stayed green if the caveat were collapsed by default
+	# — a caveat behind a disclosure triangle is a caveat nobody reads attached to a number
+	# everybody does.
+	var caveat := _find_label_containing(studio._report, "not sourced")
+	results.append(TestResult.new(
+		"the tier-three vibration caveat is beside its figure AND is not behind a disclosure",
+		caveat != null and not _has_collapsed_ancestor(caveat, studio._declared),
+		"caveat found=%s, collapsed=%s" % [caveat != null,
+			caveat != null and _has_collapsed_ancestor(caveat, studio._declared)]))
+
+	# A respawn teleport invalidates a spectrum. A builder must not have to expand anything to
+	# learn that the trace they are about to measure contains one.
+	var warning := _find_label_containing(studio._report, "respawn teleport")
+	results.append(TestResult.new(
+		"the respawn warning is never inside the collapsed block",
+		warning != null and not _has_collapsed_ancestor(warning, studio._declared),
+		"teleport warning found=%s, collapsed=%s" % [warning != null,
+			warning != null and _has_collapsed_ancestor(warning, studio._declared)]))
+
+	# Expanding still shows everything — the header fields are hidden, not dropped.
+	studio.set_declared_expanded(true)
+	var expanded := _pane_text(studio)
+	results.append(TestResult.new(
+		"expanding the block reveals the full six-part fingerprint and the tune, nothing lost",
+		studio._declared.visible
+			and expanded.contains(ReferenceBuild.build().fingerprint())
+			and expanded.contains("THE TUNE"),
+		"expanded pane carries the fingerprint and the tune"))
+
+	studio.free()
+	return results
+
+
+static func _find_label_containing(node: Node, needle: String) -> Label:
+	if node is Label and (node as Label).text.contains(needle):
+		return node as Label
+	for child in node.get_children():
+		var found := _find_label_containing(child, needle)
+		if found != null:
+			return found
+	return null
+
+
+static func _has_collapsed_ancestor(node: Node, collapsed: Node) -> bool:
+	var walker: Node = node
+	while walker != null:
+		if walker == collapsed:
+			return true
+		walker = walker.get_parent()
+	return false
 
 
 ## THE ROOM OPENS ON ITS OWN QUESTION. Two anonymous lines on one axis hid the gap at every ratio,
@@ -332,13 +404,8 @@ static func _test_screen() -> Array:
 			"(none)" if studio.selected_id.is_empty() else studio.selected_id]))
 
 	studio.select("flight-20260816-130000.csv")
-	var report_text := ""
-	for child in studio._report.get_children():
-		if child is Label:
-			report_text += (child as Label).text + "\n"
-		for grandchild in child.get_children():
-			if grandchild is Label:
-				report_text += (grandchild as Label).text + "\n"
+	studio.set_declared_expanded(true)
+	var report_text := _pane_text(studio)
 
 	# The FULL fingerprint in the pane, against the rail's truncation.
 	results.append(TestResult.new(
@@ -365,10 +432,7 @@ static func _test_screen() -> Array:
 
 	# A clean flight must not carry the warning, or the warning means nothing.
 	studio.select("flight-20260816-120000.csv")
-	var clean_text := ""
-	for child in studio._report.get_children():
-		if child is Label:
-			clean_text += (child as Label).text + "\n"
+	var clean_text := _pane_text(studio)
 	results.append(TestResult.new(
 		"a clean flight's pane says it is continuous rather than warning about nothing",
 		not clean_text.contains("respawn teleport"),
