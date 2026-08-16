@@ -59,6 +59,12 @@ var frame_bench: FrameBenchScreen = null
 ## SubViewport rendering a 3D world, and Lab's stated virtue is that it is quiet and cheap while
 ## you work.
 var field_editor: FieldEditorScreen = null
+## Studio — the flights already flown — or null when it is not the room you are in. Freed on the
+## way out like the others, and for the field editor's reason rather than the benches': it turns
+## no motors and costs no charge. What it holds is a list of headers read off disk, which goes
+## stale the moment a flight is recorded next door, so a Studio kept alive behind Sim would be a
+## room describing a history that had moved on. Rebuilding on entry re-reads the directory.
+var studio: StudioScreen = null
 ## The courses that have been laid out, and which one is flown. Held here for the same reason
 ## `pack_charge` is: two rooms touch it — the editor writes it and the field reads it — and one
 ## instance within a session is what stops the door from handing over a stale copy.
@@ -83,6 +89,7 @@ var _esc_bench_button: Button
 var _frame_bench_button: Button
 var _field_button: Button
 var _sim_button: Button
+var _studio_button: Button
 var _showing_lab := true
 
 var settings: AppSettings
@@ -130,6 +137,9 @@ func _init() -> void:
 	_frame_bench_button = _add_tab(bar, "Frame", show_frame_bench)
 	_field_button = _add_tab(bar, "Field", show_field_editor)
 	_sim_button = _add_tab(bar, "Sim", show_sim)
+	# Last, and after Sim deliberately: the tab order is the order the work happens in. You build
+	# in the garage, you fly in the field, and then you look at what the flight left behind.
+	_studio_button = _add_tab(bar, "Studio", show_studio)
 
 	_account_label = Label.new()
 	_account_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
@@ -376,6 +386,27 @@ func show_field_editor() -> void:
 	_refresh_tabs()
 
 
+## Into Studio, to look at flights already flown (LTHL-54).
+##
+## The library is constructed HERE and fresh on every entry, rather than held as a shell field
+## alongside course_library and pack_charge. Those two are shared because two rooms look at one
+## set of packs and one set of courses within a session, and a second copy would be a second
+## opinion. A log directory has exactly one reader and its contents change while the builder is
+## somewhere else — every time they land in Sim. A cached library would open a room describing the
+## history as it stood before the flight they just finished, which is the one flight they came in
+## here to look at.
+##
+## Like the field editor, this does NOT call _unplug_for(): Studio draws no current, so there is
+## nothing for it to overwrite.
+func show_studio() -> void:
+	_close_rooms()
+	studio = StudioScreen.new(FlightLogLibrary.load_from())
+	_host.add_child(studio)
+	_showing_lab = false
+	lab.visible = false
+	_refresh_tabs()
+
+
 ## Takes the pack this room is about to use off the charger. A pack cannot be plugged in and
 ## under load at once, and — the part that actually bites — every one of these rooms snapshots
 ## the pack on the way in and writes it back on the way out, so a charger still running into one
@@ -428,6 +459,13 @@ func _close_rooms() -> void:
 		_host.remove_child(field_editor)
 		field_editor.free()
 		field_editor = null
+	# No persist_pack_charge() here either, and for the same reason: Studio reads files. Nothing
+	# in it turns, draws current or holds a Powertrain, so a write-back would be inventing a
+	# consequence out of having opened a room.
+	if studio != null:
+		_host.remove_child(studio)
+		studio.free()
+		studio = null
 	# Only when a room actually changed something. Opening a bench and walking straight back out
 	# must not rewrite the file — see PackCharge._dirty.
 	if pack_charge.has_unsaved_changes():
@@ -472,3 +510,4 @@ func _refresh_tabs() -> void:
 	_frame_bench_button.button_pressed = frame_bench != null
 	_field_button.button_pressed = field_editor != null
 	_sim_button.button_pressed = sim != null
+	_studio_button.button_pressed = studio != null

@@ -369,12 +369,33 @@ static func run() -> Array:
 	# could reconstruct a Build, the log would be a second and much worse parts catalog, and the
 	# two would disagree the first time the real one changed. So the reader returns a header
 	# Dictionary and there is no route from it to a Build anywhere in the project.
-	var recorder_code := TestPidTunes._code_only(
-		FileAccess.get_file_as_string("res://src/sim/flight_recorder.gd"))
+	# EVERY FILE THAT READS A LOG, not just the recorder. Until Studio this check named one file,
+	# because one file was all there was; the moment a second reader appeared, a check still
+	# grepping only the first would have gone on passing while the guarantee it describes quietly
+	# stopped holding. THE LIST GROWS WITH EVERY NEW READER — LTHL-55's Rust LogReader binding
+	# joins it next.
+	var readers := [
+		"res://src/sim/flight_recorder.gd",
+		"res://src/sim/flight_log_library.gd",
+		"res://src/lab/studio_screen.gd",
+	]
+	var builders: PackedStringArray = []
+	var missing: PackedStringArray = []
+	for path in readers:
+		# A RENAMED OR DELETED FILE READS AS EMPTY, and "" contains neither string, so the check
+		# below would pass vacuously for a reader that had been moved out from under it. That is
+		# the exact shape of a test that cannot fail, so absence is its own failure here.
+		if not FileAccess.file_exists(path):
+			missing.append(str(path).get_file())
+			continue
+		var code := TestPidTunes._code_only(FileAccess.get_file_as_string(path))
+		if code.contains("Build.from_ids") or code.contains("PartsCatalog"):
+			builders.append(str(path).get_file())
 	results.append(TestResult.new(
-		"reading a log back cannot reconstruct a build — the log names the aircraft, it does not define it",
-		not recorder_code.contains("Build.from_ids") and not recorder_code.contains("PartsCatalog"),
-		"flight_recorder.gd builds nothing"))
+		"NOTHING that reads a log can reconstruct a build — a log names the aircraft, it does not define it",
+		builders.is_empty() and missing.is_empty(),
+		"%d readers checked, none builds" % readers.size() if builders.is_empty() and missing.is_empty()
+			else "builds a Build: %s / missing: %s" % [", ".join(builders), ", ".join(missing)]))
 
 	# --- Reading a header back ------------------------------------------------------------------
 	#
