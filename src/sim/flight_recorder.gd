@@ -93,6 +93,21 @@ const COLUMNS := [
 
 	"accel_x_body_mps2", "accel_y_body_mps2", "accel_z_body_mps2",
 	"airspeed_mps", "g_force",
+
+	# --- Appended by LTHL-51, and appended rather than slotted in beside their per-motor
+	# siblings above ON PURPOSE. SCHEMA does not bump for an addition only because a reader
+	# selects by NAME; putting m1_electrical_hz next to m1_rpm would have shifted every column
+	# after it, which is invisible to a by-name reader and fatal to a positional one. Ugly
+	# ordering is the price of that guarantee, and the header's `columns` list is what makes
+	# the ordering nobody's business.
+	#
+	# All three were already published by Observables and simply never listed. electrical_hz is
+	# the one worth naming: it is the direct analogue of Betaflight's eRPM[0..3] channel, which
+	# is what the other side of every comparison carries, so a Lothal log that omitted it forced
+	# the comparison through a unit change nobody had written down.
+	"m1_electrical_hz", "m2_electrical_hz", "m3_electrical_hz", "m4_electrical_hz",
+	"m1_tip_speed_mps", "m2_tip_speed_mps", "m3_tip_speed_mps", "m4_tip_speed_mps",
+	"weight_n",
 ]
 
 ## EVERY COLUMN STATES ITS UNIT, and the file carries this table so a reader never has to guess.
@@ -115,6 +130,9 @@ const UNITS := {
 	"gyro_x_rad_s": "rad/s", "gyro_y_rad_s": "rad/s", "gyro_z_rad_s": "rad/s",
 	"accel_x_body_mps2": "m/s^2", "accel_y_body_mps2": "m/s^2", "accel_z_body_mps2": "m/s^2",
 	"airspeed_mps": "m/s", "g_force": "g",
+	"m1_electrical_hz": "Hz", "m2_electrical_hz": "Hz", "m3_electrical_hz": "Hz", "m4_electrical_hz": "Hz",
+	"m1_tip_speed_mps": "m/s", "m2_tip_speed_mps": "m/s", "m3_tip_speed_mps": "m/s", "m4_tip_speed_mps": "m/s",
+	"weight_n": "N",
 }
 
 ## ---------------------------------------------------------------------------
@@ -151,6 +169,19 @@ var decimation: int
 ## flown twice, once observed — and why it is exact rather than approximate.
 var _rows := PackedFloat64Array()
 var _tick := 0
+
+## How many times the aircraft was TELEPORTED during this recording, incremented by the flight
+## loop on every respawn.
+##
+## This is the honest half of a problem LTHL-51 cannot fix. A respawn moves position and velocity
+## discontinuously, and a reader differencing position to get acceleration across that row gets a
+## number that never happened. The fix is an event marking the row, which is LTHL-53 and needs an
+## event stream this file does not have yet. What LTHL-51 can do, and does here, is refuse to let
+## the file stay SILENT about it: a count in the header at least tells a reader that the trace
+## contains jumps and how many, so a spectrum computed straight across one is a mistake made with
+## the warning in hand rather than without it. A log that recorded the jump and said nothing would
+## be a log that lies about the physics.
+var discontinuities := 0
 
 var _build: Build
 var _tune: RateTune
@@ -210,6 +241,24 @@ func capture(obs: Observables) -> void:
 	_rows.append(obs.accel_body_mps2.z)
 	_rows.append(obs.airspeed_mps)
 	_rows.append(obs.g_force)
+
+	# The LTHL-51 appends, in COLUMNS order. Two separate motor loops rather than one, because
+	# the columns are grouped by QUANTITY up there and a single loop would interleave them —
+	# the kind of mismatch that writes a tip speed into an electrical-frequency column and
+	# still produces a file full of plausible floats.
+	for i in Observables.MOTOR_COUNT:
+		_rows.append(obs.electrical_hz[i])
+	for i in Observables.MOTOR_COUNT:
+		_rows.append(obs.tip_speed_mps[i])
+	_rows.append(obs.weight_n)
+
+
+## Simulated seconds spanned by the rows captured so far. The same figure the header declares,
+## exposed so a live readout reports what the BUFFER holds rather than how long the pilot has had
+## the key armed — those differ the moment decimation is on, and the pilot is the only thing
+## metering memory when recording is explicit.
+func duration_s() -> float:
+	return _duration_s()
 
 
 func row_count() -> int:
@@ -276,6 +325,16 @@ func _header() -> Dictionary:
 		"decimation": decimation,
 		"rows": row_count(),
 		"duration_s": _duration_s(),
+
+		# See `discontinuities` above. Stated even when zero, because "no jumps" and "this writer
+		# does not know about jumps" are different facts and a reader has to be able to tell them
+		# apart. The caveat travels in the file for the same reason the vibration model's does:
+		# a number in a data file loses its caveats faster than a number in a source comment.
+		"discontinuities": discontinuities,
+		"discontinuity_note": "count of respawn teleports during this recording. The rows they"
+			+ " occurred on are NOT marked — there is no event stream until LTHL-53 — so"
+			+ " differencing position or velocity across one yields an acceleration that never"
+			+ " happened. Nonzero means the trace is not continuous.",
 
 		"aircraft": {
 			"fingerprint": _build.fingerprint(),

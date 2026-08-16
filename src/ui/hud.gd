@@ -51,6 +51,7 @@ var _best_lap_label: Label
 var _gate_label: Label
 var _mode_label: Label
 var _banner_label: Label
+var _record_label: Label
 
 var _banner_timeout := 0.0
 
@@ -115,6 +116,20 @@ func _init() -> void:
 	_gate_label = _add_readout(race, HORIZONTAL_ALIGNMENT_RIGHT)
 	# Exception: Accent highlight for gate label
 	_gate_label.add_theme_color_override("font_color", COLOR_ACCENT)
+
+	# --- Under the race block: the recording state ---
+	#
+	# PERSISTENT, not a banner, and that is the whole reason it is a separate widget. Recording
+	# is armed by hand (logs.md §4.1), which means the pilot can be wrong about it in both
+	# directions: flying a whole pack believing it is being logged, or leaving it running for
+	# twenty minutes believing it is not. A message that appears for two seconds at the moment
+	# the key is pressed tells you what you already knew — you had just pressed the key. The
+	# elapsed count is here for the same reason: an explicit recorder's failure mode is memory,
+	# and the pilot is the only thing metering it.
+	_record_label = _add_readout(race, HORIZONTAL_ALIGNMENT_RIGHT)
+	_record_label.visible = false
+	# Exception: Recording state is a live warning, not a readout
+	_record_label.add_theme_color_override("font_color", COLOR_CRITICAL)
 
 	# --- Centre: transient banners (lap complete, new best) ---
 	_banner_label = Label.new()
@@ -182,6 +197,19 @@ static func _format_minutes(minutes: float) -> String:
 	# countdown ticks on the half-second the way a clock does, and the mm:ss arithmetic itself
 	# lives in exactly one place (Duration, which this was the fourth copy of).
 	return Duration.clock(round(minutes * 60.0))
+
+
+## Shows or hides the recording indicator. Called from the flight loop rather than folded into
+## render(), so render()'s signature — and every bench and test that calls it — is unchanged by a
+## feature none of them have anything to say about.
+##
+## `rows` and `seconds` come from the recorder itself and are not recomputed here. A HUD that
+## multiplied elapsed time by an assumed 1 kHz would disagree with a decimated log about how much
+## it had captured, which is the one question this indicator exists to answer.
+func set_recording(active: bool, seconds: float = 0.0, rows: int = 0) -> void:
+	_record_label.visible = active
+	if active:
+		_record_label.text = "REC  %s  %s rows" % [Duration.clock(round(seconds)), rows]
 
 
 func tick_banner(delta: float) -> void:

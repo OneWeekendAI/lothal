@@ -10,7 +10,8 @@ extends Node3D
 ## Gamepad:   right stick = pitch/roll   left stick = yaw/throttle   button A = mode toggle
 ## Tab hides the build panel; parts are picked with the mouse. L swaps the listener between
 ## the pilot's position on the ground and the chase camera. C swaps the FPV feed between the
-## corner inset and the whole screen.
+## corner inset and the whole screen. R arms and disarms the flight recorder; the HUD says so for
+## as long as it is running, and disarming writes the log to user://logs.
 
 const SUBSTEPS := 8   # 120 Hz physics_process x 8 = 1 kHz dynamics (physics.md §6)
 const STICK_DEADZONE := 0.08
@@ -22,6 +23,10 @@ const STICK_THROTTLE_TRIM := 0.3
 ## See keyboard_throttle().
 const KEYBOARD_CLIMB_G := 0.25
 const MODE_TOGGLE_BUTTON := JOY_BUTTON_A
+
+## Where flight logs land. One directory, created on first write, and the same one Studio will
+## read — a log the app cannot find again is a log that was not really written.
+const LOG_DIR := "user://logs"
 
 @onready var drone: Node3D = $Drone
 @onready var camera: Camera3D = $Camera3D
@@ -97,6 +102,21 @@ var drone_audio: DroneAudio
 var fpv_view: FpvView
 var _l_was_pressed := false
 var _c_was_pressed := false
+var _r_was_pressed := false
+## The recorder, when one is armed, and null the rest of the time (LTHL-51).
+##
+## RECORDING IS EXPLICIT AND THE NULL IS THE OFF STATE. The alternative shapes — always-on, or an
+## always-on ring buffer — were considered and rejected on cost: at 55 columns and 1 kHz a session
+## buffers 55 MB per minute, and a scene that quietly accumulated that for as long as the app was
+## left open is a scene that eventually falls over in a way the pilot did not ask for. The price is
+## stated plainly because it is real: the flight worth having is often the one nobody expected, and
+## an unarmed recorder cannot produce it. That is what the persistent HUD indicator is for — it
+## makes the armed state something the pilot can see rather than remember.
+##
+## A LOG BELONGS TO ONE AIRCRAFT. The header names the build that flew, so a recording cannot
+## survive a part change; _on_build_changed closes it out rather than letting one file span two
+## aircraft while claiming to describe one.
+var _recorder: FlightRecorder = null
 ## One control path. The mode switch changes what produces the rate setpoints and nothing
 ## else — see src/fc/flight_controller.gd.
 var fc := FlightController.new()
@@ -182,6 +202,11 @@ func _ready() -> void:
 ## airframe is rebuilt from scratch rather than patched, so there is no way for a stat on
 ## the panel to disagree with what is being flown.
 func _on_build_changed(new_build: Build) -> void:
+	# Before anything else, because everything below replaces the aircraft this log is about. A
+	# recording that ran on through a part swap would carry one header naming one build over rows
+	# flown by two, and nothing in the file would say where the change happened.
+	if _recorder != null:
+		_stop_recording()
 	build = new_build
 	core = build.build_drone_core()
 	# The pack comes out of the bag as it actually is. Seeded here rather than inside Build,
@@ -258,6 +283,12 @@ func _respawn_after_crash() -> void:
 	# than reset: hitting the ground does not refill a battery.
 	persist_pack_charge()
 	lap_timer.invalidate_lap()
+	# The teleport below moves position and velocity discontinuously. A recording that spans it
+	# and says nothing is a log that lies about acceleration — see FlightRecorder.discontinuities.
+	# The lap is NOT split into a second file: a lap that ends in the dirt is still data, and the
+	# most interesting seconds in the file are the ones just before it.
+	if _recorder != null:
+		_recorder.discontinuities += 1
 	_reset_to(course.respawn_position(), course.next_gate()["position"] - course.respawn_position())
 
 ## Places the drone level, stationary, and pointed at `forward` (yaw only — respawning
@@ -327,6 +358,11 @@ func _physics_process(delta: float) -> void:
 		if _c_was_pressed:
 			_toggle_fpv()
 
+	if Input.is_key_pressed(KEY_R) != _r_was_pressed:
+		_r_was_pressed = Input.is_key_pressed(KEY_R)
+		if _r_was_pressed:
+			_toggle_recording()
+
 	if Input.get_connected_joypads().is_empty():
 		_read_keyboard()
 	else:
@@ -336,6 +372,14 @@ func _physics_process(delta: float) -> void:
 	for i in SUBSTEPS:
 		var motor_cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, substep_dt)
 		core.step(motor_cmds, substep_dt)
+		# EVERY SUBSTEP, i.e. the full 1 kHz, and inside the loop rather than once per frame.
+		# Sampling at the 120 Hz frame rate instead would be a decimation by 8 that the header
+		# could not report, and it would alias everything above 60 Hz — which is where the frame
+		# resonance this log exists to measure lives. capture() appends to a packed buffer and
+		# touches no file, which is what makes it affordable here; the determinism test in
+		# tests/test_flight_recorder.gd is what proves it does not perturb the flight.
+		if _recorder != null:
+			_recorder.capture(core.observables)
 
 	# Score the segment actually flown this frame, BEFORE any crash reset — otherwise a
 	# pass that ends in a clip just past the ring is silently thrown away.
@@ -363,6 +407,10 @@ func _physics_process(delta: float) -> void:
 	drone_audio.update(core.observables, _chase_transform.origin)
 
 	hud.render(core, build, course, lap_timer, fc.is_rate_mode())
+	# Off the recorder's own figures, not off a frame counter here. See Hud.set_recording.
+	hud.set_recording(_recorder != null,
+		_recorder.duration_s() if _recorder != null else 0.0,
+		_recorder.row_count() if _recorder != null else 0)
 	hud.tick_banner(delta)
 
 ## Swaps between hearing the drone from where the pilot stands and hearing it from the
@@ -383,6 +431,66 @@ func _toggle_fpv() -> void:
 		hud.show_banner("VIEW: no camera fitted")
 		return
 	hud.show_banner("VIEW: %s" % ("FPV" if fpv_view.toggle_main() else "CHASE"))
+
+## R, and it is a toggle rather than a hold: a log worth having is minutes long and no key is held
+## for minutes.
+func _toggle_recording() -> void:
+	if _recorder == null:
+		_start_recording()
+	else:
+		_stop_recording()
+
+## Arms the recorder against the aircraft that is flying RIGHT NOW.
+##
+## Three things are handed over and each one would be wrong to look up later. The build, because
+## the header names it. The tune, because the gains in force are the garage's and the recorder
+## refuses to guess them — `null` there would write a log that declined to say what flew. And
+## `core.gyro`, THE SENSOR THAT IS ACTUALLY IN THE AIRCRAFT: Build.gyro() constructs a fresh one
+## on every call, so asking the build would describe a sensor that never flew, and the header's
+## filtering block — the thing that decides whether a log is admissible to the resonance analysis
+## at all — would be describing the wrong instrument.
+func _start_recording() -> void:
+	_recorder = FlightRecorder.new(build, 1, pid_tunes.tune_for(build), core.gyro)
+	hud.show_banner("REC  started")
+
+## Writes the buffer out and disarms. A failed write says so on the HUD and still disarms, because
+## the alternative is a recorder that stays armed accumulating rows nobody can get out.
+func _stop_recording() -> void:
+	var recorder := _recorder
+	_recorder = null
+	if recorder.row_count() == 0:
+		hud.show_banner("REC  nothing captured")
+		return
+
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(LOG_DIR))
+	var path := log_path(Time.get_datetime_dict_from_system())
+	if recorder.save(path):
+		# The count, not just the fact. A pilot who armed the recorder by hand is the only thing
+		# standing between a 55 MB/minute buffer and a full disk, and "wrote 132000 rows" is the
+		# number that makes the next decision for them.
+		hud.show_banner("REC  saved  %d rows  %s" % [recorder.row_count(), path.get_file()], 4.0)
+	else:
+		hud.show_banner("REC  COULD NOT WRITE  %s" % path, 4.0)
+
+## Timestamped, and deliberately NOT named after the build.
+##
+## Build.fingerprint() is slash-joined part ids, which is a path and not a filename, and mangling
+## it into one would produce a second, lossy spelling of an identity that already has a canonical
+## one. The aircraft is named INSIDE the file, where a reader — Studio, or a human with an editor —
+## gets the full fingerprint rather than a flattened approximation of it. The filename's only job
+## is to be unique and to sort chronologically, which a fixed-width timestamp does for free.
+##
+## Takes the clock as an argument rather than reading it, so this is testable without one.
+static func log_path(now: Dictionary) -> String:
+	return "%s/flight-%04d%02d%02d-%02d%02d%02d.csv" % [
+		LOG_DIR, now["year"], now["month"], now["day"], now["hour"], now["minute"], now["second"]]
+
+## Leaving the field ends a flight, and an armed recorder must not go down with the scene. This is
+## the same reasoning as persist_pack_charge — which is deliberately NOT the hook used here, since
+## a crash calls that one and a crash is not the end of a recording.
+func _exit_tree() -> void:
+	if _recorder != null:
+		_stop_recording()
 
 ## Chase cam. The offset is rotated by the drone's HEADING, not left in world space: with a
 ## fixed world offset the camera keeps facing -Z no matter which way the drone is pointed,
