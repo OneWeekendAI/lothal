@@ -261,6 +261,108 @@ static func run() -> Array:
 		"%d rows at %.1f Hz" % [
 			_column(OTHER_PATH, "t_s").size(), sparse_header.get("sample_rate_hz", 0.0)]))
 
+	# --- The columns that were published all along (LTHL-51) -------------------------------------
+	#
+	# electrical_hz, tip_speed_mps and weight_n were computed by Observables and never listed in
+	# COLUMNS. The check is not "the column exists" — an empty column exists too, and a column of
+	# zeroes is exactly what a wrong wiring produces. So each is checked against the physics it is
+	# supposed to carry, using a relationship the recorder does not know about:
+	#
+	#   * electrical_hz must be rpm/60 x pole_pairs. A recorder that appended blade_pass_hz twice,
+	#     or that read the wrong motor's slot, disagrees here immediately — the two differ by
+	#     pole_pairs/blades, which is 7/3 on the reference build and not a rounding error;
+	#   * weight_n must be mass x g, which pins it to the aircraft rather than to any per-motor
+	#     quantity that happened to be lying next to it in the buffer.
+	var erpm := _column(TEST_PATH, "m1_electrical_hz")
+	var m1_rpm := _column(TEST_PATH, "m1_rpm")
+	var pole_pairs := balanced.pole_pairs()
+	var erpm_ok := erpm.size() == m1_rpm.size() and not erpm.is_empty()
+	if erpm_ok:
+		for i in range(0, erpm.size(), 97):   # every 97th row: a stride that is not a substep count
+			if absf(erpm[i] - m1_rpm[i] / 60.0 * pole_pairs) > 1e-6 * maxf(1.0, erpm[i]):
+				erpm_ok = false
+				break
+	results.append(TestResult.new(
+		"the log carries electrical frequency, and it IS rpm/60 x pole pairs — not blade pass wearing its name",
+		erpm_ok,
+		"m1_electrical_hz %.3f Hz against m1_rpm %.1f at %.0f pole pairs" % [
+			erpm[0] if not erpm.is_empty() else -1.0,
+			m1_rpm[0] if not m1_rpm.is_empty() else -1.0, pole_pairs]))
+
+	# Tip speed is the other one order tracking cannot recover on its own: it needs the prop
+	# radius, which lives in the header and not in any column. Checked as strictly positive and
+	# ordered against rpm rather than recomputed here, since recomputing it in the test would
+	# just be the same formula twice.
+	var tip := _column(TEST_PATH, "m1_tip_speed_mps")
+	results.append(TestResult.new(
+		"tip speed reaches the file and tracks rpm rather than sitting at a constant",
+		tip.size() == m1_rpm.size() and not tip.is_empty() and tip[0] > 1.0
+			and (tip[tip.size() - 1] > tip[0]) == (m1_rpm[m1_rpm.size() - 1] > m1_rpm[0]),
+		"m1_tip_speed_mps runs %.1f -> %.1f m/s" % [
+			tip[0] if not tip.is_empty() else -1.0,
+			tip[tip.size() - 1] if not tip.is_empty() else -1.0]))
+
+	var weight := _column(TEST_PATH, "weight_n")
+	var expected_weight := balanced.mass_properties.total_mass_kg * Observables.GRAVITY_MPS2
+	results.append(TestResult.new(
+		"weight reaches the file and is the aircraft's own mass x g",
+		not weight.is_empty() and absf(weight[0] - expected_weight) < 1e-4,
+		"weight_n = %.4f N against mass %.4f kg (%.4f N expected)" % [
+			weight[0] if not weight.is_empty() else -1.0,
+			balanced.mass_properties.total_mass_kg, expected_weight]))
+
+	# --- A recording says whether it is CONTINUOUS ------------------------------------------------
+	#
+	# A respawn teleports the aircraft, so a reader differencing position across that row gets an
+	# acceleration that never happened. LTHL-51 cannot mark the row — that needs the event stream
+	# LTHL-53 brings — but it must not let the file stay silent either. The count is what the
+	# header carries, and this asserts both directions: silence when the flight was continuous,
+	# and a number when it was not. Asserting only the nonzero case would pass for a recorder that
+	# hardcoded a warning into every log, which is a warning nobody would read twice.
+	var jumped := FlightRecorder.new(_build_with_imbalance(0.02))
+	_fly(_build_with_imbalance(0.02), jumped)
+	jumped.discontinuities = 2
+	jumped.save(OTHER_PATH)
+	results.append(TestResult.new(
+		"the header says whether the trace is continuous — silent on a clean flight, counted after a respawn",
+		int(_header(TEST_PATH).get("discontinuities", -1)) == 0
+			and int(_header(OTHER_PATH).get("discontinuities", -1)) == 2,
+		"clean log reports %s, respawned log reports %s" % [
+			_header(TEST_PATH).get("discontinuities", "(absent)"),
+			_header(OTHER_PATH).get("discontinuities", "(absent)")]))
+
+	# --- Flying produces a file -------------------------------------------------------------------
+	#
+	# THE ONE THAT WAS THE WHOLE POINT OF LTHL-51. Every check above passed on the day the only
+	# caller of this class was a headless tool and flying the actual simulator wrote nothing; a
+	# recorder can be perfect and unreachable. This checks the reachability, by source, in the
+	# same style as the "cannot reconstruct a build" check below — the scene must capture inside
+	# its substep loop, not once per frame, or the log is decimated by 8 without saying so.
+	var scene_code := TestPidTunes._code_only(
+		FileAccess.get_file_as_string("res://src/scenes/main.gd"))
+	var substep_body := scene_code.split("for i in SUBSTEPS:")
+	results.append(TestResult.new(
+		"the flight scene captures into the recorder, and does it per SUBSTEP rather than per frame",
+		scene_code.contains("FlightRecorder.new")
+			and substep_body.size() == 2 and substep_body[1].contains("capture("),
+		"main.gd constructs a recorder and calls capture() inside the substep loop"))
+
+	# The filename, pinned exactly, because Studio will list these by name and the list is only
+	# useful if the name sorts. Zero-padding is the whole check: "flight-2026-8-9" sorts after
+	# "flight-2026-12-01" as a string, so a formatter that dropped the padding would produce a
+	# directory that reads as random while every individual name looks fine.
+	var scene: GDScript = load("res://src/scenes/main.gd")
+	var march: String = scene.log_path({
+		"year": 2026, "month": 3, "day": 9, "hour": 7, "minute": 4, "second": 5})
+	var december: String = scene.log_path({
+		"year": 2026, "month": 12, "day": 1, "hour": 18, "minute": 30, "second": 59})
+	results.append(TestResult.new(
+		"a log's filename is zero-padded, so a directory of them sorts chronologically as text",
+		march.get_file() == "flight-20260309-070405.csv"
+			and december.get_file() == "flight-20261201-183059.csv"
+			and march < december,
+		"%s sorts before %s" % [march.get_file(), december.get_file()]))
+
 	# --- A log names an aircraft; it does not DEFINE one ---------------------------------------
 	#
 	# The corollary that keeps this file on the right side of Lab/Sim. If reading a log back
