@@ -714,19 +714,34 @@ static func _test_trace_legend() -> Array:
 		"value at t=0.400 s reads %.6f, true 100.000000" % cursored.value_at(
 			"gyro_x_rad_s", 0.400)))
 
-	# BETWEEN two samples, nearest-sample must pick one of the two neighbours exactly — never
-	# invent a value between them. t=0.4005 is exactly halfway between times[400] (100.0) and
-	# times[401] (100.25), which also exercises the "step back if the previous sample is closer"
-	# correction branch that t=0.400 alone never reaches.
-	var between := cursored.value_at("gyro_x_rad_s", 0.4005)
+	# STRICTLY CLOSER TO THE EARLIER SAMPLE — the one query shape that actually exercises the
+	# "step back if the previous sample is closer" correction branch. t=0.4004 is 0.0004 from
+	# times[400] (100.0) and 0.0006 from times[401] (100.25): binary search converges to lo=401
+	# (first index whose time is >= t), and the correction must step back to 400. The answer is
+	# unambiguous here, so this asserts equality, not membership.
+	var nearer := cursored.value_at("gyro_x_rad_s", 0.4004)
 	results.append(TestResult.new(
-		"between two samples, the cursor picks one of them exactly rather than a tolerance band",
-		absf(between - 100.0) < 1e-9 or absf(between - 100.25) < 1e-9,
-		"value at t=0.4005 s reads %.6f, neighbours are 100.000000 and 100.250000" % between))
+		"strictly closer to the earlier sample, the correction branch steps back and reads it exactly",
+		absf(nearer - 100.0) < 1e-9,
+		"value at t=0.4004 s reads %.6f, true 100.000000" % nearer))
 	results.append(TestResult.new(
-		"between two samples, the cursor never interpolates a value the log does not contain",
-		absf(between - 100.125) > 1e-9,
-		"value at t=0.4005 s reads %.6f; 100.125000 would be the invented midpoint" % between))
+		"strictly closer to the earlier sample, the cursor never interpolates a value the log does not contain",
+		absf(nearer - 100.1) > 1e-9,
+		"value at t=0.4004 s reads %.6f; 100.100000 would be the invented lerp" % nearer))
+
+	# A FLOAT64 TIE — times[400] and times[401] are exactly equidistant from t=0.4005 in float64
+	# (both distances compute to 0.0005000000000000004), so the strict `<` correction test never
+	# fires here and either neighbour is a correct answer. This does NOT exercise the correction
+	# branch — the query above does that — it only re-confirms no interpolation happens on a tie.
+	var tied := cursored.value_at("gyro_x_rad_s", 0.4005)
+	results.append(TestResult.new(
+		"on a float64 tie, the cursor picks one of the two neighbours exactly rather than a tolerance band",
+		absf(tied - 100.0) < 1e-9 or absf(tied - 100.25) < 1e-9,
+		"value at t=0.4005 s reads %.6f, neighbours are 100.000000 and 100.250000" % tied))
+	results.append(TestResult.new(
+		"on a float64 tie, the cursor never interpolates a value the log does not contain",
+		absf(tied - 100.125) > 1e-9,
+		"value at t=0.4005 s reads %.6f; 100.125000 would be the invented midpoint" % tied))
 
 	cursored.cursor_t = 0.400
 	var cursor_entry: Dictionary = cursored.legend_entries()[0]
