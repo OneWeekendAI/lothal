@@ -71,13 +71,33 @@ const CHANNEL_LIST_HEIGHT := 132.0
 ## never itself offered as a channel — plotting time against time is a diagonal line.
 const TIME_COLUMN := "t_s"
 
-## What a log opens showing, when it carries them.
-##
-## THE GAP BETWEEN THESE TWO IS THE PRODUCT'S WHOLE ARGUMENT. omega is what the aircraft did and
-## gyro is what the flight controller was told, and no real drone can produce the difference about
-## itself. Opening on anything else would bury the one thing this viewer can show that a Betaflight
-## log viewer cannot, behind a builder knowing to go looking for it.
+## What a log opens showing, in the EXPLORE view, when it carries them. The gap view does not use
+## this — it names its own pair from the axis (see _load_gap_view).
 const DEFAULT_CHANNELS := ["omega_x_rad_s", "gyro_x_rad_s"]
+
+## The series Studio computes rather than reads, and the ONLY one.
+##
+## It is a subtraction of two columns that are both already in memory, not a new figure: no
+## statistic, no filter, no provenance to state beyond its own name. The unit is the pair's, taken
+## from the header, so it lands in its own lane at its own scale rather than being flattened
+## against the overlay it was computed from.
+const DIFFERENCE_CHANNEL := "gyro − omega"
+
+## The pair the gap view draws, per axis. Sensor first so it takes SERIES_COLOURS[0] and the legend
+## reads in the order the sentence does: what the gyro said, what the aircraft did, the difference.
+const GAP_PAIRS := [
+	["gyro_x_rad_s", "omega_x_rad_s"],
+	["gyro_y_rad_s", "omega_y_rad_s"],
+	["gyro_z_rad_s", "omega_z_rad_s"],
+]
+
+enum ViewMode { GAP, EXPLORE }
+
+## The room opens on its own question. EXPLORE is a place a builder goes deliberately, not the
+## default — a 55-channel picker as the opening state is a room that asks the builder what they
+## want before it has told them anything.
+var view_mode: ViewMode = ViewMode.GAP
+var gap_axis := 0
 
 ## Columns a builder is unlikely to want first and which would crowd the top of the picker. Not
 ## hidden — the list is the header's, in the header's order, and filtering it would be this screen
@@ -95,6 +115,8 @@ var _report: VBoxContainer
 var _trace: TraceView
 var _channel_list: ItemList
 var _channel_note: Label
+var _mode_bar: HBoxContainer
+var _axis_bar: HBoxContainer
 ## The channel names offered by the log currently selected, in the header's own order. Empty when
 ## nothing is selected or the header could not be read.
 var _available_channels := PackedStringArray()
@@ -190,6 +212,28 @@ func _build_trace_column() -> Control:
 	_channel_note.theme_type_variation = &"MutedLabel"
 	column.add_child(_channel_note)
 
+	# The axis selector, which belongs to the gap view and is hidden in the explorer.
+	_axis_bar = HBoxContainer.new()
+	for index in FlightAnalysis.AXIS_LABELS.size():
+		var axis_button := Button.new()
+		axis_button.text = str(FlightAnalysis.AXIS_LABELS[index])
+		axis_button.toggle_mode = true
+		axis_button.button_pressed = index == gap_axis
+		axis_button.pressed.connect(set_gap_axis.bind(index))
+		_axis_bar.add_child(axis_button)
+	column.add_child(_axis_bar)
+
+	_mode_bar = HBoxContainer.new()
+	var gap_button := Button.new()
+	gap_button.text = "Gap view"
+	gap_button.pressed.connect(set_view_mode.bind(ViewMode.GAP))
+	_mode_bar.add_child(gap_button)
+	var explore_button := Button.new()
+	explore_button.text = "Explore channels"
+	explore_button.pressed.connect(set_view_mode.bind(ViewMode.EXPLORE))
+	_mode_bar.add_child(explore_button)
+	column.add_child(_mode_bar)
+
 	# AN ItemList RATHER THAN A ROW OF CHECKBOXES, because the list is not a fixed set: it is
 	# whatever the log's header says, which is 55 names today and 76 after LTHL-52. A wrapped row
 	# of that many boxes is a wall; a multi-select list is scrollable and stays one control.
@@ -258,6 +302,8 @@ func _render_channels() -> void:
 	if head.is_empty():
 		_trace.clear()
 		_channel_note.text = ""
+		_channel_list.visible = false
+		_axis_bar.visible = false
 		return
 
 	_channel_units = head.get("units", {})
@@ -273,8 +319,15 @@ func _render_channels() -> void:
 		_channel_list.add_item(str(column_name) if unit.is_empty()
 			else "%s  (%s)" % [column_name, unit])
 
-	_select_default_channels()
-	_load_selected_channels()
+	var exploring := view_mode == ViewMode.EXPLORE
+	_channel_list.visible = exploring
+	_axis_bar.visible = not exploring
+
+	if exploring:
+		_select_default_channels()
+		_load_selected_channels()
+	else:
+		_load_gap_view()
 
 
 ## Selects the opening channels, falling back when a log does not carry them. A pre-LTHL-51 log has
@@ -345,6 +398,66 @@ func _load_selected_channels() -> void:
 	if not reason.is_empty():
 		note += "  ·  " + reason
 	_channel_note.text = note
+
+
+## The two channels for the current axis, plus their difference.
+##
+## The difference is computed HERE and not in FlightAnalysis, because it is not a figure: it is the
+## same two arrays already in memory, subtracted for drawing. Putting it in FlightAnalysis would
+## make a plot's presentation into a law, and the law would then have two spellings the day someone
+## wanted a filtered version for the chart.
+func _load_gap_view() -> void:
+	var pair: Array = GAP_PAIRS[clampi(gap_axis, 0, GAP_PAIRS.size() - 1)]
+	var sensor: String = pair[0]
+	var truth: String = pair[1]
+
+	var request := PackedStringArray([TIME_COLUMN, sensor, truth])
+	var result: Dictionary = LogReader.read_columns(library.path_of(selected_id), request)
+	if not bool(result.get("ok", false)):
+		_trace.clear()
+		_channel_note.text = "Could not read this log: %s" % result.get("reason", "unknown")
+		return
+
+	var columns: Dictionary = result.get("columns", {})
+	if not columns.has(sensor) or not columns.has(truth):
+		_trace.clear()
+		_channel_note.text = "This log carries no %s / %s pair to compare." % [sensor, truth]
+		return
+
+	var sensor_values: PackedFloat64Array = columns[sensor]
+	var truth_values: PackedFloat64Array = columns[truth]
+	var difference := PackedFloat64Array()
+	var count := mini(sensor_values.size(), truth_values.size())
+	difference.resize(count)
+	for i in count:
+		difference[i] = sensor_values[i] - truth_values[i]
+
+	var unit := str(_channel_units.get(sensor, ""))
+	_trace.show_log(columns.get(TIME_COLUMN, PackedFloat64Array()), {
+		sensor: sensor_values,
+		truth: truth_values,
+		DIFFERENCE_CHANNEL: difference,
+	}, {
+		sensor: unit,
+		truth: unit,
+		# A DELIBERATELY DIFFERENT UNIT STRING, so lanes() puts the difference in its own lane. It
+		# is the same physical unit, and drawing it on the overlay's scale is exactly the thing this
+		# view exists to stop.
+		DIFFERENCE_CHANNEL: unit + " (difference)",
+	})
+	_channel_note.text = "%d rows  ·  %s against %s, and what the sensor added" % [
+		int(result.get("rows", 0)), sensor, truth]
+
+
+func set_view_mode(mode: ViewMode) -> void:
+	view_mode = mode
+	_render_channels()
+
+
+func set_gap_axis(axis: int) -> void:
+	gap_axis = clampi(axis, 0, GAP_PAIRS.size() - 1)
+	if view_mode == ViewMode.GAP:
+		_render_channels()
 
 
 func _on_channel_toggled(_index: int, _selected: bool) -> void:
