@@ -366,6 +366,18 @@ static func _test_report_fits() -> Array:
 			0.0 if value_label == null else value_label.custom_minimum_size.x,
 			"off" if value_label == null else str(value_label.autowrap_mode)]))
 
+	# The value column is MONOSPACE, and that is legibility rather than decoration: a column of
+	# readouts in a proportional font does not line up, and these are numbers a builder scans
+	# rather than reads. It carries no minimum width, which is what distinguishes restoring the
+	# font from restoring the crop.
+	results.append(TestResult.new(
+		"report values keep the monospace readout font, without regaining a minimum width",
+		value_label != null and value_label.theme_type_variation == &"ReadoutLabel"
+			and is_zero_approx(value_label.custom_minimum_size.x),
+		"variation %s, min width %.0f" % [
+			"(none)" if value_label == null else str(value_label.theme_type_variation),
+			0.0 if value_label == null else value_label.custom_minimum_size.x]))
+
 	studio.free()
 	return results
 
