@@ -99,9 +99,10 @@ enum ViewMode { GAP, EXPLORE }
 var view_mode: ViewMode = ViewMode.GAP
 var gap_axis := 0
 
-## Columns a builder is unlikely to want first and which would crowd the top of the picker. Not
-## hidden — the list is the header's, in the header's order, and filtering it would be this screen
-## having an opinion about a log's contents. Only the DEFAULT selection is opinionated.
+## The most channels a builder may plot at once. Enforced in _on_channel_toggled, not in the list
+## itself — the picker still offers every header column, in the header's own order; this only caps
+## how many of them can be selected together, past which a chart stops being readable and each
+## further column parsed out of a possibly-197 MB file stops being free.
 const MAX_CHANNELS := 6
 
 ## The verdict for a ratio — and it is always empty, deliberately.
@@ -378,6 +379,11 @@ func _render_channels() -> void:
 	_available_channels = PackedStringArray()
 	_visible_channels = PackedStringArray()
 	_channel_units = {}
+	# A filter typed for the PREVIOUS log must not survive a log switch — otherwise the picker can
+	# open on an empty list for a log that carries plenty of channels, just none matching a filter
+	# left over from a different flight.
+	if _channel_filter != null:
+		_channel_filter.text = ""
 
 	var head := library.header(selected_id) if not selected_id.is_empty() else {}
 	if head.is_empty():
@@ -426,16 +432,32 @@ func _rebuild_channel_list() -> void:
 		_channel_list.add_item(channel if unit.is_empty() else "%s  (%s)" % [channel, unit])
 
 
+## Preserves the builder's selection across a filter change, rather than resetting it to the
+## defaults on every keystroke. selected_channels() is read BEFORE the rebuild — after it,
+## _visible_channels has already changed and the same call would answer a different question.
+##
+## _select_default_channels() only runs when nothing was selected before typing — the initial
+## population case. A filter that narrows past every previously-selected channel leaves the
+## selection empty rather than silently substituting the defaults for a choice the builder made.
 func set_channel_filter(text: String) -> void:
 	if _channel_filter != null and _channel_filter.text != text:
 		_channel_filter.text = text
+	var previously_selected := selected_channels()
 	_rebuild_channel_list()
 	if _channel_list.item_count == 0:
-		# An explanation rather than an empty box, following the flight list's empty case.
+		# An explanation rather than an empty box, following the flight list's empty case. The
+		# trace is cleared alongside so the chart never keeps showing channels the now-empty list
+		# denies offering.
 		_channel_note.text = "No channel in this log matches \"%s\"." % text
-	else:
+		_trace.clear()
+		return
+	if previously_selected.is_empty():
 		_select_default_channels()
-		_load_selected_channels()
+	else:
+		for index in _visible_channels.size():
+			if previously_selected.has(_visible_channels[index]):
+				_channel_list.select(index, false)
+	_load_selected_channels()
 
 
 ## Selects the opening channels, falling back when a log does not carry them. A pre-LTHL-51 log has
@@ -794,7 +816,7 @@ func _render_gap() -> void:
 		# The largest text on the pane.
 		hero.text = "%s  %s" % [str(figures["label"]), format_ratio(ratio)]
 		hero.theme_type_variation = &"SubHeroReadoutLabel"
-		_report.add_child(hero)
+		(_sink if _sink != null else _report).add_child(hero)
 		_report_grid = null
 
 		# The seam a defended verdict table lands in. Empty today, on purpose — see verdict_for.
@@ -852,7 +874,7 @@ func _render_spectrum(p_head: Dictionary) -> void:
 	_add_report_title("THE SPECTRUM")
 	_spectrum = SpectrumView.new()
 	_spectrum.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_report.add_child(_spectrum)
+	(_sink if _sink != null else _report).add_child(_spectrum)
 
 	if analysis == null or not analysis.ok or analysis.mags.is_empty():
 		var why := analysis.spectrum_reason if analysis != null else ""

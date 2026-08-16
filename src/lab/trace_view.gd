@@ -278,16 +278,26 @@ func channel_extent(channel: String) -> Vector2:
 	var hi: PackedFloat64Array = pair["hi"]
 	if lo.is_empty():
 		return Vector2.ZERO
-	var low: float = lo[0]
-	var high: float = hi[0]
+	# Seeded from the first FINITE entry, not from index 0. _rebuild_buckets writes NAN into every
+	# bucket before the first parseable sample, so a channel whose leading cells are unreadable
+	# (a truncated or hand-edited log) would otherwise poison low/high before the loop below ever
+	# runs — minf/maxf against a NaN seed stays NaN no matter how many finite entries follow.
+	var low := NAN
+	var high := NAN
 	for i in lo.size():
 		# NaN is what LogReader writes for a cell that would not parse, and it must not become the
 		# extent: min/max against NaN in GDScript propagates it, and one bad cell would blank the
 		# whole axis.
 		if is_nan(lo[i]) or is_nan(hi[i]):
 			continue
-		low = minf(low, lo[i])
-		high = maxf(high, hi[i])
+		if is_nan(low):
+			low = lo[i]
+			high = hi[i]
+		else:
+			low = minf(low, lo[i])
+			high = maxf(high, hi[i])
+	if is_nan(low):
+		return Vector2.ZERO
 	return Vector2(low, high)
 
 
