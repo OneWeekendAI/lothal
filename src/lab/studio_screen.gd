@@ -640,6 +640,7 @@ func _add_report_row(key: String, value: String) -> void:
 	value_label.text = value
 	value_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	value_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	value_label.theme_type_variation = &"ReadoutLabel"
 	_report_grid.add_child(value_label)
 
 
