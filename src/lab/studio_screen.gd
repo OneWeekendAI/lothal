@@ -356,6 +356,18 @@ func _on_channel_toggled(_index: int, _selected: bool) -> void:
 		_channel_list.deselect(_index)
 		_channel_note.text = "Six channels at a time. Deselect one first."
 		return
+
+	# AND a fourth unit is refused, because four stacked lanes are too short for an axis to be
+	# readable. This is the one place the lane grouping is visible as a rule rather than as a
+	# layout, so it is stated in the units the builder is choosing in.
+	var units_seen: Dictionary = {}
+	for channel in picked:
+		units_seen[str(_channel_units.get(channel, channel))] = true
+	if units_seen.size() > TraceView.MAX_LANES:
+		_channel_list.deselect(_index)
+		_channel_note.text = "Three units at a time — a fourth lane is too short to read."
+		return
+
 	_load_selected_channels()
 
 
