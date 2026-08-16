@@ -106,9 +106,21 @@ impl LogReader {
         // Which physical column each requested name sits at, and where it lands in the output.
         // Built once, before the row loop, so the inner loop is an integer comparison rather
         // than a string search per cell.
+        // DUPLICATES ARE DROPPED, and the reason is not tidiness. `slot` below walks forward
+        // through this vector as the split walks forward through the row, which requires the
+        // indices to be strictly increasing. Two entries at the same index stall the walk: the
+        // first matches, `slot` advances to the second, and the second's index is now BEHIND the
+        // cell being looked at, so it never matches and every later column comes back empty.
+        //
+        // Found by FlightAnalysis asking for gyro_x_rad_s twice — once as the spectrum channel
+        // and once as the roll axis — which is a completely reasonable thing for a caller to do
+        // and produced a silent empty column rather than an error.
         let mut wanted: Vec<(usize, String)> = Vec::new();
         for name in names.as_slice() {
             let name = name.to_string();
+            if wanted.iter().any(|(_, existing)| *existing == name) {
+                continue;
+            }
             if let Some(index) = column_names.iter().position(|c| *c == name) {
                 wanted.push((index, name));
             }
@@ -192,6 +204,244 @@ impl LogReader {
         out.set("rows", rows);
         out.set("bad_cells", bad_cells);
         out.set("columns", &columns);
+        out
+    }
+
+    /// The averaged magnitude spectrum of one channel (LTHL-20).
+    ///
+    /// ```text
+    /// {
+    ///   "ok":        bool,
+    ///   "reason":    String,   // "" when ok
+    ///   "bin_hz":    float,    // fs / frame_len — the frequency resolution
+    ///   "frame_len": int,
+    ///   "hop":       int,
+    ///   "frames":    int,      // frames actually averaged
+    ///   "skipped":   int,      // frames dropped for containing an unreadable sample
+    ///   "mags":      PackedFloat64Array,
+    /// }
+    /// ```
+    ///
+    /// TAKES SAMPLES, NOT A PATH, and that is deliberate. `read_columns` has already parsed the
+    /// file and GDScript is holding the floats; re-reading 197 MB to compute a transform over
+    /// numbers already in memory would be the expensive half of this feature done twice. It also
+    /// leaves this function pure arithmetic, which is what lets the crosscheck feed it the same
+    /// array Python was fed rather than trusting two readers to agree first.
+    ///
+    /// Frequencies are not returned. Bin `i` is at `i * bin_hz`, and shipping a second array of
+    /// 512 floats that the caller can compute from one is a second spelling of the x axis.
+    #[func]
+    fn spectrum(samples: PackedFloat64Array, sample_rate_hz: f64) -> VarDictionary {
+        match crate::spectrum::averaged(samples.as_slice(), sample_rate_hz) {
+            Ok(s) => {
+                let mags: PackedFloat64Array = s.mags.as_slice().into();
+                let mut out = VarDictionary::new();
+                out.set("ok", true);
+                out.set("reason", String::new());
+                out.set("bin_hz", sample_rate_hz / (s.frame_len as f64));
+                out.set("frame_len", s.frame_len as i64);
+                out.set("hop", s.hop as i64);
+                out.set("frames", s.frames as i64);
+                out.set("skipped", s.skipped as i64);
+                out.set("mags", &mags);
+                out
+            }
+            Err(reason) => {
+                let mut out = VarDictionary::new();
+                out.set("ok", false);
+                out.set("reason", reason);
+                out.set("bin_hz", 0.0);
+                out.set("frame_len", 0i64);
+                out.set("hop", 0i64);
+                out.set("frames", 0i64);
+                out.set("skipped", 0i64);
+                out.set("mags", &PackedFloat64Array::new());
+                out
+            }
+        }
+    }
+
+    /// Mean, spread and step spread of one channel, optionally of the DIFFERENCE between two.
+    ///
+    /// ```text
+    /// { "n": int, "mean": float, "sd": float, "step_sd": float, "min": float, "max": float }
+    /// ```
+    ///
+    /// `subtract` may be empty, in which case the statistics are of `samples` alone. When it is
+    /// not, the statistics are of `samples[i] - subtract[i]` over the overlapping length, which
+    /// is how Studio gets the SENSOR-ONLY excursion: gyro minus omega is what the flight
+    /// controller saw that the aircraft was not doing.
+    ///
+    /// `sd` is the population deviation (divide by n), matching `np.std`'s default and the
+    /// `sqrt(sum / n)` in RateTune.vibration_step_noise_rad_s. `step_sd` is the same statistic on
+    /// successive differences, which is the one a D gain multiplies.
+    ///
+    /// NON-FINITE SAMPLES ARE SKIPPED, and a step across a skipped sample is not counted — the
+    /// gap between rows 4 and 6 is not a step, and treating it as one would report a difference
+    /// accumulated over two intervals as if it happened in one.
+    ///
+    /// Here rather than in GDScript because it is the same 180 000-row pass the parse was moved
+    /// out of. Six channels of it per click, in GDScript, is the wait this whole file exists to
+    /// avoid, and it would arrive right after the wait had been removed.
+    #[func]
+    fn stats(samples: PackedFloat64Array, subtract: PackedFloat64Array) -> VarDictionary {
+        let a = samples.as_slice();
+        let b = subtract.as_slice();
+        let len = if b.is_empty() { a.len() } else { a.len().min(b.len()) };
+
+        // WELFORD, NOT sum_sq/n - mean^2, AND THE DIFFERENCE IS NOT ACADEMIC HERE.
+        //
+        // The naive formula subtracts two nearly equal large numbers. On an rpm channel sitting
+        // at 1234.5678, sum_sq/n is about 1.5e6 and so is mean^2, so the difference keeps about
+        // five of the sixteen digits — measured, before this was changed: a channel of 500
+        // identical values reported a standard deviation of 1.2e-4 instead of zero.
+        //
+        // That is small next to an rpm, and it is NOT small next to a gyro noise floor, which is
+        // the other thing this function is asked about and which lives around 1e-3 rad/s. A
+        // spurious 1e-4 there is a tenth of the answer. Welford accumulates the deviation
+        // directly and never forms the large intermediate.
+        let mut n = 0usize;
+        let mut mean_acc = 0.0f64;
+        let mut m2 = 0.0f64;
+        let mut lo = f64::INFINITY;
+        let mut hi = f64::NEG_INFINITY;
+
+        let mut steps = 0usize;
+        let mut step_sum_sq = 0.0f64;
+        let mut previous: Option<f64> = None;
+
+        for i in 0..len {
+            let value = match (a.get(i), b.get(i)) {
+                (Some(x), Some(y)) => x - y,
+                (Some(x), None) if b.is_empty() => *x,
+                _ => break,
+            };
+            if !value.is_finite() {
+                previous = None;
+                continue;
+            }
+            n += 1;
+            let delta = value - mean_acc;
+            mean_acc += delta / (n as f64);
+            m2 += delta * (value - mean_acc);
+            if value < lo {
+                lo = value;
+            }
+            if value > hi {
+                hi = value;
+            }
+            if let Some(p) = previous {
+                let step = value - p;
+                steps += 1;
+                step_sum_sq += step * step;
+            }
+            previous = Some(value);
+        }
+
+        let mut out = VarDictionary::new();
+        out.set("n", n as i64);
+        if n == 0 {
+            out.set("mean", 0.0);
+            out.set("sd", 0.0);
+            out.set("step_sd", 0.0);
+            out.set("min", 0.0);
+            out.set("max", 0.0);
+            return out;
+        }
+        // max(0) is belt and braces: Welford's m2 is a sum of products that share a sign and
+        // cannot go negative, but a dead-still axis reporting NaN noise would be read as a broken
+        // sensor rather than as a still one, and that is not a failure worth risking to save a
+        // comparison.
+        let variance = (m2 / (n as f64)).max(0.0);
+        out.set("mean", mean_acc);
+        out.set("sd", variance.sqrt());
+        out.set(
+            "step_sd",
+            if steps == 0 {
+                0.0
+            } else {
+                (step_sum_sq / (steps as f64)).sqrt()
+            },
+        );
+        out.set("min", lo);
+        out.set("max", hi);
+        out
+    }
+
+    /// Per-frame minimum and maximum over the same frame grid the spectrum uses.
+    ///
+    /// ```text
+    /// { "lo": PackedFloat64Array, "hi": PackedFloat64Array }   // one entry per frame
+    /// ```
+    ///
+    /// Studio's admissibility check asks how far the rpm line moves WITHIN one analysis frame.
+    /// That is a min/max over each frame of the rpm channel, on the grid `frame_layout` returns,
+    /// and it must be the same grid or the check describes a window nothing was measured in.
+    ///
+    /// A frame containing a non-finite sample yields NaN for that frame rather than being
+    /// silently narrowed to its readable part — a smear measured over half a frame is not the
+    /// smear over the frame.
+    #[func]
+    fn frame_extents(
+        samples: PackedFloat64Array,
+        frame_len: i64,
+        hop: i64,
+    ) -> VarDictionary {
+        let values = samples.as_slice();
+        let n = if frame_len <= 0 { 0usize } else { frame_len as usize };
+        let step = if hop <= 0 { 1usize } else { hop as usize };
+
+        let mut lo_out: Vec<f64> = Vec::new();
+        let mut hi_out: Vec<f64> = Vec::new();
+        if n > 0 && values.len() >= n {
+            let frames = (values.len() - n) / step + 1;
+            for frame in 0..frames {
+                let start = frame * step;
+                let slice = match values.get(start..start + n) {
+                    Some(s) => s,
+                    None => break,
+                };
+                if slice.iter().any(|v| !v.is_finite()) {
+                    lo_out.push(f64::NAN);
+                    hi_out.push(f64::NAN);
+                    continue;
+                }
+                let mut lo = f64::INFINITY;
+                let mut hi = f64::NEG_INFINITY;
+                for v in slice {
+                    if *v < lo {
+                        lo = *v;
+                    }
+                    if *v > hi {
+                        hi = *v;
+                    }
+                }
+                lo_out.push(lo);
+                hi_out.push(hi);
+            }
+        }
+
+        let lo_packed: PackedFloat64Array = lo_out.as_slice().into();
+        let hi_packed: PackedFloat64Array = hi_out.as_slice().into();
+        let mut out = VarDictionary::new();
+        out.set("lo", &lo_packed);
+        out.set("hi", &hi_packed);
+        out
+    }
+
+    /// The frame layout a trace of this length would get, without doing the transform.
+    ///
+    /// Studio needs it before it has a spectrum: the admissibility check asks how much the rpm
+    /// line moves WITHIN one analysis frame, and "one analysis frame" has to be the same length
+    /// there as it is here or the check is about a window nothing was measured in.
+    #[func]
+    fn frame_layout(sample_count: i64, sample_rate_hz: f64) -> VarDictionary {
+        let count = if sample_count < 0 { 0 } else { sample_count as usize };
+        let (frame_len, hop, frames) = crate::spectrum::frame_layout(count, sample_rate_hz);
+        let mut out = VarDictionary::new();
+        out.set("frame_len", frame_len as i64);
+        out.set("hop", hop as i64);
+        out.set("frames", frames as i64);
         out
     }
 

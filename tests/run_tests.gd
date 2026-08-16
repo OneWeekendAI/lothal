@@ -14,7 +14,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
 	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
 	"yaw authority", "gyro", "motor mixer", "control path", "stick release", "warnings", "build warnings",
-	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio",
+	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio", "spectrum",
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants"]
 
 func _init() -> void:
@@ -103,6 +103,7 @@ func _run_suite(suite_name: String) -> Array:
 		"air density": return TestAirDensity.run()
 		"flight recorder": return TestFlightRecorder.run()
 		"studio": return TestStudio.run()
+		"spectrum": return TestSpectrum.run()
 		"motor mixer": return TestMotorMixer.run()
 		"control path": return TestControlPath.run()
 		"stick release": return TestStickRelease.run()
