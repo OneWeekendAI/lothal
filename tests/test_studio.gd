@@ -97,6 +97,7 @@ static func run() -> Array:
 	results.append_array(_test_channel_picker())
 	results.append_array(_test_trace_lanes())
 	results.append_array(_test_gap_view())
+	results.append_array(_test_verdict())
 	_clean()
 	return results
 
@@ -1061,3 +1062,87 @@ static func _test_trace_lanes() -> Array:
 	nan_view.free()
 	short.free()
 	return results
+
+
+## `roll 1.0x` IS THE GOOD ANSWER AND THE PANE DID NOT SAY SO. A headline number with no scale has
+## told a builder nothing — the same failure the vibration caveat exists to prevent, in a different
+## place.
+##
+## THE ANCHOR IS THE SENTENCE AND THE TWO STANDARD DEVIATIONS, NOT A BAND. A verdict table was
+## drafted — clean / some invented motion / significant / severe, at 1.15, 2 and 5 — and the
+## boundaries were a guess. Lothal has no defended answer to "at what ratio should a builder act",
+## and a pane that named one would be claiming a judgement the product has not made.
+##
+## So this suite asserts the REFUSAL, which is the harder thing to keep. verdict_for exists as the
+## named seam a defended table lands in later, and these checks are what stop it being filled with
+## another guess: they go red the moment any input produces a word.
+static func _test_verdict() -> Array:
+	var results: Array = []
+
+	# Every ratio across the plausible range, including the reference sweep's ~7x and a clean
+	# flight's ~1.0x. A stub that returned a word for any of them fails here.
+	var probed := [0.5, 1.0, 1.14, 1.16, 1.5, 1.99, 2.01, 3.0, 4.99, 5.01, 7.0, 9.0, 100.0]
+	var silent := true
+	var spoke := ""
+	for ratio in probed:
+		var word := StudioScreen.verdict_for(float(ratio))
+		if not word.is_empty():
+			silent = false
+			spoke = "%.2f -> \"%s\"" % [ratio, word]
+
+	results.append(TestResult.new(
+		"no ratio produces a verdict word, because Lothal has not decided where the bands are",
+		silent,
+		"13 ratios from 0.5 to 100 all produce no verdict" if silent
+			else "a threshold was invented: %s" % spoke))
+
+	results.append(TestResult.new(
+		"a non-finite ratio is silent too, because there was no motion to compare against",
+		StudioScreen.verdict_for(INF).is_empty()
+			and StudioScreen.verdict_for(NAN).is_empty(),
+		"inf and NaN both produce no verdict"))
+
+	# WHAT ACTUALLY ANCHORS THE NUMBER, and the reason the missing band is not a missing feature:
+	# both spreads are on the pane beside the ratio, so a builder can see 0.90023 against 0.90049
+	# and read "these are the same" without being told a word for it. The explanatory note that
+	# says what the comparison IS travels with them.
+	_fresh_dir()
+	_write_log("flight-20260816-120000.csv", 300)
+	var studio := StudioScreen.new(FlightLogLibrary.load_from(TEST_DIR))
+	studio.select("flight-20260816-120000.csv")
+	var pane := _pane_text(studio)
+	results.append(TestResult.new(
+		"the ratio is anchored by both standard deviations and the sentence, beside it in the pane",
+		pane.contains("sensor / actual") and pane.contains("rad/s sd")
+			and pane.to_lower().contains("more motion the gyro reported"),
+		"pane carries both spreads and the explanatory sentence"))
+
+	# INF still prints as a WORD rather than as a number. "inf x" reads as a broken formatter;
+	# "no motion" reads as the answer it is. This is not a verdict band — it is the ratio's own
+	# honest rendering when there was nothing to divide by.
+	results.append(TestResult.new(
+		"a perfectly still axis reads as \"no motion\" rather than as \"inf x\"",
+		StudioScreen.format_ratio(INF) == "no motion"
+			and StudioScreen.format_ratio(7.0) == "7.0x",
+		"inf -> %s, 7.0 -> %s" % [
+			StudioScreen.format_ratio(INF), StudioScreen.format_ratio(7.0)]))
+
+	studio.free()
+	return results
+
+
+## Walks the report pane for every label's text, to whatever depth the pane nests them. The pane
+## went from HBox rows to grids to collapsible sections over this plan, and a two-level walk that
+## was written for one of those shapes silently stops finding text under another — which would make
+## every pane assertion in this suite pass by finding nothing.
+static func _pane_text(studio: StudioScreen) -> String:
+	return _labels_under(studio._report)
+
+
+static func _labels_under(node: Node) -> String:
+	var out := ""
+	if node is Label:
+		out += (node as Label).text + "\n"
+	for child in node.get_children():
+		out += _labels_under(child)
+	return out
