@@ -705,11 +705,28 @@ static func _test_trace_legend() -> Array:
 	cursored.size = Vector2(700, 300)
 	cursored.show_log(ramp_times, {"gyro_x_rad_s": ramp}, {"gyro_x_rad_s": "rad/s"})
 
+	# ON a sample, the answer is exact — no ambiguity, so no tolerance band. t=0.400 lands exactly
+	# on times[400] (value 100.0); an off-by-one neighbour would read 99.75 or 100.25, a miss this
+	# bound catches that a 0.26 band could not.
 	results.append(TestResult.new(
-		"the cursor reads the channel's value at its own time, not at an index",
-		absf(cursored.value_at("gyro_x_rad_s", 0.400) - 100.0) < 0.26,
-		"value at t=0.400 s reads %.3f, true 100.000" % cursored.value_at(
+		"on a sample, the cursor reads that sample's value exactly",
+		absf(cursored.value_at("gyro_x_rad_s", 0.400) - 100.0) < 1e-9,
+		"value at t=0.400 s reads %.6f, true 100.000000" % cursored.value_at(
 			"gyro_x_rad_s", 0.400)))
+
+	# BETWEEN two samples, nearest-sample must pick one of the two neighbours exactly — never
+	# invent a value between them. t=0.4005 is exactly halfway between times[400] (100.0) and
+	# times[401] (100.25), which also exercises the "step back if the previous sample is closer"
+	# correction branch that t=0.400 alone never reaches.
+	var between := cursored.value_at("gyro_x_rad_s", 0.4005)
+	results.append(TestResult.new(
+		"between two samples, the cursor picks one of them exactly rather than a tolerance band",
+		absf(between - 100.0) < 1e-9 or absf(between - 100.25) < 1e-9,
+		"value at t=0.4005 s reads %.6f, neighbours are 100.000000 and 100.250000" % between))
+	results.append(TestResult.new(
+		"between two samples, the cursor never interpolates a value the log does not contain",
+		absf(between - 100.125) > 1e-9,
+		"value at t=0.4005 s reads %.6f; 100.125000 would be the invented midpoint" % between))
 
 	cursored.cursor_t = 0.400
 	var cursor_entry: Dictionary = cursored.legend_entries()[0]
