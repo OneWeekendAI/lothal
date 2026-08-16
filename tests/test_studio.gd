@@ -96,7 +96,84 @@ static func run() -> Array:
 	results.append_array(_test_trace_legend())
 	results.append_array(_test_channel_picker())
 	results.append_array(_test_trace_lanes())
+	results.append_array(_test_gap_view())
 	_clean()
+	return results
+
+
+## THE ROOM OPENS ON ITS OWN QUESTION. Two anonymous lines on one axis hid the gap at every ratio,
+## because at overlay scale gyro and omega sit on top of each other whether the answer is 1.0x or
+## 7x. The difference, drawn at ITS OWN scale beneath them, is what makes the answer visible.
+static func _test_gap_view() -> Array:
+	var results: Array = []
+	_fresh_dir()
+	_write_log("flight-20260816-120000.csv", 300)
+
+	var studio := StudioScreen.new(FlightLogLibrary.load_from(TEST_DIR))
+	studio.select("flight-20260816-120000.csv")
+
+	results.append(TestResult.new(
+		"Studio opens in the gap view, on roll, rather than on a free channel picker",
+		studio.view_mode == StudioScreen.ViewMode.GAP and studio.gap_axis == 0,
+		"mode=%d axis=%d" % [studio.view_mode, studio.gap_axis]))
+
+	var names := studio._trace.channel_names()
+	results.append(TestResult.new(
+		"the gap view draws the sensor, the truth, and their difference — three series, not two",
+		names.size() == 3 and Array(names).has("gyro_x_rad_s")
+			and Array(names).has("omega_x_rad_s")
+			and Array(names).has(StudioScreen.DIFFERENCE_CHANNEL),
+		"drawn: %s" % ", ".join(names)))
+
+	# The overlay pair shares one lane because they share a unit — that is what makes them
+	# comparable. The difference is its OWN lane, at its own scale, which is the entire point: at
+	# overlay scale a 1.0x gap and a 7x gap look identical.
+	var lanes := studio._trace.lanes()
+	results.append(TestResult.new(
+		"the difference gets its own lane, so a small gap is still visible",
+		lanes.size() == 2,
+		"%d lanes in the gap view" % lanes.size()))
+
+	# The difference must be the ACTUAL subtraction, not a copy of either input. Asserted against
+	# the file through an independent reader, so a bug that drew gyro twice cannot pass.
+	var path := "%s/flight-20260816-120000.csv" % TEST_DIR
+	var gyro_oracle := TestFlightRecorder._column(path, "gyro_x_rad_s")
+	var omega_oracle := TestFlightRecorder._column(path, "omega_x_rad_s")
+	var drawn_here := studio._trace.value_at(StudioScreen.DIFFERENCE_CHANNEL,
+		studio._trace.times[100])
+	results.append(TestResult.new(
+		"the difference series is sensor minus truth, sample for sample",
+		gyro_oracle.size() > 100
+			and absf(drawn_here - (gyro_oracle[100] - omega_oracle[100])) < 1e-9,
+		"difference at row 100 reads %.9f, oracle %.9f" % [
+			drawn_here, gyro_oracle[100] - omega_oracle[100]]))
+
+	# Switching axis re-reads a different pair rather than relabelling the same one.
+	studio.set_gap_axis(1)
+	var pitch_names := studio._trace.channel_names()
+	results.append(TestResult.new(
+		"the axis selector reads a different pair rather than relabelling the same one",
+		Array(pitch_names).has("gyro_y_rad_s") and Array(pitch_names).has("omega_y_rad_s")
+			and not Array(pitch_names).has("gyro_x_rad_s"),
+		"pitch view draws: %s" % ", ".join(pitch_names)))
+
+	# The 55-channel explorer is still reachable, and is still the header's list.
+	studio.set_view_mode(StudioScreen.ViewMode.EXPLORE)
+	results.append(TestResult.new(
+		"the free channel explorer is still there, still offering every header column",
+		studio._channel_list.item_count == FlightRecorder.COLUMNS.size() - 1
+			and studio._channel_list.visible,
+		"%d channels offered in explore mode" % studio._channel_list.item_count))
+
+	# And the picker is hidden in gap view rather than sitting there as a wall of names below a
+	# chart it is not driving.
+	studio.set_view_mode(StudioScreen.ViewMode.GAP)
+	results.append(TestResult.new(
+		"the channel wall is not on screen while the gap view is driving the chart",
+		not studio._channel_list.visible,
+		"picker hidden in gap view"))
+
+	studio.free()
 	return results
 
 
@@ -781,6 +858,7 @@ static func _test_channel_picker() -> Array:
 
 	var studio := StudioScreen.new(FlightLogLibrary.load_from(TEST_DIR))
 	studio.select("flight-20260816-120000.csv")
+	studio.set_view_mode(StudioScreen.ViewMode.EXPLORE)
 
 	# One entry per column in the header, minus t_s, which is the clock rather than a channel.
 	var expected := FlightRecorder.COLUMNS.size() - 1
@@ -808,6 +886,7 @@ static func _test_channel_picker() -> Array:
 
 	studio.library.refresh()
 	studio.select("flight-20270101-000000.csv")
+	studio.set_view_mode(StudioScreen.ViewMode.EXPLORE)
 	var offered := PackedStringArray()
 	for i in studio._channel_list.item_count:
 		offered.append(studio._channel_list.get_item_text(i))
