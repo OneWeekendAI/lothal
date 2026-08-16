@@ -45,11 +45,24 @@ extends Control
 ##
 ## WHAT IS STILL NOT HERE: the export button, which is LTHL-56 along with the landing invitation.
 
-## The three columns, in the widths LabScreen already proves. The rail matches the field editor's
-## 292 and the report pane matches the parts details' 336, so a builder moving between rooms is
-## not re-learning where things are.
+## The three columns. The rail matches the field editor's 292 so a builder moving between rooms is
+## not re-learning where things are. The report pane is WIDER than the parts details' 336 because
+## it carries wrapped sentences rather than part names — and 336 was not merely tight, it was over
+## budget before a character of text (see PANE_INSET).
 const RAIL_WIDTH := 292.0
-const REPORT_WIDTH := 336.0
+const REPORT_WIDTH := 420.0
+
+## What the pane spends on itself before any content: PanelContainer margins either side, the
+## ScrollContainer's vertical scrollbar, and one container separation. Content is constrained to
+## what is left, and NOTHING in the pane may set a minimum width that exceeds it.
+##
+## THIS CONSTANT IS THE FIX AND THE WIDTH IS NOT. A pane of 420 with the old forced 310 of row
+## minimums buys a few more characters and clips the next long value instead.
+const PANE_INSET := 40.0
+
+
+static func usable_report_width() -> float:
+	return REPORT_WIDTH - PANE_INSET
 
 ## How much of the trace column the channel picker claims.
 const CHANNEL_LIST_HEIGHT := 132.0
@@ -91,6 +104,10 @@ var _available_channels := PackedStringArray()
 ## alternative is that pass happening once per figure.
 var analysis: FlightAnalysis = null
 var _spectrum: SpectrumView = null
+
+## The grid the current section's rows go into. Reset by every title, so each section owns its own
+## column sizing and one long key does not widen the key column of a section three headings away.
+var _report_grid: GridContainer = null
 
 
 ## Takes the library rather than building one, so a test can hand over a directory that is not the
@@ -354,7 +371,10 @@ func _render_list() -> void:
 		# The warning is in the ROW, not only in the pane — see FlightLogLibrary.row(). A builder
 		# about to compute a spectrum over a teleport should learn it before they pick the file.
 		var mark: String = "!" if summary["warn"] else " "
-		_list.add_item("%s  %s %s  %s" % [
+		# TWO LINES, because 292 px cannot hold a timestamp, a duration and a fingerprint on one and
+		# the fingerprint is the part that lost — "frame_5in_fr…" does not distinguish two builds
+		# that differ in their motor. Wrapping costs a row of height and says which aircraft it was.
+		_list.add_item("%s  %s %s\n%s" % [
 			summary["when"], Duration.clock(round(summary["duration_s"])), mark,
 			summary["aircraft"]])
 		if summary["warn"]:
@@ -382,14 +402,18 @@ func _analyse_selected() -> void:
 	analysis = FlightAnalysis.of(library.path_of(selected_id), head)
 
 
-func _render_report() -> void:
-	# The spectrum widget lives in the pane and the pane is rebuilt wholesale, so the handle has
-	# to be dropped before the node behind it is freed. A stale _spectrum is not a crash in
-	# GDScript, it is a silently ignored draw call on an orphan.
+## Clears the pane without re-analysing. Used by _render_report, and by tests that want to append a
+## single row to an empty pane.
+func _render_report_reset() -> void:
 	_spectrum = null
+	_report_grid = null
 	for child in _report.get_children():
 		child.queue_free()
 		_report.remove_child(child)
+
+
+func _render_report() -> void:
+	_render_report_reset()
 
 	if selected_id.is_empty():
 		_add_report_note("Pick a flight.")
@@ -588,35 +612,42 @@ func _render_spectrum(p_head: Dictionary) -> void:
 
 
 func _add_report_title(text: String) -> void:
+	_report_grid = null
 	var label := Label.new()
 	label.text = text
 	label.theme_type_variation = &"TitleLabel"
 	_report.add_child(label)
 
 
+## A two-column grid rather than an HBox of two fixed-width labels.
+##
+## THE OLD SHAPE WAS THE CROP. 120 + 190 of custom_minimum_size forced every row wider than the
+## pane, so autowrap never engaged and the ScrollContainer clipped instead. Here the key column
+## sizes to its content, the value column expands into whatever is left, and a long value wraps.
 func _add_report_row(key: String, value: String) -> void:
-	var row := HBoxContainer.new()
+	if _report_grid == null:
+		_report_grid = GridContainer.new()
+		_report_grid.columns = 2
+		_report_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_report.add_child(_report_grid)
+
 	var name_label := Label.new()
 	name_label.text = key
 	name_label.theme_type_variation = &"MutedLabel"
-	name_label.custom_minimum_size = Vector2(120, 0)
-	row.add_child(name_label)
+	_report_grid.add_child(name_label)
 
 	var value_label := Label.new()
 	value_label.text = value
 	value_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	value_label.custom_minimum_size = Vector2(190, 0)
-	value_label.theme_type_variation = &"ReadoutLabel"
-	row.add_child(value_label)
-
-	_report.add_child(row)
+	value_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_report_grid.add_child(value_label)
 
 
 func _add_report_note(text: String) -> void:
 	var label := Label.new()
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.custom_minimum_size = Vector2(REPORT_WIDTH - 24.0, 0)
+	label.custom_minimum_size = Vector2(usable_report_width(), 0)
 	label.theme_type_variation = &"MutedLabel"
 	_report.add_child(label)
 
@@ -625,7 +656,7 @@ func _add_report_warning(text: String) -> void:
 	var label := Label.new()
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.custom_minimum_size = Vector2(REPORT_WIDTH - 24.0, 0)
+	label.custom_minimum_size = Vector2(usable_report_width(), 0)
 	label.theme_type_variation = &"WarnLabel"
 	_report.add_child(label)
 

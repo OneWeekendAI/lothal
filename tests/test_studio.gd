@@ -89,6 +89,7 @@ static func run() -> Array:
 	results.append_array(_test_ordering_and_rows())
 	results.append_array(_test_bad_files())
 	results.append_array(_test_screen())
+	results.append_array(_test_report_fits())
 	results.append_array(_test_shell_room())
 	results.append_array(_test_log_reader())
 	results.append_array(_test_trace_decimation())
@@ -310,6 +311,62 @@ static func _test_screen() -> Array:
 		"empty state: %s" % empty_studio._list.get_item_text(0)))
 	empty_studio.free()
 
+	return results
+
+
+## THE CROP IS ARITHMETIC. 120 + 190 of forced minimum width plus separation does not fit in a
+## 336 px pane once its margins and scrollbar are taken, which is why the gap readout rendered as
+## "... rad/" with the rest past the pane edge. The check is on the WIDTHS, not on pixels, because
+## the suite renders no frames — and on the sum per row, because each label is individually under
+## the pane width and only their sum is not.
+static func _test_report_fits() -> Array:
+	var results: Array = []
+	_fresh_dir()
+	_write_log("flight-20260816-120000.csv", 30)
+
+	var studio := StudioScreen.new(FlightLogLibrary.load_from(TEST_DIR))
+	studio.select("flight-20260816-120000.csv")
+
+	var usable := StudioScreen.usable_report_width()
+	var widest := 0.0
+	var offender := ""
+	for section in studio._report.get_children():
+		var demanded := 0.0
+		var _labels := 0
+		for child in section.get_children():
+			if child is Control:
+				demanded += (child as Control).custom_minimum_size.x
+				_labels += 1
+		if section is Control and section.get_child_count() == 0:
+			demanded = (section as Control).custom_minimum_size.x
+		if demanded > widest:
+			widest = demanded
+			offender = str(section.name)
+
+	results.append(TestResult.new(
+		"no report row demands more width than the pane can give it",
+		widest <= usable,
+		"widest row demands %.0f px of a usable %.0f (%s)" % [widest, usable, offender]))
+
+	# A long value must WRAP, not force the row wider. autowrap alone does not do this while a
+	# custom_minimum_size.x is set — the label wins and the pane clips.
+	studio._render_report_reset()
+	studio._add_report_row("fingerprint", "x".repeat(200))
+	var row: Node = studio._report.get_child(studio._report.get_child_count() - 1)
+	var value_label: Label = null
+	for child in row.get_children():
+		if child is Label:
+			value_label = child as Label
+	results.append(TestResult.new(
+		"a long value wraps inside the pane instead of forcing the row past its edge",
+		value_label != null
+			and value_label.autowrap_mode != TextServer.AUTOWRAP_OFF
+			and is_zero_approx(value_label.custom_minimum_size.x),
+		"value label min width %.0f, autowrap %s" % [
+			0.0 if value_label == null else value_label.custom_minimum_size.x,
+			"off" if value_label == null else str(value_label.autowrap_mode)]))
+
+	studio.free()
 	return results
 
 
