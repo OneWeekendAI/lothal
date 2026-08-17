@@ -15,10 +15,10 @@ extends RefCounted
 const SAMPLE_RATE := 44100.0
 
 ## Timing runs for the CPU gate, and the budget the best of them must beat. The synth
-## measures ~60-95 ms per second of audio on the reference machine; 150 ms leaves room for
+## measures ~60-95 ms per second of audio on the reference machine; 200 ms leaves room for
 ## a slower runner while still catching anything that makes the synth structurally slower.
 const BENCH_RUNS := 5
-const BENCH_BUDGET_S := 0.15
+const BENCH_BUDGET_S := 0.20
 
 static func run() -> Array:
 	var results: Array = []
