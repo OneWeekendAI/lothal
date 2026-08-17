@@ -76,12 +76,8 @@ var course_library := CourseLibrary.load_from()
 var pack_charge := PackCharge.load_from()
 
 var _host: Control
-## The CanvasLayer carrying the tab bar and the update notice. Held so the activation gate can
-## hide the entire app behind itself — see `_ready()`.
+## The CanvasLayer carrying the tab bar and the update notice.
 var _tab_layer: CanvasLayer
-## "Activated" tag sitting in the tab row once a licence has verified. Hidden until then.
-var _account_label: Label
-var _activation_layer: CanvasLayer = null
 var _lab_button: Button
 var _bench_button: Button
 var _pack_bench_button: Button
@@ -141,12 +137,21 @@ func _init() -> void:
 	# in the garage, you fly in the field, and then you look at what the flight left behind.
 	_studio_button = _add_tab(bar, "Studio", show_studio)
 
-	_account_label = Label.new()
-	_account_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	_account_label.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
-	_account_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_account_label.visible = false
-	bar.add_child(_account_label)
+	# Where the "Activated" tag used to sit. The app asks for nothing on launch now, so the only
+	# thing worth putting in that corner is a way to reach us — and it is a link out to the site
+	# rather than a form, because we are no longer collecting addresses inside the app.
+	#
+	# A browser, not an in-app view, for the reason ActivationScreen's button gave: anything
+	# resembling a sign-in window with no address bar is shaped like the phishing people are
+	# taught to refuse.
+	var contact := Button.new()
+	contact.text = "Contact us"
+	contact.flat = true
+	contact.custom_minimum_size = Vector2(0, 28)
+	contact.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	contact.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
+	contact.pressed.connect(func() -> void: OS.shell_open(LothalVersion.CONTACT_URL))
+	bar.add_child(contact)
 
 	_refresh_tabs()
 
@@ -174,66 +179,30 @@ func _ready() -> void:
 	if get_tree() != null and get_tree().root != null and settings != null:
 		get_tree().root.content_scale_factor = settings.ui_scale
 
-	_apply_activation_gate()
 
-
-## Shows the app, or the activation screen, according to the licence on disk.
-##
-## Run from `_ready()` rather than `_init()` deliberately. The rooms are built in the constructor
-## and the suite drives them by calling `AppShell.new()` without ever entering a tree — gating in
-## the constructor would mean 838 tests exercising an app that had refused to build itself, and
-## the pressure to add a bypass for them would arrive immediately. A bypass is precisely what must
-## not exist: a seam that turns the gate off is a way in that needs no decompiler at all.
-##
-## The consequence is that the `capture_*` screenshot tools, which DO enter a tree, now need an
-## activated user:// on the machine running them. That is the maintainer's own machine and it has
-## one; a headless CI box would photograph the activation screen instead, which is the honest
-## result rather than a bug.
-##
-## Missing, malformed and tampered licences all land here identically. That is the whole design —
-## if a corrupt licence behaved differently from an absent one, the difference would eventually be
-## somebody's way through.
-func _apply_activation_gate() -> void:
-	var licence := LicenceCheck.verify_stored()
-	if licence.valid:
-		_show_activated(licence.email)
-		return
-
-	print_verbose("activation gate: %s" % licence.reason)
-
-	# Everything else is hidden rather than left underneath, and the screen goes on a layer above
-	# the tab bar's. Leaving the tabs reachable would make the gate a suggestion: Sim is one click
-	# away, and it neither knows nor cares whether a licence verified.
-	_host.visible = false
-	_tab_layer.visible = false
-
-	_activation_layer = CanvasLayer.new()
-	_activation_layer.layer = 20
-	add_child(_activation_layer)
-
-	var screen := ActivationScreen.new(LothalVersion.ACTIVATION_URL)
-	screen.activated.connect(_on_activated)
-	_activation_layer.add_child(screen)
-
-
-## Called when the activation screen accepts a licence. The app appears without a relaunch — a
-## restart here would be a second chance for something to go wrong immediately after the one step
-## the user was already unsure about.
-func _on_activated(email: String) -> void:
-	if _activation_layer != null:
-		_activation_layer.queue_free()
-		_activation_layer = null
-
-	_host.visible = true
-	_tab_layer.visible = true
-	_show_activated(email)
-
-
-func _show_activated(_email: String) -> void:
-	if _account_label == null:
-		return
-	_account_label.text = "Activated"
-	_account_label.visible = true
+# ---------------------------------------------------------------------------
+# THERE IS NO LONGER AN ACTIVATION GATE
+# ---------------------------------------------------------------------------
+#
+# Lothal used to verify a signed .lothalkey out of user:// here, before `_ready()` let any room
+# appear, and show ActivationScreen instead when there wasn't one. That is gone. The app opens
+# straight into Lab for everybody, and the tab row carries a "Contact us" link to the site in
+# place of the "Activated" tag.
+#
+# The reason is the email, not the key. The gate's whole justification was collecting a verified
+# address to announce releases to, and we are not collecting addresses any more — which leaves a
+# lock on the front door whose only remaining job would be stopping people from using software we
+# are giving them. The update notice already tells an installed copy when a release exists, with
+# no address required, so nothing is lost by dropping it.
+#
+# `LicenceCheck` and `ActivationScreen` are deliberately KEPT in the source and still covered by
+# tests/test_licence_check.gd and tests/test_activation_gate.gd. They verify correctly; they are
+# simply not reached from here. If a paid tier ever needs them, the machinery — the shipped public
+# key, the key_id rotation, the byte-exact storage — is intact rather than something to rebuild
+# from memory. Do not delete them for tidiness.
+#
+# One knock-on worth knowing: the `capture_*` screenshot tools no longer need an activated
+# user:// on the machine running them, and a headless box photographs the app rather than a gate.
 
 
 func _add_tab(bar: HBoxContainer, text: String, handler: Callable) -> Button:

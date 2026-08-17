@@ -39,6 +39,17 @@ const MANIFEST_URL := "https://dl.meetdev.in/latest.json"
 ## refuse.
 const ACTIVATION_URL := "https://lothal.meetdev.in"
 
+## Where "Contact us" in the tab row sends people.
+##
+## The same permanent commitment MANIFEST_URL and ACTIVATION_URL carry: compiled in, so every
+## installed copy opens this address for ever. A hostname on our own domain for that reason — the
+## site can move hosts, this string cannot.
+##
+## This is now the only outbound link the app offers on launch. Lothal no longer asks for an email
+## address or checks a licence before it opens; the activation machinery is retained in the source
+## (LicenceCheck, ActivationScreen) but nothing calls it.
+const CONTACT_URL := "https://lothal.meetdev.in"
+
 
 ## Compares two dotted versions. Returns -1 if `a` is older, 0 if equal, 1 if `a` is newer.
 ##
