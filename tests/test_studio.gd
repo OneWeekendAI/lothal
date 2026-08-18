@@ -1190,8 +1190,10 @@ static func _test_shell_room() -> Array:
 
 	# Reading files cannot drain a pack, and a write-back "for symmetry" would be inventing a
 	# consequence out of having opened a room — the field editor's argument, verbatim.
+	# Read off RoomHost rather than a shell: the shells ask for rooms, RoomHost is the one owner of
+	# what happens on the way out, so that is where a write-back would have to appear to exist.
 	var shell_code := TestPidTunes._code_only(
-		FileAccess.get_file_as_string("res://src/ui/app_shell.gd"))
+		FileAccess.get_file_as_string("res://src/ui/room_host.gd"))
 	var studio_block := shell_code.split("if studio != null:")
 	results.append(TestResult.new(
 		"closing Studio does not persist a pack charge — reading files turns no motors",
