@@ -47,7 +47,11 @@ func _init() -> void:
 	if FileAccess.file_exists(SCRATCH_LIBRARY):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SCRATCH_LIBRARY))
 
-	var shell: AppShell = load("res://src/scenes/root.tscn").instantiate()
+	# The rooms without a shell around them. This used to load root.tscn, which was the eight-tab
+	# AppShell; root.tscn is the Glass Bench shell now, and a room screenshot wants neither shell's
+	# chrome in the frame. RoomHost is exactly the rooms — unchanged by the swap, which is the
+	# point of it existing.
+	var shell := RoomHost.new()
 	# The shell's library is the one that crosses the door into Sim, so the course has to be built
 	# into THIS instance rather than into one loaded from the scratch file afterwards.
 	shell.course_library = CourseLibrary.load_from(SCRATCH_LIBRARY)

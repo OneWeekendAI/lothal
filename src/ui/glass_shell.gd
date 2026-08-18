@@ -231,6 +231,7 @@ var _top_bar: HBoxContainer
 var _tools_glass: PanelContainer
 var _sim_button: Button
 var _lab_button: Button
+var _room_menu: RoomMenu
 var _focused_index := 0
 
 
@@ -252,6 +253,8 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	rooms.room_changed.connect(_on_room_changed)
 	add_child(rooms)
 
+	_build_update_notice()
+
 	# Order matters below: every cluster is added AFTER `rooms`, so it draws over the viewport. This
 	# is the arrangement §5 chose Godot for — Controls floating over a SubViewportContainer at full
 	# z-order, which is the one thing the Tauri hybrid could not do.
@@ -263,6 +266,12 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 
 
 func _ready() -> void:
+	# The builder's UI scale, applied to the whole window. Carried over from the old shell rather
+	# than reinvented: it is a setting somebody has already set, and a shell swap that quietly
+	# reset it would be the app forgetting something the builder told it.
+	if get_tree() != null and get_tree().root != null and settings != null:
+		get_tree().root.content_scale_factor = settings.ui_scale
+
 	# The reparent that makes the viewport full-bleed. Done here rather than in _init because
 	# reparent() requires both nodes to be inside the tree.
 	lab.rails().reparent(_rail_glass)
@@ -390,6 +399,18 @@ func _build_top_cluster() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(spacer)
 
+	# The way to reach us, carried over from the old tab row. A browser, not an in-app view, for
+	# the reason ActivationScreen's button gave: anything resembling a sign-in window with no
+	# address bar is shaped like the phishing people are taught to refuse.
+	var contact := Button.new()
+	contact.text = "Contact us"
+	contact.flat = true
+	contact.custom_minimum_size = Vector2(0, 28)
+	contact.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	contact.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
+	contact.pressed.connect(func() -> void: OS.shell_open(LothalVersion.CONTACT_URL))
+	bar.add_child(contact)
+
 
 ## Left: the rail column, floated, plus the stub that replaces it for an unmodelled system.
 ##
@@ -475,6 +496,35 @@ func _build_bottom_left_cluster() -> void:
 	row.add_child(_ring)
 
 
+## The bar that says a newer Lothal exists, and the link out to us.
+##
+## Both come straight from the old shell, and both ride the toggle's CanvasLayer for the reason the
+## toggle does: Sim's HUD is on a layer of its own and would draw over anything in the ordinary
+## tree. An update bar that only appeared in the garage would be a bar most people never see.
+##
+## Not built at all in Store builds. The bar's only action is to open the dl.meetdev.in download
+## page, and an app distributed through the Microsoft Store that points its users at an installer
+## from somewhere else fails certification — Store copies update through the Store, so the bar would
+## also be offering a route that is simply wrong for that install. The `store` feature comes from
+## the "Windows Store" export preset's custom_features, so it is false in the editor and in every
+## direct-download build.
+func _build_update_notice() -> void:
+	if OS.has_feature("store"):
+		return
+	var layer := CanvasLayer.new()
+	layer.layer = TOGGLE_LAYER
+	add_child(layer)
+
+	var notice := UpdateNotice.new(LothalVersion.MANIFEST_URL)
+	notice.theme = LothalTheme.get_theme()
+	notice.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	notice.anchor_top = 1.0
+	notice.anchor_right = 1.0
+	notice.anchor_bottom = 1.0
+	notice.offset_top = -UpdateNotice.BAR_HEIGHT
+	layer.add_child(notice)
+
+
 ## Bottom right: Lab / Sim. Two states, nothing else (§5).
 ##
 ## **On a CanvasLayer, and that is not a detail — it is the way back.** Sim puts its HUD and its
@@ -511,7 +561,7 @@ func _build_bottom_right_cluster() -> void:
 	glass.anchor_top = 1.0
 	glass.anchor_right = 1.0
 	glass.anchor_bottom = 1.0
-	glass.offset_left = -186.0 - CLUSTER_MARGIN
+	glass.offset_left = -292.0 - CLUSTER_MARGIN
 	glass.offset_top = -(BOTTOM_KEEPOUT - CLUSTER_MARGIN)
 	glass.offset_right = -CLUSTER_MARGIN
 	glass.offset_bottom = -CLUSTER_MARGIN
@@ -539,6 +589,27 @@ func _build_bottom_right_cluster() -> void:
 	_sim_button.pressed.connect(func() -> void: rooms.show_sim())
 	row.add_child(_sim_button)
 
+	# The six rooms that are neither Lab nor Sim. Beside the toggle rather than inside it, because
+	# they are not a third state of the same thing — see RoomMenu for why this is a holding
+	# position and what replaces it.
+	_room_menu = RoomMenu.new()
+	_room_menu.room_chosen.connect(_open_room)
+	row.add_child(_room_menu)
+
+
+## Opens one of the rooms behind the Rooms menu. A match rather than a dictionary of Callables,
+## because an id that names no room must be a visible error rather than a menu entry that silently
+## does nothing.
+func _open_room(room_id: String) -> void:
+	match room_id:
+		"bench": rooms.show_bench()
+		"battery_bench": rooms.show_battery_bench()
+		"esc_bench": rooms.show_esc_bench()
+		"frame_bench": rooms.show_frame_bench()
+		"field_editor": rooms.show_field_editor()
+		"studio": rooms.show_studio()
+		_: push_error("no such room: %s" % room_id)
+
 
 ## Retracts the chrome for Sim and puts it back for Lab (§5).
 ##
@@ -552,6 +623,10 @@ func _build_bottom_right_cluster() -> void:
 ## consequence Sim reports, not a decision it authors, and the drone on disk does not change while
 ## you fly it.
 func _on_room_changed() -> void:
+	# EVERY room retracts the chrome, not only Sim. A bench, the field editor and Studio each own
+	# the whole window the way Sim does, and a rail floating over a thrust stand would be a part
+	# picker on a screen where changing a part means nothing — the same authoring-where-you-should-
+	# not-be that the retraction exists to make impossible.
 	var in_lab := rooms.showing_lab()
 	_lab_button.button_pressed = in_lab
 	_sim_button.button_pressed = rooms.sim != null

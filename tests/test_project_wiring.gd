@@ -48,7 +48,48 @@ static func run() -> Array:
 	results.append_array(_test_autosave_writes_only_what_changed())
 	results.append_array(_test_recent_remembers_without_claiming_files_exist())
 
+	results.append_array(_test_recent_reads_the_drones_name())
+
 	_clean()
+	return results
+
+
+## THE RECENT LIST NAMES DRONES, NOT FILES.
+##
+## The file is named after the project ID — a drone may be called "5 inch" or carry a slash, so the
+## id is the part that is safe in a path. A label built from the filename therefore reads
+## `01m0ajmppre0j35fytky0gtczr`, and that is exactly what the menu showed until read_name existed.
+## Found by looking at a screenshot of the shipping app, not by a test.
+##
+## The check that would have proved nothing: writing a project whose name happens to equal its id,
+## or asserting the label is non-empty. So the name below is deliberately unlike any id — spaces,
+## a quote mark and a case pattern no generated id has — and the assertion is that the id does NOT
+## appear in the label.
+static func _test_recent_reads_the_drones_name() -> Array:
+	var results: Array = []
+	var project := ProjectLibrary.starting_project("Ritwik's 7\" long range")
+	var container := ProjectContainer.make(project)
+	var path := "%s/%s.%s" % [TEST_DIR, project.project_id, ProjectContainer.EXTENSION]
+	container.write(path)
+
+	results.append(TestResult.new(
+		"a remembered drone is listed by its name, not by the id its file is called",
+		ProjectContainer.read_name(path) == project.name
+			and not ProjectContainer.read_name(path).contains(project.project_id),
+		"reads back as '%s' (file is %s)" % [
+			ProjectContainer.read_name(path), path.get_file()]))
+
+	# A file that will not open is still a file the builder can point at. A blank row would be the
+	# one entry they cannot describe when asking what happened to it.
+	var broken := "%s/not-a-container.%s" % [TEST_DIR, ProjectContainer.EXTENSION]
+	var handle := FileAccess.open(broken, FileAccess.WRITE)
+	handle.store_string("this is not a zip")
+	handle.close()
+	results.append(TestResult.new(
+		"and a file that will not open still gets a label rather than a blank row",
+		ProjectContainer.read_name(broken) == "not-a-container",
+		"reads back as '%s'" % ProjectContainer.read_name(broken)))
+
 	return results
 
 

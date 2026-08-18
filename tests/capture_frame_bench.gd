@@ -65,7 +65,11 @@ func _init() -> void:
 	var prop_id: String = args[4] if args.size() > 4 else ""
 	var pack_offset_mm: float = float(args[5]) if args.size() > 5 else NAN
 
-	var shell: AppShell = load("res://src/scenes/root.tscn").instantiate()
+	# The rooms without a shell around them. This used to load root.tscn, which was the eight-tab
+	# AppShell; root.tscn is the Glass Bench shell now, and a room screenshot wants neither shell's
+	# chrome in the frame. RoomHost is exactly the rooms — unchanged by the swap, which is the
+	# point of it existing.
+	var shell := RoomHost.new()
 	root.add_child(shell)
 
 	for pair in [[frame_id, shell.lab.picker], [motor_id, shell.lab.motor_picker],

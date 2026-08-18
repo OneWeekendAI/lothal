@@ -237,6 +237,31 @@ static func open(from_path: String) -> ProjectContainer:
 	return container
 
 
+## The drone's NAME, without opening the drone.
+##
+## The recent list needs one string per file and nothing else. `open()` reads every member, parses
+## the document, resolves the schema and copies the custom parts — all of it thrown away to print
+## a label, and multiplied by eight entries every time the menu is built.
+##
+## The name is also the only honest label there is: the file is named after the project id, because
+## a drone may be called "5 inch" or carry a slash. So a recent list built from filenames shows
+## `01m0ajmppre0j35fytky0gtczr`, which is a list nobody can read — and it is what the menu showed
+## until this existed.
+##
+## Falls back to the file's stem rather than to an empty string. A container that will not open is
+## still a file the builder can point at, and a blank row would be the one entry they cannot even
+## describe when asking what happened to it.
+static func read_name(from_path: String) -> String:
+	var fallback := from_path.get_file().get_basename()
+	var reader := ZIPReader.new()
+	if reader.open(from_path) != OK:
+		return fallback
+	var document := _read_json(reader, PROJECT_MEMBER)
+	reader.close()
+	var found := str(document.get("name", ""))
+	return found if found != "" else fallback
+
+
 static func _read_json(reader: ZIPReader, member: String) -> Dictionary:
 	if not reader.file_exists(member):
 		return {}

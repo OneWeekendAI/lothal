@@ -146,9 +146,17 @@ func menu() -> ProjectMenu:
 	return _menu
 
 
-## Fills RECENT from remembered paths. The label is the file's own name plus how long ago it was
-## touched, which is what the design's mockup shows — and it comes from the FILE's modified time
-## rather than from the document inside, so listing the menu never opens eight containers.
+## Fills RECENT from remembered paths. The label is the DRONE's name plus how long ago the file was
+## touched.
+##
+## The name has to come out of the container, because the file is named after the project id — a
+## drone may be called "5 inch" or carry a slash, so the id is what is safe to put in a path. A
+## label built from the filename reads `01m0ajmppre0j35fytky0gtczr`, which is what this menu showed
+## until `ProjectContainer.read_name` existed. `read_name` reads one member and parses one field,
+## rather than `open()` reading every member to print a string.
+##
+## The TIME still comes from the file rather than the document: it is what the filesystem already
+## knows, and a document has no opinion about when it was last written.
 func set_recent_paths(paths: Array) -> void:
 	var entries: Array = []
 	var now := int(Time.get_unix_time_from_system())
@@ -159,7 +167,7 @@ func set_recent_paths(paths: Array) -> void:
 		var modified := int(FileAccess.get_modified_time(file_path))
 		entries.append({
 			"path": file_path,
-			"label": "%s      %s" % [file_path.get_file().get_basename(),
+			"label": "%s      %s" % [ProjectContainer.read_name(file_path),
 				relative_time(now - modified)],
 		})
 	_menu.set_recent(entries)

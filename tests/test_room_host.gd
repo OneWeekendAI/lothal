@@ -55,6 +55,7 @@ static func run() -> Array:
 	results.append_array(_test_neither_shell_owns_the_lifecycle())
 	results.append_array(_test_sim_retracts_the_chrome_and_lab_restores_it())
 	results.append_array(_test_returning_lands_on_the_system_you_left())
+	results.append_array(_test_the_room_menu_reaches_every_room())
 	return results
 
 
@@ -236,6 +237,63 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 		"and an unmodelled system comes back as a stub, not as somebody else's rail",
 		not stub_before and not shell.lab.rails().visible and not shell.lab.panels.visible,
 		"rails visible before=%s after=%s" % [stub_before, shell.lab.rails().visible]))
+
+	shell.free()
+	return results
+
+
+## The six rooms that are neither Lab nor Sim, reached the way a builder reaches them.
+##
+## **The coverage check is the one that matters.** Asserting that six named ids open six rooms
+## passes forever while a seventh room is added to RoomHost and left with no door — which is
+## precisely the failure this shell is exposed to, because the tab bar that used to list every room
+## is gone. So the menu's ids are checked against RoomHost's own doors, derived rather than typed
+## out: every `show_*` method that is not Lab or Sim must have an entry.
+static func _test_the_room_menu_reaches_every_room() -> Array:
+	var results: Array = []
+	var host := RoomHost.new()
+
+	var doors: Array = []
+	for method in host.get_method_list():
+		var name: String = method["name"]
+		if name.begins_with("show_") and name != "show_lab" and name != "show_sim":
+			doors.append(name.trim_prefix("show_"))
+	doors.sort()
+	var offered := RoomMenu.room_ids()
+	offered.sort()
+
+	results.append(TestResult.new(
+		"the Rooms menu offers every room RoomHost can open, and no room it cannot",
+		doors == offered and not doors.is_empty(),
+		"RoomHost opens %s · the menu offers %s" % [doors, offered]))
+
+	host.free()
+
+	# And each id actually lands. A menu that names six rooms and opens none is the same missing
+	# door wearing a label.
+	var shell := GlassShell.new()
+	var unreachable: Array = []
+	for room_id in RoomMenu.room_ids():
+		shell._open_room(room_id)
+		if shell.rooms.get(room_id) == null:
+			unreachable.append(room_id)
+		shell.rooms.show_lab()
+
+	results.append(TestResult.new(
+		"and every entry opens the room it names",
+		unreachable.is_empty(),
+		"did not open: %s" % [unreachable] if not unreachable.is_empty() else "all six opened"))
+
+	# The chrome retracts for a bench exactly as it does for Sim: a rail floating over a thrust
+	# stand would be a part picker on a screen where changing a part means nothing.
+	shell._open_room("frame_bench")
+	var retracted := not shell._top_bar.visible and not shell._rail_glass.visible \
+		and not shell._inspector.visible and not shell._tools_glass.visible
+	shell.rooms.show_lab()
+	results.append(TestResult.new(
+		"a bench retracts the chrome the same way the field does",
+		retracted,
+		"chrome retracted on the frame bench: %s" % retracted))
 
 	shell.free()
 	return results
