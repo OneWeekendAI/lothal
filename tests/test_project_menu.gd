@@ -2,9 +2,9 @@ class_name TestProjectMenu
 extends RefCounted
 ## The drone menu and the chip it drops out of — §5's "the project name IS the menu".
 ##
-## Most of this menu does not work yet, and the tests are mostly about that being TRUE rather than
-## merely intended. Three of them are written to fail in the specific way this feature is likely to
-## rot:
+## Five of the seven entries work; the two exports wait on features that are not built. The tests are
+## mostly about that split being TRUE rather than merely intended. Three are written to fail in the
+## specific way this feature is likely to rot:
 ##
 ## **1. Half-built entries must be unreachable, not just unimplemented.** The failure this guards
 ## is somebody adding `waiting_on` to an entry and forgetting to disable it — a menu item that
@@ -26,7 +26,7 @@ static func run() -> Array:
 	results.append_array(_test_the_table_is_the_feature_list())
 	results.append_array(_test_waiting_entries_are_unreachable())
 	results.append_array(_test_the_menu_has_a_recent_section())
-	results.append_array(_test_rename_is_the_one_live_entry())
+	results.append_array(_test_which_entries_are_live())
 	results.append_array(_test_a_refused_rename_does_not_vanish())
 	results.append_array(_test_the_chip_cannot_claim_to_be_saved())
 	results.append_array(_test_relative_time_reads_like_a_person_wrote_it())
@@ -115,19 +115,27 @@ static func _test_the_menu_has_a_recent_section() -> Array:
 	)]
 
 
-static func _test_rename_is_the_one_live_entry() -> Array:
+## What is live, and what is not, stated once.
+##
+## This assertion is the one that CHANGES as the app grows, and that is deliberate: turning an
+## entry on should require saying so here, out loud, next to the entries that already work. The
+## durable invariant — waiting means disabled, live means clickable — is checked separately above
+## and holds no matter which entries are on.
+static func _test_which_entries_are_live() -> Array:
 	var results: Array = []
 	results.append(TestResult.new(
-		"rename works today and the six that need the container do not",
-		ProjectMenu.is_live("rename")
-			and not ProjectMenu.is_live("new")
-			and not ProjectMenu.is_live("open")
-			and not ProjectMenu.is_live("duplicate")
+		"everything the container made possible is live; the two exports are not",
+		ProjectMenu.is_live("new")
+			and ProjectMenu.is_live("open")
+			and ProjectMenu.is_live("duplicate")
+			and ProjectMenu.is_live("rename")
+			and ProjectMenu.is_live("reveal")
 			and not ProjectMenu.is_live("export_build_sheet")
-			and not ProjectMenu.is_live("export_printed")
-			and not ProjectMenu.is_live("reveal"),
-		"rename=%s new=%s duplicate=%s" % [ProjectMenu.is_live("rename"),
-			ProjectMenu.is_live("new"), ProjectMenu.is_live("duplicate")]
+			and not ProjectMenu.is_live("export_printed"),
+		"new=%s open=%s duplicate=%s reveal=%s sheet=%s printed=%s" % [
+			ProjectMenu.is_live("new"), ProjectMenu.is_live("open"),
+			ProjectMenu.is_live("duplicate"), ProjectMenu.is_live("reveal"),
+			ProjectMenu.is_live("export_build_sheet"), ProjectMenu.is_live("export_printed")]
 	))
 
 	var chip := ProjectChip.new()

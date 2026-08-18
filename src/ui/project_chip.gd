@@ -10,18 +10,17 @@ extends PanelContainer
 ## WHAT IS TRUE HERE TODAY
 ## ---------------------------------------------------------------------------
 ##
-## The chip holds a real `Project` — a real id, a real name, real decisions read off the rails. It
-## is not a placeholder string any more. **What it does not have is anywhere to be written**, so
-## the state line says exactly that, and Rename is the only live entry in the menu.
+## New, Open, Duplicate, Rename and Reveal all work; the two exports wait on things that are not
+## built. The chip reports where the drone is written and when it was last written.
 ##
-## The state line is the part most likely to become a lie later, so it is derived from ONE fact:
-## whether `saved_path` is set. There is no "saved" boolean that could disagree with the file
-## system, and no way to show "saved 4s ago" while nothing has been written — the text for that
-## case cannot be produced without a path.
+## The state line is the part most likely to become a lie, so it is derived from ONE fact: whether
+## `saved_path` is set. There is no "saved" boolean that could disagree with the file system, and
+## while nothing has been written the "saved" wording cannot be produced at all.
 
 signal project_renamed(new_name: String)
 ## Forwarded from the menu so the shell does not have to know the menu exists.
 signal action_chosen(action_id: String)
+signal recent_chosen(path: String)
 
 ## Where this project is written. Empty until the container exists, and the state line reads off
 ## exactly this.
@@ -65,6 +64,7 @@ func _init(p_project: Project = null) -> void:
 
 	_menu = ProjectMenu.new()
 	_menu.action_chosen.connect(_on_action_chosen)
+	_menu.recent_chosen.connect(func(p: String) -> void: recent_chosen.emit(p))
 	add_child(_menu)
 
 	_build_rename_dialog()
@@ -144,6 +144,25 @@ func open_menu() -> void:
 
 func menu() -> ProjectMenu:
 	return _menu
+
+
+## Fills RECENT from remembered paths. The label is the file's own name plus how long ago it was
+## touched, which is what the design's mockup shows — and it comes from the FILE's modified time
+## rather than from the document inside, so listing the menu never opens eight containers.
+func set_recent_paths(paths: Array) -> void:
+	var entries: Array = []
+	var now := int(Time.get_unix_time_from_system())
+	for path in paths:
+		var file_path := String(path)
+		if file_path == saved_path:
+			continue
+		var modified := int(FileAccess.get_modified_time(file_path))
+		entries.append({
+			"path": file_path,
+			"label": "%s      %s" % [file_path.get_file().get_basename(),
+				relative_time(now - modified)],
+		})
+	_menu.set_recent(entries)
 
 
 # ---------------------------------------------------------------------------

@@ -25,6 +25,10 @@ extends PopupMenu
 ## Emitted when a LIVE entry is chosen. Disabled entries emit nothing — PopupMenu will not fire
 ## them, which is the machinery doing the work rather than a guard in a handler.
 signal action_chosen(action_id: String)
+## A remembered drone was picked out of RECENT. Its own signal rather than an encoded action id,
+## because a path is not an action and packing one into a string is how a drone called "new" ends
+## up creating a new drone.
+signal recent_chosen(path: String)
 
 ## Every entry, in the order §5 lists them. `waiting_on` empty means the entry works today.
 ##
@@ -36,21 +40,19 @@ const ENTRIES := [
 		"id": "new",
 		"label": "New drone",
 		"key": KEY_N,
-		"waiting_on": "Waits on the project container. A new drone that left the old one's parts "
-			+ "on screen would be describing an aircraft nobody chose.",
+		"waiting_on": "",
 	},
 	{
 		"id": "open",
 		"label": "Open…",
 		"key": KEY_O,
-		"waiting_on": "Waits on the project container. There is no .lothal file to open yet.",
+		"waiting_on": "",
 	},
 	{
 		"id": "duplicate",
 		"label": "Duplicate — try a variant",
 		"key": KEY_D,
-		"waiting_on": "Waits on the project container. Duplicate is how A/B comparison works "
-			+ "(§5), and a copy with nowhere to live and no way to switch to it is not a copy.",
+		"waiting_on": "",
 	},
 	{
 		"id": "rename",
@@ -77,7 +79,7 @@ const ENTRIES := [
 		"id": "reveal",
 		"label": "Reveal saved files",
 		"key": KEY_NONE,
-		"waiting_on": "Waits on there being a saved file to reveal.",
+		"waiting_on": "",
 	},
 ]
 
@@ -86,6 +88,9 @@ const ENTRIES := [
 const RECENT_EMPTY := "Nothing saved yet"
 
 var _id_by_index: Dictionary = {}
+var _path_by_index: Dictionary = {}
+## path -> label, newest first. Set by the shell; empty until a drone has been saved.
+var _recent: Array = []
 
 
 func _init() -> void:
@@ -97,6 +102,7 @@ func _init() -> void:
 func _build() -> void:
 	clear()
 	_id_by_index.clear()
+	_path_by_index.clear()
 
 	for entry in ENTRIES:
 		if bool((entry as Dictionary).get("separator", false)):
@@ -105,12 +111,26 @@ func _build() -> void:
 		_add_entry(entry as Dictionary)
 
 	add_separator("RECENT")
-	# One disabled line rather than nothing, for the reason the whole file exists: the absence of
-	# recents is a state worth showing, and an empty section looks like a bug.
-	add_item(RECENT_EMPTY)
-	set_item_disabled(item_count - 1, true)
-	set_item_tooltip(item_count - 1,
-		"Recent drones appear here once a drone can be saved.")
+	if _recent.is_empty():
+		# One disabled line rather than nothing: the absence of recents is a state worth showing,
+		# and an empty section looks like a bug.
+		add_item(RECENT_EMPTY)
+		set_item_disabled(item_count - 1, true)
+		set_item_tooltip(item_count - 1, "Drones you open appear here.")
+		return
+
+	for entry in _recent:
+		var index := item_count
+		add_item(str((entry as Dictionary)["label"]), index)
+		_path_by_index[index] = str((entry as Dictionary)["path"])
+		set_item_tooltip(index, str((entry as Dictionary)["path"]))
+
+
+## The recent list, as `[{path, label}]`, newest first. Rebuilds the menu — cheap, and it keeps
+## this class free of any idea of "updating" an item, which is where off-by-one index bugs live.
+func set_recent(entries: Array) -> void:
+	_recent = entries.duplicate(true)
+	_build()
 
 
 func _add_entry(entry: Dictionary) -> void:
@@ -133,6 +153,9 @@ func _add_entry(entry: Dictionary) -> void:
 
 
 func _on_id_pressed(index: int) -> void:
+	if _path_by_index.has(index):
+		recent_chosen.emit(str(_path_by_index[index]))
+		return
 	if not _id_by_index.has(index):
 		return
 	action_chosen.emit(str(_id_by_index[index]))

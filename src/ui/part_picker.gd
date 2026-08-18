@@ -221,12 +221,44 @@ func selected_part() -> Dictionary:
 
 ## Selects a part by id if the current filters show it, and reports whether it could. Used to
 ## open Lab on the reference build rather than on whatever happens to be first in each file.
+## Selects a part by id, whatever the filters are set to.
+##
+## The filters are CLEARED if the part is real but hidden by them, and that is the whole reason
+## this is not a three-line search. `select_id` used to look only at `_visible_parts`, which was
+## correct while its only caller was a click on a list the builder was already looking at. Opening
+## a saved drone is a different caller: a builder who left the size filter on 5" and opens their
+## 3" toothpick would have watched three of its parts silently fail to fit, and the app would have
+## shown an aircraft that is not the one in the file.
+##
+## Returns false only for an id this catalog does not have — which is the answer that means
+## "report it by name", and is the one case that must NOT clear the filters, because there is
+## nothing to show.
 func select_id(part_id: String) -> bool:
 	for i in _visible_parts.size():
 		if _visible_parts[i]["part_id"] == part_id:
 			select_index(i)
 			return true
+
+	var known := false
+	for part in catalog.list_category(category):
+		if String(part.get("part_id", "")) == part_id:
+			known = true
+	if not known:
+		return false
+
+	clear_filters()
+	for i in _visible_parts.size():
+		if _visible_parts[i]["part_id"] == part_id:
+			select_index(i)
+			return true
 	return false
+
+
+## Puts every filter back to All, without announcing a selection change of its own.
+func clear_filters() -> void:
+	for key in _filters:
+		(_filters[key] as OptionButton).select(0)
+	_refresh(false)
 
 ## Re-announces the current selection. Used once by LabScreen after it has connected, so the
 ## first paint of the geometry, the details and the stats needs no apply button either.

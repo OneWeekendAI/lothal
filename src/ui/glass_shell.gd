@@ -193,10 +193,21 @@ var _inspector: PanelContainer
 var _rail_stub: SystemStub
 var _inspector_stub: SystemStub
 var _system_dropdown: OptionButton
-## The drone this shell is describing. Real, and unsaved — the container is the next slice, so
-## nothing writes it anywhere. Its `parts` are kept in step with the rails by _sync_project().
-var project: Project
+## The drone this shell is describing, and the file it lives in. Its `parts` are kept in step with
+## the rails by _sync_project(), and AUTOSAVE_SECONDS later it is on disk.
+var container: ProjectContainer
 var chip: ProjectChip
+var settings: AppSettings
+var _autosave: Timer
+var _open_dialog: FileDialog
+
+## How often the shell asks whether anything changed. Not how often it writes — an unchanged
+## project writes nothing (ProjectContainer.has_unsaved_changes), so this is the resolution of the
+## "saved 4s ago" line as much as it is the save interval.
+##
+## One second, because the number the chip shows is in seconds and a chip that lagged its own
+## claim by five seconds would be reporting a save that had not happened yet.
+const AUTOSAVE_SECONDS := 1.0
 var _status_label: Label
 var _ring: CompletenessRing
 var _focused_index := 0
@@ -209,7 +220,8 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	anchor_right = 1.0
 	anchor_bottom = 1.0
 
-	project = Project.create()
+	settings = AppSettings.load_from()
+	container = ProjectContainer.make(ProjectLibrary.starting_project())
 	var catalog := p_catalog if p_catalog != null else PartsCatalog.load_with_custom()
 	lab = LabScreen.new(catalog, p_tweaks, p_pack_charge)
 	add_child(lab)
@@ -235,6 +247,24 @@ func _ready() -> void:
 	# content, and the content is a spec sheet.
 	_rail_glass.move_child(_rail_stub, -1)
 	_inspector.move_child(_inspector_stub, -1)
+
+	_autosave = Timer.new()
+	_autosave.wait_time = AUTOSAVE_SECONDS
+	_autosave.timeout.connect(_on_autosave_tick)
+	add_child(_autosave)
+	_autosave.start()
+
+	_open_dialog = FileDialog.new()
+	_open_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_open_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_open_dialog.filters = PackedStringArray(["*.%s ; Lothal drone" % ProjectContainer.EXTENSION])
+	_open_dialog.current_dir = ProjectSettings.globalize_path(ProjectLibrary.DIR)
+	_open_dialog.file_selected.connect(open_project)
+	add_child(_open_dialog)
+
+	# The drone this shell opened with needs a home too, or the first minute of work is the one
+	# minute autosave cannot protect.
+	adopt(container.project)
 
 	# The shell has no signal from Lab to listen to — LabScreen emits none — so it listens to the
 	# rails directly. Fine for an experiment, and worth naming as the reason it is not fine
@@ -305,9 +335,10 @@ func _build_top_cluster() -> void:
 	# Seven of its nine entries are greyed and say what they wait on, the same treatment SYSTEMS
 	# already gives an unmodelled system and for the same reason: a builder who cannot see that
 	# Duplicate exists cannot know the app intends to compare two drones.
-	chip = ProjectChip.new(project)
+	chip = ProjectChip.new(container.project)
 	chip.add_theme_stylebox_override("panel", _glass_stylebox())
 	chip.action_chosen.connect(_on_project_action)
+	chip.recent_chosen.connect(open_project)
 	bar.add_child(chip)
 
 	var dropdown_glass := _glass_panel()
@@ -526,22 +557,22 @@ func select_system_by_name(system_name: String) -> bool:
 ##
 ## Unhiding first is what removes the trap: by the time anything is selected the destination is
 ## visible, and by the time anything is hidden the selection has already left.
-static func _show_only_tabs(container: TabContainer, titles: Array) -> void:
+static func _show_only_tabs(tabs: TabContainer, titles: Array) -> void:
 	var first := -1
-	for i in container.get_tab_count():
-		if titles.has(container.get_tab_title(i)):
-			container.set_tab_hidden(i, false)
+	for i in tabs.get_tab_count():
+		if titles.has(tabs.get_tab_title(i)):
+			tabs.set_tab_hidden(i, false)
 			if first < 0:
 				first = i
-	# Nothing to show. Leave the container exactly as it is rather than hiding every tab: an empty
+	# Nothing to show. Leave the tabs exactly as it is rather than hiding every tab: an empty
 	# TabContainer is the same forbidden deselection by another route, and a system whose tabs are
 	# all missing is a mapping bug in SYSTEMS that should be visible, not swallowed.
 	if first < 0:
 		return
-	container.current_tab = first
-	for i in container.get_tab_count():
-		if not titles.has(container.get_tab_title(i)):
-			container.set_tab_hidden(i, true)
+	tabs.current_tab = first
+	for i in tabs.get_tab_count():
+		if not titles.has(tabs.get_tab_title(i)):
+			tabs.set_tab_hidden(i, true)
 
 
 static func _is_modelled(system: Dictionary) -> bool:
@@ -638,19 +669,87 @@ func _refresh_status() -> void:
 ## rather than half-wired. A shell that could load a drone into the pickers would have to own what
 ## happens to the one already there, and that question belongs with the container.
 func _sync_project() -> void:
-	if project == null or lab == null:
+	if container == null or lab == null:
 		return
 	var selection := lab.selection()
 	for category in selection:
-		project.parts[category] = str(selection[category])
+		container.project.parts[category] = str(selection[category])
 
 
-## Only Rename is live, and ProjectChip handles it. Everything else arrives here so that turning an
-## entry on is one branch next to the entry that already works, rather than a new signal path.
+## Rename is ProjectChip's own; everything else lands here.
 func _on_project_action(action_id: String) -> void:
-	if ProjectMenu.is_live(action_id):
+	match action_id:
+		"new":
+			adopt(ProjectLibrary.starting_project())
+		"duplicate":
+			adopt(ProjectLibrary.duplicate_of(container.project))
+		"open":
+			_open_dialog.popup_centered_ratio(0.6)
+		"reveal":
+			OS.shell_show_in_file_manager(ProjectSettings.globalize_path(
+				container.path if container.path != "" else ProjectLibrary.DIR))
+		"rename":
+			pass
+		_:
+			push_warning("project action '%s' is not built yet" % action_id)
+
+
+## Takes on a new drone: gives it a home, fits it on the rails, and points the chip at it.
+##
+## A new project is WRITTEN BEFORE IT IS SHOWN. §5 removed the save button, and a document with no
+## path cannot autosave — so a new drone that waited for a save would be the one document in the
+## app whose work is lost by default, which is exactly what the save button used to prevent.
+func adopt(project: Project) -> Array:
+	ProjectLibrary.ensure_dir()
+	container = ProjectContainer.make(project)
+	container.write(ProjectLibrary.path_for(project))
+	var missing := apply_project(project)
+	chip.set_project(project, container.path)
+	_remember(container.path)
+	_refresh_status()
+	return missing
+
+
+## Opens a container from anywhere on disk. Returns the categories that could not be fitted.
+##
+## A file that will not open leaves the drone on screen exactly as it was. The alternative — half
+## adopting it and leaving the rails on the previous aircraft — would put the chip's name and the
+## model on screen out of step, which is the state a builder cannot detect and cannot recover from.
+func open_project(path: String) -> Array:
+	var opened := ProjectContainer.open(path)
+	if opened == null:
+		push_warning("%s would not open" % path)
+		return [{"category": "", "part_id": path}]
+	container = opened
+	var missing := apply_project(opened.project)
+	chip.set_project(opened.project, opened.path)
+	_remember(opened.path)
+	_refresh_status()
+	return missing
+
+
+## Fits a project's parts on the rails. Whatever could not be fitted comes back named — see
+## LabScreen.apply_selection, which refuses to substitute.
+func apply_project(project: Project) -> Array:
+	if lab == null:
+		return []
+	return lab.apply_selection(project.parts)
+
+
+func _remember(path: String) -> void:
+	settings.remember_project(path)
+	settings.save()
+	chip.set_recent_paths(settings.existing_recent_projects())
+
+
+## The autosave tick. Asks, rather than writes: an unchanged project costs one JSON stringify.
+func _on_autosave_tick() -> void:
+	if container == null or container.path == "":
 		return
-	push_warning("project action '%s' is not built yet" % action_id)
+	_sync_project()
+	if container.has_unsaved_changes():
+		container.write()
+	chip.refresh()
 
 
 func _decided_count() -> int:

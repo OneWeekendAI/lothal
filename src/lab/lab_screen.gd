@@ -662,6 +662,46 @@ func current_build() -> Build:
 	)
 
 
+## Fits a whole selection at once — the mirror of selection(), and the direction that makes
+## opening a saved drone possible at all.
+##
+## Returns the categories it COULD NOT fit, each with the id that failed. Nothing is substituted:
+## a part that has left the catalog leaves its rail where it was and is named to the caller, so the
+## app can say "this build used motor_custom_ab12, which is no longer in your parts". Quietly
+## selecting a default instead would change the aircraft's mass and say nothing, which is the one
+## behaviour a project file must never produce.
+##
+## Lives here rather than in the shell because the rails are this screen's — the shell is allowed
+## to ask for a selection and to hand one back, and is not allowed to know how many pickers there
+## are. Adding a seventh category means editing this function and selection() together, in one
+## file, which is why they are next to each other.
+func apply_selection(selection_by_category: Dictionary) -> Array:
+	var failed: Array = []
+	var pickers := {
+		"frame": picker,
+		"motor": motor_picker,
+		"propeller": propeller_picker,
+		"battery": battery_picker,
+		"esc": esc_picker,
+		"flight_controller": fc_picker,
+	}
+	for category in pickers:
+		var part_id := String(selection_by_category.get(category, ""))
+		if part_id == "":
+			continue
+		if not (pickers[category] as PartPicker).select_id(part_id):
+			failed.append({"category": category, "part_id": part_id})
+
+	for category in Build.OPTIONAL_COMPONENTS:
+		if not selection_by_category.has(category):
+			continue
+		var part_id := String(selection_by_category[category])
+		# "" is a real answer here — not fitted — and ElectronicsPicker takes it as one.
+		if not electronics_picker.select_component(category, part_id) and part_id != "":
+			failed.append({"category": category, "part_id": part_id})
+	return failed
+
+
 ## The whole selection as a category -> part_id dictionary — what crosses the door into the bench
 ## and into the field. Assembled here rather than at each door, so a fifth category cannot be
 ## added to the rails and forgotten by one of the two things that reads them.
