@@ -2,10 +2,12 @@ extends SceneTree
 ## Dev tool, not a test: photographs GlassShell — the new UI frame — so the arrangement can be
 ## looked at rather than reasoned about. The companion to capture_lab.gd, which shoots the old one.
 ##
-##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH] [menu]
+##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH] [menu|sim]
 ##
 ## A fifth argument of `menu` drops the project menu open before the shot, which is the only way
-## to photograph an entry that is greyed — and greyed entries are most of that menu today.
+## to photograph an entry that is greyed — and greyed entries are most of that menu today. `sim`
+## flies out to the field through the toggle instead, which is the shot that shows the chrome
+## retracted — §5's "the same window with the chrome retracted" is a claim about a picture.
 ##
 ## `system` names one of GlassShell.SYSTEMS ("Propulsion", "Power", …) and selects it before the
 ## shot, which is how the dimming gets photographed. Dimming is the claim §5 makes to justify a
@@ -18,6 +20,7 @@ func _init() -> void:
 	var system: String = args[2] if args.size() > 2 else ""
 
 	var menu: bool = args.size() > 4 and args[4] == "menu"
+	var to_sim: bool = args.size() > 4 and args[4] == "sim"
 
 	if args.size() > 3 and args[3] != "":
 		var res_parts := args[3].split("x")
@@ -50,6 +53,14 @@ func _init() -> void:
 	if menu:
 		shell.chip.open_menu()
 		for i in 4:
+			await process_frame
+
+	# Out to the field, through the same toggle a click drives — not a private path beside it, for
+	# the reason `select_system_by_name` exists: a screenshot of a route nobody takes is a
+	# screenshot of nothing.
+	if to_sim:
+		shell.rooms.show_sim()
+		for i in settle:
 			await process_frame
 
 	await RenderingServer.frame_post_draw

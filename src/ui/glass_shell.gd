@@ -9,11 +9,10 @@ extends Control
 ## says what belongs there and where the list came from. Nothing here invents a spec, and nothing
 ## here saves.
 ##
-## **It is built BESIDE the old shell, not in place of it** (§4). `AppShell` is untouched and the
-## eight tabs still work; the shipping app never loads this file. Reach it through
-## `src/scenes/glass_shell.tscn` or `tests/capture_glass_shell.gd`. If the floating-glass
-## arrangement reads badly in motion — the known risk §5 names — this file is deleted and nothing
-## else moves.
+## **It is built BESIDE the old shell, not in place of it** (§4). The eight tabs still work and the
+## shipping app still boots them; reach this through `src/scenes/glass_shell.tscn` or
+## `tests/capture_glass_shell.gd`. Both shells drive ONE `RoomHost`, so neither has its own opinion
+## about what happens when you leave a room running.
 ##
 ## ## How full-bleed is achieved without editing LabScreen's layout
 ##
@@ -36,9 +35,10 @@ extends Control
 ##   waits on. That split is not a compromise, it is the structure — ProjectMenu.ENTRIES carries
 ##   one `waiting_on` string per entry, and emptying it is the whole of turning one on.
 ## - **The bottom-left tools do nothing.** Overlays, explode, x-ray and measure are four features.
-## - **The Lab/Sim toggle does not cross the door.** AppShell owns room lifecycle and the freeing
-##   of a running Sim; a second thing that instantiated rooms would be a second owner of the rule
-##   that says a bench cannot be left running.
+## - **The four benches, the field editor and Studio have no home here yet.** They are rooms in the
+##   old shell and this shell opens only Lab and Sim. `RoomHost` can already open every one of them
+##   — the missing piece is where in the dropdown model each belongs, which is a design question
+##   rather than plumbing. Until it is answered the tab bar cannot be deleted (§4's W0.6).
 ## - **The parts strip is still a column.** §5 puts a system's parts in a thin strip along the top.
 ##   That means rebuilding PartPicker, which is component work; the rail floats at the left instead.
 ##   Named again on `_build_rail_glass()`, because it is the largest remaining gap between this
@@ -50,6 +50,12 @@ const INSPECTOR_WIDTH := 348.0
 ## How far the floating columns stop short of the bottom, so they never collide with the
 ## bottom-left tool cluster or the bottom-right toggle.
 const BOTTOM_KEEPOUT := 76.0
+
+## Which CanvasLayer the Lab/Sim toggle rides. Ten, matching the old tab bar, and for the identical
+## reason: Sim's HUD is on a layer of its own and draws straight over anything in the ordinary tree.
+## The toggle is the ONLY way out of the field, so a toggle underneath the HUD is an app you cannot
+## leave. See _build_bottom_right_cluster.
+const TOGGLE_LAYER := 10
 
 ## How much of the panel's opacity glass keeps. Not fully opaque — the whole argument for a
 ## full-bleed viewport is that the model stays visible, and a solid panel over it is just the old
@@ -186,7 +192,14 @@ const SYSTEM_NODE_PREFIXES := {
 	"Video": ["Component_camera", "Component_vtx", "Component_antenna"],
 }
 
-var lab: LabScreen
+## The rooms, and the only owner of the rules for entering and leaving them. This shell asks; it
+## does not instantiate or free anything itself. See RoomHost — the reason it is a shared object
+## rather than a copy is that two shells able to leave a Powertrain turning would be one too many.
+var rooms: RoomHost
+## The garage. A pass-through, because RoomHost builds it: this shell reparents Lab's two columns
+## into floating glass and drives its rails, but it does not own its lifetime.
+var lab: LabScreen:
+	get: return rooms.lab
 
 var _rail_glass: PanelContainer
 var _inspector: PanelContainer
@@ -210,6 +223,14 @@ var _open_dialog: FileDialog
 const AUTOSAVE_SECONDS := 1.0
 var _status_label: Label
 var _ring: CompletenessRing
+## The four clusters, held so they can be RETRACTED for Sim (§5: "Sim is the same window with the
+## chrome retracted"). Held rather than looked up, because the retraction is the mechanism that
+## enforces "Sim authors nothing" — a shell that searched for its own panels by name could miss one
+## and leave a part picker floating over a flight.
+var _top_bar: HBoxContainer
+var _tools_glass: PanelContainer
+var _sim_button: Button
+var _lab_button: Button
 var _focused_index := 0
 
 
@@ -223,10 +244,15 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	settings = AppSettings.load_from()
 	container = ProjectContainer.make(ProjectLibrary.starting_project())
 	var catalog := p_catalog if p_catalog != null else PartsCatalog.load_with_custom()
-	lab = LabScreen.new(catalog, p_tweaks, p_pack_charge)
-	add_child(lab)
 
-	# Order matters below: every cluster is added AFTER `lab`, so it draws over the viewport. This
+	# top_inset stays at zero, and that zero is the design. The old shell inset every room by 40 px
+	# of tab bar; here the chrome floats over a full-bleed viewport, so there is nothing to inset
+	# below — which is also why Sim's own panel needs no offset when it is reached from this shell.
+	rooms = RoomHost.new(catalog, p_tweaks, p_pack_charge)
+	rooms.room_changed.connect(_on_room_changed)
+	add_child(rooms)
+
+	# Order matters below: every cluster is added AFTER `rooms`, so it draws over the viewport. This
 	# is the arrangement §5 chose Godot for — Controls floating over a SubViewportContainer at full
 	# z-order, which is the one thing the Tauri hybrid could not do.
 	_build_rail_glass()
@@ -327,6 +353,7 @@ func _build_top_cluster() -> void:
 	bar.offset_bottom = CLUSTER_MARGIN + TOP_BAR_HEIGHT
 	bar.add_theme_constant_override("separation", LothalTheme.SPACE_2)
 	add_child(bar)
+	_top_bar = bar
 
 	# The project chip, and it is no longer inert: it holds a real Project with a real id and a
 	# real name, Rename works, and the drone menu drops out of the name itself (§5 — "the project
@@ -424,6 +451,7 @@ func _build_bottom_left_cluster() -> void:
 	glass.offset_top = -(BOTTOM_KEEPOUT - CLUSTER_MARGIN)
 	glass.offset_bottom = -CLUSTER_MARGIN
 	add_child(glass)
+	_tools_glass = glass
 
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -449,12 +477,35 @@ func _build_bottom_left_cluster() -> void:
 
 ## Bottom right: Lab / Sim. Two states, nothing else (§5).
 ##
-## Both buttons are present and Sim is disabled, rather than the toggle being omitted. The shape of
-## this control is the part being tested — §5's argument is that Sim is "the same window with the
-## chrome retracted", which only reads as true if the way into it is a toggle on that window and
-## not a tab in a row of eight.
+## **On a CanvasLayer, and that is not a detail — it is the way back.** Sim puts its HUD and its
+## build panel on a CanvasLayer of its own, which draws over everything in the ordinary tree. The
+## first working version of this toggle was an ordinary Control, so the moment it took you to the
+## field it disappeared underneath Sim's HUD and the app had no way back to the garage short of
+## quitting. The old shell already knew this — it is why the tab bar rode `layer = 10` — and the
+## knowledge had to travel with the control that replaced it.
+##
+## The other three clusters stay in the ordinary tree deliberately. They are retracted in Sim
+## anyway, so nothing of theirs is ever underneath a HUD, and a Control inside the shell's own tree
+## inherits its theme and its layout without a second root to keep in step.
+##
+## **Live.** The door is RoomHost's, not this shell's — these two buttons ask, and the retraction of
+## the chrome that follows is `_on_room_changed`. That split is what lets the toggle be real without
+## this file becoming a second owner of "no room is left running".
+##
+## §5's argument is that Sim is "the same window with the chrome retracted", and the toggle is what
+## makes that literally true: the same window, the same viewport position, four clusters that go
+## away. A tab in a row of eight could never have expressed it, because a tab bar is chrome that
+## stays.
 func _build_bottom_right_cluster() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = TOGGLE_LAYER
+	add_child(layer)
+
 	var glass := _glass_panel()
+	# The layer is not a Control, so the theme does not reach this panel down the tree the way it
+	# reaches the other three. Set here rather than left to inherit, because unthemed is a state a
+	# screenshot shows and a test does not.
+	glass.theme = LothalTheme.get_theme()
 	glass.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	glass.anchor_left = 1.0
 	glass.anchor_top = 1.0
@@ -464,29 +515,57 @@ func _build_bottom_right_cluster() -> void:
 	glass.offset_top = -(BOTTOM_KEEPOUT - CLUSTER_MARGIN)
 	glass.offset_right = -CLUSTER_MARGIN
 	glass.offset_bottom = -CLUSTER_MARGIN
-	add_child(glass)
+	layer.add_child(glass)
 
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	glass.add_child(row)
 
-	var lab_button := Button.new()
-	lab_button.text = "Lab"
-	lab_button.toggle_mode = true
-	lab_button.button_pressed = true
-	lab_button.disabled = true
-	lab_button.custom_minimum_size = Vector2(80, 30)
-	row.add_child(lab_button)
+	_lab_button = Button.new()
+	_lab_button.text = "Lab"
+	_lab_button.toggle_mode = true
+	_lab_button.button_pressed = true
+	_lab_button.custom_minimum_size = Vector2(80, 30)
+	_lab_button.tooltip_text = "The garage. Choose parts, assemble, bench, tune."
+	_lab_button.pressed.connect(func() -> void: rooms.show_lab())
+	row.add_child(_lab_button)
 
-	var sim_button := Button.new()
-	sim_button.text = "Sim"
-	sim_button.toggle_mode = true
-	sim_button.disabled = true
-	sim_button.custom_minimum_size = Vector2(80, 30)
-	sim_button.tooltip_text = (
-		"Shape only. AppShell owns room lifecycle — a second thing that could instantiate "
-		+ "and free Sim would be a second owner of the rule that no room is left running.")
-	row.add_child(sim_button)
+	_sim_button = Button.new()
+	_sim_button.text = "Sim"
+	_sim_button.toggle_mode = true
+	_sim_button.custom_minimum_size = Vector2(80, 30)
+	_sim_button.tooltip_text = ("The field. Flies what the garage built, and authors nothing "
+		+ "except what the flight actually cost the pack.")
+	_sim_button.pressed.connect(func() -> void: rooms.show_sim())
+	row.add_child(_sim_button)
+
+
+## Retracts the chrome for Sim and puts it back for Lab (§5).
+##
+## Everything except this toggle goes away out at the field: no dropdown, no project chip, no rail,
+## no inspector, no tools. **The shape of the screen is what enforces "Sim authors nothing"** — with
+## no part picker on screen there is nothing to change a part WITH, so the rule holds by
+## construction rather than by discipline (§9). That is the whole reason the retraction is here and
+## not a nicety.
+##
+## Autosave keeps running underneath, and that is not a contradiction: the pack draining is a
+## consequence Sim reports, not a decision it authors, and the drone on disk does not change while
+## you fly it.
+func _on_room_changed() -> void:
+	var in_lab := rooms.showing_lab()
+	_lab_button.button_pressed = in_lab
+	_sim_button.button_pressed = rooms.sim != null
+
+	_top_bar.visible = in_lab
+	_tools_glass.visible = in_lab
+	if in_lab:
+		# Re-applies the focused system rather than just showing the two columns, because which of
+		# them is visible is a property of the system chosen — an unmodelled system shows stubs, and
+		# blindly unhiding here would put a Frame rail up under a dropdown reading "Config".
+		_select_system(_focused_index)
+	else:
+		_rail_glass.visible = false
+		_inspector.visible = false
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +584,12 @@ func _select_system(index: int) -> void:
 	var system: Dictionary = SYSTEMS[index]
 	var modelled := _is_modelled(system)
 
+	# The glass panels themselves are shown here rather than only in `_build_*`, because Sim
+	# retracts them — see _on_room_changed. Walking back into the garage has to put back exactly
+	# what the chosen system asks for, and the two columns inside them are separate: the panel is
+	# the frame, and a stub is what the frame holds for a system with no model.
+	_rail_glass.visible = true
+	_inspector.visible = true
 	lab.rails().visible = modelled
 	lab.panels.visible = modelled
 	_rail_stub.visible = not modelled
