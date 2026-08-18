@@ -436,6 +436,17 @@ func viewport() -> SubViewport:
 	return _viewport
 
 
+## The rail column, for a shell that wants to place it somewhere other than where this screen puts
+## it. Named accessor rather than making `_rails` public, because the point is to let a container
+## be MOVED, not to let its tabs be rebuilt from outside — reload_catalog() is the only thing
+## permitted to swap its children, and that stays in this file.
+##
+## GlassShell reparents this and `panels` out of the row on the way in, which is what leaves the
+## SubViewportContainer alone in an HBox and therefore full-bleed. Nothing else here changes.
+func rails() -> TabContainer:
+	return _rails
+
+
 ## Lab's private 3D world: a turntable pivot holding the generated airframe, a camera at a
 ## fixed distance, and enough light to read carbon against nylon.
 func _build_world() -> void:
