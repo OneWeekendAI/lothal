@@ -31,10 +31,10 @@ extends Control
 ##
 ## ## What is deliberately still absent
 ##
-## - **The project chip is inert.** §5's top-left cluster — New/Open/Duplicate/Rename, autosave,
-##   "saved 4s ago" — is the one part of the design genuinely blocked: there is no build
-##   persistence to name, save or duplicate (§4 step 1). The chip is drawn at its real size so the
-##   layout is honest about the space it takes, and it says so rather than pretending.
+## - **The project chip is live, and most of its menu is not.** The chip holds a real Project and
+##   Rename works; New, Open, Duplicate, both exports and Reveal are greyed and each says what it
+##   waits on. That split is not a compromise, it is the structure — ProjectMenu.ENTRIES carries
+##   one `waiting_on` string per entry, and emptying it is the whole of turning one on.
 ## - **The bottom-left tools do nothing.** Overlays, explode, x-ray and measure are four features.
 ## - **The Lab/Sim toggle does not cross the door.** AppShell owns room lifecycle and the freeing
 ##   of a running Sim; a second thing that instantiated rooms would be a second owner of the rule
@@ -193,6 +193,10 @@ var _inspector: PanelContainer
 var _rail_stub: SystemStub
 var _inspector_stub: SystemStub
 var _system_dropdown: OptionButton
+## The drone this shell is describing. Real, and unsaved — the container is the next slice, so
+## nothing writes it anywhere. Its `parts` are kept in step with the rails by _sync_project().
+var project: Project
+var chip: ProjectChip
 var _status_label: Label
 var _ring: CompletenessRing
 var _focused_index := 0
@@ -205,6 +209,7 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	anchor_right = 1.0
 	anchor_bottom = 1.0
 
+	project = Project.create()
 	var catalog := p_catalog if p_catalog != null else PartsCatalog.load_with_custom()
 	lab = LabScreen.new(catalog, p_tweaks, p_pack_charge)
 	add_child(lab)
@@ -293,26 +298,17 @@ func _build_top_cluster() -> void:
 	bar.add_theme_constant_override("separation", LothalTheme.SPACE_2)
 	add_child(bar)
 
-	# The project chip. Inert, and the text is the honest form of that: there is no build
-	# persistence, so there is no project to name. Drawn at full size anyway so the cluster occupies
-	# the room it will really occupy — a chip that grew later would move the dropdown, and the
-	# dropdown is the one control in this bar people will aim at without looking.
-	var project := _glass_panel()
-	var project_row := HBoxContainer.new()
-	project.add_child(project_row)
-	var project_name := Label.new()
-	project_name.text = "Untitled build"
-	project_name.theme_type_variation = "TitleLabel"
-	project_name.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SUBTITLE)
-	project_row.add_child(project_name)
-	var project_state := Label.new()
-	project_state.text = "not saved anywhere yet"
-	project_state.theme_type_variation = "SmallLabel"
-	project_state.tooltip_text = (
-		"The project menu, autosave and Duplicate all wait on build persistence "
-		+ "(CONTINUE-HERE.md §4 step 1). Nothing here saves.")
-	project_row.add_child(project_state)
-	bar.add_child(project)
+	# The project chip, and it is no longer inert: it holds a real Project with a real id and a
+	# real name, Rename works, and the drone menu drops out of the name itself (§5 — "the project
+	# name IS the menu", which is why there is no File button anywhere in this shell).
+	#
+	# Seven of its nine entries are greyed and say what they wait on, the same treatment SYSTEMS
+	# already gives an unmodelled system and for the same reason: a builder who cannot see that
+	# Duplicate exists cannot know the app intends to compare two drones.
+	chip = ProjectChip.new(project)
+	chip.add_theme_stylebox_override("panel", _glass_stylebox())
+	chip.action_chosen.connect(_on_project_action)
+	bar.add_child(chip)
 
 	var dropdown_glass := _glass_panel()
 	_system_dropdown = OptionButton.new()
@@ -620,6 +616,7 @@ static func _system_of_name(node_name: StringName) -> String:
 ## must NOT become is a number that looks live and is not: when the four unmodelled systems arrive
 ## the arc starts moving on its own, and until then this comment is the honest label.
 func _refresh_status() -> void:
+	_sync_project()
 	if _status_label == null:
 		return
 	var decided := _decided_count()
@@ -631,6 +628,29 @@ func _refresh_status() -> void:
 			"How much of the drone you have decided — not how good it is (§9). "
 			+ "The four unmodelled systems can never be decided yet.")
 		_ring.queue_redraw()
+
+
+## Copies the rails' selection into the document.
+##
+## ONE DIRECTION ONLY, and that is the honest half of the wiring: the rails are still the source of
+## truth for what is fitted, and the Project follows them. The other direction — a project OPENING
+## and driving the rails — is what New and Open need, and it is why those two entries are greyed
+## rather than half-wired. A shell that could load a drone into the pickers would have to own what
+## happens to the one already there, and that question belongs with the container.
+func _sync_project() -> void:
+	if project == null or lab == null:
+		return
+	var selection := lab.selection()
+	for category in selection:
+		project.parts[category] = str(selection[category])
+
+
+## Only Rename is live, and ProjectChip handles it. Everything else arrives here so that turning an
+## entry on is one branch next to the entry that already works, rather than a new signal path.
+func _on_project_action(action_id: String) -> void:
+	if ProjectMenu.is_live(action_id):
+		return
+	push_warning("project action '%s' is not built yet" % action_id)
 
 
 func _decided_count() -> int:
@@ -660,6 +680,17 @@ func _decided_count() -> int:
 ## inside the inspector must stay opaque, or text lands on text.
 func _glass_panel() -> PanelContainer:
 	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _glass_stylebox())
+	return panel
+
+
+## The glass look on its own, for a Control that already exists and only wants the surface — the
+## project chip is its own class, so it cannot be a PanelContainer this file made.
+##
+## Split out rather than letting a caller build a throwaway panel and steal its stylebox: an
+## orphan Control never added to the tree is never freed, and four leaked ObjectDB instances at
+## exit is exactly what that looked like.
+static func _glass_stylebox() -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = Color(
 		LothalTheme.PANEL_BG.r, LothalTheme.PANEL_BG.g, LothalTheme.PANEL_BG.b, GLASS_ALPHA)
@@ -668,8 +699,7 @@ func _glass_panel() -> PanelContainer:
 	box.set_border_width_all(1)
 	box.set_corner_radius_all(8)
 	box.set_content_margin_all(LothalTheme.SPACE_2)
-	panel.add_theme_stylebox_override("panel", box)
-	return panel
+	return box
 
 
 ## What stands in for a system Lothal does not model yet.

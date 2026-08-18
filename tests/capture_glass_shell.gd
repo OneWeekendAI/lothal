@@ -2,7 +2,10 @@ extends SceneTree
 ## Dev tool, not a test: photographs GlassShell — the new UI frame — so the arrangement can be
 ## looked at rather than reasoned about. The companion to capture_lab.gd, which shoots the old one.
 ##
-##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH]
+##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH] [menu]
+##
+## A fifth argument of `menu` drops the project menu open before the shot, which is the only way
+## to photograph an entry that is greyed — and greyed entries are most of that menu today.
 ##
 ## `system` names one of GlassShell.SYSTEMS ("Propulsion", "Power", …) and selects it before the
 ## shot, which is how the dimming gets photographed. Dimming is the claim §5 makes to justify a
@@ -13,6 +16,8 @@ func _init() -> void:
 	var out_path: String = args[0] if args.size() > 0 else "user://glass_shell.png"
 	var settle: int = int(args[1]) if args.size() > 1 else 30
 	var system: String = args[2] if args.size() > 2 else ""
+
+	var menu: bool = args.size() > 4 and args[4] == "menu"
 
 	if args.size() > 3 and args[3] != "":
 		var res_parts := args[3].split("x")
@@ -38,6 +43,14 @@ func _init() -> void:
 	shell.lab.set_orbit(deg_to_rad(28.0), deg_to_rad(18.0))
 	for i in 2:
 		await process_frame
+
+	# The drone menu, if asked for. It is a Window, so it only lands in this shot because Godot
+	# embeds subwindows by default — worth knowing before anybody wonders why the menu is missing
+	# from a screenshot taken with embedding turned off.
+	if menu:
+		shell.chip.open_menu()
+		for i in 4:
+			await process_frame
 
 	await RenderingServer.frame_post_draw
 	var image := root.get_texture().get_image()
