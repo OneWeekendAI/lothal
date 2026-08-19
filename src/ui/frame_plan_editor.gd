@@ -35,6 +35,11 @@ extends Control
 signal document_changed(document: AirframeDocument)
 ## Emitted when the selection changes, so a properties strip can follow it.
 signal selection_changed(plate_index: int)
+## Emitted when the CAMERA moves — zoom or pan — and nothing about the document has changed. Its
+## own signal rather than a second use of `document_changed`, because the four inspector tabs listen
+## to that one and re-integrating the mass of every plate because somebody scrolled a wheel is work
+## for an answer that cannot have moved.
+signal view_changed
 
 ## How close, in PIXELS, the cursor has to be to grab a vertex. In pixels rather than millimetres
 ## because it describes a hand rather than a frame: at 8 px it is the same physical distance whether
@@ -67,11 +72,23 @@ var _drag := Drag.NONE
 var _drag_vertex := -1
 var _last_mouse_px := Vector2.ZERO
 var _fitted := false
+## Whether the builder has moved the view themselves. Until they have, a resize re-frames the
+## drawing; after it, a resize leaves the camera exactly where they put it. Without the flag the
+## canvas either abandons a frame on the first window resize or overrides a deliberate zoom on
+## every one, and both are wrong for the same reason: the view belongs to whoever last aimed it.
+var _view_moved := false
 
 
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_CLICK
+	# THE CANVAS MUST CLIP. A Control does not clip its own drawing, and every line here is placed
+	# by a pan-and-zoom transform with no bound on it — so a zoomed-in frame painted its arms
+	# straight over the toolbar, the inspector and the window edge, on top of chrome it is
+	# supposed to sit under. One property, and it is the difference between a viewport and a
+	# stencil-free plotter.
+	clip_contents = true
+	resized.connect(_on_resized)
 
 
 ## Opens a frame. Clears the history, because the previous frame's undo stack is not this one's —
@@ -95,7 +112,36 @@ func fit_to_document() -> void:
 	var bounds := _bounds_mm()
 	transform.fit(bounds[0], bounds[1], size)
 	_fitted = true
+	_view_moved = false
 	queue_redraw()
+	view_changed.emit()
+
+
+## Zooms about the middle of the view. The toolbar's ± buttons and the keyboard drive this; the
+## wheel does NOT, because a wheel has a cursor to zoom about and a button does not, and zooming a
+## button press about the last place the mouse happened to be is how a canvas jumps sideways when
+## you press "+".
+func zoom_by(factor: float) -> void:
+	transform.zoom_at(size * 0.5, factor)
+	_view_moved = true
+	queue_redraw()
+	view_changed.emit()
+
+
+## How far in the view is, as a multiple of what `fit` would choose. Shown in the toolbar so the
+## scale bar has a number beside it and "I am lost" has an obvious way back.
+func zoom_ratio() -> float:
+	var bounds := _bounds_mm()
+	var fitted := PlanTransform.new()
+	fitted.fit(bounds[0], bounds[1], size)
+	if fitted.scale_px_per_mm <= 0.0:
+		return 1.0
+	return transform.scale_px_per_mm / fitted.scale_px_per_mm
+
+
+func _on_resized() -> void:
+	if _fitted and not _view_moved:
+		fit_to_document()
 
 
 # ---------------------------------------------------------------------------
@@ -114,11 +160,15 @@ func _gui_input(event: InputEvent) -> void:
 func _handle_button(event: InputEventMouseButton) -> void:
 	if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 		transform.zoom_at(event.position, ZOOM_STEP)
+		_view_moved = true
 		queue_redraw()
+		view_changed.emit()
 		return
 	if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 		transform.zoom_at(event.position, 1.0 / ZOOM_STEP)
+		_view_moved = true
 		queue_redraw()
+		view_changed.emit()
 		return
 
 	# Middle button pans, always, whatever is under it. A canvas where panning depends on hitting
@@ -170,6 +220,7 @@ func _handle_motion(event: InputEventMouseMotion) -> void:
 	match _drag:
 		Drag.PAN:
 			transform.pan(delta)
+			_view_moved = true
 		Drag.VERTEX:
 			_drag_vertex_to(event.position, event.ctrl_pressed)
 		Drag.PLATE:

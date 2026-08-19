@@ -29,6 +29,9 @@ var spec_rows: Array = []
 
 var _title: Label
 var _detail_values: Dictionary = {}   # spec key -> Label
+## The column of rows, kept so the panel can be asked how wide its CONTENT wants to be. See
+## `content_width`.
+var _content: VBoxContainer
 
 
 func _init(p_spec_rows: Array) -> void:
@@ -38,7 +41,15 @@ func _init(p_spec_rows: Array) -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
 	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# HORIZONTAL SCROLL IS THE ESCAPE HATCH, NOT THE PLAN.
+	#
+	# A ScrollContainer does not claim its child's width once it can scroll it, and that is the
+	# property that matters here: without it, a value longer than the panel — "centred (<0.1 mm of
+	# the origin)" is one — pushed the whole tab wider than the window it was anchored inside, and
+	# the last characters of every row were cut off by the window edge with no way to reach them.
+	# The shell still sizes this panel to its content (`content_width`); this is what happens when
+	# the content wants more room than the window has to give.
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(scroll)
@@ -46,6 +57,7 @@ func _init(p_spec_rows: Array) -> void:
 	var root := VBoxContainer.new()
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_padded(scroll).add_child(root)
+	_content = root
 
 	_title = Label.new()
 	_title.text = "—"
@@ -105,6 +117,19 @@ func rendered_text() -> String:
 		var key: String = row["key"]
 		lines.append("%s: %s" % [row["label"], _detail_values[key].text])
 	return "\n".join(lines)
+
+
+## How wide this panel would like to be, in pixels, for its current contents to fit without
+## scrolling — the rows plus the padding around them.
+##
+## Asked rather than inferred, because the rows are rendered AFTER the panel is first laid out: a
+## shell that measured the tab once at startup sized itself to eleven dashes and was too narrow the
+## moment real values arrived. The number changes with the text, so it has to be re-asked when the
+## text does.
+func content_width() -> float:
+	if _content == null:
+		return custom_minimum_size.x
+	return _content.get_combined_minimum_size().x + LothalTheme.SPACE_2 * 2
 
 
 ## Inset the panel's contents so right-aligned values do not sit flush against the window edge,

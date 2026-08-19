@@ -41,8 +41,19 @@ const SNAP_CHOICES := [
 ]
 
 var editor: FramePlanEditor
+## The same document, extruded. Airframe is a STACK, and a top view cannot show a stack — plate
+## roles, standoff height and which plate an arm is sandwiched between are numbers in the plan view
+## and are the whole shape here.
+var view_3d: Frame3DView
 var catalog: PartsCatalog
 
+var _canvas_host: Control
+var _view_2d_button: Button
+var _view_3d_button: Button
+var _zoom_label: Label
+## The catalog entry the open document was started from. Kept for one reason only: `FrameModel`
+## needs the surface material and the mount table, and neither of those is in the document.
+var _source_frame: Dictionary = {}
 var _open_button: MenuButton
 var _role_picker: OptionButton
 var _thickness_field: SpinBox
@@ -58,19 +69,51 @@ var _syncing := false
 func _init(p_catalog: PartsCatalog = null) -> void:
 	catalog = p_catalog if p_catalog != null else PartsCatalog.load_default()
 
+	# AN OPAQUE BACKDROP, UNDER EVERYTHING ELSE IN THE ROOM.
+	#
+	# This room covers the 3D view rather than sitting beside it, and it used to do so with a
+	# transparent Control: the canvas painted its own rectangle, and every gap around it — the
+	# toolbar strip, the margins, the space beside the property row — let Lab's turntable show
+	# through. So a builder drawing a frame watched a DIFFERENT drone's props turning behind their
+	# toolbar, which reads as a rendering fault rather than as a feature.
+	var backdrop := Panel.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.add_theme_stylebox_override("panel", _backdrop_stylebox())
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(backdrop)
+
 	var column := VBoxContainer.new()
 	column.set_anchors_preset(Control.PRESET_FULL_RECT)
+	column.offset_left = LothalTheme.SPACE_2
+	column.offset_right = -LothalTheme.SPACE_2
+	column.offset_top = LothalTheme.SPACE_2
+	column.offset_bottom = -LothalTheme.SPACE_2
+	column.add_theme_constant_override("separation", LothalTheme.SPACE_1)
 	add_child(column)
 
 	column.add_child(_build_toolbar())
 	column.add_child(_build_property_strip())
 
+	# The plan view and the 3D view share one rectangle and one visibility switch, rather than
+	# splitting it. Half a canvas to draw in and half a model too small to read is worse than
+	# either whole, and the toggle is one click — see `set_view_3d`.
+	_canvas_host = Control.new()
+	_canvas_host.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_canvas_host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_canvas_host.clip_contents = true
+	column.add_child(_canvas_host)
+
 	editor = FramePlanEditor.new()
-	editor.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	editor.set_anchors_preset(Control.PRESET_FULL_RECT)
 	editor.document_changed.connect(_on_document_changed)
 	editor.selection_changed.connect(_on_selection_changed)
-	column.add_child(editor)
+	editor.view_changed.connect(_refresh_zoom_label)
+	_canvas_host.add_child(editor)
+
+	view_3d = Frame3DView.new()
+	view_3d.set_anchors_preset(Control.PRESET_FULL_RECT)
+	view_3d.visible = false
+	_canvas_host.add_child(view_3d)
 
 
 
@@ -109,21 +152,52 @@ func _build_toolbar() -> Control:
 	row.add_child(VSeparator.new())
 
 	row.add_child(_button("Undo", func() -> void: editor.undo()))
-	row.add_child(_button("Fit", func() -> void: editor.fit_to_document()))
+	row.add_child(VSeparator.new())
+
+	# THE VIEW CONTROLS, IN ONE CLUSTER, AND VISIBLE.
+	#
+	# Zoom was previously the mouse wheel and nothing else. A wheel is a fine way to zoom and a bad
+	# way to DISCOVER that zooming exists, and a canvas whose scale can only be changed by a gesture
+	# nobody has been told about is a canvas that appears to be stuck at whatever it opened on. The
+	# readout beside them is the other half of the same argument: it says how far in you are, so
+	# "1.0×" is a state you can see yourself leave and a state Fit visibly returns you to.
+	row.add_child(_button("−", func() -> void: _zoom(1.0 / FramePlanEditor.ZOOM_STEP), "Zoom out"))
+	row.add_child(_button("+", func() -> void: _zoom(FramePlanEditor.ZOOM_STEP), "Zoom in"))
+	row.add_child(_button("Fit", _on_fit, "Frame the whole drawing  (F)"))
+
+	_zoom_label = Label.new()
+	_zoom_label.theme_type_variation = &"SmallLabel"
+	_zoom_label.custom_minimum_size = Vector2(46, 0)
+	_zoom_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(_zoom_label)
+
+	_view_2d_button = _button("2D", func() -> void: set_view_3d(false), "The plan you draw in")
+	_view_2d_button.toggle_mode = true
+	_view_2d_button.button_pressed = true
+	row.add_child(_view_2d_button)
+
+	_view_3d_button = _button("3D", func() -> void: set_view_3d(true),
+		"The same frame, extruded — drag to orbit, wheel to zoom")
+	_view_3d_button.toggle_mode = true
+	row.add_child(_view_3d_button)
+	row.add_child(VSeparator.new())
 
 	var snap := OptionButton.new()
 	for choice in SNAP_CHOICES:
 		snap.add_item("snap %s" % choice["label"])
 	snap.item_selected.connect(func(index: int) -> void:
 		editor.snap_mm = float(SNAP_CHOICES[index]["value"]))
+	_compact(snap)
 	row.add_child(snap)
 
 	_symmetry_button = CheckButton.new()
 	_symmetry_button.text = "Symmetry"
 	_symmetry_button.button_pressed = true
 	_symmetry_button.toggled.connect(func(on: bool) -> void: editor.symmetric_arms = on)
+	_compact(_symmetry_button)
 	row.add_child(_symmetry_button)
 
+	_compact(_open_button)
 	return row
 
 
@@ -136,7 +210,8 @@ func _build_property_strip() -> Control:
 	row.add_theme_constant_override("h_separation", LothalTheme.SPACE_2)
 
 	var role_label := Label.new()
-	role_label.text = "Selected plate:"
+	role_label.text = "Selected plate"
+	role_label.theme_type_variation = &"SmallLabel"
 	row.add_child(role_label)
 
 	_role_picker = OptionButton.new()
@@ -144,10 +219,12 @@ func _build_property_strip() -> Control:
 			AirframeDocument.ROLE_ARM, AirframeDocument.ROLE_SIDE, AirframeDocument.ROLE_MID]:
 		_role_picker.add_item(role)
 	_role_picker.item_selected.connect(_on_role_chosen)
+	_compact(_role_picker)
 	row.add_child(_role_picker)
 
 	var thickness_label := Label.new()
 	thickness_label.text = "stock"
+	thickness_label.theme_type_variation = &"SmallLabel"
 	row.add_child(thickness_label)
 
 	_thickness_field = SpinBox.new()
@@ -157,21 +234,62 @@ func _build_property_strip() -> Control:
 	_thickness_field.value = FrameEdits.DEFAULT_PLATE_THICKNESS_MM
 	_thickness_field.suffix = "mm"
 	_thickness_field.value_changed.connect(_on_thickness_changed)
+	_thickness_field.custom_minimum_size = Vector2(96, 0)
+	_compact(_thickness_field)
 	row.add_child(_thickness_field)
 
 	_status = Label.new()
-	_status.theme_type_variation = &"MutedLabel"
+	_status.theme_type_variation = &"SmallLabel"
+	# The status line is the only thing here whose length is unbounded — it carries sentences about
+	# what just happened, and one of them is a whole explanation of why a preset opened as a copy.
+	# Clipped rather than allowed to push the toolbar wider than the room.
+	_status.clip_text = true
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(_status)
 
 	return row
 
 
-static func _button(text: String, action: Callable) -> Button:
+static func _button(text: String, action: Callable, tooltip: String = "") -> Button:
 	var button := Button.new()
 	button.text = text
+	button.tooltip_text = tooltip
 	button.pressed.connect(action)
+	_compact(button)
 	return button
+
+
+## Shrinks a control to workbench scale.
+##
+## The room carries about twenty controls in a strip above the drawing, and at the theme's default
+## body size and button padding they took two wrapped rows and about a fifth of the height of the
+## window — chrome outweighing the thing it acts on. Applied per control rather than by editing the
+## theme, because everywhere else in the app these sizes are right; it is the DENSITY here that is
+## wrong, and a global change would shrink the readouts a builder is meant to read.
+static func _compact(control: Control) -> void:
+	control.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	if control is Button:
+		for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+			var box := control.get_theme_stylebox(state, "Button")
+			if box == null:
+				continue
+			var tight := box.duplicate() as StyleBox
+			tight.content_margin_left = LothalTheme.SPACE_2
+			tight.content_margin_right = LothalTheme.SPACE_2
+			tight.content_margin_top = 2
+			tight.content_margin_bottom = 2
+			control.add_theme_stylebox_override(state, tight)
+
+
+## The room's own ground. Opaque, and a shade off the canvas so the drawing still reads as a surface
+## sitting on a bench rather than as the bench itself.
+static func _backdrop_stylebox() -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(LothalTheme.PANEL_BG, 0.97)
+	box.border_color = LothalTheme.BORDER
+	box.set_border_width_all(1)
+	box.set_corner_radius_all(6)
+	return box
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +306,7 @@ static func _button(text: String, action: Callable) -> Button:
 ## the reason `_on_open_chosen` gives: an edited preset is no longer the product the vendor
 ## published.
 func start_from(frame: Dictionary) -> void:
+	_source_frame = frame
 	if frame.is_empty():
 		editor.open(FrameEdits.new_frame("Untitled frame"))
 		return
@@ -330,6 +449,12 @@ func _on_thickness_changed(value: float) -> void:
 func _on_document_changed(document: AirframeDocument) -> void:
 	editor.queue_redraw()
 	_sync_property_strip()
+	_refresh_zoom_label()
+	# The 3D view is rebuilt only while it is the view you are looking at. Extruding every plate on
+	# every mouse motion of a vertex drag would cost a full mesh rebuild per frame for a picture
+	# nobody is looking at; switching to 3D rebuilds it once, from the document as it then stands.
+	if view_3d.visible:
+		view_3d.show_document(document, _source_frame)
 	document_changed.emit(document)
 
 
@@ -352,6 +477,56 @@ func _sync_property_strip() -> void:
 			_role_picker.select(index)
 	_thickness_field.value = AirframeDocument.plate_thickness_mm(plate)
 	_syncing = false
+
+
+# ---------------------------------------------------------------------------
+# The two views
+# ---------------------------------------------------------------------------
+
+## Switches between the plan you draw in and the frame you drew.
+##
+## THE PLAN VIEW IS THE ONE WITH HANDS. Nothing in 3D is editable and nothing pretends to be —
+## dragging there orbits the camera — so the switch is a way to LOOK at what you made, and the
+## drawing controls stay live behind it because coming back to a canvas with the wrong snap step
+## selected would be its own small betrayal.
+func set_view_3d(on: bool) -> void:
+	view_3d.visible = on
+	editor.visible = not on
+	_view_2d_button.button_pressed = not on
+	_view_3d_button.button_pressed = on
+	if on:
+		view_3d.show_document(editor.document, _source_frame)
+	_refresh_zoom_label()
+
+
+func showing_3d() -> bool:
+	return view_3d.visible
+
+
+## Fit, meaning whichever view is in front. One button rather than two, because a builder who has
+## lost the drawing does not first want to work out which of two Fits they need.
+func _on_fit() -> void:
+	if view_3d.visible:
+		view_3d.reset_view()
+	else:
+		editor.fit_to_document()
+	_refresh_zoom_label()
+
+
+func _zoom(factor: float) -> void:
+	if view_3d.visible:
+		view_3d.zoom_by(factor)
+	else:
+		editor.zoom_by(factor)
+	_refresh_zoom_label()
+
+
+func _refresh_zoom_label() -> void:
+	if _zoom_label == null:
+		return
+	# The 3D view has a camera distance rather than a scale, and a "×" against a fitted distance is
+	# the same sentence in both: one is what Fit gives you.
+	_zoom_label.text = "3D" if view_3d.visible else "%.1f×" % editor.zoom_ratio()
 
 
 func _set_status(text: String) -> void:

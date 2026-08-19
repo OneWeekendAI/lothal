@@ -47,6 +47,10 @@ const TOP_BAR_HEIGHT := 44.0
 const CLUSTER_MARGIN := 12.0
 const RAIL_WIDTH := 300.0
 const INSPECTOR_WIDTH := 348.0
+## The most of the window the inspector may claim, however long its rows get. Just under half:
+## past that the thing being inspected has less room than the description of it, which inverts what
+## a full-bleed viewport is for.
+const MAX_INSPECTOR_FRACTION := 0.42
 ## How far the floating columns stop short of the bottom, so they never collide with the
 ## bottom-left tool cluster or the bottom-right toggle.
 const BOTTOM_KEEPOUT := 76.0
@@ -372,7 +376,15 @@ func _fit_columns() -> void:
 	var rail_width := maxf(RAIL_WIDTH, lab.rails().get_combined_minimum_size().x)
 	_rail_glass.offset_right = CLUSTER_MARGIN + rail_width + LothalTheme.SPACE_2 * 2
 
-	var inspector_width := maxf(INSPECTOR_WIDTH, lab.panels.get_combined_minimum_size().x)
+	var inspector_width := maxf(INSPECTOR_WIDTH, _inspector_content_width())
+	# CLAMPED TO THE WINDOW, because a measurement is a request and not an entitlement. The panel is
+	# anchored to the right edge and grows leftwards, so an unclamped request wider than the window
+	# does not produce a wide panel — it produces a panel whose contents run off the right-hand edge,
+	# which is what "1500 of 15" looked like and what the four Airframe tabs did again with their
+	# longer sentences. Past this bound the panel stops growing and its own scroll takes over.
+	var ceiling := maxf(INSPECTOR_WIDTH, size.x * MAX_INSPECTOR_FRACTION) if size.x > 0.0 \
+		else inspector_width
+	inspector_width = minf(inspector_width, ceiling)
 	_inspector.offset_left = -(inspector_width + LothalTheme.SPACE_2 * 2 + CLUSTER_MARGIN)
 
 	# The plan editor stops where the inspector begins, MEASURED the same way and for the same
@@ -517,6 +529,25 @@ func _on_frame_edited(document: AirframeDocument) -> void:
 	lab.arms_details.render(document)
 	lab.fasteners_details.render(document)
 	lab.layout_details.render(document)
+	# The rows just changed, so the width they want just changed with them. Deferred because a
+	# Control's combined minimum size is not up to date until the layout pass after the labels were
+	# set — measuring here would size the panel to the text it held a moment ago.
+	_fit_columns.call_deferred()
+
+
+## The widest thing any visible inspector tab wants to be.
+##
+## `get_combined_minimum_size()` on the TabContainer is not enough on its own any more: the spec
+## panels can now scroll horizontally, and a ScrollContainer deliberately stops claiming its
+## child's width once it can scroll it. That is the right behaviour — it is what stops a long value
+## running off the window — but it also means the tab no longer ASKS for the width its rows need.
+## So the rows are asked directly, and the larger of the two answers wins.
+func _inspector_content_width() -> float:
+	var widest := lab.panels.get_combined_minimum_size().x
+	for child in lab.panels.get_children():
+		if child is SpecPanel and (child as Control).visible:
+			widest = maxf(widest, (child as SpecPanel).content_width())
+	return widest
 
 
 func _build_inspector() -> void:
@@ -720,6 +751,11 @@ func _on_room_changed() -> void:
 	else:
 		_rail_glass.visible = false
 		_inspector.visible = false
+		# The plan canvas goes with them. It is a child of this shell rather than of Lab, so nothing
+		# else hides it — and left up it would float a frame you were drawing over the course you
+		# are now flying, opaque, on top of the one room that owns the whole window.
+		if _workbench != null:
+			_workbench.visible = false
 
 
 # ---------------------------------------------------------------------------
@@ -753,6 +789,17 @@ func _select_system(index: int) -> void:
 	# because a canvas floating over the Propulsion room would be editing a frame nobody was looking
 	# at while covering the model they were.
 	var in_airframe := modelled and str(system["name"]) == "Airframe"
+	# THE 3D WORLD IS SWITCHED OFF, not merely covered.
+	#
+	# The workbench is a floating Control over a full-bleed SubViewportContainer, and every pixel of
+	# the room the workbench does not paint — its margins, the strip beside the toolbar, the gap
+	# above the canvas — was a window onto Lab's turntable. So a builder drawing a frame had another
+	# drone's propellers turning behind their own toolbar. Hiding the container is the honest fix
+	# rather than painting over it: a viewport nobody can see should not be rendering either, and
+	# `UPDATE_WHEN_VISIBLE` means hiding it stops the work as well as the picture.
+	var viewport_container := lab.viewport().get_parent()
+	if viewport_container is Control:
+		(viewport_container as Control).visible = not in_airframe
 	if _workbench != null:
 		_workbench.visible = in_airframe
 		if in_airframe:
