@@ -1,0 +1,26 @@
+[gd_scene load_steps=2 format=3]
+
+; The new UI frame (src/ui/glass_shell.gd), as a scene you can actually open.
+;
+; NOT the application root — that is still root.tscn and the eight-tab AppShell. This exists so the
+; shell experiment can be RUN and clicked rather than only photographed by
+; tests/capture_glass_shell.gd. Open it in the editor and press F6, or from a terminal:
+;
+;   godot res://src/scenes/glass_shell.tscn
+;
+; When the shell stops being an experiment, project.godot's run/main_scene points here instead and
+; this comment goes away. Until then nothing in the shipping app loads this file.
+;
+; Almost empty for the same reason root.tscn is: everything is constructed in the script, because
+; hand-placed UI does not survive version control (architecture.md).
+
+[ext_resource type="Script" path="res://src/ui/glass_shell.gd" id="1"]
+
+[node name="GlassShell" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")

@@ -86,21 +86,22 @@ static func _test_plate_tracks_arm_length(catalog: PartsCatalog) -> TestResult:
 	var model_7in := FrameModel.new()
 	model_7in.rebuild(frame_7in)
 
-	var plate_3in: MeshInstance3D = model_3in.get_node("PlateTop")
-	var plate_7in: MeshInstance3D = model_7in.get_node("PlateTop")
-
-	var size_3in: Vector3 = (plate_3in.mesh as BoxMesh).size
-	var size_7in: Vector3 = (plate_7in.mesh as BoxMesh).size
+	# Read off the MODEL rather than off a BoxMesh's `size`, because a plate is no longer a box: it
+	# is the extrusion of the document's own outline (airframe.md §7.2), and an ArrayMesh has no
+	# size to ask for. `plate_side_m` is the measurement that survived the change, and it is the one
+	# every consumer actually wanted — the pack's overhang is measured against it.
+	var size_3in := model_3in.plate_side_m
+	var size_7in := model_7in.plate_side_m
 
 	model_3in.free()
 	model_7in.free()
 
-	var passed := size_7in.x > size_3in.x
+	var passed := size_7in > size_3in and size_3in > 0.0
 
 	return TestResult.new(
 		"centre plate size tracks arm length across frames",
 		passed,
-		"3in plate side=%.4fm, 7in plate side=%.4fm" % [size_3in.x, size_7in.x]
+		"3in plate side=%.4fm, 7in plate side=%.4fm" % [size_3in, size_7in]
 	)
 
 

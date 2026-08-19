@@ -99,6 +99,22 @@ var esc_picker: EscPicker
 var fc_picker: FcPicker
 var electronics_picker: ElectronicsPicker
 var details: FrameDetails
+## The four Airframe tabs. Read-only inspectors over the airframe maths (airframe.md §3–§5); none
+## of them owns state, so a reload rebuilds them with everything else and nothing is lost.
+var structure_details: StructureDetails
+var arms_details: ArmsDetails
+var fasteners_details: FastenersDetails
+var layout_details: LayoutDetails
+
+## The frame the Airframe tabs are describing, as geometry.
+##
+## HELD, not regenerated per repaint. The four tabs no longer take a Build — a frame is a frame with
+## nothing bolted to it (airframe.md §1) — so what they need is a document, and the document has to
+## outlive a selection change or an edit made in the Airframe room would be thrown away the moment
+## somebody picked a different propeller. It is regenerated only when the SELECTED FRAME changes,
+## which is the one event that really does mean "you are now looking at a different object".
+var frame_document: AirframeDocument
+var _frame_document_id := ""
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
 var battery_details: BatteryDetails
@@ -210,6 +226,27 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	details = FrameDetails.new()
 	details.name = "Frame"
 	panels.add_child(details)
+
+	# The four Airframe tabs (airframe.md §1). They are panels and not rails because none of them
+	# is a thing you pick: an arm, a bolted joint and an inertia tensor are consequences of the
+	# frame you already chose, not entries in a catalog. All four render against the SAME frame
+	# dictionary the Frame panel gets, which is what keeps them from describing a different
+	# aircraft than the one on screen.
+	structure_details = StructureDetails.new()
+	structure_details.name = "Structure"
+	panels.add_child(structure_details)
+
+	arms_details = ArmsDetails.new()
+	arms_details.name = "Arms"
+	panels.add_child(arms_details)
+
+	fasteners_details = FastenersDetails.new()
+	fasteners_details.name = "Fasteners"
+	panels.add_child(fasteners_details)
+
+	layout_details = LayoutDetails.new()
+	layout_details.name = "Layout"
+	panels.add_child(layout_details)
 
 	motor_details = MotorDetails.new(catalog)
 	motor_details.name = "Motor"
@@ -429,13 +466,6 @@ func reload_catalog() -> void:
 	_on_selection_changed()
 
 
-## The viewport the airframe is drawn in. Named accessor because the screenshot tooling and the
-## tests reach for it, and because its World3D does not exist until this screen is inside the tree —
-## a caller that needs the world has to be handed the viewport and resolve it later.
-func viewport() -> SubViewport:
-	return _viewport
-
-
 ## Lab's private 3D world: a turntable pivot holding the generated airframe, a camera at a
 ## fixed distance, and enough light to read carbon against nylon.
 func _build_world() -> void:
@@ -543,14 +573,6 @@ func _on_part_selected(_part: Dictionary) -> void:
 	_on_selection_changed()
 
 
-## The air the garage quotes in, changed. One method rather than a bare property assignment,
-## because setting the air without re-deriving leaves five stats and every warning describing the
-## previous field — and the whole point of this feature is that those numbers follow the place.
-func set_air(p_air: AirDensity) -> void:
-	air = p_air
-	_on_selection_changed()
-
-
 ## The single path from a selection to everything that shows it. Geometry, all three panels'
 ## spec rows and the five derived stats are rebuilt from ONE Build in ONE call, so there is no
 ## ordering in which a panel could be showing one component while the viewport shows another —
@@ -567,6 +589,13 @@ func _on_selection_changed() -> void:
 	# room, not of the props that happen to be fitted.
 	airframe.set_all_rates_rpm(HAND_SPIN_RPM)
 	details.render(build.frame, build)
+	# All four against the same frame, in the same call as every other panel — one handler rebuilds
+	# everything, so an Airframe tab cannot be describing the frame you had a selection ago.
+	_refresh_frame_document(build.frame)
+	structure_details.render(frame_document)
+	arms_details.render(frame_document)
+	fasteners_details.render(frame_document)
+	layout_details.render(frame_document)
 	motor_details.render(build.motor, build)
 	propeller_details.render(build.propeller, build)
 	battery_details.render(build.battery, build)
@@ -645,9 +674,7 @@ func current_build() -> Build:
 		propeller_picker.selected_part()["part_id"],
 		battery_picker.selected_part()["part_id"],
 		esc_picker.selected_part()["part_id"],
-		fc_picker.selected_part()["part_id"],
-		electronics_picker.component_ids(),
-		air
+		fc_picker.selected_part()["part_id"]
 	)
 
 

@@ -60,6 +60,38 @@ static func write_document(path: String, document: Dictionary) -> bool:
 	return true
 
 
+## Writes `document` to `path` so that a process killed mid-write leaves the PREVIOUS file
+## intact, rather than a truncated one.
+##
+## `write_document` above overwrites in place, which is fine for a preference — the cost of losing
+## a slider position to a crash is a slider position. It is not fine for a drone. A project is
+## rewritten on every autosave, so the window in which a kill would truncate it is open more or
+## less permanently, and what is in it is hours of somebody's design.
+##
+## Write beside, then rename. A rename over an existing file is atomic on both platforms Lothal
+## ships on, so at no instant does `path` hold half a document: it holds the old one, then the new
+## one. The temporary is removed on a failed write so a dead `.tmp` cannot accumulate next to a
+## builder's files or be mistaken for a recovery copy.
+static func write_document_atomic(path: String, document: Dictionary) -> bool:
+	var temp_path := path + ".tmp"
+	if not write_document(temp_path, document):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(temp_path))
+		return false
+
+	var directory := DirAccess.open(path.get_base_dir())
+	if directory == null:
+		push_warning("could not open %s to rename into (error %d)" % [
+			path.get_base_dir(), DirAccess.get_open_error()])
+		return false
+
+	var renamed := directory.rename(temp_path.get_file(), path.get_file())
+	if renamed != OK:
+		push_warning("could not replace %s (error %d)" % [path, renamed])
+		directory.remove(temp_path.get_file())
+		return false
+	return true
+
+
 ## Splits a loaded document's keys into the ones a version recognises and the ones it does not,
 ## so the unrecognised half can be written straight back out. Returns only the unknown half —
 ## the known half is the caller's business and it reads those keys itself.

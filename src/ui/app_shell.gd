@@ -1,28 +1,25 @@
 class_name AppShell
 extends Control
-## The two rooms, and the door between them (labs-and-sim.md §1).
+## The eight-tab shell — **the OLD one, on its way out**.
 ##
-## Lab is the garage and it is where the app opens. Sim is the field, reached deliberately.
-## Before this shell existed, Lothal booted straight into a flight simulation with a parts
-## panel bolted onto the side, which made every part change feel like a cheat-menu slider
-## rather than a decision.
+## Everything this file used to know about rooms now lives in `RoomHost`, and what is left here is
+## the tab bar, the update notice and the link out to the site. It is kept working, and kept
+## covered by the suite, while `GlassShell` grows into the shell that replaces it (CONTINUE-HERE.md
+## §4: "build the new shell beside the old one, port one system at a time, keep the old tabs working
+## until the new shell covers them, delete the tab bar last").
 ##
-## The important behaviour is what happens on the way through the door:
+## **Why this is a delegate rather than a copy.** The room rules are not conventions — they are
+## `_close_rooms()` freeing an instance immediately, and every room that could have drained a pack
+## writing its consequence back on the way out. A second shell with its own copy would be a second
+## thing capable of leaving a Powertrain turning behind a screen nobody is looking at, and the only
+## evidence would be a battery that was wrong later. So both shells drive one `RoomHost`, and the
+## fields below are pass-throughs to it rather than state of their own.
 ##
-## **Sim does not exist while you are in Lab.** It is instantiated when the tab is opened and
-## FREED when it is left — not hidden, not paused. That is the honest form of "choosing parts
-## does not cost a 1 kHz integrator, a renderer and a real-time audio synthesiser": a paused
-## node still holds a chase camera, a DroneAudio bus and a HUD CanvasLayer, and a flag saying
-## it is idle is something that can rot. A freed instance cannot.
-##
-## **Lab persists.** It is cheap — no integrator lives in it — and the frame you chose should
-## still be chosen when you walk back from the field. This is the boundary labs-and-sim.md §4
-## describes: the build crosses from Lab to Sim, and nothing crosses back except consequences.
-##
-## Consequence worth naming: because Sim is rebuilt on entry, a lap in progress does not
-## survive a trip to the garage. That is the intended reading — you landed and walked away.
+## The behaviour those rules produce is documented on `RoomHost`, not repeated here.
 
-const SIM_SCENE := "res://src/scenes/main.tscn"
+## Where Sim lives. Kept as a constant on this class because tests/test_lab.gd loads the scene
+## through it; the room that actually instantiates it is RoomHost.
+const SIM_SCENE := RoomHost.SIM_SCENE
 const TAB_BAR_HEIGHT := 40.0
 
 var lab: LabScreen
@@ -59,12 +56,6 @@ var frame_bench: FrameBenchScreen = null
 ## SubViewport rendering a 3D world, and Lab's stated virtue is that it is quiet and cheap while
 ## you work.
 var field_editor: FieldEditorScreen = null
-## Studio — the flights already flown — or null when it is not the room you are in. Freed on the
-## way out like the others, and for the field editor's reason rather than the benches': it turns
-## no motors and costs no charge. What it holds is a list of headers read off disk, which goes
-## stale the moment a flight is recorded next door, so a Studio kept alive behind Sim would be a
-## room describing a history that had moved on. Rebuilding on entry re-reads the directory.
-var studio: StudioScreen = null
 ## The courses that have been laid out, and which one is flown. Held here for the same reason
 ## `pack_charge` is: two rooms touch it — the editor writes it and the field reads it — and one
 ## instance within a session is what stops the door from handing over a stale copy.
@@ -76,8 +67,15 @@ var course_library := CourseLibrary.load_from()
 var pack_charge := PackCharge.load_from()
 
 var _host: Control
-## The CanvasLayer carrying the tab bar and the update notice.
+## The CanvasLayer carrying the tab bar and the update notice. Held so the activation gate can
+## hide the entire app behind itself — see `_ready()`.
 var _tab_layer: CanvasLayer
+## "Activated — someone@example.com", sitting in the tab row. Permanently visible, and that is
+## the point: it is the whole of the anti-sharing mechanism, and a licence's owner being named
+## somewhere the borrower cannot help seeing is worth more than any check that could be removed
+## by decompiling. Empty and hidden until a licence has verified.
+var _account_label: Label
+var _activation_layer: CanvasLayer = null
 var _lab_button: Button
 var _bench_button: Button
 var _pack_bench_button: Button
@@ -85,7 +83,6 @@ var _esc_bench_button: Button
 var _frame_bench_button: Button
 var _field_button: Button
 var _sim_button: Button
-var _studio_button: Button
 var _showing_lab := true
 
 var settings: AppSettings
@@ -110,9 +107,6 @@ func _init() -> void:
 	add_child(_host)
 
 	lab = LabScreen.new(catalog_for_lab(), null, pack_charge)
-	# The garage quotes its numbers in the air of the course that is selected to be flown. Set here
-	# rather than read by Lab, so there is one owner of the library and one reader of it.
-	lab.air = course_library.selected().air
 	_host.add_child(lab)
 
 	# The tab bar sits on a high CanvasLayer so it stays reachable over Sim, whose HUD is
@@ -120,7 +114,6 @@ func _init() -> void:
 	var tab_layer := CanvasLayer.new()
 	tab_layer.layer = 10
 	add_child(tab_layer)
-	_tab_layer = tab_layer
 
 	var bar := HBoxContainer.new()
 	bar.position = Vector2(LothalTheme.SPACE_2, 6)
@@ -225,152 +218,39 @@ func catalog_for_lab() -> PartsCatalog:
 	return PartsCatalog.load_with_custom()
 
 
+# ---------------------------------------------------------------------------
+# The doors. Each is one line now — RoomHost does the work, and the tab bar restyles itself from
+# `room_changed` rather than each of these remembering to.
+# ---------------------------------------------------------------------------
+
 func showing_lab() -> bool:
-	return _showing_lab
+	return rooms.showing_lab()
 
 
-## Back to the garage. Sim is removed from the tree and freed immediately rather than
-## queue_free()'d, so that "the flight loop has stopped" is true the moment this returns
-## instead of at the end of the frame — which is also what makes it testable synchronously.
 func show_lab() -> void:
-	_close_rooms()
-	_showing_lab = true
-	lab.visible = true
-	_refresh_tabs()
+	rooms.show_lab()
 
 
-## Onto the thrust stand, with the pairing currently chosen on Lab's rails. The bench judges
-## the build being assembled next door — it has no fixture of its own, because a bench that
-## tested something other than what you are building would be answering a question nobody asked.
-##
-## Built fresh every time, so the pack starts full and the motor starts stopped. A bench you
-## walked away from mid-run and came back to still spinning would be a machine left unattended.
 func show_bench() -> void:
-	_close_rooms()
-	var selection := lab.selection()
-	_unplug_for(selection)
-	bench = BenchScreen.new(
-		lab.catalog,
-		selection["motor"],
-		selection["propeller"],
-		selection["battery"],
-		pack_charge
-	)
-	_host.add_child(bench)
-	_showing_lab = false
-	lab.visible = false
-	_refresh_tabs()
+	rooms.show_bench()
 
 
-## Onto the battery bench, with the pack currently chosen on Lab's rail and the motors and props
-## that will be pulling on it. Built fresh every time, for the same reason the thrust stand is: a
-## bench you walked away from mid-run and came back to still under load would be a machine left
-## unattended, and here it would have been quietly flattening a battery the whole time.
 func show_battery_bench() -> void:
-	_close_rooms()
-	var selection := lab.selection()
-	_unplug_for(selection)
-	battery_bench = BatteryBenchScreen.new(
-		lab.catalog,
-		selection["motor"],
-		selection["propeller"],
-		selection["battery"],
-		pack_charge
-	)
-	_host.add_child(battery_bench)
-	_showing_lab = false
-	lab.visible = false
-	_refresh_tabs()
+	rooms.show_battery_bench()
 
 
-## Onto the ESC bench, with the board currently chosen on Lab's rail and the motors that will be
-## pulling through it. Built fresh every time, for the same reason the other two benches are: a
-## bench you walked away from mid-sweep and came back to still at full throttle would be a machine
-## left unattended.
 func show_esc_bench() -> void:
-	_close_rooms()
-	var selection := lab.selection()
-	_unplug_for(selection)
-	esc_bench = EscBenchScreen.new(
-		lab.catalog,
-		selection["motor"],
-		selection["propeller"],
-		selection["battery"],
-		selection["esc"],
-		pack_charge,
-		selection["frame"]
-	)
-	_host.add_child(esc_bench)
-	_showing_lab = false
-	lab.visible = false
-	_refresh_tabs()
+	rooms.show_esc_bench()
 
 
-## Onto the frame bench, with the whole aircraft Lab has assembled. It takes the FULL selection
-## rather than a pairing, because what is under test here is the frame carrying its build — an empty
-## frame has no interesting inertia, and swapping the pack changes the answer as much as swapping
-## the frame does.
-##
-## Built fresh every time, for the same reason the other three benches are: a bench you walked away
-## from mid-step and came back to still at full deflection would be a machine left unattended.
 func show_frame_bench() -> void:
-	_close_rooms()
-	var selection := lab.selection()
-	_unplug_for(selection)
-	frame_bench = FrameBenchScreen.new(
-		lab.catalog,
-		selection["frame"],
-		selection["motor"],
-		selection["propeller"],
-		selection["battery"],
-		selection["esc"],
-		pack_charge,
-		lab.tweaks
-	)
-	_host.add_child(frame_bench)
-	_showing_lab = false
-	lab.visible = false
-	_refresh_tabs()
+	rooms.show_frame_bench()
 
 
-## Into the field editor, with the build currently on Lab's rails. The build is here for exactly one
-## reason — a ring smaller than the aircraft that has to fly through it is impossible, and that is a
-## comparison of two known dimensions — and this room changes nothing about it.
-##
-## Notably it does NOT call _unplug_for(). A charger running while you lay out gates is fine: this
-## room draws no current, so there is nothing for it to overwrite. That is labs-and-sim.md §5 read
-## literally rather than by analogy with the benches.
 func show_field_editor() -> void:
 	_close_rooms()
 	field_editor = FieldEditorScreen.new(course_library, lab.current_build())
-	# Editing the field changes what the aircraft next door CAN DO, so Lab's readout has to follow
-	# it. Without this the builder types 3500 m, walks back to the garage and reads a
-	# thrust-to-weight for a place they are not — which is the exact stale reading this feature
-	# exists to remove, reintroduced one room over.
-	field_editor.course_changed.connect(func() -> void:
-		lab.set_air(course_library.selected().air))
 	_host.add_child(field_editor)
-	_showing_lab = false
-	lab.visible = false
-	_refresh_tabs()
-
-
-## Into Studio, to look at flights already flown (LTHL-54).
-##
-## The library is constructed HERE and fresh on every entry, rather than held as a shell field
-## alongside course_library and pack_charge. Those two are shared because two rooms look at one
-## set of packs and one set of courses within a session, and a second copy would be a second
-## opinion. A log directory has exactly one reader and its contents change while the builder is
-## somewhere else — every time they land in Sim. A cached library would open a room describing the
-## history as it stood before the flight they just finished, which is the one flight they came in
-## here to look at.
-##
-## Like the field editor, this does NOT call _unplug_for(): Studio draws no current, so there is
-## nothing for it to overwrite.
-func show_studio() -> void:
-	_close_rooms()
-	studio = StudioScreen.new(FlightLogLibrary.load_from())
-	_host.add_child(studio)
 	_showing_lab = false
 	lab.visible = false
 	_refresh_tabs()
@@ -428,13 +308,6 @@ func _close_rooms() -> void:
 		_host.remove_child(field_editor)
 		field_editor.free()
 		field_editor = null
-	# No persist_pack_charge() here either, and for the same reason: Studio reads files. Nothing
-	# in it turns, draws current or holds a Powertrain, so a write-back would be inventing a
-	# consequence out of having opened a room.
-	if studio != null:
-		_host.remove_child(studio)
-		studio.free()
-		studio = null
 	# Only when a room actually changed something. Opening a bench and walking straight back out
 	# must not rewrite the file — see PackCharge._dirty.
 	if pack_charge.has_unsaved_changes():
@@ -449,26 +322,7 @@ func _close_rooms() -> void:
 ## the door: pick the 7" frame in the garage and the airframe in the field is a 7", because
 ## both rooms generate it from the same Build rather than each drawing their own.
 func show_sim() -> void:
-	_close_rooms()
-	if sim == null:
-		sim = load(SIM_SCENE).instantiate()
-		sim.initial_selection = lab.selection()
-		_unplug_for(sim.initial_selection)
-		# Handed over rather than loaded by Sim, so both rooms are looking at ONE set of packs
-		# within a session. Sim drains it and writes back on landing; it authors nothing else.
-		sim.pack_charge = pack_charge
-		# The field crosses the door the same way the build does, and in the same direction only.
-		# Handed over rather than re-loaded so a course laid out next door is the course you fly
-		# without a trip through the file; Sim reads it and never writes it (labs-and-sim.md §4).
-		sim.course_library = course_library
-		sim.adopt_selected_course()
-		# Sim is a direct child rather than living in `_host`, so nothing insets it below the
-		# tab bar the way Lab is inset. Its panel is told how much room the bar takes instead.
-		sim.ui_top_inset = TAB_BAR_HEIGHT
-		add_child(sim)
-	_showing_lab = false
-	lab.visible = false
-	_refresh_tabs()
+	rooms.show_sim()
 
 
 func _refresh_tabs() -> void:
@@ -479,4 +333,3 @@ func _refresh_tabs() -> void:
 	_frame_bench_button.button_pressed = frame_bench != null
 	_field_button.button_pressed = field_editor != null
 	_sim_button.button_pressed = sim != null
-	_studio_button.button_pressed = studio != null
