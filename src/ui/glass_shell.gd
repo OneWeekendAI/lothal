@@ -88,9 +88,35 @@ const DIM_TRANSPARENCY := 0.82
 ## look at it and then answer that, not to answer it in advance.
 const SYSTEMS := [
 	{
-		"name": "Airframe",
+		# THE AIRCRAFT ITSELF, and the only entry that is a choice rather than a consequence.
+		#
+		# Splitting this out of Airframe is what let Airframe become what §1 says it is. The old
+		# single entry was doing two unrelated jobs at once: pick which of fifteen catalog frames
+		# you are working on, and inspect what that choice implies. The first is shopping and the
+		# second is engineering, and putting them behind one dropdown item meant the four things §1
+		# actually names — frame, arms, the bolted joint, the soft mounts — had nowhere to live.
+		"name": "Drone",
 		"rails": ["Frame"],
 		"panels": ["Frame", "Fit"],
+		"decided_by": ["frame"],
+	},
+	{
+		# THE FOUR THINGS §1 NAMES, minus the one with no model behind it.
+		#
+		# No rail, and that is not an omission. Every other system here is a list of parts you pick
+		# from; none of these four is. An arm is a plate with a centreline (§2), a bolted joint is
+		# generated from the bolt pattern, and an inertia tensor is an integral — you choose a frame
+		# and these follow. So the rail column is hidden for this system entirely, which is the
+		# first time this shell renders the full-bleed viewport the design asks for with nothing but
+		# an inspector floating over it.
+		#
+		# STRAPS & PADS IS ABSENT. §6 models a pad as a spring and gives it a transmissibility, and
+		# none of that is built — only the pad's material and mass exist. A fifth tab reading four
+		# dashes would be worse than its absence, and the honest place for it is here, in a comment
+		# that says why, until §6 has a model. Slice A6.
+		"name": "Airframe",
+		"rails": [],
+		"panels": ["Structure", "Arms", "Fasteners", "Layout"],
 		"decided_by": ["frame"],
 	},
 	{
@@ -233,6 +259,8 @@ var _sim_button: Button
 var _lab_button: Button
 var _room_menu: RoomMenu
 var _focused_index := 0
+## The plan editor, shown only while Airframe is the focused system.
+var _workbench: FrameWorkbench
 
 
 func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
@@ -259,6 +287,7 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	# is the arrangement §5 chose Godot for — Controls floating over a SubViewportContainer at full
 	# z-order, which is the one thing the Tauri hybrid could not do.
 	_build_rail_glass()
+	_build_workbench()
 	_build_inspector()
 	_build_top_cluster()
 	_build_bottom_left_cluster()
@@ -345,6 +374,13 @@ func _fit_columns() -> void:
 
 	var inspector_width := maxf(INSPECTOR_WIDTH, lab.panels.get_combined_minimum_size().x)
 	_inspector.offset_left = -(inspector_width + LothalTheme.SPACE_2 * 2 + CLUSTER_MARGIN)
+
+	# The plan editor stops where the inspector begins, MEASURED the same way and for the same
+	# reason. `INSPECTOR_WIDTH` is a floor and the panel is routinely wider than it, so an editor
+	# sized against the constant put its own toolbar underneath the inspector — where the last
+	# controls could be seen through the glass and not clicked.
+	if _workbench != null:
+		_workbench.offset_right = _inspector.offset_left - CLUSTER_MARGIN
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +476,49 @@ func _build_rail_glass() -> void:
 ## selected — the app opens on the reference build, so there is no empty state — which is why it is
 ## always shown here. The "only when selected" rule is real, but it belongs to the systems that have
 ## no default, and those are exactly the four that show a stub instead.
+## The Airframe room's own workspace, filling the viewport area whenever Airframe is the focused
+## system — airframe.md §7.1.
+##
+## IT COVERS THE 3D VIEW RATHER THAN SITTING BESIDE IT, and that is the point. Airframe's subject is
+## a frame you are drawing, and a plan view is where you draw one: the 3D model is what the frame
+## LOOKS like, and it is one dropdown click away in any other system. Splitting the viewport between
+## the two would give you half a canvas to draw in and half a model too small to read.
+##
+## Added between the rail glass and the inspector so it draws over the viewport and under the
+## floating chrome — the arrangement §5 chose Godot for.
+func _build_workbench() -> void:
+	_workbench = FrameWorkbench.new(lab.catalog)
+	_workbench.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Clear of the floating chrome on three sides: the top bar, the inspector column on the right,
+	# and the tool cluster along the bottom. The left edge runs almost to the window edge, because
+	# Airframe hides the rail column entirely — there is no parts list for a frame you are drawing.
+	_workbench.offset_left = CLUSTER_MARGIN
+	_workbench.offset_right = -INSPECTOR_WIDTH - CLUSTER_MARGIN * 2.0   # refined by _fit_columns()
+	_workbench.offset_top = TOP_BAR_HEIGHT + CLUSTER_MARGIN
+	_workbench.offset_bottom = -BOTTOM_KEEPOUT
+	_workbench.visible = false
+	# The one wire that makes the room live: an edit repaints the four inspector tabs, so mass,
+	# inertia, stiffness and the assembly checks move while a corner is being dragged.
+	_workbench.document_changed.connect(_on_frame_edited)
+	add_child(_workbench)
+	# Opened on the frame the builder currently has selected, as a copy. See `start_from`.
+	_workbench.start_from(lab.current_build().frame)
+
+
+## An edit in the plan view, pushed to the four Airframe tabs.
+##
+## Straight to the panels rather than through `LabScreen._on_selection_changed`, deliberately:
+## nothing about the aircraft has changed — the same motor, pack and props are fitted — and
+## rebuilding the whole 3D assembly on every mouse motion during a drag would be both wasteful and
+## wrong, since the frame being drawn is not necessarily the frame that is fitted.
+func _on_frame_edited(document: AirframeDocument) -> void:
+	lab.frame_document = document
+	lab.structure_details.render(document)
+	lab.arms_details.render(document)
+	lab.fasteners_details.render(document)
+	lab.layout_details.render(document)
+
+
 func _build_inspector() -> void:
 	_inspector = _glass_panel()
 	_inspector.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
@@ -663,15 +742,36 @@ func _select_system(index: int) -> void:
 	# retracts them — see _on_room_changed. Walking back into the garage has to put back exactly
 	# what the chosen system asks for, and the two columns inside them are separate: the panel is
 	# the frame, and a stub is what the frame holds for a system with no model.
-	_rail_glass.visible = true
+	var has_rails := _has_rails(system)
+
+	# A modelled system with no rails (Airframe) hides the whole left column — glass and all —
+	# rather than floating an empty panel there. An UNMODELLED system still shows it, because that
+	# is where its stub lives and the stub is the point.
+	_rail_glass.visible = has_rails or not modelled
 	_inspector.visible = true
-	lab.rails().visible = modelled
+	# THE PLAN EDITOR IS THE AIRFRAME ROOM. Shown for that system and hidden for every other one,
+	# because a canvas floating over the Propulsion room would be editing a frame nobody was looking
+	# at while covering the model they were.
+	var in_airframe := modelled and str(system["name"]) == "Airframe"
+	if _workbench != null:
+		_workbench.visible = in_airframe
+		if in_airframe:
+			# The tabs describe the frame OPEN IN THE EDITOR, not the one fitted to the build. They
+			# are usually the same frame; they stop being the same the moment anything is drawn, and
+			# an inspector describing the other one would be answering a question nobody asked.
+			_on_frame_edited(_workbench.editor.document)
+	# The viewport tools — overlays, explode, x-ray, measure — all act on the 3D model, which the
+	# plan editor is covering. Hidden here rather than left to click through onto something the
+	# builder cannot see.
+	_tools_glass.visible = not in_airframe
+	lab.rails().visible = modelled and has_rails
 	lab.panels.visible = modelled
 	_rail_stub.visible = not modelled
 	_inspector_stub.visible = not modelled
 
 	if modelled:
-		_show_only_tabs(lab.rails(), system["rails"])
+		if has_rails:
+			_show_only_tabs(lab.rails(), system["rails"])
 		_show_only_tabs(lab.panels, system["panels"])
 	else:
 		_rail_stub.show_system(system)
@@ -735,7 +835,20 @@ static func _show_only_tabs(tabs: TabContainer, titles: Array) -> void:
 			tabs.set_tab_hidden(i, true)
 
 
+## Whether a system has anything behind it at all — the test that decides between showing the real
+## columns and showing the `soon` stub.
+##
+## PANELS COUNT, NOT JUST RAILS. It used to be rails alone, which was right while every modelled
+## system was a parts picker and is wrong now that Airframe is four inspectors over computed
+## geometry with nothing to pick. A system with panels and no rail is fully modelled; it just has
+## no shopping list.
 static func _is_modelled(system: Dictionary) -> bool:
+	return not ((system["rails"] as Array).is_empty() and (system["panels"] as Array).is_empty())
+
+
+## Whether this system has a parts list on the left. False for Airframe, which hides the rail column
+## rather than showing an empty one.
+static func _has_rails(system: Dictionary) -> bool:
 	return not (system["rails"] as Array).is_empty()
 
 
@@ -759,6 +872,11 @@ func _apply_focus() -> void:
 		return
 	var focused := str(SYSTEMS[_focused_index]["name"])
 	if not _is_modelled(SYSTEMS[_focused_index]):
+		focused = ""
+	# Drone is the WHOLE aircraft, so it dims nothing. Dimming everything except the frame while a
+	# builder is choosing between fifteen frames would hide the motors and props that make one frame
+	# look different from another, which is most of what there is to see at that moment.
+	if focused == "Drone":
 		focused = ""
 	_fade_below(lab.airframe, "", focused)
 

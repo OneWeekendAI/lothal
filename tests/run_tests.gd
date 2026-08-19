@@ -15,7 +15,9 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
 	"yaw authority", "gyro", "motor mixer", "control path", "stick release", "warnings", "build warnings",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio", "spectrum",
-	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring"]
+	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
+	"polygon props", "control effectiveness", "frame materials", "hardware mass",
+	"airframe document", "airframe properties", "arm beam", "arm profile", "frame edits", "frame plan editor", "plate mesh", "airframe tabs"]
 
 func _init() -> void:
 	var total := 0
@@ -49,6 +51,18 @@ func _init() -> void:
 
 func _run_suite(suite_name: String) -> Array:
 	match suite_name:
+		"airframe tabs": return TestAirframeTabs.run()
+		"airframe document": return TestAirframeDocument.run()
+		"airframe properties": return TestAirframeProperties.run()
+		"arm beam": return TestArmBeam.run()
+		"arm profile": return TestArmProfile.run()
+		"frame edits": return TestFrameEdits.run()
+		"frame plan editor": return TestFramePlanEditor.run()
+		"plate mesh": return TestPlateMesh.run()
+		"polygon props": return TestPolygonProps.run()
+		"control effectiveness": return TestControlEffectiveness.run()
+		"frame materials": return TestFrameMaterials.run()
+		"hardware mass": return TestHardwareMass.run()
 		"mass properties": return TestMassProperties.run()
 		"mass positions": return TestMassPositions.run()
 		"hover": return TestHover.run()

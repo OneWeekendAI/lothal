@@ -47,7 +47,11 @@ extends RefCounted
 ## because constructing one needs a catalog off disk — and because if these ever drift apart, the
 ## drift IS the bug this suite should report.
 const RAIL_TITLES := ["Frame", "Motor", "Prop", "Pack", "ESC", "FC", "Electronics"]
-const PANEL_TITLES := ["Frame", "Motor", "Prop", "Pack", "ESC", "FC", "Electronics", "Fit", "Tune"]
+## The four Airframe tabs sit immediately after Frame, in LabScreen's order. They are the first
+## panels in this list with no rail beside them — Airframe has none — which is the case
+## `_show_only_tabs` had never been asked to route before.
+const PANEL_TITLES := ["Frame", "Structure", "Arms", "Fasteners", "Layout",
+	"Motor", "Prop", "Pack", "ESC", "FC", "Electronics", "Fit", "Tune"]
 
 
 static func run() -> Array:

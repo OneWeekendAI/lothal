@@ -1,5 +1,5 @@
 {
-  "_schema": "One JSON file per part category (parts.md). Two tiers now live side by side: `specs` is physics-bearing, and that rule is unchanged — if a spec does not feed the physics, it does not belong in `specs`. `catalog` is browsing metadata: a field is admitted there only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale — colour, price and vendor links are still banned by name, from either block. 'arm_mm' is centre-to-motor and is the sleeper spec — it is squared in the parallel axis theorem, so a 7\" frame has roughly 4x the roll inertia of a 3\" from geometry alone. 'max_prop_inches' and 'motor_mount' drive compatibility warnings only; Lothal warns, it never blocks. 'stack_mount' is the centre-plate bolt pattern the FC/ESC stack sandwiches into — it is geometry-bearing (it is where the stack is drawn and what it is checked against), not physics-bearing: no mount position reaches the mass model.",
+  "_schema": "One JSON file per part category (parts.md). Two tiers now live side by side: `specs` is physics-bearing, and that rule is unchanged — if a spec does not feed the physics, it does not belong in `specs`. `catalog` is browsing metadata: a field is admitted there only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale — colour, price and vendor links are still banned by name, from either block. 'arm_mm' is centre-to-motor and is the sleeper spec — it is squared in the parallel axis theorem, so a 7\" frame has roughly 4x the roll inertia of a 3\" from geometry alone. 'max_prop_inches' and 'motor_mount' drive compatibility warnings only; Lothal warns, it never blocks. 'stack_mount' is the centre-plate bolt pattern the FC/ESC stack sandwiches into — it is geometry-bearing (it is where the stack is drawn and what it is checked against), not physics-bearing: no mount position reaches the mass model. THE THREE GEOMETRY FIELDS (airframe.md §2, §3.2, §4.3), added in slice A2b: 'plate_thickness_mm' is the centre/bottom plate stock the frame is cut from; 'arm_width_mm' is the arm's width AT THE ROOT, where it leaves the centre plate, which is where the bending moment is largest and where the taper is measured from; 'arm_thickness_mm' is the arm's OWN stock thickness. Arm thickness is a separate field from plate thickness and must never be collapsed into it: a real frame's arms are cut from thicker sheet than its plates (the GEP-MK5 is 5.0 mm arms on 2.5 mm plates, the Evoque F5 V2 is 6 mm arms on a 3 mm bottom plate), and the difference is not cosmetic because THICKNESS IS CUBED in the bending maths - I = b*t^3/12, so stiffness and hence resonance go as t^3 while they go only LINEARLY as arm width b. Doubling an arm's thickness makes it eight times as stiff; doubling its width makes it twice as stiff. Assuming an arm is as thick as a plate is what put ArmBeam's computed 5\" resonance a factor of 6.7 below the guessed 180 Hz. ALL THREE FIELDS ARE OPTIONAL AND OFTEN ABSENT, and absence is a real answer, not a gap to fill: a moulded or ducted frame has no plate geometry at all, and no vendor surveyed for this file publishes an arm WIDTH, only thicknesses. Loaders must fall back when a field is missing and must never invent one. CONSTRUCTION (airframe.md §0, §2): 'construction' is 'plate' or 'moulded' and it decides WHETHER THE PLATE MODEL APPLIES AT ALL, which is why it sits in specs rather than in catalog. A plate frame is cut from flat sheet, so its mass, inertia, arm stiffness and resonance are integrals over polygons and every one of them is computable; a one-piece injection-moulded frame is not a plate assembly and owes that model nothing, so it gets NO generated plates and the app reports no mass, no arm and no resonance for it rather than fabricating a carbon beam that exists nowhere on the product. ABSENCE MEANS 'plate', because that is what all but one of the frames surveyed are and because the plate path has documented fallbacks for every figure it needs. Do not infer this field from a missing plate_thickness_mm: the 2.5\" whoop and the cinewhoop are hybrids that really do have CF plates and simply publish no thickness for them, and treating them as moulded would delete real structure.",
   "parts": [
     {
       "part_id": "frame_65mm_whoop",
@@ -10,14 +10,15 @@
         "arm_mm": 32.0,
         "max_prop_inches": 1.6,
         "motor_mount": "6x6",
-        "stack_mount": "25.5x25.5"
+        "stack_mount": "25.5x25.5",
+        "construction": "moulded"
       },
       "catalog": {
         "frame_type": "tinywhoop",
         "material": "injection-moulded nylon (PA12)",
         "size_class": "65mm"
       },
-      "source": "representative 65mm whoop frame spec sheet; arm and mass class-typical, not a specific product"
+      "source": "representative 65mm whoop frame spec sheet; arm and mass class-typical, not a specific product. NO PLATE GEOMETRY: this is an injection-moulded one-piece nylon whoop frame, not a plate assembly, and airframe.md §0 says the plate model owes a moulded part nothing. plate_thickness_mm, arm_width_mm and arm_thickness_mm are therefore absent by construction rather than unsourced."
     },
     {
       "part_id": "frame_25in_whoop",
@@ -35,7 +36,7 @@
         "material": "nylon + CF plate hybrid",
         "size_class": "2.5\""
       },
-      "source": "representative 2.5\" micro whoop frame spec sheet; arm and mass class-typical, not a specific product"
+      "source": "representative 2.5\" micro whoop frame spec sheet; arm and mass class-typical, not a specific product. NO PLATE GEOMETRY: a moulded-nylon-plus-carbon hybrid. The carbon half would have a plate thickness and the moulded half genuinely does not have one, and nothing published separates the two by mass, so all three geometry fields are absent rather than half-guessed."
     },
     {
       "part_id": "frame_3in_toothpick",
@@ -44,6 +45,8 @@
       "mass_g": 35.0,
       "specs": {
         "arm_mm": 75.0,
+        "plate_thickness_mm": 1.5,
+        "arm_thickness_mm": 3.0,
         "max_prop_inches": 3.5,
         "motor_mount": "12x12",
         "stack_mount": "25.5x25.5"
@@ -53,7 +56,7 @@
         "material": "carbon fibre 3K",
         "size_class": "3\""
       },
-      "source": "representative 3\" toothpick frame spec sheet"
+      "source": "representative 3\" toothpick frame spec sheet. Plate and arm thickness are CLASS-TYPICAL of surveyed 3\" toothpicks, not of this (representative) frame: FPVCycle ToothPick 3 'TP3' (fpvcycle.com/products/kabab-toothpick-3-tp3-frame) publishes 1.5 mm body plates with 3 mm arms, and the HGLRC Petrel 120X 3\" (getfpv.com) is a 3 mm unibody where the bottom plate IS the arms. 1.5 mm plate / 3 mm arm is the plate-and-arm construction of the two. No arm width is published by either, so arm_width_mm is absent."
     },
     {
       "part_id": "frame_35in_freestyle",
@@ -62,6 +65,8 @@
       "mass_g": 58.0,
       "specs": {
         "arm_mm": 88.0,
+        "plate_thickness_mm": 2.0,
+        "arm_thickness_mm": 4.0,
         "max_prop_inches": 3.5,
         "motor_mount": "12x12",
         "stack_mount": "20x20"
@@ -71,7 +76,7 @@
         "material": "carbon fibre 3K",
         "size_class": "3.5\""
       },
-      "source": "representative 3.5\" freestyle frame spec sheet; arm and mass class-typical, not a specific product"
+      "source": "representative 3.5\" freestyle frame spec sheet; arm and mass class-typical, not a specific product. Plate and arm thickness are CLASS-TYPICAL of surveyed 3.5\" freestyle frames: GEPRC GEP-ST35 Smart35 (geprc.com/product/gep-st35-frame/) publishes 'Top Plate: 2.0mm', 'Arm Plate: 4.0mm' (its 4 mm bottom plate IS the arm plate) with an optional 2.5 mm reinforcing arm. No arm width published, so arm_width_mm is absent."
     },
     {
       "part_id": "frame_5in_race",
@@ -80,6 +85,8 @@
       "mass_g": 88.0,
       "specs": {
         "arm_mm": 108.0,
+        "plate_thickness_mm": 2.5,
+        "arm_thickness_mm": 4.0,
         "max_prop_inches": 5.0,
         "motor_mount": "16x16",
         "stack_mount": "30.5x30.5"
@@ -89,7 +96,7 @@
         "material": "carbon fibre 3K",
         "size_class": "5\""
       },
-      "source": "representative 5\" race frame spec sheet"
+      "source": "representative 5\" race frame spec sheet. Plate and arm thickness are CLASS-TYPICAL of surveyed 5\" race frames: Armattan Mongoose 5\" (armattanquads.com/products/mongoose-1) is sold as 'Choose 3mm or 4mm thick arms' with a 2 mm top and 3 mm centre plate; ImpulseRC Apex 5\" (getfpv.com/impulserc-apex-5-base-frame-kit.html) publishes 2.5 mm bottom / 2 mm mid / 5.5 mm arm; the UAVMODEL 2026 frame-selection guide gives 4-5 mm arms and 2-2.5 mm base plate for racing. No arm width published, so arm_width_mm is absent."
     },
     {
       "part_id": "frame_5in_freestyle",
@@ -98,6 +105,9 @@
       "mass_g": 110.0,
       "specs": {
         "arm_mm": 110.0,
+        "plate_thickness_mm": 2.5,
+        "arm_width_mm": 12.0,
+        "arm_thickness_mm": 5.0,
         "max_prop_inches": 5.1,
         "motor_mount": "16x16",
         "stack_mount": "30.5x30.5"
@@ -107,7 +117,7 @@
         "material": "carbon fibre 3K",
         "size_class": "5\""
       },
-      "source": "representative 5\" freestyle frame spec sheet; the reference build's frame"
+      "source": "representative 5\" freestyle frame spec sheet; the reference build's frame. Plate and arm thickness are CLASS-TYPICAL of surveyed 5\" freestyle frames: TBS Source One V6 (readymaderc.com, 85715) publishes 2.5 mm bottom / 2 mm top / 6 mm arm; Armattan Beaver 5\" (progressiverc.com) 2 mm bottom / 5 mm arm; GEPRC GEP-MK5 O4 Pro 2.5 mm plates / 5.0 mm arm; ImpulseRC Apex 5\" 2.5 mm bottom / 5.5 mm arm. arm_width_mm is the one width figure any source states in millimetres: the UAVMODEL 2026 frame-selection guide's worked 5\" example, 'A 5mm thick, 12mm wide arm has 60mm2 cross-sectional area' (blog.uavmodel.com/fpv-drone-frame-selection-arm-thickness-material-grade-and-geometry-for-freestyle-vs-racing-2026-guide/), which sits inside the same guide's 12-15 mm freestyle band. NO VENDOR PUBLISHES ARM WIDTH for any frame surveyed for this file, including the three named products below - that is why it is absent everywhere else rather than interpolated."
     },
     {
       "part_id": "frame_5in_deadcat",
@@ -116,6 +126,8 @@
       "mass_g": 122.0,
       "specs": {
         "arm_mm": 118.0,
+        "plate_thickness_mm": 3.0,
+        "arm_thickness_mm": 6.0,
         "max_prop_inches": 5.1,
         "motor_mount": "16x16",
         "stack_mount": "30.5x30.5"
@@ -125,7 +137,7 @@
         "material": "carbon fibre 4K high-modulus",
         "size_class": "5\""
       },
-      "source": "representative 5\" deadcat frame; arm and mass class-typical, not a specific product"
+      "source": "representative 5\" deadcat frame; arm and mass class-typical, not a specific product. Plate and arm thickness are CLASS-TYPICAL of surveyed 5\" DEADCAT frames, which run thicker than a true-X of the same size: iFlight Nazgul Evoque F5D V2 (shop.iflight.com, product 2283) publishes 'Arm Thickness: 6mm' and 'Bottom Plate Thickness: 3mm'; the Evoque F5 V3 the same. No arm width published, so arm_width_mm is absent."
     },
     {
       "part_id": "frame_iflight_evoque_f5_v2_o4",
@@ -134,6 +146,8 @@
       "mass_g": 249.0,
       "specs": {
         "arm_mm": 111.5,
+        "plate_thickness_mm": 3.0,
+        "arm_thickness_mm": 6.0,
         "max_prop_inches": 5.1,
         "motor_mount": "16x16",
         "stack_mount": "20x20"
@@ -143,7 +157,7 @@
         "material": "carbon fibre 3K",
         "size_class": "5\""
       },
-      "source": "iFlight 'Nazgul Evoque F5 V2 O4 Frame Kit' product page (shop.iflight.com, product 2283): weight 249±5 g, wheelbase 223 mm (DeadCat), 6 mm arms, 20x20/O3.0 mm stack, 16x16 mm motor mount. arm_mm is the published wheelbase halved, which is the motor radius; the frame is a DEADCAT, so the four motors are not on a square and this project's X layout is an approximation of its geometry — it is exact for mass, which is what data/validation/builds.json reads it for, and approximate for inertia."
+      "source": "iFlight 'Nazgul Evoque F5 V2 O4 Frame Kit' product page (shop.iflight.com, product 2283): weight 249±5 g, wheelbase 223 mm (DeadCat), 6 mm arms, 20x20/O3.0 mm stack, 16x16 mm motor mount. arm_mm is the published wheelbase halved, which is the motor radius; the frame is a DEADCAT, so the four motors are not on a square and this project's X layout is an approximation of its geometry — it is exact for mass, which is what data/validation/builds.json reads it for, and approximate for inertia. GEOMETRY, from the same product page's dimension block: 'Arm Thickness: 6mm', 'Bottom Plate Thickness: 3mm', 'Top Plate Thickness: 2mm', 'Upper Plate Thickness: 3mm', 'Camera Plate Thickness: 3mm' (iFlight state a +/-0.2 mm manufacturing tolerance on all of these). plate_thickness_mm records the BOTTOM plate, 3 mm; this frame's top plate is 2 mm and one field cannot carry both, so a preset built from it is slightly heavy in its top plate. ARM WIDTH IS NOT PUBLISHED - iFlight give five thicknesses and no width anywhere on the page - so arm_width_mm is absent rather than guessed."
     },
     {
       "part_id": "frame_iflight_evoque_f5_v3",
@@ -152,6 +166,8 @@
       "mass_g": 256.0,
       "specs": {
         "arm_mm": 118.0,
+        "plate_thickness_mm": 3.0,
+        "arm_thickness_mm": 6.0,
         "max_prop_inches": 5.1,
         "motor_mount": "16x16",
         "stack_mount": "20x20"
@@ -161,7 +177,7 @@
         "material": "carbon fibre 3K",
         "size_class": "5\""
       },
-      "source": "iFlight 'Nazgul Evoque F5 V3 Frame Kit' product page (shop.iflight.com, product 2407): weight 256±10 g, wheelbase 236 mm (DeadCat default) / 239 mm (True X), 6 mm arms, 20x20/O3.0 mm stack, 16x16 mm motor mount. arm_mm is the DeadCat wheelbase halved; same approximation note as the V2 above."
+      "source": "iFlight 'Nazgul Evoque F5 V3 Frame Kit' product page (shop.iflight.com, product 2407): weight 256±10 g, wheelbase 236 mm (DeadCat default) / 239 mm (True X), 6 mm arms, 20x20/O3.0 mm stack, 16x16 mm motor mount. arm_mm is the DeadCat wheelbase halved; same approximation note as the V2 above. GEOMETRY, from the same product page: 'Arm Thickness: 6mm', 'Bottom Plate Thickness: 3mm', 'Top Plate Thickness: 3mm' (+/-0.2 mm stated tolerance). ARM WIDTH IS NOT PUBLISHED, so arm_width_mm is absent."
     },
     {
       "part_id": "frame_geprc_mk5_o4_pro_wide_x",
@@ -170,6 +186,8 @@
       "mass_g": 165.1,
       "specs": {
         "arm_mm": 112.5,
+        "plate_thickness_mm": 2.5,
+        "arm_thickness_mm": 5.0,
         "max_prop_inches": 5.0,
         "motor_mount": "16x16",
         "stack_mount": "30.5x30.5"
@@ -179,7 +197,7 @@
         "material": "carbon fibre 3K",
         "size_class": "5\""
       },
-      "source": "GEPRC 'GEP-MK5 O4 Pro Wide X Frame' product page (geprc.com/product/gep-mk5-o4-pro-wide-x-frame/), 'Wide X Specifications' block: 'Weight: 165.1g ± 10g', 'Wheelbase: 225mm', 'Arm Thickness: 5.0mm', 'FC Mounting Pattern: 30.5mm * 30.5mm', 'Motor Mounting Pattern: 16mm * 16mm / 19mm * 19mm', 'Recommended Prop：5-inch', '3K carbon fiber frame'. arm_mm is the published wheelbase halved, which is the motor radius. motor_mount is the SMALLER of the two published patterns, which is the one the SPEEDX2 2107.5's Φ26.83 mm base can carry — a 19x19 pattern has a 26.87 mm diagonal, wider than the motor's own base. WHAT THE 165.1 g INCLUDES IS NOT STATED, and that omission is the point: the page's 'Includes' list carries '1 x GEP-MK5 O4 Pro Frame' as one line and then '1 x 3D printouts pack', '1 x Screw pack', the Velcro and rubber straps and the anti-slip pads as SEPARATE lines, which reads as the weight being the frame proper. iFlight state their Evoque frame-kit weights the same way — one number, no inventory — and the two vendors' numbers are 84 g apart for the same size class."
+      "source": "GEPRC 'GEP-MK5 O4 Pro Wide X Frame' product page (geprc.com/product/gep-mk5-o4-pro-wide-x-frame/), 'Wide X Specifications' block: 'Weight: 165.1g ± 10g', 'Wheelbase: 225mm', 'Arm Thickness: 5.0mm', 'FC Mounting Pattern: 30.5mm * 30.5mm', 'Motor Mounting Pattern: 16mm * 16mm / 19mm * 19mm', 'Recommended Prop：5-inch', '3K carbon fiber frame'. arm_mm is the published wheelbase halved, which is the motor radius. motor_mount is the SMALLER of the two published patterns, which is the one the SPEEDX2 2107.5's Φ26.83 mm base can carry — a 19x19 pattern has a 26.87 mm diagonal, wider than the motor's own base. WHAT THE 165.1 g INCLUDES IS NOT STATED, and that omission is the point: the page's 'Includes' list carries '1 x GEP-MK5 O4 Pro Frame' as one line and then '1 x 3D printouts pack', '1 x Screw pack', the Velcro and rubber straps and the anti-slip pads as SEPARATE lines, which reads as the weight being the frame proper. iFlight state their Evoque frame-kit weights the same way — one number, no inventory — and the two vendors' numbers are 84 g apart for the same size class. GEOMETRY, from the same 'Wide X Specifications' block: 'Top Plate Thickness: 2.5mm', 'Bottom Plate Thickness: 2.5mm', 'Arm Thickness: 5.0mm'. Top and bottom agree here, so plate_thickness_mm is exact for this frame rather than a choice between two. ARM WIDTH IS NOT PUBLISHED, so arm_width_mm is absent - and note the arm is TWICE the plate at 5.0 vs 2.5, which is the asymmetry the resonance maths turns on."
     },
     {
       "part_id": "frame_5in_cinewhoop",
@@ -197,7 +215,7 @@
         "material": "CF plates + moulded nylon ducts",
         "size_class": "5\""
       },
-      "source": "representative 5\" cinewhoop frame; arm and mass class-typical, not a specific product"
+      "source": "representative 5\" cinewhoop frame; arm and mass class-typical, not a specific product. NO PLATE GEOMETRY: ducted, with moulded nylon ducts that are most of the frame. §0 puts a moulded part outside the plate model, so all three geometry fields are absent."
     },
     {
       "part_id": "frame_6in_long_range",
@@ -206,6 +224,8 @@
       "mass_g": 132.0,
       "specs": {
         "arm_mm": 130.0,
+        "plate_thickness_mm": 3.0,
+        "arm_thickness_mm": 6.0,
         "max_prop_inches": 6.0,
         "motor_mount": "16x16",
         "stack_mount": "30.5x30.5"
@@ -215,7 +235,7 @@
         "material": "carbon fibre 3K",
         "size_class": "6\""
       },
-      "source": "representative 6\" long-range frame spec sheet; arm and mass class-typical, not a specific product"
+      "source": "representative 6\" long-range frame spec sheet; arm and mass class-typical, not a specific product. Plate and arm thickness are CLASS-TYPICAL of surveyed 6\" frames: iFlight Nazgul Evoque F6 V2 (iflight-rc.eu) publishes 6 mm arms / 3 mm bottom plate; Diatone Roma F6 (diatone.us/products/roma-f6-6-inch-frame-kit) publishes 'ARM Thickness: 6mm', 'Bottom Plate: 3.5mm', 'Top Plate: 2.5mm', 'Medium Plate: 2mm'. No arm width published, so arm_width_mm is absent."
     },
     {
       "part_id": "frame_7in_long_range",
@@ -224,6 +244,8 @@
       "mass_g": 148.0,
       "specs": {
         "arm_mm": 150.0,
+        "plate_thickness_mm": 3.0,
+        "arm_thickness_mm": 6.0,
         "max_prop_inches": 7.0,
         "motor_mount": "16x16",
         "stack_mount": "30.5x30.5"
@@ -233,7 +255,7 @@
         "material": "carbon fibre 3K",
         "size_class": "7\""
       },
-      "source": "representative 7\" long-range frame spec sheet"
+      "source": "representative 7\" long-range frame spec sheet. Plate and arm thickness are CLASS-TYPICAL of surveyed 7\" long-range frames: Diatone Roma F7 (diatone.us/products/roma-f7-frame-kit) 6 mm arm / 3.5 mm bottom; iFlight Titan DC7 6 mm arm / 3 mm bottom; Rekon7 LR (rekonfpv.com) 6 mm arms / 2 mm bottom. 6 mm arm is unanimous across the three; 3 mm is the middle plate figure. No arm width published, so arm_width_mm is absent."
     },
     {
       "part_id": "frame_7in_cinelifter",
@@ -242,6 +264,8 @@
       "mass_g": 210.0,
       "specs": {
         "arm_mm": 158.0,
+        "plate_thickness_mm": 3.0,
+        "arm_thickness_mm": 8.0,
         "max_prop_inches": 7.0,
         "motor_mount": "19x19",
         "stack_mount": "30.5x30.5"
@@ -251,7 +275,7 @@
         "material": "carbon fibre 4K high-modulus",
         "size_class": "7\""
       },
-      "source": "representative 7\" cinelifter frame; arm and mass class-typical, not a specific product"
+      "source": "representative 7\" cinelifter frame; arm and mass class-typical, not a specific product. Plate and arm thickness are CLASS-TYPICAL of surveyed cinelifters, which are the thickest-armed class in the catalog: iFlight Taurus X8 V3 (getfpv.com/iflight-taurus-x8-v3-8-cinelifter-drone-frame-kit.html) publishes 'Arm Thickness: 8mm', 'Bottom Plate Thickness: 3mm'; Taurus X8 Pro 8 mm arm / 3.5 mm bottom; Shendrones Thicc 2.1 8 mm arms / 3 mm bottom / 2.5 mm body plates. No arm width published, so arm_width_mm is absent."
     },
     {
       "part_id": "frame_10in_long_range",
@@ -260,6 +284,8 @@
       "mass_g": 265.0,
       "specs": {
         "arm_mm": 215.0,
+        "plate_thickness_mm": 3.0,
+        "arm_thickness_mm": 7.0,
         "max_prop_inches": 10.0,
         "motor_mount": "19x19",
         "stack_mount": "30.5x30.5"
@@ -269,7 +295,7 @@
         "material": "carbon fibre 3K",
         "size_class": "10\""
       },
-      "source": "representative 10\" long-range frame; arm and mass class-typical, not a specific product"
+      "source": "representative 10\" long-range frame; arm and mass class-typical, not a specific product. Plate and arm thickness are CLASS-TYPICAL of surveyed 10\" frames: iFlight Nazgul XL10 V6 (shop.iflight.com, product 1967) publishes 'Arm Thickness: 7mm', 'Bottom Plate Thickness: 3mm', 'Top Plate Thickness: 3mm'; Mark4 10\" V2 7.5 mm arms / 3 mm bottom plate. No arm width published, so arm_width_mm is absent."
     }
   ]
 }
