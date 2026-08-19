@@ -81,6 +81,17 @@ const ENTRIES := [
 		"key": KEY_NONE,
 		"waiting_on": "",
 	},
+	{"separator": true},
+	# Last, and set off by a separator, because it is the one entry that destroys something. It does
+	# not sit beside New or Duplicate, the entries that create drones — a builder reaching for New
+	# and finding Delete in the same breath is the one-click-loses-everything shape §10 of the
+	# projects design refuses. The deletion itself is a move to the app's trash, not an unlink.
+	{
+		"id": "delete",
+		"label": "Delete",
+		"key": KEY_NONE,
+		"waiting_on": "",
+	},
 ]
 
 ## What the RECENT section says while there is nothing to be recent. Not an empty menu: the section
@@ -91,6 +102,10 @@ var _id_by_index: Dictionary = {}
 var _path_by_index: Dictionary = {}
 ## path -> label, newest first. Set by the shell; empty until a drone has been saved.
 var _recent: Array = []
+## Whether a drone is open. The entries that need one are greyed while this is false; the chip owns
+## the value and refreshes it whenever the open drone changes — including to "no drone" after a
+## delete, which is the whole point.
+var _has_project := true
 
 
 func _init() -> void:
@@ -146,10 +161,30 @@ func _add_entry(entry: Dictionary) -> void:
 		set_item_accelerator(index, KEY_MASK_META | key)
 
 	var waiting_on := str(entry.get("waiting_on", ""))
-	if waiting_on == "":
+	if waiting_on != "":
+		set_item_disabled(index, true)
+		set_item_tooltip(index, waiting_on)
 		return
-	set_item_disabled(index, true)
-	set_item_tooltip(index, waiting_on)
+	# Live, but meaningless without a drone. A builder who just deleted their only drone should not
+	# be offered "Delete" on nothing — so the three project-dependent entries grey in that state,
+	# and the greying lives in the same table that decides what the entries do.
+	if not _has_project and needs_project(str(entry["id"])):
+		set_item_disabled(index, true)
+		set_item_tooltip(index, "No drone is open — New or Open one.")
+
+
+## Whether `action_id` needs a drone open to mean anything. The three that do: Duplicate, Rename
+## and Delete all act on the drone you are looking at, and with none open there is nothing to act
+## on. New, Open and Reveal work without one.
+static func needs_project(action_id: String) -> bool:
+	return action_id == "duplicate" or action_id == "rename" or action_id == "delete"
+
+
+## Tells the menu whether a drone is open, and greys the entries that need one accordingly. The
+## chip calls this from `set_project`, so it fires on every New, Open, Duplicate and Delete.
+func set_has_project(has_project: bool) -> void:
+	_has_project = has_project
+	_build()
 
 
 func _on_id_pressed(index: int) -> void:

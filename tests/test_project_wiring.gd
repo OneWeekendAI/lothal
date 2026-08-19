@@ -49,6 +49,9 @@ static func run() -> Array:
 	results.append_array(_test_recent_remembers_without_claiming_files_exist())
 
 	results.append_array(_test_recent_reads_the_drones_name())
+	results.append_array(_test_delete_moves_to_trash())
+	results.append_array(_test_new_drones_get_distinct_default_names())
+	results.append_array(_test_delete_leaves_no_project())
 
 	_clean()
 	return results
@@ -323,6 +326,16 @@ static func _test_recent_remembers_without_claiming_files_exist() -> Array:
 		"%s" % [reloaded.existing_recent_projects()]
 	))
 
+	# The in-app half: a drone Lothal itself deleted is forgotten, not merely filtered out of the
+	# menu. The file-gone filter above is for paths that vanish OUTSIDE the app, where Lothal cannot
+	# know; here it knows it moved the file, so knowing is different from tolerating.
+	settings.forget_project(gone)
+	results.append(TestResult.new(
+		"and one Lothal deletes is removed from the list, not just hidden",
+		settings.recent_projects == [real],
+		"%s" % [settings.recent_projects]
+	))
+
 	# The cap, checked at the boundary rather than trusted.
 	var many := AppSettings.new()
 	for i in AppSettings.RECENT_LIMIT + 5:
@@ -333,6 +346,107 @@ static func _test_recent_remembers_without_claiming_files_exist() -> Array:
 			and String(many.recent_projects[0]).ends_with("d12.lothal"),
 		"%d entries, newest %s" % [many.recent_projects.size(), many.recent_projects[0]]
 	))
+	return results
+
+
+## The delete feature (§10 of the projects design): a rename into the app's trash, never an
+## unlink. The easy version — unlink with a confirmation — makes losing a month of design one
+## misplaced click, and the trash is the design's answer to that.
+##
+## The check that would have proved nothing: asserting the original path is gone. That passes
+## against an unlink. So the same call also asserts the file EXISTS in `user://builds/trash/`
+## and opens as a valid container — which only a move can satisfy.
+static func _test_delete_moves_to_trash() -> Array:
+	var results: Array = []
+	var project := ProjectLibrary.starting_project("Doomed")
+	var container := ProjectContainer.make(project)
+	var path := "%s/%s.%s" % [TEST_DIR, project.project_id, ProjectContainer.EXTENSION]
+	container.write(path)
+
+	ProjectLibrary.delete(path)
+
+	var trash := "%s/trash/%s.%s" % [ProjectLibrary.DIR, project.project_id,
+		ProjectContainer.EXTENSION]
+	results.append(TestResult.new(
+		"a deleted drone is gone from where it lived",
+		not FileAccess.file_exists(path),
+		"%s removed" % path
+	))
+	results.append(TestResult.new(
+		"and sits in the app's trash, still openable",
+		FileAccess.file_exists(trash) and ProjectContainer.open(trash) != null,
+		"trash holds %s" % trash
+	))
+	# The trash is real app-owned storage; take the file back out so the suite leaves it clean.
+	if FileAccess.file_exists(trash):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(trash))
+	return results
+
+
+## The two fixes for the delete-that-looked-like-nothing bug.
+##
+## **1. Distinct default names.** Every New drone was named "Untitled build", so a wall of
+## identical projects accumulated and deleting one was indistinguishable from having done nothing —
+## the replacement was named the same as the thing deleted. A new drone's default name now comes
+## from what is already on disk, so consecutive drones are distinct.
+##
+## **2. Delete leaves nothing open.** Delete used to adopt a fresh starting project in the same
+## second, which is the second half of why delete looked inert. Delete now closes the drone and
+## creates nothing; the chip says so, and the builds folder does not grow.
+static func _test_new_drones_get_distinct_default_names() -> Array:
+	var results: Array = []
+	var first := ProjectLibrary.starting_project()
+	# A new drone is only on disk once New adopts it, and the NEXT default name is derived from what
+	# is on disk — so the write between the two calls is the flow, not test scaffolding.
+	ProjectContainer.make(first).write(ProjectLibrary.path_for(first))
+	var second := ProjectLibrary.starting_project()
+	results.append(TestResult.new(
+		"two new drones get different default names",
+		first.name != second.name
+			and ProjectLibrary._untitled_number(second.name)
+				> ProjectLibrary._untitled_number(first.name),
+		"'%s' then '%s'" % [first.name, second.name]
+	))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(ProjectLibrary.path_for(first)))
+	return results
+
+
+static func _test_delete_leaves_no_project() -> Array:
+	var results: Array = []
+	var shell := GlassShell.new()
+	var project := ProjectLibrary.starting_project("Doomed shell")
+	var builds := ProjectSettings.globalize_path(ProjectLibrary.DIR)
+	var before := DirAccess.get_files_at(builds)
+	shell.adopt(project)
+	var gone := shell.container.path
+
+	shell._on_project_action("delete")
+
+	var after := DirAccess.get_files_at(builds)
+	results.append(TestResult.new(
+		"delete closes the drone and opens nothing",
+		shell.container == null and shell.chip.project == null,
+		"container=%s chip-project=%s" % [shell.container, shell.chip.project]
+	))
+	results.append(TestResult.new(
+		"and writes no replacement drone",
+		after.size() == before.size()
+			and not after.has(gone.get_file())
+			and not FileAccess.file_exists(gone),
+		"%d files after (before was %d), gone=%s" % [after.size(), before.size(),
+			not FileAccess.file_exists(gone)]
+	))
+	results.append(TestResult.new(
+		"and the chip says there is no drone",
+		shell.chip.state_text() == "no drone open",
+		"'%s'" % shell.chip.state_text()
+	))
+	# The move lands in the app's trash; take it back out so the suite leaves the app clean.
+	var trash_file := "%s/trash/%s.%s" % [ProjectLibrary.DIR,
+		project.project_id, ProjectContainer.EXTENSION]
+	if FileAccess.file_exists(trash_file):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(trash_file))
+	shell.free()
 	return results
 
 

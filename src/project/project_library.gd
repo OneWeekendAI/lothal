@@ -21,6 +21,9 @@ extends RefCounted
 ## Open… can still open a container anywhere on disk.
 
 const DIR := "user://builds"
+## Where a deleted drone goes. A subdirectory of DIR rather than a sibling, so it is reachable
+## from the same "Reveal saved files" folder the builder already knows.
+const TRASH_SUBDIR := "trash"
 
 
 static func ensure_dir() -> void:
@@ -29,6 +32,33 @@ static func ensure_dir() -> void:
 
 static func path_for(project: Project) -> String:
 	return "%s/%s.%s" % [DIR, project.project_id, ProjectContainer.EXTENSION]
+
+
+## Moves a container into the app's trash — a rename, never a delete (§10 of the projects design).
+##
+## Deletion is reversible by construction: the file still exists, one Finder step away in
+## `user://builds/trash/`, and nothing empties that directory automatically. The easy version —
+## unlink with a confirmation dialog — makes losing a month of design one misplaced click, which is
+## exactly what the trash exists to prevent.
+##
+## A container opened from anywhere on disk moves the same way one born in `user://builds` does:
+## the trash is app-owned, the source path is irrelevant. Nothing here deletes anything.
+static func delete(path: String) -> void:
+	if path == "" or not FileAccess.file_exists(path):
+		return
+	ensure_dir()
+	var trash := "%s/%s" % [DIR, TRASH_SUBDIR]
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(trash))
+	var target := "%s/%s" % [trash, path.get_file()]
+	# A container can only be deleted once, so a collision is near-impossible; if one somehow
+	# occurs, move under a suffixed name rather than clobbering whatever is already there.
+	var attempt := 0
+	while FileAccess.file_exists(target):
+		attempt += 1
+		target = "%s/%s-%d.%s" % [trash, path.get_file().get_basename(), attempt,
+			path.get_file().get_extension()]
+	if DirAccess.rename_absolute(path, target) != OK:
+		push_warning("could not move %s to the trash" % path)
 
 
 ## What "New drone" starts from.
@@ -43,8 +73,13 @@ static func path_for(project: Project) -> String:
 ## reference build's 496 g rather than 475 g. A project created by Project.create() fits nothing
 ## optional on purpose — see ProjectSchema rule 2 — and that is right for a document read off
 ## disk and wrong for a drone somebody just asked for.
-static func starting_project(p_name: String = "Untitled build") -> Project:
-	var project := Project.create(p_name)
+##
+## The default name is NOT the literal "Untitled build" any more. Every New was named that, so a
+## wall of identical drones accumulated and deleting one was indistinguishable from having done
+## nothing — the replacement had the same name as the thing removed. The default now comes from
+## what is already on disk; see _default_build_name.
+static func starting_project(p_name: String = "") -> Project:
+	var project := Project.create(p_name if p_name != "" else _default_build_name())
 	project.parts["frame"] = ReferenceBuild.FRAME_ID
 	project.parts["motor"] = ReferenceBuild.MOTOR_ID
 	project.parts["propeller"] = ReferenceBuild.PROPELLER_ID
@@ -54,6 +89,40 @@ static func starting_project(p_name: String = "Untitled build") -> Project:
 	for category in Build.OPTIONAL_COMPONENTS:
 		project.parts[category] = String(Build.DEFAULT_COMPONENT_IDS[category])
 	return project
+
+
+## What a new drone is called when the builder did not name it: the next number past the highest
+## "Untitled build N" already on disk.
+##
+## The builds folder AND the trash are scanned, so a number is never reused while a copy of that
+## name still exists anywhere — "Untitled build 4" deleted to the trash is not a free slot until
+## it is gone from both. Numbers skip if a builder renamed one; skipping is fine, reuse is not.
+static func _default_build_name() -> String:
+	ensure_dir()
+	var highest := -1
+	for folder in [DIR, "%s/%s" % [DIR, TRASH_SUBDIR]]:
+		var absolute := ProjectSettings.globalize_path(folder)
+		if not DirAccess.dir_exists_absolute(absolute):
+			continue
+		for file in DirAccess.get_files_at(absolute):
+			if not file.ends_with(".%s" % ProjectContainer.EXTENSION):
+				continue
+			var number := _untitled_number(ProjectContainer.read_name("%s/%s" % [folder, file]))
+			if number > highest:
+				highest = number
+	if highest < 0:
+		return "Untitled build"
+	return "Untitled build %d" % (highest + 1)
+
+
+## "Untitled build" -> 0, "Untitled build 12" -> 12, anything else -> -1 (not a default name).
+static func _untitled_number(name: String) -> int:
+	if name == "Untitled build":
+		return 0
+	if not name.begins_with("Untitled build "):
+		return -1
+	var suffix := name.substr("Untitled build ".length())
+	return int(suffix) if suffix.is_valid_int() else -1
 
 
 ## A copy of `source`: same decisions, new identity, its own history.

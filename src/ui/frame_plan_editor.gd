@@ -139,8 +139,18 @@ func zoom_ratio() -> float:
 	return transform.scale_px_per_mm / fitted.scale_px_per_mm
 
 
+## Whether a change of size should re-frame the drawing.
+##
+## Its own predicate rather than two clauses inside the signal handler, because it is the whole of
+## the policy and the signal is untestable here: `resized` does not fire on a Control outside the
+## tree, so a suite that drove it through `size =` would assert nothing in either direction. This
+## can be asked directly, and it is the part that can be wrong.
+func should_refit_on_resize() -> bool:
+	return _fitted and not _view_moved
+
+
 func _on_resized() -> void:
-	if _fitted and not _view_moved:
+	if should_refit_on_resize():
 		fit_to_document()
 
 

@@ -9,6 +9,9 @@ extends SceneTree
 ## flies out to the field through the toggle instead, which is the shot that shows the chrome
 ## retracted — §5's "the same window with the chrome retracted" is a claim about a picture.
 ##
+## A fifth argument of `3d` flips the Airframe room to its 3D view, which is the shot that shows the
+## frame you drew as the stack it is. Only meaningful together with `Airframe` as the system.
+##
 ## `system` names one of GlassShell.SYSTEMS ("Propulsion", "Power", …) and selects it before the
 ## shot, which is how the dimming gets photographed. Dimming is the claim §5 makes to justify a
 ## full-bleed viewport at all, so it is the one behaviour here worth a picture.
@@ -21,6 +24,7 @@ func _init() -> void:
 
 	var menu: bool = args.size() > 4 and args[4] == "menu"
 	var to_sim: bool = args.size() > 4 and args[4] == "sim"
+	var to_3d: bool = args.size() > 4 and args[4] == "3d"
 
 	if args.size() > 3 and args[3] != "":
 		var res_parts := args[3].split("x")
@@ -60,6 +64,14 @@ func _init() -> void:
 	# screenshot of nothing.
 	if to_sim:
 		shell.rooms.show_sim()
+		for i in settle:
+			await process_frame
+
+	# The Airframe room's other view. Driven through the same toggle a click drives, and it only
+	# means anything with `system` set to Airframe — the room is the only thing that has a 3D view
+	# of the frame being DRAWN rather than of the frame that is fitted.
+	if to_3d and shell.workbench() != null:
+		shell.workbench().set_view_3d(true)
 		for i in settle:
 			await process_frame
 

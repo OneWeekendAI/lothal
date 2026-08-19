@@ -52,6 +52,16 @@ func remember_project(path: String) -> void:
 		recent_projects.pop_back()
 
 
+## Removes `path` from the recent list, for a drone Lothal itself just moved to the trash.
+##
+## The list is deliberately tolerant of paths that vanish OUTSIDE the app — a Finder move, a
+## deleted folder — because there Lothal cannot know. An in-app delete DOES know, and knowing is
+## different from tolerating: a path the app itself moved should not sit in the list until it
+## scrolls off the limit, as if the drone still existed somewhere.
+func forget_project(path: String) -> void:
+	recent_projects.erase(path)
+
+
 ## The remembered paths that still exist. The menu asks for these rather than for the raw list,
 ## so a drone deleted in Finder disappears from the menu instead of offering an error.
 func existing_recent_projects() -> Array:

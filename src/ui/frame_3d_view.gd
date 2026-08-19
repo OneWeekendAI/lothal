@@ -156,8 +156,12 @@ func _build_world() -> void:
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = LothalTheme.SURFACE_BASE
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.52, 0.57, 0.66)
-	env.ambient_light_energy = 1.1
+	# BRIGHTER THAN LAB'S WORLD, deliberately. Lab lights a whole aircraft — motors, a pack, props,
+	# a printed mount — and the carbon reads against those. Here there is nothing in shot but the
+	# carbon, which is nearly black, so the same lighting produced a dark grey frame on a dark grey
+	# ground and the plate edges that are the entire point of this view were invisible.
+	env.ambient_light_color = Color(0.58, 0.63, 0.72)
+	env.ambient_light_energy = 1.7
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 
 	var world_environment := WorldEnvironment.new()
@@ -171,8 +175,16 @@ func _build_world() -> void:
 	# light turns half of an airframe into a silhouette, which is the half with the arms in it.
 	var fill_light := DirectionalLight3D.new()
 	fill_light.rotation_degrees = Vector3(-6.0, 145.0, 0.0)
-	fill_light.light_energy = 0.45
+	fill_light.light_energy = 0.7
 	_viewport.add_child(fill_light)
+
+	# A weak bounce from below, standing in for the bench the frame is lying on. Without it the
+	# underside is lit by ambient alone — and the underside is half of every orbit through a plate
+	# stack, which is the shape this view exists to show.
+	var bounce_light := DirectionalLight3D.new()
+	bounce_light.rotation_degrees = Vector3(62.0, 20.0, 0.0)
+	bounce_light.light_energy = 0.45
+	_viewport.add_child(bounce_light)
 
 	_orbit = Node3D.new()
 	_viewport.add_child(_orbit)
@@ -188,7 +200,7 @@ func _build_world() -> void:
 	# including underneath, which is where a plate stack is actually judged from.
 	var key_light := DirectionalLight3D.new()
 	key_light.rotation_degrees = Vector3(-28.0, -22.0, 0.0)
-	key_light.light_energy = 1.5
+	key_light.light_energy = 2.1
 	_orbit.add_child(key_light)
 
 	_apply_camera()
@@ -204,22 +216,28 @@ func _apply_camera() -> void:
 	_camera.transform = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, _distance_m))
 
 
-## The widest thing in the document, in metres, as a diameter about the origin.
+## How wide the frame is on screen, in metres, as an extent about the origin.
+##
+## THE BOUNDING BOX, NOT THE RADIUS. An X frame's arms reach furthest along the diagonals, so its
+## radial reach is about 40% larger than anything you can actually see across it — measured that
+## way, a 5" frame was framed as though it were a disc 310 mm across and drew at about half the
+## width it should have, marooned in the middle of a large empty viewport.
 ##
 ## About the ORIGIN rather than about the drawing's own centre, because the origin is what the
 ## camera looks at and what every motor position is measured from — a frame authored off-centre
 ## should look off-centre, which is the one way a builder ever notices they drew it that way.
 func _span_m() -> float:
-	var reach_mm := 0.0
+	var extent := Vector2.ZERO
 	if _pending_document != null:
 		for plate in _pending_document.plates:
 			for point in AirframeDocument.plate_outline(plate):
-				reach_mm = maxf(reach_mm, point.length())
-	if reach_mm <= 0.0:
+				extent = extent.max(point.abs())
+	var half_mm := maxf(extent.x, extent.y)
+	if half_mm <= 0.0:
 		# An empty document. A 200 mm box, matching the plan editor's empty framing, so switching
 		# views on a blank frame does not change how big "nothing" looks.
-		reach_mm = 100.0
-	return reach_mm * 2.0 / 1000.0
+		half_mm = 100.0
+	return half_mm * 2.0 / 1000.0
 
 
 func _distance_for(span_m: float) -> float:

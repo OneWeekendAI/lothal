@@ -28,6 +28,17 @@ extends RefCounted
 ##   - `_test_switching_to_3d_swaps_the_whole_canvas` fails if the two views are merely stacked
 ##     rather than swapped: an editor left visible under a SubViewportContainer still takes the
 ##     clicks, so a builder would drag vertices they could not see.
+##
+## ## What is deliberately NOT asserted here
+##
+## That the inspector column sizes itself to the rows it is carrying — the other half of the same
+## screenshot, and the reason `SpecPanel.content_width()` exists. It cannot be checked in this
+## harness: `Label.update_minimum_size()` does nothing on a node outside the tree, so a panel's
+## combined minimum size never moves off its floor no matter what it is rendering, and
+## `content_width()` returns a constant 296 px for every frame in the catalog. A test asserting it
+## would report the same number for correct and broken code alike. It is checked instead by
+## photographing the real shell — `tests/capture_glass_shell.gd -- <out.png> 30 Airframe` — which is
+## the same reason `test_glass_shell.gd` refuses to assert `current_tab`.
 
 const CANVAS_SIZE := Vector2(900.0, 620.0)
 
@@ -39,7 +50,6 @@ static func run() -> Array:
 	results.append(_test_the_zoom_controls_move_the_view_and_the_readout_follows())
 	results.append(_test_a_resize_reframes_an_untouched_view_only())
 	results.append(_test_switching_to_3d_swaps_the_whole_canvas())
-	results.append(_test_a_panel_asks_for_the_width_its_longest_value_needs())
 	return results
 
 
@@ -134,34 +144,51 @@ static func _test_the_zoom_controls_move_the_view_and_the_readout_follows() -> T
 
 ## A resize must re-frame a view nobody has aimed, and must not touch one they have.
 ##
-## Both halves, because each alone passes against doing nothing on resize in one direction and
-## against always re-fitting in the other — and the two wrong behaviours are the two that shipped.
+## Both halves, because each alone passes against a wrong answer in the other direction: always
+## re-fit and the aimed case fails, never re-fit and the untouched case fails. The two wrong
+## behaviours are the two obvious ones, which is why neither may be left unpinned.
+##
+## The PREDICATE is driven rather than the signal. `resized` does not fire on a Control outside the
+## tree — verified, it fires zero times for two `size =` assignments — so a test that assigned a
+## size and read the scale back would report "did not re-fit" against correct code and against
+## broken code alike. That is the shape of a test that cannot fail, so the policy is asked directly
+## and the one-line signal wiring is left to the running app and the capture screenshot.
 static func _test_a_resize_reframes_an_untouched_view_only() -> TestResult:
-	var untouched := _workbench()
-	untouched.editor.size = CANVAS_SIZE
-	untouched.editor.fit_to_document()
-	var before_fit := untouched.editor.transform.scale_px_per_mm
-	untouched.editor.size = CANVAS_SIZE * 0.5
-	var after_fit := untouched.editor.transform.scale_px_per_mm
-	untouched.free()
+	var workbench := _workbench()
+	var editor := workbench.editor
+	editor.size = CANVAS_SIZE
+	editor.fit_to_document()
+	var after_fit := editor.should_refit_on_resize()
 
-	var aimed := _workbench()
-	aimed.editor.size = CANVAS_SIZE
-	aimed.editor.fit_to_document()
-	aimed.editor.zoom_by(3.0)
-	var before_zoom := aimed.editor.transform.scale_px_per_mm
-	aimed.editor.size = CANVAS_SIZE * 0.5
-	var after_zoom := aimed.editor.transform.scale_px_per_mm
-	aimed.free()
+	# That a re-fit would actually DO something at the new size — otherwise the predicate above is
+	# permission to perform a no-op, and the test would pass on a canvas whose scale never moves.
+	var scale_here := editor.transform.scale_px_per_mm
+	editor.size = CANVAS_SIZE * 0.5
+	editor.fit_to_document()
+	var scale_there := editor.transform.scale_px_per_mm
 
-	# Halving the view halves the scale a fit chooses; a view the builder aimed keeps its own.
-	var reframed := after_fit < before_fit * 0.75
-	var left_alone := absf(after_zoom - before_zoom) < 1.0e-6
+	editor.zoom_by(3.0)
+	var after_zoom := editor.should_refit_on_resize()
+
+	# Panning is aiming the view too. Driven as a real DRAG through `_gui_input` — press on empty
+	# space, move, release — and not by calling `transform.pan()`, which would reach past the editor
+	# to the object underneath it and assert nothing about whether the editor noticed.
+	var panned := _workbench()
+	panned.editor.size = CANVAS_SIZE
+	panned.editor.fit_to_document()
+	var empty_px := Vector2(20.0, 20.0)
+	panned.editor._gui_input(_press(empty_px))
+	panned.editor._gui_input(_motion(empty_px + Vector2(40.0, 20.0)))
+	var after_pan := panned.editor.should_refit_on_resize()
+	panned.free()
+
+	var refits := scale_there < scale_here * 0.75
+	workbench.free()
 	return TestResult.new(
-		"a resize re-frames a view nobody aimed, and leaves an aimed one exactly where it was",
-		reframed and left_alone,
-		"untouched %.3f -> %.3f px/mm; aimed %.3f -> %.3f px/mm"
-			% [before_fit, after_fit, before_zoom, after_zoom])
+		"a resize re-frames a view nobody aimed, and leaves an aimed one alone",
+		after_fit and not after_zoom and not after_pan and refits,
+		"after fit: %s, after zoom: %s, after pan: %s, refit changes scale %.2f -> %.2f px/mm"
+			% [after_fit, after_zoom, after_pan, scale_here, scale_there])
 
 
 ## The two views share one rectangle and one switch. Stacking them instead — leaving the editor
@@ -187,39 +214,46 @@ static func _test_switching_to_3d_swaps_the_whole_canvas() -> TestResult:
 
 
 # ---------------------------------------------------------------------------
-# What the inspector asks the shell for
-# ---------------------------------------------------------------------------
-
-## The shell sizes the inspector column to the width its rows need, and it can only do that if a
-## panel will say what that width is AFTER its values have been rendered. Measured once at startup,
-## the column was sized to eleven dashes and every real value ran off the window edge.
-static func _test_a_panel_asks_for_the_width_its_longest_value_needs() -> TestResult:
-	var panel := StructureDetails.new()
-	var empty := panel.content_width()
-
-	var catalog := PartsCatalog.load_default()
-	var frames := catalog.list_category("frame")
-	panel.render(AirframeDocument.from_catalog_frame(frames[0]))
-	var rendered := panel.content_width()
-	panel.free()
-
-	return TestResult.new(
-		"a spec panel asks for more width once it is carrying real values",
-		rendered > empty and rendered > 0.0,
-		"%.0f px empty -> %.0f px rendered" % [empty, rendered])
-
-
-# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+## The frame the room opens on in the app, and the one in every screenshot of it.
+##
+## NAMED, NOT INDEXED. `list_category("frame")[0]` is the 65 mm Whoop — a MOULDED frame, which by
+## §7.3 has no plate model at all and produces a document with zero plates. Every assertion here
+## about what is drawn and where it lands was silently vacuous against it: the first version of
+## this suite reported "0 points outside the canvas" and meant "there is no canvas".
+const FIXTURE_FRAME := "5\" Freestyle"
+
 
 ## A workbench opened on a real catalog frame, which is what the room opens on in the app. A blank
 ## document would make the zoom and fit assertions vacuous — there would be nothing to frame.
 static func _workbench() -> FrameWorkbench:
 	var catalog := PartsCatalog.load_default()
 	var workbench := FrameWorkbench.new(catalog)
-	workbench.start_from(catalog.list_category("frame")[0])
+	workbench.start_from(_fixture_frame(catalog))
 	return workbench
+
+
+static func _press(position: Vector2) -> InputEventMouseButton:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = true
+	event.position = position
+	return event
+
+
+static func _motion(position: Vector2) -> InputEventMouseMotion:
+	var event := InputEventMouseMotion.new()
+	event.position = position
+	return event
+
+
+static func _fixture_frame(catalog: PartsCatalog) -> Dictionary:
+	for frame in catalog.list_category("frame"):
+		if str(frame.get("name", "")) == FIXTURE_FRAME:
+			return frame
+	return {}
 
 
 ## The Control the two views share. Found by walking rather than exposed, because it is an

@@ -47,10 +47,12 @@ const TOP_BAR_HEIGHT := 44.0
 const CLUSTER_MARGIN := 12.0
 const RAIL_WIDTH := 300.0
 const INSPECTOR_WIDTH := 348.0
-## The most of the window the inspector may claim, however long its rows get. Just under half:
-## past that the thing being inspected has less room than the description of it, which inverts what
-## a full-bleed viewport is for.
-const MAX_INSPECTOR_FRACTION := 0.42
+## The most of the window the inspector may claim, however long its rows get. Under half: past that
+## the thing being inspected has less room than the description of it, which inverts what a
+## full-bleed viewport is for. 0.45 rather than 0.42 because the widest tab in the app — Layout, at
+## 561 px — lands just inside it on a 1333 px window, and a ceiling that cut the widest real panel
+## by a handful of pixels would be a bound chosen to be tidy rather than to be right.
+const MAX_INSPECTOR_FRACTION := 0.45
 ## How far the floating columns stop short of the bottom, so they never collide with the
 ## bottom-left tool cluster or the bottom-right toggle.
 const BOTTOM_KEEPOUT := 76.0
@@ -259,6 +261,14 @@ var _ring: CompletenessRing
 ## and leave a part picker floating over a flight.
 var _top_bar: HBoxContainer
 var _tools_glass: PanelContainer
+## The dropdown's own glass, held so the empty state can hide it while keeping the chip — the two
+## live project actions ride the chip, not the dropdown.
+var _dropdown_glass: PanelContainer
+## The whole Lab/Sim cluster, held so the empty state can hide it: there is no build to take to
+## the field, and a toggle that flies nothing would be a button that lies.
+var _bottom_right_glass: PanelContainer
+## The "No drone open" panel that replaces the chrome after a Delete.
+var _empty_state: Control
 var _sim_button: Button
 var _lab_button: Button
 var _room_menu: RoomMenu
@@ -293,6 +303,10 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	_build_rail_glass()
 	_build_workbench()
 	_build_inspector()
+	# Between the inspector and the top cluster, so the chip draws over it but it covers the model
+	# and the floating columns. The empty state must never hide the project chip — New and Open are
+	# the only way out of it.
+	_build_empty_state()
 	_build_top_cluster()
 	_build_bottom_left_cluster()
 	_build_bottom_right_cluster()
@@ -376,7 +390,7 @@ func _fit_columns() -> void:
 	var rail_width := maxf(RAIL_WIDTH, lab.rails().get_combined_minimum_size().x)
 	_rail_glass.offset_right = CLUSTER_MARGIN + rail_width + LothalTheme.SPACE_2 * 2
 
-	var inspector_width := maxf(INSPECTOR_WIDTH, _inspector_content_width())
+	var inspector_width := maxf(INSPECTOR_WIDTH, _inspector_content_width(_focused_panel_titles()))
 	# CLAMPED TO THE WINDOW, because a measurement is a request and not an entitlement. The panel is
 	# anchored to the right edge and grows leftwards, so an unclamped request wider than the window
 	# does not produce a wide panel — it produces a panel whose contents run off the right-hand edge,
@@ -441,6 +455,7 @@ func _build_top_cluster() -> void:
 	_system_dropdown.select(0)
 	_system_dropdown.item_selected.connect(_select_system)
 	dropdown_glass.add_child(_system_dropdown)
+	_dropdown_glass = dropdown_glass
 	bar.add_child(dropdown_glass)
 
 	var spacer := Control.new()
@@ -523,6 +538,12 @@ func _build_workbench() -> void:
 ## nothing about the aircraft has changed — the same motor, pack and props are fitted — and
 ## rebuilding the whole 3D assembly on every mouse motion during a drag would be both wasteful and
 ## wrong, since the frame being drawn is not necessarily the frame that is fitted.
+## The Airframe room, for the capture tooling and anything else that needs to drive it the way a
+## click does rather than by reaching into a private field. Null until `_build_workbench` has run.
+func workbench() -> FrameWorkbench:
+	return _workbench
+
+
 func _on_frame_edited(document: AirframeDocument) -> void:
 	lab.frame_document = document
 	lab.structure_details.render(document)
@@ -535,19 +556,37 @@ func _on_frame_edited(document: AirframeDocument) -> void:
 	_fit_columns.call_deferred()
 
 
-## The widest thing any visible inspector tab wants to be.
+## The widest that any of THIS SYSTEM'S inspector tabs wants to be.
 ##
-## `get_combined_minimum_size()` on the TabContainer is not enough on its own any more: the spec
-## panels can now scroll horizontally, and a ScrollContainer deliberately stops claiming its
-## child's width once it can scroll it. That is the right behaviour — it is what stops a long value
-## running off the window — but it also means the tab no longer ASKS for the width its rows need.
-## So the rows are asked directly, and the larger of the two answers wins.
-func _inspector_content_width() -> float:
+## Two things this has to get right, and the first version got neither.
+##
+## **Why it asks the panels rather than the container.** `get_combined_minimum_size()` on the
+## TabContainer is no longer enough: the spec panels can now scroll horizontally, and a
+## ScrollContainer deliberately stops claiming its child's width once it can scroll it. That is the
+## behaviour that stops a long value running off the window, and its cost is that the tab no longer
+## ASKS for the width its rows need. So the rows are asked directly.
+##
+## **Why it measures every tab of the system and not the visible one.** In a TabContainer exactly
+## one child is visible — the tab in front — so filtering on `visible` sizes the column to whichever
+## tab happens to be open. Airframe's four tabs want 446, 515, 540 and 561 px; sized to Structure at
+## 446, clicking Arms or Layout clipped every value on the right, which is precisely the fault this
+## function exists to fix, moved one click away. Measuring all four also means the column does not
+## CHANGE WIDTH as you tab across it, which would make the canvas beside it jump for no reason the
+## builder can see.
+func _inspector_content_width(titles: Array) -> float:
 	var widest := lab.panels.get_combined_minimum_size().x
 	for child in lab.panels.get_children():
-		if child is SpecPanel and (child as Control).visible:
+		if child is SpecPanel and titles.has(str(child.name)):
 			widest = maxf(widest, (child as SpecPanel).content_width())
 	return widest
+
+
+## The panel titles the focused system routes to. Empty for an unmodelled system, which shows a stub
+## instead — and a stub is sized by its own text, not by a spec grid.
+func _focused_panel_titles() -> Array:
+	if _focused_index < 0 or _focused_index >= SYSTEMS.size():
+		return []
+	return SYSTEMS[_focused_index].get("panels", [])
 
 
 func _build_inspector() -> void:
@@ -565,6 +604,57 @@ func _build_inspector() -> void:
 	_inspector_stub = SystemStub.new(false)
 	_inspector_stub.visible = false
 	_inspector.add_child(_inspector_stub)
+
+
+## The panel that replaces the whole workspace after a Delete.
+##
+## Two buttons and the project chip. The chip is the real escape hatch — New, Open, Reveal and
+## RECENT all live there, and this panel's buttons are the same two actions one click closer. It
+## is deliberately spare: the state after delete is "there is no drone", and a screen full of
+## chrome describing nothing would be the app pretending otherwise.
+func _build_empty_state() -> void:
+	_empty_state = Control.new()
+	_empty_state.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_empty_state.visible = false
+	add_child(_empty_state)
+
+	var centre := CenterContainer.new()
+	centre.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_empty_state.add_child(centre)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", LothalTheme.SPACE_3)
+	centre.add_child(box)
+
+	var title := Label.new()
+	title.text = "No drone open"
+	title.theme_type_variation = "TitleLabel"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+
+	var hint := Label.new()
+	hint.text = ("You deleted the drone you were on. New starts a fresh build; Open finds one you "
+		+ "saved. Your recent drones are in the menu at the top left.")
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.theme_type_variation = "MutedLabel"
+	hint.custom_minimum_size = Vector2(420, 0)
+	box.add_child(hint)
+
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+	box.add_child(row)
+
+	var new_button := Button.new()
+	new_button.text = "New drone"
+	new_button.pressed.connect(func() -> void: adopt(ProjectLibrary.starting_project()))
+	row.add_child(new_button)
+
+	var open_button := Button.new()
+	open_button.text = "Open…"
+	open_button.pressed.connect(func() -> void: _open_dialog.popup_centered_ratio(0.6))
+	row.add_child(open_button)
 
 
 ## Bottom left: the tools, the live status, and the completeness ring.
@@ -662,6 +752,7 @@ func _build_bottom_right_cluster() -> void:
 	add_child(layer)
 
 	var glass := _glass_panel()
+	_bottom_right_glass = glass
 	# The layer is not a Control, so the theme does not reach this panel down the tree the way it
 	# reaches the other three. Set here rather than left to inherit, because unthemed is a state a
 	# screenshot shows and a test does not.
@@ -826,6 +917,10 @@ func _select_system(index: int) -> void:
 
 	_apply_focus()
 	_refresh_status()
+	# Which tabs have to fit just changed with the system, so the column's width has to be asked
+	# again. Deferred for the same reason it is everywhere else here: a panel that has just been
+	# shown has not been laid out yet, and its combined minimum size is still the previous answer.
+	_fit_columns.call_deferred()
 
 
 ## Selects a system by its name, keeping the dropdown in step. The seam the capture tool drives, so
@@ -975,6 +1070,15 @@ func _refresh_status() -> void:
 	_sync_project()
 	if _status_label == null:
 		return
+	if container == null:
+		# With no drone there is nothing decided, and the ring must not read as a score of nothing
+		# — an empty arc is the honest rendering of an empty state.
+		_status_label.text = "No drone open"
+		if _ring != null:
+			_ring.fraction = 0.0
+			_ring.tooltip_text = "Nothing is open — New or Open a drone."
+			_ring.queue_redraw()
+		return
 	var decided := _decided_count()
 	_status_label.text = "%s  ·  %d of %d systems decided" % [
 		SYSTEMS[_focused_index]["name"], decided, SYSTEMS.size()]
@@ -1013,6 +1117,17 @@ func _on_project_action(action_id: String) -> void:
 		"reveal":
 			OS.shell_show_in_file_manager(ProjectSettings.globalize_path(
 				container.path if container.path != "" else ProjectLibrary.DIR))
+		"delete":
+			# The container is moved to the app's trash, not unlinked — §10 of the projects design,
+			# and the reason there is no confirmation dialog. Nothing replaces it: the app closes
+			# the drone and shows the empty state, because a delete that handed you a fresh
+			# "Untitled build" in the same second looked exactly like a delete that did nothing.
+			var gone := container.path
+			if gone != "":
+				ProjectLibrary.delete(gone)
+				settings.forget_project(gone)
+				settings.save()
+			_clear_project()
 		"rename":
 			pass
 		_:
@@ -1030,6 +1145,7 @@ func adopt(project: Project) -> Array:
 	container.write(ProjectLibrary.path_for(project))
 	var missing := apply_project(project)
 	chip.set_project(project, container.path)
+	_show_project()
 	_remember(container.path)
 	_refresh_status()
 	return missing
@@ -1048,6 +1164,7 @@ func open_project(path: String) -> Array:
 	container = opened
 	var missing := apply_project(opened.project)
 	chip.set_project(opened.project, opened.path)
+	_show_project()
 	_remember(opened.path)
 	_refresh_status()
 	return missing
@@ -1065,6 +1182,47 @@ func _remember(path: String) -> void:
 	settings.remember_project(path)
 	settings.save()
 	chip.set_recent_paths(settings.existing_recent_projects())
+
+
+## Closes the current drone without opening another — the state after Delete.
+##
+## The chip reads "No drone" and the menu's project-dependent entries grey, and the workspace is
+## hidden behind the empty-state panel. Autosave has nothing to write (container is null), so this
+## is the one state in the app that cannot create a project on its own — which is the entire point.
+func _clear_project() -> void:
+	container = null
+	chip.set_project(null, "")
+	_show_empty_state()
+	_refresh_status()
+
+
+## Shows the "No drone open" panel and hides everything the shell floats over the model — the
+## dropdown, the rail, the inspector, the plan canvas, the tools, the Lab/Sim toggle. Only the chip
+## stays: its New, Open, Reveal and RECENT are the way out.
+func _show_empty_state() -> void:
+	_empty_state.visible = true
+	_dropdown_glass.visible = false
+	_rail_glass.visible = false
+	_inspector.visible = false
+	if _workbench != null:
+		_workbench.visible = false
+	_tools_glass.visible = false
+	if _bottom_right_glass != null:
+		_bottom_right_glass.visible = false
+	var viewport_container := lab.viewport().get_parent()
+	if viewport_container is Control:
+		(viewport_container as Control).visible = false
+
+
+## Undoes the empty state — every New and Open lands here. The per-system visibility of the columns
+## and the model is `_select_system`'s job, so this re-runs it against the focused system rather
+## than guessing at what to show.
+func _show_project() -> void:
+	_empty_state.visible = false
+	_dropdown_glass.visible = true
+	if _bottom_right_glass != null:
+		_bottom_right_glass.visible = true
+	_select_system(_focused_index)
 
 
 ## The autosave tick. Asks, rather than writes: an unchanged project costs one JSON stringify.

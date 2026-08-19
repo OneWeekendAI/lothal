@@ -165,12 +165,6 @@ func _build_toolbar() -> Control:
 	row.add_child(_button("+", func() -> void: _zoom(FramePlanEditor.ZOOM_STEP), "Zoom in"))
 	row.add_child(_button("Fit", _on_fit, "Frame the whole drawing  (F)"))
 
-	_zoom_label = Label.new()
-	_zoom_label.theme_type_variation = &"SmallLabel"
-	_zoom_label.custom_minimum_size = Vector2(46, 0)
-	_zoom_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	row.add_child(_zoom_label)
-
 	_view_2d_button = _button("2D", func() -> void: set_view_3d(false), "The plan you draw in")
 	_view_2d_button.toggle_mode = true
 	_view_2d_button.button_pressed = true
@@ -180,6 +174,15 @@ func _build_toolbar() -> Control:
 		"The same frame, extruded — drag to orbit, wheel to zoom")
 	_view_3d_button.toggle_mode = true
 	row.add_child(_view_3d_button)
+
+	# AFTER the 2D/3D pair, not before it. Sitting between "Fit" and "2D" the readout was a third
+	# item in a row of buttons, and in 3D it read "3D  2D  3D" — a label that looks like the control
+	# beside it is worse than no label.
+	_zoom_label = Label.new()
+	_zoom_label.theme_type_variation = &"SmallLabel"
+	_zoom_label.custom_minimum_size = Vector2(46, 0)
+	_zoom_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(_zoom_label)
 	row.add_child(VSeparator.new())
 
 	var snap := OptionButton.new()
@@ -524,9 +527,10 @@ func _zoom(factor: float) -> void:
 func _refresh_zoom_label() -> void:
 	if _zoom_label == null:
 		return
-	# The 3D view has a camera distance rather than a scale, and a "×" against a fitted distance is
-	# the same sentence in both: one is what Fit gives you.
-	_zoom_label.text = "3D" if view_3d.visible else "%.1f×" % editor.zoom_ratio()
+	# Blank in 3D. The number means "times the scale Fit chose", which is a statement about a flat
+	# drawing; the orbit has a camera distance instead, and printing a ratio for it would be putting
+	# a plausible number next to a different quantity.
+	_zoom_label.text = "" if view_3d.visible else "%.1f×" % editor.zoom_ratio()
 
 
 func _set_status(text: String) -> void:

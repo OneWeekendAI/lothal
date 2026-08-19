@@ -73,25 +73,32 @@ func _init(p_project: Project = null) -> void:
 
 
 ## Adopts a project and redraws. Used by New and Open when they exist; used by the suite now.
+## A null project is the state after Delete — the chip reads "No drone" and the menu's
+## project-dependent entries grey, so the app is not offering "Delete" on nothing.
 func set_project(p_project: Project, p_saved_path: String = "") -> void:
 	project = p_project
 	saved_path = p_saved_path
+	_menu.set_has_project(p_project != null)
 	refresh()
 
 
 func refresh() -> void:
-	_name_label.text = project.name if project != null else "Untitled build"
+	_name_label.text = project.name if project != null else "No drone"
 	_state_label.text = state_text()
 	_state_label.tooltip_text = (
-		"This drone has a name and an id, and nothing to write them to yet — the project "
-		+ "container is the next slice." if saved_path == "" else saved_path)
+		"No drone is open — New or Open one." if project == null else
+		("This drone has a name and an id, and nothing to write them to yet — the project "
+			+ "container is the next slice." if saved_path == "" else saved_path))
 	_dot.add_theme_color_override("font_color",
 		LothalTheme.TEXT_MUTED if saved_path == "" else LothalTheme.SUCCESS)
 
 
 ## The state line. Derived from whether there is a path, so the "saved" wording is unreachable
-## while nothing is written — which is the point (see the class comment).
+## while nothing is written — which is the point (see the class comment). A null project has its
+## own wording first: with no drone at all, "not saved anywhere yet" would be a lie twice over.
 func state_text() -> String:
+	if project == null:
+		return "no drone open"
 	if saved_path == "":
 		return "not saved anywhere yet"
 	return "saved %s" % relative_time(
@@ -210,6 +217,8 @@ func begin_rename() -> void:
 ## A blank name is refused rather than accepted-and-defaulted. "Untitled build" appearing where a
 ## builder typed spaces looks like the app lost the name they typed.
 func submit_rename(new_name: String) -> String:
+	if project == null:
+		return "No drone is open."
 	var trimmed := new_name.strip_edges()
 	if trimmed == "":
 		return "A drone needs a name."

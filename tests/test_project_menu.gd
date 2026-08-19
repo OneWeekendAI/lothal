@@ -30,6 +30,7 @@ static func run() -> Array:
 	results.append_array(_test_a_refused_rename_does_not_vanish())
 	results.append_array(_test_the_chip_cannot_claim_to_be_saved())
 	results.append_array(_test_relative_time_reads_like_a_person_wrote_it())
+	results.append_array(_test_no_project_greys_the_drone_entries())
 	return results
 
 
@@ -42,14 +43,14 @@ static func _test_the_table_is_the_feature_list() -> Array:
 
 	results.append(TestResult.new(
 		"every entry in the menu has a distinct id",
-		ids.size() == unique.size() and ids.size() == 7,
+		ids.size() == unique.size() and ids.size() == 8,
 		"%d entries: %s" % [ids.size(), ids]
 	))
 
 	# The mockup's own list. Named here so that dropping one silently is a failing test rather than
 	# a screenshot nobody compares against.
 	var expected := ["new", "open", "duplicate", "rename", "export_build_sheet",
-		"export_printed", "reveal"]
+		"export_printed", "reveal", "delete"]
 	results.append(TestResult.new(
 		"and the menu still offers everything the design put in it",
 		ids == expected,
@@ -130,11 +131,13 @@ static func _test_which_entries_are_live() -> Array:
 			and ProjectMenu.is_live("duplicate")
 			and ProjectMenu.is_live("rename")
 			and ProjectMenu.is_live("reveal")
+			and ProjectMenu.is_live("delete")
 			and not ProjectMenu.is_live("export_build_sheet")
 			and not ProjectMenu.is_live("export_printed"),
-		"new=%s open=%s duplicate=%s reveal=%s sheet=%s printed=%s" % [
+		"new=%s open=%s duplicate=%s reveal=%s delete=%s sheet=%s printed=%s" % [
 			ProjectMenu.is_live("new"), ProjectMenu.is_live("open"),
 			ProjectMenu.is_live("duplicate"), ProjectMenu.is_live("reveal"),
+			ProjectMenu.is_live("delete"),
 			ProjectMenu.is_live("export_build_sheet"), ProjectMenu.is_live("export_printed")]
 	))
 
@@ -182,6 +185,57 @@ static func _test_a_refused_rename_does_not_vanish() -> Array:
 	root.free()
 	tree.free()
 	chip.free()
+	return results
+
+
+## A menu item's index, by its label. The menu table owns the mapping, so the test looks it up the
+## same way a user would — by what is on screen.
+static func _item_index(menu: PopupMenu, text: String) -> int:
+	for i in menu.item_count:
+		if menu.get_item_text(i) == text:
+			return i
+	return -1
+
+
+## The delete-fix half that lives in the menu: when there is no drone open, the entries that need
+## a drone to mean anything — Duplicate, Rename, Delete — are greyed, and the ones that don't (New,
+## Open, Reveal) stay clickable. Without this, a builder who just deleted their only drone would be
+## offered "Delete" on nothing.
+static func _test_no_project_greys_the_drone_entries() -> Array:
+	var menu := ProjectMenu.new()
+	menu.set_has_project(false)
+	var wrong: Array = []
+	for pair in [["duplicate", "Duplicate — try a variant"], ["rename", "Rename"],
+			["delete", "Delete"]]:
+		if not menu.is_item_disabled(_item_index(menu, str(pair[1]))):
+			wrong.append("%s should be greyed with no drone" % pair[0])
+	for pair in [["new", "New drone"], ["open", "Open…"], ["reveal", "Reveal saved files"]]:
+		if menu.is_item_disabled(_item_index(menu, str(pair[1]))):
+			wrong.append("%s should stay clickable with no drone" % pair[0])
+	var results := [TestResult.new(
+		"with no drone open, only New, Open and Reveal stay clickable",
+		wrong.is_empty(),
+		"problems: %s" % [wrong]
+	)]
+
+	var chip := ProjectChip.new()
+	chip.set_project(null, "")
+	var chip_menu := chip.menu()
+	results.append(TestResult.new(
+		"and the chip that adopts no drone greys the same entries",
+		chip_menu.is_item_disabled(_item_index(chip_menu, "Delete"))
+			and not chip_menu.is_item_disabled(_item_index(chip_menu, "Open…")),
+		"delete disabled=%s open disabled=%s" % [
+			chip_menu.is_item_disabled(_item_index(chip_menu, "Delete")),
+			chip_menu.is_item_disabled(_item_index(chip_menu, "Open…"))]
+	))
+	results.append(TestResult.new(
+		"and the chip's state line says there is no drone",
+		chip.state_text() == "no drone open",
+		"'%s'" % chip.state_text()
+	))
+	chip.free()
+	menu.free()
 	return results
 
 
