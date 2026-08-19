@@ -99,6 +99,22 @@ var esc_picker: EscPicker
 var fc_picker: FcPicker
 var electronics_picker: ElectronicsPicker
 var details: FrameDetails
+## The four Airframe tabs. Read-only inspectors over the airframe maths (airframe.md §3–§5); none
+## of them owns state, so a reload rebuilds them with everything else and nothing is lost.
+var structure_details: StructureDetails
+var arms_details: ArmsDetails
+var fasteners_details: FastenersDetails
+var layout_details: LayoutDetails
+
+## The frame the Airframe tabs are describing, as geometry.
+##
+## HELD, not regenerated per repaint. The four tabs no longer take a Build — a frame is a frame with
+## nothing bolted to it (airframe.md §1) — so what they need is a document, and the document has to
+## outlive a selection change or an edit made in the Airframe room would be thrown away the moment
+## somebody picked a different propeller. It is regenerated only when the SELECTED FRAME changes,
+## which is the one event that really does mean "you are now looking at a different object".
+var frame_document: AirframeDocument
+var _frame_document_id := ""
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
 var battery_details: BatteryDetails
@@ -210,6 +226,27 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	details = FrameDetails.new()
 	details.name = "Frame"
 	panels.add_child(details)
+
+	# The four Airframe tabs (airframe.md §1). They are panels and not rails because none of them
+	# is a thing you pick: an arm, a bolted joint and an inertia tensor are consequences of the
+	# frame you already chose, not entries in a catalog. All four render against the SAME frame
+	# dictionary the Frame panel gets, which is what keeps them from describing a different
+	# aircraft than the one on screen.
+	structure_details = StructureDetails.new()
+	structure_details.name = "Structure"
+	panels.add_child(structure_details)
+
+	arms_details = ArmsDetails.new()
+	arms_details.name = "Arms"
+	panels.add_child(arms_details)
+
+	fasteners_details = FastenersDetails.new()
+	fasteners_details.name = "Fasteners"
+	panels.add_child(fasteners_details)
+
+	layout_details = LayoutDetails.new()
+	layout_details.name = "Layout"
+	panels.add_child(layout_details)
 
 	motor_details = MotorDetails.new(catalog)
 	motor_details.name = "Motor"
@@ -436,6 +473,17 @@ func viewport() -> SubViewport:
 	return _viewport
 
 
+## The rail column, for a shell that wants to place it somewhere other than where this screen puts
+## it. Named accessor rather than making `_rails` public, because the point is to let a container
+## be MOVED, not to let its tabs be rebuilt from outside — reload_catalog() is the only thing
+## permitted to swap its children, and that stays in this file.
+##
+## GlassShell reparents this and `panels` out of the row on the way in, which is what leaves the
+## SubViewportContainer alone in an HBox and therefore full-bleed. Nothing else here changes.
+func rails() -> TabContainer:
+	return _rails
+
+
 ## Lab's private 3D world: a turntable pivot holding the generated airframe, a camera at a
 ## fixed distance, and enough light to read carbon against nylon.
 func _build_world() -> void:
@@ -551,6 +599,19 @@ func set_air(p_air: AirDensity) -> void:
 	_on_selection_changed()
 
 
+## Regenerates the Airframe document when, and only when, the selected frame changes.
+##
+## The guard is the whole function. Without it every selection change — a different pack, a nudged
+## battery — would rebuild the geometry from the catalog and silently discard anything edited in the
+## Airframe room, which is the one failure mode a document-backed editor must not have.
+func _refresh_frame_document(frame: Dictionary) -> void:
+	var id := str(frame.get("part_id", ""))
+	if frame_document != null and id == _frame_document_id:
+		return
+	_frame_document_id = id
+	frame_document = AirframeDocument.from_catalog_frame(frame)
+
+
 ## The single path from a selection to everything that shows it. Geometry, all three panels'
 ## spec rows and the five derived stats are rebuilt from ONE Build in ONE call, so there is no
 ## ordering in which a panel could be showing one component while the viewport shows another —
@@ -567,6 +628,13 @@ func _on_selection_changed() -> void:
 	# room, not of the props that happen to be fitted.
 	airframe.set_all_rates_rpm(HAND_SPIN_RPM)
 	details.render(build.frame, build)
+	# All four against the same frame, in the same call as every other panel — one handler rebuilds
+	# everything, so an Airframe tab cannot be describing the frame you had a selection ago.
+	_refresh_frame_document(build.frame)
+	structure_details.render(frame_document)
+	arms_details.render(frame_document)
+	fasteners_details.render(frame_document)
+	layout_details.render(frame_document)
 	motor_details.render(build.motor, build)
 	propeller_details.render(build.propeller, build)
 	battery_details.render(build.battery, build)
@@ -649,6 +717,46 @@ func current_build() -> Build:
 		electronics_picker.component_ids(),
 		air
 	)
+
+
+## Fits a whole selection at once — the mirror of selection(), and the direction that makes
+## opening a saved drone possible at all.
+##
+## Returns the categories it COULD NOT fit, each with the id that failed. Nothing is substituted:
+## a part that has left the catalog leaves its rail where it was and is named to the caller, so the
+## app can say "this build used motor_custom_ab12, which is no longer in your parts". Quietly
+## selecting a default instead would change the aircraft's mass and say nothing, which is the one
+## behaviour a project file must never produce.
+##
+## Lives here rather than in the shell because the rails are this screen's — the shell is allowed
+## to ask for a selection and to hand one back, and is not allowed to know how many pickers there
+## are. Adding a seventh category means editing this function and selection() together, in one
+## file, which is why they are next to each other.
+func apply_selection(selection_by_category: Dictionary) -> Array:
+	var failed: Array = []
+	var pickers := {
+		"frame": picker,
+		"motor": motor_picker,
+		"propeller": propeller_picker,
+		"battery": battery_picker,
+		"esc": esc_picker,
+		"flight_controller": fc_picker,
+	}
+	for category in pickers:
+		var part_id := String(selection_by_category.get(category, ""))
+		if part_id == "":
+			continue
+		if not (pickers[category] as PartPicker).select_id(part_id):
+			failed.append({"category": category, "part_id": part_id})
+
+	for category in Build.OPTIONAL_COMPONENTS:
+		if not selection_by_category.has(category):
+			continue
+		var part_id := String(selection_by_category[category])
+		# "" is a real answer here — not fitted — and ElectronicsPicker takes it as one.
+		if not electronics_picker.select_component(category, part_id) and part_id != "":
+			failed.append({"category": category, "part_id": part_id})
+	return failed
 
 
 ## The whole selection as a category -> part_id dictionary — what crosses the door into the bench

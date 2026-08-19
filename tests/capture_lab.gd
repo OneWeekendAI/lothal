@@ -45,7 +45,11 @@ func _init() -> void:
 			DisplayServer.window_set_size(Vector2i(w, h))
 			root.size = Vector2i(w, h)
 
-	var shell: AppShell = load("res://src/scenes/root.tscn").instantiate()
+	# The rooms without a shell around them. This used to load root.tscn, which was the eight-tab
+	# AppShell; root.tscn is the Glass Bench shell now, and a room screenshot wants neither shell's
+	# chrome in the frame. RoomHost is exactly the rooms — unchanged by the swap, which is the
+	# point of it existing.
+	var shell := RoomHost.new()
 	root.add_child(shell)
 
 	if part_id == "sim":

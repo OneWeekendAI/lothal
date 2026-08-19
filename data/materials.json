@@ -1,0 +1,125 @@
+{
+  "_schema": "The material constants every airframe number multiplies by (airframe.md §6.1). Same two-tier shape as data/parts/*.json and for the same reason: `specs` is physics-bearing — density_kg_m3, youngs_modulus_gpa and strength_mpa are read by the mass, stiffness, resonance and stress maths, and nothing goes in `specs` that the physics does not read. `catalog` is browsing metadata: factual, checkable properties needed to navigate the list (the form the material comes in, where on an aircraft it is used, the honesty tier its modulus is quoted at). Colour, price and vendor links are banned by name from both blocks, exactly as in the parts files; `source` names a datasheet or a published measurement, never a shop. Units are spelled into the field names because a silent unit is how a frame ends up a thousand times too stiff. `youngs_modulus_45_gpa` exists only for materials that HAVE a weave direction: a 3K twill plate is stiff along 0/90 and roughly 30% less stiff at 45°, so an arm cut diagonally across the sheet is a different arm from one cut along it. Where that field is present the modulus is direction-dependent and `modulus_tier` says `characteristic` — airframe.md §8 puts E(θ) anisotropy in the characteristic tier, meaning it may rank two layups and may never put an error bar on the difference. Where it is absent the material is isotropic (or, for a quasi-isotropic layup, engineered to be) and the single modulus is engineering-grade. Strength figures are quoted for the loading the airframe maths actually applies — tensile for plate and fasteners — and are omitted rather than guessed where a material has no meaningful structural strength (TPU 95A is a spring and a bumper, never a load path). Fastener mass is NEVER tabulated here or anywhere: it is derived from geometry times the density in this file (§5.1, HardwareMass).",
+  "materials": [
+    {
+      "material_id": "carbon_3k_twill_0_90",
+      "name": "Carbon plate, 3K twill 0/90",
+      "specs": {
+        "density_kg_m3": 1525.0,
+        "youngs_modulus_gpa": 70.0,
+        "youngs_modulus_45_gpa": 49.0,
+        "strength_mpa": 600.0
+      },
+      "catalog": {
+        "form": "sheet",
+        "used_for": "every plate on a bought frame",
+        "modulus_tier": "characteristic"
+      },
+      "source": "DragonPlate, 'Just How Strong Is Carbon Fiber?' — ~70 GPa tensile modulus, ~600 MPa tensile strength, ~1.5 g/cm3 for a balanced 0/90 standard-modulus layup. 45-degree value is the ~30% knockdown described in airframe.md §6.1, characteristic and unmeasured."
+    },
+    {
+      "material_id": "carbon_quasi_isotropic",
+      "name": "Carbon plate, quasi-isotropic (0/±45/90)",
+      "specs": {
+        "density_kg_m3": 1550.0,
+        "youngs_modulus_gpa": 50.0,
+        "strength_mpa": 500.0
+      },
+      "catalog": {
+        "form": "sheet",
+        "used_for": "higher-end '4K high-modulus' plate; direction-independent by design",
+        "modulus_tier": "engineering"
+      },
+      "source": "CNC Carbon Fiber 3K sheet data (1.55 g/cm3, 0/90/±45 lay-up) with modulus from the ScienceDirect quasi-isotropic CFRP study ([-45/90/45/0]2s, E ≈ 49.7 GPa)."
+    },
+    {
+      "material_id": "pa12_sls",
+      "name": "PA12 (SLS nylon)",
+      "specs": {
+        "density_kg_m3": 930.0,
+        "youngs_modulus_gpa": 1.7,
+        "strength_mpa": 48.0
+      },
+      "catalog": {
+        "form": "printed solid",
+        "used_for": "printed ducts, whoop frames",
+        "modulus_tier": "engineering"
+      },
+      "source": "Xometry Pro nylon PA12 (SLS/MJF) datasheet — 0.93 g/cm3, tensile modulus 1600-1850 MPa, flexural ~1700 MPa, tensile strength 46-51 MPa; corroborated by the Craftcloud SLS PA12 material guide."
+    },
+    {
+      "material_id": "tpu_95a",
+      "name": "TPU 95A",
+      "specs": {
+        "density_kg_m3": 1200.0,
+        "youngs_modulus_gpa": 0.03
+      },
+      "catalog": {
+        "form": "printed solid",
+        "used_for": "bumpers, soft mounts, battery pads — a spring, never a load path",
+        "modulus_tier": "characteristic"
+      },
+      "source": "UAVMODEL, 'Advanced 3D Printing Materials for FPV Drone Frames' — TPU 95A as the FPV standard for pads, mounts and bumpers. Modulus is the 0.01-0.05 GPa span of airframe.md §6.1 quoted at its midpoint; §6.2 says pad modulus is one of the four declared free constants, so this ranks mounts and never sizes one."
+    },
+    {
+      "material_id": "aluminium_6061",
+      "name": "Aluminium 6061",
+      "specs": {
+        "density_kg_m3": 2700.0,
+        "youngs_modulus_gpa": 69.0,
+        "strength_mpa": 310.0
+      },
+      "catalog": {
+        "form": "machined bar",
+        "used_for": "standoffs, screws",
+        "modulus_tier": "engineering"
+      },
+      "source": "airframe.md §6.1 material table; 2700 kg/m3 is the density the §5.1 standoff derivation is checked against (M3 5 mm x 12 mm standoff, 0.407 g computed vs 0.4 g listed by Amplified Parts and REV Robotics)."
+    },
+    {
+      "material_id": "aluminium_7075",
+      "name": "Aluminium 7075",
+      "specs": {
+        "density_kg_m3": 2810.0,
+        "youngs_modulus_gpa": 71.0,
+        "strength_mpa": 570.0
+      },
+      "catalog": {
+        "form": "machined bar",
+        "used_for": "standoffs and screws where 6061 strips",
+        "modulus_tier": "engineering"
+      },
+      "source": "airframe.md §6.1 material table — the 'alloy is 2810' figure §5.1 uses for alloy screws."
+    },
+    {
+      "material_id": "steel_fastener",
+      "name": "Steel (fastener)",
+      "specs": {
+        "density_kg_m3": 7850.0,
+        "youngs_modulus_gpa": 200.0,
+        "strength_mpa": 800.0
+      },
+      "catalog": {
+        "form": "rolled thread",
+        "used_for": "screws — the default, and the heaviest",
+        "modulus_tier": "engineering"
+      },
+      "source": "airframe.md §6.1 material table; 7850 kg/m3 is the steel density §5.1's screw formula is written around."
+    },
+    {
+      "material_id": "titanium_ti6al4v",
+      "name": "Titanium (Ti-6Al-4V)",
+      "specs": {
+        "density_kg_m3": 4430.0,
+        "youngs_modulus_gpa": 114.0,
+        "strength_mpa": 950.0
+      },
+      "catalog": {
+        "form": "rolled thread",
+        "used_for": "weight-saving screws — a real choice a builder makes, so it is a material here and not a constant",
+        "modulus_tier": "engineering"
+      },
+      "source": "airframe.md §6.1 material table — Ti-6Al-4V, the grade FPV titanium hardware is sold in."
+    }
+  ]
+}

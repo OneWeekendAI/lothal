@@ -25,7 +25,11 @@ func _init() -> void:
 	var prop_id: String = args[3] if args.size() > 3 else ""
 	var settle: int = int(args[4]) if args.size() > 4 else 40
 
-	var shell: AppShell = load("res://src/scenes/root.tscn").instantiate()
+	# The rooms without a shell around them. This used to load root.tscn, which was the eight-tab
+	# AppShell; root.tscn is the Glass Bench shell now, and a room screenshot wants neither shell's
+	# chrome in the frame. RoomHost is exactly the rooms — unchanged by the swap, which is the
+	# point of it existing.
+	var shell := RoomHost.new()
 	root.add_child(shell)
 
 	if motor_id != "" and not shell.lab.motor_picker.select_id(motor_id):

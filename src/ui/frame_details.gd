@@ -15,6 +15,18 @@ const SPEC_ROWS := [
 	{"key": "provenance", "label": "Provenance"},
 ]
 
+## EVERY COMPUTED FIGURE HAS MOVED OUT OF THIS PANEL, deliberately. Plate stock, mass from geometry,
+## the arm's mode and its droop were briefly rows here; they are now the Airframe system's Structure
+## and Arms tabs. Two reasons, and the second is the load-bearing one:
+##
+##   - This panel is reached from the DRONE entry, which is where you choose which aircraft you are
+##     working on. Its job is the frame's own published figures — what the vendor claims — so that
+##     the computed figures elsewhere have something to disagree WITH.
+##   - PartDetails' header warns that giving several panels their own copy of a number invites
+##     several renderers and eventually several answers. An arm resonance rendered both here and on
+##     the Arms tab is exactly that, and the Arms tab can compute the loaded figure this one never
+##     could, so the duplicate would also have been the worse of the two.
+
 func _init() -> void:
 	super(SPEC_ROWS)
 

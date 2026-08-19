@@ -26,11 +26,18 @@ const SPACE_6 := 24
 const SPACE_8 := 32
 
 # Type Scale
-const FONT_SIZE_SMALL := 12
-const FONT_SIZE_BODY := 14
-const FONT_SIZE_SUBTITLE := 18
-const FONT_SIZE_TITLE := 22
-const FONT_SIZE_HERO := 32
+#
+# TIGHTENED ONE STEP, DELIBERATELY. The old scale was written for the eight-tab shell, where a
+# screen held one panel and a big viewport; the glass shell puts a top bar, a toolbar, a property
+# strip and a four-tab inspector on screen at once, and at the old sizes the chrome outweighed the
+# drawing it was wrapped around. The RATIOS are unchanged — this is the same scale a step down, not
+# a redesign — and the two readout sizes are left alone, because a hero readout is the number the
+# screen exists to show and shrinking it would be shrinking the content to make room for the frame.
+const FONT_SIZE_SMALL := 11
+const FONT_SIZE_BODY := 13
+const FONT_SIZE_SUBTITLE := 16
+const FONT_SIZE_TITLE := 18
+const FONT_SIZE_HERO := 30
 
 static var _cached_theme: Theme = null
 
@@ -101,8 +108,11 @@ static func _build_theme() -> Theme:
 	btn_normal.border_color = BORDER
 	btn_normal.set_border_width_all(1)
 	btn_normal.set_corner_radius_all(4)
-	btn_normal.content_margin_left = SPACE_3
-	btn_normal.content_margin_right = SPACE_3
+	# A button is padded to be hittable, not to be large. SPACE_3 either side put about 24 px of air
+	# around a four-character label, and a toolbar of fifteen of those is a toolbar that wraps onto
+	# a second row in a window that had the width for one.
+	btn_normal.content_margin_left = SPACE_2
+	btn_normal.content_margin_right = SPACE_2
 	btn_normal.content_margin_top = SPACE_1
 	btn_normal.content_margin_bottom = SPACE_1
 
