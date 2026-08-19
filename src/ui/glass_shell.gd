@@ -406,7 +406,11 @@ func _fit_columns() -> void:
 	# sized against the constant put its own toolbar underneath the inspector — where the last
 	# controls could be seen through the glass and not clicked.
 	if _workbench != null:
-		_workbench.offset_right = _inspector.offset_left - CLUSTER_MARGIN
+		# To the window edge while the inspector is hidden, which in Airframe it always is. Sized
+		# against the panel's measured left edge otherwise, because `INSPECTOR_WIDTH` is a floor and
+		# the panel is routinely wider than it.
+		_workbench.offset_right = -CLUSTER_MARGIN if not _inspector.visible \
+			else _inspector.offset_left - CLUSTER_MARGIN
 
 
 # ---------------------------------------------------------------------------
@@ -528,8 +532,11 @@ func _build_workbench() -> void:
 	# inertia, stiffness and the assembly checks move while a corner is being dragged.
 	_workbench.document_changed.connect(_on_frame_edited)
 	add_child(_workbench)
-	# Opened on the frame the builder currently has selected, as a copy. See `start_from`.
-	_workbench.start_from(lab.current_build().frame)
+	# OPENED ON A LAYOUT, NOT ON THE FITTED FRAME. Handing the room `lab.current_build().frame` put
+	# somebody's 5" freestyle product on screen — a vendor, a published mass and an inch size — in
+	# front of a builder who has chosen none of those and is here to design a part. A generated
+	# Quad X is the same amount of geometry to look at and makes no claim about anything.
+	_workbench.start_from({})
 
 
 ## An edit in the plan view, pushed to the four Airframe tabs.
@@ -546,6 +553,15 @@ func workbench() -> FrameWorkbench:
 
 func _on_frame_edited(document: AirframeDocument) -> void:
 	lab.frame_document = document
+	# ONLY WHEN SOMEBODY CAN SEE THEM. The room's own drawer renders the same four panels against
+	# the same document, and in Airframe the shell's inspector is hidden — so rendering these too
+	# would be four tab-fulls of rows rebuilt on every mouse motion of a vertex drag, for text that
+	# is not on screen. They stay wired for every other route into this signal.
+	# `_inspector == null` is the room being CONSTRUCTED: the workbench opens a frame in its own
+	# constructor, which publishes an edit before the shell's later clusters exist. Skipping is
+	# right in both cases — `_select_system` renders the panels when a system is actually chosen.
+	if _inspector == null or not _inspector.visible:
+		return
 	lab.structure_details.render(document)
 	lab.arms_details.render(document)
 	lab.fasteners_details.render(document)
@@ -891,6 +907,12 @@ func _select_system(index: int) -> void:
 	var viewport_container := lab.viewport().get_parent()
 	if viewport_container is Control:
 		(viewport_container as Control).visible = not in_airframe
+	# THE INSPECTOR COLUMN IS HANDED TO THE ROOM as well, and this is the second half of the same
+	# argument as the viewport. Airframe's numbers now live in the drawer under its own canvas and
+	# its controls live in its own right-hand column, so the shell's inspector would be a third
+	# column showing the same four tabs — beside a room that already has them, in the space the
+	# room's controls need. Every other system keeps it.
+	_inspector.visible = not in_airframe
 	if _workbench != null:
 		_workbench.visible = in_airframe
 		if in_airframe:

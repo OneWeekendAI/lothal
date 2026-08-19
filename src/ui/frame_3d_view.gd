@@ -25,6 +25,21 @@ extends SubViewportContainer
 ## silently failed to draw for weeks. So everything below happens on `_ready`, and a document handed
 ## over before then is remembered and rendered when the world exists.
 
+## Emitted when a plate is clicked, with its index in the document, or −1 for a click on nothing.
+##
+## THE 3D VIEW HAS HANDS NOW. It used to be look-only, which made the one property a plan view
+## cannot show — how high a plate sits in the stack — the one property you could not edit where you
+## could see it. A builder checking whether the top plate clears the stack had to switch back to a
+## flat drawing to move it.
+signal plate_picked(plate_index: int)
+## Emitted while a selected plate is dragged: how far it moved in plan, mm, and how far it moved
+## vertically, mm. Both in the DOCUMENT's units, because the view's job is to say what the gesture
+## meant and `FrameEdits` is what performs it — the same split the plan canvas keeps.
+signal plate_dragged(plate_index: int, delta_mm: Vector2, delta_z_mm: float)
+
+## Which plate is selected, mirrored from the workbench so the two views agree. −1 for none.
+var selected_plate := -1
+
 ## Where the camera starts. Slightly above the horizon and off the nose, which is the angle a frame
 ## is photographed from and the one that shows the stack and the arm sweep in the same picture.
 const START_YAW_DEG := 28.0
@@ -43,6 +58,9 @@ const MIN_DISTANCE_M := 0.06
 const MAX_DISTANCE_M := 4.0
 
 const ORBIT_SENSITIVITY := 0.35
+## How far a plate rises per pixel of a Shift-drag, mm. Slow enough that a 25 mm stack is a
+## deliberate movement rather than a flick.
+const HEIGHT_DRAG_MM_PER_PX := 0.5
 
 var _viewport: SubViewport
 var _orbit: Node3D
@@ -57,6 +75,11 @@ var _distance_m := 0.5
 var _fitted_distance_m := 0.5
 
 var _orbiting := false
+## The plate being dragged in 3D, or −1. Its own state rather than a mode, because the gesture is
+## decided by what was under the cursor when the button went down.
+var _dragging_plate := -1
+var _drag_from_mm := Vector2.ZERO
+var _drag_plane_z_mm := 0.0
 
 ## What to draw once there is a world to draw it in. See the class comment: a document can arrive
 ## before `_ready`, and dropping it would leave the view blank until the next edit.
@@ -68,6 +91,17 @@ var _built := false
 func _init() -> void:
 	stretch = true
 	mouse_filter = Control.MOUSE_FILTER_STOP
+
+
+## Re-frames the model when the view's own rectangle changes.
+##
+## The room's canvas takes whatever the shelf and the controls leave it, so this view is routinely
+## given its real size AFTER a document has been handed to it — and a fit computed against a
+## placeholder rectangle leaves the frame cropped at the edges of a viewport it was framed for at a
+## different size. Only while visible: fitting a hidden view is arithmetic nobody sees.
+func _on_resized_refit() -> void:
+	if visible and _built and _pending_document != null:
+		fit_to_document()
 
 
 func _ready() -> void:
@@ -130,15 +164,113 @@ func _gui_input(event: InputEvent) -> void:
 		elif button.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			zoom_by(1.0 / ZOOM_STEP)
 		elif button.button_index == MOUSE_BUTTON_LEFT:
-			_orbiting = button.pressed
-	elif event is InputEventMouseMotion and _orbiting:
+			if not button.pressed:
+				_orbiting = false
+				_dragging_plate = -1
+				return
+			# A CLICK ON A PLATE SELECTS IT; A CLICK ON NOTHING ORBITS. That split is what lets one
+			# button do both without a modal tool: the empty space around a frame is most of the
+			# viewport, so the gesture a builder already knows still works everywhere it used to.
+			var hit := pick(button.position)
+			plate_picked.emit(hit)
+			if hit >= 0:
+				_dragging_plate = hit
+				_drag_plane_z_mm = AirframeDocument.plate_z_mm(_pending_document.plates[hit])
+				_drag_from_mm = _plan_point_at(button.position, _drag_plane_z_mm)
+			else:
+				_orbiting = true
+	elif event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
-		_yaw -= deg_to_rad(motion.relative.x * ORBIT_SENSITIVITY)
-		# CLAMPED, not wrapped. Letting the pitch roll past vertical flips the horizon and leaves a
-		# builder looking at a mirrored frame with no way to tell that is what happened.
-		_pitch = clampf(_pitch + deg_to_rad(motion.relative.y * ORBIT_SENSITIVITY),
-			deg_to_rad(MIN_PITCH_DEG), deg_to_rad(MAX_PITCH_DEG))
-		_apply_camera()
+		if _dragging_plate >= 0:
+			_drag_plate(motion)
+		elif _orbiting:
+			_yaw -= deg_to_rad(motion.relative.x * ORBIT_SENSITIVITY)
+			# CLAMPED, not wrapped. Letting the pitch roll past vertical flips the horizon and leaves
+			# a builder looking at a mirrored frame with no way to tell that is what happened.
+			_pitch = clampf(_pitch + deg_to_rad(motion.relative.y * ORBIT_SENSITIVITY),
+				deg_to_rad(MIN_PITCH_DEG), deg_to_rad(MAX_PITCH_DEG))
+			_apply_camera()
+
+
+## Moves the plate under the cursor: in plan normally, in HEIGHT with Shift held.
+##
+## Shift for height rather than a second mouse button, because height is the reason to drag here at
+## all and it has to be reachable on a trackpad. The plan drag is done by re-projecting the cursor
+## onto the plate's own plane rather than by scaling pixels: at a shallow camera angle a pixel is
+## worth centimetres near the horizon and millimetres near the camera, and a scaled drag makes the
+## plate slide out from under the cursor.
+func _drag_plate(motion: InputEventMouseMotion) -> void:
+	if _pending_document == null or _dragging_plate >= _pending_document.plates.size():
+		return
+	if motion.shift_pressed:
+		# 0.5 mm per pixel, upward for an upward drag. A height has no plane to project onto — the
+		# gesture is along the screen — so this is the one place a pixel rate is the honest answer.
+		var lift := -motion.relative.y * HEIGHT_DRAG_MM_PER_PX
+		_drag_plane_z_mm += lift
+		plate_dragged.emit(_dragging_plate, Vector2.ZERO, lift)
+		return
+	var now := _plan_point_at(motion.position, _drag_plane_z_mm)
+	var delta := now - _drag_from_mm
+	_drag_from_mm = now
+	if delta != Vector2.ZERO:
+		plate_dragged.emit(_dragging_plate, delta, 0.0)
+
+
+## Which plate lies under a screen position, or −1.
+##
+## Ray against each plate's OWN PLANE, nearest first, rather than a physics query. A physics pick
+## would need a collision body per plate, rebuilt on every edit, for a hit test on a handful of flat
+## polygons — and `Geometry2D.is_point_in_polygon` against the document's own outline is both
+## cheaper and the same polygon the mass integral uses, so a plate you can click is exactly a plate
+## that weighs something.
+func pick(position_px: Vector2) -> int:
+	if _camera == null or _pending_document == null:
+		return -1
+	var best := -1
+	var nearest := INF
+	for index in _pending_document.plates.size():
+		var plate: Dictionary = _pending_document.plates[index]
+		var z_mm := AirframeDocument.plate_z_mm(plate)
+		var hit := _plan_point_at(position_px, z_mm, true)
+		if not is_finite(hit.x):
+			continue
+		var outline := AirframeDocument.plate_outline(plate)
+		if outline.size() < 3 or not Geometry2D.is_point_in_polygon(hit, outline):
+			continue
+		var distance := AirframeDocument.world_m(hit, z_mm).distance_to(
+			_camera.global_transform.origin)
+		if distance < nearest:
+			nearest = distance
+			best = index
+	return best
+
+
+## Where the cursor's ray crosses the horizontal plane at a stated height, in plan millimetres.
+## `Vector2(INF, INF)` when the ray is parallel to the plane or crosses it behind the camera —
+## which is a miss, not a position, and returning a plausible number for it would let a plate be
+## picked through the floor from underneath.
+func _plan_point_at(position_px: Vector2, z_mm: float, strict: bool = false) -> Vector2:
+	if _camera == null:
+		return Vector2(INF, INF)
+	# The container may be scaled relative to its viewport, so the position is mapped rather than
+	# passed through: a stretched SubViewportContainer would otherwise pick a few millimetres off,
+	# and the error would grow with the window.
+	var scaled := position_px
+	if size.x > 0.0 and size.y > 0.0:
+		var viewport_size := Vector2(_viewport.size)
+		scaled = position_px / size * viewport_size
+	var origin := _camera.project_ray_origin(scaled)
+	var direction := _camera.project_ray_normal(scaled)
+	var plane_y := z_mm / 1000.0
+	if absf(direction.y) < 1.0e-6:
+		return Vector2(INF, INF)
+	var travel := (plane_y - origin.y) / direction.y
+	if strict and travel <= 0.0:
+		return Vector2(INF, INF)
+	var point := origin + direction * travel
+	# world X → plan u, world Z → plan v, and metres → millimetres: `AirframeDocument.world_m`
+	# inverted, which is the only place in this file that mapping appears.
+	return Vector2(point.x, point.z) * 1000.0
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +278,7 @@ func _gui_input(event: InputEvent) -> void:
 # ---------------------------------------------------------------------------
 
 func _build_world() -> void:
+	resized.connect(_on_resized_refit)
 	_viewport = SubViewport.new()
 	_viewport.own_world_3d = true
 	_viewport.transparent_bg = false
@@ -218,21 +351,25 @@ func _apply_camera() -> void:
 
 ## How wide the frame is on screen, in metres, as an extent about the origin.
 ##
-## THE BOUNDING BOX, NOT THE RADIUS. An X frame's arms reach furthest along the diagonals, so its
-## radial reach is about 40% larger than anything you can actually see across it — measured that
-## way, a 5" frame was framed as though it were a disc 310 mm across and drew at about half the
-## width it should have, marooned in the middle of a large empty viewport.
+## THE RADIUS, NOT THE BOUNDING BOX, and this is the one place the two genuinely differ. A plan view
+## never turns, so its own fit can use the bounding box — what you see across a 5" X frame really is
+## its 164 mm bbox and not its 220 mm diagonal. THIS view orbits. At the default 28° of yaw an X
+## frame's diagonal lies across the screen, so a fit computed from the bounding box framed a 5"
+## frame as 164 mm wide and drew it 220 mm wide, with both of the visible arms running off the edges
+## of the viewport — the fault the fit exists to prevent, arrived at by measuring the wrong thing.
+##
+## The cost is honest and small: at a yaw where the arms point at the corners, the frame sits a
+## little smaller than it could. A frame slightly too small is a frame you can see.
 ##
 ## About the ORIGIN rather than about the drawing's own centre, because the origin is what the
 ## camera looks at and what every motor position is measured from — a frame authored off-centre
 ## should look off-centre, which is the one way a builder ever notices they drew it that way.
 func _span_m() -> float:
-	var extent := Vector2.ZERO
+	var half_mm := 0.0
 	if _pending_document != null:
 		for plate in _pending_document.plates:
 			for point in AirframeDocument.plate_outline(plate):
-				extent = extent.max(point.abs())
-	var half_mm := maxf(extent.x, extent.y)
+				half_mm = maxf(half_mm, point.length())
 	if half_mm <= 0.0:
 		# An empty document. A 200 mm box, matching the plan editor's empty framing, so switching
 		# views on a blank frame does not change how big "nothing" looks.

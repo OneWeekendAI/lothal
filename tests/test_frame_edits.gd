@@ -49,9 +49,95 @@ static func run() -> Array:
 	results.append(_test_a_drawn_arm_is_measurable_and_widening_it_stiffens_it())
 	results.append(_test_radial_symmetry_puts_arms_where_the_motors_are())
 	results.append(_test_a_hole_removes_mass())
+	results.append(_test_adding_hardware_makes_a_whole_joint())
+	results.append(_test_a_motor_mount_cuts_holes_and_keeps_the_spins_balanced())
+	results.append(_test_a_motor_mount_that_will_not_fit_is_refused_whole())
 	results.append(_test_an_edit_is_undoable_exactly_once())
 	results.append(_test_undo_survives_a_round_trip_through_json())
 	return results
+
+
+# ---------------------------------------------------------------------------
+# Hardware and mounts
+# ---------------------------------------------------------------------------
+
+## A standoff arrives WITH its screws, and the set has a real mass and a real check.
+##
+## The count is asserted because the failure it guards is silent: a lone standoff weighs something
+## and draws nothing, so a frame with eight of them and no screws shows a plausible mass and not one
+## of §5's three warnings — the builder is told nothing precisely where the joint is unchecked. The
+## masses are then taken from `HardwareMass` rather than typed, so this test stays true if the
+## standoff's dimensions are ever revised.
+static func _test_adding_hardware_makes_a_whole_joint() -> TestResult:
+	var document := _document_with_plate()
+	var index := FrameEdits.add_hardware(document, Vector2(12.0, 0.0), 25.0, 0.0, 2.0)
+	var kinds: Array = []
+	for entry in document.hardware:
+		kinds.append(str(entry.get("kind", "?")))
+	var materials := FrameMaterials.load_default()
+	var standoff_g := HardwareMass.standoff_round_mass_g(
+		FrameEdits.DEFAULT_STANDOFF_OUTER_D_MM, FrameEdits.DEFAULT_STANDOFF_BORE_D_MM, 25.0,
+		materials.density(FrameEdits.DEFAULT_STANDOFF_MATERIAL))
+	var screws := kinds.count("screw")
+	return TestResult.new("added hardware is a whole joint, not a lone standoff",
+		index == 0 and kinds.count("standoff_round") == 1 and screws == 2 and standoff_g > 0.0,
+		"%d standoff, %d screws, standoff %.2f g" % [
+			kinds.count("standoff_round"), screws, standoff_g])
+
+
+## A mount is holes AND a motor, and the ring still balances afterwards.
+##
+## Balance is checked on a frame that had three motors: adding the fourth must leave the sum of the
+## spins at zero, which it does only because `add_motor_mount` re-alternates rather than appending
+## whatever spin it felt like. A mount that appended a fixed +1 would give three up and one down —
+## a quad that cannot hold heading, and nothing on screen to say so.
+static func _test_a_motor_mount_cuts_holes_and_keeps_the_spins_balanced() -> TestResult:
+	var document := FrameEdits.new_frame("mount")
+	for angle in [45.0, 135.0, 225.0]:
+		FrameEdits.add_arm(document, angle, 100.0, 20.0, 20.0, 5.0)
+	FrameEdits.alternate_spins(document)
+	var plate := FrameEdits.add_rectangle(document, Vector2(70.0, -70.0), 30.0, 30.0, 2.0, 0.0,
+		AirframeDocument.ROLE_BOTTOM)
+	var area_before := absf(PolygonProps.area(
+		AirframeDocument.plate_outline(document.plates[plate])))
+	var region_before: float = PolygonProps.region_properties(
+		AirframeDocument.plate_outline(document.plates[plate]),
+		AirframeDocument.plate_holes(document.plates[plate]))["area"]
+
+	var motor := FrameEdits.add_motor_mount(document, plate, Vector2(70.0, -70.0), 16.0, 0.0)
+	var holes := AirframeDocument.plate_holes(document.plates[plate])
+	var region_after: float = PolygonProps.region_properties(
+		AirframeDocument.plate_outline(document.plates[plate]), holes)["area"]
+
+	return TestResult.new("a motor mount cuts four holes, adds a motor, and stays balanced",
+		motor == 3 and holes.size() == 4 and document.motors.size() == 4
+			and region_after < region_before
+			and is_zero_approx(FrameEdits.spin_balance(document))
+			and is_equal_approx(area_before, absf(PolygonProps.area(
+				AirframeDocument.plate_outline(document.plates[plate])))),
+		"%d holes, %d motors, %.1f mm² left of %.1f, spin sum %.0f" % [
+			holes.size(), document.motors.size(), region_after, region_before,
+			FrameEdits.spin_balance(document)])
+
+
+## A pattern that does not fit inside the plate is refused, and refused BEFORE anything is written.
+##
+## Holes outside their plate are not a warning — they are nothing at all: they subtract no area,
+## they weaken nothing, and the motor they imply is bolted to air. Cutting them anyway would put
+## four circles on the cut sheet that the plate does not contain, which a cutter will happily
+## reproduce as four marks on the waste.
+static func _test_a_motor_mount_that_will_not_fit_is_refused_whole() -> TestResult:
+	var document := _document_with_plate()
+	var plate: Dictionary = document.plates[0]
+	var holes_before := AirframeDocument.plate_holes(plate).size()
+	var motors_before := document.motors.size()
+	# The plate is 40 mm; a 60 mm pattern puts every corner outside it.
+	var refused := FrameEdits.add_motor_mount(document, 0, Vector2.ZERO, 60.0, 0.0)
+	return TestResult.new("a motor mount that will not fit is refused whole",
+		refused == -1 and AirframeDocument.plate_holes(document.plates[0]).size() == holes_before
+			and document.motors.size() == motors_before,
+		"returned %d, %d holes, %d motors" % [refused,
+			AirframeDocument.plate_holes(document.plates[0]).size(), document.motors.size()])
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +146,14 @@ static func run() -> Array:
 
 static func _materials() -> FrameMaterials:
 	return FrameMaterials.load_default()
+
+
+## One 40 mm centre plate at the origin — the smallest frame a joint or a mount can be added to.
+static func _document_with_plate() -> AirframeDocument:
+	var document := FrameEdits.new_frame("test")
+	FrameEdits.add_rectangle(document, Vector2.ZERO, 40.0, 40.0, 2.0, 0.0,
+		AirframeDocument.ROLE_BOTTOM)
+	return document
 
 
 ## The density every expectation below is built from, read from the same table the maths reads.
