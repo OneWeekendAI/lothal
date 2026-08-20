@@ -12,10 +12,11 @@ extends Node3D
 ##
 ## So the angle is steep at the root and shallow at the tip, and a 4.8" pitch blade is visibly
 ## more feathered than a 4.3" one of the same diameter. That is not decoration: it is the same
-## pitch number the physics reads through PropellerModel, drawn. A flat disc, or one blade mesh
-## scaled to size, would let the picture and the physics disagree about the only prop property
-## you cannot read off a spec line at a glance. tests/test_propeller_mesh.gd reads the angle
-## back out of the generated vertices at every station and converts it to a pitch.
+## beta(r) the physics reads — PropellerDocument.beta_rad is the ONE definition (propulsion.md
+## §3.2, slice P3), and this mesh reads it, so the picture and the physics cannot disagree about
+## the only prop property you cannot read off a spec line. A flat disc, or one blade mesh scaled
+## to size, would break that. tests/test_propeller_mesh.gd reads the angle back out of the
+## generated vertices and asserts it equals the document's beta(r) at every station.
 ##
 ## ROTATION: THIS CLASS IS A RENDERER OF A RATE IT IS GIVEN.
 ##
@@ -121,27 +122,39 @@ const ALIASING_MARGIN := 0.8
 var _rate_rad_s := 0.0
 var _blur: MeshInstance3D
 
+## The PropellerDocument this mesh draws its twist from — §3.2's ONE beta(r), read through
+## `beta_rad`. Built from the same dictionary in `rebuild` unless a caller hands one in, which is
+## the authored-twist case: a blade whose twist table somebody wrote, drawn as written.
+var _doc: PropellerDocument
+
 
 ## Clears any previously generated blades and rebuilds from `prop`. The 4-blade-to-2-blade
 ## direction is the one that matters: leftover blades on a larger prop just look like a larger
 ## prop, so a missed clear-out here is invisible rather than obviously broken.
-func rebuild(prop: Dictionary) -> void:
+##
+## `doc` is the PropellerDocument whose beta(r) this mesh draws. It is built from `prop` when
+## omitted; hand one in for a blade whose twist was AUTHORED, because that shape exists only in
+## the document (§3.2) and cannot be recovered from a spec line.
+func rebuild(prop: Dictionary, doc: PropellerDocument = null) -> void:
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
 
 	var specs: Dictionary = prop.get("specs", {})
 	var diameter_m: float = float(specs.get("diameter_inches", 5.0)) * INCH_M
-	var pitch_m: float = float(specs.get("pitch_inches", 4.0)) * INCH_M
 	blade_count = maxi(int(specs.get("blades", 2)), 1)
 	radius_m = diameter_m * 0.5
+
+	# The twist this mesh draws is the document's beta(r), never a second copy of the helix
+	# formula — the two would drift, and the picture would start lying about the physics.
+	_doc = doc if doc != null else PropellerDocument.from_catalog_prop(prop)
 
 	var hub_radius := radius_m * HUB_RADIUS_TO_RADIUS
 	var material := _material_for(prop)
 
 	# Blades first, because the hub has to be deep enough to contain their roots and the only
 	# honest source for how deep that is is the geometry itself.
-	var blade_mesh := _build_blade_mesh(hub_radius, pitch_m)
+	var blade_mesh := _build_blade_mesh(hub_radius)
 	var blade_aabb := blade_mesh.get_aabb()
 	var blade_reach: float = maxf(absf(blade_aabb.position.y), blade_aabb.end.y)
 
@@ -286,7 +299,7 @@ func _blur_material(base: StandardMaterial3D) -> StandardMaterial3D:
 ## are stitched into four faces, and the two ends are capped, so the blade is a closed solid
 ## that catches light differently on its upper and lower surfaces — which is what makes the
 ## twist legible on screen at all. A single-sided ribbon reads as paper.
-func _build_blade_mesh(hub_radius: float, pitch_m: float) -> ArrayMesh:
+func _build_blade_mesh(hub_radius: float) -> ArrayMesh:
 	var chord_max: float = radius_m * 2.0 * CHORD_TO_DIAMETER_AT_3_BLADE \
 		* pow(3.0 / float(blade_count), CHORD_BLADE_COUNT_EXPONENT)
 
@@ -300,7 +313,9 @@ func _build_blade_mesh(hub_radius: float, pitch_m: float) -> ArrayMesh:
 		var radius: float = hub_radius + (radius_m - hub_radius) * span
 		var chord := _chord_at(span, chord_max)
 		var thickness := chord * THICKNESS_TO_CHORD_RATIO
-		var twist := twist_angle_rad(pitch_m, radius)
+		# The blade angle, from the document's beta(r) — the one definition. Geometric for a
+		# preset, the authored table when a builder wrote one.
+		var twist := _doc.beta_rad(radius / radius_m)
 
 		# Chord direction, rotated about the radial (+X) axis by the twist. At zero twist it
 		# lies tangentially (+Z) and the blade is flat; at 90 degrees it stands on edge.
@@ -334,15 +349,6 @@ func _build_blade_mesh(hub_radius: float, pitch_m: float) -> ArrayMesh:
 
 	tool.generate_normals()
 	return tool.commit()
-
-
-## The blade angle at radius r for a given pitch — the whole propeller model in one line, and
-## the reason this class exists rather than a scaled stand-in. Static so the relationship is
-## quotable on its own.
-static func twist_angle_rad(pitch_m: float, p_radius_m: float) -> float:
-	if p_radius_m <= 0.0:
-		return 0.0
-	return atan(pitch_m / (TAU * p_radius_m))
 
 
 ## Chord at a fractional position along the blade, as a slice of a sine arch: narrow at the

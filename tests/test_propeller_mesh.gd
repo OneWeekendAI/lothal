@@ -12,6 +12,11 @@ extends RefCounted
 ## or a uniformly-angled paddle would sail through any check that only looked at diameter and
 ## blade count.
 ##
+## Since slice P3 the twist is not re-derived at all — the mesh DRAWS the document's beta(r).
+## PropellerDocument.beta_rad is the one definition (propulsion.md §3.2), and the two tests at
+## the bottom assert the angle read back from the drawn blade equals that beta, at every station,
+## including for an authored twist table.
+##
 ## Reading the angle back out is done with a principal-axis fit over each station's vertices.
 ## The blade has thickness, so a station is four corners of a thin rectangle; the major axis
 ## of that rectangle IS the chord line, exactly, because the thickness spreads symmetrically
@@ -30,6 +35,8 @@ static func run() -> Array:
 	results.append(_test_diameter_sets_the_sweep(catalog))
 	results.append(_test_a_3_blade_5in_is_not_a_2_blade_7in(catalog))
 	results.append(_test_rebuild_no_stale_blades(catalog))
+	results.append(_test_mesh_twist_is_the_documents_beta(catalog))
+	results.append(_test_authored_twist_is_drawn(catalog))
 
 	return results
 
@@ -322,3 +329,109 @@ static func _test_rebuild_no_stale_blades(catalog: PartsCatalog) -> TestResult:
 		"%d children -> %d, old blade still inside: %s, radius now %.4f m" % [
 			four_blade_children, two_blade_children, old_still_inside, radius]
 	)
+
+
+# ---------------------------------------------------------------------------
+# P3 — the mesh draws the document's beta(r), not a copy of it
+# ---------------------------------------------------------------------------
+
+## P3'S PROOF, and the whole point of the slice: the angle the mesh draws and the angle the
+## document's beta(r) says are ONE NUMBER, asserted at every station. The mesh reads
+## PropellerDocument.beta_rad — that is the change — and this checks the vertex construction
+## (station -> rotated section -> mesh) encodes that angle honestly, with no sign error, no
+## offset and no second copy. For geometric presets the mesh and the document are the same helix,
+## so this also pins the two together the way test_propeller_document pins the chord: if either
+## ever drifts, the read-back stops matching the document.
+static func _test_mesh_twist_is_the_documents_beta(catalog: PartsCatalog) -> TestResult:
+	var checked := 0
+	var worst_error := 0.0
+	var worst_where := ""
+
+	for prop_id in ["prop_5x43x3", "prop_7x35x2", "prop_3x3x3", "prop_10x5x2"]:
+		var prop: Dictionary = catalog.get_part(prop_id)
+		var doc := PropellerDocument.from_catalog_prop(prop)
+		var mesh := PropellerMesh.new()
+		mesh.rebuild(prop)
+		var stations := _stations(_blade_vertices(mesh))
+		var radius_m := mesh.radius_m
+		mesh.free()
+
+		for station in stations:
+			var radius: float = station["radius"]
+			if radius <= 0.0:
+				continue
+			var read_back := _twist_rad(station["points"])
+			var expected := doc.beta_rad(radius / radius_m)
+			var error := absf(read_back - expected)
+			checked += 1
+			if error > worst_error:
+				worst_error = error
+				worst_where = "%s at r/R=%.3f (drawn %.3f°, doc %.3f°)" % [
+					prop_id, radius / radius_m, rad_to_deg(read_back), rad_to_deg(expected)]
+
+	return TestResult.new(
+		"the blade angle drawn equals the document's beta(r), one number at every station",
+		checked >= 40 and worst_error < 0.001,
+		"%d stations, worst deviation %.5f rad — %s" % [checked, worst_error, worst_where])
+
+
+## THE CASE ONLY READING THE DOCUMENT CAN GET RIGHT. A blade whose builder authored a twist table
+## (twist_mode: authored, §3.2 — the tip-unloaded shape good blades use) must be DRAWN with that
+## table, not with the constant-pitch helix. Before slice P3 the mesh held its own geometric
+## formula and would draw the helix; the physics (the document) would read the authored table, and
+## the picture and the physics would disagree by exactly the unload. This test fails on that state
+## and passes once the mesh reads beta_rad.
+static func _test_authored_twist_is_drawn(catalog: PartsCatalog) -> TestResult:
+	var prop: Dictionary = catalog.get_part("prop_5x43x3")
+	var doc := PropellerDocument.from_catalog_prop(prop)
+	# An unloaded tip: the root as the helix demands, the geometric middle, and a tip four degrees
+	# shallower — less twist at the tip, which is what "most good props unload the tip" means.
+	# The root/mid/tip are read while the document is still GEOMETRIC; switching mode first would
+	# make beta_rad read the still-empty authored table and every station would come back 0.
+	var root := doc.beta_rad(0.1)
+	var mid := doc.beta_rad(0.5)
+	var tip := doc.beta_rad(1.0)
+	doc.twist_mode = PropellerDocument.TWIST_MODE_AUTHORED
+	doc.twist = [0.1, root, 0.5, mid, 1.0, tip - deg_to_rad(4.0)]
+
+	var mesh := PropellerMesh.new()
+	mesh.rebuild(prop, doc)
+	var stations := _stations(_blade_vertices(mesh))
+	var radius_m := mesh.radius_m
+	mesh.free()
+
+	var checked := 0
+	var worst_error := 0.0
+	var worst_where := ""
+	for station in stations:
+		var radius: float = station["radius"]
+		if radius <= 0.0:
+			continue
+		var r_frac := radius / radius_m
+		var read_back := _twist_rad(station["points"])
+		var expected := doc.beta_rad(r_frac)
+		var error := absf(read_back - expected)
+		checked += 1
+		if error > worst_error:
+			worst_error = error
+			worst_where = "r/R=%.3f (drawn %.3f°, doc %.3f°)" % [
+				r_frac, rad_to_deg(read_back), rad_to_deg(expected)]
+
+	# And the unload must be REAL, checked against the helix the same prop would draw without the
+	# authored table — an independent oracle, so the test is not comparing the mesh to itself.
+	var tip_read := _tip_twist_rad(stations)
+	var helix_tip := atan(doc.pitch_mm / (TAU * radius_m * 1000.0))
+	var unloaded := absf(tip_read - (helix_tip - deg_to_rad(4.0))) < 0.001
+
+	return TestResult.new(
+		"an authored twist table is drawn as authored, not as the constant-pitch helix",
+		checked >= 10 and worst_error < 0.001 and unloaded,
+		"%d stations, worst deviation %.5f rad — %s; tip drawn %.2f°, helix tip %.2f°" % [
+			checked, worst_error, worst_where, rad_to_deg(tip_read), rad_to_deg(helix_tip)])
+
+
+## The blade angle at the outermost station — the tip, where beta is smallest and an unload shows.
+static func _tip_twist_rad(stations: Array) -> float:
+	if stations.is_empty():
+		return 0.0
+	return _twist_rad(stations[stations.size() - 1]["points"])

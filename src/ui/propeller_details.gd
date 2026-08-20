@@ -250,9 +250,10 @@ func _read(prop: Dictionary, key: String) -> String:
 		"pitch_inches":
 			return "%.1f\"" % float(specs.get("pitch_inches", 0.0))
 		"tip_angle":
-			var radius_m: float = float(specs.get("diameter_inches", 0.0)) * PropellerMesh.INCH_M * 0.5
-			if radius_m <= 0.0:
+			var doc := document_for(prop)
+			if doc == null or doc.diameter_mm <= 0.0:
 				return "—"
-			var pitch_m: float = float(specs.get("pitch_inches", 0.0)) * PropellerMesh.INCH_M
-			return "%.1f°" % rad_to_deg(PropellerMesh.twist_angle_rad(pitch_m, radius_m))
+			# The blade angle at the tip, read from the SAME beta(r) the mesh draws and the BEMT
+			# integral will read (propulsion.md §3.2) — one definition, three readers.
+			return "%.1f°" % rad_to_deg(doc.beta_rad(1.0))
 	return super(prop, key)
