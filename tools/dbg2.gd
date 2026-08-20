@@ -6,8 +6,9 @@ func _init() -> void:
 	for plate in doc.plates:
 		var outline := AirframeDocument.plate_outline(plate)
 		var area := PolygonProps.area(outline)
-		var mesh := PlateMesh.extrude(outline, AirframeDocument.plate_thickness_mm(plate), AirframeDocument.plate_z_mm(plate))
+		var mesh := PlateMesh.extrude(outline, AirframeDocument.plate_thickness_mm(plate))
 		print(plate.get("role"), " pts=", outline.size(), " area=", area,
+			" z=", AirframeDocument.plate_z_mm(plate),
 			" mesh=", "null" if mesh == null else str(mesh.get_aabb()),
 			" tris=", 0 if mesh == null else int(mesh.surface_get_array_len(0) / 3.0))
 	var model := FrameModel.new()
