@@ -1,4 +1,5 @@
 mod battery;
+mod bemt;
 mod fitting;
 mod licence;
 mod log_reader;
