@@ -120,6 +120,45 @@
         "modulus_tier": "engineering"
       },
       "source": "airframe.md §6.1 material table — Ti-6Al-4V, the grade FPV titanium hardware is sold in."
+    },
+    {
+      "material_id": "polycarbonate",
+      "name": "Polycarbonate (PC)",
+      "specs": {
+        "density_kg_m3": 1200.0
+      },
+      "catalog": {
+        "form": "moulded part",
+        "used_for": "most FPV propellers — the plastic blades are made of",
+        "modulus_tier": "characteristic"
+      },
+      "source": "Published PC datasheet density ~1.19-1.21 g/cm3; 1200 kg/m3 is the figure FPV propellers are quoted at. No modulus: propulsion.md §2.1 keeps flex out of the model, so nothing reads blade stiffness."
+    },
+    {
+      "material_id": "glass_filled_nylon",
+      "name": "Glass-filled nylon (PA6+GF)",
+      "specs": {
+        "density_kg_m3": 1400.0
+      },
+      "catalog": {
+        "form": "moulded part",
+        "used_for": "stiffer FPV propellers — DAL, Gemfan 'nylon' blends",
+        "modulus_tier": "characteristic"
+      },
+      "source": "Published PA6-GF30 datasheet density ~1.36-1.42 g/cm3, rounded to 1400. Characteristic: the fill fraction of a specific prop is not published. No modulus: propulsion.md §2.1 keeps flex out of the model."
+    },
+    {
+      "material_id": "carbon_filled_nylon",
+      "name": "Carbon-filled nylon (PA6+CF)",
+      "specs": {
+        "density_kg_m3": 1350.0
+      },
+      "catalog": {
+        "form": "moulded part",
+        "used_for": "large, stiff FPV propellers quoted 'carbon-filled'",
+        "modulus_tier": "characteristic"
+      },
+      "source": "Published PA6-CF datasheet density ~1.25-1.45 g/cm3 depending on fill, taken at the middle. Characteristic: the fill fraction of a specific prop is not published. No modulus: propulsion.md §2.1 keeps flex out of the model."
     }
   ]
 }
