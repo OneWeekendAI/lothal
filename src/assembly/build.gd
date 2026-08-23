@@ -456,16 +456,24 @@ func _recompute() -> void:
 	# than guessed. A motor's headline thrust figure is only meaningful together with the
 	# prop and pack it was measured on, so motors.json names both. Fit k_t for that exact
 	# pairing, then rescale it to whatever prop is actually fitted.
+	#
+	# THE MOVE IS NOW THE BEMT GEOMETRY RATIO (§0, P5): blade count and twist enter the
+	# integral where they act, at the RPM the motor's k_t was fitted at, instead of the old
+	# D⁴·blades^0.8·pitch^0.5 rules of thumb. When the fitted prop IS the motor's test prop
+	# (the reference build), the ratio short-circuits to 1.0 bit-exact — the anchor the
+	# 496 g / 11.69:1 / 29.6% oracles hang on.
 	var test_prop: Dictionary = catalog.get_part(motor["thrust_test"]["prop_id"])
 	var test_voltage: float = float(motor["thrust_test"]["voltage_v"])
 	var test_max_rpm: float = float(motor["specs"]["kv"]) * test_voltage
 	var k_t_at_test_prop := PropellerModel.fit_k_t(float(motor["specs"]["max_thrust_g"]), test_max_rpm)
 
-	var test_geom := _prop_geometry(test_prop)
-	var prop_geom := _prop_geometry(propeller)
-	k_t = PropellerModel.scale_k_t_to_prop(
-		k_t_at_test_prop, test_geom.diameter_m, test_geom.pitch_m, test_geom.blades,
-		prop_geom.diameter_m, prop_geom.pitch_m, prop_geom.blades)
+	var test_doc := PropellerDocument.from_catalog_prop(test_prop)
+	var prop_doc := PropellerDocument.from_catalog_prop(propeller)
+	k_t = BemtModel.scale_k_t_to_prop(
+		k_t_at_test_prop,
+		test_doc.diameter_mm * 0.001, test_doc.pitch_mm * 0.001, float(test_doc.blades), test_doc.chord,
+		prop_doc.diameter_mm * 0.001, prop_doc.pitch_mm * 0.001, float(prop_doc.blades), prop_doc.chord,
+		test_max_rpm)
 	# --- And then moved to the AIR THIS BUILD IS FLOWN IN ---
 	# T = C_T * rho * n^2 * D^4, so k_t is linear in density. Without this line the whole air slice
 	# is decoration: thrust_n is k_t * omega^2 with no rho in it, and fit_k_t has none either, so

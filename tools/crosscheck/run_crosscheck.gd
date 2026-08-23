@@ -135,38 +135,28 @@ func _check_propeller(motors: Array, props: Array, catalog: PartsCatalog) -> voi
 				PropellerModel.fit_k_q(e["k_t"], d), RProp.fit_k_q(e["k_t"], d),
 				"%s -> %s d=%s k_t=%s" % [e["id"], p["part_id"], d, e["k_t"]])
 
-	# scale_k_t_to_prop across EVERY ordered prop pair, for each motor's fitted k_t.
-	for e in k_ts:
-		var from_p: Dictionary = catalog.get_part(e["test_prop"])
-		var fg := _geom(from_p)
-		for to_p in props:
-			var tg := _geom(to_p)
-			var a := PropellerModel.scale_k_t_to_prop(e["k_t"],
-				fg["diameter_m"], fg["pitch_m"], fg["blades"],
-				tg["diameter_m"], tg["pitch_m"], tg["blades"])
-			var b := RProp.scale_k_t_to_prop(e["k_t"], fg, tg)
-			_cmp("PropellerModel.scale_k_t_to_prop", a, b,
-				"%s: %s -> %s" % [e["id"], from_p["part_id"], to_p["part_id"]])
-
-	# Every ordered prop pair independent of any motor, at a unit k_t.
-	for from_p in props:
-		var fg := _geom(from_p)
-		for to_p in props:
-			var tg := _geom(to_p)
-			var a := PropellerModel.scale_k_t_to_prop(1.0e-8,
-				fg["diameter_m"], fg["pitch_m"], fg["blades"],
-				tg["diameter_m"], tg["pitch_m"], tg["blades"])
-			var b := RProp.scale_k_t_to_prop(1.0e-8, fg, tg)
-			_cmp("PropellerModel.scale_k_t_to_prop", a, b,
-				"unit k_t: %s -> %s" % [from_p["part_id"], to_p["part_id"]])
-
 	# thrust_n / reaction_torque_n_m over the RPM sweep, for every motor x prop k_t.
+	#
+	# The cross-prop k_t move is NOT compared here any more: P5 deleted the exponent law
+	# (D⁴·blades^0.8·pitch^0.5) it validated and replaced it with the BEMT geometry ratio
+	# (propulsion.md §0), which exists only in Rust — there is no byte-verbatim GDScript twin
+	# to compare against, and editing the ref to the new law would make the crosscheck compare
+	# the port against itself. The new law is validated by test_calibration.gd and by the
+	# held-out points in test_validation.gd instead. Here, k_t is computed with the NEW law so
+	# the thrust/torque comparison exercises the coefficient the product actually flies on.
 	for e in k_ts:
 		var from_p: Dictionary = catalog.get_part(e["test_prop"])
-		var fg := _geom(from_p)
+		var from_doc := PropellerDocument.from_catalog_prop(from_p)
+		var from_kv: float = float(catalog.get_part(e["id"])["specs"]["kv"])
+		var from_v: float = float(catalog.get_part(e["id"])["thrust_test"]["voltage_v"])
+		var from_rpm := from_kv * from_v
 		for to_p in props:
+			var to_doc := PropellerDocument.from_catalog_prop(to_p)
+			var k_t := BemtModel.scale_k_t_to_prop(e["k_t"],
+				from_doc.diameter_mm * 0.001, from_doc.pitch_mm * 0.001, float(from_doc.blades), from_doc.chord,
+				to_doc.diameter_mm * 0.001, to_doc.pitch_mm * 0.001, float(to_doc.blades), to_doc.chord,
+				from_rpm)
 			var tg := _geom(to_p)
-			var k_t := RProp.scale_k_t_to_prop(e["k_t"], fg, tg)
 			var k_q := RProp.fit_k_q(k_t, tg["diameter_m"])
 			for rpm in rpm_sweep:
 				_cmp("PropellerModel.thrust_n",
@@ -329,13 +319,17 @@ func _check_powertrain(motors: Array, props: Array, packs: Array, catalog: Parts
 		var rated_rpm := kv * tv
 		var k_t_test := RProp.fit_k_t(float(m["specs"]["max_thrust_g"]), rated_rpm)
 		var test_prop: Dictionary = catalog.get_part(m["thrust_test"]["prop_id"])
-		var fg := _geom(test_prop)
+		var test_doc := PropellerDocument.from_catalog_prop(test_prop)
 		var max_amps := float(m["specs"]["max_amps"])
 		var poles := float(m["specs"].get("poles", 14))
 
 		for p in props:
+			var p_doc := PropellerDocument.from_catalog_prop(p)
+			var k_t := BemtModel.scale_k_t_to_prop(k_t_test,
+				test_doc.diameter_mm * 0.001, test_doc.pitch_mm * 0.001, float(test_doc.blades), test_doc.chord,
+				p_doc.diameter_mm * 0.001, p_doc.pitch_mm * 0.001, float(p_doc.blades), p_doc.chord,
+				rated_rpm)
 			var tg := _geom(p)
-			var k_t := RProp.scale_k_t_to_prop(k_t_test, fg, tg)
 			var k_q := RProp.fit_k_q(k_t, tg["diameter_m"])
 
 			for bp in packs:

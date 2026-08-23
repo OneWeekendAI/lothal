@@ -29,7 +29,7 @@ extends RefCounted
 ##     motor_f60proii_2207_1750kv   1785 g @ 1840KV/23.4V   k_t = 8.606e-07
 ##     motor_speedx_gr2306_2450kv   1519 g @ 2430KV/15.5V   k_t = 9.628e-07
 ##
-## Scaled onto one prop through PropellerModel.scale_k_t_to_prop, all fifteen catalog motors span
+## Scaled onto one prop through the BEMT geometry ratio (§0, P5), all fifteen catalog motors span
 ## 3.32x. Those numbers are not noise in the model — the model is one division. They are fifteen
 ## manufacturers' thrust tables disagreeing with each other, measured on different stands, at
 ## different temperatures, with different ideas of what "max" means. That disagreement IS the
@@ -239,10 +239,15 @@ static func implied_k_t_on(catalog: PartsCatalog, motor: Dictionary, to_geometry
 	if fit_rpm <= 0.0:
 		return 0.0
 	var k_t_at_fit := PropellerModel.fit_k_t(float(motor.get("specs", {}).get("max_thrust_g", 0.0)), fit_rpm)
+	# The cross-prop move is the BEMT geometry ratio (§0, P5) — blade count and twist in the
+	# integral, at the fit RPM — not the deleted exponent law. `to_geometry` carries the
+	# target prop's chord (ThrustValidation.geometry_of supplies it).
 	var fit_geom := ThrustValidation.geometry_of(fit_prop)
-	return PropellerModel.scale_k_t_to_prop(
-		k_t_at_fit, fit_geom.diameter_m, fit_geom.pitch_m, fit_geom.blades,
-		to_geometry.diameter_m, to_geometry.pitch_m, to_geometry.blades)
+	return BemtModel.scale_k_t_to_prop(
+		k_t_at_fit,
+		fit_geom.diameter_m, fit_geom.pitch_m, fit_geom.blades, fit_geom.chord,
+		to_geometry.diameter_m, to_geometry.pitch_m, to_geometry.blades, to_geometry.chord,
+		fit_rpm)
 
 
 static func _thrust_coefficient(catalog: PartsCatalog, motor: Dictionary) -> Array[BuildWarning]:

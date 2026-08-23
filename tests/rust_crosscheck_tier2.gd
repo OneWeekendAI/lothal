@@ -99,27 +99,6 @@ static func _ref_k_t_band(implied_kts: Array, widening: float) -> Array:
 		return [0.0, INF, 0.0, 0.0, 0.0]
 	return [lowest / widening, highest * widening, lowest, highest, float(count)]
 
-static func _ref_extrapolation_factors(from_d: float, from_pitch: float, from_blades: float,
-		to_d: float, to_pitch: float, to_blades: float) -> Array:
-	var diameter_factor := pow(to_d / from_d, 4.0)
-	var blade_factor := pow(to_blades / from_blades, 0.8)
-	var pitch_factor := pow(to_pitch / from_pitch, 0.5)
-	var combined := diameter_factor * blade_factor * pitch_factor
-	var magnitude: float = maxf(combined, 1.0 / combined)
-	var terms := [
-		{"factor": diameter_factor},
-		{"factor": blade_factor},
-		{"factor": pitch_factor},
-	]
-	var dominant := 0
-	var best_distance := 0.0
-	for i in terms.size():
-		var d := absf(log(float(terms[i]["factor"])))
-		if d > best_distance:
-			best_distance = d
-			dominant = i
-	return [diameter_factor, blade_factor, pitch_factor, combined, magnitude, float(dominant)]
-
 # ---------------------------------------------------------------------------
 # The comparisons.
 # ---------------------------------------------------------------------------
@@ -188,16 +167,10 @@ func _check_plausibility() -> int:
 		for i in 5:
 			failures += _cmp(rust[i], ref[i], "k_t_band[%d]" % i)
 
-	# extrapolation factors across prop geometry pairs (inches, consistent with the catalog).
-	for pair in [
-		[[5.0, 4.3, 3.0], [5.1, 3.5, 3.0]],
-		[[5.0, 4.3, 3.0], [7.0, 4.0, 4.0]],
-		[[3.5, 3.0, 2.0], [5.0, 4.3, 3.0]],
-	]:
-		var rust: PackedFloat64Array = Plausibility.extrapolation_factors(
-			pair[0][0], pair[0][1], pair[0][2], pair[1][0], pair[1][1], pair[1][2])
-		var ref := _ref_extrapolation_factors(
-			pair[0][0], pair[0][1], pair[0][2], pair[1][0], pair[1][1], pair[1][2])
-		for i in 6:
-			failures += _cmp(rust[i], ref[i], "extrapolation[%d] %s" % [i, str(pair)])
+	# extrapolation_factors is NOT transcribed here any more: P5 deleted the exponent law
+	# (D⁴·blades^0.8·pitch^0.5) it validated and replaced it with the BEMT geometry ratio
+	# (propulsion.md §0), which exists only in Rust — there is no pre-port GDScript arithmetic
+	# to transcribe, and a transcription that called BemtModel would compare the function
+	# against itself. The new law is validated by test_calibration.gd and by the held-out
+	# points in test_validation.gd instead.
 	return failures

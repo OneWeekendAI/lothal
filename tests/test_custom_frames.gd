@@ -504,7 +504,7 @@ static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestRe
 
 
 ## The third row of FramePlausibility's header table, docs/lothal/parts.md's quoted copy of it,
-## was never checked against a real build — a grep for 1220, 7.20 and 29.3 across tests/ found
+## was never checked against a real build — a grep for 1220, 7.20 and 29.7 across tests/ found
 ## nothing before this test existed. The whoop row is pinned by the test above (a whoop FRAME
 ## carrying a whoop); the reference row is pinned by
 ## _test_a_custom_frame_does_not_move_the_reference_build (496 / 11.69 / 29.6). This test is the
@@ -531,12 +531,12 @@ static func _test_the_long_range_rows_third_row_is_a_real_build() -> TestResult:
 
 	var matches_auw := absf(auw - 1220.0) < 0.05
 	var matches_twr := absf(twr - 7.20) < 0.005
-	var matches_hover := absf(hover - 29.3) < 0.05
+	var matches_hover := absf(hover - 29.7) < 0.05
 
 	return TestResult.new(
 		"the header table's 10\" long-range row is a real build, not an unchecked figure",
 		matches_auw and matches_twr and matches_hover,
-		"AUW=%.2f g (want 1220.0), TWR=%.3f (want 7.20), hover=%.2f%% (want 29.3)" % [
+		"AUW=%.2f g (want 1220.0), TWR=%.3f (want 7.20), hover=%.2f%% (want 29.7)" % [
 			auw, twr, hover])
 
 

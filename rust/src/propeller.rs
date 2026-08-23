@@ -22,15 +22,6 @@ use godot::prelude::*;
 const K_Q_TO_K_T_RATIO_AT_5IN: f64 = 0.02;
 const K_Q_REFERENCE_DIAMETER_M: f64 = 0.127; // 5 inches
 
-/// Exponents for moving a fitted k_t from the prop it was measured on to another prop.
-/// Diameter's D^4 is dimensional and exact. Blade count and pitch have no clean law and are
-/// documented rules of thumb. THESE REMAIN UNVALIDATED and the shipped catalog cannot
-/// validate them — see the original's header for the full reasoning. They are deliberately
-/// public (the app prints "the blades^0.8 rule of thumb" to users), so GDScript files that
-/// referenced them keep the values as module consts pointing here.
-pub const BLADE_COUNT_EXPONENT: f64 = 0.8;
-pub const PITCH_EXPONENT: f64 = 0.5;
-
 /// Sea-level standard air. The SAME number as Build.AIR_DENSITY_KGM3, and tests/test_rust_constants.gd
 /// pins them together — a rotor disc and an airframe's drag area must not be told two different
 /// things about the air they are both moving through.
@@ -87,25 +78,6 @@ impl PropellerModel {
         max_thrust_n / (max_omega * max_omega)
     }
 
-    /// Moves a k_t fitted on `from_prop` onto `to_prop`. Geometry is unpacked (three f64
-    /// per side) rather than Dictionaries, per design §4.3.
-    #[func]
-    pub fn scale_k_t_to_prop(
-        k_t_from: f64,
-        from_d: f64,
-        from_pitch: f64,
-        from_blades: f64,
-        to_d: f64,
-        to_pitch: f64,
-        to_blades: f64,
-    ) -> f64 {
-        let diameter_ratio = to_d / from_d;
-        let blade_ratio = to_blades / from_blades;
-        let pitch_ratio = to_pitch / from_pitch;
-        k_t_from * diameter_ratio.powi(4) * blade_ratio.powf(BLADE_COUNT_EXPONENT)
-            * pitch_ratio.powf(PITCH_EXPONENT)
-    }
-
     #[func]
     pub fn fit_k_q(k_t: f64, diameter_m: f64) -> f64 {
         k_t * K_Q_TO_K_T_RATIO_AT_5IN * (diameter_m / K_Q_REFERENCE_DIAMETER_M)
@@ -158,7 +130,7 @@ impl PropellerModel {
     /// pitch/diameter. Both figures are already in the catalog, so per the derived-not-typed rule
     /// in parts.md no `j_zero` field is added to propellers.json.
     ///
-    /// A RULE OF THUMB, in the same voice as BLADE_COUNT_EXPONENT. Real props reach zero thrust
+    /// A RULE OF THUMB, in the same voice as the deleted BLADE_COUNT_EXPONENT. Real props reach zero thrust
     /// somewhat BELOW their geometric advance — typically 0.8-0.9 of it — because the blade has a
     /// zero-lift angle and is not at its nominal pitch across the whole radius. Using the geometric
     /// figure therefore UNDER-predicts unloading: this model is optimistic in this term, and it is

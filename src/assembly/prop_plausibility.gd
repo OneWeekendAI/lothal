@@ -18,10 +18,11 @@ extends RefCounted
 ##   BLADES OUTSIDE 2-4. The catalog spans 2-, 3- and 4-blade props (propellers.json). Real props
 ##   exist outside the range — five-blade cinelifter, single-blade of, ducted whoop stators — but
 ##   they are class outliers on any airframe Lothal knows how to build. The mass model reads
-##   blades as a factor in rotor inertia; the render draws exactly that many blades; the k_t
-##   scaling law's blades^0.8 exponent was fitted against nothing tighter than tables of tri-
-##   blades and bi-blades, so extrapolating to eight blades is an exercise the model has not
-##   earned. WARN, never block: an aircraft with a 5-blade prop flies fine on paper, and if the
+##   blades as a factor in rotor inertia; the render draws exactly that many blades; and since
+##   P5 blade count enters the BEMT integral directly rather than through a fitted exponent —
+##   but the integral is fed a GENERATED planform whose chord-per-blade taper was only ever
+##   checked against tri- and bi-blade props, so extrapolating to eight blades is an exercise
+##   the model has not earned. WARN, never block: an aircraft with a 5-blade prop flies fine on paper, and if the
 ##   builder knows what they are doing that is their business.
 ##
 ##   MASS vs DIAMETER. Prop mass scales as diameter cubed, near enough — it is a small piece of
@@ -37,10 +38,6 @@ extends RefCounted
 ## review, and every entry is inside its own band by construction. Same policy as MotorPlausibility.
 
 const BAND_WIDENING_FACTOR := 2.0
-
-## Mirrors propeller.rs BLADE_COUNT_EXPONENT. Rust cannot export constants to GDScript;
-## keep in step with the Rust source of truth (enforced by the golden cross-check).
-const BLADE_COUNT_EXPONENT := 0.8
 
 ## The blade counts the catalog spans. Outside these is a fact about the aircraft, said out loud.
 const MIN_TYPICAL_BLADES := 2
@@ -83,9 +80,8 @@ static func _blade_count(prop: Dictionary) -> Array[BuildWarning]:
 		return out
 
 	out.append(BuildWarning.characteristic(&"implausible_blade_count",
-		"%d-blade props are outside the %d-%d range the catalog carries. The physics still runs — blades scale k_t through a documented rule of thumb (blades^%.1f) — but the exponent was fitted against tri- and bi-blade tables, and %d blades is extrapolation this file has no way to check." % [
-			blades, MIN_TYPICAL_BLADES, MAX_TYPICAL_BLADES,
-			BLADE_COUNT_EXPONENT, blades],
+		"%d-blade props are outside the %d-%d range the catalog carries. The physics still runs — blade count enters the BEMT integral directly, no rule of thumb — but the integral was validated on tri- and bi-blade presets, and %d blades is extrapolation this file has no way to check." % [
+			blades, MIN_TYPICAL_BLADES, MAX_TYPICAL_BLADES, blades],
 		{"blades": blades, "min_typical": MIN_TYPICAL_BLADES, "max_typical": MAX_TYPICAL_BLADES}))
 	return out
 

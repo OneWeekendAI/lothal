@@ -43,6 +43,23 @@ const BEMT_ITERATIONS: i64 = 20;
 /// Number of annuli the disc is divided into — §4.1's "~40 annuli".
 const BEMT_ANNULLI: i64 = 40;
 
+/// The GLOBAL section polar (§4.2, P5's fit) — the two free constants, fitted once across
+/// the whole catalog, never per-prop. C_l = min(a0·α, C_l_max), C_d = C_d0 + k_polar·C_l².
+/// a0_eff and C_d0 are the document's two free constants; k_polar comes from lifting-line
+/// theory (1/(π·AR·e)), C_l_max is the stall cap.
+///
+/// P5's polar-fit finding: these values barely matter to the calibration band. A grid over
+/// a0_eff ∈ {4.5, 5.5, 6.5} × C_d0 ∈ {0.01, 0.03, 0.06} moves the catalog calibration spread
+/// from 4.33x only to 4.03x — the band is set by `chord_is_assumed` and the catalog's own
+/// 1.79x motor-to-motor disagreement (motor_plausibility's finding), not by the polar. So the
+/// production polar stays at the P4 placeholder values rather than chasing a 0.05x that is
+/// catalog noise (§4.4: "if a global polar cannot get the calibration factors into a tight
+/// band, that is a real result and it ships as one").
+const POLAR_A0_EFF: f64 = 5.5;
+const POLAR_C_D0: f64 = 0.03;
+const POLAR_K: f64 = 0.02;
+const POLAR_C_L_MAX: f64 = 1.0;
+
 #[derive(GodotClass)]
 #[class(no_init, base=RefCounted)]
 pub struct BemtModel;
@@ -210,11 +227,140 @@ impl BemtModel {
 
         PackedFloat64Array::from([thrust, torque, power_ind, power_prof, max_residual])
     }
+
+    /// The production global polar (§4.2, P5's fit) as [a0_eff, C_d0, k_polar, C_l_max].
+    /// Exposed so the app can report which polar a number was computed with, and so
+    /// test_calibration.gd can run the same solve the production functions run.
+    #[func]
+    pub fn global_polar() -> PackedFloat64Array {
+        PackedFloat64Array::from([POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX])
+    }
+
+    /// The per-prop calibration scalar (§4.4): the single number which, applied
+    /// multiplicatively to the BEMT thrust at the measured RPM, reproduces the measured
+    /// thrust exactly. Uses the production global polar (POLAR_*), not a caller-supplied one.
+    ///
+    /// Guarded: a solve that refuses (bad geometry) or produces non-positive thrust returns
+    /// 0.0 rather than a division by a degenerate number — the same refusal the solve itself
+    /// uses for invalid inputs.
+    #[func]
+    pub fn calibrate(
+        rho: f64,
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        rpm: f64,
+        chord_points_mm: PackedFloat64Array,
+        measured_thrust_n: f64,
+    ) -> f64 {
+        if measured_thrust_n <= 0.0 {
+            return 0.0;
+        }
+        let thrust = Self::solve(
+            rho,
+            diameter_m,
+            pitch_m,
+            blades,
+            rpm,
+            chord_points_mm,
+            POLAR_A0_EFF,
+            POLAR_C_D0,
+            POLAR_K,
+            POLAR_C_L_MAX,
+        )[0];
+        if thrust <= 0.0 {
+            return 0.0;
+        }
+        measured_thrust_n / thrust
+    }
+
+    /// The cross-prop k_t move (§0), now a BEMT geometry ratio rather than the deleted
+    /// `D⁴ · blades^0.8 · pitch^0.5`:
+    ///
+    ///     k_t_fitted = k_t_from × BEMT(to, rpm) / BEMT(from, rpm)
+    ///
+    /// Blade count and twist enter the integral where they physically act; the calibration
+    /// scalar cancels in the ratio (it is `T_meas / BEMT(from)` on both sides), so no new
+    /// fitted numbers are needed to move a fitted k_t to another prop.
+    ///
+    /// The IDENTITY SHORT-CIRCUIT is load-bearing, not an optimisation: when the target prop
+    /// is the prop the k_t was fitted on (the reference build fits its motor on the same
+    /// prop it flies), the function returns `k_t_from` untouched, to the bit. That is what
+    /// keeps the 496 g / 11.69:1 / 29.6% oracles from moving — the anchor is a short circuit
+    /// rather than arithmetic that happens to land on 1 (the same discipline the forward-
+    /// flight slice used).
+    #[func]
+    pub fn scale_k_t_to_prop(
+        k_t_from: f64,
+        from_d: f64,
+        from_pitch: f64,
+        from_blades: f64,
+        from_chord: PackedFloat64Array,
+        to_d: f64,
+        to_pitch: f64,
+        to_blades: f64,
+        to_chord: PackedFloat64Array,
+        rpm: f64,
+    ) -> f64 {
+        // Identity: same geometry AND same planform. The chord comparison is what makes the
+        // short-circuit honest — two props with the same diameter/pitch/blades but different
+        // chords are different props and must go through the integral.
+        if from_d == to_d
+            && from_pitch == to_pitch
+            && from_blades == to_blades
+            && chords_equal(&from_chord, &to_chord)
+        {
+            return k_t_from;
+        }
+        let from_t = Self::solve(
+            AIR_DENSITY_KGM3,
+            from_d,
+            from_pitch,
+            from_blades,
+            rpm,
+            from_chord,
+            POLAR_A0_EFF,
+            POLAR_C_D0,
+            POLAR_K,
+            POLAR_C_L_MAX,
+        )[0];
+        if from_t <= 0.0 {
+            return 0.0;
+        }
+        let to_t = Self::solve(
+            AIR_DENSITY_KGM3,
+            to_d,
+            to_pitch,
+            to_blades,
+            rpm,
+            to_chord,
+            POLAR_A0_EFF,
+            POLAR_C_D0,
+            POLAR_K,
+            POLAR_C_L_MAX,
+        )[0];
+        k_t_from * to_t / from_t
+    }
 }
 
 /// dT = 4πρr·(V_ax + v)·v·F·dr — the momentum closure at one annulus (§4.1), hover form.
 fn momentum_dt(rho: f64, r_m: f64, v_mps: f64, f: f64, dr: f64) -> f64 {
     4.0 * std::f64::consts::PI * rho * r_m * v_mps * v_mps * f * dr
+}
+
+/// Whether two planforms are the same shape: same length and equal [r/R, chord_mm] pairs,
+/// element for element. Used by the identity short-circuit in scale_k_t_to_prop — a planform
+/// is a list of pairs, so equality is a walk, not a single comparison.
+fn chords_equal(a: &PackedFloat64Array, b: &PackedFloat64Array) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    for i in 0..a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+    }
+    true
 }
 
 /// dT = 0.5ρU²·N_b·c·(C_l·cosφ − C_d·sinφ)·dr — the blade element at one annulus (§4.1).
