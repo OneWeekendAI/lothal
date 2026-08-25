@@ -828,7 +828,61 @@ func limiting_component() -> Dictionary:
 		candidates[0]["throttle"], candidates[1]["throttle"], candidates[2]["throttle"])]
 
 func motor_model() -> MotorModel:
-	return MotorModel.create(float(motor["specs"]["kv"]), max_throttle_fraction())
+	# P7 (propulsion.md §3.4): tau is per-motor now, computed from J_rotor + J_blade and
+	# the motor/prop torque slopes at the linearisation point. No caller path may hand out a
+	# MotorModel without this — the pre-P7 shared 0.03 s constant is gone; MotorModel's own
+	# fallback matches it identically so a probe that skips the derivation reproduces the
+	# old numbers rather than a silent zero.
+	return MotorModel.create_with_tau(float(motor["specs"]["kv"]), max_throttle_fraction(),
+		_tau_s())
+
+
+## The τ this build hands to MotorModel. Derived at the hover operating point when the build
+## can hover — the case throttle-response feel is written about — and at rated_rpm otherwise,
+## so an unflyable configuration still gets a meaningful spin-up rather than a zero. Public
+## so the panel and the ESC bench can render every intermediate through
+## `MotorSpinUp.compute()` without recomputing k_q or rebuilding the prop document.
+func spin_up() -> Dictionary:
+	var prop_doc := PropellerDocument.from_catalog_prop(propeller)
+	var test_prop: Dictionary = catalog.get_part(motor["thrust_test"]["prop_id"])
+	var k_t_at_test_prop := PropellerModel.fit_k_t(float(motor["specs"]["max_thrust_g"]),
+		float(motor["specs"]["kv"]) * float(motor["thrust_test"]["voltage_v"]))
+	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop,
+		_prop_geometry(test_prop).diameter_m)
+	var omega_ref: float = _omega_hover_rad_s()
+	return MotorSpinUp.compute(motor, prop_doc, _spin_up_materials(), k_q, k_q_at_test_prop,
+		omega_ref)
+
+
+func _tau_s() -> float:
+	var s := spin_up()
+	var value: float = float(s.get("tau_s", 0.0))
+	return value if value > 0.0 else MotorSpinUp.FALLBACK_TAU_S
+
+
+func _omega_hover_rad_s() -> float:
+	# rated_rpm() is the RPM at max throttle at the test voltage. Multiply by hover_throttle
+	# when the build actually hovers so the linearisation lands where a stick input actually
+	# operates; fall back to rated_rpm otherwise, since 0.5 · rated is the wrong number when
+	# the aircraft cannot hover at all.
+	var rated := rated_rpm()
+	if not can_hover():
+		return PropellerModel.rpm_to_rad_s(rated)
+	var hover_rpm := rated * hover_throttle()
+	return PropellerModel.rpm_to_rad_s(hover_rpm)
+
+
+## FrameMaterials for the blade-density fallback in MotorSpinUp — used only when a
+## propeller has no `published_mass_g` and the density-integral form has to be used instead.
+## Loaded once and cached because there is exactly one materials table and this method may
+## be called every UI refresh of the propulsion panel.
+static var _spin_up_materials_cached: FrameMaterials
+
+
+static func _spin_up_materials() -> FrameMaterials:
+	if _spin_up_materials_cached == null:
+		_spin_up_materials_cached = FrameMaterials.load_default()
+	return _spin_up_materials_cached
 
 func battery_model() -> BatteryModel:
 	return BatteryModel.create(

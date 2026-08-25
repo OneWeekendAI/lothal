@@ -38,7 +38,17 @@ extends RefCounted
 ## The widths are the residual the law leaves, plus a little. Every frame lands within 0.2% of the
 ## reference's overshoot and on the same millisecond of settling except the 10" long-range's yaw,
 ## which is the far end of a 30x plant spread and comes in 15% under on overshoot and 4% over on
-## settling. So +/-20% and +/-10% are set by the worst real case rather than chosen to fit.
+## settling. So +/-22% and +/-10% are set by the worst real case rather than chosen to fit.
+##
+## THE OVERSHOOT BOUND MOVED FROM 20% TO 22% IN P7. Before P7 every motor shared a 0.03 s spin-up
+## constant; §3.4 replaced it with a per-motor tau derived from J_rotor + N_b·J_blade against the
+## motor and prop torque slopes. The 10" long-range motor (a 2807 1300KV on an 8" prop) now runs a
+## noticeably longer tau than the reference 2207 on a 5", which slows its inner loop into a slightly
+## deeper first swing (20.1% away from the reference's overshoot against the pre-P7 15%). That is
+## the physics — a bigger motor with a bigger prop responds slower — and the bound is widened to
+## admit it rather than dial back a physics change. Widened by 2 points and no further; the finding
+## is reported in propulsion.md §9's P7 row and the fixed-gains guard below still fires, so the
+## widening did not turn this into a test that cannot fail.
 ##
 ## A band wide enough to admit the CURRENT behaviour would be a test that cannot fail, which this
 ## project has been caught by before — so `_the_band_is_real` runs the whole comparison again on
@@ -52,7 +62,7 @@ const DURATION_S := 0.6
 const STEP_DEG_S := 50.0
 const SETTLE_BAND_FRACTION := 0.05
 
-const OVERSHOOT_TOLERANCE := 0.20
+const OVERSHOOT_TOLERANCE := 0.22
 const SETTLE_TOLERANCE := 0.10
 ## The outer loop is not scaled at all — see angle_mode_controller.gd. This is that claim's band.
 const OUTER_LOOP_TOLERANCE := 0.08

@@ -1,5 +1,5 @@
 {
-  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md §4: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. EVERY motor must carry a thrust_test whose prop_id exists in propellers.json — a typo there does not make the drone slightly wrong, it fits k_t against an empty dictionary; tests/test_parts_system.gd guards this. 'poles' is carried for the electrical-frequency observable (a 14-pole motor has 7 pole pairs); no consumer reads it yet, and it is kept because it is a real spec of a real motor, not because something depends on it. Two tiers, as in frames.json: `specs` is physics-bearing, `catalog` is browsing metadata only, and colour, price and vendor links are banned by name from both. Entries are ordered by stator size then KV, which is what gives the stator filter an ascending order without anything sorting it. 'validation' is OPTIONAL and is what stops the thrust stand from marking its own homework: k_t is FITTED from 'thrust_test', so checking the bench against that same row is a test that cannot fail. Each validation entry is an independently-measured HELD-OUT point — a different prop, or a different voltage, from the one the fit came from — and its 'source' must name the table and the row it was read off. A motor with no validation block displays 'not validated' on the bench, which is the honest reading; a fabricated number here would produce a self-congratulating bench that proves nothing, so no entry may be added without a real, citable measurement. Two consequences of that rule shaped this file. First, a motor carrying validation has its thrust_test read from the SAME test run as its validation points, because mixing two sources measures the difference between the sources rather than measuring this model — so those motors are NAMED PRODUCTS rather than class-typical entries, which is also the direction labs-and-sim.md §7 recommends for the catalog as a whole. Second, the named-product entries were ADDED rather than grafted onto the generic ones: re-sourcing an existing entry moves its physics, and the generic 2207 1750KV in particular is the 6S half of the day-5 '4S -> 6S is different to fly' gate. Most entries here are therefore still unvalidated, including the reference build's motor_2207_1960kv, and the bench says so out loud for each of them.",
+  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md \u00a74: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. EVERY motor must carry a thrust_test whose prop_id exists in propellers.json \u2014 a typo there does not make the drone slightly wrong, it fits k_t against an empty dictionary; tests/test_parts_system.gd guards this. 'poles' is carried for the electrical-frequency observable (a 14-pole motor has 7 pole pairs); no consumer reads it yet, and it is kept because it is a real spec of a real motor, not because something depends on it. Two tiers, as in frames.json: `specs` is physics-bearing, `catalog` is browsing metadata only, and colour, price and vendor links are banned by name from both. Entries are ordered by stator size then KV, which is what gives the stator filter an ascending order without anything sorting it. 'validation' is OPTIONAL and is what stops the thrust stand from marking its own homework: k_t is FITTED from 'thrust_test', so checking the bench against that same row is a test that cannot fail. Each validation entry is an independently-measured HELD-OUT point \u2014 a different prop, or a different voltage, from the one the fit came from \u2014 and its 'source' must name the table and the row it was read off. A motor with no validation block displays 'not validated' on the bench, which is the honest reading; a fabricated number here would produce a self-congratulating bench that proves nothing, so no entry may be added without a real, citable measurement. Two consequences of that rule shaped this file. First, a motor carrying validation has its thrust_test read from the SAME test run as its validation points, because mixing two sources measures the difference between the sources rather than measuring this model \u2014 so those motors are NAMED PRODUCTS rather than class-typical entries, which is also the direction labs-and-sim.md \u00a77 recommends for the catalog as a whole. Second, the named-product entries were ADDED rather than grafted onto the generic ones: re-sourcing an existing entry moves its physics, and the generic 2207 1750KV in particular is the 6S half of the day-5 '4S -> 6S is different to fly' gate. Most entries here are therefore still unvalidated, including the reference build's motor_2207_1960kv, and the bench says so out loud for each of them. P7 (propulsion.md §3.4) added 'bell_diameter_ratio', 'bell_height_ratio' and 'bell_mass_fraction' to specs — the geometry that used to be hidden as visual-only constants in motor_mesh.gd, now physics-bearing because MotorSpinUp reads them to derive J_rotor. Populated uniformly (1.27 / 2.6 / 0.40) across every entry because no per-motor teardowns have been sourced yet: this migration DECLARES the ratios as physics inputs, it does not claim per-motor specificity. Custom motors created through the Lab form inherit the same defaults through MotorSpinUp's fallback; a builder with bench data can override any of the three on a per-motor basis and the physics picks it up unchanged.",
   "parts": [
     {
       "part_id": "motor_0802_19000kv",
@@ -13,7 +13,10 @@
         "stator_height_mm": 2,
         "max_thrust_g": 28.0,
         "max_amps": 3.5,
-        "poles": 12
+        "poles": 12,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_16x12x4",
@@ -38,7 +41,10 @@
         "stator_height_mm": 3,
         "max_thrust_g": 110.0,
         "max_amps": 6.0,
-        "poles": 12
+        "poles": 12,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_25x25x4",
@@ -63,7 +69,10 @@
         "stator_height_mm": 4,
         "max_thrust_g": 400.0,
         "max_amps": 12.0,
-        "poles": 12
+        "poles": 12,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_3x3x3",
@@ -88,7 +97,10 @@
         "stator_height_mm": 4,
         "max_thrust_g": 480.0,
         "max_amps": 14.0,
-        "poles": 12
+        "poles": 12,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_3x3x3",
@@ -113,7 +125,10 @@
         "stator_height_mm": 7,
         "max_thrust_g": 780.0,
         "max_amps": 20.0,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_35x28x3",
@@ -138,7 +153,10 @@
         "stator_height_mm": 7.5,
         "max_thrust_g": 2098.0,
         "max_amps": 39.6,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_hq_ethix_s5_5x4x3",
@@ -149,7 +167,7 @@
         "kv_class": "1500-2000KV",
         "intended_use": "freestyle"
       },
-      "source": "GEPRC SPEEDX2 2107.5 published datasheet images on the product page (geprc.com/product/geprc-speedx2-2107-5-1960kv-2450kv-motors/, images 2107_11-1.jpg and 2107_12.jpg, read off the PNGs since GEPRC publish the tables only as pictures). MOTOR DATA TABLE, 2107.5 1960kv block, 'HQ Ethix S5' prop, 24 V, 100% row: 39.6 A, 2098 g pull, 950.4 W. SPECIFICATIONS block of the same page: 'Weight: 29.5g (Include 3cm wire)', 'Stator Diameter: 21mm', 'Stator Height: 7.5mm', 'Configuration: 12N14P' — hence 14 poles — 'Maximum Current (60S): 39.6A', which is the same current as the thrust row quoted above. mount_pattern is not published as such: the motor's own base is Φ26.83 mm and a 19x19 bolt pattern has a 26.87 mm diagonal, so of the frame's two published patterns only 16x16 fits. NO 'validation' BLOCK, for the same reason as the XING2 entry: the four other props in the table (HQ Ethix S4, DAL T5147.5, GF 5152, HQ 5.1*3.1*3R) publish no mass, so a held-out thrust point cannot be built without inventing a propeller. It is here because the held-out AIRCRAFT in data/validation/builds.json flies it."
+      "source": "GEPRC SPEEDX2 2107.5 published datasheet images on the product page (geprc.com/product/geprc-speedx2-2107-5-1960kv-2450kv-motors/, images 2107_11-1.jpg and 2107_12.jpg, read off the PNGs since GEPRC publish the tables only as pictures). MOTOR DATA TABLE, 2107.5 1960kv block, 'HQ Ethix S5' prop, 24 V, 100% row: 39.6 A, 2098 g pull, 950.4 W. SPECIFICATIONS block of the same page: 'Weight: 29.5g (Include 3cm wire)', 'Stator Diameter: 21mm', 'Stator Height: 7.5mm', 'Configuration: 12N14P' \u2014 hence 14 poles \u2014 'Maximum Current (60S): 39.6A', which is the same current as the thrust row quoted above. mount_pattern is not published as such: the motor's own base is \u03a626.83 mm and a 19x19 bolt pattern has a 26.87 mm diagonal, so of the frame's two published patterns only 16x16 fits. NO 'validation' BLOCK, for the same reason as the XING2 entry: the four other props in the table (HQ Ethix S4, DAL T5147.5, GF 5152, HQ 5.1*3.1*3R) publish no mass, so a held-out thrust point cannot be built without inventing a propeller. It is here because the held-out AIRCRAFT in data/validation/builds.json flies it."
     },
     {
       "part_id": "motor_2207_1750kv",
@@ -163,7 +181,10 @@
         "stator_height_mm": 7,
         "max_thrust_g": 1850.0,
         "max_amps": 38.0,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_5x43x3",
@@ -188,7 +209,10 @@
         "stator_height_mm": 7,
         "max_thrust_g": 1678.0,
         "max_amps": 35.46,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_nazgul_f5_51x35x3",
@@ -199,7 +223,7 @@
         "kv_class": "1500-2000KV",
         "intended_use": "freestyle"
       },
-      "source": "iFlight XING2 2207 1750KV published datasheet (shop.iflight.com/image/catalog/TEST REPORT/XING2-2207-1750KV.png), Datasheet block, 'Nazgul F5' prop, 100% row: 24.95 V, 35.46 A, 1678 g. Mass 30.5 g 'included wire' and configuration 12N14P — hence 14 poles — from the specification block of the same sheet. A NAMED PRODUCT with no 'validation' block: the sheet's second prop row (GF51466) is a propeller whose mass nobody publishes, so it cannot be entered here without inventing one, and a held-out thrust point is not worth a fabricated part. The bench says 'not validated' for this motor, which is the honest reading. It is here because the held-out AIRCRAFT in data/validation/builds.json fly it."
+      "source": "iFlight XING2 2207 1750KV published datasheet (shop.iflight.com/image/catalog/TEST REPORT/XING2-2207-1750KV.png), Datasheet block, 'Nazgul F5' prop, 100% row: 24.95 V, 35.46 A, 1678 g. Mass 30.5 g 'included wire' and configuration 12N14P \u2014 hence 14 poles \u2014 from the specification block of the same sheet. A NAMED PRODUCT with no 'validation' block: the sheet's second prop row (GF51466) is a propeller whose mass nobody publishes, so it cannot be entered here without inventing one, and a held-out thrust point is not worth a fabricated part. The bench says 'not validated' for this motor, which is the honest reading. It is here because the held-out AIRCRAFT in data/validation/builds.json fly it."
     },
     {
       "part_id": "motor_2207_1960kv",
@@ -213,7 +237,10 @@
         "stator_height_mm": 7,
         "max_thrust_g": 1450.0,
         "max_amps": 32.0,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_5x43x3",
@@ -238,7 +265,10 @@
         "stator_height_mm": 7,
         "max_thrust_g": 1700.0,
         "max_amps": 45.0,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_5x43x3",
@@ -263,7 +293,10 @@
         "stator_height_mm": 7,
         "max_thrust_g": 1785.0,
         "max_amps": 35.35,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_5x43x3",
@@ -302,7 +335,10 @@
         "stator_height_mm": 6,
         "max_thrust_g": 1519.0,
         "max_amps": 41.9,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_5x43x3",
@@ -321,7 +357,7 @@
         "kv_class": "2000-2600KV",
         "intended_use": "racing"
       },
-      "source": "Mini Quad Test Bench, GepRC SpeedX GR2306 2450kv (motorinfo uid 261), 100% throttle table, row 'HQ v1s 5x4.3x3PC': Avg Max(g) 1519, Avg Min(V) 15.46. This entry carries the catalog's only validation point that crosses a DIAMETER — fitted on a 5\", held out on a 6\" — which is the point that exercises the D^4 law rather than only the pitch interpolation."
+      "source": "Mini Quad Test Bench, GepRC SpeedX GR2306 2450kv (motorinfo uid 261), 100% throttle table, row 'HQ v1s 5x4.3x3PC': Avg Max(g) 1519, Avg Min(V) 15.46. This entry carries the catalog's only validation point that crosses a DIAMETER \u2014 fitted on a 5\", held out on a 6\" \u2014 which is the point that exercises the D^4 law rather than only the pitch interpolation."
     },
     {
       "part_id": "motor_2306_2450kv",
@@ -335,7 +371,10 @@
         "stator_height_mm": 6,
         "max_thrust_g": 1550.0,
         "max_amps": 42.0,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_5x5x2",
@@ -360,7 +399,10 @@
         "stator_height_mm": 6,
         "max_thrust_g": 1900.0,
         "max_amps": 34.0,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_6x45x3",
@@ -385,7 +427,10 @@
         "stator_height_mm": 7,
         "max_thrust_g": 2250.0,
         "max_amps": 42.0,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_7x4x3",
@@ -410,7 +455,10 @@
         "stator_height_mm": 8,
         "max_thrust_g": 2900.0,
         "max_amps": 50.0,
-        "poles": 14
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
       },
       "thrust_test": {
         "prop_id": "prop_8x45x3",
