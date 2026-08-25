@@ -182,7 +182,7 @@ func _rebuild() -> void:
 		_build.motor_model(), _build.k_t, _build.k_q, _build.battery_model(),
 		_build.effective_max_amps, _build.rated_rpm(),
 		_build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, geometry.pitch_m,
-		_build.air.kgm3()
+		_build.air.kgm3(), _build.blade_chord()
 	)
 
 	# The pack arrives as it actually is, not as it came off the shelf. This one line is what

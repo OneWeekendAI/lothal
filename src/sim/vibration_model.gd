@@ -202,13 +202,15 @@ const PHASE_OFFSETS := [0.0, 3.883222, 7.766444, 11.649666]
 # The soft mount
 # ---------------------------------------------------------------------------
 
-## The natural frequency of a 1 mm pad under one motor. GUESSED, and the one below is derived:
-## a pad of given material and area has stiffness k = EA/t, so f_n goes as 1/sqrt(thickness) —
-## which is grounded, and is why a thicker pad isolates lower.
-const MOUNT_REFERENCE_HZ := 250.0
-const MOUNT_REFERENCE_THICKNESS_M := 0.001
-## Rubber and silicone pads are heavily damped compared to the frame. Guessed, in the usual range.
-const MOUNT_DAMPING_RATIO := 0.1
+## Soft-mount stiffness is now derived from published grommet specs (Shore A durometer, contact
+## area, count) through `SoftMount` (src/propulsion/soft_mount.gd) — propulsion.md §5 and slice
+## P8. The pre-P8 anchor `MOUNT_REFERENCE_HZ = 250 Hz` and its thickness reference are deleted;
+## thickness enters through `k = E·A/t` where it always belonged, and the frequency is a
+## computation with a citable formula rather than a guess.
+##
+## Damping is still a guess and still lives in the isolator's own file: `SoftMount` owns the
+## default. This file reads it through `SoftMount.damping_ratio_for()` so there is one
+## source of truth for the number, not two that can disagree.
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +224,14 @@ var rpm := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
 var imbalance_kg := DEFAULT_IMBALANCE_KG
 var blade_pass_kg := BLADE_PASS_EQUIVALENT_KG
 var soft_mount_m := 0.0
+## Optional per-mount overrides passed through to `SoftMount.compute`. Empty means the
+## class-typical FPV grommet defaults soft_mount.gd owns; a future authored per-frame mount
+## spec drops in here without touching any physics path.
+var soft_mount_spec: Dictionary = {}
+## The tip mass the mount is carrying (motor + prop, in kg). Set by `for_build`; the pad's
+## own share is added inside `mount_hz()` from `SoftMount.compute` so there is one place the
+## m_supported term is assembled.
+var tip_load_kg := REFERENCE_TIP_MASS_KG
 var resonance_hz := REFERENCE_RESONANCE_HZ
 var damping_ratio := DEFAULT_DAMPING_RATIO
 var blades := 3.0
@@ -253,26 +263,32 @@ static func for_build(build: Build) -> VibrationModel:
 	var geometry := build.prop_geometry()
 	model.blades = geometry.blades
 	model.prop_radius_m = geometry.diameter_m * 0.5
-	model.resonance_hz = resonance_hz_for(build.arm_m, tip_mass_kg_for(build))
 	model.soft_mount_m = float(build.assembly_value("soft_mount_m"))
+	model.tip_load_kg = tip_mass_kg_for(build)
+	# P8: the pad's own mass lands at the arm tip and lowers the mode. Zero when no mount is
+	# fitted, so the reference build's resonance is bit-identical to pre-P8.
+	var mount_mass := SoftMount.mount_mass_kg(model.soft_mount_m, model.soft_mount_spec)
+	model.resonance_hz = resonance_hz_for(build.arm_m, model.tip_load_kg + mount_mass)
 	model.imbalance_kg = float(build.assembly_value("prop_imbalance_g")) / 1000.0
 	return model
 
 
 ## What hangs off the end of one arm: the motor and its prop. Both masses are published, which is
-## what lets the frame mode depend on the build rather than only on the frame.
+## what lets the frame mode depend on the build rather than only on the frame. The soft-mount's
+## own mass (P8) is added by `for_build` on top of this — kept separate so a bench that sweeps
+## motor mass at fixed mount hardware still gets the answer it asked for.
 static func tip_mass_kg_for(build: Build) -> float:
 	return (float(build.motor.get("mass_g", 0.0)) + float(build.propeller.get("mass_g", 0.0))) / 1000.0
 
 
 ## The frame's first arm-bending mode — the scaling law at the top of this file, anchored on
 ## REFERENCE_RESONANCE_HZ. Static and takes raw numbers so a bench can sweep it without a Build.
-static func resonance_hz_for(arm_m: float, tip_mass_kg: float) -> float:
-	if arm_m <= 0.0 or tip_mass_kg <= 0.0:
+static func resonance_hz_for(arm_m: float, tip_kg: float) -> float:
+	if arm_m <= 0.0 or tip_kg <= 0.0:
 		return REFERENCE_RESONANCE_HZ
 	return REFERENCE_RESONANCE_HZ \
 		* pow(REFERENCE_ARM_M / arm_m, ARM_LENGTH_EXPONENT) \
-		* sqrt(REFERENCE_TIP_MASS_KG / tip_mass_kg)
+		* sqrt(REFERENCE_TIP_MASS_KG / tip_kg)
 
 
 ## A single-degree-of-freedom mode's magnitude response to forcing at `hz`:
@@ -295,12 +311,11 @@ static func modal_gain(hz: float, res_hz: float, zeta: float) -> float:
 ## The natural frequency of the fitted soft-mount pad, or INF when there is no pad — which makes
 ## transmissibility exactly 1 below, with no branch for "bare" anywhere else.
 ##
-## f_n goes as 1/sqrt(thickness) because a pad's stiffness is EA/t. That part is grounded; the
-## 250 Hz at 1 mm it is anchored on is not.
+## P8: computed by `SoftMount.f_n_hz` from Shore A durometer, contact area and grommet count
+## through Gent's correlation. Thickness is still the builder's tweak; it enters through the
+## `k = E·A/t` denominator where it belongs, not through a scaling law anchored on 250 Hz.
 func mount_hz() -> float:
-	if soft_mount_m <= 0.0:
-		return INF
-	return MOUNT_REFERENCE_HZ * sqrt(MOUNT_REFERENCE_THICKNESS_M / soft_mount_m)
+	return SoftMount.f_n_hz(soft_mount_m, tip_load_kg, soft_mount_spec)
 
 
 ## What fraction of the forcing at `hz` the pad passes through to the frame:
@@ -317,7 +332,8 @@ func mount_transmissibility(hz: float) -> float:
 	if is_inf(f_n):
 		return 1.0
 	var r := hz / f_n
-	var damped := 2.0 * MOUNT_DAMPING_RATIO * r
+	var zeta := SoftMount.damping_ratio_for(soft_mount_spec)
+	var damped := 2.0 * zeta * r
 	var real := 1.0 - r * r
 	return sqrt((1.0 + damped * damped) / (real * real + damped * damped))
 

@@ -365,7 +365,7 @@ func _run_powertrain_pair(tag: String, kv: float, k_t: float, k_q: float, max_am
 	#
 	# Build.AIR_DENSITY_KGM3 rather than AirDensity.standard_kgm3(), deliberately: the twin's literal
 	# is 1.225, and the derivation is 1.2249781. Nothing in this cross-check reads rho today — the
-	# body velocity is zero throughout, so power_factor short-circuits to 1.0 — so the two are
+	# body velocity is zero throughout, so the forward-flight ratios short-circuit to 1.0 — so the two are
 	# indistinguishable here, which is exactly why the choice should be made on principle now rather
 	# than discovered later. A golden cross-check must be handed the constant its ORACLE holds.
 	var rust: Powertrain = Powertrain.create(r_motor, k_t, k_q, r_batt, max_amps, rated_rpm,

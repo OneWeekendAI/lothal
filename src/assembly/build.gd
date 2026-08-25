@@ -320,6 +320,8 @@ var air := AirDensity.standard()
 
 var arm_m: float
 var mass_properties: MassProperties
+## Lazily built by forward_ratios(). Never read directly.
+var _forward_ratios: BemtRatios = null
 var k_t: float
 var k_q: float
 ## Motor max_amps adjusted for the selected prop: current tracks shaft torque, so a prop
@@ -514,6 +516,30 @@ func _recompute() -> void:
 ## inch-to-metre conversion.
 func prop_geometry() -> Dictionary:
 	return _prop_geometry(propeller)
+
+
+## The fitted propeller's planform, flat as `PropellerDocument.chord` stores it: r/R and chord in
+## millimetres, alternating. The blade's own geometry, which §0's rule says must be the SAME
+## geometry the mesh draws and the integral reads — this is the accessor that carries it out of the
+## document and into the powertrain.
+func blade_chord() -> PackedFloat64Array:
+	return PropellerDocument.from_catalog_prop(propeller).chord
+
+
+## The forward-flight ratio surface for the fitted prop (P6's closure). Cached on the build,
+## because `BemtRatios.for_prop` costs ~150 ms of BEMT solves the first time a given planform is
+## asked for and every panel refresh reconstructs a Build.
+##
+## This is the ONE place forward flight is decided for this aircraft. Both the flight tick (through
+## `Powertrain`) and the panel figures below read the same surface, so the current the pack sees
+## and the current the stats page quotes cannot disagree about what the rotor is doing — the same
+## property `current_in_flight_at_rpm`'s "one factor rather than two" comment defends.
+func forward_ratios() -> BemtRatios:
+	if _forward_ratios == null:
+		var geometry := prop_geometry()
+		_forward_ratios = BemtRatios.for_prop(
+			geometry.diameter_m, geometry.pitch_m, geometry.blades, blade_chord())
+	return _forward_ratios
 
 
 ## Per-prop geometry in SI, since the catalog quotes props in inches like the real world.
@@ -898,7 +924,7 @@ func build_drone_core() -> DroneCore:
 	return DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
 		effective_max_amps, rated_rpm(), drag_coefficient,
 		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m,
-		air.kgm3())
+		air.kgm3(), blade_chord())
 
 ## Electrical frequency is per POLE PAIR, not per pole — a 14-pole motor turns through
 ## seven electrical cycles per revolution, not fourteen. Getting this wrong is a factor of
@@ -1182,9 +1208,7 @@ func hover_throttle_for(pack: BatteryModel) -> float:
 ## cheaper. Both come out of the one angle; neither is a separate assumption.
 func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceiling: float,
 		open_circuit_v: float = AT_NOMINAL) -> float:
-	var geometry := prop_geometry()
-	var diameter_m: float = geometry.diameter_m
-	var pitch_m: float = geometry.pitch_m
+	var ratios := forward_ratios()
 
 	var lift_n := load_factor * weight_n()
 	var drag_n := drag_coefficient * airspeed_mps * airspeed_mps
@@ -1197,8 +1221,9 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 	var high := throttle_ceiling
 	for _i in 40:
 		var mid := (low + high) * 0.5
-		var thrust_n := 4.0 * PropellerModel.thrust_n_in_flight(
-			k_t, rpm_at_throttle(mid, open_circuit_v), diameter_m, pitch_m, v_axial)
+		var mid_rpm := rpm_at_throttle(mid, open_circuit_v)
+		var thrust_n := 4.0 * PropellerModel.thrust_n(k_t, mid_rpm) \
+			* ratios.thrust_ratio(mid_rpm, v_axial, v_edge)
 		if thrust_n < target_n:
 			low = mid
 		else:
@@ -1208,8 +1233,7 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 	# still not holding it" — the same convention hover_throttle() uses for a build that cannot
 	# hold itself up, rather than a number quietly clamped into looking achievable.
 	var rpm := rpm_at_throttle(high, open_circuit_v)
-	return 4.0 * current_at_rpm(rpm) * PropellerModel.power_factor(
-		k_t, rpm, diameter_m, pitch_m, v_axial, v_edge, air.kgm3())
+	return 4.0 * current_at_rpm(rpm) * ratios.power_ratio(rpm, v_axial, v_edge)
 
 
 ## The current a pack actually sees over a flight: the model's answer at each row of
@@ -1276,16 +1300,17 @@ func remaining_flight_time_min(pack: BatteryModel) -> float:
 ## for those the previous figure was an over-estimate.
 func top_speed_kmh() -> float:
 	var lean_horizontal_n := weight_n() * tan(TOP_SPEED_LEAN_RAD)
-	var geometry := prop_geometry()
 	var max_rpm := max_rpm_at_nominal()
+	var ratios := forward_ratios()
 
 	# The drag-only answer, which is an upper bound: unloading can only ever take thrust away.
 	var high := sqrt(lean_horizontal_n / drag_coefficient)
 	var low := 0.0
 	for _i in 40:
 		var mid := (low + high) * 0.5
-		var available_n := 4.0 * PropellerModel.thrust_n_in_flight(k_t, max_rpm,
-			geometry.diameter_m, geometry.pitch_m, mid * sin(TOP_SPEED_LEAN_RAD))
+		var available_n := 4.0 * PropellerModel.thrust_n(k_t, max_rpm) \
+			* ratios.thrust_ratio(max_rpm, mid * sin(TOP_SPEED_LEAN_RAD),
+				mid * cos(TOP_SPEED_LEAN_RAD))
 		var horizontal_n := minf(lean_horizontal_n, available_n * sin(TOP_SPEED_LEAN_RAD))
 		if drag_coefficient * mid * mid < horizontal_n:
 			low = mid
@@ -1602,7 +1627,8 @@ func _prop_unloading() -> Array[BuildWarning]:
 	var top_mps := top_speed_kmh() / 3.6
 	var v_axial := top_mps * sin(TOP_SPEED_LEAN_RAD)
 	var max_rpm := max_rpm_at_nominal()
-	var remaining := PropellerModel.thrust_factor(max_rpm, geometry.diameter_m, geometry.pitch_m, v_axial)
+	var v_edge := top_mps * cos(TOP_SPEED_LEAN_RAD)
+	var remaining := forward_ratios().thrust_ratio(max_rpm, v_axial, v_edge)
 
 	if remaining >= UNLOADING_WORTH_NAMING:
 		return out

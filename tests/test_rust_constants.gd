@@ -4,8 +4,13 @@ extends RefCounted
 ##
 ## Rust cannot export consts to GDScript, so values that used to have exactly one definition
 ## now have two: the default battery chemistry (battery.rs vs build.gd), and air density
-## (propeller.rs vs build.gd). Nothing structural keeps the copies equal — they agree today
+## (bemt.rs vs build.gd). Nothing structural keeps the copies equal — they agree today
 ## because they were written together, which is not a mechanism.
+##
+## P6's closure MOVED the air-density pin rather than dropping it. propeller.rs's copy of rho was
+## the one this file used to invert, through `induced_velocity_mps`; that function, `power_factor`
+## and the constant itself are all deleted, and the copy that decides thrust now is `bemt.rs`'s.
+## The pin follows the physics: it inverts a BEMT solve, which is what actually runs.
 ##
 ## P5 DELETED the third duplicated pair. BLADE_COUNT_EXPONENT and PITCH_EXPONENT were pinned
 ## here by deriving them from PropellerModel.scale_k_t_to_prop; that function is gone,
@@ -77,9 +82,15 @@ static func run() -> Array:
 	# back to its own constant (air_density_or_default). The value recovered is therefore Rust's
 	# default, under the test's control in no way at all, and comparing it to build.gd's constant
 	# is once again a statement about the two copies rather than about the argument list.
-	var disc_area: float = PropellerModel.disc_area_m2(1.0)
-	var v_hover: float = PropellerModel.induced_velocity_mps(1.0, 1.0, 0.0, 0.0, -1.0)
-	var rust_default_rho: float = 1.0 / (2.0 * disc_area * v_hover * v_hover)
+	# The inversion is now BEMT's, and it is simpler than Glauert's was: every term on both sides
+	# of the annulus closure is linear in rho, so rho cancels out of the induced-velocity fixed
+	# point entirely and THRUST IS EXACTLY PROPORTIONAL TO IT. So one solve at rho = 1 and one at a
+	# non-positive rho — the single input that makes Rust fall back to its own constant — recover
+	# that constant as a ratio of two thrusts, with nothing of the test's own left in it.
+	var polar := BemtModel.global_polar()
+	var t_at_unit: float = _solve_thrust(1.0, polar)
+	var t_at_default: float = _solve_thrust(-1.0, polar)
+	var rust_default_rho: float = t_at_default / t_at_unit
 	results.append(TestResult.new(
 		"the air density Rust falls back to equals Build.AIR_DENSITY_KGM3",
 		absf(rust_default_rho - Build.AIR_DENSITY_KGM3) < AIR_DENSITY_TOL,
@@ -113,25 +124,39 @@ static func run() -> Array:
 	# Build's air ever reaches Rust. Dropping the parameter at the seam — passing standard air
 	# regardless of the field — leaves both of them green.
 	#
-	# So this one perturbs the air and asserts the induced velocity moved by the amount
-	# sqrt(T/2*rho*A) DEMANDS, computed here independently. That is what stops it degenerating into
-	# the same tautology by another route: it is not asserting the output changed, which passing
-	# any parameter through would achieve, but that it changed to the value the physics requires.
+	# So this one perturbs the air and asserts the thrust moved by the amount proportionality
+	# DEMANDS, computed here independently. That is what stops it degenerating into the same
+	# tautology by another route: it is not asserting the output changed, which passing any
+	# parameter through would achieve, but that it changed to the value the physics requires.
 	var thin_rho: float = AirDensity.new(3500.0, 20.0).kgm3()
-	var v_thin: float = PropellerModel.induced_velocity_mps(1.0, 1.0, 0.0, 0.0, thin_rho)
-	var v_expected: float = sqrt(1.0 / (2.0 * thin_rho * disc_area))
+	var t_thin: float = _solve_thrust(thin_rho, polar)
 	results.append(TestResult.new(
-		"a supplied air density is the one Rust hovers on, to the value the physics demands",
-		absf(v_thin - v_expected) < AIR_DENSITY_TOL,
-		"at rho %.6f: rust %.9f m/s, sqrt(T/2rhoA) %.9f m/s" % [thin_rho, v_thin, v_expected]
+		"a supplied air density is the one Rust solves on, to the value the physics demands",
+		absf(t_thin - thin_rho * t_at_unit) < AIR_DENSITY_TOL * t_at_unit,
+		"at rho %.6f: rust %.9f N, rho x T(1 kg/m3) %.9f N" % [
+			thin_rho, t_thin, thin_rho * t_at_unit]
 	))
 
-	# The check above passes vacuously if thin air happens to give the same induced velocity as
-	# standard air, so pin that it does not — the same discipline the LiPo/Li-ion pair gets below.
+	# The check above passes vacuously if thin air happens to give the same thrust as standard
+	# air, so pin that it does not — the same discipline the LiPo/Li-ion pair gets above.
 	results.append(TestResult.new(
-		"thin air gives a different induced velocity from standard, so the check above can fail",
-		absf(v_thin - v_hover) > 0.01,
-		"3500 m: %.4f m/s vs standard: %.4f m/s" % [v_thin, v_hover]
+		"thin air gives a different thrust from standard, so the check above can fail",
+		absf(t_thin - t_at_default) / t_at_default > 0.01,
+		"3500 m: %.4f N vs standard: %.4f N" % [t_thin, t_at_default]
 	))
 
 	return results
+
+
+## One BEMT solve on the reference propeller at a fixed RPM, returning thrust. The prop and the RPM
+## are held constant across every call so the ONLY thing that varies between them is rho — which is
+## what makes a ratio of two of them a statement about the density and nothing else.
+static func _solve_thrust(rho: float, polar: PackedFloat64Array) -> float:
+	var doc := PropellerDocument.new()
+	doc.diameter_mm = 127.0
+	doc.pitch_mm = 114.3
+	doc.blades = 3
+	doc.chord = PropellerDocument.generate_chord(127.0, 3)
+	return BemtModel.solve(rho, doc.diameter_mm * 0.001, doc.pitch_mm * 0.001,
+		float(doc.blades), 20000.0, doc.chord,
+		polar[0], polar[1], polar[2], polar[3])[0]

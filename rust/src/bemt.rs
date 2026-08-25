@@ -496,11 +496,27 @@ impl BemtModel {
             rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
             POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX,
             v_axial_mps, v_edge_mps);
-        let flight_p = flight_r[2] + flight_r[3];
+        // NO REGENERATION, AND NO DISCONTINUITY EITHER. Past the geometric advance the rotor
+        // is unloaded and BEMT's INDUCED power term goes negative — the physically correct
+        // statement that a windmilling rotor gives energy back, which this powertrain has no
+        // way to receive (propeller.rs's deleted power_factor carried the same refusal, for
+        // the same reason: a quad in a fast descent charged its own pack).
+        //
+        // The refusal used to be `flight_p <= 0 → return 1.0`, and THAT WAS A WORSE ANSWER THAN
+        // THE REGIME IT GUARDED. Measured on the reference 5x4.5x3 at 20,000 RPM, the ratio
+        // fell smoothly to 0.247 at mu_ax = 0.275 and then JUMPED TO 1.000 at 0.300 — the model
+        // asserting that a prop flying past its own zero-thrust point costs exactly what it
+        // costs in a hover. On the flight tick that is a step change in pack current at a
+        // speed a fast build actually reaches, and it is what made the ratio surface
+        // untabulatable: refining the grid made the interpolation error WORSE, which is the
+        // signature of a discontinuity rather than of a steep function.
+        //
+        // The floor goes on the induced term where the sign problem actually is. Profile power
+        // — the blades' own drag — is unconditionally real and stays. So an unloaded rotor
+        // costs its blade drag and nothing less, the ratio is continuous through the crossing,
+        // and no energy comes back.
+        let flight_p = flight_r[2].max(0.0) + flight_r[3];
         if flight_p <= 0.0 {
-            // If BEMT reports non-positive power in forward flight the rotor has passed into
-            // the windmill/vortex-ring transition; return 1.0 (static) rather than a ratio
-            // that could go negative — same defence as propeller.rs's descent guard.
             return 1.0;
         }
         flight_p / static_p
