@@ -18,7 +18,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs",
-	"propeller document", "blade geometry", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios"]
+	"propeller document", "blade geometry", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard"]
 
 func _init() -> void:
 	var total := 0
@@ -62,6 +62,7 @@ func _run_suite(suite_name: String) -> Array:
 		"motor spin up": return TestMotorSpinUp.run()
 		"soft mount": return TestSoftMount.run()
 		"bemt ratios": return TestBemtRatios.run()
+		"prop guard": return TestPropGuard.run()
 		"airframe document": return TestAirframeDocument.run()
 		"frame layouts": return TestFrameLayouts.run()
 		"frame export": return TestFrameExport.run()
