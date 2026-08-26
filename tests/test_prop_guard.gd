@@ -435,4 +435,91 @@ static func run() -> Array:
 		String(over_wall["tier"]).begins_with("insufficient_data"),
 		"tier %s (outer=5 mm, wall=12 mm)" % over_wall["tier"]))
 
+	# -----------------------------------------------------------------------
+	# P10a — as_part_mass, the AirframeProperties wiring
+	# -----------------------------------------------------------------------
+	# plans/2026-08-26-propulsion-room-design.md §3.3–§3.5: the guard enters the aircraft's
+	# mass tensor as a PartMass at the MOTOR'S plan position, with Vector3.ZERO for its local
+	# inertia diagonal — so the R² roll-inertia bite arrives via parallel-axis in
+	# AirframeProperties exactly once. The four checks below assert both halves of that,
+	# because the alternative — handing the scalar `roll_inertia_contribution_kg_m2` to the
+	# local diagonal — would double-count on any build where a guard sits at the arm tip, and
+	# the doubling would be a silent finding-shaped bug: every mass number correct, every
+	# roll-inertia number wrong by 2x.
+	var motor_pos := Vector3(0.096, 0.0, 0.0)   # a 5" arm's tip in the airframe frame
+	var pm := PropGuard.as_part_mass({
+			"kind": PropGuard.KIND_BUMPER,
+			"outer_radius_mm": 68.0, "wall_mm": 3.0, "height_mm": 12.0,
+			"density_kg_m3": 1050.0, "mount_radius_mm": 96.0,
+		}, motor_pos)
+	results.append(TestResult.new(
+		"as_part_mass returns a PartMass — not null — for a well-formed bumper spec",
+		pm != null,
+		"pm is %s" % ("null" if pm == null else "PartMass(mass=%.3f g)" % (pm.mass_kg * 1000.0))))
+
+	results.append(TestResult.new(
+		"as_part_mass mass_kg equals PropGuard.mass_kg — the physics is the ONE source",
+		absf(pm.mass_kg - PropGuard.mass_kg({
+			"kind": PropGuard.KIND_BUMPER, "outer_radius_mm": 68.0, "wall_mm": 3.0,
+			"height_mm": 12.0, "density_kg_m3": 1050.0, "mount_radius_mm": 96.0})) < 1e-9,
+		"as_part_mass=%.9f kg, mass_kg=%.9f kg" % [pm.mass_kg,
+			PropGuard.mass_kg({"kind": PropGuard.KIND_BUMPER, "outer_radius_mm": 68.0,
+				"wall_mm": 3.0, "height_mm": 12.0, "density_kg_m3": 1050.0,
+				"mount_radius_mm": 96.0})]))
+
+	# The position is the MOTOR's, to the bit — not the motor's shifted by mount_radius_mm, and
+	# not the ring's centroid in world coordinates. A mutation that offset the guard by
+	# mount_radius_mm (a length pretending to be a position) fails this check by 96 mm on X.
+	results.append(TestResult.new(
+		"as_part_mass position is the motor's, exactly — mount_radius_mm is a length, not a position",
+		pm.position_m == motor_pos,
+		"pm.position=%s, motor_pos=%s" % [pm.position_m, motor_pos]))
+
+	# The load-bearing line, and the reason the P9 row's own paragraph warned about it: the
+	# scalar `roll_inertia_contribution_kg_m2` is already m·R_guard² — handing it to the local
+	# diagonal would let parallel-axis in AirframeProperties add ANOTHER m·d² on top. For this
+	# ring that scalar is 4.25e-4 kg·m² (m = 15.794 g at R_guard = mount + outer = 164 mm), and
+	# this check is deliberately AXIS-BLIND: it demands the whole vector be zero, so a stub that
+	# wired the scalar to X (pitch) is caught here even though the roll-inertia check in
+	# test_airframe_properties.gd — which reads I_ZZ — would not see it. The consequence half of
+	# the pair, where the mutation is inserted and its effect on the tensor asserted, is that
+	# file's check 5.
+	results.append(TestResult.new(
+		"as_part_mass local_inertia_diag is Vector3.ZERO — the R² bite arrives once, via parallel-axis",
+		pm.local_inertia_diag == Vector3.ZERO,
+		"pm.local_inertia_diag=%s (must be ZERO)" % pm.local_inertia_diag))
+
+	# Refused specs return null rather than a zero-mass PartMass. A zero-mass entry would still
+	# appear as "prop_guard: 0.000 g" in the frame bench's contributions list, which is a wrong
+	# caption for a real absence. Same posture soft_mount.gd's mount_mass_kg took for bad
+	# grommet specs.
+	var pm_missing := PropGuard.as_part_mass({}, motor_pos)
+	results.append(TestResult.new(
+		"as_part_mass returns null for a spec with no kind — no zero-mass caption in the frame bench",
+		pm_missing == null,
+		"pm_missing is %s" % ("null" if pm_missing == null else "PartMass"))
+	)
+
+	var pm_bad_wall := PropGuard.as_part_mass({
+			"kind": PropGuard.KIND_BUMPER, "outer_radius_mm": 68.0, "wall_mm": -3.0,
+			"height_mm": 12.0, "density_kg_m3": 1050.0, "mount_radius_mm": 96.0,
+		}, motor_pos)
+	results.append(TestResult.new(
+		"as_part_mass returns null for a spec compute() refuses — no fallback to a class-typical part",
+		pm_bad_wall == null,
+		"pm_bad_wall is %s" % ("null" if pm_bad_wall == null else "PartMass")))
+
+	# Duct kind is admissible too — as_part_mass reads the mass, and mass does not read `kind`.
+	# The tip_loss_closure and clearance branches are separate: this helper is exclusively
+	# about how much the ring weighs and where it rides.
+	var pm_duct := PropGuard.as_part_mass({
+			"kind": PropGuard.KIND_DUCT, "outer_radius_mm": 68.0, "wall_mm": 3.0,
+			"height_mm": 12.0, "density_kg_m3": 1050.0, "mount_radius_mm": 96.0,
+			"tip_gap_mm": 1.5,
+		}, motor_pos)
+	results.append(TestResult.new(
+		"as_part_mass on a duct returns the SAME mass as the equivalent bumper — mass does not read kind",
+		pm_duct != null and absf(pm_duct.mass_kg - pm.mass_kg) < 1e-12,
+		"duct pm.mass=%.9f, bumper pm.mass=%.9f" % [pm_duct.mass_kg if pm_duct else 0.0, pm.mass_kg]))
+
 	return results

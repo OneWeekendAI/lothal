@@ -22,6 +22,14 @@ const CATEGORY_FILES := {
 	"vtx": "res://data/parts/vtxs.json",
 	"antenna": "res://data/parts/antennas.json",
 	"receiver": "res://data/parts/receivers.json",
+	# P10a (propulsion.md §9 P10 row / plans/2026-08-26-propulsion-room-design.md §3): guards enter
+	# on the same shape as the four above — a build may fit NONE, in which case nothing here
+	# touches the reference-build oracle (496 g / 11.69:1 / 29.6%). Physics is
+	# src/propulsion/prop_guard.gd; wiring into AirframeProperties.extra_parts is
+	# PropGuard.as_part_mass(), which plants the guard's mass at the motor's plan position and
+	# lets parallel-axis supply the R² bite exactly once — P9's row spells out the double-count
+	# trap that would otherwise result.
+	"guard": "res://data/parts/guards.json",
 }
 
 ## The id prefix a builder-entered part MUST carry, and which a SHIPPED part may never carry.

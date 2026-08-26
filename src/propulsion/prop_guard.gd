@@ -333,6 +333,39 @@ static func thrust_change_claim(spec: Dictionary) -> String:
 	return "unknown"
 
 
+## The guard, packaged as a `PartMass` for `AirframeProperties.compute`'s `extra_parts` slot —
+## the P9 deferral that P10a lands (plans/2026-08-26-propulsion-room-design.md §3).
+##
+## `motor_position_m` is the position the guard's mass RIDES AT — the motor's own plan position,
+## because the ring wraps its motor. `mount_radius_mm` in the spec is a LENGTH (the distance
+## from the aircraft's roll axis to the ring's centre, which is the arm length in v1); it is not
+## a position that goes into the tensor. The position that goes into the tensor is the motor's,
+## and the parallel-axis shift AirframeProperties applies then produces the R² roll-inertia
+## bite exactly once.
+##
+## `local_inertia_diag` is `Vector3.ZERO`, and this line is where the double-count trap the P9
+## row named lives. `compute()` already returns the scalar `roll_inertia_contribution_kg_m2=
+## m·R_guard²`; if that scalar were handed to the local diagonal, `AirframeProperties`'s
+## parallel-axis shift would ADD `m·d²` on top of it, and a guard at the same arm length as
+## the motor would count `m·R_guard²` twice. The ring's own point-of-inertia about its centroid
+## is `m·R_ring²/2` — negligible against the parallel-axis term at the arm length (§6.2 owns
+## the arithmetic; the ratio is R_ring/R_arm and it goes as the square) and carried in this
+## comment rather than in the number, on the same posture `_hardware_element` takes for a
+## standoff.
+##
+## Returns `null` for any spec `compute()` refuses. A zero-mass `PartMass` would still enter the
+## `contributions` list and would appear in a frame-bench row as "prop_guard: 0.000 g", which is
+## a wrong caption for a real absence; `null` is what stops the caller from appending it.
+static func as_part_mass(spec: Dictionary, motor_position_m: Vector3) -> PartMass:
+	var result := compute(spec)
+	if result["tier"] != "computed":
+		return null
+	var ring_mass_kg := float(result["mass_kg"])
+	if ring_mass_kg <= 0.0:
+		return null
+	return PartMass.new(ring_mass_kg, motor_position_m, Vector3.ZERO, "prop_guard")
+
+
 static func _unknown_kind() -> Dictionary:
 	return {
 		"kind": "",
