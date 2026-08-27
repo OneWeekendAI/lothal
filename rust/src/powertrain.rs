@@ -127,9 +127,24 @@ impl Powertrain {
               motor_max_amps: f64, rated_rpm: f64, pole_pairs: f64, blades: f64,
               prop_radius_m: f64, prop_pitch_m: f64, air_density_kgm3: f64,
               blade_chord_mm: PackedFloat64Array) -> Gd<Self> {
+        Self::create_with_guard(motor_model, k_t, k_q, battery, motor_max_amps, rated_rpm,
+            pole_pairs, blades, prop_radius_m, prop_pitch_m, air_density_kgm3,
+            blade_chord_mm, 0.0)
+    }
+
+    /// The P10b closure-aware form. `guard_closure` is the `PropGuard::tip_loss_closure` value
+    /// for whatever guard this build has fitted; it reaches the ratio surface here so the
+    /// same aircraft with and without a duct fits two different surfaces (plans/
+    /// 2026-08-26-propulsion-room-design.md §4.0). The static path is handled in `Build`,
+    /// which multiplies k_t by `BemtRatios::static_closure_factor()` at recompute time.
+    #[func]
+    fn create_with_guard(motor_model: Gd<MotorModel>, k_t: f64, k_q: f64, battery: Gd<BatteryModel>,
+              motor_max_amps: f64, rated_rpm: f64, pole_pairs: f64, blades: f64,
+              prop_radius_m: f64, prop_pitch_m: f64, air_density_kgm3: f64,
+              blade_chord_mm: PackedFloat64Array, guard_closure: f64) -> Gd<Self> {
         let last_voltage_v = battery.bind().nominal_v;
-        let forward_ratios = BemtRatios::for_prop(
-            prop_radius_m * 2.0, prop_pitch_m, blades, blade_chord_mm);
+        let forward_ratios = BemtRatios::for_prop_with_guard(
+            prop_radius_m * 2.0, prop_pitch_m, blades, blade_chord_mm, guard_closure);
         let observables = Self::make_observables();
         let mut pt = Gd::from_object(Self {
             motor_model,

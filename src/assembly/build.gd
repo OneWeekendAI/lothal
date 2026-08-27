@@ -300,6 +300,15 @@ var fc: Dictionary
 ## everything that reads them reads all four the same way (mass_parts, electronics_mass_g), and
 ## four near-identical fields is four places a fifth component would have to be added.
 var components: Dictionary = {}
+## The prop guard, applied to every motor (v1: one guard for the whole build). Empty when nothing
+## is fitted — the reference build's default, so its 496 g / 11.69:1 / 29.6% oracles are unmoved
+## bit-identically. See guard_id below for the id that resolved to this dictionary.
+##
+## LANDED IN P10b (plans/2026-08-26-propulsion-room-design.md §3.4), which is the wiring P10a's
+## `PropGuard.as_part_mass` was written for but the slice did not carry across. Without this
+## field the closure the BEMT solve reads through `forward_ratios()` would have nothing to close
+## against — a duct fitted on paper and forgotten in flight.
+var guard: Dictionary = {}
 var catalog: PartsCatalog
 
 ## THE AIR THIS BUILD IS FLOWN IN, and the line that makes a Build an aircraft AT A PLACE rather
@@ -320,8 +329,31 @@ var air := AirDensity.standard()
 
 var arm_m: float
 var mass_properties: MassProperties
-## Lazily built by forward_ratios(). Never read directly.
+## Lazily built by forward_ratios(). Never read directly. Cleared in _recompute so a Build that
+## is reconfigured — different guard, different prop — pays the ~150 ms BEMT solve once for its
+## new surface rather than flying the previous fit's, which would be a silent regression the
+## Rust-side cache key alone cannot save.
 var _forward_ratios: BemtRatios = null
+## The tip-loss suppression the fitted guard earns (§4.0). 0.0 when no guard is fitted, positive
+## when a duct's `tip_gap_mm` is small compared with the blade's tip chord. Derived once in
+## `_recompute` from `PropellerDocument.chord_at(1.0)` — the physics's own length scale, per
+## `PropGuard.tip_loss_closure`'s own refusal to keep the chord as a constant.
+var guard_closure: float = 0.0
+## What the closure does to STATIC thrust and to STATIC torque, from `BemtModel.
+## static_closure_factors()`. Both are 1.0 when no guard is fitted.
+##
+## TWO NUMBERS, NOT ONE, AND THAT IS THE POINT. `k_q` is fit from `k_t` by a fixed multiple
+## (`PropellerModel.fit_k_q`), so scaling `k_t` by the thrust factor and then fitting `k_q`
+## from the scaled value would move torque the same way thrust moved. The solve says the
+## opposite: closing the tip leak enlarges the momentum sink, the induced velocity drops, and
+## induced drag drops with it. Measured on the reference 5x4.5x3 at the cinewhoop duct's
+## closure of 0.5615 — thrust x1.0017, torque x0.9829. Fitting k_q from the scaled k_t would
+## have reported a duct costing 0.17% MORE current where the model says it saves 1.71%, and
+## `effective_max_amps` (which is a ratio of two k_q values) would have carried that the same
+## wrong way. `tests/test_prop_guard.gd`'s `_a_duct_saves_current_rather_than_costing_it`
+## asserts the direction so the shortcut cannot come back.
+var _static_closure_factor: float = 1.0
+var _static_closure_torque_factor: float = 1.0
 var k_t: float
 var k_q: float
 ## Motor max_amps adjusted for the selected prop: current tracks shaft torque, so a prop
@@ -374,7 +406,7 @@ const DEFAULT_ASSEMBLY := {
 static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String,
 		battery_id: String, esc_id: String = DEFAULT_ESC_ID,
 		fc_id: String = DEFAULT_FC_ID, component_ids: Dictionary = {},
-		p_air: AirDensity = null) -> Build:
+		p_air: AirDensity = null, guard_id: String = "") -> Build:
 	var b := Build.new()
 	# `null` rather than AirDensity.standard() as the default value, because a GDScript default
 	# argument is evaluated once and shared: a literal object default would hand every Build in the
@@ -399,6 +431,13 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 		if part.is_empty():
 			continue
 		b.components[category] = part
+	# The guard, one for the whole build. Same treatment as an optional component: an id that
+	# resolves to nothing leaves the guard slot empty rather than filled with a massless ghost,
+	# which is what keeps the reference build's 496 g oracle bit-identical at guard_id = "".
+	if guard_id != "":
+		var guard_part: Dictionary = p_catalog.get_part(guard_id)
+		if not guard_part.is_empty():
+			b.guard = guard_part
 	b._recompute()
 	return b
 
@@ -420,9 +459,15 @@ func at_air(p_air: AirDensity) -> Build:
 			ids[category] = str((components[category] as Dictionary)["part_id"])
 		else:
 			ids[category] = ""
+	# A twin at a different air must carry the same guard — otherwise "would this fly at sea
+	# level" answers about a different aircraft. Fits the guard by its id, same as every other
+	# component, so the twin re-runs the closure derivation at the new density rather than
+	# copying the old scalar (the closure IS density-invariant, but stating that here would
+	# duplicate the property BemtRatios asserts and drift is exactly the failure mode).
+	var g_id := str(guard.get("part_id", "")) if not guard.is_empty() else ""
 	var twin := Build.from_ids(catalog, str(frame["part_id"]), str(motor["part_id"]),
 		str(propeller["part_id"]), str(battery["part_id"]), str(esc["part_id"]),
-		str(fc["part_id"]), ids, p_air)
+		str(fc["part_id"]), ids, p_air, g_id)
 	twin.set_assembly(assembly)
 	return twin
 
@@ -452,6 +497,40 @@ func mount_points() -> Array[MountPoint]:
 
 func _recompute() -> void:
 	arm_m = float(frame["specs"]["arm_mm"]) / 1000.0
+
+	# The guard's tip-loss closure and static thrust boost — computed first, before k_t, because
+	# k_t scales by the static factor and everything downstream (peak thrust, hover throttle,
+	# TWR) reads that scaled k_t. Zero-closure short-circuit is not an optimisation: it keeps
+	# the reference build's 496 g / 11.69:1 / 29.6% oracles bit-identical at guard_id = "",
+	# because `PropGuard.tip_loss_closure` returns 0.0 for a bumper AND for an unfitted guard,
+	# and `BemtRatios.static_closure_factor` returns 1.0 at closure = 0.0. See P10a's row for
+	# why the oracle-preservation check that guards this is a positive assertion.
+	guard_closure = 0.0
+	_static_closure_factor = 1.0
+	_static_closure_torque_factor = 1.0
+	if not guard.is_empty():
+		# The blade's tip chord IS the length scale §0's rule names, and PropellerDocument's
+		# `chord_at(1.0)` is the ONE place it lives — a constant here would be a second copy
+		# `tip_loss_closure`'s own refusal exists to prevent. The three plumbing links §4.0
+		# names run through here: this one (the length scale), the k_t scaling below (the
+		# static path), and _forward_ratios clearance (the surface cache).
+		#
+		# READABLE FIRST, THEN THE CLAIM. `tip_loss_closure` asks only about `kind` and
+		# `tip_gap_mm` — it never calls `compute()`, because P9 wrote it as a pure statement
+		# about a gap and a length scale. `mass_parts()` DOES call `compute()`, through
+		# `as_part_mass`, and drops a guard whose geometry is refused. Without this check the
+		# two disagree: a duct with a mistyped `wall_mm` fits no mass, appears on no inspector
+		# row, and still hands the aircraft its tip-loss suppression. One unreadable part, two
+		# answers. So the closure is claimed only for a guard the geometry can read, which is
+		# the same "an unreadable part models as no part" posture the refusal exists for.
+		var guard_specs: Dictionary = guard.get("specs", {})
+		if String(PropGuard.compute(guard_specs).get("tier", "")) == "computed":
+			var guarded_prop_doc := PropellerDocument.from_catalog_prop(propeller)
+			var chord_at_tip_mm := guarded_prop_doc.chord_at(1.0)
+			guard_closure = PropGuard.tip_loss_closure(guard_specs, chord_at_tip_mm)
+	# _forward_ratios cleared here even when nothing changed, so the check does not have to know
+	# what changed — a stale surface is what §4.0's third bullet warns against.
+	_forward_ratios = null
 
 	# --- Thrust coefficient, fit from the manufacturer table, then moved to this prop ---
 	# physics.md §4 is explicit that C_T must be fit from published thrust tables rather
@@ -499,7 +578,36 @@ func _recompute() -> void:
 	# is false as physics rather than merely uncertain as data.
 	k_t *= air.kgm3() / AirDensity.standard_kgm3()
 
-	k_q = PropellerModel.fit_k_q(k_t, _prop_geometry(propeller).diameter_m)
+	# The guard's static thrust boost, from §4.0's "the closure reaches both". `k_t` reaches
+	# `PropellerModel.thrust_n` at hover — the panel's own hover-throttle bisection — and the
+	# forward-flight tick reads through `forward_ratios()`, whose closure-aware surface takes
+	# the same closure into both numerator and denominator so the ratio is nearly closure-
+	# invariant. Which means: without this line, a fitted duct would raise the flight-tick
+	# thrust and NOT the hover-throttle the panel quotes, and a builder would see two answers.
+	#
+	# Solved once when the guard is fitted, cached on the build so hover_throttle's ~60 bisect
+	# iterations do not each pay a fresh solve. Follows the k_t scaling for air density above
+	# for the same reason: the panel quotes k_t already scaled by the field, and the closure
+	# is another multiplicative correction to the same number.
+	#
+	# The torque half of the same pair is applied to k_q below rather than here, because k_q is
+	# fit FROM k_t and the closure moves the two in opposite directions — see this file's
+	# `_static_closure_torque_factor` for the measured numbers.
+	var k_t_open_rotor := k_t
+	if guard_closure > 0.0:
+		var prop_g := prop_geometry()
+		var closure_factors := BemtModel.static_closure_factors(
+			prop_g.diameter_m, prop_g.pitch_m, prop_g.blades, blade_chord(), guard_closure)
+		_static_closure_factor = closure_factors[0]
+		_static_closure_torque_factor = closure_factors[1]
+		k_t *= _static_closure_factor
+
+	# k_q is fit from the OPEN-ROTOR k_t and then carries the closure's own torque factor. Both
+	# steps are needed: fitting from the closed k_t would double the closure into torque with
+	# the wrong sign, and skipping the torque factor would leave a duct's current draw — the
+	# number a duct is actually fitted for — untouched by the duct.
+	k_q = PropellerModel.fit_k_q(k_t_open_rotor, _prop_geometry(propeller).diameter_m) \
+		* _static_closure_torque_factor
 
 	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop, _prop_geometry(test_prop).diameter_m)
 	effective_max_amps = float(motor["specs"]["max_amps"]) * (k_q / k_q_at_test_prop)
@@ -537,8 +645,14 @@ func blade_chord() -> PackedFloat64Array:
 func forward_ratios() -> BemtRatios:
 	if _forward_ratios == null:
 		var geometry := prop_geometry()
-		_forward_ratios = BemtRatios.for_prop(
-			geometry.diameter_m, geometry.pitch_m, geometry.blades, blade_chord())
+		# `for_prop_with_guard` at closure = 0.0 reaches the SAME cache entry `for_prop` used
+		# to, since the Rust key bit-encodes 0.0 verbatim — so a build with no guard fitted
+		# pays no extra solve. A fitted guard keys a different table, which is the point of
+		# threading the closure at all: two builds that differ only in their guard get two
+		# different surfaces, one solve each, cached forever after.
+		_forward_ratios = BemtRatios.for_prop_with_guard(
+			geometry.diameter_m, geometry.pitch_m, geometry.blades, blade_chord(),
+			guard_closure)
 	return _forward_ratios
 
 
@@ -679,6 +793,26 @@ func mass_parts() -> Array:
 	var loose_mass_kg := wiring_mass_g() / 1000.0
 	parts.append(PartMass.new(loose_mass_kg, Vector3.ZERO,
 		InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M), "Wiring"))
+
+	# Prop guards, one ring at each motor — the P10a `as_part_mass` finally has a caller
+	# (§3.4 shipped in P10b). PartMass carries the guard's mass at the motor's plan position
+	# with `Vector3.ZERO` local diagonal, so `AirframeProperties.compute`'s parallel-axis shift
+	# adds the R² roll-inertia bite exactly ONCE — the double-count trap this file's guard row
+	# would fall into if anyone handed the local diagonal the scalar
+	# `roll_inertia_contribution_kg_m2` instead. The `null` return from `as_part_mass` on an
+	# unreadable guard is what stops a class-typical default masquerading as a real fit, so
+	# nothing is appended when the guard's spec is one `compute()` refuses.
+	#
+	# One guard applied to every motor (v1: whole-build guard_id in from_ids). A per-motor
+	# per-guard authoring is future work; the physics already accepts a heterogeneous fit
+	# because `as_part_mass` takes the motor position as a separate arg.
+	if not guard.is_empty():
+		var guard_specs: Dictionary = guard.get("specs", {})
+		for motor_name in MotorLayout.MOTOR_NAMES:
+			var pm := PropGuard.as_part_mass(guard_specs,
+				MotorLayout.motor_position(motor_name, arm_m))
+			if pm != null:
+				parts.append(pm)
 
 	return parts
 
@@ -924,7 +1058,7 @@ func build_drone_core() -> DroneCore:
 	return DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
 		effective_max_amps, rated_rpm(), drag_coefficient,
 		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m,
-		air.kgm3(), blade_chord())
+		air.kgm3(), blade_chord(), guard_closure)
 
 ## Electrical frequency is per POLE PAIR, not per pole — a 14-pole motor turns through
 ## seven electrical cycles per revolution, not fourteen. Getting this wrong is a factor of

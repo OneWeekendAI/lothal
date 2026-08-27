@@ -119,21 +119,27 @@ impl RatioTable {
     }
 }
 
-type CacheKey = (u64, u64, u64, Vec<u64>);
+/// (diameter, pitch, blades, guard_closure, chord[]). The closure is a full u64 bit-pattern,
+/// same discipline as the geometry fields: two closures that differ in the last bit are two
+/// different tables, so the cache cannot silently hand the second one the first one's surface.
+type CacheKey = (u64, u64, u64, u64, Vec<u64>);
 
 fn cache() -> &'static Mutex<HashMap<CacheKey, Arc<RatioTable>>> {
     static CACHE: OnceLock<Mutex<HashMap<CacheKey, Arc<RatioTable>>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// The geometry IS the key. Bit patterns rather than rounded values, because two propellers
-/// that differ in the last bit of a chord station are two different planforms and a rounded
-/// key would quietly hand the second one the first one's surface.
-fn key_of(diameter_m: f64, pitch_m: f64, blades: f64, chord: &PackedFloat64Array) -> CacheKey {
+/// The geometry PLUS the guard closure IS the key. Bit patterns rather than rounded values,
+/// because two propellers that differ in the last bit of a chord station are two different
+/// planforms and a rounded key would quietly hand the second one the first one's surface —
+/// and same for two guards that differ in the last bit of `tip_loss_closure`'s output.
+fn key_of(diameter_m: f64, pitch_m: f64, blades: f64, guard_closure: f64,
+        chord: &PackedFloat64Array) -> CacheKey {
     (
         diameter_m.to_bits(),
         pitch_m.to_bits(),
         blades.to_bits(),
+        guard_closure.to_bits(),
         chord.as_slice().iter().map(|v| v.to_bits()).collect(),
     )
 }
@@ -143,6 +149,7 @@ fn build_table(
     pitch_m: f64,
     blades: f64,
     chord: &PackedFloat64Array,
+    guard_closure: f64,
 ) -> Arc<RatioTable> {
     let n = MU_AXIAL_NODES * MU_EDGE_NODES;
     let mut thrust = vec![0.0; n];
@@ -163,12 +170,12 @@ fn build_table(
             let v_ax = (i as f64 * ha) * omega_r;
             let v_ed = (j as f64 * he) * omega_r;
             let idx = RatioTable::index(i, j);
-            thrust[idx] = BemtModel::thrust_ratio_forward(
+            thrust[idx] = BemtModel::thrust_ratio_forward_with_guard(
                 reference_rho, diameter_m, pitch_m, blades, reference_rpm,
-                chord.clone(), v_ax, v_ed);
-            power[idx] = BemtModel::power_ratio_forward(
+                chord.clone(), v_ax, v_ed, guard_closure);
+            power[idx] = BemtModel::power_ratio_forward_with_guard(
                 reference_rho, diameter_m, pitch_m, blades, reference_rpm,
-                chord.clone(), v_ax, v_ed);
+                chord.clone(), v_ax, v_ed, guard_closure);
         }
     }
     Arc::new(RatioTable { thrust, power })
@@ -179,6 +186,24 @@ fn build_table(
 pub struct BemtRatios {
     table: Arc<RatioTable>,
     radius_m: f64,
+    /// The guard closure this surface was BUILT with — carried so `static_closure_factor()`
+    /// can answer without a second key lookup, and so the "changing the guard invalidates the
+    /// build's cached surface" test can assert on it directly. 0.0 for an unfitted guard.
+    guard_closure: f64,
+    /// Cached at construction to avoid a fresh solve every time the panel or a warning asks.
+    /// Recomputed only when `for_prop_with_guard` builds a new object. Thrust and torque are
+    /// cached as a PAIR because the closure moves them in OPPOSITE directions and a caller
+    /// that took only the thrust half would derive torque from it — see
+    /// `BemtModel::static_closure_factors` for the measured numbers and what that costs.
+    static_closure_factor_cached: f64,
+    static_closure_torque_factor_cached: f64,
+    /// The geometry, kept so `static_closure_factor` can re-solve if asked about a different
+    /// closure — but not the primary reason: the primary reason is that a test that CHECKS
+    /// the factor should be able to do so from just the surface object.
+    diameter_m: f64,
+    pitch_m: f64,
+    blades: f64,
+    chord_points_mm: PackedFloat64Array,
 }
 
 #[godot_api]
@@ -196,14 +221,42 @@ impl BemtRatios {
         blades: f64,
         chord_points_mm: PackedFloat64Array,
     ) -> Gd<Self> {
+        // Delegates with guard_closure = 0.0 through the SAME cache lookup — bit-identity is
+        // a property of the cache key plus the build path, not a promise the wrapper repeats.
+        Self::for_prop_with_guard(diameter_m, pitch_m, blades, chord_points_mm, 0.0)
+    }
+
+    /// The P10b closure-aware surface (plans/2026-08-26-propulsion-room-design.md §4). Two
+    /// propellers that differ only in their fitted guard are two different cacheable surfaces
+    /// because `guard_closure` sits in the cache key; a `Build` that changes its `guard_id`
+    /// invalidates its own `_forward_ratios` handle and calls this again to get the new one
+    /// (the Rust-side key alone would not save a build that cached the old surface — the
+    /// invalidation obligation lives on the caller). `guard_closure = 0.0` reaches the SAME
+    /// cache entry that `for_prop` populates, since both bit-key the same u64.
+    #[func]
+    pub fn for_prop_with_guard(
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        chord_points_mm: PackedFloat64Array,
+        guard_closure: f64,
+    ) -> Gd<Self> {
         let radius_m = diameter_m * 0.5;
         if radius_m <= 0.0 || blades <= 0.0 || chord_points_mm.len() < 4 {
             return Gd::from_object(Self {
                 table: Arc::new(RatioTable { thrust: vec![], power: vec![] }),
                 radius_m: 0.0,
+                guard_closure: 0.0,
+                static_closure_factor_cached: 1.0,
+                static_closure_torque_factor_cached: 1.0,
+                diameter_m: 0.0,
+                pitch_m: 0.0,
+                blades: 0.0,
+                chord_points_mm: PackedFloat64Array::new(),
             });
         }
-        let key = key_of(diameter_m, pitch_m, blades, &chord_points_mm);
+        let closure = guard_closure.clamp(0.0, 1.0);
+        let key = key_of(diameter_m, pitch_m, blades, closure, &chord_points_mm);
         let table = {
             let mut guard = cache().lock().expect("bemt ratio cache should not be poisoned");
             if let Some(hit) = guard.get(&key) {
@@ -213,13 +266,65 @@ impl BemtRatios {
                 // practice (one thread builds, the flight tick only reads a built table) and
                 // holding it means two callers asking for the same new prop in the same frame
                 // solve it once rather than twice.
-                let built = build_table(diameter_m, pitch_m, blades, &chord_points_mm);
+                let built = build_table(diameter_m, pitch_m, blades, &chord_points_mm, closure);
                 guard.insert(key, built.clone());
                 built
             }
         };
-        Gd::from_object(Self { table, radius_m })
+        let static_factors = BemtModel::static_closure_factors(
+            diameter_m, pitch_m, blades, chord_points_mm.clone(), closure);
+        Gd::from_object(Self {
+            table,
+            radius_m,
+            guard_closure: closure,
+            static_closure_factor_cached: static_factors[0],
+            static_closure_torque_factor_cached: static_factors[1],
+            diameter_m,
+            pitch_m,
+            blades,
+            chord_points_mm,
+        })
     }
+
+    /// The closure this surface was built with. Exposed so `Build`'s test can assert that a
+    /// change to `guard_id` produced a different surface (identity is not enough — a stale
+    /// cache read would return a new-object handle with the OLD closure) rather than a mere
+    /// object-identity check that a `null` reset would satisfy.
+    #[func]
+    pub fn guard_closure(&self) -> f64 {
+        self.guard_closure
+    }
+
+    /// The static thrust multiplier a fitted guard earns — cached in the object. `Build`
+    /// scales `k_t` by this so the panel's hover throttle reflects the closure the flight
+    /// tick sees through the ratio surface (plan §4.0 "the closure reaches both").
+    #[func]
+    pub fn static_closure_factor(&self) -> f64 {
+        self.static_closure_factor_cached
+    }
+
+    /// The static TORQUE multiplier the same guard earns — below 1 for a real duct, because
+    /// closing the tip leak drops the induced velocity and with it the induced drag. Exposed
+    /// alongside the thrust factor so no caller has to derive one from the other; deriving
+    /// torque from a closure-scaled `k_t` is the defect `BemtModel::static_closure_factors`
+    /// documents by measurement.
+    #[func]
+    pub fn static_closure_torque_factor(&self) -> f64 {
+        self.static_closure_torque_factor_cached
+    }
+
+    /// The propeller geometry this surface was built on — exposed so a test can prove the
+    /// stored chord is what the closure was computed with, not a copy that could drift.
+    #[func]
+    pub fn chord_points_mm(&self) -> PackedFloat64Array {
+        self.chord_points_mm.clone()
+    }
+    #[func]
+    pub fn diameter_m(&self) -> f64 { self.diameter_m }
+    #[func]
+    pub fn pitch_m(&self) -> f64 { self.pitch_m }
+    #[func]
+    pub fn blades(&self) -> f64 { self.blades }
 
     /// The fraction of static thrust this prop still makes at this airspeed and RPM — the
     /// BEMT-native replacement for the deleted `PropellerModel::thrust_factor`.

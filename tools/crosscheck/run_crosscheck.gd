@@ -368,8 +368,16 @@ func _run_powertrain_pair(tag: String, kv: float, k_t: float, k_q: float, max_am
 	# body velocity is zero throughout, so the forward-flight ratios short-circuit to 1.0 — so the two are
 	# indistinguishable here, which is exactly why the choice should be made on principle now rather
 	# than discovered later. A golden cross-check must be handed the constant its ORACLE holds.
+	#
+	# The blade planform, and it is REQUIRED rather than optional: `Powertrain.create` gained it
+	# when P6's ratio surface replaced the old thrust_factor formula, and this call site kept
+	# compiling on the old arity for exactly as long as nothing ran it — the rot this cross-check
+	# is not in `run_tests.gd`'s SUITES to catch. Generated from the prop's own diameter and blade
+	# count, which is what `PropellerDocument.from_catalog_prop` does for a catalog prop with no
+	# authored planform, so the surface built here is the surface a Build would fly.
+	var blade_chord := PropellerDocument.generate_chord(prop_radius_m * 2000.0, int(blades))
 	var rust: Powertrain = Powertrain.create(r_motor, k_t, k_q, r_batt, max_amps, rated_rpm,
-		pole_pairs, blades, prop_radius_m, prop_pitch_m, Build.AIR_DENSITY_KGM3)
+		pole_pairs, blades, prop_radius_m, prop_pitch_m, Build.AIR_DENSITY_KGM3, blade_chord)
 
 	var g_motor: RMotor = RMotor.new(kv, 1.0)
 	var g_batt: RBatt = RBatt.new(nv, r, mah, cells, chem)

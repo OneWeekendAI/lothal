@@ -162,83 +162,35 @@ impl BemtModel {
         k_polar: f64,
         c_l_max: f64,
     ) -> PackedFloat64Array {
-        if blades <= 0.0 || diameter_m <= 0.0 || rpm <= 0.0 || chord_points_mm.len() < 4 {
-            return PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0, 1.0]);
-        }
-        let rho = if rho > 0.0 { rho } else { AIR_DENSITY_KGM3 };
-        let radius_m = diameter_m * 0.5;
-        let omega = rpm * std::f64::consts::TAU / 60.0;
-        let n = BEMT_ANNULLI.max(1) as usize;
-        let iters = BEMT_ITERATIONS.max(1) as usize;
+        // Delegates with guard_closure = 0.0 through the same code path — bit-identity is a
+        // property of the code path, not a promise the wrapper repeats.
+        solve_impl(rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            a0_eff, c_d0, k_polar, c_l_max, 0.0)
+    }
 
-        // The blade spans [hub, tip]; the hub is where the planform begins (the generator's
-        // HUB_RADIUS_TO_RADIUS, an authored blade's own first station).
-        let r_hub_frac = chord_points_mm[0].clamp(0.0, 1.0);
-        let r_hub_m = r_hub_frac * radius_m;
-        let dr = (radius_m - r_hub_m) / n as f64;
-
-        let mut thrust = 0.0;
-        let mut torque = 0.0;
-        let mut power_ind = 0.0;
-        let mut power_prof = 0.0;
-        let mut max_residual = 0.0f64;
-
-        for i in 0..n {
-            let r = r_hub_m + (i as f64 + 0.5) * dr;
-            let r_frac = r / radius_m;
-            let chord_m = chord_at_m(&chord_points_mm, r_frac);
-            if chord_m <= 0.0 {
-                continue;
-            }
-            // Geometric pitch, §3.2: the blade angle at this radius.
-            let beta = (pitch_m / (std::f64::consts::TAU * r)).atan();
-
-            // Fixed point on the induced velocity, seeded at 0 (hover: no inflow yet).
-            let mut v_i = 0.0f64;
-            for _ in 0..iters {
-                let phi = (v_i / (omega * r)).atan();
-                let f = Self::tip_loss_factor(blades, r_frac, phi);
-                let alpha = beta - phi;
-                let cl = (a0_eff * alpha).min(c_l_max);
-                let cd = c_d0 + k_polar * cl * cl;
-                let u2 = v_i * v_i + (omega * r) * (omega * r);
-                let d_t = blade_dt(rho, u2, blades, chord_m, cl, cd, phi, dr);
-                // Momentum closure, hover: 4πρr·v_i²·F·dr = dT → v_i = √(dT / (4πρr·F·dr)).
-                // (V_ax ≠ 0 becomes the quadratic v² + V_ax·v − dT/(4πρrF·dr) = 0 in P6.)
-                let a = 4.0 * std::f64::consts::PI * rho * r * f * dr;
-                if a <= 0.0 {
-                    v_i = 0.0;
-                    break;
-                }
-                v_i = (d_t / a).max(0.0).sqrt();
-            }
-
-            // Final pass: report from the converged v_i.
-            let phi = (v_i / (omega * r)).atan();
-            let f = Self::tip_loss_factor(blades, r_frac, phi);
-            let alpha = beta - phi;
-            let cl = (a0_eff * alpha).min(c_l_max);
-            let cd = c_d0 + k_polar * cl * cl;
-            let u2 = v_i * v_i + (omega * r) * (omega * r);
-            let cos_phi = phi.cos();
-            let sin_phi = phi.sin();
-
-            let d_t = blade_dt(rho, u2, blades, chord_m, cl, cd, phi, dr);
-            let d_q = 0.5 * rho * u2 * blades * chord_m * (cl * sin_phi + cd * cos_phi) * r * dr;
-            let d_t_mom = momentum_dt(rho, r, v_i, f, dr);
-
-            thrust += d_t;
-            torque += d_q;
-            // Induced power is thrust × local induced velocity (§4.5's FM denominator, part 1).
-            power_ind += d_t * v_i;
-            // Profile power is the drag part of shaft power: Ω·(0.5ρU²N_b c·C_d·cosφ·r·dr).
-            power_prof += omega * 0.5 * rho * u2 * blades * chord_m * cd * cos_phi * r * dr;
-
-            let residual = (d_t - d_t_mom).abs() / d_t_mom.abs().max(1e-30);
-            max_residual = max_residual.max(residual);
-        }
-
-        PackedFloat64Array::from([thrust, torque, power_ind, power_prof, max_residual])
+    /// The P10b closure-aware form. `guard_closure ∈ [0, 1]` post-processes Prandtl's tip-loss
+    /// factor F at every annulus:  F_effective = F + closure · (1 − F). At closure = 0.0 this
+    /// is `solve` bit-identically (see `_the_closure_anchor_is_exact` in test_bemt_ratios.gd);
+    /// at closure = 1.0 the tip leak is closed entirely.
+    ///
+    /// The scalar closure comes from `PropGuard::tip_loss_closure`, and reaches this solve
+    /// through `Build.forward_ratios()` / the static-thrust scaling in `Build._recompute`.
+    #[func]
+    pub fn solve_with_guard(
+        rho: f64,
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        rpm: f64,
+        chord_points_mm: PackedFloat64Array,
+        a0_eff: f64,
+        c_d0: f64,
+        k_polar: f64,
+        c_l_max: f64,
+        guard_closure: f64,
+    ) -> PackedFloat64Array {
+        solve_impl(rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            a0_eff, c_d0, k_polar, c_l_max, guard_closure)
     }
 
     /// P6 — §4.1 with V_ax ≠ 0 and edgewise flow. Extends `solve` with an axial freestream
@@ -282,145 +234,33 @@ impl BemtModel {
         v_axial_mps: f64,
         v_edge_mps: f64,
     ) -> PackedFloat64Array {
-        // Descent is declined, however deep — the vortex-ring state sits under any negative
-        // axial inflow and momentum theory does not apply. Delegating to the static solve is
-        // the "static answer" the propeller.rs guard already uses for the same reason (see
-        // its power_factor block on "a quad in a 30 m/s descent CHARGED ITS OWN PACK"); the
-        // sentinel residual = -1.0 lets a caller distinguish "converged fine at V=0" from
-        // "refused a descent".
-        if v_axial_mps < 0.0 {
-            let mut res = Self::solve(
-                rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
-                a0_eff, c_d0, k_polar, c_l_max);
-            if res.len() == 5 {
-                res[4] = -1.0;
-            }
-            return res;
-        }
-
-        // Hover-identity guard: at V_ax = V_edge = 0 the Glauert momentum closure loses
-        // contractivity (the iteration v_new = d_t/(a·v_old) oscillates around v* rather
-        // than settling to it), so delegate to `solve`, whose v_new = √(d_t/a) is the
-        // hover fixed point directly. This is the same "short circuit rather than arithmetic
-        // that happens to land on 1" discipline test_calibration.gd's identity uses.
-        if v_axial_mps == 0.0 && v_edge_mps == 0.0 {
-            return Self::solve(
-                rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
-                a0_eff, c_d0, k_polar, c_l_max);
-        }
-
-        if blades <= 0.0 || diameter_m <= 0.0 || rpm <= 0.0 || chord_points_mm.len() < 4 {
-            return PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0, 1.0]);
-        }
-        let rho = if rho > 0.0 { rho } else { AIR_DENSITY_KGM3 };
-        let radius_m = diameter_m * 0.5;
-        let omega = rpm * std::f64::consts::TAU / 60.0;
-        let n = BEMT_ANNULLI.max(1) as usize;
-        let iters = BEMT_FORWARD_ITERATIONS.max(1) as usize;
-
-        let r_hub_frac = chord_points_mm[0].clamp(0.0, 1.0);
-        let r_hub_m = r_hub_frac * radius_m;
-        let dr = (radius_m - r_hub_m) / n as f64;
-
-        let mut thrust = 0.0;
-        let mut torque = 0.0;
-        let mut power_ind = 0.0;
-        let mut power_prof = 0.0;
-        let mut max_residual = 0.0f64;
-        let v_edge_sq = v_edge_mps * v_edge_mps;
-
-        for i in 0..n {
-            let r = r_hub_m + (i as f64 + 0.5) * dr;
-            let r_frac = r / radius_m;
-            let chord_m = chord_at_m(&chord_points_mm, r_frac);
-            if chord_m <= 0.0 {
-                continue;
-            }
-            let beta = (pitch_m / (std::f64::consts::TAU * r)).atan();
-
-            // Fixed point on v_i. Two stable schemes, chosen by whether V_edge is present:
-            //   V_edge = 0  → the momentum closure a·v² + a·V_ax·v − dT = 0 is a quadratic
-            //                 in v with a closed-form positive root. One matrix-free solve
-            //                 per pass, no relaxation, converges as fast as dT converges.
-            //   V_edge > 0  → Glauert's magnitude closure v = dT/(a·|V_total|). This is the
-            //                 iteration whose contractivity is |V_ax|/(|V_ax|+v_h) — fine
-            //                 when V_ax dominates v_h, weak when it does not — so it is
-            //                 under-relaxed at α = 0.5 to keep the fixed point stable across
-            //                 the whole airspeed sweep the U-curve traces.
-            //
-            // Seed at 0. The very first pass computes dT with no inflow (upper bound); each
-            // subsequent pass tightens v_i toward the closed form.
-            let mut v_i = 0.0f64;
-            let a = 4.0 * std::f64::consts::PI * rho * r * dr;
-            for pass in 0..iters {
-                let axial = v_axial_mps + v_i;
-                let phi = (axial / (omega * r)).atan();
-                let f = Self::tip_loss_factor(blades, r_frac, phi);
-                let alpha = beta - phi;
-                let cl = (a0_eff * alpha).min(c_l_max);
-                let cd = c_d0 + k_polar * cl * cl;
-                let u2 = axial * axial + v_edge_sq + (omega * r) * (omega * r);
-                let d_t = blade_dt(rho, u2, blades, chord_m, cl, cd, phi, dr);
-                let a_f = a * f;
-                if a_f <= 0.0 {
-                    // No annulus left to accept momentum (F → 0 at the tip). Same break
-                    // `solve` takes, and for the same reason.
-                    v_i = 0.0;
-                    break;
-                }
-                // The axial closure a·F·v·(V_ax + v) = dT has a closed-form positive root.
-                // It is EXACT when V_edge = 0, and when V_edge > 0 it is an upper bound on
-                // the true v_i (|V_total| ≥ V_ax + v_i, so the same dT is carried by less
-                // induced velocity) — which makes it the right first pass in both cases:
-                // the answer in one, and a seed on the correct side in the other.
-                let disc = v_axial_mps * v_axial_mps + 4.0 * d_t.max(0.0) / a_f;
-                let quadratic_root = ((-v_axial_mps + disc.sqrt()) * 0.5).max(0.0);
-                if v_edge_mps == 0.0 || pass == 0 {
-                    v_i = quadratic_root;
-                    continue;
-                }
-                // Glauert's magnitude closure, under-relaxed at α = 0.5. Seeded from the
-                // quadratic rather than from 0: seeding at 0 makes |V_total| = √(V_ax²+V_edge²)
-                // on the first pass, which at low airspeed is far below the hover inflow and
-                // throws v_i an order of magnitude past the fixed point — from where the
-                // blade element stalls negative and the iteration never recovers. A negative
-                // dT is clamped to zero inflow (as `solve` does) rather than breaking the
-                // loop, so a single overshooting pass cannot pin the annulus at v_i = 0.
-                let magnitude = (axial * axial + v_edge_sq).sqrt();
-                let v_new = (d_t.max(0.0) / (a_f * magnitude)).max(0.0);
-                v_i = 0.5 * v_i + 0.5 * v_new;
-            }
-
-            // Report from the converged v_i.
-            let axial = v_axial_mps + v_i;
-            let phi = (axial / (omega * r)).atan();
-            let f = Self::tip_loss_factor(blades, r_frac, phi);
-            let alpha = beta - phi;
-            let cl = (a0_eff * alpha).min(c_l_max);
-            let cd = c_d0 + k_polar * cl * cl;
-            let u2 = axial * axial + v_edge_sq + (omega * r) * (omega * r);
-            let cos_phi = phi.cos();
-            let sin_phi = phi.sin();
-
-            let d_t = blade_dt(rho, u2, blades, chord_m, cl, cd, phi, dr);
-            let d_q = 0.5 * rho * u2 * blades * chord_m * (cl * sin_phi + cd * cos_phi) * r * dr;
-            let magnitude = (axial * axial + v_edge_sq).sqrt();
-            let d_t_mom = 4.0 * std::f64::consts::PI * rho * r * v_i * magnitude * f * dr;
-
-            thrust += d_t;
-            torque += d_q;
-            // Induced power at this annulus: dT · (V_ax + v_i). The V_ax part is the power
-            // spent pushing the aircraft along the rotor axis (parasite drag's home), and v_i
-            // is the induced part — one term, correctly signed, no double-counting.
-            power_ind += d_t * axial;
-            power_prof += omega * 0.5 * rho * u2 * blades * chord_m * cd * cos_phi * r * dr;
-
-            let residual = (d_t - d_t_mom).abs() / d_t_mom.abs().max(1e-30);
-            max_residual = max_residual.max(residual);
-        }
-
-        PackedFloat64Array::from([thrust, torque, power_ind, power_prof, max_residual])
+        solve_forward_impl(rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            a0_eff, c_d0, k_polar, c_l_max, v_axial_mps, v_edge_mps, 0.0)
     }
+
+    /// The P10b closure-aware forward solve. See `solve_with_guard` for what `guard_closure`
+    /// means; the two share one path, guarding one property: at guard_closure = 0.0 the
+    /// closure branch reduces to a no-op and the pre-P10b behaviour is bit-identical.
+    #[func]
+    pub fn solve_forward_with_guard(
+        rho: f64,
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        rpm: f64,
+        chord_points_mm: PackedFloat64Array,
+        a0_eff: f64,
+        c_d0: f64,
+        k_polar: f64,
+        c_l_max: f64,
+        v_axial_mps: f64,
+        v_edge_mps: f64,
+        guard_closure: f64,
+    ) -> PackedFloat64Array {
+        solve_forward_impl(rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            a0_eff, c_d0, k_polar, c_l_max, v_axial_mps, v_edge_mps, guard_closure)
+    }
+
 
     /// The BEMT-native replacement for PropellerModel::thrust_factor — the anchored-at-1
     /// ratio of forward-flight thrust to static thrust at the same RPM. The hover short
@@ -443,23 +283,115 @@ impl BemtModel {
         v_axial_mps: f64,
         v_edge_mps: f64,
     ) -> f64 {
+        Self::thrust_ratio_forward_with_guard(
+            rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
+            v_axial_mps, v_edge_mps, 0.0)
+    }
+
+    /// The P10b closure-aware form. Ratio of forward-flight thrust to STATIC thrust with the
+    /// SAME closure applied to both — the tip-loss suppression multiplies both nearly the
+    /// same way, so the ratio surface is nearly closure-invariant. That is a prediction
+    /// test_bemt_ratios.gd's `[P10b]` block checks rather than an assumption to rely on: if
+    /// it fails, the ratios need to move to a per-closure surface and the cache key already
+    /// carries the closure bits to make that a mechanical change.
+    #[func]
+    pub fn thrust_ratio_forward_with_guard(
+        rho: f64,
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        rpm: f64,
+        chord_points_mm: PackedFloat64Array,
+        v_axial_mps: f64,
+        v_edge_mps: f64,
+        guard_closure: f64,
+    ) -> f64 {
         if (v_axial_mps == 0.0 && v_edge_mps == 0.0) || v_axial_mps < 0.0 {
             return 1.0;
         }
-        let static_t = Self::solve(
-            rho, diameter_m, pitch_m, blades, rpm, chord_points_mm.clone(),
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX)[0];
+        let static_t = solve_impl(
+            rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure)[0];
         if static_t <= 0.0 {
             return 1.0;
         }
-        let flight_t = Self::solve_forward(
-            rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
+        let flight_t = solve_forward_impl(
+            rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
             POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX,
-            v_axial_mps, v_edge_mps)[0];
-        // Clamp to [0, 1]: past the geometric advance BEMT correctly reports negative or
-        // vanishing thrust, and a ratio outside [0, 1] would be the model claiming reversed
-        // thrust — outside domain, same as propeller.rs's clamp.
+            v_axial_mps, v_edge_mps, guard_closure)[0];
         (flight_t / static_t).max(0.0).min(1.0)
+    }
+
+    /// The P10b static closure factors — what a fitted guard does to STATIC thrust and to
+    /// STATIC torque, as a pair, from ONE pair of solves. Returns `[thrust_factor,
+    /// torque_factor]`, each `solve(closure)/solve(0)` at reference conditions.
+    ///
+    /// **Why a pair and not just thrust.** `Build` scales `k_t` by the thrust factor so the
+    /// hover throttle the panel quotes matches the flight tick. But `k_q` is fit FROM `k_t`
+    /// (`PropellerModel::fit_k_q` is a fixed multiple), so a `k_t` scaled by the closure and a
+    /// `k_q` derived from it would move torque in the SAME direction as thrust. The solve says
+    /// the opposite: closing the tip leak enlarges the momentum sink, which drops the induced
+    /// velocity, which drops induced drag. Measured on the reference 5x4.5x3 at closure
+    /// 0.5615 (the cinewhoop duct's 1.5 mm gap): thrust x1.0017, torque x0.9829. Deriving
+    /// `k_q` from the scaled `k_t` would report a duct COSTING 0.17% more current when the
+    /// model says it SAVES 1.71% — the wrong sign on the one number a duct is fitted for.
+    ///
+    /// **Both factors are RPM- and rho-invariant**, which is what makes one scalar per
+    /// (propeller, closure) enough: the static solve is scale-invariant in Omega (phi and
+    /// therefore alpha, C_l, C_d and F are unchanged when V_i and Omega·r scale together) and
+    /// linear in rho on both sides of the annulus closure. That is the same self-similarity
+    /// `bemt_ratios.rs` rests on, and `test_bemt_ratios.gd`'s
+    /// `_the_closure_factors_are_rpm_and_density_invariant` asserts it BIT-EXACTLY rather than
+    /// leaving it as this paragraph's assertion.
+    ///
+    /// **Neither factor is clamped.** An earlier draft pinned the thrust factor to `>= 1.0` on
+    /// the reasoning that a duct cannot reduce thrust; that would have hidden exactly the
+    /// finding above, where the interesting motion is DOWNWARD and in the other channel. This
+    /// file reports what the quadrature says, on `prop_guard.gd`'s own "reported, not clamped"
+    /// posture for a negative clearance.
+    ///
+    /// Returns `[1.0, 1.0]` at closure <= 0.0 by short circuit, and for a degenerate propeller
+    /// the solve refuses.
+    #[func]
+    pub fn static_closure_factors(
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        chord_points_mm: PackedFloat64Array,
+        guard_closure: f64,
+    ) -> PackedFloat64Array {
+        let closure = sanitize_closure(guard_closure);
+        if closure <= 0.0 {
+            return PackedFloat64Array::from([1.0, 1.0]);
+        }
+        // The reference operating point. Both factors are invariant in it (see above), so it
+        // is a scale for the arithmetic and not a modelling constant — the same posture, and
+        // the same two numbers, `bemt_ratios.rs::build_table` already takes.
+        let reference_rpm = 20_000.0;
+        let reference_rho = AIR_DENSITY_KGM3;
+        let base = solve_impl(
+            reference_rho, diameter_m, pitch_m, blades, reference_rpm, &chord_points_mm,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0);
+        if base[0] <= 0.0 || base[1] <= 0.0 {
+            return PackedFloat64Array::from([1.0, 1.0]);
+        }
+        let closed = solve_impl(
+            reference_rho, diameter_m, pitch_m, blades, reference_rpm, &chord_points_mm,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, closure);
+        PackedFloat64Array::from([closed[0] / base[0], closed[1] / base[1]])
+    }
+
+    /// The thrust half of `static_closure_factors`, for a caller that wants one number. Kept
+    /// as its own `#[func]` because `bemt_ratios.rs` caches it on the surface object.
+    #[func]
+    pub fn static_closure_factor(
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        chord_points_mm: PackedFloat64Array,
+        guard_closure: f64,
+    ) -> f64 {
+        Self::static_closure_factors(diameter_m, pitch_m, blades, chord_points_mm, guard_closure)[0]
     }
 
     /// The BEMT-native replacement for PropellerModel::power_factor. The anchored-at-1 ratio
@@ -482,20 +414,39 @@ impl BemtModel {
         v_axial_mps: f64,
         v_edge_mps: f64,
     ) -> f64 {
+        Self::power_ratio_forward_with_guard(
+            rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
+            v_axial_mps, v_edge_mps, 0.0)
+    }
+
+    /// The P10b closure-aware form of `power_ratio_forward`. Same posture as
+    /// `thrust_ratio_forward_with_guard`.
+    #[func]
+    pub fn power_ratio_forward_with_guard(
+        rho: f64,
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        rpm: f64,
+        chord_points_mm: PackedFloat64Array,
+        v_axial_mps: f64,
+        v_edge_mps: f64,
+        guard_closure: f64,
+    ) -> f64 {
         if (v_axial_mps == 0.0 && v_edge_mps == 0.0) || v_axial_mps < 0.0 {
             return 1.0;
         }
-        let static_r = Self::solve(
-            rho, diameter_m, pitch_m, blades, rpm, chord_points_mm.clone(),
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX);
+        let static_r = solve_impl(
+            rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure);
         let static_p = static_r[2] + static_r[3];
         if static_p <= 0.0 {
             return 1.0;
         }
-        let flight_r = Self::solve_forward(
-            rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
+        let flight_r = solve_forward_impl(
+            rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
             POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX,
-            v_axial_mps, v_edge_mps);
+            v_axial_mps, v_edge_mps, guard_closure);
         // NO REGENERATION, AND NO DISCONTINUITY EITHER. Past the geometric advance the rotor
         // is unloaded and BEMT's INDUCED power term goes negative — the physically correct
         // statement that a windmilling rotor gives energy back, which this powertrain has no
@@ -660,6 +611,247 @@ fn chords_equal(a: &PackedFloat64Array, b: &PackedFloat64Array) -> bool {
 /// dT = 0.5ρU²·N_b·c·(C_l·cosφ − C_d·sinφ)·dr — the blade element at one annulus (§4.1).
 fn blade_dt(rho: f64, u2: f64, blades: f64, chord_m: f64, cl: f64, cd: f64, phi: f64, dr: f64) -> f64 {
     0.5 * rho * u2 * blades * chord_m * (cl * phi.cos() - cd * phi.sin()) * dr
+}
+
+/// The closure, made safe to multiply by: NaN and the infinities become 0.0 (no claim), and
+/// anything outside [0, 1] is clamped into it. The bound is the physics's own — a duct closes
+/// the tip leak; it cannot make F exceed 1, and it cannot make the leak WORSE than an open
+/// blade. `PropGuard.tip_loss_closure`'s rational form already lands inside [0, 1], so this
+/// guards the FFI BOUNDARY rather than that caller: `solve_with_guard` is a public `#[func]`
+/// and a number arriving from GDScript has had no such form imposed on it.
+///
+/// Applied ONCE per solve rather than per annulus, so the inner loop stays the two flops the
+/// bit-identity argument below is about. At `guard_closure = 0.0` it returns 0.0, so the
+/// identity `solve == solve_with_guard(.., 0.0)` survives the sanitiser.
+#[inline]
+fn sanitize_closure(guard_closure: f64) -> f64 {
+    if !guard_closure.is_finite() {
+        return 0.0;
+    }
+    guard_closure.clamp(0.0, 1.0)
+}
+
+/// F_effective = F + closure · (1 − F). The tip-loss suppression a duct's tip gap earns
+/// through `PropGuard::tip_loss_closure`. At closure = 0.0 this returns f_base unchanged;
+/// the expression IS f_base bit-identically in IEEE 754 for every finite f_base (0.0 · x is
+/// 0.0 for any finite x, subnormals included), which is the property the P4/P5/P6 oracle
+/// preservation rests on. The plan doc §7 walks the case explicitly — do not "optimise" this
+/// into `if guard_closure == 0.0 { f_base } else { ... }` without checking the -0.0 case,
+/// because a branch introduces a NEW way the equality could break rather than closing an
+/// existing one.
+#[inline]
+fn tip_loss_with_closure(f_base: f64, guard_closure: f64) -> f64 {
+    f_base + guard_closure * (1.0 - f_base)
+}
+
+/// The static (hover) solve, callable from both `#[func] BemtModel::solve` (closure = 0.0)
+/// and `#[func] BemtModel::solve_with_guard` (closure passed through). Extracted so bit-
+/// identity at closure = 0.0 is a property of ONE code path rather than two implementations
+/// staying in step. `chord_points_mm` is borrowed by reference: the wrapper takes an owned
+/// array so the FFI copy happens once at the boundary.
+fn solve_impl(
+    rho: f64,
+    diameter_m: f64,
+    pitch_m: f64,
+    blades: f64,
+    rpm: f64,
+    chord_points_mm: &PackedFloat64Array,
+    a0_eff: f64,
+    c_d0: f64,
+    k_polar: f64,
+    c_l_max: f64,
+    guard_closure: f64,
+) -> PackedFloat64Array {
+    let guard_closure = sanitize_closure(guard_closure);
+    if blades <= 0.0 || diameter_m <= 0.0 || rpm <= 0.0 || chord_points_mm.len() < 4 {
+        return PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0, 1.0]);
+    }
+    let rho = if rho > 0.0 { rho } else { AIR_DENSITY_KGM3 };
+    let radius_m = diameter_m * 0.5;
+    let omega = rpm * std::f64::consts::TAU / 60.0;
+    let n = BEMT_ANNULLI.max(1) as usize;
+    let iters = BEMT_ITERATIONS.max(1) as usize;
+
+    let r_hub_frac = chord_points_mm[0].clamp(0.0, 1.0);
+    let r_hub_m = r_hub_frac * radius_m;
+    let dr = (radius_m - r_hub_m) / n as f64;
+
+    let mut thrust = 0.0;
+    let mut torque = 0.0;
+    let mut power_ind = 0.0;
+    let mut power_prof = 0.0;
+    let mut max_residual = 0.0f64;
+
+    for i in 0..n {
+        let r = r_hub_m + (i as f64 + 0.5) * dr;
+        let r_frac = r / radius_m;
+        let chord_m = chord_at_m(chord_points_mm, r_frac);
+        if chord_m <= 0.0 {
+            continue;
+        }
+        let beta = (pitch_m / (std::f64::consts::TAU * r)).atan();
+
+        let mut v_i = 0.0f64;
+        for _ in 0..iters {
+            let phi = (v_i / (omega * r)).atan();
+            let f_base = BemtModel::tip_loss_factor(blades, r_frac, phi);
+            let f = tip_loss_with_closure(f_base, guard_closure);
+            let alpha = beta - phi;
+            let cl = (a0_eff * alpha).min(c_l_max);
+            let cd = c_d0 + k_polar * cl * cl;
+            let u2 = v_i * v_i + (omega * r) * (omega * r);
+            let d_t = blade_dt(rho, u2, blades, chord_m, cl, cd, phi, dr);
+            let a = 4.0 * std::f64::consts::PI * rho * r * f * dr;
+            if a <= 0.0 {
+                v_i = 0.0;
+                break;
+            }
+            v_i = (d_t / a).max(0.0).sqrt();
+        }
+
+        let phi = (v_i / (omega * r)).atan();
+        let f_base = BemtModel::tip_loss_factor(blades, r_frac, phi);
+        let f = tip_loss_with_closure(f_base, guard_closure);
+        let alpha = beta - phi;
+        let cl = (a0_eff * alpha).min(c_l_max);
+        let cd = c_d0 + k_polar * cl * cl;
+        let u2 = v_i * v_i + (omega * r) * (omega * r);
+        let cos_phi = phi.cos();
+        let sin_phi = phi.sin();
+
+        let d_t = blade_dt(rho, u2, blades, chord_m, cl, cd, phi, dr);
+        let d_q = 0.5 * rho * u2 * blades * chord_m * (cl * sin_phi + cd * cos_phi) * r * dr;
+        let d_t_mom = momentum_dt(rho, r, v_i, f, dr);
+
+        thrust += d_t;
+        torque += d_q;
+        power_ind += d_t * v_i;
+        power_prof += omega * 0.5 * rho * u2 * blades * chord_m * cd * cos_phi * r * dr;
+
+        let residual = (d_t - d_t_mom).abs() / d_t_mom.abs().max(1e-30);
+        max_residual = max_residual.max(residual);
+    }
+
+    PackedFloat64Array::from([thrust, torque, power_ind, power_prof, max_residual])
+}
+
+/// The forward-flight solve, callable from both `#[func] BemtModel::solve_forward`
+/// (closure = 0.0) and `#[func] BemtModel::solve_forward_with_guard`. Same "one code path,
+/// two closures" story as `solve_impl`.
+fn solve_forward_impl(
+    rho: f64,
+    diameter_m: f64,
+    pitch_m: f64,
+    blades: f64,
+    rpm: f64,
+    chord_points_mm: &PackedFloat64Array,
+    a0_eff: f64,
+    c_d0: f64,
+    k_polar: f64,
+    c_l_max: f64,
+    v_axial_mps: f64,
+    v_edge_mps: f64,
+    guard_closure: f64,
+) -> PackedFloat64Array {
+    let guard_closure = sanitize_closure(guard_closure);
+    if v_axial_mps < 0.0 {
+        let mut res = solve_impl(
+            rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
+            a0_eff, c_d0, k_polar, c_l_max, guard_closure);
+        if res.len() == 5 {
+            res[4] = -1.0;
+        }
+        return res;
+    }
+    if v_axial_mps == 0.0 && v_edge_mps == 0.0 {
+        return solve_impl(
+            rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
+            a0_eff, c_d0, k_polar, c_l_max, guard_closure);
+    }
+
+    if blades <= 0.0 || diameter_m <= 0.0 || rpm <= 0.0 || chord_points_mm.len() < 4 {
+        return PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0, 1.0]);
+    }
+    let rho = if rho > 0.0 { rho } else { AIR_DENSITY_KGM3 };
+    let radius_m = diameter_m * 0.5;
+    let omega = rpm * std::f64::consts::TAU / 60.0;
+    let n = BEMT_ANNULLI.max(1) as usize;
+    let iters = BEMT_FORWARD_ITERATIONS.max(1) as usize;
+
+    let r_hub_frac = chord_points_mm[0].clamp(0.0, 1.0);
+    let r_hub_m = r_hub_frac * radius_m;
+    let dr = (radius_m - r_hub_m) / n as f64;
+
+    let mut thrust = 0.0;
+    let mut torque = 0.0;
+    let mut power_ind = 0.0;
+    let mut power_prof = 0.0;
+    let mut max_residual = 0.0f64;
+    let v_edge_sq = v_edge_mps * v_edge_mps;
+
+    for i in 0..n {
+        let r = r_hub_m + (i as f64 + 0.5) * dr;
+        let r_frac = r / radius_m;
+        let chord_m = chord_at_m(chord_points_mm, r_frac);
+        if chord_m <= 0.0 {
+            continue;
+        }
+        let beta = (pitch_m / (std::f64::consts::TAU * r)).atan();
+
+        let mut v_i = 0.0f64;
+        let a = 4.0 * std::f64::consts::PI * rho * r * dr;
+        for pass in 0..iters {
+            let axial = v_axial_mps + v_i;
+            let phi = (axial / (omega * r)).atan();
+            let f_base = BemtModel::tip_loss_factor(blades, r_frac, phi);
+            let f = tip_loss_with_closure(f_base, guard_closure);
+            let alpha = beta - phi;
+            let cl = (a0_eff * alpha).min(c_l_max);
+            let cd = c_d0 + k_polar * cl * cl;
+            let u2 = axial * axial + v_edge_sq + (omega * r) * (omega * r);
+            let d_t = blade_dt(rho, u2, blades, chord_m, cl, cd, phi, dr);
+            let a_f = a * f;
+            if a_f <= 0.0 {
+                v_i = 0.0;
+                break;
+            }
+            let disc = v_axial_mps * v_axial_mps + 4.0 * d_t.max(0.0) / a_f;
+            let quadratic_root = ((-v_axial_mps + disc.sqrt()) * 0.5).max(0.0);
+            if v_edge_mps == 0.0 || pass == 0 {
+                v_i = quadratic_root;
+                continue;
+            }
+            let magnitude = (axial * axial + v_edge_sq).sqrt();
+            let v_new = (d_t.max(0.0) / (a_f * magnitude)).max(0.0);
+            v_i = 0.5 * v_i + 0.5 * v_new;
+        }
+
+        let axial = v_axial_mps + v_i;
+        let phi = (axial / (omega * r)).atan();
+        let f_base = BemtModel::tip_loss_factor(blades, r_frac, phi);
+        let f = tip_loss_with_closure(f_base, guard_closure);
+        let alpha = beta - phi;
+        let cl = (a0_eff * alpha).min(c_l_max);
+        let cd = c_d0 + k_polar * cl * cl;
+        let u2 = axial * axial + v_edge_sq + (omega * r) * (omega * r);
+        let cos_phi = phi.cos();
+        let sin_phi = phi.sin();
+
+        let d_t = blade_dt(rho, u2, blades, chord_m, cl, cd, phi, dr);
+        let d_q = 0.5 * rho * u2 * blades * chord_m * (cl * sin_phi + cd * cos_phi) * r * dr;
+        let magnitude = (axial * axial + v_edge_sq).sqrt();
+        let d_t_mom = 4.0 * std::f64::consts::PI * rho * r * v_i * magnitude * f * dr;
+
+        thrust += d_t;
+        torque += d_q;
+        power_ind += d_t * axial;
+        power_prof += omega * 0.5 * rho * u2 * blades * chord_m * cd * cos_phi * r * dr;
+
+        let residual = (d_t - d_t_mom).abs() / d_t_mom.abs().max(1e-30);
+        max_residual = max_residual.max(residual);
+    }
+
+    PackedFloat64Array::from([thrust, torque, power_ind, power_prof, max_residual])
 }
 
 /// c(r) at a stated fraction of radius, piecewise-linear over the planform, mm → m. Linear

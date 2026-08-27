@@ -522,4 +522,353 @@ static func run() -> Array:
 		pm_duct != null and absf(pm_duct.mass_kg - pm.mass_kg) < 1e-12,
 		"duct pm.mass=%.9f, bumper pm.mass=%.9f" % [pm_duct.mass_kg if pm_duct else 0.0, pm.mass_kg]))
 
+	# -----------------------------------------------------------------------
+	# [P10b] The Build wiring — a fitted guard reaching mass, thrust, torque and the surface
+	# -----------------------------------------------------------------------
+	results.append_array(_the_reference_build_fits_no_guard())
+	results.append_array(_a_fitted_guard_rides_at_every_motor())
+	results.append_array(_a_bumper_moves_mass_and_no_thrust_number())
+	results.append_array(_a_duct_saves_current_rather_than_costing_it())
+	results.append_array(_the_length_scale_is_the_blade_s_own_tip_chord())
+	results.append_array(_changing_the_guard_invalidates_the_cached_surface())
+	results.append_array(_the_air_twin_carries_the_guard())
+	results.append_array(_an_unreadable_guard_fits_nothing())
+
 	return results
+
+
+# ---------------------------------------------------------------------------
+# [P10b] The Build wiring — plans/2026-08-26-propulsion-room-design.md §3.4 and §4.0
+# ---------------------------------------------------------------------------
+#
+# P10a shipped `guards.json`, `PropGuard.as_part_mass` and the physics, and proved the
+# `AirframeProperties` boundary with fixtures that hand `PartMass` entries in directly. It did
+# NOT ship the wiring: `as_part_mass` had no caller outside `tests/`, so no aircraft in the app
+# could fit a guard and P10b's closure had nothing to read. That wiring is what this section
+# tests — a fitted guard reaching mass, inertia, thrust, torque, current and the ratio surface,
+# each by its own route and each with its own way to be missed.
+
+## `guards.json`'s cinewhoop shroud, the entry §3.1 built for exactly this: `tip_gap_mm = 1.5`
+## against the reference prop's 1.92 mm tip chord.
+const DUCT_ID := "guard_duct_5in_cinewhoop"
+## And the freestyle ring, which is a bumper and must therefore move mass and NOTHING else.
+const BUMPER_ID := "guard_bumper_5in_abs"
+
+
+static func _build_with_guard(guard_id: String) -> Build:
+	return Build.from_ids(PartsCatalog.load_default(), ReferenceBuild.FRAME_ID,
+		ReferenceBuild.MOTOR_ID, ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID,
+		ReferenceBuild.ESC_ID, ReferenceBuild.FC_ID, {}, null, guard_id)
+
+
+## The reference build fits NO guard, and every oracle it anchors is bit-identical with the new
+## parameter present. This is §7's first named failure mode: a `guard_id` default of `""` that
+## the parts loader still enumerates, or a closure short circuit that returns 0.99999 instead of
+## exactly 1.0, and 496 g / 11.69:1 / 29.6% quietly stop being the numbers the paper says.
+##
+## Asserted against `ReferenceBuild.build()`, which does NOT pass a guard_id at all, so this also
+## pins that the new trailing default argument did not change what the default build is.
+##
+## TO MAKE THIS FAIL: default `guard_id` to any catalog id, or move the `guard_closure > 0.0`
+## short circuit in `_recompute` to `>= 0.0`.
+static func _the_reference_build_fits_no_guard() -> Array:
+	var plain := ReferenceBuild.build()
+	var explicit := _build_with_guard("")
+	return [
+		TestResult.new(
+			"[P10b] a build with guard_id \"\" is the reference build, bit-identical in mass and thrust",
+			plain.mass_properties.total_mass_kg == explicit.mass_properties.total_mass_kg
+				and plain.k_t == explicit.k_t and plain.k_q == explicit.k_q
+				and plain.effective_max_amps == explicit.effective_max_amps,
+			"mass %.17f / %.17f, k_t %.17f / %.17f" % [
+				plain.mass_properties.total_mass_kg, explicit.mass_properties.total_mass_kg,
+				plain.k_t, explicit.k_t]),
+		TestResult.new(
+			"[P10b] and the 496 g / 11.69:1 / 29.6% oracles are where they were",
+			absf(explicit.mass_properties.total_mass_kg - 0.496) < 1.0e-9
+				and absf(explicit.thrust_to_weight() - 11.6935) < 1.0e-3
+				and absf(explicit.hover_throttle() - 0.29571) < 1.0e-4
+				and explicit.guard_closure == 0.0,
+			"%.1f g, %.4f:1, %.5f hover, closure %.1f" % [
+				explicit.mass_properties.total_mass_kg * 1000.0, explicit.thrust_to_weight(),
+				explicit.hover_throttle(), explicit.guard_closure]),
+	]
+
+
+## A fitted guard rides at every motor, and its mass and its inertia bite both arrive.
+##
+## MASS IS ASSERTED EXACTLY: four rings, one per motor, `4 x PropGuard.mass_kg(spec)` and not a
+## milligram else. A wiring that fitted one guard for the whole aircraft, or that appended the
+## guard to `extra_parts` twice, moves this number and cannot hide.
+##
+## THE INERTIA BITE IS ASSERTED AGAINST ITS POINT-MASS FLOOR. Each motor sits at
+## `(±arm/√2, 0, ±arm/√2)`, so a ring at the motor's own position contributes `m·(x² + y²) =
+## m·arm²/2` to roll (I_ZZ) and the four of them contribute `2·m·arm²` — 4.05e-4 kg·m² for the
+## bumper's 16.74 g on a 110 mm arm. The MEASURED delta is 4.14e-4: 2% higher, because 63 g
+## arriving at y = 0 also pulls the whole aircraft's centre of mass toward the motor plane and
+## every other part's parallel-axis distance moves with it. So the check is a band around the
+## closed form rather than an equality — wide enough for the CoM shift, far too tight for the
+## double-count P10a's row warns about, which lands at 3.9x.
+##
+## TO MAKE THIS FAIL: place the guard at `Vector3.ZERO` (the delta collapses to the CoM shift
+## alone), fit one guard instead of four, or hand `PartMass` the scalar
+## `roll_inertia_contribution_kg_m2` as its local diagonal on the Z axis.
+static func _a_fitted_guard_rides_at_every_motor() -> Array:
+	var catalog := PartsCatalog.load_default()
+	var spec: Dictionary = catalog.get_part(BUMPER_ID)["specs"]
+	var ring_kg := PropGuard.mass_kg(spec)
+	var plain := ReferenceBuild.build()
+	var guarded := _build_with_guard(BUMPER_ID)
+
+	var mass_delta := guarded.mass_properties.total_mass_kg - plain.mass_properties.total_mass_kg
+	var roll_delta := guarded.mass_properties.inertia.z.z - plain.mass_properties.inertia.z.z
+	var point_mass_floor := 2.0 * ring_kg * guarded.arm_m * guarded.arm_m
+
+	return [
+		TestResult.new(
+			"[P10b] a fitted guard adds exactly four rings of mass — one per motor, not one per build",
+			absf(mass_delta - 4.0 * ring_kg) < 1.0e-12,
+			"delta %.9f kg against 4 x %.9f = %.9f" % [
+				mass_delta, ring_kg, 4.0 * ring_kg]),
+		TestResult.new(
+			"[P10b] and the roll-inertia bite lands on its point-mass floor, not at zero and not doubled",
+			roll_delta > point_mass_floor
+				and roll_delta < 1.05 * point_mass_floor,
+			"roll delta %.9f kg·m² against the 2·m·arm² floor %.9f (ratio %.4f)" % [
+				roll_delta, point_mass_floor, roll_delta / point_mass_floor]),
+	]
+
+
+## §6.1's SILENT FAILURE, now testable through a whole aircraft: a bumper claims mass, inertia
+## and clearance ONLY. Fitting one must move the mass numbers and leave every thrust number
+## bit-identical — not close, identical, because `tip_loss_closure` returns 0.0 for a bumper and
+## `_recompute`'s short circuit then never touches `k_t`.
+##
+## The reason this is worth a whole-build test after `test_prop_guard.gd` already checks
+## `tip_loss_closure` on a bumper: the closure is computed in `Build._recompute` from a spec dug
+## out of a catalog record, and a wiring that read `guard["specs"]["tip_gap_mm"]` directly
+## instead of going through `PropGuard` would pass every unit check in this file and hand the
+## freestyle ring a duct's thrust anyway. `guards.json`'s bumper carries no `tip_gap_mm`, so the
+## sharper version of the same trap — a wiring that treats a missing gap as zero, i.e. as a
+## PERFECT seal — is what the `k_t` identity actually catches.
+##
+## TO MAKE THIS FAIL: drop the `kind` check from `tip_loss_closure`, or default a missing
+## `tip_gap_mm` to 0.0 anywhere on the path.
+static func _a_bumper_moves_mass_and_no_thrust_number() -> Array:
+	var plain := ReferenceBuild.build()
+	var bumped := _build_with_guard(BUMPER_ID)
+	return [
+		TestResult.new(
+			"[P10b] a fitted BUMPER leaves k_t, k_q and the current limit bit-identical",
+			bumped.guard_closure == 0.0 and bumped.k_t == plain.k_t
+				and bumped.k_q == plain.k_q
+				and bumped.effective_max_amps == plain.effective_max_amps,
+			"closure %.1f, k_t %.17f / %.17f" % [bumped.guard_closure, bumped.k_t, plain.k_t]),
+		TestResult.new(
+			"[P10b] while its mass and inertia genuinely moved, so the check above is not vacuous",
+			bumped.mass_properties.total_mass_kg > plain.mass_properties.total_mass_kg
+				and bumped.mass_properties.inertia.z.z > plain.mass_properties.inertia.z.z,
+			"%.1f g against %.1f g, I_ZZ %.8f against %.8f" % [
+				bumped.mass_properties.total_mass_kg * 1000.0,
+				plain.mass_properties.total_mass_kg * 1000.0,
+				bumped.mass_properties.inertia.z.z, plain.mass_properties.inertia.z.z]),
+	]
+
+
+## THE DEFECT THIS TEST EXISTS TO PIN, and it shipped in the first cut of P10b.
+##
+## `Build` fits `k_q` from `k_t` — `PropellerModel.fit_k_q` is a fixed multiple of it — so the
+## obvious wiring, "scale `k_t` by the closure's thrust factor and let `k_q` follow", moves
+## torque in the SAME direction as thrust. The BEMT solve says the opposite: closing the tip leak
+## enlarges the annulus that accepts momentum, the induced velocity falls, and induced drag falls
+## with it. Measured on the reference build with the cinewhoop duct (closure 0.5615):
+##
+##     static thrust   x 1.00999
+##     static torque   x 0.99472
+##
+## The first cut reported `k_q` UP 1.0% where the model says it is DOWN 0.53%, and
+## `effective_max_amps` — which is a ratio of two `k_q` values — carried the same error the same
+## wrong way. A duct's entire point is that it is an efficiency part; the number a builder fits
+## one for is the current, and the current was the number that went backwards.
+##
+## So `k_q` is now fit from the OPEN-ROTOR `k_t` and multiplied by the closure's own TORQUE
+## factor, from `BemtModel.static_closure_factors`'s second element. This test asserts the
+## direction, which is what the shortcut cannot satisfy: no scalar multiple of a `k_t` that went
+## UP produces a `k_q` that went DOWN.
+##
+## TO MAKE THIS FAIL: write `k_q = PropellerModel.fit_k_q(k_t, D)` after the `k_t *=` line —
+## the exact one-line shortcut this replaced.
+static func _a_duct_saves_current_rather_than_costing_it() -> Array:
+	var plain := ReferenceBuild.build()
+	var ducted := _build_with_guard(DUCT_ID)
+	return [
+		TestResult.new(
+			"[P10b] a fitted duct raises k_t — the thrust the closed tip leak earns, +1.0%",
+			ducted.k_t > plain.k_t
+				and absf(ducted.k_t / plain.k_t - 1.00999) < 5.0e-5,
+			"k_t ratio %.8f" % (ducted.k_t / plain.k_t)),
+		TestResult.new(
+			"[P10b] and LOWERS k_q, which no multiple of a raised k_t can do — the shortcut is dead",
+			ducted.k_q < plain.k_q
+				and absf(ducted.k_q / plain.k_q - 0.99472) < 5.0e-5,
+			"k_q ratio %.8f (the k_t-derived shortcut would give %.8f)" % [
+				ducted.k_q / plain.k_q, ducted.k_t / plain.k_t]),
+		TestResult.new(
+			"[P10b] and the current limit follows the torque, not the thrust",
+			ducted.effective_max_amps < plain.effective_max_amps,
+			"%.4f A against %.4f A" % [
+				ducted.effective_max_amps, plain.effective_max_amps]),
+	]
+
+
+## §4.0's FIRST LINK: where the length scale comes from. `PropGuard.tip_loss_closure` takes
+## `chord_at_tip_mm` from its caller because P9 refused to keep it as a constant, and the caller
+## is `PropellerDocument.chord_at(1.0)`. The failure this guards is a tip-chord constant
+## reappearing in `build.gd` — which would pass every check in this file that only looks at the
+## closure's VALUE, because a constant near 1.9 mm gives nearly the right answer on the reference
+## prop and the wrong answer on every other propeller in the catalog.
+##
+## So it is asserted on TWO propellers with different tip chords, against the document's own
+## `chord_at(1.0)` each time. A constant cannot satisfy both.
+##
+## TO MAKE THIS FAIL: replace `guarded_prop_doc.chord_at(1.0)` with any literal.
+static func _the_length_scale_is_the_blade_s_own_tip_chord() -> Array:
+	var catalog := PartsCatalog.load_default()
+	var spec: Dictionary = catalog.get_part(DUCT_ID)["specs"]
+	var results: Array = []
+	var tip_chords: Array = []
+	for prop_id in [ReferenceBuild.PROPELLER_ID, "prop_8x45x3"]:
+		var prop: Dictionary = catalog.get_part(prop_id)
+		if prop.is_empty():
+			continue
+		var build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+			prop_id, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID, ReferenceBuild.FC_ID,
+			{}, null, DUCT_ID)
+		var tip_chord_mm := PropellerDocument.from_catalog_prop(prop).chord_at(1.0)
+		tip_chords.append(tip_chord_mm)
+		results.append(TestResult.new(
+			"[P10b] the closure on %s reads that blade's OWN tip chord, not a constant" % prop_id,
+			absf(build.guard_closure - PropGuard.tip_loss_closure(spec, tip_chord_mm)) < 1.0e-15,
+			"closure %.12f from tip chord %.5f mm" % [build.guard_closure, tip_chord_mm]))
+	results.append(TestResult.new(
+		"[P10b] and the two propellers really do have different tip chords, so a constant fails",
+		tip_chords.size() == 2 and absf(float(tip_chords[0]) - float(tip_chords[1])) > 0.1,
+		"tip chords %s mm" % str(tip_chords)))
+	return results
+
+
+## §4.0's SECOND LINK, and the one it calls "the most likely to be missed, because everything
+## looks right and the aircraft flies the old surface". `Build` caches `_forward_ratios` because
+## the first solve costs ~150 ms. Extending the Rust cache key is necessary and NOT sufficient: a
+## build that already holds a surface keeps flying the pre-guard one until something clears the
+## handle.
+##
+## Asserted by fitting a guard on a build that has ALREADY built its open-rotor surface, then
+## checking the new surface both is a different object and reports the new closure. Object
+## identity alone is too weak — a wiring that reset the handle to `null` and then rebuilt from a
+## stale `guard_closure` would pass it — and the closure alone is too weak, because a surface
+## built from the right closure but never re-fetched is the exact bug. Both, or neither.
+##
+## TO MAKE THIS FAIL: delete the `_forward_ratios = null` line from `_recompute`.
+static func _changing_the_guard_invalidates_the_cached_surface() -> Array:
+	var catalog := PartsCatalog.load_default()
+	var build := ReferenceBuild.build()
+	var open_surface := build.forward_ratios()
+	var open_closure := open_surface.guard_closure()
+
+	build.guard = catalog.get_part(DUCT_ID)
+	build._recompute()
+	var ducted_surface := build.forward_ratios()
+	# Snapshotted HERE, not read at the end: the `return [...]` below is built after the guard
+	# has been taken off again, so a `build.guard_closure` in the assertion would read 0.0 and
+	# fail a check about a state the build is no longer in.
+	var ducted_closure := build.guard_closure
+
+	# And back off again — a guard REMOVED must invalidate just as a guard fitted does.
+	build.guard = {}
+	build._recompute()
+	var reopened_surface := build.forward_ratios()
+
+	return [
+		TestResult.new(
+			"[P10b] fitting a guard replaces the cached ratio surface — object AND closure both move",
+			ducted_surface.get_instance_id() != open_surface.get_instance_id()
+				and open_closure == 0.0
+				and absf(ducted_surface.guard_closure() - ducted_closure) < 1.0e-15
+				and ducted_surface.guard_closure() > 0.5,
+			"open closure %.4f, ducted surface closure %.17f, build closure %.17f" % [
+				open_closure, ducted_surface.guard_closure(), ducted_closure]),
+		TestResult.new(
+			"[P10b] and removing it invalidates the surface again, back to the open rotor",
+			reopened_surface.get_instance_id() != ducted_surface.get_instance_id()
+				and reopened_surface.guard_closure() == 0.0
+				and build.guard_closure == 0.0,
+			"reopened surface closure %.4f" % reopened_surface.guard_closure()),
+	]
+
+
+## A twin at a different air must be the SAME AIRCRAFT. `at_air` rebuilds through `from_ids`, so
+## a guard that did not travel would make "would this fly at sea level" an answer about a
+## different drone — lighter by 63 g and with the tip leak open again.
+##
+## The closure is re-derived at the new density rather than copied, which is the honest way round:
+## it IS density-invariant, but a copied scalar and a re-derived one are the same number only
+## while that stays true, and stating the invariance in two places is how they drift apart.
+##
+## TO MAKE THIS FAIL: drop the trailing `g_id` argument from `at_air`'s `from_ids` call.
+static func _the_air_twin_carries_the_guard() -> Array:
+	var ducted := _build_with_guard(DUCT_ID)
+	var twin := ducted.at_air(AirDensity.new(3500.0, 5.0))
+	return [
+		TestResult.new(
+			"[P10b] a build re-flown at another air keeps its guard, its mass and its closure",
+			str(twin.guard.get("part_id", "")) == DUCT_ID
+				and twin.guard_closure == ducted.guard_closure
+				and absf(twin.mass_properties.total_mass_kg
+					- ducted.mass_properties.total_mass_kg) < 1.0e-12,
+			"twin guard %s, closure %.12f, mass %.4f g" % [
+				str(twin.guard.get("part_id", "")), twin.guard_closure,
+				twin.mass_properties.total_mass_kg * 1000.0]),
+		TestResult.new(
+			"[P10b] and the thin air still moved its k_t, so the twin is genuinely a twin at 3500 m",
+			twin.k_t < ducted.k_t,
+			"k_t %.12f at 3500 m against %.12f at sea level" % [twin.k_t, ducted.k_t]),
+	]
+
+
+## An unreadable guard fits NOTHING — not a zero-mass ghost, not a class-typical ring. Same
+## posture `as_part_mass` takes with its `null` return, asserted one level up where a builder
+## could actually hit it: a custom part with a mistyped `wall_mm`.
+##
+## Both halves matter. The mass must be bit-identical to the unguarded build (a zero-mass
+## `PartMass` would pass a lenient check while adding a phantom entry to `contributions`), and
+## the closure must be 0.0 (a duct whose geometry `compute()` refuses must not still claim the
+## tip-loss suppression its `tip_gap_mm` would earn).
+##
+## TO MAKE THIS FAIL: drop the `pm != null` guard in `mass_parts()`, or read `tip_gap_mm` without
+## first asking `compute()` whether the ring is readable at all.
+static func _an_unreadable_guard_fits_nothing() -> Array:
+	var plain := ReferenceBuild.build()
+	var build := ReferenceBuild.build()
+	build.guard = {
+		"part_id": "guard_broken_fixture",
+		"category": "guard",
+		"specs": {
+			"kind": PropGuard.KIND_DUCT, "outer_radius_mm": 68.0, "wall_mm": -3.0,
+			"height_mm": 12.0, "density_kg_m3": 1050.0, "mount_radius_mm": 96.0,
+			"tip_gap_mm": 1.5,
+		},
+	}
+	build._recompute()
+	return [
+		TestResult.new(
+			"[P10b] a guard whose geometry compute() refuses adds no mass — bit-identical, not close",
+			build.mass_properties.total_mass_kg == plain.mass_properties.total_mass_kg
+				and build.mass_properties.inertia.z.z == plain.mass_properties.inertia.z.z,
+			"%.17f kg against %.17f kg" % [
+				build.mass_properties.total_mass_kg, plain.mass_properties.total_mass_kg]),
+		TestResult.new(
+			"[P10b] and claims no tip-loss suppression either, though its tip_gap_mm is readable",
+			build.guard_closure == 0.0 and build.k_t == plain.k_t and build.k_q == plain.k_q,
+			"closure %.1f, k_t %.17f / %.17f" % [build.guard_closure, build.k_t, plain.k_t]),
+	]
