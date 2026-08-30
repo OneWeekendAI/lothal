@@ -32,6 +32,12 @@ extends PartDetails
 ## P4–P8, none of them exist, and a row that renders "—" for them would invite someone to fill it in
 ## with the coefficients this document is removing.
 
+## Emitted when the builder asks to open the Propulsion room on this propeller, with the catalog
+## record it is showing. The panel opens nothing itself — see `_build_footer`.
+signal design_blade_requested(prop: Dictionary)
+
+var _design_button: Button
+
 const SPEC_ROWS := [
 	{"key": "diameter_class", "label": "Diameter class"},
 	{"key": "blade_count", "label": "Blades"},
@@ -219,15 +225,31 @@ static func blade_note_text(doc: PropellerDocument, mats: FrameMaterials) -> Str
 	return " ".join(lines)
 
 
-## The blade note, then PartDetails' own footer. Order matters: the note is a footnote to the rows
-## above it, and putting it under the aircraft's stat block would orphan it from the numbers it
-## explains.
+## The blade note, the way into the room, then PartDetails' own footer. Order matters: the note is a
+## footnote to the rows above it, and putting it under the aircraft's stat block would orphan it
+## from the numbers it explains.
 func _build_footer(root: VBoxContainer) -> void:
 	_blade_note = Label.new()
 	_blade_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_blade_note.custom_minimum_size = Vector2(280, 0)
 	_blade_note.theme_type_variation = &"MutedLabel"
 	root.add_child(_blade_note)
+
+	# THE DOOR TO THE PROPULSION ROOM, and it is on this panel for the reason `room_menu.gd`'s own
+	# header states: a workspace belongs to the system it works on, reached from that system's
+	# inspector, rather than from a list of destinations. The room edits the planform these rows
+	# describe, and the caveat two lines up — "blade chord assumed" — is exactly what going in
+	# there is for, so the button sits directly under the sentence that motivates it.
+	#
+	# The room is NOT this panel's to open. The button says what happened and the shell decides
+	# what to do about it, on the same rule every other control in this UI follows.
+	_design_button = Button.new()
+	_design_button.text = "Design this blade…"
+	_design_button.tooltip_text = ("Open the planform editor: the blade's chord distribution, its "
+		+ "section at any radius, and the mount stack it turns on.")
+	_design_button.pressed.connect(func() -> void: design_blade_requested.emit(_rendered_part))
+	root.add_child(_design_button)
+
 	super(root)
 
 

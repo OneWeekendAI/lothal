@@ -18,7 +18,7 @@ static func run() -> Array:
 	results.append(_test_a_bad_file_loads_as_an_empty_propeller())
 	results.append(_test_material_mapping_follows_the_catalog_string(catalog, materials))
 	results.append(_test_no_authored_mass_field(catalog))
-	results.append(_test_planform_matches_the_mesh_shape(catalog))
+	results.append(_test_the_mesh_holds_no_chord_law_of_its_own(catalog))
 	results.append(_test_mass_falsification_is_reported_not_gated(catalog, materials))
 
 	return results
@@ -188,60 +188,58 @@ static func _test_no_authored_mass_field(catalog: PartsCatalog) -> TestResult:
 			if problems.is_empty() else "; ".join(problems))
 
 
-## THE PLANFORM IS THE SHAPE THE MESH DRAWS. §7.2 says the mesh's chord constants become the
-## document's c(r); until that rewiring ships, this pins the two copies together so they cannot
-## drift. The mesh's `_chord_at(span, chord_max)` is rebuilt here from its PUBLIC constants and
-## compared against the document's planform AT THE DOCUMENT'S OWN STATIONS — the same technique
-## test_rust_constants uses (derive the other side from behaviour, not from an accessor).
+## THE PLANFORM IS THE SHAPE THE MESH DRAWS — and since P10d there is only ONE of it.
 ##
-## The comparison must be at the document's own points, not between them: §2 says a planform IS
-## piecewise-linear c(r), so the stored chord equals the exact sine-arch at each station and is a
-## linear interpolation between them. Asking for the exact arch value at an off-station radius would
-## measure the interpolation sagitta, not a drift — a real failure of this pin must be a station
-## value, not an interpolated one.
+## Until P10d this check rebuilt the mesh's own `_chord_at(span, chord_max)` from the mesh's own
+## public constants and compared it against the document's planform, pinning two copies together
+## so they could not drift. §7.2's rewiring has now landed: the mesh calls `_doc.chord_at()`, and
+## a pin between two copies of a law is meaningless when there is one copy. Comparing the document
+## against a law restated HERE would be worse than meaningless — it would be this test asserting
+## its own arithmetic.
 ##
-## The tolerance is RELATIVE (1e-9) and the points are read from the flat PackedFloat64Array, not
-## from `chord_points()`: that accessor returns Vector2, which is SINGLE precision, and §3.1
-## measures what that costs — about 4e-7 relative on a chord near 13 mm, which would fail any
-## absolute pin that a real drift (a changed exponent, a missing 0.5) misses by a factor of ten
-## thousand. The stored doubles are the document; they are what the pin must test.
-static func _test_planform_matches_the_mesh_shape(catalog: PartsCatalog) -> TestResult:
+## So the check inverts. It reads `propeller_mesh.gd`'s SOURCE and asserts the file declares no
+## chord law, no thickness ratio and no hub-radius fraction of its own — the same source-inspection
+## shape `test_prop_rotation.gd` uses to assert the mesh names no rpm. A future edit that
+## reintroduces a local copy (the exact regression P10d exists to close) fails here, on the way in,
+## by name. The station count stays, because the generator's sampling density is a document
+## property with no second home.
+##
+## The drawn-geometry half — that the chord in the built vertices EQUALS `chord_at()` to the bit —
+## lives in `test_propeller_mesh.gd`, where the geometry is.
+static func _test_the_mesh_holds_no_chord_law_of_its_own(catalog: PartsCatalog) -> TestResult:
 	var problems: Array = []
+
+	var source := FileAccess.get_file_as_string("res://src/lab/propeller_mesh.gd")
+	if source.is_empty():
+		problems.append("propeller_mesh.gd could not be read")
+	# Declarations only. The words appear in that file's prose (it explains what it deleted and
+	# why), and a comment is not a second definition; a `const NAME :=` line is.
+	var banned := ["CHORD_TO_DIAMETER_AT_3_BLADE", "CHORD_BLADE_COUNT_EXPONENT",
+		"CHORD_ROOT_FRACTION", "CHORD_TIP_FRACTION", "CHORD_FULLNESS",
+		"THICKNESS_TO_CHORD_RATIO", "HUB_RADIUS_TO_RADIUS"]
+	var declared: Array = []
+	for line in source.split("\n"):
+		var text := (line as String).strip_edges()
+		if not text.begins_with("const "):
+			continue
+		for name in banned:
+			if text.begins_with("const %s " % name) or text.begins_with("const %s:" % name):
+				declared.append(name)
+	for name in declared:
+		problems.append("propeller_mesh.gd declares its own %s again" % name)
+
 	for prop_id in ["prop_5x43x3", "prop_7x35x2", "prop_16x12x4", "prop_10x5x2"]:
-		var prop: Dictionary = catalog.get_part(prop_id)
-		var specs: Dictionary = prop["specs"]
-		var diameter_mm: float = float(specs["diameter_inches"]) * PropellerDocument.INCH_TO_MM
-		var blades := int(specs["blades"])
-		var doc := PropellerDocument.from_catalog_prop(prop)
-
-		# The mesh's own chord law, from its own constants:
-		var radius_mm := diameter_mm * 0.5
-		var chord_max_mm := diameter_mm * PropellerMesh.CHORD_TO_DIAMETER_AT_3_BLADE \
-			* pow(3.0 / float(blades), PropellerMesh.CHORD_BLADE_COUNT_EXPONENT)
-		var hub_mm := radius_mm * PropellerMesh.HUB_RADIUS_TO_RADIUS
-
+		var doc := PropellerDocument.from_catalog_prop(catalog.get_part(prop_id))
 		var stations := int(doc.chord.size() / 2.0)
-		var i := 0
-		while i + 1 < doc.chord.size():
-			var r_frac := doc.chord[i]
-			var doc_chord_mm := doc.chord[i + 1]
-			var span := (r_frac * radius_mm - hub_mm) / (radius_mm - hub_mm)
-			var arch := PropellerMesh.CHORD_ROOT_FRACTION \
-				+ (PropellerMesh.CHORD_TIP_FRACTION - PropellerMesh.CHORD_ROOT_FRACTION) * span
-			var mesh_chord_mm := chord_max_mm * pow(sin(PI * arch), PropellerMesh.CHORD_FULLNESS)
-			var rel := absf(doc_chord_mm - mesh_chord_mm) / maxf(absf(mesh_chord_mm), 1e-9)
-			if rel > 1e-9:
-				problems.append("%s: at r/R %.3f mesh %.4f mm vs doc %.4f mm (rel %.1e)" % [
-					prop_id, r_frac, mesh_chord_mm, doc_chord_mm, rel])
-			i += 2
-
 		if stations != PropellerDocument.PLANFORM_STATIONS:
 			problems.append("%s: %d stations, want %d" % [
 				prop_id, stations, PropellerDocument.PLANFORM_STATIONS])
+
 	return TestResult.new(
-		"the document's planform matches the mesh's sine-arch at every document station",
-		problems.is_empty(),
-		"4 props x %d stations agree" % PropellerDocument.PLANFORM_STATIONS
+		"[P10d] the mesh declares no chord law, thickness ratio or hub fraction of its own",
+		problems.is_empty() and not source.is_empty(),
+		"%d banned constants declared in propeller_mesh.gd; 4 props x %d document stations" % [
+			declared.size(), PropellerDocument.PLANFORM_STATIONS]
 			if problems.is_empty() else "; ".join(problems))
 
 

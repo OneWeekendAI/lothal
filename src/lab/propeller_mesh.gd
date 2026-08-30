@@ -51,27 +51,14 @@ const INCH_M := 0.0254
 ## surface rather than a run of flat facets; the cost is 4 vertices each.
 const STATIONS := 14
 
-## Blade chord (front-to-back width) at its widest, as a fraction of diameter, quoted for a
-## 3-blade prop. A 5" tri-blade is about 13 mm at its widest on a 127 mm diameter.
-const CHORD_TO_DIAMETER_AT_3_BLADE := 0.105
-## Fewer blades, wider each. A bi-blade has to recover the blade area a tri-blade gets from
-## the third blade, so it is broader — which is exactly how the two look side by side in the
-## real world, and a big part of what makes a 2-blade recognisable as one at a glance. The
-## exponent keeps total blade area roughly constant rather than exactly so; blade area is not
-## a spec parts.md carries, so this is a documented rule of thumb like PropellerModel's own
-## blade-count exponent, not a fitted law.
-const CHORD_BLADE_COUNT_EXPONENT := 0.45
-
-## Where along the blade the chord peaks, and how full the profile is. Expressed as a slice of
-## a sine arch: the root starts part-way up the arch (so it is narrow but not zero) and the tip
-## stops just short of the far end (so it tapers to a narrow tip rather than a point).
-const CHORD_ROOT_FRACTION := 0.18
-const CHORD_TIP_FRACTION := 0.98
-const CHORD_FULLNESS := 0.7
-
-## Blade thickness as a fraction of the local chord, so the blade thins toward the tip on its
-## own. Real props run 8-12% thickness-to-chord.
-const THICKNESS_TO_CHORD_RATIO := 0.10
+## Chord, thickness and the hub ratio are NOT declared here. Until slice P10d this file held its
+## own copy of the five sine-arch chord constants, its own thickness ratio and its own hub
+## fraction, and computed a chord from them — so the picture agreed with the physics only for as
+## long as nobody edited a planform. `PropellerDocument` owns all three (§7.2), the mesh reads
+## `_doc.chord_at()`, `_doc.thickness_ratio` and `PropellerDocument.HUB_RADIUS_TO_RADIUS`, and
+## `tests/test_propeller_mesh.gd` asserts the chord in the BUILT vertices follows the document's,
+## including for a planform a builder edited — the case a mesh drawing its own arch gets wrong by
+## millimetres. Same defect and same fix as P3's beta(r), in the other half of the same object.
 
 ## The centre boss, as a fraction of the prop's radius. A real 5" hub is around 9 mm deep on a
 ## 63 mm radius, which is chunkier than it looks in a photograph and is the number this ratio
@@ -83,8 +70,9 @@ const THICKNESS_TO_CHORD_RATIO := 0.10
 ## the hub. If the hub is shallower than the root it carries, the blade emerges below the hub's
 ## own underside and the lowest part of the propeller is a blade tucked under the motor — which
 ## is what put blade roots inside the bell. So the hub is at least as deep as its root section:
-## see stack_height_m, which is measured from the generated blade rather than assumed.
-const HUB_RADIUS_TO_RADIUS := 0.10
+## see stack_height_m, which is measured from the generated blade rather than assumed. The RADIUS
+## fraction itself lives on PropellerDocument; only the HEIGHT fraction below, a drawing decision
+## with no counterpart in the document, is declared here.
 const HUB_HEIGHT_TO_RADIUS := 0.14
 
 ## Half the prop's published diameter — what the sweep actually occupies, and therefore the
@@ -149,7 +137,10 @@ func rebuild(prop: Dictionary, doc: PropellerDocument = null) -> void:
 	# formula — the two would drift, and the picture would start lying about the physics.
 	_doc = doc if doc != null else PropellerDocument.from_catalog_prop(prop)
 
-	var hub_radius := radius_m * HUB_RADIUS_TO_RADIUS
+	# The blade root starts at the hub edge, and where that edge sits is the document's
+	# statement, not the mesh's: the planform is sampled from that same fraction outward, so a
+	# second copy here would sample c(r) outside its own authored range.
+	var hub_radius := radius_m * PropellerDocument.HUB_RADIUS_TO_RADIUS
 	var material := _material_for(prop)
 
 	# Blades first, because the hub has to be deep enough to contain their roots and the only
@@ -300,9 +291,6 @@ func _blur_material(base: StandardMaterial3D) -> StandardMaterial3D:
 ## that catches light differently on its upper and lower surfaces — which is what makes the
 ## twist legible on screen at all. A single-sided ribbon reads as paper.
 func _build_blade_mesh(hub_radius: float) -> ArrayMesh:
-	var chord_max: float = radius_m * 2.0 * CHORD_TO_DIAMETER_AT_3_BLADE \
-		* pow(3.0 / float(blade_count), CHORD_BLADE_COUNT_EXPONENT)
-
 	var tool := SurfaceTool.new()
 	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 
@@ -311,20 +299,14 @@ func _build_blade_mesh(hub_radius: float) -> ArrayMesh:
 		# The blade starts at the hub's edge and ends exactly on the published radius, so the
 		# sweep the geometry occupies is the diameter the catalog quotes — no more, no less.
 		var radius: float = hub_radius + (radius_m - hub_radius) * span
-		var chord := _chord_at(span, chord_max)
-		var thickness := chord * THICKNESS_TO_CHORD_RATIO
-		# The blade angle, from the document's beta(r) — the one definition. Geometric for a
-		# preset, the authored table when a builder wrote one.
-		var twist := _doc.beta_rad(radius / radius_m)
-
-		# Chord direction, rotated about the radial (+X) axis by the twist. At zero twist it
-		# lies tangentially (+Z) and the blade is flat; at 90 degrees it stands on edge.
-		var chordwise := Vector3(0.0, sin(twist), cos(twist))
-		var face := Vector3(0.0, -cos(twist), sin(twist))
-
+		var r_frac := radius / radius_m
+		# The whole section — chord, thickness AND the blade angle — from the document, which is
+		# the ONE place any of the three is defined (§7.2, P3 for beta and P10d for the rest). The
+		# corners arrive in (tangential, axial) millimetres and in this loop's own winding order,
+		# so all that is left here is the unit and the radial offset.
 		var centre := Vector3(radius, 0.0, 0.0)
-		for corner in [Vector2(0.5, 0.5), Vector2(-0.5, 0.5), Vector2(-0.5, -0.5), Vector2(0.5, -0.5)]:
-			tool.add_vertex(centre + chordwise * (chord * corner.x) + face * (thickness * corner.y))
+		for corner in _doc.section_corners_mm(r_frac):
+			tool.add_vertex(centre + Vector3(0.0, corner.y, corner.x) * 0.001)
 
 	for i in STATIONS - 1:
 		var base := i * 4
@@ -349,13 +331,6 @@ func _build_blade_mesh(hub_radius: float) -> ArrayMesh:
 
 	tool.generate_normals()
 	return tool.commit()
-
-
-## Chord at a fractional position along the blade, as a slice of a sine arch: narrow at the
-## root, widest around two-thirds out, tapering to a narrow tip.
-func _chord_at(span: float, chord_max: float) -> float:
-	var arch: float = CHORD_ROOT_FRACTION + (CHORD_TIP_FRACTION - CHORD_ROOT_FRACTION) * span
-	return chord_max * pow(sin(PI * arch), CHORD_FULLNESS)
 
 
 ## Appearance from catalog.material, by substring, with a neutral default for a prop whose

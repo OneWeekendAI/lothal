@@ -128,20 +128,35 @@ func chord_points() -> Array:
 ## c(r) by piecewise-linear interpolation of the planform, at a stated fraction of radius. Linear
 ## interpolation is exactly what the integrals assume, so asking `chord_at` and integrating over the
 ## same points cannot disagree.
+##
+## **It reads the flat `PackedFloat64Array` and NOT `chord_points()`, and that is not tidiness.**
+## The accessor returns `Vector2`, which is SINGLE precision, so routing this function through it
+## put a 4e-7 relative haircut on the one chord every caller reads — the mesh, the mass integral,
+## the tip length scale the guard closure is measured against, and since P10d the room's own
+## editor. It was found by the check that `PlanformEdits.insert_station` adds a point without
+## MOVING the curve: inserting a station at the chord this function reported changed `c(r)`
+## elsewhere by 7e-9 mm, which is float32 noise and not an insert. Small, and the wrong kind of
+## small — a rounding that enters through a shared accessor is one every downstream number
+## inherits.
 func chord_at(r_frac: float) -> float:
-	var pts := chord_points()
-	if pts.is_empty():
+	var count := chord.size()
+	if count < 2:
 		return 0.0
-	if r_frac <= pts[0].x:
-		return pts[0].y
-	if r_frac >= pts[pts.size() - 1].x:
-		return pts[pts.size() - 1].y
-	for i in pts.size() - 1:
-		var a: Vector2 = pts[i]
-		var b: Vector2 = pts[i + 1]
-		if r_frac >= a.x and r_frac <= b.x:
-			var t := (r_frac - a.x) / (b.x - a.x)
-			return a.y + (b.y - a.y) * t
+	if r_frac <= chord[0]:
+		return chord[1]
+	if r_frac >= chord[count - 2]:
+		return chord[count - 1]
+	var i := 0
+	while i + 3 < count:
+		var a_r: float = chord[i]
+		var b_r: float = chord[i + 2]
+		if r_frac >= a_r and r_frac <= b_r:
+			var span := b_r - a_r
+			if span <= 0.0:
+				return chord[i + 1]
+			var t := (r_frac - a_r) / span
+			return chord[i + 1] + (chord[i + 3] - chord[i + 1]) * t
+		i += 2
 	return 0.0
 
 
@@ -155,6 +170,44 @@ func beta_rad(r_frac: float) -> float:
 		return 0.0
 	var r_mm := r_frac * radius_mm()
 	return atan(pitch_mm / (TAU * r_mm))
+
+
+## The blade's SECTION at a stated fraction of radius: the four corners of the thin rectangle the
+## blade occupies there, in millimetres, in the (chordwise, face-normal) plane of the section —
+## chord wide, `thickness_ratio · chord` thick, rotated about the radial axis by `beta_rad`.
+##
+## THIS EXISTS SO THE SECTION IS DEFINED ONCE. `PropellerMesh` builds its vertices from these
+## corners and the room's section view draws them, which is the same rule P10d applied to chord:
+## the picture and the physics may not each own a copy of the same shape. Corners are returned in
+## the mesh's own order — (+half chord, +half thickness) first, then anticlockwise — because the
+## mesh stitches consecutive stations into faces by index and a reordering here would turn the
+## blade inside out.
+##
+## Millimetres, not metres, on the document's own convention: `chord` is a millimetre table and a
+## unit change belongs at the boundary that draws, not in the middle of the geometry.
+##
+## The plane's axes are (TANGENTIAL, AXIAL) in that order — `x` runs the way the blade sweeps and
+## `y` is up the shaft — so the mesh maps a corner to blade-local space as `Vector3(0, v.y, v.x)`
+## and nothing here has to know that the mesh's radial direction is +X.
+func section_corners_mm(r_frac: float) -> PackedVector2Array:
+	# `chord_mm` and `twist_rad` rather than `chord` and `twist`: both are MEMBER names on this
+	# class, and `project.godot` treats shadowing as an error.
+	var chord_mm := chord_at(r_frac)
+	var thickness_mm := chord_mm * thickness_ratio
+	var twist_rad := beta_rad(r_frac)
+
+	# Chord direction, rotated about the radial axis by the twist: at zero twist it lies
+	# tangentially and the section is flat; at 90 degrees it stands on edge.
+	var chordwise := Vector2(cos(twist_rad), sin(twist_rad))
+	# NOT the left-hand normal. The mesh caps its root and tip with a fixed winding and stitches
+	# consecutive stations by index, so flipping this vector reverses every face's normal and turns
+	# the blade inside out — a change that looks like a lighting bug and is a geometry one.
+	var face := Vector2(sin(twist_rad), -cos(twist_rad))
+
+	var out := PackedVector2Array()
+	for corner in [Vector2(0.5, 0.5), Vector2(-0.5, 0.5), Vector2(-0.5, -0.5), Vector2(0.5, -0.5)]:
+		out.append(chordwise * (chord_mm * corner.x) + face * (thickness_mm * corner.y))
+	return out
 
 
 static func _twist_at(r_frac: float, twist_table: PackedFloat64Array) -> float:

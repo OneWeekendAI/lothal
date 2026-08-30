@@ -275,6 +275,10 @@ var _room_menu: RoomMenu
 var _focused_index := 0
 ## The plan editor, shown only while Airframe is the focused system.
 var _workbench: FrameWorkbench
+## The blade designer — Propulsion's room, opened on request rather than with the system. See
+## `_build_blade_room` for why the two rooms differ in that.
+var _blade_room: PropulsionWorkbench
+var _blade_room_close: Button
 
 
 func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
@@ -302,6 +306,7 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	# z-order, which is the one thing the Tauri hybrid could not do.
 	_build_rail_glass()
 	_build_workbench()
+	_build_blade_room()
 	_build_inspector()
 	# Between the inspector and the top cluster, so the chip draws over it but it covers the model
 	# and the floating columns. The empty state must never hide the project chip — New and Open are
@@ -549,6 +554,83 @@ func _build_workbench() -> void:
 ## click does rather than by reaching into a private field. Null until `_build_workbench` has run.
 func workbench() -> FrameWorkbench:
 	return _workbench
+
+
+## The Propulsion room — the blade designer, propulsion.md §7.1, slice P10d. Same accessor and same
+## reason as `workbench()` above.
+func blade_room() -> PropulsionWorkbench:
+	return _blade_room
+
+
+## The blade designer, built hidden and opened from the Prop inspector's own button.
+##
+## **IT IS AN OVERLAY, NOT A SYSTEM VIEW, and that is a deliberate difference from Airframe.**
+## Airframe's room replaces the whole viewport whenever Airframe is focused, because Airframe has no
+## rails: there is no list of frames to pick from when the frame is the thing you are drawing.
+## Propulsion has two rails and they are still the point — a builder in Propulsion is usually
+## choosing a motor and a prop, not authoring a planform. Making the room the system's permanent
+## view would take that away to deliver something most visits do not want.
+##
+## So it opens on request and closes again, and the way in is a button on the Prop panel, which is
+## `room_menu.gd`'s own stated arrangement: a workspace belongs to the system it works on, reached
+## from that system's inspector. It touches neither `RoomHost` nor `RoomMenu`, so the derived
+## "every room has a door" invariant in `test_room_host.gd` is untouched — this room's door is not
+## a menu entry, and P10f is the slice that generalises that.
+func _build_blade_room() -> void:
+	_blade_room = PropulsionWorkbench.new(lab.catalog)
+	_blade_room.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_blade_room.offset_left = CLUSTER_MARGIN
+	_blade_room.offset_right = -CLUSTER_MARGIN
+	_blade_room.offset_top = TOP_BAR_HEIGHT + CLUSTER_MARGIN
+	_blade_room.offset_bottom = -BOTTOM_KEEPOUT
+	_blade_room.visible = false
+	add_child(_blade_room)
+
+	# The way out. On the shell rather than in the room, for the same reason the room does not open
+	# itself: the room is a workspace and the shell owns where a workspace sits.
+	_blade_room_close = Button.new()
+	_blade_room_close.text = "Close blade designer"
+	_blade_room_close.visible = false
+	_blade_room_close.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_blade_room_close.offset_left = -180.0 - CLUSTER_MARGIN
+	_blade_room_close.offset_right = -CLUSTER_MARGIN
+	_blade_room_close.offset_top = TOP_BAR_HEIGHT + CLUSTER_MARGIN * 2.0
+	_blade_room_close.offset_bottom = TOP_BAR_HEIGHT + CLUSTER_MARGIN * 2.0 + 30.0
+	_blade_room_close.pressed.connect(func() -> void: set_blade_room_open(false))
+	add_child(_blade_room_close)
+
+	lab.propeller_details.design_blade_requested.connect(_on_design_blade_requested)
+
+
+func _on_design_blade_requested(prop: Dictionary) -> void:
+	var part_id := str(prop.get("part_id", ""))
+	if part_id != "":
+		_blade_room.open_preset(part_id)
+	set_blade_room_open(true)
+
+
+## Opens or closes the blade designer, and takes the same three things away from the viewport that
+## the Airframe room does: the 3D world (switched OFF rather than covered — a viewport nobody can
+## see should not be rendering), the viewport tools that act on a model the room is over, and the
+## rail and inspector columns whose space the room needs.
+##
+## Public because it is what a test drives, and what the capture tooling drives, rather than
+## synthesising a click on a button whose position is a layout decision.
+func set_blade_room_open(open: bool) -> void:
+	if _blade_room == null:
+		return
+	_blade_room.visible = open
+	_blade_room_close.visible = open
+	_rail_glass.visible = not open and _rail_glass.visible
+	_tools_glass.visible = not open and _tools_glass.visible
+	_inspector.visible = not open and _inspector.visible
+	var viewport_container := lab.viewport().get_parent()
+	if viewport_container is Control:
+		(viewport_container as Control).visible = not open
+	# Closing puts back exactly what the focused system asks for, rather than guessing — the same
+	# reason `_show_project` re-runs the selection instead of restoring what it remembers.
+	if not open:
+		_select_system(_focused_index)
 
 
 func _on_frame_edited(document: AirframeDocument) -> void:
@@ -879,6 +961,14 @@ func _on_room_changed() -> void:
 func _select_system(index: int) -> void:
 	_focused_index = index
 	var system: Dictionary = SYSTEMS[index]
+
+	# THE BLADE DESIGNER DOES NOT SURVIVE A SYSTEM CHANGE. It is an overlay over Propulsion, and
+	# leaving it up while the builder walked to Power would put a planform editor over a pack they
+	# had just asked to look at. Hidden directly rather than through `set_blade_room_open`, because
+	# that function ends by calling THIS one and the two would recurse.
+	if _blade_room != null:
+		_blade_room.visible = false
+		_blade_room_close.visible = false
 	var modelled := _is_modelled(system)
 
 	# The glass panels themselves are shown here rather than only in `_build_*`, because Sim
@@ -1228,6 +1318,9 @@ func _show_empty_state() -> void:
 	_inspector.visible = false
 	if _workbench != null:
 		_workbench.visible = false
+	if _blade_room != null:
+		_blade_room.visible = false
+		_blade_room_close.visible = false
 	_tools_glass.visible = false
 	if _bottom_right_glass != null:
 		_bottom_right_glass.visible = false

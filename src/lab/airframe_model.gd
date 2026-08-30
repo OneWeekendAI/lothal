@@ -25,6 +25,12 @@ var motor_meshes: Dictionary = {}
 ## propeller physically bolts — so a taller motor lifts its prop without anything recomputing
 ## a clearance, and a frame change moves motors and props together in one step.
 var propeller_meshes: Dictionary = {}
+## motor name -> GuardMesh. Empty when the build fits no guard. Parented onto the arm-tip pad
+## as a sibling of the motor: the ring wraps its motor at the plan position, so it rides the
+## same pad the motor does and a frame rebuild takes it with the arm rather than leaving a
+## stale ring where a motor used to be. Reads its inner wall from PropGuard.tip_clearance_mm
+## against the prop's own drawn radius (never a second geometry copy) — see guard_mesh.gd.
+var guard_meshes: Dictionary = {}
 ## The pack. Parented onto the frame for the same reason the motors hang off the arm-tip pads: the
 ## mount's height is FrameModel's, the standoff tweak moves it, and a frame rebuild frees it rather
 ## than leaving a stale pack behind.
@@ -73,6 +79,7 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 	frame_model.rebuild(build.frame, tweak_m["plate_gap_m"])
 	motor_meshes.clear()
 	propeller_meshes.clear()
+	guard_meshes.clear()
 	arm_m = build.arm_m
 
 	# The pack, on whichever of the frame's strap mounts the builder chose, slid to wherever they
@@ -172,6 +179,23 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		propeller.spin = MotorLayout.SPIN[motor_name]
 		motor.add_child(propeller)
 		propeller_meshes[motor_name] = propeller
+
+		# The prop guard, if the build fits one. Sibling of the motor under the same arm-tip
+		# pad — the ring wraps the motor at the plan position, so the pad is where it belongs.
+		# Y is the propeller disc's own, because a shroud is what wraps that disc and the tip
+		# clearance the ring reads describes the gap between them at that plane. An empty
+		# build.guard clears any previous ring and leaves the pad without one, which is what
+		# "not fitted" means — same posture as component_meshes above.
+		if not build.guard.is_empty():
+			var guard := GuardMesh.new()
+			guard.name = "Guard_%s" % motor_name
+			guard.rebuild(build.guard, propeller.radius_m)
+			# Position the ring at the disc plane, in the pad's own frame — the motor's y is
+			# already relative to the pad, and propeller.position.y is relative to the motor,
+			# so the total is the motor's y plus the prop's y for the ring's centre.
+			guard.position = Vector3(0, motor.position.y + propeller.position.y, 0)
+			pad.add_child(guard)
+			guard_meshes[motor_name] = guard
 
 
 ## Hands each propeller the RPM of its own motor, in MotorLayout.MOTOR_NAMES order — which is the
@@ -300,6 +324,32 @@ func battery_prop_clearance_m() -> float:
 	var centre_z := -battery_offset_m
 	return footprint_prop_clearance_m(Rect2(
 		-half_x, centre_z - half_z, half_x * 2.0, half_z * 2.0))
+
+
+## Every fitted guard's ring silhouette in plan view, motor name -> 32-vertex polygon, in the
+## airframe's own XZ plane. Empty when the build fits no guard.
+##
+## For the camera-frustum containment test plans/2026-08-26-propulsion-room-design.md §5 P10c
+## asks for. The arm half of that check does not exist yet, so nothing reads this — it is here
+## so the guard plugs into the check on the day it lands rather than becoming a second thing to
+## catch up.
+##
+## The plan centre comes from `MotorLayout.motor_position`, which is the SAME source
+## `footprint_prop_clearance_m` reads two functions below, and not from the GuardMesh node's own
+## transform: the ring is parented onto the arm-tip pad, so its local XZ is the pad's origin and
+## four rings read that way would all sit on the aircraft's centre. One definition of where a
+## motor is, here as there.
+func guard_ring_polygons_m() -> Dictionary:
+	var out := {}
+	for motor_name in MotorLayout.MOTOR_NAMES:
+		if not guard_meshes.has(motor_name):
+			continue
+		var guard: GuardMesh = guard_meshes[motor_name]
+		var hub := MotorLayout.motor_position(motor_name, arm_m)
+		var polygon := guard.ring_polygon_m(Vector2(hub.x, hub.z))
+		if not polygon.is_empty():
+			out[motor_name] = polygon
+	return out
 
 
 ## The narrowest gap in PLAN VIEW between an arbitrary footprint and any propeller's swept disc, in
