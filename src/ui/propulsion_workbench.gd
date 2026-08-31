@@ -41,6 +41,11 @@ extends Control
 ## Emitted after any edit to the open document, so an inspector can repaint against it.
 signal document_changed(document: PropellerDocument)
 
+## Emitted when a blade is published as a propeller. Carries the record, so a listener does not have
+## to re-read the parts file to know what appeared — and the shell needs to know, because a catalog
+## it loaded at startup does not contain a part that was made five minutes ago.
+signal parts_published(record: Dictionary)
+
 ## The blade a new document starts from when the room is opened with nothing. The reference 5" the
 ## rest of the app is pinned to, so a room opened cold shows the aircraft the oracles describe.
 const DEFAULT_PRESET := "prop_5x43x3"
@@ -67,6 +72,12 @@ var _motor_mesh: MotorMesh
 var _prop_mesh: PropellerMesh
 var _assumed_button: CheckButton
 var _status: Label
+
+## The blade document as it was last PUBLISHED, or empty for a blade that never was. Compared
+## against the open document to say whether the aircraft is flying this shape or an older one
+## (§2.1). Held as the dictionary rather than the object so the comparison is by value: the open
+## document is edited in place, and a reference would always equal itself.
+var _published: Dictionary = {}
 var _pad_slider: HSlider
 
 
@@ -145,6 +156,12 @@ func _build_toolbar() -> Control:
 	row.add_theme_constant_override("v_separation", LothalTheme.SPACE_1)
 
 	row.add_child(_button("Save", _on_save, "Write this blade to your own library"))
+	# THE SECOND DOOR (plans/2026-09-01-authored-blade-design.md §3). `Save` keeps a draft;
+	# this makes the blade a propeller the build can fit and the sim can fly. Two buttons rather
+	# than one because they are two different acts: a draft is private to this room, and a
+	# published propeller is a part that shows up in the rail beside the ones a builder bought.
+	row.add_child(_button("Publish as propeller", _on_publish,
+		"Add this blade to your parts as a propeller you can fit to an aircraft and fly"))
 	row.add_child(_button("Duplicate", _on_duplicate,
 		"Copy this blade so the preset stays as it shipped"))
 	row.add_child(_button("+ Station", _on_add_station,
@@ -226,6 +243,11 @@ func open_blade(path: String) -> void:
 ## here, so there is exactly one place that has to remember to refresh all three views.
 func set_document(p_document: PropellerDocument) -> void:
 	document = p_document
+	# A DIFFERENT BLADE HAS NO PUBLISH HISTORY IN THIS ROOM. Cleared here rather than left standing,
+	# because a snapshot carried across an open would have the room comparing the blade on screen
+	# against a different blade's published shape and reporting "edited since publishing" about an
+	# aircraft that is flying neither.
+	_published = {}
 	editor.set_document(document)
 	section.set_document(document)
 	_assumed_button.set_pressed_no_signal(not document.chord_is_assumed)
@@ -311,6 +333,53 @@ func _on_save() -> void:
 	shelf.refresh_saved()
 
 
+## Publishes the open blade as a propeller a build can fit (§3).
+##
+## The record's every field comes from the document — mass included, and mass ESPECIALLY: see
+## `CustomPropellers.record_from_document` for why a typed mass would let half the model follow the
+## geometry while the other half kept the numbers of the blade this one was copied from.
+##
+## Refusals come from `CustomPropellers` rather than from here. The room knows how to draw a blade;
+## whether a record is one the parts system will accept is the parts system's own question, and it
+## already refuses a propeller with no diameter in the one place every other custom part is judged.
+func _on_publish() -> void:
+	if document == null:
+		return
+	var store := CustomPropellers.load_from()
+	var record := CustomPropellers.record_from_document(
+		document, PropellerDetails.materials(), "designed in the Propulsion room")
+	# A republish of the same blade REPLACES rather than collides: the id is derived from the name,
+	# so publishing twice is the builder revising their own part, not adding a second one. Removing
+	# first is what makes that an update — `add` refuses a duplicate id, and it is right to.
+	store.remove(str(record.get("part_id", "")))
+	var problems := store.add(record)
+	if not problems.is_empty():
+		_status.text = "Could not publish: %s" % ", ".join(problems)
+		return
+	if not store.save():
+		_status.text = "Could not write your parts file"
+		return
+	_published = record[PropellerDocument.AUTHORED_BLADE_KEY].duplicate(true)
+	_refresh_publish_state()
+	parts_published.emit(record)
+
+
+## What the room says about the gap between the draft on screen and the part that was published.
+##
+## §2.1's cost, made visible. Publishing takes a SNAPSHOT — the blade document is copied into the
+## parts record, so a later drag in this room does not reach an aircraft until it is published
+## again. That is the honest behaviour for a store whose other records are things a builder bought,
+## and it is also the behaviour most likely to be experienced as a bug. Saying it out loud is the
+## whole mitigation, so this line is not decoration.
+func _refresh_publish_state() -> void:
+	if document == null or _published.is_empty():
+		return
+	if document.to_dictionary() == _published:
+		_status.text = "Published — this is the blade your aircraft flies"
+	else:
+		_status.text = "Edited since publishing — your aircraft still flies the published shape"
+
+
 func _on_duplicate() -> void:
 	if document == null:
 		return
@@ -350,6 +419,10 @@ func _refresh() -> void:
 
 	section.queue_redraw()
 	editor.queue_redraw()
+
+	# Last, because it describes the state the rest of this function just produced: whether the
+	# shape on screen is still the shape that was published (§2.1).
+	_refresh_publish_state()
 
 
 ## The open document as the record `PropellerMesh.rebuild` reads — diameter, blade count and the

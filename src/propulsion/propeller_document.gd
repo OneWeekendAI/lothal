@@ -49,6 +49,11 @@ const KNOWN_KEYS := [
 ## §3.2's discriminator. Default is `geometric`: `β(r) = atan(P / 2πr)` derives from pitch, which is
 ## what every preset and every constant-pitch helix is. `authored` exists for a real blade that
 ## unloads its tip; a preset never authors twist (authoring one would be inventing a spec).
+## The key a CATALOG RECORD carries an authored blade under — a record key, not a document one, so
+## it is deliberately absent from `KNOWN_KEYS` above. `CustomParts` writes each record back whole,
+## which is what makes an unrecognised key on a record survive a save/load round-trip untouched.
+const AUTHORED_BLADE_KEY := "blade"
+
 const TWIST_MODE_GEOMETRIC := "geometric"
 const TWIST_MODE_AUTHORED := "authored"
 
@@ -309,6 +314,16 @@ static func material_id_for_catalog(description: String) -> String:
 ## CARRIED as `published_mass_g` and never consulted, so the mass falsification stays a falsification
 ## rather than a fit.
 static func from_catalog_prop(prop: Dictionary) -> PropellerDocument:
+	# THE RESOLVER (plans/2026-09-01-authored-blade-design.md §2). Asked FIRST, because a record
+	# carrying an authored planform is a record whose diameter and pitch describe a blade somebody
+	# drew rather than one the generator should invent. Every physics reader in Lothal funnels
+	# through this function — Build.blade_chord, the guard's tip-chord length scale, MotorSpinUp's
+	# blade inertia, ThrustValidation's k_t fit — so this is the ONE place an authored blade has to
+	# reach, and not one of those callers changes.
+	var authored := authored_blade_of(prop)
+	if authored != null:
+		return authored
+
 	var doc := PropellerDocument.new()
 	var specs: Dictionary = prop.get("specs", {})
 
@@ -329,6 +344,53 @@ static func from_catalog_prop(prop: Dictionary) -> PropellerDocument:
 	# Carried, never consulted. See `published_mass_g`.
 	doc.published_mass_g = float(prop.get("mass_g", 0.0))
 	return doc
+
+
+## The authored blade a catalog record carries, or `null` for a record that carries none and for one
+## whose blade block cannot be read.
+##
+## The shape is INLINE — the whole `to_dictionary()` under one key on the record — rather than an id
+## pointing into `user://blades`. §2.1 records the argument in full; the short form is that a pointer
+## can dangle, `user://blades` is not part of a project file, and the only two answers to a dangling
+## one are "silently fly a planform nobody drew" (the exact defect this slice exists to delete) and
+## "refuse to open the project". An inline block cannot dangle.
+##
+## Identity comes from the RECORD, not from the block. The fitted part's `part_id` is what every
+## other reader keys on, and a blade block carrying a stale id from the draft it was published out
+## of would make `PropellerDetails` and `Build` disagree about which propeller is fitted.
+static func authored_blade_of(prop: Dictionary) -> PropellerDocument:
+	var block: Variant = prop.get(AUTHORED_BLADE_KEY, null)
+	if not (block is Dictionary) or (block as Dictionary).is_empty():
+		return null
+	var doc := from_dictionary(block as Dictionary)
+	if not doc.is_readable():
+		return null
+	doc.id = str(prop.get("part_id", doc.id))
+	doc.name = str(prop.get("name", doc.name))
+	return doc
+
+
+## True for a record that claims an authored blade and hands over one nothing can read — a truncated
+## write, a hand-edited file, a document from a newer Lothal. Separate from `authored_blade_of`
+## returning null, which is also the answer for the ordinary case of a catalog prop with no blade at
+## all: those two must be told apart, because one of them is a build warning and the other is every
+## propeller Lothal ships. See §2.2 — the fallback to the generated arch is announced, never silent.
+static func has_unreadable_blade(prop: Dictionary) -> bool:
+	var block: Variant = prop.get(AUTHORED_BLADE_KEY, null)
+	if not (block is Dictionary) or (block as Dictionary).is_empty():
+		return false
+	return authored_blade_of(prop) == null
+
+
+## Whether this document describes a propeller the model can fly. The bar is the BEMT's own: fewer
+## than two (r/R, chord) pairs is not a planform to integrate — `bemt.rs`'s `solve_impl` refuses at
+## `chord_points_mm.len() < 4` — and a blade with no radius has no disc.
+##
+## Deliberately NOT a plausibility check. Whether a readable planform is a sensible one is
+## `PropPlausibility`'s question, asked of the fitted build where every other such judgement lives;
+## answering it here would put a second opinion in the loader.
+func is_readable() -> bool:
+	return chord.size() >= 4 and chord.size() % 2 == 0 and diameter_mm > 0.0 and blades >= 1
 
 
 ## Every catalog prop as a preset, keyed by part_id. The migration §9's P1 asks for.

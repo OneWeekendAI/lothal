@@ -48,6 +48,14 @@ const MAX_TYPICAL_BLADES := 4
 ## prop: every check here is a check on numbers one person typed.
 static func warnings_for(build: Build) -> Array[BuildWarning]:
 	var out: Array[BuildWarning] = []
+
+	# BEFORE the custom-part gate, deliberately. Everything else in this file is a check on numbers
+	# one person typed, and returns nothing for a shipped prop. This one is a check on whether the
+	# aircraft is flying the blade its record claims, and a shipped file that has been hand-edited to
+	# carry an unreadable blade block deserves the same sentence a custom one does.
+	if PropellerDocument.has_unreadable_blade(build.propeller):
+		out.append(_unreadable_blade(build.propeller))
+
 	if not PartsCatalog.is_custom(str(build.propeller.get("part_id", ""))):
 		return out
 
@@ -71,6 +79,25 @@ static func _provenance(prop: Dictionary) -> BuildWarning:
 			float(specs.get("diameter_inches", 0.0)), float(specs.get("pitch_inches", 0.0)),
 			int(specs.get("blades", 0)), float(prop.get("mass_g", 0.0))],
 		{"part_id": str(prop.get("part_id", "")), "source": source})
+
+
+## The record claims an authored blade and hands over one nothing can read — a truncated write, a
+## hand-edited file, a document from a newer Lothal. The model falls back to the generated arch,
+## which is `build.gd`'s own "an unreadable part models as no part" posture, and this is the half
+## that keeps the fallback from being a lie: the aircraft is flying a planform nobody drew, and the
+## builder is told which one and why.
+##
+## `characteristic` rather than `limiting`: nothing about the aircraft is impossible or capped. It
+## is a different propeller from the one the record claims, which is a fact about what is being
+## flown (plans/2026-09-01-authored-blade-design.md §2.2).
+static func _unreadable_blade(prop: Dictionary) -> BuildWarning:
+	var specs: Dictionary = prop.get("specs", {})
+	return BuildWarning.characteristic(&"unreadable_blade",
+		"The %s carries an authored blade that could not be read, so every thrust and hover figure on this build comes from a planform GENERATED from its %.1f\" diameter, %.1f\" pitch and %d blades — not from the shape that was drawn. Open it in the Propulsion room and publish it again to replace the assumption with the real planform." % [
+			prop.get("name", prop.get("part_id", "?")),
+			float(specs.get("diameter_inches", 0.0)), float(specs.get("pitch_inches", 0.0)),
+			int(specs.get("blades", 0))],
+		{"part_id": str(prop.get("part_id", ""))})
 
 
 static func _blade_count(prop: Dictionary) -> Array[BuildWarning]:

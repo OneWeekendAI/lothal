@@ -84,6 +84,44 @@ static func make_record(name: String, mass_g: float, diameter_inches: float, pit
 	}
 
 
+## An authored blade published as a propeller a build can fit
+## (plans/2026-09-01-authored-blade-design.md §3). The Propulsion room's second door: `Save` keeps a
+## draft in `BladeLibrary`, and this turns one into a product.
+##
+## Delegates to `make_record` rather than assembling a record beside it, so the "ONE place a prop
+## record's shape is written down" rule above survives a second author. What this adds is the inline
+## blade block — the whole document under `PropellerDocument.AUTHORED_BLADE_KEY` — which is what
+## `from_catalog_prop` resolves and therefore what makes the fitted aircraft fly the drawn shape.
+##
+## MASS IS DERIVED, and that is this function's load-bearing decision. `BladeGeometry.blade_mass_g`
+## integrates the planform against the material's density and the document's own thickness ratio
+## (and already multiplies by the blade count — the name says blade, the integral says propeller).
+## A publish path that let a mass be typed would let a builder narrow a blade by 40% and keep the
+## mass of the blade they copied, and then the aerodynamics would follow the new geometry while the
+## rotor inertia, the spin-up tau and the aircraft's own mass followed the old one. Half the model
+## moving is worse than none of it moving, because nothing on screen says which half.
+##
+## The document's `published_mass_g` is set to the same number before the block is written. For a
+## catalog blade those two are a manufacturer's figure and an integral, and P1's falsification is
+## the gap between them; for an authored blade there is no manufacturer, so they are one number by
+## construction. `MotorSpinUp`'s two inertia paths — published and computed — therefore agree here,
+## and `tests/test_authored_blade.gd` asserts that rather than leaving it as a comment.
+static func record_from_document(document: PropellerDocument, materials: FrameMaterials,
+		source: String) -> Dictionary:
+	if document == null:
+		return {}
+	var published := document.to_dictionary()
+	var mass_g := BladeGeometry.blade_mass_g(document, materials)
+	published["published_mass_g"] = mass_g
+
+	var record := make_record(document.name, mass_g,
+		document.diameter_mm / PropellerDocument.INCH_TO_MM,
+		document.pitch_mm / PropellerDocument.INCH_TO_MM,
+		document.blades, document.material_id, source)
+	record[PropellerDocument.AUTHORED_BLADE_KEY] = published
+	return record
+
+
 static func id_for(name: String) -> String:
 	return CustomParts.id_for_name(name, "propeller")
 
