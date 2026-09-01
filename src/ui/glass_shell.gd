@@ -280,6 +280,13 @@ var _workbench: FrameWorkbench
 var _blade_room: PropulsionWorkbench
 var _blade_room_close: Button
 
+## The first of P10e's five analysis overlays, and the button that shows it. Held on the shell
+## rather than inside the tools cluster so `set_thrust_overlay_visible` can be driven by a test
+## without synthesising a click on a button whose position is a layout decision — the same posture
+## `set_blade_room_open` takes.
+var _thrust_overlay: ThrustOverlay
+var _overlays_button: Button
+
 
 func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 		p_pack_charge: PackCharge = null) -> void:
@@ -307,6 +314,7 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	_build_rail_glass()
 	_build_workbench()
 	_build_blade_room()
+	_build_thrust_overlay()
 	_build_inspector()
 	# Between the inspector and the top cluster, so the chip draws over it but it covers the model
 	# and the floating columns. The empty state must never hide the project chip — New and Open are
@@ -616,6 +624,68 @@ func _build_blade_room() -> void:
 	lab.propeller_details.design_blade_requested.connect(_on_design_blade_requested)
 
 
+## The thrust-distribution overlay — P10e's first, and the one the blade designer sits next to.
+##
+## Bottom left of the viewport, clear of the rail column and above the tool cluster that toggles
+## it. That corner rather than the middle because the overlay is a thing you glance at while
+## changing a prop on the rail, not a thing you read instead of the model.
+##
+## Added BEFORE the empty state and the two clusters, so a shell with no drone open covers it and
+## the tools still draw over it. It is a chart about a fitted propeller; there is no honest version
+## of it on a screen that says "no drone open".
+func _build_thrust_overlay() -> void:
+	_thrust_overlay = ThrustOverlay.new()
+	_thrust_overlay.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_thrust_overlay.anchor_top = 1.0
+	_thrust_overlay.anchor_bottom = 1.0
+	_thrust_overlay.offset_left = RAIL_WIDTH + CLUSTER_MARGIN * 2.0
+	_thrust_overlay.offset_right = RAIL_WIDTH + CLUSTER_MARGIN * 2.0 + 360.0
+	_thrust_overlay.offset_top = -(BOTTOM_KEEPOUT + 210.0)
+	_thrust_overlay.offset_bottom = -BOTTOM_KEEPOUT
+	_thrust_overlay.visible = false
+	add_child(_thrust_overlay)
+
+
+## Shows or hides the overlay, refilling it from the CURRENT build on the way up.
+##
+## Refilled on show rather than kept live, because a BEMT solve is not free and an overlay nobody
+## is looking at must not cost the rails a solve per click. Everything that changes the aircraft
+## already ends in `_refresh_status`, which refreshes this when it is up — so the chart a builder
+## is looking at follows the rail, and the chart nobody is looking at costs nothing.
+##
+## Public for the same reason `set_blade_room_open` is: it is what a test and the capture tooling
+## drive, rather than a click at a coordinate.
+func set_thrust_overlay_visible(shown: bool) -> void:
+	if _overlays_button != null:
+		_overlays_button.button_pressed = shown
+	# Routed through the same sync the room and the door use, so "the toggle is on" and "the
+	# overlay is up" cannot disagree on a screen the overlay does not belong on.
+	_sync_thrust_overlay(rooms == null or rooms.showing_lab())
+
+
+## Puts the overlay where the toggle and the screen together say it belongs. `allowed` is whatever
+## the caller knows about the screen — in Lab, out of a room — and the toggle decides the rest.
+##
+## One function rather than two assignments, because the two callers were the two chances to leave
+## an overlay up over something it is not about.
+func _sync_thrust_overlay(allowed: bool) -> void:
+	if _thrust_overlay == null:
+		return
+	var want: bool = allowed and _overlays_button != null and _overlays_button.button_pressed
+	if want:
+		_refill_thrust_overlay()
+	_thrust_overlay.visible = want
+
+
+func _refill_thrust_overlay() -> void:
+	if _thrust_overlay == null:
+		return
+	# `container == null` is the empty state — no drone, so no propeller, so no distribution. The
+	# overlay says so in words rather than drawing a flat line, which would be a claim about a
+	# blade that is not fitted.
+	_thrust_overlay.adopt(null if container == null or lab == null else lab.current_build())
+
+
 func _on_design_blade_requested(prop: Dictionary) -> void:
 	var part_id := str(prop.get("part_id", ""))
 	if part_id != "":
@@ -637,6 +707,12 @@ func set_blade_room_open(open: bool) -> void:
 	_blade_room_close.visible = open
 	_rail_glass.visible = not open and _rail_glass.visible
 	_tools_glass.visible = not open and _tools_glass.visible
+	# The overlay retracts with the tools, and comes back if the toggle was left on. The room
+	# covers the viewport it draws over, and a chart floating on top of the blade designer would be
+	# describing the aircraft rather than the blade being drawn. Coming back REFILLED is the point
+	# of routing this through `_sync_thrust_overlay`: the blade you just published is the blade the
+	# curve should be about the moment the room closes.
+	_sync_thrust_overlay(not open)
 	_inspector.visible = not open and _inspector.visible
 	var viewport_container := lab.viewport().get_parent()
 	if viewport_container is Control:
@@ -797,6 +873,20 @@ func _build_bottom_left_cluster() -> void:
 		button.custom_minimum_size = Vector2(0, 28)
 		button.tooltip_text = "%s is a frame slot — no overlay behind it yet." % tool_name
 		row.add_child(button)
+		# THE FIRST BUTTON NOW HAS SOMETHING BEHIND IT (P10e). Overlays is a toggle rather than a
+		# door: it puts a chart over the viewport and takes it away again, and nothing else on
+		# screen moves. That is the whole of the "an overlay is not a room" claim this corner was
+		# drawn early to test, now carrying one real feature instead of four slots.
+		#
+		# The other three stay disabled and keep their tooltip. Turning them on together would
+		# have made the corner a menu of promises again.
+		if tool_name == "Overlays":
+			button.disabled = false
+			button.toggle_mode = true
+			button.tooltip_text = ("Thrust along the blade — where the propeller you fitted "
+				+ "actually makes its lift.")
+			button.toggled.connect(set_thrust_overlay_visible)
+			_overlays_button = button
 
 	row.add_child(VSeparator.new())
 
@@ -946,6 +1036,10 @@ func _on_room_changed() -> void:
 
 	_top_bar.visible = in_lab
 	_tools_glass.visible = in_lab
+	# The overlay goes with the tools that switch it on. It draws a chart about the aircraft in
+	# the garage, and left up over a bench or the field it would be a chart about a drone that is
+	# not the subject of the screen it is floating on.
+	_sync_thrust_overlay(in_lab)
 	if in_lab:
 		# Re-applies the focused system rather than just showing the two columns, because which of
 		# them is visible is a property of the system chosen — an unmodelled system shows stubs, and
@@ -1205,6 +1299,13 @@ func _refresh_status() -> void:
 			_ring.tooltip_text = "Nothing is open — New or Open a drone."
 			_ring.queue_redraw()
 		return
+	# THE OVERLAY FOLLOWS THE RAIL. Every path that changes the aircraft — a picker, a reload
+	# after the blade designer publishes, a project opening — already ends here, so hooking the
+	# refill on this one function is what makes "publish a blade next door and watch the curve
+	# move" true without a second notification path to keep in step.
+	if _thrust_overlay != null and _thrust_overlay.visible:
+		_refill_thrust_overlay()
+
 	var decided := _decided_count()
 	_status_label.text = "%s  ·  %d of %d systems decided" % [
 		SYSTEMS[_focused_index]["name"], decided, SYSTEMS.size()]

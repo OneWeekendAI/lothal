@@ -2,7 +2,7 @@ extends SceneTree
 ## Dev tool, not a test: photographs GlassShell — the new UI frame — so the arrangement can be
 ## looked at rather than reasoned about. The companion to capture_lab.gd, which shoots the old one.
 ##
-##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH] [menu|sim]
+##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH] [menu|sim|3d|overlay]
 ##
 ## A fifth argument of `menu` drops the project menu open before the shot, which is the only way
 ## to photograph an entry that is greyed — and greyed entries are most of that menu today. `sim`
@@ -25,6 +25,7 @@ func _init() -> void:
 	var menu: bool = args.size() > 4 and args[4] == "menu"
 	var to_sim: bool = args.size() > 4 and args[4] == "sim"
 	var to_3d: bool = args.size() > 4 and args[4] == "3d"
+	var overlay: bool = args.size() > 4 and args[4] == "overlay"
 
 	if args.size() > 3 and args[3] != "":
 		var res_parts := args[3].split("x")
@@ -73,6 +74,16 @@ func _init() -> void:
 	if to_3d and shell.workbench() != null:
 		shell.workbench().set_view_3d(true)
 		for i in settle:
+			await process_frame
+
+	# The thrust-distribution overlay (P10e). Driven through `set_thrust_overlay_visible`, which is
+	# what the Overlays toggle calls — the same rule the sim and 3d branches follow. This is the
+	# only way the overlay gets LOOKED at: its arithmetic is proven headless in
+	# tests/test_thrust_overlay.gd, and whether the curve is legible over a turning airframe is
+	# exactly the question a headless suite cannot answer.
+	if overlay:
+		shell.set_thrust_overlay_visible(true)
+		for i in 4:
 			await process_frame
 
 	await RenderingServer.frame_post_draw

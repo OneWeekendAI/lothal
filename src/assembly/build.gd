@@ -1068,15 +1068,41 @@ func _tau_s() -> float:
 
 
 func _omega_hover_rad_s() -> float:
-	# rated_rpm() is the RPM at max throttle at the test voltage. Multiply by hover_throttle
-	# when the build actually hovers so the linearisation lands where a stick input actually
-	# operates; fall back to rated_rpm otherwise, since 0.5 · rated is the wrong number when
-	# the aircraft cannot hover at all.
+	return PropellerModel.rpm_to_rad_s(operating_rpm())
+
+
+## The RPM this aircraft is judged at: hover if it hovers, rated if it does not.
+##
+## rated_rpm() is the RPM at max throttle at the test voltage. Multiply by hover_throttle when the
+## build actually hovers so the linearisation lands where a stick input actually operates; fall
+## back to rated_rpm otherwise, since 0.5 · rated is the wrong number when the aircraft cannot
+## hover at all.
+##
+## Public and named because P10e's thrust-distribution overlay needs the SAME operating point the
+## spin-up linearisation uses. Two definitions of "the RPM this drone sits at" would let the
+## overlay draw a blade loading the τ nobody flies, and the disagreement would be invisible —
+## both numbers are plausible and neither is labelled.
+func operating_rpm() -> float:
 	var rated := rated_rpm()
 	if not can_hover():
-		return PropellerModel.rpm_to_rad_s(rated)
-	var hover_rpm := rated * hover_throttle()
-	return PropellerModel.rpm_to_rad_s(hover_rpm)
+		return rated
+	return rated * hover_throttle()
+
+
+## The static thrust the fitted blade makes at each annulus of the solve, at `operating_rpm()`.
+##
+## `[r_m, dT_N]` interleaved, straight out of `BemtModel.thrust_distribution` — which taps the
+## per-annulus addends of the very sum `solve()` returns. There is deliberately NO arithmetic here
+## beyond assembling the call: the moment this method starts adjusting what Rust handed back, the
+## overlay is drawing something the aircraft does not fly.
+##
+## Empty for a rotor the solve declines (P10e §3): a refusal and a blade that makes no thrust are
+## different answers and must not render the same.
+func thrust_distribution() -> PackedFloat64Array:
+	var geometry := prop_geometry()
+	return BemtModel.thrust_distribution(
+		air.kgm3(), geometry.diameter_m, geometry.pitch_m, geometry.blades,
+		operating_rpm(), blade_chord(), guard_closure)
 
 
 ## FrameMaterials for the blade-density fallback in MotorSpinUp — used only when a

@@ -193,6 +193,41 @@ impl BemtModel {
             a0_eff, c_d0, k_polar, c_l_max, guard_closure)
     }
 
+    /// The per-annulus thrust the static solve integrates — P10e's thrust-distribution overlay.
+    ///
+    /// Returns `[r_m, dT_N]` interleaved, one pair per annulus, from INSIDE `solve_impl`'s own
+    /// loop. It is not a second quadrature and must never become one: `Σ dT` over the returned
+    /// pairs equals `solve(...)[0]` bit-identically, because the pairs ARE the addends of that
+    /// sum in the order they were added. An overlay that recomputed the integral in GDScript
+    /// would be a second copy of a definition free to drift from the first, which is the exact
+    /// defect P10d spent a slice deleting from `PropellerMesh`.
+    ///
+    /// `dT` is a per-ANNULUS thrust, not a density: the caller divides by the annulus width to
+    /// plot dT/dr, and the width is `r[1] − r[0]` off the returned grid rather than a constant
+    /// re-derived from the diameter. The polar is the global fitted one (§4.2) rather than four
+    /// more arguments, because this is a view of the aircraft's own solve and there is no
+    /// operating point at which a viewer should be choosing a different section polar than the
+    /// physics uses.
+    ///
+    /// Refusals mirror `solve`'s: a rotor the solve declines returns an EMPTY array, so a caller
+    /// cannot mistake a refusal for a blade that makes no thrust.
+    #[func]
+    pub fn thrust_distribution(
+        rho: f64,
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        rpm: f64,
+        chord_points_mm: PackedFloat64Array,
+        guard_closure: f64,
+    ) -> PackedFloat64Array {
+        let mut dist: Vec<f64> = Vec::new();
+        solve_impl_collecting(
+            rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, Some(&mut dist));
+        PackedFloat64Array::from(dist.as_slice())
+    }
+
     /// P6 — §4.1 with V_ax ≠ 0 and edgewise flow. Extends `solve` with an axial freestream
     /// and an edgewise freestream (the two aircraft velocities the rotor sees when it is
     /// tilted into forward flight: axial along the rotor's own thrust axis, edgewise across
@@ -662,6 +697,35 @@ fn solve_impl(
     c_l_max: f64,
     guard_closure: f64,
 ) -> PackedFloat64Array {
+    solve_impl_collecting(rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
+        a0_eff, c_d0, k_polar, c_l_max, guard_closure, None)
+}
+
+/// `solve_impl` with an optional per-annulus tap (P10e's thrust-distribution overlay).
+///
+/// The tap exists so the overlay reads the addends of the SAME sum `solve` returns rather than a
+/// second quadrature written beside it. Every annulus appends `[r_m, dT_N]` to `dist` — the
+/// zero-chord ones too, with dT = 0.0, so the vector holds one pair per annulus and its stride-2
+/// walk is the identical sequence of IEEE additions `thrust` accumulates. That is what makes the
+/// overlay's total BIT-identical to `solve()[0]` rather than merely close, which is the property
+/// tests/test_thrust_overlay.gd asserts with `==`.
+///
+/// `None` is the whole of the cost for every other caller: one branch per annulus, outside the
+/// fixed-point loop, and not one line of the arithmetic moved to make room for it.
+fn solve_impl_collecting(
+    rho: f64,
+    diameter_m: f64,
+    pitch_m: f64,
+    blades: f64,
+    rpm: f64,
+    chord_points_mm: &PackedFloat64Array,
+    a0_eff: f64,
+    c_d0: f64,
+    k_polar: f64,
+    c_l_max: f64,
+    guard_closure: f64,
+    mut dist: Option<&mut Vec<f64>>,
+) -> PackedFloat64Array {
     let guard_closure = sanitize_closure(guard_closure);
     if blades <= 0.0 || diameter_m <= 0.0 || rpm <= 0.0 || chord_points_mm.len() < 4 {
         return PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0, 1.0]);
@@ -687,6 +751,10 @@ fn solve_impl(
         let r_frac = r / radius_m;
         let chord_m = chord_at_m(chord_points_mm, r_frac);
         if chord_m <= 0.0 {
+            if let Some(d) = dist.as_mut() {
+                d.push(r);
+                d.push(0.0);
+            }
             continue;
         }
         let beta = (pitch_m / (std::f64::consts::TAU * r)).atan();
@@ -722,6 +790,11 @@ fn solve_impl(
         let d_t = blade_dt(rho, u2, blades, chord_m, cl, cd, phi, dr);
         let d_q = 0.5 * rho * u2 * blades * chord_m * (cl * sin_phi + cd * cos_phi) * r * dr;
         let d_t_mom = momentum_dt(rho, r, v_i, f, dr);
+
+        if let Some(d) = dist.as_mut() {
+            d.push(r);
+            d.push(d_t);
+        }
 
         thrust += d_t;
         torque += d_q;
