@@ -49,6 +49,7 @@ static func run() -> Array:
 	results.append(_test_a_new_blade_starts_from_the_arch_and_says_it_is_one())
 	results.append(_test_the_new_blade_form_refuses_and_stays_up())
 	results.append(_test_the_room_says_which_shape_the_aircraft_flies())
+	results.append(_test_a_blade_published_next_door_is_flyable_on_the_next_trip_out())
 	return results
 
 
@@ -565,6 +566,82 @@ static func _test_the_room_says_which_shape_the_aircraft_flies() -> TestResult:
 		"snapshot %s, published \"%s\", edited \"%s\", cleared %s, no stale claim %s, user file restored %s" % [
 			str(snapshot_taken), published_line, edited_line, str(cleared),
 			str(no_stale_claim), str(restored)])
+
+
+# ---------------------------------------------------------------------------
+# §7b's fourth bullet, which turned out to be wrong — and is pinned so it stays wrong
+# ---------------------------------------------------------------------------
+
+## A blade published while the pilot is in the garage must be flyable the next time they walk out
+## to the field, WITHOUT restarting the app.
+##
+## §7b recorded this as an open gap: *"Sim caches its scene (`RoomHost.show_sim`) and loads its
+## catalog once, so a blade published after the first flight of a session does not reach Sim's build
+## panel until the room is rebuilt."* That is not what the code does. `show_sim` opens with
+## `_close_rooms()`, which frees `sim` and sets it to null, so the `if sim == null` guard below it is
+## always taken and the scene — and its one `PartsCatalog.load_with_custom()` — is built fresh on
+## every trip out. The gap was closed by construction and nobody had written down that it was.
+##
+## Which is exactly why it is worth a check rather than a correction to the doc. The reasoning that
+## produced the wrong entry is reasoning anybody reading `show_sim` in isolation would repeat, and
+## the guard it hinges on reads like a cache. A later change that made `_close_rooms` keep the scene
+## alive — for a faster door, or to preserve a lap across a trip to the garage — would reopen it
+## silently, and the symptom would be a blade the builder can see in the room and cannot fit.
+##
+## THE TWO CLAUSES ARE A PAIR. "Sim is rebuilt" alone says nothing about what it reads; "the store
+## has the blade" alone says nothing about whether Sim ever looks again. Together they are the
+## claim. The panel is exercised through the same class Sim builds — `BuildPanel`, against
+## `load_with_custom`, which is the call `scenes/main.gd:194` makes — because Sim's own panel is
+## built in `_ready` and this runner processes no frames (see tests/test_lab.gd for the same
+## constraint stated from the other side).
+##
+## Mutation that turns this red: have `_close_rooms` leave `sim` alone — the cache §7b assumed —
+## and the first clause goes red while the second stays green, which is the honest split.
+static func _test_a_blade_published_next_door_is_flyable_on_the_next_trip_out() -> TestResult:
+	var captured := _capture_custom_parts()
+
+	var shell := AppShell.new()
+	shell.show_sim()
+	var first: Node = shell.sim
+	shell.show_lab()
+
+	# Published from the garage while the field is closed — the sequence §7b was about.
+	var store := CustomPropellers.load_from()
+	var record := CustomPropellers.record_from_document(
+		_scaled_document(0.6), PropellerDetails.materials(), "authored")
+	var part_id := str(record["part_id"])
+	store.remove(part_id)
+	store.add(record)
+	store.save()
+
+	shell.show_sim()
+	var rebuilt: bool = shell.sim != first
+	shell.free()
+
+	# Clause two: what a freshly built Sim reads. Same catalog call, same panel class, and the
+	# planform that comes out the far side must be the narrowed one rather than the arch.
+	var catalog := PartsCatalog.load_with_custom()
+	var in_store: bool = not catalog.get_part(part_id).is_empty()
+	var panel := BuildPanel.new(catalog, {"propeller": part_id})
+	panel._rebuild()
+	var flown := panel.build.blade_chord()
+	panel.free()
+
+	var authored := PropellerDocument.from_catalog_prop(record).chord
+	var chord_matches: bool = flown.size() == authored.size() and flown.size() > 0
+	if chord_matches:
+		for i in flown.size():
+			if absf(flown[i] - authored[i]) > IDENTITY_EPS:
+				chord_matches = false
+				break
+
+	var restored := _restore_custom_parts(captured)
+	return TestResult.new(
+		"a blade published while Sim is closed is fitted and flown on the next trip out",
+		rebuilt and in_store and chord_matches and restored,
+		"sim rebuilt %s, in store %s, flown chord matches authored %s (%d vs %d points), user file restored %s" % [
+			str(rebuilt), str(in_store), str(chord_matches),
+			flown.size(), authored.size(), str(restored)])
 
 
 ## The builder's real parts file, as it stood before this suite touched it. Captured as raw text

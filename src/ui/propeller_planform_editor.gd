@@ -38,6 +38,13 @@ signal document_changed(document: PropellerDocument)
 ## the caret changes no geometry, and the room's numbers strip must not re-integrate a blade
 ## because somebody moved the mouse.
 signal caret_moved(r_frac: float)
+## Emitted BEFORE the first change of a drag, so the room can snapshot the shape the builder is
+## about to leave. Its own signal rather than the canvas reaching into the room's history, on
+## `FrameControls`' rule: a drag is ONE undo step, and only the thing that owns the gesture knows
+## where it started. `document_changed` cannot be used for this — it fires after the change and
+## once per mouse motion, and a history recorded off it would step back through the path the cursor
+## took rather than to the chord the station had when it was grabbed.
+signal edit_began()
 
 ## How close, in PIXELS, the cursor must be to grab a station. Pixels rather than millimetres for
 ## `FramePlanEditor.GRAB_RADIUS_PX`'s reason: it describes a hand, so it is the same physical
@@ -60,9 +67,13 @@ var dragging_station := -1
 ## section there tells a builder nothing.
 var caret_r_frac := 0.7
 
-## True while a drag is in progress and the document has already been changed once. The room
-## records undo state on `edit_began`, and a drag that emitted that on every mouse motion would
-## fill the history with one entry per pixel.
+## True once the drag in progress has changed the document at least once — the latch that makes
+## `edit_began` fire exactly once per gesture. Without it a drag across forty pixels would fill the
+## history with forty entries and undo would replay the cursor's path.
+##
+## It was written when the canvas shipped and read by nothing until undo existed; the comment then
+## already described the signal above as though it were there. It is now what it always said it
+## was.
 var _edit_open := false
 
 
@@ -79,6 +90,10 @@ func set_document(p_document: PropellerDocument) -> void:
 	document = p_document
 	hovered_station = -1
 	dragging_station = -1
+	# A gesture does not continue across a document swap — including the swap an UNDO makes. Left
+	# latched, the first drag after an undo would change the blade without announcing itself, and
+	# that one edit would be unundoable.
+	_edit_open = false
 	queue_redraw()
 
 
@@ -195,6 +210,12 @@ func drag_station_to(index: int, pixel: Vector2) -> void:
 	var edited := PlanformEdits.set_chord(document.chord, index, chord_mm)
 	if edited == document.chord:
 		return
+	# ANNOUNCED AFTER THE REFUSAL CHECK AND BEFORE THE WRITE. After, because a gesture `Planform
+	# Edits` refused changed nothing and must not leave an undo step that undoes nothing — the same
+	# rule `FrameWorkbench` applies to a refused import. Before, because the point of the snapshot
+	# is the shape that is about to stop existing.
+	if not _edit_open:
+		edit_began.emit()
 	document.chord = edited
 	# An EDITED planform is no longer the generator's assumption about a catalog line. This is the
 	# flag §3.1 puts on every figure derived from a generated planform, and clearing it here rather

@@ -31,12 +31,20 @@ extends Control
 ## its own copy of the chord law, so an edited planform moved the physics and left the picture
 ## alone — the room would have been an editor for a shape nobody could see.
 ##
-## ## Why there is no undo yet, said rather than left missing
+## ## Undo, which P10d left owed and §7d pays
 ##
-## The airframe designer has `FrameHistory` and this room has none. A planform edit is a single
-## scalar per station and the shelf reopens the preset in one click, so the cheap recovery exists;
-## a history stack that recorded one entry per pixel of a drag is the version that would need
-## designing, and it is not what P10d is for. Named here so its absence is a decision.
+## The room holds a `BladeHistory` and every edit records into it BEFORE changing anything. The
+## history lives here rather than in the canvas — the opposite of `FramePlanEditor`, which owns its
+## own — because in this room the canvas is not the only thing that edits: `+ Station`,
+## `− Station` and the measured-chord toggle are all on the toolbar, and a history inside the
+## canvas would step back through drags and straight past everything a button did. The canvas says
+## `edit_began` and the room decides what that is worth, which is the arrangement `FrameControls`
+## already uses for the airframe inspector.
+##
+## Undo does NOT go through `set_document`. That function clears the publish snapshot, which is
+## right for opening a different blade and wrong for stepping back within one — a builder who
+## published, dragged and undid would be told the room has never published anything about a blade
+## it published a minute ago. Both paths share `_show_document`; only the open path clears.
 
 ## Emitted after any edit to the open document, so an inspector can repaint against it.
 signal document_changed(document: PropellerDocument)
@@ -57,6 +65,10 @@ const DEFAULT_MOTOR := "motor_2306_1700kv"
 
 var catalog: PartsCatalog
 var document: PropellerDocument
+
+## The shapes this blade has been through. Public for the same reason `FramePlanEditor.history` is:
+## the toolbar asks it whether its buttons mean anything.
+var history := BladeHistory.new()
 
 var shelf: PropellerShelf
 var editor: PropellerPlanformEditor
@@ -120,6 +132,7 @@ func _init(p_catalog: PartsCatalog = null) -> void:
 	editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	editor.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	editor.document_changed.connect(_on_planform_edited)
+	editor.edit_began.connect(_on_edit_began)
 	editor.caret_moved.connect(_on_caret_moved)
 	body.add_child(editor)
 
@@ -173,6 +186,13 @@ func _build_toolbar() -> Control:
 		"Add a control point at the caret, at the chord the blade already has there"))
 	row.add_child(_button("− Station", _on_remove_station,
 		"Remove the control point nearest the caret"))
+	row.add_child(VSeparator.new())
+
+	# Buttons as well as keys, `FrameWorkbench`'s arrangement: the room is reachable by mouse alone
+	# and an undo only a keyboard can find is an undo half the builders never learn is there. Both
+	# call the same two methods.
+	row.add_child(_button("Undo", undo, "Step back one edit (Ctrl-Z)"))
+	row.add_child(_button("Redo", redo, "Step forward again (Ctrl-Shift-Z)"))
 	row.add_child(VSeparator.new())
 
 	# THE CAVEAT, AS A SWITCH. §3.1 puts "blade chord assumed" on every figure derived from a
@@ -247,7 +267,10 @@ func open_blade(path: String) -> void:
 ## Puts a document in the room. THE ONE PATH — every open, every preset and every test goes through
 ## here, so there is exactly one place that has to remember to refresh all three views.
 func set_document(p_document: PropellerDocument) -> void:
-	document = p_document
+	# THE PREVIOUS BLADE'S HISTORY IS NOT THIS BLADE'S. `FramePlanEditor.open` clears for the same
+	# reason and it is worth restating: an undo that reached across an open would replace the blade
+	# just opened with the one just left, silently, and the shelf is one click away so it happens.
+	history.clear()
 	# A DIFFERENT BLADE HAS NO PUBLISH HISTORY IN THIS ROOM. Cleared here rather than left standing,
 	# because a snapshot carried across an open would have the room comparing the blade on screen
 	# against a different blade's published shape and reporting "edited since publishing" about an
@@ -259,11 +282,72 @@ func set_document(p_document: PropellerDocument) -> void:
 	# published shape" over a blade that was never published. The stale comparison and the stale
 	# sentence are one thing, and they are cleared in one place.
 	_status.text = ""
+	_show_document(p_document)
+
+
+## Puts a document in front of the three views and says so, WITHOUT touching the publish snapshot
+## or the history. The half of `set_document` that undo also needs: stepping back inside one blade
+## is not opening a different one, and the two differ in exactly what this function leaves alone.
+func _show_document(p_document: PropellerDocument) -> void:
+	document = p_document
 	editor.set_document(document)
 	section.set_document(document)
 	_assumed_button.set_pressed_no_signal(not document.chord_is_assumed)
 	_refresh()
 	document_changed.emit(document)
+
+
+# ---------------------------------------------------------------------------
+# Undo
+# ---------------------------------------------------------------------------
+
+## Steps back one edit. Public because the toolbar button, Ctrl-Z and the tests all drive it, and
+## all three must be the same path — a button that did its own thing diverges from the key the
+## first time either changes.
+##
+## The status line is NOT written here. It is `_refresh`'s job, through `_refresh_publish_state`,
+## and that comparison is BY VALUE against the published dictionary — so an undo that lands back on
+## the published shape makes the room say the aircraft flies this blade again, for free, with no
+## undo-aware code in the publish path at all.
+func undo() -> void:
+	if not history.can_undo():
+		return
+	_show_document(history.undo(document))
+
+
+## Steps forward again, into the state the last undo left.
+func redo() -> void:
+	if not history.can_redo():
+		return
+	_show_document(history.redo(document))
+
+
+## The canvas is about to change the blade for the first time in this drag.
+func _on_edit_began() -> void:
+	history.record(document)
+
+
+## Ctrl-Z and Ctrl-Shift-Z, and Cmd on macOS — `FramePlanEditor._handle_key` accepts both modifiers
+## for the same reason, and that is the whole of the platform difference in this app.
+##
+## `_unhandled_key_input` rather than `_gui_input`, because this room has no single focused canvas:
+## the planform editor takes focus for its own drags and the toolbar buttons take it for theirs, so
+## a handler hung on any one of them would work until the builder clicked somewhere else. This is
+## the thin half of the feature and it is the half with no test — a synthesised key needs a real
+## window and a tree that processes frames, which this suite has neither of (tests/test_lab.gd
+## states the same constraint from the other side). What is tested is everything below the key:
+## `undo()` and `redo()` are driven directly.
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.keycode != KEY_Z:
+		return
+	if not (key.ctrl_pressed or key.meta_pressed):
+		return
+	if key.shift_pressed:
+		redo()
+	else:
+		undo()
+	accept_event()
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +381,9 @@ func _on_caret_moved(r_frac: float) -> void:
 func _on_assumed_toggled(measured: bool) -> void:
 	if document == null:
 		return
+	if document.chord_is_assumed == (not measured):
+		return
+	history.record(document)
 	document.chord_is_assumed = not measured
 	_refresh()
 	document_changed.emit(document)
@@ -309,6 +396,10 @@ func _on_add_station() -> void:
 	if edited == document.chord:
 		_status.text = "There is already a station at r/R %.3f" % editor.caret_r_frac
 		return
+	# RECORDED AFTER THE REFUSAL, never before it: a press that changed nothing must not leave a
+	# step on the stack, or a builder pressing "+ Station" twice at one radius has to press undo
+	# twice to get back one edit.
+	history.record(document)
 	document.chord = edited
 	editor.queue_redraw()
 	_refresh()
@@ -323,6 +414,7 @@ func _on_remove_station() -> void:
 	if edited == document.chord:
 		_status.text = "A planform needs at least %d stations" % PlanformEdits.MIN_STATIONS
 		return
+	history.record(document)
 	document.chord = edited
 	editor.queue_redraw()
 	_refresh()

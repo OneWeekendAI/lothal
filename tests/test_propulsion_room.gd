@@ -44,7 +44,269 @@ static func run() -> Array:
 	results.append(_test_a_pad_moves_both_the_picture_and_the_frequency())
 	results.append(_test_moving_the_caret_rebuilds_nothing())
 	results.append(_test_the_prop_panel_carries_the_door_and_opens_nothing_itself())
+	results.append(_test_a_drag_is_one_undo_step_and_two_undos_reach_the_start())
+	results.append(_test_redo_walks_back_up_and_a_new_edit_forgets_the_branch())
+	results.append(_test_a_refused_edit_leaves_nothing_to_undo())
+	results.append(_test_undo_cannot_reach_across_an_open())
+	results.append(_test_undoing_back_to_the_published_shape_says_so())
 	return results
+
+
+# ---------------------------------------------------------------------------
+# §7d — undo, which P10d owed
+# ---------------------------------------------------------------------------
+
+## The blade the room opened on, and the far side of a preset that is not it. Named here rather
+## than inline so the cross-document check reads as what it is.
+const OTHER_PRESET := "prop_3x3x3"
+
+
+## Lets go of the mouse, through the canvas's own handler. A gesture is bounded by a press and a
+## release, and the release is what re-arms `edit_began` — so a test that called `drag_station_to`
+## six times without one would be testing a single six-motion drag, not two drags.
+static func _release_mouse(editor: PropellerPlanformEditor) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = false
+	editor._gui_input(event)
+
+
+## One gesture: several motions on one station, then a release.
+static func _drag_gesture(room: PropulsionWorkbench, index: int, to_mm: float) -> void:
+	var r_frac: float = float(PlanformEdits.points(room.document.chord)[index][0])
+	var from_mm: float = float(PlanformEdits.points(room.document.chord)[index][1])
+	# Four motions, because the failure this is aimed at is per-motion recording and one motion
+	# cannot tell the two apart.
+	for step in [0.25, 0.5, 0.75, 1.0]:
+		var at_mm: float = from_mm + (to_mm - from_mm) * float(step)
+		room.editor.drag_station_to(index, room.editor.to_pixels(r_frac, at_mm))
+	_release_mouse(room.editor)
+
+
+## A DRAG IS ONE UNDO STEP, and undoing twice reaches the shape the room opened on.
+##
+## Two failures live here and the check is built to separate them. The first is granularity: the
+## canvas changes the document on every mouse motion, so a history recorded off `document_changed`
+## would hold one entry per pixel and undo would crawl back along the cursor's path — the first
+## clause is the station count of the stack, and it is 1 per gesture or the feature is useless.
+##
+## The second is `FrameHistory`'s own aliasing trap, restated because it is the one that looks like
+## it works: a stack holding the live `PropellerDocument` rather than its dictionary would have
+## every later edit mutating the memory of the earlier shape, so the FIRST undo appears to do
+## nothing much and the second cannot reach the start. Hence two gestures and two undos.
+##
+## Both mutations were run and both went red, and neither split the way it was predicted to — worth
+## recording, because the prediction was the reason to believe the clauses were independent.
+##
+##   - Dropping the `_edit_open` latch (emit `edit_began` on every motion): depth reads 4/8 instead
+##     of 1/2, AND both chord clauses go red. The guess was that the shapes on the stack are still
+##     real ones so the chords would survive; they do not, because one undo then lands a quarter of
+##     the way back along the drag rather than at its start. The depth clause and the chord clauses
+##     are measuring the same defect from two ends.
+##   - Storing the live document (`_undone.append(document)` with `undo` returning it unchanged):
+##     both chord clauses go red and the depth clauses stay green, which is the aliasing bug wearing
+##     its usual disguise — the stack is the right SIZE and every entry on it is the present.
+static func _test_a_drag_is_one_undo_step_and_two_undos_reach_the_start() -> TestResult:
+	var room := _room()
+	var opened := room.document.chord.duplicate()
+
+	_drag_gesture(room, 12, 3.0)
+	var depth_after_one: int = room.history.depth()
+	var after_first := room.document.chord.duplicate()
+
+	_drag_gesture(room, 20, 2.0)
+	var depth_after_two: int = room.history.depth()
+
+	room.undo()
+	var back_to_first := room.document.chord.duplicate()
+	room.undo()
+	var back_to_opened := room.document.chord.duplicate()
+	room.free()
+
+	var moved: bool = after_first != opened
+	var one_step_each: bool = depth_after_one == 1 and depth_after_two == 2
+	var first_undo_lands: bool = back_to_first == after_first
+	var second_undo_lands: bool = back_to_opened == opened
+
+	return TestResult.new(
+		"[§7d] a drag is ONE undo step, and two undos put the blade back where the room opened it",
+		moved and one_step_each and first_undo_lands and second_undo_lands,
+		"drag moved the blade %s, depth 1/2 -> %d/%d, undo lands on the first shape %s, second undo lands on the opened shape %s" % [
+			str(moved), depth_after_one, depth_after_two,
+			str(first_undo_lands), str(second_undo_lands)])
+
+
+## Redo is the other half of the loop the room is for — push a station, look at the section, put it
+## back, look again — and the branch rule is what keeps it honest: once a new edit is made from an
+## undone state, the shapes that used to lie ahead are unreachable, and offering to redo into one
+## would move the blade sideways into a history nobody is in any more.
+##
+## Mutations that turn this red: dropping `_redone.clear()` from `BladeHistory.record` reddens the
+## last clause alone; having `redo()` fail to push the current state back onto the undo stack
+## reddens the "undo is available again" clause and leaves the chord clauses green.
+static func _test_redo_walks_back_up_and_a_new_edit_forgets_the_branch() -> TestResult:
+	var room := _room()
+	var opened := room.document.chord.duplicate()
+	_drag_gesture(room, 12, 3.0)
+	var edited := room.document.chord.duplicate()
+
+	room.undo()
+	var redo_offered: bool = room.history.can_redo()
+	var undone := room.document.chord.duplicate()
+
+	room.redo()
+	var redone := room.document.chord.duplicate()
+	var undo_offered_again: bool = room.history.can_undo()
+
+	# A fresh edit from here. The redo branch is now unreachable and must be gone.
+	room.undo()
+	_drag_gesture(room, 25, 1.5)
+	var branch_forgotten: bool = not room.history.can_redo()
+	room.free()
+
+	var undone_right: bool = undone == opened
+	var redone_right: bool = redone == edited and edited != opened
+	return TestResult.new(
+		"[§7d] redo returns the undone shape, and an edit made from an undone state forgets it",
+		redo_offered and undone_right and redone_right and undo_offered_again
+			and branch_forgotten,
+		"redo offered %s, undo landed on the opened shape %s, redo landed on the edited shape %s, undo offered again %s, branch forgotten after a new edit %s" % [
+			str(redo_offered), str(undone_right), str(redone_right),
+			str(undo_offered_again), str(branch_forgotten)])
+
+
+## AN EDIT THE MODEL REFUSED IS NOT AN EDIT. `+ Station` at a radius that already carries one,
+## `− Station` on a two-station planform and a toggle set to the value it already holds all leave
+## the document exactly as it was, and a history entry for any of them is a press of undo that
+## appears to do nothing — which a builder reads as undo being broken, not as their own no-op.
+##
+## The three are checked together because they are one rule with three call sites, and the obvious
+## wrong implementation — `history.record` as the first line of each handler — breaks all three.
+##
+## Mutation that turns this red: move `history.record(document)` above the refusal check in
+## `_on_add_station`. All four clauses go red — 1, 1, 1 and 3 steps — and the reason is worth
+## stating rather than tidying, since it was not the predicted result: the depth is CUMULATIVE
+## across the four presses, so one bad call site drags every later count with it. This check
+## therefore names the rule and not the call site; the "a refused insert left 1 step" line in the
+## detail is what names the call site.
+static func _test_a_refused_edit_leaves_nothing_to_undo() -> TestResult:
+	var room := _room()
+	var faults: Array = []
+
+	# A station already sits at the caret's own radius: put the caret exactly on one.
+	room.editor.caret_r_frac = float(PlanformEdits.points(room.document.chord)[7][0])
+	room._on_add_station()
+	if room.history.depth() != 0:
+		faults.append("a refused insert left %d step(s)" % room.history.depth())
+
+	# The floor. Two stations left, and `− Station` must refuse.
+	room.document.chord = PackedFloat64Array([0.2, 5.0, 0.9, 3.0])
+	room._on_remove_station()
+	if room.history.depth() != 0:
+		faults.append("a refused remove left %d step(s)" % room.history.depth())
+
+	# The toggle, set to what it already says.
+	room.document.chord_is_assumed = true
+	room._on_assumed_toggled(false)
+	if room.history.depth() != 0:
+		faults.append("a no-op toggle left %d step(s)" % room.history.depth())
+
+	# And the control: a station the planform CAN take is one step, so the check above is not
+	# passing because nothing is ever recorded.
+	room.editor.caret_r_frac = 0.55
+	room._on_add_station()
+	var real_edit_recorded: bool = room.history.depth() == 1
+	if not real_edit_recorded:
+		faults.append("a real insert recorded %d step(s)" % room.history.depth())
+	room.free()
+
+	return TestResult.new(
+		"[§7d] an insert, a remove or a toggle the model refused leaves nothing on the undo stack",
+		faults.is_empty(),
+		"three refusals recorded nothing and a real insert recorded one step"
+			if faults.is_empty() else "; ".join(faults))
+
+
+## UNDO MUST NOT REACH ACROSS AN OPEN. The shelf is one click from the canvas, so a builder edits a
+## 5", picks a 3" off the shelf, presses Ctrl-Z — and on a history that survived the open, the 3"
+## on screen is silently replaced by the 5" they thought they had left.
+##
+## Both clauses are needed. "Nothing to undo" alone would pass on a room that had stopped recording
+## altogether, so the diameter is asserted after a real edit on the new blade: the history works,
+## it just does not contain the other propeller.
+##
+## Mutation that turns this red: remove `history.clear()` from `set_document`. The first clause goes
+## red immediately and the second follows it, since the undo then lands on the 5".
+static func _test_undo_cannot_reach_across_an_open() -> TestResult:
+	var room := _room()
+	var first_diameter := room.document.diameter_mm
+	_drag_gesture(room, 12, 3.0)
+
+	room.open_preset(OTHER_PRESET)
+	var second_diameter := room.document.diameter_mm
+	var nothing_carried_over: bool = not room.history.can_undo()
+
+	room.undo()
+	var still_the_new_blade: bool = room.document.diameter_mm == second_diameter
+
+	# The history is alive on THIS blade, which is what makes the clause above a statement about
+	# the clear rather than about a room that records nothing.
+	var before := room.document.chord.duplicate()
+	_drag_gesture(room, 5, 1.2)
+	room.undo()
+	var records_here: bool = room.document.chord == before
+	room.free()
+
+	return TestResult.new(
+		"[§7d] opening a different blade forgets the last one's history — undo cannot cross the shelf",
+		nothing_carried_over and still_the_new_blade and records_here
+			and first_diameter != second_diameter,
+		"%.1f mm -> %.1f mm; nothing carried over %s, undo left the new blade alone %s, history works on the new blade %s" % [
+			first_diameter, second_diameter, str(nothing_carried_over),
+			str(still_the_new_blade), str(records_here)])
+
+
+## THE STATUS LINE COMES BACK BY ITSELF, and that is the finding worth pinning rather than the
+## feature. §2.1's comparison is BY VALUE — `document.to_dictionary() == _published` — so an undo
+## that lands on the published shape must make the room say the aircraft flies this blade again
+## with no undo-aware code anywhere in the publish path. It only holds because undo goes through
+## `_show_document` and NOT through `set_document`, which clears `_published` on purpose.
+##
+## The middle clause is the one that makes this more than a tautology: the room must say "edited
+## since publishing" first, or the final line could be the line it never stopped showing.
+##
+## Mutation that turns this red: have `undo()` call `set_document` instead of `_show_document` —
+## the obvious wiring, since `set_document` is documented as the one path in. The published-again
+## clause goes red and the edited clause stays green.
+static func _test_undoing_back_to_the_published_shape_says_so() -> TestResult:
+	# The builder's own parts file, captured through the same helpers `test_authored_blade.gd`
+	# wrote for this — one definition of "put it back", not two.
+	var captured := TestAuthoredBlade._capture_custom_parts()
+
+	var room := _room()
+	room.document.name = "Undo status fixture blade"
+	room._on_publish()
+	var published_line := room._status.text
+
+	_drag_gesture(room, 12, 3.0)
+	var edited_line := room._status.text
+
+	room.undo()
+	var undone_line := room._status.text
+	var snapshot_survived: bool = not room._published.is_empty()
+	room.free()
+
+	var restored := TestAuthoredBlade._restore_custom_parts(captured)
+
+	var said_published: bool = published_line.contains("this is the blade your aircraft flies")
+	var said_edited: bool = edited_line.contains("Edited since publishing")
+	var said_published_again: bool = undone_line.contains("this is the blade your aircraft flies")
+	return TestResult.new(
+		"[§7d] undoing back to the published shape makes the room say the aircraft flies it again",
+		said_published and said_edited and said_published_again and snapshot_survived
+			and restored,
+		"published \"%s\", edited \"%s\", undone \"%s\", snapshot survived %s, user file restored %s" % [
+			published_line, edited_line, undone_line, str(snapshot_survived), str(restored)])
 
 
 static func _room() -> PropulsionWorkbench:
