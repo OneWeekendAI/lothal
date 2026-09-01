@@ -586,6 +586,20 @@ func _build_blade_room() -> void:
 	_blade_room.visible = false
 	add_child(_blade_room)
 
+	# THE STORE CHANGED, SO THE BUILD PATH HAS TO HEAR ABOUT IT (§4 of
+	# plans/2026-09-01-authored-blade-design.md). Every other way of writing a custom part already
+	# ends in `LabScreen.reload_catalog` — the pickers' six `custom_*_changed` signals are all wired
+	# to it — and the room's publish door was the one writer with nobody listening. Without this
+	# line the record lands in `user://custom_parts.json` and reaches the rails, the details panel
+	# and the aircraft only after a restart: a builder publishes a blade, walks back to the garage,
+	# and the propeller they just made is not on the rail.
+	#
+	# `reload_catalog` re-reads the file and rebuilds the rails, which is why a republish of a blade
+	# the aircraft is ALREADY flying lands too: the reselected prop resolves out of the new catalog,
+	# and `current_build()` assembles a Build from it. `Build.refit_from` is the same rule stated
+	# where a Build that outlives the reload can honour it.
+	_blade_room.parts_published.connect(func(_record: Dictionary) -> void: lab.reload_catalog())
+
 	# The way out. On the shell rather than in the room, for the same reason the room does not open
 	# itself: the room is a workspace and the shell owns where a workspace sits.
 	_blade_room_close = Button.new()

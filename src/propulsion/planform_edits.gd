@@ -165,3 +165,36 @@ static func nearest_station(chord: PackedFloat64Array, r_frac: float) -> int:
 			best_distance = distance
 			best = i
 	return best
+
+
+## A blade started from nothing — §3.2 of plans/2026-09-01-authored-blade-design.md, and the sibling
+## of `FrameEdits.new_frame` one room over.
+##
+## **"From nothing" means NOT TIED TO A CATALOG PRODUCT — it does not mean a blank planform.** The
+## chord comes back as `PropellerDocument.generate_chord` for this diameter and blade count, flagged
+## `chord_is_assumed`, which is the same starting arch a preset gets and flagged for the same
+## reason. The alternative was considered and is worse: a blade with no chord distribution has no
+## area, no mass, no thrust and no drawable shape, so the planform canvas, the section view and the
+## mount profile would each need an empty state whose whole working life is the five seconds before
+## the builder drags the first station. Starting from a generated arch that SAYS it is a guess is
+## the same honesty with a working room attached.
+##
+## What is genuinely dropped is the product: no part number, no manufacturer, no vendor mass and no
+## name inherited from a listing. `published_mass_g` stays 0.0 for exactly `FrameEdits.new_frame`'s
+## reason — this blade has no vendor, so there is no published figure to compare an integral
+## against, and quoting one of zero would invent a mass gap against a propeller that does not exist.
+static func new_blade(blade_name: String, diameter_mm: float, pitch_mm: float, blades: int,
+		material_id: String) -> PropellerDocument:
+	var document := PropellerDocument.new()
+	document.id = "blade_%d" % Time.get_ticks_usec()
+	document.name = blade_name
+	document.author = ""
+	document.revision = ""
+	document.diameter_mm = diameter_mm
+	document.pitch_mm = pitch_mm
+	document.blades = maxi(blades, 1)
+	document.material_id = material_id
+	document.chord = PropellerDocument.generate_chord(diameter_mm, document.blades)
+	document.chord_is_assumed = true
+	document.published_mass_g = 0.0
+	return document

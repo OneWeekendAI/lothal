@@ -155,6 +155,11 @@ func _build_toolbar() -> Control:
 	row.add_theme_constant_override("h_separation", LothalTheme.SPACE_2)
 	row.add_theme_constant_override("v_separation", LothalTheme.SPACE_1)
 
+	# THE THIRD WAY IN (§3.2). The shelf opens a preset and `Duplicate` copies one; until this
+	# button there was no way to start a blade that was not descended from a product. It sits first
+	# because it is where a blade begins.
+	row.add_child(_button("New blade…", _on_new_blade,
+		"Start a blade of your own — not a copy of anything in the catalog"))
 	row.add_child(_button("Save", _on_save, "Write this blade to your own library"))
 	# THE SECOND DOOR (plans/2026-09-01-authored-blade-design.md §3). `Save` keeps a draft;
 	# this makes the blade a propeller the build can fit and the sim can fly. Two buttons rather
@@ -248,6 +253,12 @@ func set_document(p_document: PropellerDocument) -> void:
 	# against a different blade's published shape and reporting "edited since publishing" about an
 	# aircraft that is flying neither.
 	_published = {}
+	# And so is the sentence the snapshot produced. `_refresh_publish_state` says nothing when there
+	# is no snapshot, which leaves whatever it said LAST on screen — so without this line a builder
+	# who publishes a blade and then opens a different one reads "your aircraft still flies the
+	# published shape" over a blade that was never published. The stale comparison and the stale
+	# sentence are one thing, and they are cleared in one place.
+	_status.text = ""
 	editor.set_document(document)
 	section.set_document(document)
 	_assumed_button.set_pressed_no_signal(not document.chord_is_assumed)
@@ -378,6 +389,41 @@ func _refresh_publish_state() -> void:
 		_status.text = "Published — this is the blade your aircraft flies"
 	else:
 		_status.text = "Edited since publishing — your aircraft still flies the published shape"
+
+
+## Opens the "New blade…" form, seeded with the open blade's own numbers (§3.2).
+##
+## SEEDED, NOT BLANK, and the two are different: the form arrives holding a 5x4.3x3 because that is
+## what is on screen, and a builder making a 5" of their own then changes a name rather than typing
+## four numbers they already know. What the new document does NOT inherit is the product — no part
+## number, no vendor mass, no planform copied across. That is the whole distinction §3.2 draws
+## between "from nothing" and "a blank shape".
+##
+## The dialog is created per press and freed when it closes rather than held as a field, the same
+## arrangement `PropellerPicker._open_dialog` uses: a form that survives its own dismissal is a form
+## holding last week's numbers the next time it opens.
+func _on_new_blade() -> void:
+	var dialog := NewBladeDialog.new()
+	if document != null:
+		dialog.set_fields("Untitled blade",
+			document.diameter_mm / PropellerDocument.INCH_TO_MM,
+			document.pitch_mm / PropellerDocument.INCH_TO_MM,
+			document.blades,
+			document.material_id)
+	dialog.blade_created.connect(func(created: PropellerDocument) -> void:
+		adopt_new_blade(created)
+		dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+## Puts a freshly-created blade in the room and says what happened. Separate from the lambda above
+## so a test can drive the outcome without a window: `popup_centered` needs the node in a tree, and
+## `set_document` plus the status line is the whole of what the button is for.
+func adopt_new_blade(created: PropellerDocument) -> void:
+	set_document(created)
+	_status.text = ("New blade \"%s\" — the arch is a starting guess, not a measurement. "
+		+ "Drag a station and it stops being one.") % created.name
 
 
 func _on_duplicate() -> void:

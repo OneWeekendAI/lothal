@@ -110,9 +110,17 @@ static func record_from_document(document: PropellerDocument, materials: FrameMa
 		source: String) -> Dictionary:
 	if document == null:
 		return {}
-	var published := document.to_dictionary()
 	var mass_g := BladeGeometry.blade_mass_g(document, materials)
-	published["published_mass_g"] = mass_g
+	# THE DOCUMENT IS STAMPED, NOT ONLY THE COPY, and this line is the one §2.1's status line rests
+	# on. Publishing sets `published_mass_g` from the integral (§3.1); writing that only into the
+	# record's block would leave the open document differing from the record it was just published
+	# out of, in a field the builder never touched — and the room, which compares the two by value,
+	# would report "edited since publishing" the instant the publish returned. A snapshot that says
+	# the shape is stale the moment it is taken tells a builder nothing about the one case it exists
+	# for. The mutation is the honest one: this IS the act of publishing, and after it the document
+	# and the product agree about the mass because they are the same propeller.
+	document.published_mass_g = mass_g
+	var published := document.to_dictionary()
 
 	var record := make_record(document.name, mass_g,
 		document.diameter_mm / PropellerDocument.INCH_TO_MM,

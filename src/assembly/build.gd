@@ -311,6 +311,13 @@ var components: Dictionary = {}
 var guard: Dictionary = {}
 var catalog: PartsCatalog
 
+## THE IDS THIS BUILD IS AN AIRCRAFT MADE OF, kept beside the resolved dictionaries so the build can
+## be re-resolved when the catalog under it moves — see `refit_from`, which is §4 of
+## plans/2026-09-01-authored-blade-design.md. Written once by `from_ids` and never edited: a Build
+## assembled field by field, which several fixtures still do, carries an empty table here and
+## therefore has nothing to refit from, which is honest rather than wrong.
+var _part_ids: Dictionary = {}
+
 ## THE AIR THIS BUILD IS FLOWN IN, and the line that makes a Build an aircraft AT A PLACE rather
 ## than an aircraft.
 ##
@@ -413,15 +420,54 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 	# process the SAME AirDensity instance, and one caller mutating its elevation would move the
 	# oracle. The null is the language's shape, not an admission that air is optional.
 	b.air = p_air if p_air != null else AirDensity.standard()
-	b.catalog = p_catalog
-	b.frame = p_catalog.get_part(frame_id)
-	b.motor = p_catalog.get_part(motor_id)
-	b.propeller = p_catalog.get_part(prop_id)
-	b.battery = p_catalog.get_part(battery_id)
-	b.esc = p_catalog.get_part(esc_id)
-	b.fc = p_catalog.get_part(fc_id)
+	b._part_ids = {
+		"frame": frame_id,
+		"motor": motor_id,
+		"propeller": prop_id,
+		"battery": battery_id,
+		"esc": esc_id,
+		"fc": fc_id,
+		"guard": guard_id,
+	}
 	for category in OPTIONAL_COMPONENTS:
-		var part_id := String(component_ids.get(category, DEFAULT_COMPONENT_IDS[category]))
+		b._part_ids[category] = String(component_ids.get(category, DEFAULT_COMPONENT_IDS[category]))
+	b.refit_from(p_catalog)
+	return b
+
+
+## Re-resolves every part from `p_catalog` by the id it was fitted under, and recomputes.
+##
+## THE RULE (plans/2026-09-01-authored-blade-design.md §4): a Build is rebuilt from its parts when
+## the parts store changes. Publishing an edited blade re-writes a record a build may already be
+## flying, and P10b's finding applies unchanged — `_forward_ratios` caches the ratio surface, and a
+## build holding one solved from the old planform keeps flying the old planform. The stale set is
+## larger than the surface: `_static_closure_factor` read the old tip chord, `k_t` was scaled
+## against the old blade, and the spin-up τ was fitted to the old blade's inertia. Every one of
+## them is derived in `_recompute`, so re-resolving the dictionaries and recomputing clears all
+## four at once rather than clearing four handles by name and forgetting the fifth.
+##
+## IN PLACE rather than returning a twin, and that is the load-bearing half. A caller that rebuilt
+## a fresh Build would trivially get a fresh `_forward_ratios` object whether or not the planform
+## under it had moved — which is exactly why §4's assertion is a PAIR, and why the object-identity
+## half of it only means something against a build that was asked to refit itself.
+##
+## `from_ids` is this function's first caller, so there is one resolution path rather than two: the
+## constructor records the ids and then refits, and a category added to one is added to both by
+## construction.
+func refit_from(p_catalog: PartsCatalog) -> void:
+	catalog = p_catalog
+	frame = p_catalog.get_part(String(_part_ids.get("frame", "")))
+	motor = p_catalog.get_part(String(_part_ids.get("motor", "")))
+	propeller = p_catalog.get_part(String(_part_ids.get("propeller", "")))
+	battery = p_catalog.get_part(String(_part_ids.get("battery", "")))
+	esc = p_catalog.get_part(String(_part_ids.get("esc", "")))
+	fc = p_catalog.get_part(String(_part_ids.get("fc", "")))
+	# Rebuilt rather than patched, so a component whose id no longer resolves is UNFITTED after a
+	# refit instead of left behind as the part it used to be. A builder who deletes a custom camera
+	# and finds the aircraft still 8 g heavier would be reading a part that is gone.
+	components = {}
+	for category in OPTIONAL_COMPONENTS:
+		var part_id := String(_part_ids.get(category, DEFAULT_COMPONENT_IDS[category]))
 		if part_id == "":
 			continue
 		var part: Dictionary = p_catalog.get_part(part_id)
@@ -430,16 +476,17 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 		# would have given and is at least visible in the details panel as a missing component.
 		if part.is_empty():
 			continue
-		b.components[category] = part
+		components[category] = part
 	# The guard, one for the whole build. Same treatment as an optional component: an id that
 	# resolves to nothing leaves the guard slot empty rather than filled with a massless ghost,
 	# which is what keeps the reference build's 496 g oracle bit-identical at guard_id = "".
-	if guard_id != "":
-		var guard_part: Dictionary = p_catalog.get_part(guard_id)
+	guard = {}
+	var fitted_guard_id := String(_part_ids.get("guard", ""))
+	if fitted_guard_id != "":
+		var guard_part: Dictionary = p_catalog.get_part(fitted_guard_id)
 		if not guard_part.is_empty():
-			b.guard = guard_part
-	b._recompute()
-	return b
+			guard = guard_part
+	_recompute()
 
 ## The same aircraft, at a different field.
 ##
