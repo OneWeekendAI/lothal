@@ -327,12 +327,17 @@ func mount_hz() -> float:
 ## above sqrt(2) does it start to isolate. That is real, it is the reason soft mounts are chosen
 ## for a frequency rather than for softness, and it is a thing a builder can now discover by
 ## fitting a pad and watching the wrong harmonic get worse.
-func mount_transmissibility(hz: float) -> float:
+##
+## `zeta` is NAN by default, which means "the ratio this mount's spec carries". Pass a number to
+## read the same curve at a STATED damping ratio — the parameter exists so that reading the curve
+## at another zeta needs no write. See `mount_transmissibility_at`.
+func mount_transmissibility(hz: float, zeta: float = NAN) -> float:
 	var f_n := mount_hz()
 	if is_inf(f_n):
 		return 1.0
 	var r := hz / f_n
-	var zeta := SoftMount.damping_ratio_for(soft_mount_spec)
+	if is_nan(zeta):
+		zeta = SoftMount.damping_ratio_for(soft_mount_spec)
 	var damped := 2.0 * zeta * r
 	var real := 1.0 - r * r
 	return sqrt((1.0 + damped * damped) / (real * real + damped * damped))
@@ -340,18 +345,18 @@ func mount_transmissibility(hz: float) -> float:
 
 ## The same curve, read at a STATED damping ratio rather than at the spec's.
 ##
-## An EXTRACTION, not a second formula: it sets the one field `mount_transmissibility` reads zeta
-## out of and asks the same function, so there is exactly one transmissibility in this codebase.
-## P10e's vibration overlay uses it to draw the hump as a band across the published damping range
-## — soft_mount.gd's `DAMPING_RATIO_LOW`/`HIGH` — because the height of that hump is a guess and
-## the overlay has to say so with more than a caption.
+## An EXTRACTION, not a second formula: it threads a zeta into the same function, so there is
+## exactly one transmissibility in this codebase. P10e's vibration overlay uses it to draw the hump
+## as a band across the published damping range — soft_mount.gd's `DAMPING_RATIO_LOW`/`HIGH` —
+## because the height of that hump is a guess and the overlay has to say so with more than a
+## caption.
+##
+## It is a READ, and it stays one. An earlier version set `soft_mount_spec`, called the formula and
+## restored the field; a caller holding the sim's live model — or any re-entrancy — would have read
+## the band's zeta out of an object that is supposed to describe the fitted pad. A query that writes
+## is a torn read waiting to be found, so the ratio travels as an argument instead.
 func mount_transmissibility_at(hz: float, zeta: float) -> float:
-	var saved := soft_mount_spec
-	soft_mount_spec = soft_mount_spec.duplicate()
-	soft_mount_spec["damping_ratio"] = zeta
-	var value := mount_transmissibility(hz)
-	soft_mount_spec = saved
-	return value
+	return mount_transmissibility(hz, zeta)
 
 
 ## WHY `mount_hz()` said what it said: "computed", "no_mount", or "insufficient_data:<reason>".

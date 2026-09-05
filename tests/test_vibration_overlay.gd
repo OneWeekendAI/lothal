@@ -25,6 +25,14 @@ extends RefCounted
 ## 5. **The vertical lines are this aircraft's, at the RPM it is turning.** Rated RPM is the wrong
 ##    operating point and the difference is a factor a builder cannot see from the picture.
 ##
+## 6. **A flat line gets no word that reads as a result.** T = 1 is the disturbance passing through
+##    unchanged. Calling that "isolated" — which a two-way split at unity did — puts a finding on a
+##    bare frame's chart directly above the caption saying nothing is fitted.
+##
+## 7. **The frequency ruler is logarithmic.** The electrical line is near a kilohertz and the pad
+##    near 141 Hz; on a linear ruler the hump this overlay exists to show is a smudge on the left
+##    edge.
+##
 ## ## What is deliberately NOT checked here
 ##
 ## Anything needing the shell in a tree — `tests/run_tests.gd` processes no frames. So the mapping
@@ -48,6 +56,8 @@ static func run() -> Array:
 	results.append(_test_the_lines_are_this_aircraft_at_its_operating_rpm())
 	results.append(_test_the_curve_maps_onto_the_canvas())
 	results.append(_test_a_build_that_turns_nothing_is_refused())
+	results.append(_test_a_bare_frames_lines_are_not_called_isolated())
+	results.append(_test_the_frequency_axis_is_logarithmic())
 	return results
 
 
@@ -378,6 +388,123 @@ static func _test_a_build_that_turns_nothing_is_refused() -> TestResult:
 		stopped and turning and empty_ok and healthy_ok,
 		"stopped refused %s, turning allowed %s, no drone refused %s, reference build drawn %s"
 			% [str(stopped), str(turning), str(empty_ok), str(healthy_ok)])
+
+
+# ---------------------------------------------------------------------------
+# 8. A flat line is not a result
+# ---------------------------------------------------------------------------
+
+## On a bare frame and on a mount the model declined, NO excitation line is labelled "isolated".
+##
+## This is the third place in the app a flat curve nearly got a word attached that a builder reads
+## as a finding. Every sample on both no-pad curves is exactly 1.0 — T = 1 is the disturbance
+## passing through UNCHANGED, which is the definition of no isolation — and a two-way split at
+## `t > 1.0` sent all of them down the else branch, so the chart said "1x rotation: isolated"
+## directly above its own caption saying nothing is fitted.
+##
+## Both no-pad tiers are checked, because they share the curve and would share the defect. The
+## fitted build is checked too, so the fix cannot be "never say isolated": on a real pad the line
+## above the crossover still has to be named.
+##
+## MUTATION that turns this red: put `region_at` back to two ways —
+## `return "amplified" if t > 1.0 else "isolated"`. Observed: this check alone reddens.
+static func _test_a_bare_frames_lines_are_not_called_isolated() -> TestResult:
+	var bare := VibrationOverlay.new()
+	bare.adopt(ReferenceBuild.build())
+	var declined := VibrationOverlay.new()
+	declined.adopt(_build_with_unreadable_mount())
+
+	var bare_words: Array = []
+	var bare_ok := bare.excitations.size() == 3
+	for order_name in bare.excitations:
+		var word := bare.region_at_hz(float(bare.excitations[order_name]))
+		bare_words.append(word)
+		bare_ok = bare_ok and word != "isolated" and word != "amplified" and word != ""
+	var declined_ok := declined.excitations.size() == 3
+	for order_name in declined.excitations:
+		declined_ok = declined_ok \
+			and declined.region_at_hz(float(declined.excitations[order_name])) != "isolated"
+
+	# And unity itself, at the boundary, from the pure function.
+	var unity_named: bool = VibrationOverlay.region_at(1.0) != "isolated" \
+		and VibrationOverlay.region_at(1.0) != "amplified"
+
+	# A real pad still isolates above its crossover, so the fix is not "stop saying isolated".
+	var fitted := VibrationOverlay.new()
+	fitted.adopt(_build_with_mount(FITTED_MOUNT_M))
+	var still_isolates: bool = fitted.region_at_hz(fitted.mount_f_n_hz * 4.0) == "isolated" \
+		and fitted.region_at_hz(fitted.mount_f_n_hz) == "amplified"
+	bare.free()
+	declined.free()
+	fitted.free()
+	return TestResult.new(
+		"a bare frame's excitation lines are not labelled isolated — T = 1 is unchanged, not isolation",
+		bare_ok and declined_ok and unity_named and still_isolates,
+		"bare lines %s (%s), declined pad's lines %s, region_at(1.0) = %s (%s), a fitted pad still isolates %s"
+			% [str(bare_words), str(bare_ok), str(declined_ok),
+				VibrationOverlay.region_at(1.0), str(unity_named), str(still_isolates)])
+
+
+# ---------------------------------------------------------------------------
+# 9. The frequency ruler
+# ---------------------------------------------------------------------------
+
+## The frequency axis is logarithmic, its decades are marked, and the samples are spaced to match.
+##
+## Three clauses, and each rejects a different way of half-doing this. The GEOMETRIC MEAN clause is
+## the definition: on a log axis the geometric mean of the axis ends lands on the horizontal centre,
+## and it names the linear answer and rejects it by pixels so an axis that merely got rescaled fails.
+## The DECADE clause is what makes the ruler readable — an unmarked log axis is a linear axis to
+## whoever reads it. The SAMPLING clause is separate because a log axis drawn from linearly spaced
+## samples looks right and resolves the hump with a handful of points: consecutive samples must have
+## a constant RATIO, not a constant difference.
+##
+## MUTATION that turns this red: put `to_pixels`'s x back to `clampf(hz / top, 0.0, 1.0)` (with
+## `bottom` deleted — leaving it declared is an unused-variable warning, and warnings are errors, so
+## that version does not build and proves nothing). Observed: the geometric-mean clause reddens
+## here, and check 6 reddens too, on its `spans` clause — with the samples still geometric the first
+## one no longer lands on the left edge of a linear ruler. Neither clause of check 6 would have
+## caught a linear axis on its own, which is why this check exists.
+static func _test_the_frequency_axis_is_logarithmic() -> TestResult:
+	var overlay := VibrationOverlay.new()
+	overlay.adopt(_build_with_mount(FITTED_MOUNT_M))
+	overlay.size = Vector2(360, 210)
+	var inner_left := VibrationOverlay.MARGIN_PX
+	var inner_width: float = 360.0 - VibrationOverlay.MARGIN_PX * 2.0
+	var bottom := overlay.bottom_hz()
+	var top := overlay.top_hz()
+
+	var spans_decades: bool = bottom > 0.0 and top / bottom > 10.0
+	var mid_hz := sqrt(bottom * top)
+	var mid_x := overlay.to_pixels(mid_hz, 1.0).x
+	var centre := inner_left + inner_width * 0.5
+	var log_mapped: bool = absf(mid_x - centre) < 0.5
+	# The same frequency on a linear ruler, named and rejected: it is far left of centre.
+	var linear_x := inner_left + inner_width * (mid_hz / top)
+	var not_linear: bool = absf(linear_x - centre) > 10.0
+
+	var decades := overlay.decade_gridlines()
+	var decades_ok := decades.size() >= 2
+	for hz in decades:
+		var gx := overlay.to_pixels(hz, 1.0).x
+		decades_ok = decades_ok and hz >= bottom and hz <= top \
+			and gx > inner_left - 1e-9 and gx < inner_left + inner_width + 1e-9
+
+	# Sampled in log space: a constant ratio between neighbours, not a constant gap.
+	var ratio_ok: bool = overlay.freq_hz.size() > 3 and overlay.freq_hz[0] > 0.0
+	var first_ratio: float = overlay.freq_hz[1] / overlay.freq_hz[0] if ratio_ok else 0.0
+	for i in range(1, overlay.freq_hz.size()):
+		ratio_ok = ratio_ok \
+			and absf(overlay.freq_hz[i] / overlay.freq_hz[i - 1] - first_ratio) < 1e-9
+	overlay.free()
+	return TestResult.new(
+		"the frequency axis is logarithmic, its decades are marked, and the samples match it",
+		spans_decades and log_mapped and not_linear and decades_ok and ratio_ok,
+		"%.1f-%.0f Hz over %.1f decades (%s), geometric mean %.1f Hz at %.1f px vs centre %.1f "
+			% [bottom, top, log(top / bottom) / log(10.0), str(spans_decades), mid_hz, mid_x, centre]
+			+ "(log %s, linear would be %.1f px %s), %d decade lines %s, constant sample ratio %s"
+				% [str(log_mapped), linear_x, str(not_linear), decades.size(), str(decades_ok),
+					str(ratio_ok)])
 
 
 # ---------------------------------------------------------------------------

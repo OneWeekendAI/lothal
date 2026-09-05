@@ -10,6 +10,12 @@ extends Control
 ## one shaded as isolation, and this aircraft's three excitation frequencies — 1x, blade passing,
 ## motor electrical — dropped on as vertical lines at the RPM it is actually turning.
 ##
+## The frequency axis is LOGARITHMIC, with decade gridlines. On this aircraft the motor's electrical
+## excitation at hover is near a kilohertz and the pad sits near 141 Hz, so a linear ruler spends
+## six sevenths of its width on a flat tail and squashes the hump — the reason §3.2 gives for this
+## overlay existing — against the left edge. Transmissibility itself stays linear: it is a ratio
+## read against T = 1, and a log Y would put that line wherever zero happens to fall.
+##
 ## A transmissibility curve on its own is a property of a grommet, and a textbook has printed it.
 ## The same curve with THIS build's blade-passing line on it answers the question a builder has:
 ## is my prop exciting the band where this pad makes things worse? Nothing in Lothal has ever put
@@ -67,7 +73,8 @@ const PLATE_ALPHA := 0.86
 ## MARGIN_PX — it changes how smooth the picture is and nothing about what it says.
 const SAMPLE_COUNT := 160
 
-## How far past the pad's own frequency the axis runs, as a multiple of it. A ZOOM LEVEL, not a
+## How far past the pad's own frequency the axis runs — and, on the other end, how far below the
+## lowest feature it starts (`bottom_hz`), because a log axis has no zero. A ZOOM LEVEL, not a
 ## physical claim: the interesting structure is the hump and the crossover just above it, and an
 ## axis that stopped at f_n would cut the isolation region — the half of the picture that makes
 ## the other half worth looking at — off the right-hand edge. The axis still stretches past this
@@ -154,10 +161,13 @@ func adopt(build: Build) -> void:
 	operating_rpm = build.operating_rpm()
 	hovers = build.can_hover()
 
+	# Hoisted: `excitation_orders()` ASSEMBLES a dictionary, it does not hold one, so reading it
+	# once per key and again per value builds the same fan twice a loop.
+	var orders := build.excitation_orders()
 	excitations = {}
-	for order_name in build.excitation_orders():
+	for order_name in orders:
 		excitations[order_name] = CampbellOverlay.excitation_hz(
-			float(build.excitation_orders()[order_name]), operating_rpm)
+			float(orders[order_name]), operating_rpm)
 
 	refusal = refusal_for(operating_rpm)
 	_sample(model)
@@ -193,16 +203,37 @@ static func caption_for_tier(p_tier: String, f_n: float) -> String:
 	return "Soft mount, natural frequency %.0f Hz — derived from grommet specs, never measured." % f_n
 
 
-## Whether a transmissibility value is amplification or isolation, from the VALUE rather than from
-## the frequency.
+## Whether a transmissibility value is amplification, isolation, or neither, from the VALUE rather
+## than from the frequency.
 ##
 ## Written this way on purpose. The textbook statement of the rule is "below sqrt(2)·f_n a pad
 ## amplifies", and writing that here would put a second copy of the isolator's crossover in a file
 ## that has no business owning one — right up until someone changes the damping term and the
 ## shading and the curve disagree. Asking whether the sample the model returned is above unity
 ## cannot disagree with the model, because it IS the model's answer.
+##
+## THREE-WAY, and that is the fix rather than a nicety. T = 1 is not isolation: both no-pad cases
+## are flat at exactly 1.0, so a two-way split labelled every excitation line on a bare frame
+## "isolated" — a word a builder reads as a result, on a chart whose own caption two lines below
+## says nothing is fitted. Unchanged is its own answer and it is the honest one.
 static func region_at(t: float) -> String:
-	return "amplified" if t > 1.0 else "isolated"
+	if t > 1.0:
+		return "amplified"
+	if t < 1.0:
+		return "isolated"
+	return "passed through unchanged"
+
+
+## The region an excitation frequency lands in, read off the SAMPLED curve the way `_draw` reads it
+## — public so the words on the lines are provable headless, which is the only way this file is
+## tested.
+func region_at_hz(hz: float) -> String:
+	var t := 1.0
+	for i in freq_hz.size():
+		if freq_hz[i] >= hz:
+			t = transmissibility[i]
+			break
+	return region_at(t)
 
 
 ## The top of the frequency axis. Fitted to the picture's own content: far enough past the pad to
@@ -217,6 +248,49 @@ func top_hz() -> float:
 	return top
 
 
+## The bottom of the frequency axis, and the reason it exists at all: THE AXIS IS LOGARITHMIC, and
+## a log axis has no zero to start at.
+##
+## It is logarithmic because of what this build actually looks like. The motor's electrical
+## excitation at hover is near a kilohertz and the pad's own frequency is near 141 Hz, so on a
+## linear ruler the amplification hump — the single feature §3.2 gives as the reason this overlay
+## exists — is squashed into the left seventh of the plot and the crossover with it. A decade ruler
+## gives the hump and the kilohertz line comparable room, which is what a builder is comparing.
+##
+## Symmetric with `top_hz`: the same zoom multiple, below the lowest feature instead of above the
+## highest.
+func bottom_hz() -> float:
+	var low := INF
+	for order_name in excitations:
+		var hz := float(excitations[order_name])
+		if hz > 0.0:
+			low = minf(low, hz)
+	if is_finite(mount_f_n_hz) and mount_f_n_hz > 0.0:
+		low = minf(low, mount_f_n_hz)
+	if not is_finite(low) or low <= 0.0:
+		return 0.0
+	return low / AXIS_SPAN_MULTIPLE
+
+
+## The powers of ten inside the axis — the gridlines a log ruler is read against. Without them a
+## reader has no way to tell a log axis from a linear one, and a mis-read decade is a factor of ten
+## in the wrong direction.
+func decade_gridlines() -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	var bottom := bottom_hz()
+	var top := top_hz()
+	if bottom <= 0.0 or top <= bottom:
+		return out
+	var exponent := int(ceil(log(bottom) / log(10.0)))
+	while true:
+		var hz: float = pow(10.0, float(exponent))
+		if hz > top:
+			break
+		out.append(hz)
+		exponent += 1
+	return out
+
+
 ## The top of the transmissibility axis: the tallest point of the widest curve, and never below 1,
 ## so the unity line a whole half of this chart is defined against is always on the canvas.
 func peak_t() -> float:
@@ -228,11 +302,16 @@ func peak_t() -> float:
 	return peak * AXIS_HEADROOM
 
 
-## (hz, T) to a pixel on this canvas.
+## (hz, T) to a pixel on this canvas. X is LOGARITHMIC (see `bottom_hz`); Y is not — transmissibility
+## is a ratio around unity and the whole chart is read against the T = 1 line, which a log Y would
+## put at the arbitrary place zero goes.
 func to_pixels(hz: float, t: float) -> Vector2:
 	var inner := _inner_rect()
 	var top := top_hz()
-	var x_frac := 0.0 if top <= 0.0 else clampf(hz / top, 0.0, 1.0)
+	var bottom := bottom_hz()
+	var x_frac := 0.0
+	if top > bottom and bottom > 0.0 and hz > 0.0:
+		x_frac = clampf(log(hz / bottom) / log(top / bottom), 0.0, 1.0)
 	var y_frac := clampf(t / peak_t(), 0.0, 1.0)
 	return Vector2(
 		inner.position.x + x_frac * inner.size.x,
@@ -257,10 +336,15 @@ func _sample(model: VibrationModel) -> void:
 	t_low_damping = PackedFloat64Array()
 	t_high_damping = PackedFloat64Array()
 	var top := top_hz()
-	if top <= 0.0:
+	var bottom := bottom_hz()
+	if top <= 0.0 or bottom <= 0.0 or top <= bottom:
 		return
+	# Sampled evenly in LOG space, to match the axis. Even spacing in linear hertz would put most
+	# of the samples in the top decade, where the curve is a straight line, and leave the hump —
+	# the narrowest and only interesting feature — resolved by a handful of them.
+	var ratio := top / bottom
 	for i in SAMPLE_COUNT + 1:
-		var hz := top * float(i) / float(SAMPLE_COUNT)
+		var hz: float = bottom * pow(ratio, float(i) / float(SAMPLE_COUNT))
 		freq_hz.append(hz)
 		transmissibility.append(model.mount_transmissibility(hz))
 		t_low_damping.append(
@@ -293,6 +377,14 @@ func _draw() -> void:
 	var axis := Color(0.45, 0.5, 0.58, 0.7)
 	draw_line(inner.position + Vector2(0.0, inner.size.y), inner.position + inner.size, axis, 1.0)
 	draw_line(inner.position, inner.position + Vector2(0.0, inner.size.y), axis, 1.0)
+
+	# The decades. A log ruler that is not marked as one is a linear ruler to whoever reads it.
+	for hz in decade_gridlines():
+		var gx := to_pixels(hz, 0.0).x
+		draw_line(Vector2(gx, inner.position.y), Vector2(gx, inner.position.y + inner.size.y),
+			Color(0.45, 0.5, 0.58, 0.22), 1.0)
+		draw_string(font, Vector2(gx + 2.0, inner.position.y + inner.size.y + 11.0),
+			"%.0f" % hz, HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(0.5, 0.55, 0.62))
 
 	# Unity first, under everything: it is the line the two regions are defined against, and the
 	# whole point of the picture is which side of it a builder's harmonics land on.
@@ -342,19 +434,14 @@ func _draw() -> void:
 	var index := 0
 	for order_name in excitations:
 		var hz := float(excitations[order_name])
-		if hz > 0.0 and hz <= top_hz():
+		if hz >= bottom_hz() and hz <= top_hz():
 			var at := to_pixels(hz, 0.0)
 			draw_line(Vector2(at.x, inner.position.y),
 				Vector2(at.x, inner.position.y + inner.size.y),
 				hues[index % hues.size()], 1.0)
-			var t_here := 1.0
-			for i in freq_hz.size():
-				if freq_hz[i] >= hz:
-					t_here = transmissibility[i]
-					break
-			draw_string(font, Vector2(minf(at.x + 3.0, size.x - 96.0),
+			draw_string(font, Vector2(minf(at.x + 3.0, size.x - 116.0),
 				inner.position.y + 12.0 + 11.0 * index),
-				"%s: %s" % [str(order_name), region_at(t_here)],
+				"%s: %s" % [str(order_name), region_at_hz(hz)],
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 10, hues[index % hues.size()])
 		index += 1
 
@@ -364,7 +451,7 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.85, 0.7, 0.45)
 			if tier.begins_with("insufficient_data:") else Color(0.68, 0.72, 0.8))
 	draw_string(font, Vector2(MARGIN_PX * 0.4, size.y - 6.0),
-		"0-%.0f Hz at %.0f rpm (%s)  ·  band = damping zeta %.2f-%.2f, a guess, not a spec"
-			% [top_hz(), operating_rpm, "hover" if hovers else "flat out",
+		"%.0f-%.0f Hz, log scale, at %.0f rpm (%s)  ·  band = damping zeta %.2f-%.2f, a guess, not a spec"
+			% [bottom_hz(), top_hz(), operating_rpm, "hover" if hovers else "flat out",
 				SoftMount.DAMPING_RATIO_LOW, SoftMount.DAMPING_RATIO_HIGH],
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.68, 0.72, 0.8))

@@ -171,6 +171,43 @@ static func run() -> Array:
 		"zeta = 0 spec: T(f_n) = %.3f (finite, and the amplification peak is still there)"
 			% t_at_resonance))
 
+	# `mount_transmissibility_at` is a QUERY, and reading a curve at another damping ratio must not
+	# write to the model it is read from. An earlier version set `soft_mount_spec`, called the
+	# formula and restored the field — which is a torn read for anyone holding the sim's live model
+	# and for any re-entrancy, and the failure is silent: the caller's next transmissibility comes
+	# back at a zeta nobody chose. Both halves are checked — the spec Dictionary is unchanged
+	# (identity AND content, since a duplicate-and-restore leaves the content right), and the
+	# nominal curve reads the same before and after.
+	#
+	# Stated honestly: the exact prior implementation — duplicate, set, call, RESTORE the original
+	# reference — is invisible to any check that looks only after the call returns, which is why it
+	# survived review. What a check can hold is the property the parameter makes structural: the
+	# model's spec is the same object with the same content afterwards, and the nominal curve is
+	# unmoved. Every write-based version that forgets to restore, restores the wrong object, or
+	# restores a duplicate is caught by that, and the version that restores perfectly is caught by
+	# nothing here — it is caught by the signature no longer having a field to write.
+	#
+	# MUTATION that turns this red: `mount_transmissibility_at` writes the zeta into
+	# `soft_mount_spec` and does NOT put it back — the one-line slip the restore existed to prevent.
+	var queried := VibrationModel.new(0.110)
+	queried.tip_load_kg = _REFERENCE_TIP_MASS_KG
+	queried.soft_mount_m = 0.002
+	var spec_before: Dictionary = queried.soft_mount_spec
+	var t_before := queried.mount_transmissibility(queried.mount_hz())
+	var t_band := queried.mount_transmissibility_at(
+		queried.mount_hz(), SoftMount.DAMPING_RATIO_LOW)
+	var t_after := queried.mount_transmissibility(queried.mount_hz())
+	results.append(TestResult.new(
+		"reading the curve at a stated damping ratio does not write to the model it is read from",
+		is_same(queried.soft_mount_spec, spec_before)
+			and queried.soft_mount_spec == spec_before
+			and t_after == t_before and t_band != t_before
+			and SoftMount.damping_ratio_for(queried.soft_mount_spec)
+				== SoftMount.damping_ratio_for(spec_before),
+		"T(f_n) = %.4f before, %.4f after a read at zeta %.2f (which gave %.4f); spec object unmoved %s"
+			% [t_before, t_after, SoftMount.DAMPING_RATIO_LOW, t_band,
+				str(is_same(queried.soft_mount_spec, spec_before))]))
+
 	# An unreadable grommet spec models as NO mount rather than as a class-typical one — the
 	# refusing answer. A fallback to the defaults here would attribute isolation to a pad whose
 	# specs the model just declined to read.
