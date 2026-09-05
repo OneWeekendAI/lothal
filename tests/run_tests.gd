@@ -18,7 +18,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs",
-	"propeller document", "blade geometry", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay"]
+	"propeller document", "blade geometry", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay"]
 
 func _init() -> void:
 	var total := 0
@@ -56,6 +56,7 @@ func _run_suite(suite_name: String) -> Array:
 		"authored blade": return TestAuthoredBlade.run()
 		"thrust overlay": return TestThrustOverlay.run()
 		"campbell overlay": return TestCampbellOverlay.run()
+		"vibration overlay": return TestVibrationOverlay.run()
 		"propeller document": return TestPropellerDocument.run()
 		"blade geometry": return TestBladeGeometry.run()
 		"bemt": return TestBemt.run()

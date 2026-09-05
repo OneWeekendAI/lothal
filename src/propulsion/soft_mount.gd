@@ -73,11 +73,24 @@ const _DEFAULT_SHORE_A := 60.0
 const _DEFAULT_CONTACT_AREA_M2 := 4.0e-6      # 4 mm², one compressed 6 mm-OD grommet
 const _DEFAULT_GROMMETS_PER_MOTOR := 4
 const _DEFAULT_DENSITY_KG_M3 := 1200.0        # silicone rubber, class-typical
-## Damping ratio for silicone/rubber isolators. Vibration textbook range is 0.05 to 0.15;
-## 0.10 is the middle. Kept as the guess it always was — this file replaces the stiffness
-## anchor, not the damping one, and pretending the damping is now sourced would be a lie
-## with a number on it.
+## Damping ratio for silicone/rubber isolators. The middle of the textbook range below. Kept as
+## the guess it always was — this file replaces the stiffness anchor, not the damping one, and
+## pretending the damping is now sourced would be a lie with a number on it.
 const DEFAULT_DAMPING_RATIO := 0.10
+
+## THE ENDS OF THAT RANGE, and they are an EXTRACTION rather than two new numbers: "vibration
+## textbook range is 0.05 to 0.15" is what the comment above this pair has said since P8, and
+## DEFAULT_DAMPING_RATIO has always been "the middle" of it. Naming the ends gives the sentence
+## one home instead of leaving it as prose a reader has to trust.
+##
+## They exist because P10e's vibration overlay draws the transmissibility hump, whose HEIGHT is
+## set entirely by this guess — the least trustworthy feature of the most eye-catching part of
+## the curve. Drawing it at DEFAULT_DAMPING_RATIO alone would claim a peak height nothing
+## supports; drawing the band between these two says how much of the picture is the guess.
+## Widening them to a guess about a guess is the failure that would be, so they are the published
+## range and nothing wider.
+const DAMPING_RATIO_LOW := 0.05
+const DAMPING_RATIO_HIGH := 0.15
 
 
 ## Gent's Shore A → Young's modulus correlation, in MPa. Exact form of §5.2. Elementary and

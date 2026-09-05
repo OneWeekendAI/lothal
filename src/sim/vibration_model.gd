@@ -338,6 +338,33 @@ func mount_transmissibility(hz: float) -> float:
 	return sqrt((1.0 + damped * damped) / (real * real + damped * damped))
 
 
+## The same curve, read at a STATED damping ratio rather than at the spec's.
+##
+## An EXTRACTION, not a second formula: it sets the one field `mount_transmissibility` reads zeta
+## out of and asks the same function, so there is exactly one transmissibility in this codebase.
+## P10e's vibration overlay uses it to draw the hump as a band across the published damping range
+## — soft_mount.gd's `DAMPING_RATIO_LOW`/`HIGH` — because the height of that hump is a guess and
+## the overlay has to say so with more than a caption.
+func mount_transmissibility_at(hz: float, zeta: float) -> float:
+	var saved := soft_mount_spec
+	soft_mount_spec = soft_mount_spec.duplicate()
+	soft_mount_spec["damping_ratio"] = zeta
+	var value := mount_transmissibility(hz)
+	soft_mount_spec = saved
+	return value
+
+
+## WHY `mount_hz()` said what it said: "computed", "no_mount", or "insufficient_data:<reason>".
+##
+## An EXTRACTION of the argument list `mount_hz()` already assembles, named because a reader of
+## the vibration path needs the tier and must not rebuild the three arguments itself — a caller
+## passing a different tip mass would get a tier describing a mount that is not the one fitted.
+## `SoftMount.f_n_hz` returns INF for a mount that is absent AND for one whose spec it declined
+## to read, and this is the only thing that tells those two apart.
+func mount_tier() -> String:
+	return String(SoftMount.compute(soft_mount_m, tip_load_kg, soft_mount_spec)["tier"])
+
+
 ## Adopts the powertrain's current motor speeds. Called by DroneCore every step: the four rpms are
 ## the model's only input, and the fact that they differ under manoeuvre is what makes the output a
 ## beating signal rather than a single sine.

@@ -291,6 +291,10 @@ var _thrust_overlay: ThrustOverlay
 ## feature, not a slot for one chart. A per-overlay button would have made the corner a menu, which
 ## is the thing that corner was drawn early to avoid.
 var _campbell_overlay: CampbellOverlay
+
+## P10e's third, beside the other two on the same button. Same argument as the second: the corner
+## carries FEATURES, and "Overlays" is the analysis feature.
+var _vibration_overlay: VibrationOverlay
 var _overlays_button: Button
 
 
@@ -665,6 +669,19 @@ func _build_thrust_overlay() -> void:
 	_campbell_overlay.visible = false
 	add_child(_campbell_overlay)
 
+	# Third along the same baseline: what the blade excites (Campbell) and what the pad does with
+	# it (this) are the two halves of one sentence, and they are read left to right.
+	_vibration_overlay = VibrationOverlay.new()
+	_vibration_overlay.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_vibration_overlay.anchor_top = 1.0
+	_vibration_overlay.anchor_bottom = 1.0
+	_vibration_overlay.offset_left = RAIL_WIDTH + CLUSTER_MARGIN * 4.0 + 720.0
+	_vibration_overlay.offset_right = RAIL_WIDTH + CLUSTER_MARGIN * 4.0 + 1080.0
+	_vibration_overlay.offset_top = -(BOTTOM_KEEPOUT + 210.0)
+	_vibration_overlay.offset_bottom = -BOTTOM_KEEPOUT
+	_vibration_overlay.visible = false
+	add_child(_vibration_overlay)
+
 
 ## Shows or hides the overlay, refilling it from the CURRENT build on the way up.
 ##
@@ -697,6 +714,8 @@ func _sync_thrust_overlay(allowed: bool) -> void:
 	_thrust_overlay.visible = want
 	if _campbell_overlay != null:
 		_campbell_overlay.visible = want
+	if _vibration_overlay != null:
+		_vibration_overlay.visible = want
 
 
 func _refill_thrust_overlay() -> void:
@@ -709,6 +728,8 @@ func _refill_thrust_overlay() -> void:
 	_thrust_overlay.adopt(build)
 	if _campbell_overlay != null:
 		_campbell_overlay.adopt(build)
+	if _vibration_overlay != null:
+		_vibration_overlay.adopt(build)
 
 
 func _on_design_blade_requested(prop: Dictionary) -> void:
@@ -908,8 +929,8 @@ func _build_bottom_left_cluster() -> void:
 		if tool_name == "Overlays":
 			button.disabled = false
 			button.toggle_mode = true
-			button.tooltip_text = ("Thrust along the blade — where the propeller you fitted "
-				+ "actually makes its lift.")
+			button.tooltip_text = ("Analysis charts over the Lab: thrust along the blade, "
+				+ "what this airframe rings at, and what the soft mount lets through.")
 			button.toggled.connect(set_thrust_overlay_visible)
 			_overlays_button = button
 
