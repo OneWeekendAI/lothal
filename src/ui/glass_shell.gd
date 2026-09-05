@@ -285,6 +285,12 @@ var _blade_room_close: Button
 ## without synthesising a click on a button whose position is a layout decision — the same posture
 ## `set_blade_room_open` takes.
 var _thrust_overlay: ThrustOverlay
+
+## P10e's second overlay, beside the first rather than behind a second button. The four bottom-left
+## buttons are four FEATURES — overlays, explode, x-ray, measure — and "Overlays" is the analysis
+## feature, not a slot for one chart. A per-overlay button would have made the corner a menu, which
+## is the thing that corner was drawn early to avoid.
+var _campbell_overlay: CampbellOverlay
 var _overlays_button: Button
 
 
@@ -645,6 +651,20 @@ func _build_thrust_overlay() -> void:
 	_thrust_overlay.visible = false
 	add_child(_thrust_overlay)
 
+	# To the right of the first, on the same baseline: the two are read together — where the load
+	# sits on the blade, and what that blade excites — and stacking one over the other would have
+	# put the second one in the rail's column.
+	_campbell_overlay = CampbellOverlay.new()
+	_campbell_overlay.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_campbell_overlay.anchor_top = 1.0
+	_campbell_overlay.anchor_bottom = 1.0
+	_campbell_overlay.offset_left = RAIL_WIDTH + CLUSTER_MARGIN * 3.0 + 360.0
+	_campbell_overlay.offset_right = RAIL_WIDTH + CLUSTER_MARGIN * 3.0 + 720.0
+	_campbell_overlay.offset_top = -(BOTTOM_KEEPOUT + 210.0)
+	_campbell_overlay.offset_bottom = -BOTTOM_KEEPOUT
+	_campbell_overlay.visible = false
+	add_child(_campbell_overlay)
+
 
 ## Shows or hides the overlay, refilling it from the CURRENT build on the way up.
 ##
@@ -675,6 +695,8 @@ func _sync_thrust_overlay(allowed: bool) -> void:
 	if want:
 		_refill_thrust_overlay()
 	_thrust_overlay.visible = want
+	if _campbell_overlay != null:
+		_campbell_overlay.visible = want
 
 
 func _refill_thrust_overlay() -> void:
@@ -683,7 +705,10 @@ func _refill_thrust_overlay() -> void:
 	# `container == null` is the empty state — no drone, so no propeller, so no distribution. The
 	# overlay says so in words rather than drawing a flat line, which would be a claim about a
 	# blade that is not fitted.
-	_thrust_overlay.adopt(null if container == null or lab == null else lab.current_build())
+	var build: Build = null if container == null or lab == null else lab.current_build()
+	_thrust_overlay.adopt(build)
+	if _campbell_overlay != null:
+		_campbell_overlay.adopt(build)
 
 
 func _on_design_blade_requested(prop: Dictionary) -> void:

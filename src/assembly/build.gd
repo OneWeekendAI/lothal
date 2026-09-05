@@ -1105,6 +1105,42 @@ func thrust_distribution() -> PackedFloat64Array:
 		operating_rpm(), blade_chord(), guard_closure)
 
 
+## The per-rev orders the airframe is excited at, name → multiples of one revolution.
+##
+## Three, and they are three different physical mechanisms rather than three harmonics of one:
+## an out-of-balance blade forces once per revolution, the blades force once each per revolution,
+## and the motor's electrical drive forces once per POLE PAIR per revolution. P10e's Campbell
+## overlay turns each into a line at `order · rpm / 60`.
+##
+## Assembled here rather than in the overlay for the reason `thrust_distribution` is: the
+## multipliers are properties of the aircraft, and an overlay that recomputed one of them from
+## `specs.poles` would be a second definition of a number that already has one — the P10d defect
+## in a new file. `pole_pairs()` is that one definition, halving included.
+##
+## BLADE PASSING IS `blades × rpm/60` ONLY FOR EVENLY SPACED BLADES. That is every propeller
+## Lothal can express today — blade count is a scalar on the record and the authored planform
+## carries one chord table for all blades. If a future slice ever lets a builder space blades
+## unequally, the forcing splits into a set of lines around this one and this method is where it
+## stops being true; nothing downstream would notice on its own.
+func excitation_orders() -> Dictionary:
+	return {
+		"1x rotation": 1.0,
+		"blade passing": float(prop_geometry().blades),
+		"motor electrical": pole_pairs(),
+	}
+
+
+## The highest RPM this aircraft can actually turn: full throttle as the weakest of the motor,
+## pack and ESC limits allows it, sag included.
+##
+## A composition of two methods that already exist, named because P10e's Campbell diagram has to
+## draw the difference between "an RPM on the axis" and "an RPM this build can reach". Marking a
+## resonance crossing the aircraft cannot get to is the overlay telling a builder to avoid a
+## throttle setting that does not exist.
+func reachable_rpm() -> float:
+	return rpm_at_throttle(max_throttle_fraction())
+
+
 ## FrameMaterials for the blade-density fallback in MotorSpinUp — used only when a
 ## propeller has no `published_mass_g` and the density-integral form has to be used instead.
 ## Loaded once and cached because there is exactly one materials table and this method may
