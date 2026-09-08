@@ -1,6 +1,6 @@
 class_name RoomMenu
 extends MenuButton
-## The way into every room that is not Lab or Sim and is not reached from an inspector — three
+## The way into every room that is not Lab or Sim and is not reached from an inspector — two
 ## benches, the field editor and Studio.
 ##
 ## ---------------------------------------------------------------------------
@@ -20,13 +20,18 @@ extends MenuButton
 ## capability, which is §4's whole method: port one system at a time, keep everything working,
 ## delete the tab bar last.
 ##
-## ## THE THRUST STAND HAS LEFT THIS LIST (P10f)
+## ## THE THRUST STAND AND THE ESC BENCH HAVE LEFT THIS LIST (P10f, then this slice)
 ##
-## It is the first room to make the move the paragraph above describes, and it is reached from the
-## Motor inspector's own "Open thrust bench…" button — the same door the blade designer already
-## uses on the Prop panel. The ESC bench follows the same pattern when its turn comes, and the
-## frame bench belongs under Airframe; both are still here because moving them is their own slice
-## and a room without a door is worse than a room in a menu.
+## The thrust stand went first, reached from the Motor inspector's own "Open thrust bench…" button
+## — the same door the blade designer already uses on the Prop panel. P10f named the ESC bench as
+## the next one and did not move it; it has now followed the same pattern, from the ESC panel,
+## under the two rows ("Passes in total", "Limited by") that are what the bench measures.
+##
+## **The pack bench and the frame bench are still here, and the reason is that neither move is
+## obvious.** The frame bench belongs under Airframe, whose inspector the room has taken over
+## entirely — so its door is a question about where the Airframe room puts one, not about this
+## menu. The pack bench tests a component the Power system owns, and that move is available; it is
+## simply not this slice. A room without a door is worse than a room in a menu.
 ##
 ## **A room leaving this list does not stop being covered.** `tests/test_room_host.gd` derives the
 ## room list from `RoomHost`'s own `show_*` methods and asserts every one of them has a door; P10f
@@ -44,12 +49,11 @@ signal room_chosen(room_id: String)
 ## Every room reachable from here, in the order the work happens in: you bench the parts, you lay
 ## out where you are going to fly, and then you look at what the flight left behind.
 ##
-## `separator_before` marks where a group ends. The four benches are one kind of thing — a machine
+## `separator_before` marks where a group ends. The benches are one kind of thing — a machine
 ## running under load — and the field editor and Studio are not, and the line is the only thing
 ## saying so in a list this short.
 const ENTRIES := [
 	{"id": "battery_bench", "label": "Pack bench", "separator_before": false},
-	{"id": "esc_bench", "label": "ESC bench", "separator_before": false},
 	{"id": "frame_bench", "label": "Frame bench", "separator_before": false},
 	{"id": "field_editor", "label": "Field — lay out the course", "separator_before": true},
 	{"id": "studio", "label": "Studio — flights already flown", "separator_before": false},
@@ -62,8 +66,8 @@ func _init() -> void:
 	text = "Rooms"
 	custom_minimum_size = Vector2(96, 30)
 	tooltip_text = ("The benches, the field editor and Studio — unchanged, and reached from here "
-		+ "until each one lands where it belongs (a bench under the system it tests). The thrust "
-		+ "stand has already moved: it opens from the Motor inspector.")
+		+ "until each one lands where it belongs (a bench under the system it tests). Two have "
+		+ "moved: the thrust stand opens from the Motor inspector, the ESC bench from the ESC panel.")
 
 	var popup := get_popup()
 	for entry in ENTRIES:

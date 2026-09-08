@@ -36,6 +36,18 @@ func _init() -> void:
 	var shell := GlassShell.new()
 	root.add_child(shell)
 
+	# THE TRAY GOES UP BEFORE THE SYSTEM IS CHOSEN, and the order is the whole point of this shot.
+	#
+	# Turning it on afterwards photographs the toggle, which was never the defect: the defect was a
+	# tray that was already up being carried into a room it is not about. `_select_system` hid the
+	# tool cluster for Airframe and left the five charts floating over the frame editor with their
+	# own dismiss button off-screen. A capture that switched the overlay on last could not have seen
+	# it, and did not.
+	if overlay:
+		shell.set_thrust_overlay_visible(true)
+		for i in 4:
+			await process_frame
+
 	if system != "" and not shell.select_system_by_name(system):
 		print("no such system: %s" % system)
 		quit(1)
@@ -76,15 +88,10 @@ func _init() -> void:
 		for i in settle:
 			await process_frame
 
-	# The thrust-distribution overlay (P10e). Driven through `set_thrust_overlay_visible`, which is
-	# what the Overlays toggle calls — the same rule the sim and 3d branches follow. This is the
-	# only way the overlay gets LOOKED at: its arithmetic is proven headless in
-	# tests/test_thrust_overlay.gd, and whether the curve is legible over a turning airframe is
-	# exactly the question a headless suite cannot answer.
-	if overlay:
-		shell.set_thrust_overlay_visible(true)
-		for i in 4:
-			await process_frame
+	# The analysis tray (P10e). Switched on above, before the system, so the shot answers "what
+	# happens to a tray that is already up" rather than "does the toggle work". Its geometry is
+	# proven headless in tests/test_overlay_tray.gd; whether the cards are legible over a turning
+	# airframe, and whether they are correctly ABSENT over a room, is what a picture is for.
 
 	await RenderingServer.frame_post_draw
 	var image := root.get_texture().get_image()

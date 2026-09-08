@@ -280,30 +280,29 @@ var _workbench: FrameWorkbench
 var _blade_room: PropulsionWorkbench
 var _blade_room_close: Button
 
-## The first of P10e's five analysis overlays, and the button that shows it. Held on the shell
-## rather than inside the tools cluster so `set_thrust_overlay_visible` can be driven by a test
-## without synthesising a click on a button whose position is a layout decision — the same posture
-## `set_blade_room_open` takes.
-var _thrust_overlay: ThrustOverlay
-
-## P10e's second overlay, beside the first rather than behind a second button. The four bottom-left
-## buttons are four FEATURES — overlays, explode, x-ray, measure — and "Overlays" is the analysis
-## feature, not a slot for one chart. A per-overlay button would have made the corner a menu, which
-## is the thing that corner was drawn early to avoid.
-var _campbell_overlay: CampbellOverlay
-
-## P10e's third, beside the other two on the same button. Same argument as the second: the corner
-## carries FEATURES, and "Overlays" is the analysis feature.
-var _vibration_overlay: VibrationOverlay
-
-## P10e's fourth and fifth, on a SECOND ROW above the first three rather than a fourth and fifth
-## column. Three 360 px charts plus the rail already reach 1380 px; five would run off a laptop
-## screen, and an overlay drawn past the right edge is the "a line off the canvas is a warning the
-## builder never gets" failure `VibrationOverlay.top_hz` was written against, one level up. Same
-## button, because the corner carries features and not charts.
-var _spin_up_overlay: SpinUpOverlay
-var _prop_disc_overlay: PropDiscOverlay
+## P10e's five analysis overlays, keyed by `OverlayTray.ENTRIES` id. Held on the shell rather than
+## inside the tools cluster so the tray can be driven by a test without synthesising a click on a
+## button whose position is a layout decision — the same posture `set_blade_room_open` takes.
+##
+## A dictionary rather than five named members, and that is not tidiness. The five were five
+## members, and every operation on them — show, hide, refill, place — was five lines that had to be
+## written five times and, being written five times, drifted: `_sync_thrust_overlay` guarded four of
+## them for null and returned early on the fifth. What the tray does to all of them, it now does in
+## a loop.
+var _overlays: Dictionary = {}
+## Which of the five the builder has ticked. Five at once is what shipped and what did not fit; see
+## `OverlayTray` for why the default is two.
+var _chosen_overlays: Array[String] = []
 var _overlays_button: Button
+## The chevron beside it. Two controls because they are two actions — put the tray up or take it
+## down, and change what is in it — and one button doing both means either a click that opens a menu
+## when you wanted a toggle, or a toggle you cannot reconfigure without one.
+var _overlays_menu_button: MenuButton
+
+## The top strip's door into the focused system's room, and the glass behind it. Shown only for a
+## system that HAS a room reachable that way — today, Propulsion. See `_build_top_cluster`.
+var _room_door: Button
+var _room_door_glass: PanelContainer
 
 
 func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
@@ -443,6 +442,12 @@ func _fit_columns() -> void:
 		_workbench.offset_right = -CLUSTER_MARGIN if not _inspector.visible \
 			else _inspector.offset_left - CLUSTER_MARGIN
 
+	# THE OVERLAY TRAY IS SIZED THE SAME WAY, and for the same reason the workbench is: both walls
+	# of its band are columns that have just moved. A tray placed against `INSPECTOR_WIDTH` would
+	# have been the constant-versus-measurement mistake one more time, in the corner that already
+	# made it once.
+	_layout_overlays()
+
 
 # ---------------------------------------------------------------------------
 # The four clusters
@@ -492,6 +497,28 @@ func _build_top_cluster() -> void:
 	dropdown_glass.add_child(_system_dropdown)
 	_dropdown_glass = dropdown_glass
 	bar.add_child(dropdown_glass)
+
+	# THE ROOM DOOR, beside the system it belongs to.
+	#
+	# Propulsion's room — the blade designer — was reachable only from a "Design this blade…" button
+	# inside the Prop TAB of the right-hand inspector. Two clicks deep, invisible while the Motor tab
+	# was selected, and the first builder to use the app could not find it: "I can't see how I am
+	# going to design props just like frames." Airframe announces its room by opening it with the
+	# system; Propulsion could not, because its two rails are still the point and a room would cover
+	# them. So the door moves to the top strip, where it is visible the whole time the system is
+	# chosen and costs the viewport a button.
+	#
+	# The Prop panel's button STAYS. It is the one that carries the blade the panel is rendering,
+	# which is not always the fitted one, and P10d's test asserts exactly that. This door carries the
+	# FITTED blade, off the rail, which is what a door labelled by the system rather than by a row
+	# should open.
+	var door_glass := _glass_panel()
+	_room_door = Button.new()
+	_room_door.custom_minimum_size = Vector2(0, 28)
+	_room_door.pressed.connect(_on_room_door_pressed)
+	door_glass.add_child(_room_door)
+	_room_door_glass = door_glass
+	bar.add_child(door_glass)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -645,142 +672,207 @@ func _build_blade_room() -> void:
 	# header), and the two exports are here rather than on their panels because a details panel
 	# that wrote a file would be a panel that knows where this app puts things.
 	lab.motor_details.thrust_bench_requested.connect(_on_thrust_bench_requested)
+	# The ESC bench, the second room to leave the Rooms menu for the inspector of the system it
+	# tests — the move P10f named and left. Through the same `_open_room` as every other room, so
+	# the lifecycle stays RoomHost's and there is no second construction path.
+	lab.esc_details.esc_bench_requested.connect(func() -> void: _open_room("esc_bench"))
 	lab.motor_details.mount_stl_requested.connect(_on_mount_stl_requested)
 	lab.propeller_details.guard_stl_requested.connect(_on_guard_stl_requested)
 
 
-## The thrust-distribution overlay — P10e's first, and the one the blade designer sits next to.
+## The five analysis overlays — P10e — built once and placed by `OverlayTray`.
 ##
 ## Bottom left of the viewport, clear of the rail column and above the tool cluster that toggles
-## it. That corner rather than the middle because the overlay is a thing you glance at while
+## them. That corner rather than the middle because an overlay is a thing you glance at while
 ## changing a prop on the rail, not a thing you read instead of the model.
 ##
-## Added BEFORE the empty state and the two clusters, so a shell with no drone open covers it and
-## the tools still draw over it. It is a chart about a fitted propeller; there is no honest version
-## of it on a screen that says "no drone open".
+## NO OFFSETS ARE SET HERE, and that is the fix. The five used to carry hand-written absolute
+## offsets — three columns of 360 px from the rail, then a second row — which put the third column
+## under the inspector and off the right-hand edge of any window narrower than about 1430 px. The
+## app ships at 1280. Geometry now comes from `_layout_overlays`, against a band measured from the
+## chrome that is actually on screen; see `OverlayTray` for the full account.
+##
+## Added BEFORE the empty state and the two clusters, so a shell with no drone open covers them and
+## the tools still draw over them. They are charts about a fitted propeller; there is no honest
+## version of one on a screen that says "no drone open".
 func _build_thrust_overlay() -> void:
-	_thrust_overlay = ThrustOverlay.new()
-	_thrust_overlay.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_thrust_overlay.anchor_top = 1.0
-	_thrust_overlay.anchor_bottom = 1.0
-	_thrust_overlay.offset_left = RAIL_WIDTH + CLUSTER_MARGIN * 2.0
-	_thrust_overlay.offset_right = RAIL_WIDTH + CLUSTER_MARGIN * 2.0 + 360.0
-	_thrust_overlay.offset_top = -(BOTTOM_KEEPOUT + 210.0)
-	_thrust_overlay.offset_bottom = -BOTTOM_KEEPOUT
-	_thrust_overlay.visible = false
-	add_child(_thrust_overlay)
-
-	# To the right of the first, on the same baseline: the two are read together — where the load
-	# sits on the blade, and what that blade excites — and stacking one over the other would have
-	# put the second one in the rail's column.
-	_campbell_overlay = CampbellOverlay.new()
-	_campbell_overlay.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_campbell_overlay.anchor_top = 1.0
-	_campbell_overlay.anchor_bottom = 1.0
-	_campbell_overlay.offset_left = RAIL_WIDTH + CLUSTER_MARGIN * 3.0 + 360.0
-	_campbell_overlay.offset_right = RAIL_WIDTH + CLUSTER_MARGIN * 3.0 + 720.0
-	_campbell_overlay.offset_top = -(BOTTOM_KEEPOUT + 210.0)
-	_campbell_overlay.offset_bottom = -BOTTOM_KEEPOUT
-	_campbell_overlay.visible = false
-	add_child(_campbell_overlay)
-
-	# Third along the same baseline: what the blade excites (Campbell) and what the pad does with
-	# it (this) are the two halves of one sentence, and they are read left to right.
-	_vibration_overlay = VibrationOverlay.new()
-	_vibration_overlay.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_vibration_overlay.anchor_top = 1.0
-	_vibration_overlay.anchor_bottom = 1.0
-	_vibration_overlay.offset_left = RAIL_WIDTH + CLUSTER_MARGIN * 4.0 + 720.0
-	_vibration_overlay.offset_right = RAIL_WIDTH + CLUSTER_MARGIN * 4.0 + 1080.0
-	_vibration_overlay.offset_top = -(BOTTOM_KEEPOUT + 210.0)
-	_vibration_overlay.offset_bottom = -BOTTOM_KEEPOUT
-	_vibration_overlay.visible = false
-	add_child(_vibration_overlay)
-
-	# Second row, one panel height above the first, left-aligned with it. The two rows read as
-	# what the aircraft makes (thrust, orders, transmission) over how it behaves in time and in
-	# plan — and a builder who wants only the first row gets it by the window being short.
-	_spin_up_overlay = SpinUpOverlay.new()
-	_spin_up_overlay.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_spin_up_overlay.anchor_top = 1.0
-	_spin_up_overlay.anchor_bottom = 1.0
-	_spin_up_overlay.offset_left = RAIL_WIDTH + CLUSTER_MARGIN * 2.0
-	_spin_up_overlay.offset_right = RAIL_WIDTH + CLUSTER_MARGIN * 2.0 + 360.0
-	_spin_up_overlay.offset_top = -(BOTTOM_KEEPOUT + 210.0 * 2.0 + CLUSTER_MARGIN)
-	_spin_up_overlay.offset_bottom = -(BOTTOM_KEEPOUT + 210.0 + CLUSTER_MARGIN)
-	_spin_up_overlay.visible = false
-	add_child(_spin_up_overlay)
-
-	# Above the Campbell chart, and that column pairing is deliberate: the prop's orders and the
-	# prop's footprint are both about the disc.
-	_prop_disc_overlay = PropDiscOverlay.new()
-	_prop_disc_overlay.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_prop_disc_overlay.anchor_top = 1.0
-	_prop_disc_overlay.anchor_bottom = 1.0
-	_prop_disc_overlay.offset_left = RAIL_WIDTH + CLUSTER_MARGIN * 3.0 + 360.0
-	_prop_disc_overlay.offset_right = RAIL_WIDTH + CLUSTER_MARGIN * 3.0 + 720.0
-	_prop_disc_overlay.offset_top = -(BOTTOM_KEEPOUT + 210.0 * 2.0 + CLUSTER_MARGIN)
-	_prop_disc_overlay.offset_bottom = -(BOTTOM_KEEPOUT + 210.0 + CLUSTER_MARGIN)
-	_prop_disc_overlay.visible = false
-	add_child(_prop_disc_overlay)
+	# Constructed from the tray's own list, in the tray's own order, so a sixth overlay is one
+	# entry there plus one line here rather than a member, a build block, a show line, a hide line
+	# and a refill line — the shape that let the old code guard four of five for null.
+	_overlays = {
+		"thrust": ThrustOverlay.new(),
+		"campbell": CampbellOverlay.new(),
+		"vibration": VibrationOverlay.new(),
+		"spin_up": SpinUpOverlay.new(),
+		"prop_disc": PropDiscOverlay.new(),
+	}
+	for entry in OverlayTray.ENTRIES:
+		var card: Control = _overlays[str(entry["id"])]
+		# Placed by `_layout_overlays` in window coordinates, so the preset is the top-left corner
+		# and every offset is absolute. Anchored to the BOTTOM edge previously, which is why the
+		# cards moved correctly when the window got shorter and not when it got narrower.
+		card.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		card.visible = false
+		add_child(card)
+	_chosen_overlays = []
+	for id in OverlayTray.DEFAULT_CHOSEN:
+		_chosen_overlays.append(str(id))
 
 
-## Shows or hides the overlay, refilling it from the CURRENT build on the way up.
+## The band the cards are allowed to occupy: what is left of the window once the four clusters have
+## taken theirs.
+##
+## Measured from the nodes rather than from the constants, because two of the four edges MOVE. The
+## rail and the inspector are both sized to their content by `_fit_columns` — `RAIL_WIDTH` and
+## `INSPECTOR_WIDTH` are floors, not widths — so a band computed from the constants would have been
+## the same class of mistake as the offsets it replaces, just further from the edge. `_fit_columns`
+## calls this again for that reason.
+##
+## The inspector's left edge is taken only when it is VISIBLE. In Airframe it is hidden and the room
+## owns that space, but Airframe also forbids the tray outright, so the branch matters for the one
+## case that is neither: a system whose inspector has been retracted with the tray still up.
+func _overlay_band() -> Rect2:
+	var left := _rail_glass.offset_right + CLUSTER_MARGIN if _rail_glass != null \
+		and _rail_glass.visible else CLUSTER_MARGIN
+	var right := size.x + _inspector.offset_left - CLUSTER_MARGIN if _inspector != null \
+		and _inspector.visible else size.x - CLUSTER_MARGIN
+	var top := CLUSTER_MARGIN + TOP_BAR_HEIGHT + LothalTheme.SPACE_2
+	var bottom := size.y - BOTTOM_KEEPOUT
+	return Rect2(Vector2(left, top), Vector2(maxf(right - left, 0.0), maxf(bottom - top, 0.0)))
+
+
+## Puts each visible card where the tray says it goes.
+##
+## Called on every event that can change the band — a system change, a room change, a window
+## resize, a column re-fit — because the band is a function of the chrome and the chrome moves.
+func _layout_overlays() -> void:
+	var showing: Array[String] = []
+	for entry in OverlayTray.ENTRIES:
+		var id := str(entry["id"])
+		if _overlays.has(id) and (_overlays[id] as Control).visible:
+			showing.append(id)
+	var rects := OverlayTray.layout(_overlay_band(), showing.size())
+	for index in showing.size():
+		var card: Control = _overlays[showing[index]]
+		if index >= rects.size():
+			# Beyond capacity. Hidden rather than drawn somewhere it does not fit — the chooser
+			# refuses to tick past capacity, so this is the window having SHRUNK under a tray that
+			# already fitted, and a card half under the inspector is worse than a card absent.
+			card.visible = false
+			continue
+		var rect: Rect2 = rects[index]
+		card.offset_left = rect.position.x
+		card.offset_top = rect.position.y
+		card.offset_right = rect.end.x
+		card.offset_bottom = rect.end.y
+
+
+## Shows or hides the chosen overlays, refilling them from the CURRENT build on the way up.
 ##
 ## Refilled on show rather than kept live, because a BEMT solve is not free and an overlay nobody
 ## is looking at must not cost the rails a solve per click. Everything that changes the aircraft
-## already ends in `_refresh_status`, which refreshes this when it is up — so the chart a builder
-## is looking at follows the rail, and the chart nobody is looking at costs nothing.
+## already ends in `_refresh_status`, which refreshes those that are up — so the chart a builder is
+## looking at follows the rail, and the chart nobody is looking at costs nothing.
 ##
 ## Public for the same reason `set_blade_room_open` is: it is what a test and the capture tooling
-## drive, rather than a click at a coordinate.
+## drive, rather than a click at a coordinate. The name is P10e's and is kept so the capture script
+## keeps working; what it toggles is now the tray rather than one chart.
 func set_thrust_overlay_visible(shown: bool) -> void:
 	if _overlays_button != null:
 		_overlays_button.button_pressed = shown
-	# Routed through the same sync the room and the door use, so "the toggle is on" and "the
-	# overlay is up" cannot disagree on a screen the overlay does not belong on.
-	_sync_thrust_overlay(rooms == null or rooms.showing_lab())
+	_sync_thrust_overlay()
 
 
-## Puts the overlay where the toggle and the screen together say it belongs. `allowed` is whatever
-## the caller knows about the screen — in Lab, out of a room — and the toggle decides the rest.
+## Puts the tray where the toggle and the screen together say it belongs.
 ##
-## One function rather than two assignments, because the two callers were the two chances to leave
-## an overlay up over something it is not about.
-func _sync_thrust_overlay(allowed: bool) -> void:
-	if _thrust_overlay == null:
+## TAKES NO ARGUMENT, and that is the fix for the defect that let five Propulsion charts float over
+## the Airframe room. It used to take an `allowed` bool that each of three callers computed for
+## itself, and `_select_system` — the caller that hides the tool cluster for Airframe — never called
+## it at all. The state is read here instead, through `OverlayTray.allowed`, so a caller cannot omit
+## a term it does not pass and a fourth retraction path gets the rule for free.
+func _sync_thrust_overlay() -> void:
+	if _overlays.is_empty():
 		return
+	var allowed := OverlayTray.allowed(
+		rooms == null or rooms.showing_lab(),
+		_blade_room != null and _blade_room.visible,
+		_focused_system_covers_viewport())
 	var want: bool = allowed and _overlays_button != null and _overlays_button.button_pressed
 	if want:
 		_refill_thrust_overlay()
-	_thrust_overlay.visible = want
-	if _campbell_overlay != null:
-		_campbell_overlay.visible = want
-	if _vibration_overlay != null:
-		_vibration_overlay.visible = want
-	if _spin_up_overlay != null:
-		_spin_up_overlay.visible = want
-	if _prop_disc_overlay != null:
-		_prop_disc_overlay.visible = want
+	for entry in OverlayTray.ENTRIES:
+		var id := str(entry["id"])
+		(_overlays[id] as Control).visible = want and _chosen_overlays.has(id)
+	_layout_overlays()
+
+
+## Airframe, and the reason it is asked as a question about the SYSTEM rather than by name at the
+## call site: the plan editor takes the whole viewport, so a chart floating over it is a chart about
+## a drone the builder cannot see. Any future system that owns the viewport answers true here and
+## needs no second edit.
+func _focused_system_covers_viewport() -> bool:
+	var system: Dictionary = SYSTEMS[_focused_index]
+	return _is_modelled(system) and str(system["name"]) == "Airframe"
 
 
 func _refill_thrust_overlay() -> void:
-	if _thrust_overlay == null:
+	if _overlays.is_empty():
 		return
 	# `container == null` is the empty state — no drone, so no propeller, so no distribution. The
-	# overlay says so in words rather than drawing a flat line, which would be a claim about a
+	# overlays say so in words rather than drawing a flat line, which would be a claim about a
 	# blade that is not fitted.
 	var build: Build = null if container == null or lab == null else lab.current_build()
-	_thrust_overlay.adopt(build)
-	if _campbell_overlay != null:
-		_campbell_overlay.adopt(build)
-	if _vibration_overlay != null:
-		_vibration_overlay.adopt(build)
-	if _spin_up_overlay != null:
-		_spin_up_overlay.adopt(build)
-	if _prop_disc_overlay != null:
-		_prop_disc_overlay.adopt(build)
+	for entry in OverlayTray.ENTRIES:
+		_overlays[str(entry["id"])].adopt(build)
 
+
+## The chooser behind the chevron: the five by name, ticked or not.
+##
+## Rebuilt on every open rather than kept in step, because what it must show is the CURRENT band's
+## capacity as well as the current ticks — and the band changes with the window, which nothing
+## notifies this menu about. Five items is cheap enough that a rebuild is simpler than a
+## subscription, and a menu that disagreed with the tray would be worse than either.
+func _populate_overlay_menu() -> void:
+	if _overlays_menu_button == null:
+		return
+	var popup := _overlays_menu_button.get_popup()
+	popup.clear()
+	var fits := OverlayTray.capacity(_overlay_band())
+	for index in OverlayTray.ENTRIES.size():
+		var entry: Dictionary = OverlayTray.ENTRIES[index]
+		var id := str(entry["id"])
+		popup.add_check_item(str(entry["title"]), index)
+		popup.set_item_checked(index, _chosen_overlays.has(id))
+		# Greyed rather than hidden when the window has no room for another, and the SAME treatment
+		# an unmodelled system gets in the dropdown, for the same reason: a builder who cannot see
+		# that a fifth chart exists cannot know to widen the window for it. Ticked items stay
+		# enabled so there is always a way back down.
+		if not _chosen_overlays.has(id) and _chosen_overlays.size() >= fits:
+			popup.set_item_disabled(index, true)
+			popup.set_item_tooltip(index, OverlayTray.refusal(_overlay_band()))
+
+
+## Ticks or unticks one chart, and puts the tray up if it was down.
+##
+## Choosing a chart from a menu is an unambiguous request to see it, so it turns the toggle on
+## rather than quietly changing what a hidden tray would contain — the "the toggle is on and the
+## overlay is up cannot disagree" rule, in the one direction the toggle does not drive.
+func _on_overlay_chosen(index: int) -> void:
+	var id := str((OverlayTray.ENTRIES[index] as Dictionary)["id"])
+	if _chosen_overlays.has(id):
+		_chosen_overlays.erase(id)
+	elif _chosen_overlays.size() >= OverlayTray.capacity(_overlay_band()):
+		# Unreachable through the menu, which greys the item — reachable if this is ever called by
+		# anything else. It refuses and says why, rather than accepting a card `_layout_overlays`
+		# would then have to hide.
+		if _status_label != null:
+			_status_label.text = OverlayTray.refusal(_overlay_band())
+		return
+	else:
+		_chosen_overlays.append(id)
+		if _overlays_button != null:
+			_overlays_button.button_pressed = true
+	_sync_thrust_overlay()
 
 ## The thrust stand, opened from the Motor inspector — P10f.
 ##
@@ -844,6 +936,37 @@ static func _safe_export_name(text: String) -> String:
 	return "part" if out.is_empty() else out
 
 
+## What the top strip's door says for a system, or "" for a system that has none.
+##
+## A LOOKUP ON THE SYSTEM rather than an `if name == "Propulsion"` at the call site, because the
+## next system to grow a room — Power has a pack bench, Config has nothing yet — must be one entry
+## here and not a second branch somewhere else. The empty string is the answer for the other eight,
+## including Airframe: Airframe's room opens WITH the system, and a door to a room you are already
+## standing in is a button that does nothing.
+##
+## Static so it can be checked without a shell. That is not a nicety in this file — `GlassShell`
+## needs a tree, a frame and a catalog before any of it runs, so a rule left inside an instance
+## method is a rule no headless test can reach, which is how the missing overlay retraction stayed
+## invisible until somebody opened the app.
+static func room_door_label(system: Dictionary) -> String:
+	if not _is_modelled(system):
+		return ""
+	match str(system["name"]):
+		"Propulsion": return "Design blade…"
+		_: return ""
+
+
+## Opens the focused system's room on the part the RAIL has selected.
+##
+## `propeller_picker.selected_part()` rather than a lookup by id, because it is the same record the
+## Prop panel renders and the same one its own button emits — one definition of "the blade being
+## looked at", so the two doors cannot open on different blades.
+func _on_room_door_pressed() -> void:
+	if lab == null:
+		return
+	_on_design_blade_requested(lab.propeller_picker.selected_part())
+
+
 func _on_design_blade_requested(prop: Dictionary) -> void:
 	var part_id := str(prop.get("part_id", ""))
 	if part_id != "":
@@ -870,7 +993,7 @@ func set_blade_room_open(open: bool) -> void:
 	# describing the aircraft rather than the blade being drawn. Coming back REFILLED is the point
 	# of routing this through `_sync_thrust_overlay`: the blade you just published is the blade the
 	# curve should be about the moment the room closes.
-	_sync_thrust_overlay(not open)
+	_sync_thrust_overlay()
 	_inspector.visible = not open and _inspector.visible
 	var viewport_container := lab.viewport().get_parent()
 	if viewport_container is Control:
@@ -1041,10 +1164,29 @@ func _build_bottom_left_cluster() -> void:
 		if tool_name == "Overlays":
 			button.disabled = false
 			button.toggle_mode = true
-			button.tooltip_text = ("Analysis charts over the Lab: thrust along the blade, "
-				+ "what this airframe rings at, and what the soft mount lets through.")
+			button.button_pressed = false
+			button.tooltip_text = ("Analysis charts over the Lab. The chevron chooses which — "
+				+ "five exist and the window decides how many fit at once.")
 			button.toggled.connect(set_thrust_overlay_visible)
 			_overlays_button = button
+
+			# The chooser. A separate control from the toggle because they are two actions, and
+			# because the alternative shipped: five charts up at once, laid out for a screen nobody
+			# has, two of them under the inspector. Which charts is now a decision the builder makes
+			# instead of one the window makes badly.
+			#
+			# `about_to_popup` rather than a rebuild on every tick, because the menu has to show the
+			# CURRENT band's capacity and nothing notifies it of a window resize.
+			var chooser := MenuButton.new()
+			chooser.text = "▾"
+			chooser.flat = false
+			chooser.custom_minimum_size = Vector2(0, 28)
+			chooser.tooltip_text = "Choose which analysis charts are up."
+			var popup := chooser.get_popup()
+			popup.id_pressed.connect(_on_overlay_chosen)
+			popup.about_to_popup.connect(_populate_overlay_menu)
+			row.add_child(chooser)
+			_overlays_menu_button = chooser
 
 	row.add_child(VSeparator.new())
 
@@ -1197,7 +1339,7 @@ func _on_room_changed() -> void:
 	# The overlay goes with the tools that switch it on. It draws a chart about the aircraft in
 	# the garage, and left up over a bench or the field it would be a chart about a drone that is
 	# not the subject of the screen it is floating on.
-	_sync_thrust_overlay(in_lab)
+	_sync_thrust_overlay()
 	if in_lab:
 		# Re-applies the focused system rather than just showing the two columns, because which of
 		# them is visible is a property of the system chosen — an unmodelled system shows stubs, and
@@ -1236,6 +1378,15 @@ func _select_system(index: int) -> void:
 		_blade_room.visible = false
 		_blade_room_close.visible = false
 	var modelled := _is_modelled(system)
+
+	# The door into this system's room, if it has one. Hidden rather than disabled for the eight
+	# that do not — a greyed "Design blade…" beside a Power dropdown would be a promise about packs
+	# that nothing intends to keep, which is a different thing from the greyed dropdown entries,
+	# where the greyness IS the message.
+	if _room_door != null:
+		var label := room_door_label(system)
+		_room_door.text = label
+		_room_door_glass.visible = label != ""
 
 	# The glass panels themselves are shown here rather than only in `_build_*`, because Sim
 	# retracts them — see _on_room_changed. Walking back into the garage has to put back exactly
@@ -1280,6 +1431,14 @@ func _select_system(index: int) -> void:
 	# plan editor is covering. Hidden here rather than left to click through onto something the
 	# builder cannot see.
 	_tools_glass.visible = not in_airframe
+	# AND THE CHARTS GO WITH THE TOOLS. This line is the defect: the cluster was hidden here and the
+	# overlays it toggles were not, so choosing Airframe left five Propulsion charts floating over
+	# the frame editor with their own dismiss button off-screen. The other two paths that retract
+	# the chrome — `_on_room_changed` and `set_blade_room_open` — both called the sync; this one
+	# never did. `_sync_thrust_overlay` now reads the state rather than being told it, so the
+	# omission cannot recur silently, but the call still has to be made from the path that changes
+	# the state.
+	_sync_thrust_overlay()
 	lab.rails().visible = modelled and has_rails
 	lab.panels.visible = modelled
 	_rail_stub.visible = not modelled
@@ -1461,8 +1620,11 @@ func _refresh_status() -> void:
 	# after the blade designer publishes, a project opening — already ends here, so hooking the
 	# refill on this one function is what makes "publish a blade next door and watch the curve
 	# move" true without a second notification path to keep in step.
-	if _thrust_overlay != null and _thrust_overlay.visible:
-		_refill_thrust_overlay()
+	for entry in OverlayTray.ENTRIES:
+		var id := str(entry["id"])
+		if _overlays.has(id) and (_overlays[id] as Control).visible:
+			_refill_thrust_overlay()
+			break
 
 	var decided := _decided_count()
 	_status_label.text = "%s  ·  %d of %d systems decided" % [

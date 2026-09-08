@@ -94,6 +94,11 @@ func row_text(key: String) -> String:
 	return _read(_rendered_part, key)
 
 
+## One rendered stat row, for tests — the counterpart of `rendered_text()` for the footer block.
+func stat_text(key: String) -> String:
+	return _stat_values[key].text if _stat_values.has(key) else "(missing)"
+
+
 ## Resolves a row key against the part dictionary and formats it for display. The default reads the
 ## `catalog` block, which covers every browsing field; subclasses override to add their own unit
 ## formatting for `specs` fields.

@@ -8,7 +8,7 @@ extends SceneTree
 ## the runner silent.
 
 const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
-	"rate step response", "rate mode release", "translation", "parts system", "build panel",
+	"rate step response", "rate mode release", "translation", "parts system", "build panel", "details footers",
 	"gate course", "course library", "course warnings", "field editor", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
@@ -18,7 +18,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs",
-	"propeller document", "blade geometry", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row"]
+	"propeller document", "blade geometry", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray"]
 
 func _init() -> void:
 	var total := 0
@@ -71,6 +71,7 @@ func _run_suite(suite_name: String) -> Array:
 		"stl writer": return TestStlWriter.run()
 		"propulsion export": return TestPropulsionExport.run()
 		"guard row": return TestGuardRow.run()
+		"overlay tray": return TestOverlayTray.run()
 		"prop guard": return TestPropGuard.run()
 		"guard mesh": return TestGuardMesh.run()
 		"planform edits": return TestPlanformEdits.run()
@@ -102,6 +103,7 @@ func _run_suite(suite_name: String) -> Array:
 		"translation": return TestTranslation.run()
 		"parts system": return TestPartsSystem.run()
 		"build panel": return TestBuildPanel.run()
+		"details footers": return TestDetailsFooters.run()
 		"gate course": return TestGateCourse.run()
 		"course library": return TestCourseLibrary.run()
 		"course warnings": return TestCourseWarnings.run()

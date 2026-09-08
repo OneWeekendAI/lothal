@@ -253,7 +253,7 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 ## Adding to it is therefore a claim, and the claim is checked one assertion down: every id here
 ## must be a door RoomHost actually has, so a typo or a room that is later deleted fails rather
 ## than quietly excusing nothing.
-const INSPECTOR_DOORS := ["bench"]
+const INSPECTOR_DOORS := ["bench", "esc_bench"]
 
 
 ## The rooms that are neither Lab nor Sim, reached the way a builder reaches them.
@@ -308,6 +308,15 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 	results.append(TestResult.new(
 		"the Rooms menu no longer lists the thrust stand",
 		not RoomMenu.room_ids().has("bench"),
+		"menu offers %s" % [RoomMenu.room_ids()]))
+
+	# The same assertion for the ESC bench, which P10f named as the next to move and left in the
+	# menu. Written as its own check rather than folded into the one above, because two rooms
+	# sharing one assertion means one of them can come back and the check still fails for the
+	# other — a failure that names the wrong room is barely better than no failure.
+	results.append(TestResult.new(
+		"the Rooms menu no longer lists the ESC bench",
+		not RoomMenu.room_ids().has("esc_bench"),
 		"menu offers %s" % [RoomMenu.room_ids()]))
 
 	host.free()

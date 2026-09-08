@@ -762,11 +762,22 @@ static func _test_moving_the_caret_rebuilds_nothing() -> TestResult:
 ## doing it.
 ##
 ## The shell's half — that the signal opens the overlay, switches the 3D world off, and that walking
-## to another system closes it — cannot be checked in this harness. `GlassShell` wires itself in
-## `_ready()`, which needs a tree, a rendered frame and a real catalog, and `run_tests.gd` processes
-## no frames by design; `test_glass_shell.gd` says the same about itself and tests a static function
-## for exactly this reason. It is covered by driving the real shell with frames, through
-## `tests/capture_glass_shell.gd`.
+## to another system closes it — was described here as uncheckable in this harness, and **that was
+## too strong**. `GlassShell` does need a tree, a rendered frame and a real catalog before its TAB
+## ROUTING means anything (`current_tab` does not take effect until a layout pass, which is what
+## `test_glass_shell.gd` documents about itself) — but `tests/test_room_host.gd` has been building a
+## real shell with `GlassShell.new()` and asserting VISIBILITY on it all along, and visibility is
+## what this paragraph is about.
+##
+## The cost of the overstatement was measured on 2026-09-08: two shell defects shipped green — five
+## analysis overlays floating over the Airframe room, and a card layout that did not fit the window
+## the app opens at — both of them visibility, both caught immediately once somebody wrote the check
+## this comment said could not be written. `tests/test_overlay_tray.gd` §"shell" now drives that
+## path, including the size a `Control` outside a laid-out tree does not have.
+##
+## What stays true here is the split: the PANEL's half is what this check drives, and it is the half
+## that carries the load — a button emitting a hardcoded default would open the room on the wrong
+## blade and look entirely correct doing it.
 static func _test_the_prop_panel_carries_the_door_and_opens_nothing_itself() -> TestResult:
 	var catalog := PartsCatalog.load_default()
 	var panel := PropellerDetails.new(PartsCatalog.load_default())
