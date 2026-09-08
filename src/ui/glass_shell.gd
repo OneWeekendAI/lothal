@@ -295,6 +295,14 @@ var _campbell_overlay: CampbellOverlay
 ## P10e's third, beside the other two on the same button. Same argument as the second: the corner
 ## carries FEATURES, and "Overlays" is the analysis feature.
 var _vibration_overlay: VibrationOverlay
+
+## P10e's fourth and fifth, on a SECOND ROW above the first three rather than a fourth and fifth
+## column. Three 360 px charts plus the rail already reach 1380 px; five would run off a laptop
+## screen, and an overlay drawn past the right edge is the "a line off the canvas is a warning the
+## builder never gets" failure `VibrationOverlay.top_hz` was written against, one level up. Same
+## button, because the corner carries features and not charts.
+var _spin_up_overlay: SpinUpOverlay
+var _prop_disc_overlay: PropDiscOverlay
 var _overlays_button: Button
 
 
@@ -682,6 +690,33 @@ func _build_thrust_overlay() -> void:
 	_vibration_overlay.visible = false
 	add_child(_vibration_overlay)
 
+	# Second row, one panel height above the first, left-aligned with it. The two rows read as
+	# what the aircraft makes (thrust, orders, transmission) over how it behaves in time and in
+	# plan — and a builder who wants only the first row gets it by the window being short.
+	_spin_up_overlay = SpinUpOverlay.new()
+	_spin_up_overlay.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_spin_up_overlay.anchor_top = 1.0
+	_spin_up_overlay.anchor_bottom = 1.0
+	_spin_up_overlay.offset_left = RAIL_WIDTH + CLUSTER_MARGIN * 2.0
+	_spin_up_overlay.offset_right = RAIL_WIDTH + CLUSTER_MARGIN * 2.0 + 360.0
+	_spin_up_overlay.offset_top = -(BOTTOM_KEEPOUT + 210.0 * 2.0 + CLUSTER_MARGIN)
+	_spin_up_overlay.offset_bottom = -(BOTTOM_KEEPOUT + 210.0 + CLUSTER_MARGIN)
+	_spin_up_overlay.visible = false
+	add_child(_spin_up_overlay)
+
+	# Above the Campbell chart, and that column pairing is deliberate: the prop's orders and the
+	# prop's footprint are both about the disc.
+	_prop_disc_overlay = PropDiscOverlay.new()
+	_prop_disc_overlay.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_prop_disc_overlay.anchor_top = 1.0
+	_prop_disc_overlay.anchor_bottom = 1.0
+	_prop_disc_overlay.offset_left = RAIL_WIDTH + CLUSTER_MARGIN * 3.0 + 360.0
+	_prop_disc_overlay.offset_right = RAIL_WIDTH + CLUSTER_MARGIN * 3.0 + 720.0
+	_prop_disc_overlay.offset_top = -(BOTTOM_KEEPOUT + 210.0 * 2.0 + CLUSTER_MARGIN)
+	_prop_disc_overlay.offset_bottom = -(BOTTOM_KEEPOUT + 210.0 + CLUSTER_MARGIN)
+	_prop_disc_overlay.visible = false
+	add_child(_prop_disc_overlay)
+
 
 ## Shows or hides the overlay, refilling it from the CURRENT build on the way up.
 ##
@@ -716,6 +751,10 @@ func _sync_thrust_overlay(allowed: bool) -> void:
 		_campbell_overlay.visible = want
 	if _vibration_overlay != null:
 		_vibration_overlay.visible = want
+	if _spin_up_overlay != null:
+		_spin_up_overlay.visible = want
+	if _prop_disc_overlay != null:
+		_prop_disc_overlay.visible = want
 
 
 func _refill_thrust_overlay() -> void:
@@ -730,6 +769,10 @@ func _refill_thrust_overlay() -> void:
 		_campbell_overlay.adopt(build)
 	if _vibration_overlay != null:
 		_vibration_overlay.adopt(build)
+	if _spin_up_overlay != null:
+		_spin_up_overlay.adopt(build)
+	if _prop_disc_overlay != null:
+		_prop_disc_overlay.adopt(build)
 
 
 func _on_design_blade_requested(prop: Dictionary) -> void:
