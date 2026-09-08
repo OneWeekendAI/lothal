@@ -49,6 +49,7 @@ static func run() -> Array:
 	results.append(_test_a_refused_edit_leaves_nothing_to_undo())
 	results.append(_test_undo_cannot_reach_across_an_open())
 	results.append(_test_undoing_back_to_the_published_shape_says_so())
+	results.append(_test_the_close_button_does_not_cover_the_rooms_own_toolbar())
 	return results
 
 
@@ -810,3 +811,44 @@ static func _test_the_prop_panel_carries_the_door_and_opens_nothing_itself() -> 
 			and shown != ReferenceBuild.PROPELLER_ID,
 		"%d button(s), %d emission(s), carried %s while the build fits %s" % [
 			buttons.size(), emitted.size(), emitted_id, ReferenceBuild.PROPELLER_ID])
+
+
+## The way out must not sit on top of the way in.
+##
+## THE SHIPPED DEFECT, from a screenshot: "Close blade designer" was pinned top-right at
+## `TOP_BAR_HEIGHT + CLUSTER_MARGIN * 2`, and the room itself started twelve pixels higher, at
+## `TOP_BAR_HEIGHT + CLUSTER_MARGIN`. The room's first row is its toolbar — new, save, publish,
+## stations, undo, the pitch spinbox and the rpm slider — and the button landed squarely on the
+## right-hand end of it. The pitch value was half covered and the rpm slider was gone entirely.
+## Nothing errored; the room worked, you just could not reach two of its controls.
+##
+## Both controls are anchored to the TOP edge (`PRESET_FULL_RECT` and `PRESET_TOP_RIGHT` both put
+## `anchor_top` at zero), so their `offset_top`/`offset_bottom` are already the same measurement
+## from the same origin and can be compared directly — no layout pass required, which matters in a
+## harness that renders no frames.
+##
+## The horizontal half is asserted too rather than assumed. It is what makes the vertical check
+## necessary: the room spans the full width of the window, so there is no column the button could
+## be parked in that is not over the room. If that ever stops being true the vertical rule could be
+## relaxed, and this assertion is the thing that would fail and say so.
+static func _test_the_close_button_does_not_cover_the_rooms_own_toolbar() -> TestResult:
+	var shell := GlassShell.new()
+	# 1280×720 is what `project.godot` opens at, so the shell under test is the shipping window.
+	shell.size = Vector2(1280.0, 720.0)
+	shell.set_blade_room_open(true)
+
+	var room: Control = shell.blade_room()
+	var button: Button = shell._blade_room_close
+
+	var both_up: bool = room.visible and button.visible
+	# The button's right-anchored span, expressed as a distance in from the right edge, against the
+	# room's own right edge. Overlapping horizontally is the premise, not the bug.
+	var overlaps_horizontally: bool = button.offset_right > room.offset_right - 1.0
+	var clears_vertically: bool = room.offset_top >= button.offset_bottom
+
+	return TestResult.new(
+		"the close button sits above the blade room, not on its toolbar",
+		both_up and overlaps_horizontally and clears_vertically,
+		"room open %s, button up %s, room top %.1f vs button bottom %.1f (overlap horizontally: %s)"
+			% [room.visible, button.visible, room.offset_top, button.offset_bottom,
+				overlaps_horizontally])

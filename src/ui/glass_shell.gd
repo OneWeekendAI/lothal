@@ -56,6 +56,15 @@ const MAX_INSPECTOR_FRACTION := 0.45
 ## How far the floating columns stop short of the bottom, so they never collide with the
 ## bottom-left tool cluster or the bottom-right toggle.
 const BOTTOM_KEEPOUT := 76.0
+## The height of the blade designer's close button, and so of the strip reserved for it above the
+## room. Named rather than inlined because two places have to agree on it: the button's own
+## geometry, and the room's top offset that clears it. They did not agree — the button was pinned
+## over the room's first toolbar row, hiding the Pitch and RPM controls behind it. See
+## `_build_blade_room`.
+const BLADE_CLOSE_HEIGHT := 30.0
+## The bottom edge of that strip, measured from the top of the window. Everything the blade designer
+## draws starts below it.
+const BLADE_CLOSE_STRIP_BOTTOM := TOP_BAR_HEIGHT + CLUSTER_MARGIN * 2.0 + BLADE_CLOSE_HEIGHT
 
 ## Which CanvasLayer the Lab/Sim toggle rides. Ten, matching the old tab bar, and for the identical
 ## reason: Sim's HUD is on a layer of its own and draws straight over anything in the ordinary tree.
@@ -634,7 +643,12 @@ func _build_blade_room() -> void:
 	_blade_room.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_blade_room.offset_left = CLUSTER_MARGIN
 	_blade_room.offset_right = -CLUSTER_MARGIN
-	_blade_room.offset_top = TOP_BAR_HEIGHT + CLUSTER_MARGIN
+	# BELOW THE CLOSE STRIP, not level with it. The room's own toolbar is its first row, and with
+	# the room starting at the same height as the button that closes it, the button sat on top of
+	# that row: the pitch spinbox and the rpm slider were behind "Close blade designer". The rails
+	# and the inspector are hidden while the room is up, so the strip costs nothing that is on
+	# screen — it is empty window either way.
+	_blade_room.offset_top = BLADE_CLOSE_STRIP_BOTTOM + CLUSTER_MARGIN
 	_blade_room.offset_bottom = -BOTTOM_KEEPOUT
 	_blade_room.visible = false
 	add_child(_blade_room)
@@ -661,8 +675,8 @@ func _build_blade_room() -> void:
 	_blade_room_close.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_blade_room_close.offset_left = -180.0 - CLUSTER_MARGIN
 	_blade_room_close.offset_right = -CLUSTER_MARGIN
-	_blade_room_close.offset_top = TOP_BAR_HEIGHT + CLUSTER_MARGIN * 2.0
-	_blade_room_close.offset_bottom = TOP_BAR_HEIGHT + CLUSTER_MARGIN * 2.0 + 30.0
+	_blade_room_close.offset_top = BLADE_CLOSE_STRIP_BOTTOM - BLADE_CLOSE_HEIGHT
+	_blade_room_close.offset_bottom = BLADE_CLOSE_STRIP_BOTTOM
 	_blade_room_close.pressed.connect(func() -> void: set_blade_room_open(false))
 	add_child(_blade_room_close)
 

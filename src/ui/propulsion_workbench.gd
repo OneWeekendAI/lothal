@@ -61,7 +61,24 @@ const DEFAULT_PRESET := "prop_5x43x3"
 ## The motor the mount profile draws when the room is opened outside a build. A stack has to be a
 ## stack of SOMETHING, and this is the reference build's own motor — the same posture the default
 ## preset takes.
-const DEFAULT_MOTOR := "motor_2306_1700kv"
+## The motor the room's mount profile and design-RPM ceiling are measured against.
+##
+## `ReferenceBuild.MOTOR_ID` rather than a string of its own, and that is a FIX: this constant read
+## "motor_2306_1700kv" until 2026-09-08, which is not a part in the catalog. `PartsCatalog.get_part`
+## answers a miss with an empty Dictionary, and every reader here went through `.get(…, default)`,
+## so the room had silently been drawing its mount stack and its soft-mount frequency for NO MOTOR
+## since it shipped — no error, just a profile built on defaults. Naming the reference build's own
+## motor means the id cannot rot again without the reference build rotting with it.
+const DEFAULT_MOTOR := ReferenceBuild.MOTOR_ID
+
+## Where the design-RPM slider starts, as a fraction of the room motor's rated (unloaded) speed.
+##
+## 0.65 is a hover-ish operating point for a quad that can lift itself twice over, and it is a
+## SLIDER precisely because it is not derivable from the blade: a propeller has no throttle, no
+## pack and no airframe, so the speed it is judged at is a question the builder answers. The
+## default exists so the panel opens with an answer rather than a blank, and the number is stated
+## here rather than buried so that it can be argued with.
+const DESIGN_RPM_FRACTION := 0.65
 
 var catalog: PartsCatalog
 var document: PropellerDocument
@@ -74,6 +91,8 @@ var shelf: PropellerShelf
 var editor: PropellerPlanformEditor
 var section: PropellerSectionView
 var profile: PropellerMountProfile
+var aero: BladeAeroPanel
+var blade_view: BladeView3D
 
 ## The motor whose stack the profile draws, and the pad on it. Held as a record and a thickness
 ## rather than as a built mesh, because the mesh is rebuilt from them on every change.
@@ -91,6 +110,10 @@ var _status: Label
 ## document is edited in place, and a reference would always equal itself.
 var _published: Dictionary = {}
 var _pad_slider: HSlider
+var _pitch_spin: SpinBox
+var _rpm_slider: HSlider
+var _rpm_label: Label
+var design_rpm := 0.0
 
 
 func _init(p_catalog: PartsCatalog = null) -> void:
@@ -128,21 +151,47 @@ func _init(p_catalog: PartsCatalog = null) -> void:
 	shelf.blade_chosen.connect(_on_blade_chosen)
 	body.add_child(shelf)
 
+	# The centre column is the planform and, under it, what that planform DOES. They share the r/R
+	# axis and the caret, and that is the argument for stacking them rather than putting the curve
+	# in the right-hand column: a builder dragging a control point sees the angle of attack under
+	# their cursor move at the same radius, in the same place on screen.
+	var centre := VBoxContainer.new()
+	centre.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	centre.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	centre.add_theme_constant_override("separation", LothalTheme.SPACE_1)
+	body.add_child(centre)
+
 	editor = PropellerPlanformEditor.new()
 	editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	editor.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	editor.size_flags_stretch_ratio = 1.6
 	editor.document_changed.connect(_on_planform_edited)
 	editor.edit_began.connect(_on_edit_began)
 	editor.caret_moved.connect(_on_caret_moved)
-	body.add_child(editor)
+	centre.add_child(editor)
+
+	aero = BladeAeroPanel.new()
+	aero.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	aero.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	centre.add_child(aero)
 
 	# The two read-only views share the right column: the section is what the caret is for, and the
 	# stack is the context the blade is turning in. Both are consequences of the document, so
 	# neither takes a click.
 	var right := VBoxContainer.new()
-	right.custom_minimum_size = Vector2(240, 0)
+	right.custom_minimum_size = Vector2(250, 0)
 	right.add_theme_constant_override("separation", LothalTheme.SPACE_1)
 	body.add_child(right)
+
+	# The blade itself, above the two views that describe it. First in the column because it is the
+	# question the other two answer in detail: what am I actually making.
+	blade_view = BladeView3D.new()
+	blade_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# The largest of the three panes in this column. The section and the mount profile are readable
+	# at their minimum sizes; the blade is the one whose whole value is how much of it you can see.
+	blade_view.size_flags_stretch_ratio = 1.8
+	right.add_child(blade_view)
+	right.add_child(_build_view_buttons())
 
 	section = PropellerSectionView.new()
 	section.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -224,7 +273,69 @@ func _build_toolbar() -> Control:
 	_pad_slider.max_value = MotorMesh.max_soft_mount_m(motor)
 	_pad_slider.value_changed.connect(_on_pad_changed)
 	row.add_child(_pad_slider)
+	row.add_child(VSeparator.new())
 
+	var pitch_caption := Label.new()
+	pitch_caption.text = "Pitch"
+	pitch_caption.theme_type_variation = &"SmallLabel"
+	row.add_child(pitch_caption)
+
+	# THE OTHER HALF OF THE BLADE, and until now the half nobody could edit. The planform editor
+	# owns c(r); pitch owns β(r), which is the stronger lever of the two — pitch sets the angle of
+	# attack directly, while chord only reaches it through the inflow. It was fixed at "New blade…"
+	# and unreachable ever after, which left the room able to draw a blade it could not re-pitch.
+	#
+	# INCHES, matching `NewBladeDialog`: pitch is a number people quote off a product ("5x4.3"), and
+	# 0.1" is the granularity propellers are actually sold in. The conversion to the document's
+	# millimetres happens in `set_pitch_mm`, at the one boundary.
+	_pitch_spin = SpinBox.new()
+	_pitch_spin.min_value = 0.1
+	_pitch_spin.max_value = 40.0
+	_pitch_spin.step = 0.1
+	_pitch_spin.custom_minimum_size = Vector2(84, 0)
+	_pitch_spin.value_changed.connect(_on_pitch_changed)
+	row.add_child(_pitch_spin)
+	row.add_child(VSeparator.new())
+
+	# THE SPEED THE BLADE IS JUDGED AT. A propeller has no throttle of its own, so the operating
+	# point is the builder's to state — and every figure in the panel below moves with it, which is
+	# the thing worth learning from the slider being there.
+	_rpm_label = Label.new()
+	_rpm_label.theme_type_variation = &"SmallLabel"
+	_rpm_label.custom_minimum_size = Vector2(96, 0)
+	row.add_child(_rpm_label)
+
+	_rpm_slider = HSlider.new()
+	_rpm_slider.min_value = 1000.0
+	# The room motor's rated (unloaded) speed is the ceiling, because it is the fastest anything in
+	# this room could turn this blade. A round number would be a second, wronger answer to a
+	# question the motor already answers.
+	_rpm_slider.max_value = Fitting.rated_rpm(
+		float(motor["specs"]["kv"]), float(motor["thrust_test"]["voltage_v"]))
+	_rpm_slider.step = 100.0
+	_rpm_slider.custom_minimum_size = Vector2(150, 0)
+	design_rpm = _rpm_slider.max_value * DESIGN_RPM_FRACTION
+	_rpm_slider.value = design_rpm
+	_rpm_slider.value_changed.connect(_on_rpm_changed)
+	row.add_child(_rpm_slider)
+
+	return row
+
+
+## The four canonical viewpoints, as buttons under the 3D view.
+##
+## Buttons and not only dragging, for the toolbar's own reason one level up: "show me the top" has
+## one right answer, and a builder hunting for it by dragging cannot compare two blades from the
+## same angle on two different days.
+func _build_view_buttons() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", LothalTheme.SPACE_1)
+	for view_id in BladeView3D.VIEWS.keys():
+		var button := Button.new()
+		button.text = str(view_id).capitalize()
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(blade_view.snap_to.bind(view_id))
+		row.add_child(button)
 	return row
 
 
@@ -372,6 +483,8 @@ func _on_caret_moved(r_frac: float) -> void:
 	# The caret changes nothing about the document, so this must NOT go through `_refresh` — the
 	# mount stack and the blade mass cannot have moved because somebody looked somewhere else.
 	section.set_r_frac(r_frac)
+	aero.set_caret(r_frac)
+	blade_view.set_caret(r_frac)
 
 
 ## The toggle, in the direction that reads: ON means "I measured this", which is `chord_is_assumed`
@@ -419,6 +532,61 @@ func _on_remove_station() -> void:
 	editor.queue_redraw()
 	_refresh()
 	document_changed.emit(document)
+
+
+## The pitch spinner moved. Inches in, millimetres through the one boundary.
+func _on_pitch_changed(inches: float) -> void:
+	set_pitch_mm(inches * PropellerDocument.INCH_TO_MM)
+
+
+## Re-pitches the open blade, recording an undo step first. Returns false when the document will
+## not take a pitch, which is a real case and not a guard against nonsense — see below.
+##
+## Public because the spinner, the tests and any future caller must be the same path: `undo()`'s own
+## argument one section down, applied to the other editable property in the room.
+##
+## AN AUTHORED TWIST REFUSES. `PropellerDocument.beta_rad` reads the twist TABLE when `twist_mode`
+## is authored and never looks at `pitch_mm` (§3.2) — so on such a blade this would write a number
+## that changes the file, changes nothing on screen, and changes no figure in the panel. A control
+## that appears to work and does nothing is worse than one that is switched off, so the spinner is
+## disabled in that mode and this method refuses in it, and the refusal is HERE rather than only on
+## the widget: a disabled control is a fact about the toolbar, and this is a fact about the blade.
+func set_pitch_mm(pitch_mm: float) -> bool:
+	if document == null or pitch_mm <= 0.0 \
+			or document.twist_mode == PropellerDocument.TWIST_MODE_AUTHORED:
+		return false
+	if is_equal_approx(document.pitch_mm, pitch_mm):
+		return false
+	# The same call `_on_edit_began` makes for a drag, so pitch changes and planform edits share one
+	# history: Ctrl-Z walks back through both in the order they happened.
+	history.record(document)
+	document.pitch_mm = pitch_mm
+	_refresh()
+	document_changed.emit(document)
+	return true
+
+
+## Puts the spinner where the document is, without firing the handler that would write it back.
+##
+## `set_value_no_signal` and not `value`: a `Range` assigned during `_show_document` would emit
+## `value_changed`, which calls `set_pitch_mm`, which records an undo step — so opening a blade, or
+## UNDOING one, would push a step of its own onto the history it was walking.
+func _sync_pitch_control() -> void:
+	if _pitch_spin == null or document == null:
+		return
+	var authored := document.twist_mode == PropellerDocument.TWIST_MODE_AUTHORED
+	_pitch_spin.set_value_no_signal(document.pitch_mm / PropellerDocument.INCH_TO_MM)
+	_pitch_spin.editable = not authored
+	_pitch_spin.tooltip_text = ("This blade's twist is authored station by station, so pitch no "
+		+ "longer defines it — edit the twist table instead.") if authored \
+		else "Pitch in inches. Sets the blade angle at every radius, and with it the angle of attack."
+
+
+## The design RPM moved. The document has not, so this does NOT go through `_refresh` — the mount
+## stack and the blade mass cannot have changed because the builder asked about a different speed.
+func _on_rpm_changed(value: float) -> void:
+	design_rpm = value
+	_refresh_aero()
 
 
 func _on_pad_changed(value: float) -> void:
@@ -557,10 +725,37 @@ func _refresh() -> void:
 
 	section.queue_redraw()
 	editor.queue_redraw()
+	_sync_pitch_control()
+
+	blade_view.show_propeller(_as_catalog_prop(), document)
+	_refresh_aero()
 
 	# Last, because it describes the state the rest of this function just produced: whether the
 	# shape on screen is still the shape that was published (§2.1).
 	_refresh_publish_state()
+
+
+## The verdict, recomputed for the open document at the design RPM.
+##
+## Separate from `_refresh` because the two have different triggers: the document changing moves
+## the mass, the mount stack and the picture, while the RPM moving changes only what the blade
+## would DO. Folding the second into the first would rebuild three meshes every time a builder
+## dragged the speed slider.
+##
+## The solve is ~40 annuli × 20 fixed-point iterations in Rust and is called on the drag, not
+## deferred: `Build.forward_ratios` documents the sweep it caches as ~150 ms, and that is a sweep
+## of many solves. This is one.
+func _refresh_aero() -> void:
+	if document == null or aero == null:
+		return
+	var verdict := BladeAero.analyse(document, design_rpm)
+	var radius_m := document.radius_mm() * 0.001
+	aero.show_verdict(verdict, radius_m)
+	blade_view.set_stall_bands(
+		BladeAero.stall_bands(verdict["stations"], BemtModel.global_polar()[3], radius_m)
+			if not verdict["refused"] else PackedFloat64Array())
+	if _rpm_label != null:
+		_rpm_label.text = "%.0f RPM" % design_rpm
 
 
 ## The open document as the record `PropellerMesh.rebuild` reads — diameter, blade count and the

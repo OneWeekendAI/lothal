@@ -224,8 +224,48 @@ impl BemtModel {
         let mut dist: Vec<f64> = Vec::new();
         solve_impl_collecting(
             rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, Some(&mut dist));
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, Some(&mut dist), None);
         PackedFloat64Array::from(dist.as_slice())
+    }
+
+    /// The per-annulus WORKING STATE of the static solve — what each slice of blade is actually
+    /// doing at the operating point, for the Propulsion room's stall readout.
+    ///
+    /// Returns `[r_m, alpha_rad, c_l, c_d]` interleaved, one quadruple per annulus, taken from
+    /// INSIDE `solve_impl`'s converged block — the same `alpha`, `c_l` and `c_d` that go on to
+    /// make that annulus's `dT`. This is `thrust_distribution`'s rule applied to a second
+    /// quantity and it is the same rule for the same reason: `alpha = beta - phi` is cheap
+    /// enough to recompute in GDScript, and a GDScript copy would be a second definition of the
+    /// blade's angle of attack, free to drift from the one the physics used. There would then be
+    /// nothing to say which copy is the propeller.
+    ///
+    /// The grid is `thrust_distribution`'s grid, annulus for annulus and in the same order,
+    /// including the zero-chord annuli — so a caller holding both may index one by the other.
+    ///
+    /// STALL is not a field here, and deliberately: the polar caps lift at `C_l_max`
+    /// (`c_l = min(a0_eff·alpha, c_l_max)`), so a station is stalled exactly when its returned
+    /// `c_l` has reached that cap, and the cap is already published through `global_polar()[3]`.
+    /// A bool computed here would be a THIRD place the stall condition is written down. The
+    /// caller compares two published numbers instead.
+    ///
+    /// Refusals mirror `solve`'s and `thrust_distribution`'s: a rotor the solve declines returns
+    /// an EMPTY array, so a refusal cannot be read as a blade sitting at zero incidence.
+    #[func]
+    pub fn station_distribution(
+        rho: f64,
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        rpm: f64,
+        chord_points_mm: PackedFloat64Array,
+        guard_closure: f64,
+    ) -> PackedFloat64Array {
+        let mut stations: Vec<f64> = Vec::new();
+        solve_impl_collecting(
+            rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, None,
+            Some(&mut stations));
+        PackedFloat64Array::from(stations.as_slice())
     }
 
     /// P6 — §4.1 with V_ax ≠ 0 and edgewise flow. Extends `solve` with an axial freestream
@@ -698,7 +738,7 @@ fn solve_impl(
     guard_closure: f64,
 ) -> PackedFloat64Array {
     solve_impl_collecting(rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
-        a0_eff, c_d0, k_polar, c_l_max, guard_closure, None)
+        a0_eff, c_d0, k_polar, c_l_max, guard_closure, None, None)
 }
 
 /// `solve_impl` with an optional per-annulus tap (P10e's thrust-distribution overlay).
@@ -725,6 +765,7 @@ fn solve_impl_collecting(
     c_l_max: f64,
     guard_closure: f64,
     mut dist: Option<&mut Vec<f64>>,
+    mut stations: Option<&mut Vec<f64>>,
 ) -> PackedFloat64Array {
     let guard_closure = sanitize_closure(guard_closure);
     if blades <= 0.0 || diameter_m <= 0.0 || rpm <= 0.0 || chord_points_mm.len() < 4 {
@@ -754,6 +795,15 @@ fn solve_impl_collecting(
             if let Some(d) = dist.as_mut() {
                 d.push(r);
                 d.push(0.0);
+            }
+            // The station tap pushes an entry here too, so both taps walk the SAME annuli in the
+            // same order and a caller may index one by the other. A blade that is not there has
+            // no angle of attack, and 0.0 says exactly that: zero chord, zero lift, not stalled.
+            if let Some(st) = stations.as_mut() {
+                st.push(r);
+                st.push(0.0);
+                st.push(0.0);
+                st.push(0.0);
             }
             continue;
         }
@@ -794,6 +844,15 @@ fn solve_impl_collecting(
         if let Some(d) = dist.as_mut() {
             d.push(r);
             d.push(d_t);
+        }
+        // Same block, same converged v_i: `alpha`, `cl` and `cd` here are the values that go on to
+        // make `d_t` two lines above. A second solve, or a GDScript recomputation of `beta - phi`,
+        // would be a second copy of the definition free to drift from the one that made the thrust.
+        if let Some(st) = stations.as_mut() {
+            st.push(r);
+            st.push(alpha);
+            st.push(cl);
+            st.push(cd);
         }
 
         thrust += d_t;
