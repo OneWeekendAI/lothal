@@ -36,7 +36,37 @@ extends PartDetails
 ## record it is showing. The panel opens nothing itself — see `_build_footer`.
 signal design_blade_requested(prop: Dictionary)
 
+## THE GUARD'S INSPECTOR ROW — P10f, and the row is on THIS panel rather than the Motor's for a
+## geometric reason: a guard wraps the propeller disc. Its inner wall is derived from
+## `PropGuard.tip_clearance_mm` against the tip radius of the prop these rows describe, so the
+## clearance a builder is choosing between is a fact about the part on this panel. The motor only
+## decides where the ring rides.
+##
+## **This is also the row P10a and P10b both ended by naming as missing.** `Build.guard_id` has
+## been reachable from `Build.from_ids` and from nowhere else: the physics was proved, the ring was
+## drawn, the BEMT closure was wired end to end, and no builder could fit a guard. The dropdown is
+## what makes all of that reachable, and the project schema line beside it is what makes it
+## survive a save.
+##
+## "Not fitted" is the first row and the default, on `ElectronicsPicker`'s own argument and for a
+## stronger reason here: the reference build fits no guard, and its 496 g / 11.69:1 / 29.6% oracle
+## is bit-identical only while that stays true.
+signal guard_changed(guard_id: String)
+
+## Emitted with the guard id and the tip radius the ring was fitted around — both, because the
+## annulus is a function of the pair and the panel is the one place that holds them together. The
+## shell owns the file dialog for the same reason it owns the rooms.
+signal guard_stl_requested(guard_id: String, prop_tip_radius_m: float)
+
 var _design_button: Button
+
+var _catalog: PartsCatalog
+var _guard_selector: OptionButton
+## Selector index -> guard part id, "" first. An index into THIS and never into
+## `catalog.list_category("guard")` — the two lists differ by the "Not fitted" row, and reading a
+## part out of the catalog by a selector index is off by one for the whole of the list.
+var _guard_ids: Array = [""]
+var _guard_export: Button
 
 const SPEC_ROWS := [
 	{"key": "diameter_class", "label": "Diameter class"},
@@ -55,6 +85,10 @@ const SPEC_ROWS := [
 	{"key": "blade_inertia", "label": "Blade inertia"},
 ]
 
+## What the guard row's empty selection reads as. One constant rather than a literal, on
+## ElectronicsPicker's own argument.
+const NOT_FITTED := "Not fitted"
+
 ## The blade rows, so the caveat logic and the tests share one list rather than two that drift.
 const BLADE_KEYS := ["planform", "blade_mass", "mass_gap", "k2", "blade_inertia"]
 
@@ -72,7 +106,13 @@ static var _doc_cache: PropellerDocument
 var _blade_note: Label
 
 
-func _init() -> void:
+## The catalog is REQUIRED rather than defaulted to null, and that is deliberate. A null-catalog
+## branch that quietly built the panel without its guard row would be the exact silent failure
+## P10a and P10b each ended by reporting: physics that is proved and unreachable. If a caller has
+## no catalog, the panel should fail to construct where the caller is, not on a screen weeks later
+## with a dropdown missing.
+func _init(p_catalog: PartsCatalog) -> void:
+	_catalog = p_catalog
 	super(SPEC_ROWS)
 
 
@@ -250,7 +290,93 @@ func _build_footer(root: VBoxContainer) -> void:
 	_design_button.pressed.connect(func() -> void: design_blade_requested.emit(_rendered_part))
 	root.add_child(_design_button)
 
+	_build_guard_row(root)
+
 	super(root)
+
+
+## The guard row — see `guard_changed` for why it is on this panel and what it unblocks.
+func _build_guard_row(root: VBoxContainer) -> void:
+	root.add_child(HSeparator.new())
+
+	var title := Label.new()
+	title.text = "Prop guard"
+	title.theme_type_variation = &"TitleLabel"
+	root.add_child(title)
+
+	_guard_selector = OptionButton.new()
+	_guard_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Clipped for the reason ElectronicsPicker's selectors are: "5\" cinewhoop shroud (ABS, 1.5 mm
+	# gap)" would otherwise set this column's width from its longest string.
+	_guard_selector.clip_text = true
+	_guard_selector.custom_minimum_size = Vector2(280, 0)
+	_guard_selector.add_item(NOT_FITTED)
+	_guard_ids = [""]
+	for guard in _catalog.list_category("guard"):
+		_guard_selector.add_item("%s   %s g" % [
+			PartPicker.display_name(guard), PartPicker._format_mass(guard)])
+		_guard_ids.append(str(guard["part_id"]))
+	_guard_selector.select(0)
+	_guard_selector.item_selected.connect(_on_guard_selected)
+	root.add_child(_guard_selector)
+
+	_guard_export = Button.new()
+	_guard_export.text = "Export guard (STL)…"
+	_guard_export.tooltip_text = ("The ring as a printable solid, in millimetres — the same "
+		+ "annulus the aircraft is drawn with, at the clearance these rows were computed for.")
+	# DISABLED WITH NOTHING FITTED, rather than emitting a request the shell would have to refuse.
+	# A button that does nothing when pressed is indistinguishable from a broken one.
+	_guard_export.disabled = true
+	_guard_export.pressed.connect(func() -> void:
+		guard_stl_requested.emit(guard_id(), _tip_radius_m()))
+	root.add_child(_guard_export)
+
+	var note := Label.new()
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.custom_minimum_size = Vector2(280, 0)
+	note.theme_type_variation = &"MutedLabel"
+	note.text = ("A bumper claims mass, inertia and clearance. A duct claims those and the tip-loss "
+		+ "suppression as well — which on this model saves current rather than adding thrust. "
+		+ "Either one bites into roll inertia harder than the motor it rides on.")
+	root.add_child(note)
+
+
+func _on_guard_selected(index: int) -> void:
+	_guard_export.disabled = _guard_ids[index] == ""
+	guard_changed.emit(String(_guard_ids[index]))
+
+
+## The fitted guard, "" for none. What LabScreen reads to assemble a Build and what the project
+## file records.
+func guard_id() -> String:
+	if _guard_selector == null:
+		return ""
+	return String(_guard_ids[_guard_selector.selected])
+
+
+## Fits a guard by id, as opening a saved drone does. Returns whether the id was one this catalog
+## knows — a guard that has left the catalog leaves the row where it was and is reported, on
+## `LabScreen.apply_selection`'s own rule that nothing is silently substituted.
+func select_guard(p_guard_id: String) -> bool:
+	if _guard_selector == null:
+		return p_guard_id == ""
+	var index := _guard_ids.find(p_guard_id)
+	if index < 0:
+		return false
+	_guard_selector.select(index)
+	_guard_export.disabled = p_guard_id == ""
+	return true
+
+
+## The tip radius of the propeller these rows describe, read through the SAME document the mesh,
+## the mass integral and the BEMT closure read. Not `diameter_inches / 2` computed here: that
+## would be the second definition of a prop's radius, and the guard's whole inner wall hangs off
+## it.
+func _tip_radius_m() -> float:
+	var doc := document_for(_rendered_part)
+	if doc == null:
+		return 0.0
+	return doc.diameter_mm * 0.0005
 
 
 func render(part: Dictionary, build: Build) -> void:

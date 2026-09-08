@@ -60,7 +60,13 @@ static func _reference_project() -> Project:
 	project.parts["battery"] = ReferenceBuild.BATTERY_ID
 	project.parts["esc"] = ReferenceBuild.ESC_ID
 	project.parts["flight_controller"] = ReferenceBuild.FC_ID
-	for category in ProjectSchema.OPTIONAL_CATEGORIES:
+	# `Build.OPTIONAL_COMPONENTS` and NOT `ProjectSchema.OPTIONAL_CATEGORIES`, and the difference
+	# is not cosmetic — it is what P10f's guard exposed. The schema's optional list is "categories
+	# a project file may leave off" and the Build's is "the payload the mass model weighs from a
+	# dictionary"; the guard is in the first and not the second, because it reaches `Build` as a
+	# trailing argument rather than through `component_ids`. This loop wants the four bays with
+	# defaults, so it reads the list that HAS defaults.
+	for category in Build.OPTIONAL_COMPONENTS:
 		project.parts[category] = String(Build.DEFAULT_COMPONENT_IDS[category])
 	return project
 

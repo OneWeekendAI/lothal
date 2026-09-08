@@ -56,7 +56,13 @@ static func _project(p_name: String = "Weekend 5") -> Project:
 	# which is ProjectSchema's dense-parts rule working, and is why this helper weighs 475 g
 	# without these four lines. Spelled out so the 496 g oracle below is about the container
 	# round trip rather than about what Project.create() happens to default to.
-	for category in ProjectSchema.OPTIONAL_CATEGORIES:
+	# `Build.OPTIONAL_COMPONENTS` and NOT `ProjectSchema.OPTIONAL_CATEGORIES`, and the difference
+	# is not cosmetic — it is what P10f's guard exposed. The schema's optional list is "categories
+	# a project file may leave off" and the Build's is "the payload the mass model weighs from a
+	# dictionary"; the guard is in the first and not the second, because it reaches `Build` as a
+	# trailing argument rather than through `component_ids`. This loop wants the four bays with
+	# defaults, so it reads the list that HAS defaults.
+	for category in Build.OPTIONAL_COMPONENTS:
 		project.parts[category] = String(Build.DEFAULT_COMPONENT_IDS[category])
 	return project
 

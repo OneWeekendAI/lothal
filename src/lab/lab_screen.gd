@@ -252,9 +252,19 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	motor_details.name = "Motor"
 	panels.add_child(motor_details)
 
-	propeller_details = PropellerDetails.new()
+	propeller_details = PropellerDetails.new(catalog)
 	propeller_details.name = "Prop"
 	panels.add_child(propeller_details)
+	# Fitting a guard is a selection change like any other, and it has to run through the SAME
+	# handler: it moves the mass, the roll inertia, the ring on the aircraft and — for a duct —
+	# the current the aircraft draws. A dropdown that only redrew its own panel would report an
+	# aircraft nobody built.
+	#
+	# Connected HERE and not beside the rails' six connections, because the guard's control is a
+	# panel and the panels are built after the rails — the rail block runs while
+	# `propeller_details` is still null.
+	propeller_details.guard_changed.connect(func(_guard_id: String) -> void:
+		_on_selection_changed())
 
 	# The pack tab holds two things: what the battery IS, and what state it is in. They are stacked
 	# in one tab rather than split across two, because "4S 1500, and it is 12% full" is one thought.
@@ -705,6 +715,12 @@ func show_panel(panel_name: String) -> bool:
 ## no battery rail and is the single line this slice existed to delete: every number Lab reported
 ## was a number about one particular 4S 1500, and a rail that emitted a selection nobody read
 ## would have looked finished from every angle except the stats.
+##
+## **The guard comes from the Prop panel and not from a rail** (P10f). It is the same shape of
+## deletion one slice later: `Build.from_ids` has taken a `guard_id` since P10b and nothing in the
+## app passed one, so every number Lab reported was a number about an unguarded aircraft even when
+## the ring was on screen. The trailing argument rather than a seventh picker, because the row is
+## a dropdown on an inspector — see `PropellerDetails.guard_changed` for why it lives there.
 func current_build() -> Build:
 	return Build.from_ids(
 		catalog,
@@ -715,7 +731,8 @@ func current_build() -> Build:
 		esc_picker.selected_part()["part_id"],
 		fc_picker.selected_part()["part_id"],
 		electronics_picker.component_ids(),
-		air
+		air,
+		propeller_details.guard_id()
 	)
 
 
@@ -756,6 +773,15 @@ func apply_selection(selection_by_category: Dictionary) -> Array:
 		# "" is a real answer here — not fitted — and ElectronicsPicker takes it as one.
 		if not electronics_picker.select_component(category, part_id) and part_id != "":
 			failed.append({"category": category, "part_id": part_id})
+
+	# The guard, by the same rule as the rest: "" is a real answer (not fitted), and an id this
+	# catalog no longer knows is REPORTED rather than substituted. A guard silently dropped to
+	# "none" would reopen a saved drone lighter, with more roll authority and — if it was a duct —
+	# more current draw than the one that was saved.
+	if selection_by_category.has("guard"):
+		var guard_id := String(selection_by_category["guard"])
+		if not propeller_details.select_guard(guard_id):
+			failed.append({"category": "guard", "part_id": guard_id})
 	return failed
 
 
@@ -775,6 +801,10 @@ func selection() -> Dictionary:
 	# already a category -> id dictionary in exactly this shape, and copying its four keys out by
 	# hand would be the fifth place a component category has to be remembered.
 	out.merge(electronics_picker.component_ids())
+	# The guard rides in the same dictionary as every other category, which is what lets the
+	# project file, the bench door and the field door all carry it without any of them knowing
+	# that it comes from an inspector row rather than from a rail.
+	out["guard"] = propeller_details.guard_id()
 	return out
 
 

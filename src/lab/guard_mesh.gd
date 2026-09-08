@@ -147,44 +147,79 @@ func ring_polygon_m(centre_xz: Vector2) -> PackedVector2Array:
 	return out
 
 
-## A hollow extruded annulus — four vertex rings (inner-bottom, inner-top, outer-top,
-## outer-bottom), stitched into the inner wall, the top face, the outer wall, and the bottom
-## face. CULL_DISABLED via the material means winding order is not load-bearing; normals are
-## generated from the geometry.
-func _build_ring_mesh() -> ArrayMesh:
-	var tool := SurfaceTool.new()
-	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+## The ring as printable triangles: millimetres, Z up, wound OUTWARD, centred on the origin.
+##
+## **This is the ONE definition of the annulus.** `_build_ring_mesh` consumes it rather than
+## building a second one, which is the same rule this file already holds for the inner wall: a
+## second copy can disagree, and the disagreement here would be invisible on screen. The screen
+## draws with `CULL_DISABLED` and generated normals, so a ring wound inside out looks identical;
+## a slicer reading the same ring produces a part with the outside missing. Sharing the geometry
+## means the winding StlWriter checks is the winding the picture was made from.
+##
+## Z UP rather than the node's own Y up, because that is the STL convention and every tool that
+## opens one expects it — the same statement `FrameExport.to_stl` makes for a plate. The mesh
+## rotates it back by -90° about X, which is a proper rotation and therefore preserves both the
+## winding and the normals.
+##
+## Empty when no ring was built, on the same posture as `ring_polygon_m`: an aircraft that fits
+## no guard exports no guard rather than a zero-radius one.
+func ring_triangles_mm() -> Array:
+	var out: Array = []
+	if outer_radius_m <= 0.0 or height_m <= 0.0 or inner_radius_m <= 0.0:
+		return out
 
-	var half_h := height_m * 0.5
+	var inner := inner_radius_m * StlWriter.MM_PER_M
+	var outer := outer_radius_m * StlWriter.MM_PER_M
+	var half_h := height_m * StlWriter.MM_PER_M * 0.5
 	var seg := RADIAL_SEGMENTS
 
 	for i in seg:
-		var theta := TAU * float(i) / float(seg)
-		var c := cos(theta)
-		var s := sin(theta)
-		tool.add_vertex(Vector3(inner_radius_m * c, -half_h, inner_radius_m * s))
-		tool.add_vertex(Vector3(inner_radius_m * c,  half_h, inner_radius_m * s))
-		tool.add_vertex(Vector3(outer_radius_m * c,  half_h, outer_radius_m * s))
-		tool.add_vertex(Vector3(outer_radius_m * c, -half_h, outer_radius_m * s))
+		var theta_a := TAU * float(i) / float(seg)
+		var theta_b := TAU * float((i + 1) % seg) / float(seg)
+		var ib_a := Vector3(inner * cos(theta_a), inner * sin(theta_a), -half_h)
+		var it_a := Vector3(inner * cos(theta_a), inner * sin(theta_a), half_h)
+		var ot_a := Vector3(outer * cos(theta_a), outer * sin(theta_a), half_h)
+		var ob_a := Vector3(outer * cos(theta_a), outer * sin(theta_a), -half_h)
+		var ib_b := Vector3(inner * cos(theta_b), inner * sin(theta_b), -half_h)
+		var it_b := Vector3(inner * cos(theta_b), inner * sin(theta_b), half_h)
+		var ot_b := Vector3(outer * cos(theta_b), outer * sin(theta_b), half_h)
+		var ob_b := Vector3(outer * cos(theta_b), outer * sin(theta_b), -half_h)
 
-	for i in seg:
-		var a := i * 4
-		var b := ((i + 1) % seg) * 4
-		# Inner wall (a+0, a+1, b+0, b+1)
-		tool.add_index(a + 0); tool.add_index(a + 1); tool.add_index(b + 1)
-		tool.add_index(a + 0); tool.add_index(b + 1); tool.add_index(b + 0)
-		# Top face (a+1, a+2, b+2, b+1)
-		tool.add_index(a + 1); tool.add_index(a + 2); tool.add_index(b + 2)
-		tool.add_index(a + 1); tool.add_index(b + 2); tool.add_index(b + 1)
-		# Outer wall (a+2, a+3, b+3, b+2)
-		tool.add_index(a + 2); tool.add_index(a + 3); tool.add_index(b + 3)
-		tool.add_index(a + 2); tool.add_index(b + 3); tool.add_index(b + 2)
-		# Bottom face (a+3, a+0, b+0, b+3)
-		tool.add_index(a + 3); tool.add_index(a + 0); tool.add_index(b + 0)
-		tool.add_index(a + 3); tool.add_index(b + 0); tool.add_index(b + 3)
+		# Outer wall — normals point away from the axis.
+		out.append(PackedVector3Array([ob_a, ob_b, ot_b]))
+		out.append(PackedVector3Array([ob_a, ot_b, ot_a]))
+		# Inner wall — the bore, so its normals point BACK towards the axis. This is the face a
+		# ring wound naively gets wrong, because it is the one whose outward direction is inward.
+		out.append(PackedVector3Array([ib_a, it_b, ib_b]))
+		out.append(PackedVector3Array([ib_a, it_a, it_b]))
+		# Top (+Z) and bottom (−Z) annular faces.
+		out.append(PackedVector3Array([it_a, ot_a, ot_b]))
+		out.append(PackedVector3Array([it_a, ot_b, it_b]))
+		out.append(PackedVector3Array([ib_a, ob_b, ob_a]))
+		out.append(PackedVector3Array([ib_a, ib_b, ob_b]))
 
+	return out
+
+
+## The drawn ring, built from `ring_triangles_mm` — see that function for why there is only one
+## annulus in this file. Millimetres come back to metres and Z-up comes back to the node's Y-up
+## through `_to_local_m`, which is a rotation and not a reflection, so what is drawn is wound the
+## way what is printed is wound.
+func _build_ring_mesh() -> ArrayMesh:
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for triangle in ring_triangles_mm():
+		for point in triangle:
+			tool.add_vertex(_to_local_m(point))
 	tool.generate_normals()
 	return tool.commit()
+
+
+## Millimetres, Z up (the print frame) to metres, Y up (this node's frame). A -90° rotation about
+## X: proper, so winding and normals survive it, which is what lets one triangle list serve both
+## the screen and the slicer.
+static func _to_local_m(point_mm: Vector3) -> Vector3:
+	return Vector3(point_mm.x, point_mm.z, -point_mm.y) / StlWriter.MM_PER_M
 
 
 ## Appearance from the catalog record's `material` field, in the manner of MotorMesh /

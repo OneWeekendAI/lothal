@@ -242,13 +242,33 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 	return results
 
 
-## The six rooms that are neither Lab nor Sim, reached the way a builder reaches them.
+## Every room reached from an inspector rather than from the Rooms menu — P10f.
 ##
-## **The coverage check is the one that matters.** Asserting that six named ids open six rooms
-## passes forever while a seventh room is added to RoomHost and left with no door — which is
-## precisely the failure this shell is exposed to, because the tab bar that used to list every room
-## is gone. So the menu's ids are checked against RoomHost's own doors, derived rather than typed
-## out: every `show_*` method that is not Lab or Sim must have an entry.
+## **A LIST, and deliberately not a flag on RoomHost.** The design doc's §7 names the way this
+## amendment could land green while a room loses its door: an exemption that a room sets for
+## itself is one a room can set by accident, and then it simply vanishes from both the menu and
+## this check. An explicit list next to the assertion is an edit a reviewer sees in the same diff
+## as the room, which is the whole difference.
+##
+## Adding to it is therefore a claim, and the claim is checked one assertion down: every id here
+## must be a door RoomHost actually has, so a typo or a room that is later deleted fails rather
+## than quietly excusing nothing.
+const INSPECTOR_DOORS := ["bench"]
+
+
+## The rooms that are neither Lab nor Sim, reached the way a builder reaches them.
+##
+## **The coverage check is the one that matters.** Asserting that some named ids open some rooms
+## passes forever while a new room is added to RoomHost and left with no door — which is precisely
+## the failure this shell is exposed to, because the tab bar that used to list every room is gone.
+## So RoomHost's own doors are derived rather than typed out — every `show_*` method that is not
+## Lab or Sim — and each must be reachable from EITHER the Rooms menu OR an inspector.
+##
+## P10f moved the thrust stand from the first to the second. That change had to amend this check
+## rather than break it: deleting the `bench` entry from `RoomMenu.ENTRIES` while
+## `RoomHost.show_bench()` still exists fails the original set equality, and "the menu no longer
+## lists Thrust" is the opposite polarity of that assertion — it would have sat beside a failing
+## check rather than replacing it. The guarantee is unchanged: no room is left with no door.
 static func _test_the_room_menu_reaches_every_room() -> Array:
 	var results: Array = []
 	var host := RoomHost.new()
@@ -259,18 +279,41 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 		if name.begins_with("show_") and name != "show_lab" and name != "show_sim":
 			doors.append(name.trim_prefix("show_"))
 	doors.sort()
-	var offered := RoomMenu.room_ids()
-	offered.sort()
+	var reachable: Array = []
+	reachable.append_array(RoomMenu.room_ids())
+	reachable.append_array(INSPECTOR_DOORS)
+	reachable.sort()
 
 	results.append(TestResult.new(
-		"the Rooms menu offers every room RoomHost can open, and no room it cannot",
-		doors == offered and not doors.is_empty(),
-		"RoomHost opens %s · the menu offers %s" % [doors, offered]))
+		"every room RoomHost can open has a door — in the Rooms menu or on an inspector — and "
+			+ "nothing has a door to a room it cannot open",
+		doors == reachable and not doors.is_empty(),
+		"RoomHost opens %s · reachable %s (menu %s + inspector %s)" % [
+			doors, reachable, RoomMenu.room_ids(), INSPECTOR_DOORS]))
+
+	# The exemption list is itself checked, so it cannot excuse a room that does not exist.
+	var stale: Array = []
+	for room_id in INSPECTOR_DOORS:
+		if not doors.has(room_id):
+			stale.append(room_id)
+	results.append(TestResult.new(
+		"and every inspector-reached room named here is a room RoomHost actually has",
+		stale.is_empty(),
+		"not doors: %s" % [stale] if not stale.is_empty() else "all of %s" % [INSPECTOR_DOORS]))
+
+	# THE MENU NO LONGER LISTS THRUST, asserted by name rather than left to the set equality
+	# above — which a re-addition would satisfy by moving `bench` back into the menu and out of
+	# INSPECTOR_DOORS in one edit. This is the assertion that makes putting it back a visible
+	# decision.
+	results.append(TestResult.new(
+		"the Rooms menu no longer lists the thrust stand",
+		not RoomMenu.room_ids().has("bench"),
+		"menu offers %s" % [RoomMenu.room_ids()]))
 
 	host.free()
 
-	# And each id actually lands. A menu that names six rooms and opens none is the same missing
-	# door wearing a label.
+	# And each id actually lands. A menu that names rooms and opens none is the same missing door
+	# wearing a label.
 	var shell := GlassShell.new()
 	var unreachable: Array = []
 	for room_id in RoomMenu.room_ids():
@@ -282,7 +325,8 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 	results.append(TestResult.new(
 		"and every entry opens the room it names",
 		unreachable.is_empty(),
-		"did not open: %s" % [unreachable] if not unreachable.is_empty() else "all six opened"))
+		"did not open: %s" % [unreachable] if not unreachable.is_empty() else
+			"all %d opened" % RoomMenu.room_ids().size()))
 
 	# The chrome retracts for a bench exactly as it does for Sim: a rail floating over a thrust
 	# stand would be a part picker on a screen where changing a part means nothing.
@@ -294,6 +338,36 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 		"a bench retracts the chrome the same way the field does",
 		retracted,
 		"chrome retracted on the frame bench: %s" % retracted))
+
+	# AND THE INSPECTOR PATH DOES THE SAME — P10f moved this assertion onto the new door, which is
+	# where the design doc says it should now live. Driven through the SIGNAL the Motor panel
+	# emits rather than by calling `_open_room` again: that would re-assert what the line above
+	# already proved and would say nothing about whether the button is connected to anything. The
+	# bench must be open afterwards, which is what distinguishes "the chrome went away" from "the
+	# signal did nothing and the chrome was already down".
+	shell.lab.motor_details.thrust_bench_requested.emit()
+	var bench_open := shell.rooms.bench != null
+	var bench_retracted := not shell._top_bar.visible and not shell._rail_glass.visible \
+		and not shell._inspector.visible and not shell._tools_glass.visible
+	shell.rooms.show_lab()
+	results.append(TestResult.new(
+		"the thrust stand opens from the Motor inspector, and retracts the chrome identically",
+		bench_open and bench_retracted,
+		"opened=%s retracted=%s" % [bench_open, bench_retracted]))
+
+	# §7.5's "no room is left running" on the new path rather than assumed from the old. Asserted
+	# on `is_instance_valid` of the instance captured while it was up: asserting the FIELD is null
+	# passes against a teardown that nulls the reference and leaves a Powertrain turning, which is
+	# the bug wearing the fix's clothes — the same mutation this suite's header records finding in
+	# `frame_bench.free()`.
+	shell.lab.motor_details.thrust_bench_requested.emit()
+	var bench_instance: Node = shell.rooms.bench
+	var was_open := bench_instance != null
+	shell.rooms.show_lab()
+	results.append(TestResult.new(
+		"and the bench opened from the inspector is FREED on the way out, not merely forgotten",
+		was_open and not is_instance_valid(bench_instance),
+		"was open: %s · still alive: %s" % [was_open, is_instance_valid(bench_instance)]))
 
 	shell.free()
 	return results

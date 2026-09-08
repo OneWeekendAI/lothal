@@ -26,7 +26,7 @@ static func run() -> Array:
 	var results: Array = []
 	var catalog := PartsCatalog.load_default()
 	var materials := FrameMaterials.load_default()
-	var panel := PropellerDetails.new()
+	var panel := PropellerDetails.new(PartsCatalog.load_default())
 
 	results.append(_test_every_blade_row_renders_for_every_prop(catalog, panel))
 	results.append(_test_a_generated_planform_is_labelled_assumed_everywhere(catalog, panel))

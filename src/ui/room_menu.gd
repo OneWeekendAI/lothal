@@ -1,12 +1,13 @@
 class_name RoomMenu
 extends MenuButton
-## The way into every room that is not Lab or Sim — the four benches, the field editor and Studio.
+## The way into every room that is not Lab or Sim and is not reached from an inspector — three
+## benches, the field editor and Studio.
 ##
 ## ---------------------------------------------------------------------------
 ## WHY THIS IS A MENU AND NOT SIX MORE DROPDOWN ENTRIES
 ## ---------------------------------------------------------------------------
 ##
-## These six screens are shipped, working, and **unchanged**. What they lack in the new shell is a
+## These screens are shipped, working, and **unchanged**. What they lack in the new shell is a
 ## door, not a design. Folding them into the system dropdown would make that list fifteen items
 ## long, which is the sidebar problem §5 rejected wearing a different control; giving each its own
 ## floating cluster would spend the viewport the full-bleed layout exists to protect.
@@ -18,6 +19,20 @@ extends MenuButton
 ## build. This is what carries the rooms across in the meantime without any of them losing a
 ## capability, which is §4's whole method: port one system at a time, keep everything working,
 ## delete the tab bar last.
+##
+## ## THE THRUST STAND HAS LEFT THIS LIST (P10f)
+##
+## It is the first room to make the move the paragraph above describes, and it is reached from the
+## Motor inspector's own "Open thrust bench…" button — the same door the blade designer already
+## uses on the Prop panel. The ESC bench follows the same pattern when its turn comes, and the
+## frame bench belongs under Airframe; both are still here because moving them is their own slice
+## and a room without a door is worse than a room in a menu.
+##
+## **A room leaving this list does not stop being covered.** `tests/test_room_host.gd` derives the
+## room list from `RoomHost`'s own `show_*` methods and asserts every one of them has a door; P10f
+## amended that check to "in the menu OR in the inspector-reached list", which is an explicit list
+## sitting next to the assertion rather than a flag a new room could set for itself. Deleting an
+## entry here without adding it there still fails.
 ##
 ## The entries are data for the same reason ProjectMenu's are: nothing else enumerates the rooms
 ## this shell can open, so a room cannot be added to RoomHost and quietly left unreachable here.
@@ -33,7 +48,6 @@ signal room_chosen(room_id: String)
 ## running under load — and the field editor and Studio are not, and the line is the only thing
 ## saying so in a list this short.
 const ENTRIES := [
-	{"id": "bench", "label": "Thrust stand", "separator_before": false},
 	{"id": "battery_bench", "label": "Pack bench", "separator_before": false},
 	{"id": "esc_bench", "label": "ESC bench", "separator_before": false},
 	{"id": "frame_bench", "label": "Frame bench", "separator_before": false},
@@ -48,7 +62,8 @@ func _init() -> void:
 	text = "Rooms"
 	custom_minimum_size = Vector2(96, 30)
 	tooltip_text = ("The benches, the field editor and Studio — unchanged, and reached from here "
-		+ "until each one lands where it belongs (a bench under the system it tests).")
+		+ "until each one lands where it belongs (a bench under the system it tests). The thrust "
+		+ "stand has already moved: it opens from the Motor inspector.")
 
 	var popup := get_popup()
 	for entry in ENTRIES:
@@ -68,8 +83,8 @@ func _on_id_pressed(index: int) -> void:
 
 
 ## The room ids this menu can emit. Exists so a test can assert the menu covers every room RoomHost
-## can open, rather than checking six hardcoded strings that would agree with a seventh going
-## missing.
+## can open, rather than checking five hardcoded strings that would agree with a sixth going
+## missing. A room reached from an inspector instead is named in that same test's exemption list.
 static func room_ids() -> Array:
 	var ids: Array = []
 	for entry in ENTRIES:

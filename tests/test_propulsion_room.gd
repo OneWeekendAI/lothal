@@ -769,7 +769,7 @@ static func _test_moving_the_caret_rebuilds_nothing() -> TestResult:
 ## `tests/capture_glass_shell.gd`.
 static func _test_the_prop_panel_carries_the_door_and_opens_nothing_itself() -> TestResult:
 	var catalog := PartsCatalog.load_default()
-	var panel := PropellerDetails.new()
+	var panel := PropellerDetails.new(PartsCatalog.load_default())
 	var build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
 		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
 		ReferenceBuild.FC_ID, Build.DEFAULT_COMPONENT_IDS)

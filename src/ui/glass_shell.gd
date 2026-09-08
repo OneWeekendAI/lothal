@@ -641,6 +641,13 @@ func _build_blade_room() -> void:
 
 	lab.propeller_details.design_blade_requested.connect(_on_design_blade_requested)
 
+	# P10f'S THREE INSPECTOR DOORS. The thrust stand left the Rooms menu (see `room_menu.gd`'s own
+	# header), and the two exports are here rather than on their panels because a details panel
+	# that wrote a file would be a panel that knows where this app puts things.
+	lab.motor_details.thrust_bench_requested.connect(_on_thrust_bench_requested)
+	lab.motor_details.mount_stl_requested.connect(_on_mount_stl_requested)
+	lab.propeller_details.guard_stl_requested.connect(_on_guard_stl_requested)
+
 
 ## The thrust-distribution overlay — P10e's first, and the one the blade designer sits next to.
 ##
@@ -773,6 +780,68 @@ func _refill_thrust_overlay() -> void:
 		_spin_up_overlay.adopt(build)
 	if _prop_disc_overlay != null:
 		_prop_disc_overlay.adopt(build)
+
+
+## The thrust stand, opened from the Motor inspector — P10f.
+##
+## It goes through the SAME `_open_room` every other room goes through, rather than constructing a
+## BenchScreen here. That is the whole content of "the room lifecycle is still RoomHost's": the
+## bench is freed on the way out, the chrome retracts through `_on_room_changed`, and "no room is
+## left running" is one object's guarantee and not two. A second construction path would be a
+## second Powertrain that could be left turning behind a screen nobody is looking at.
+func _on_thrust_bench_requested() -> void:
+	_open_room("bench")
+
+
+## The propulsion exports. Both land in the same `user://exports` folder `FrameWorkbench` writes
+## to and both open it afterwards, on that room's own argument: a file you cannot find has not been
+## exported. The path is in the status line too, because `OS.shell_open` does nothing headless.
+func _on_mount_stl_requested(motor: Dictionary) -> void:
+	if container == null:
+		return
+	# The stack on the AIRCRAFT, not a fresh one built from the same parts. It already carries the
+	# builder's assembly tweaks — the pad thickness and the shim stack — and rebuilding it here
+	# would be a second construction that could silently disagree with the one on screen about
+	# exactly the two numbers a fit check is asked about.
+	var mesh: MotorMesh = lab.airframe.motor_meshes.get(MotorLayout.MOTOR_NAMES[0])
+	if mesh == null:
+		return
+	var solid_name := _safe_export_name(String(motor.get("part_id", "motor")) + "-mount")
+	var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
+	DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
+	_report_export(PropulsionExport.write_mount_stack(mesh, solid_name, path), path)
+
+
+func _on_guard_stl_requested(guard_id: String, prop_tip_radius_m: float) -> void:
+	if guard_id == "":
+		return
+	var guard := lab.catalog.get_part(guard_id)
+	var solid_name := _safe_export_name(guard_id)
+	var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
+	DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
+	_report_export(PropulsionExport.write_guard(guard, prop_tip_radius_m, path), path)
+
+
+## Says what happened, and says it the way `StlWriter` said it. A refusal names the part and the
+## reason — "the surface is not closed", "the solid is inside out" — rather than "export failed",
+## because the first is something a builder can report and the second is not.
+func _report_export(result: Dictionary, path: String) -> void:
+	if _status_label == null:
+		return
+	if bool(result["ok"]):
+		_status_label.text = "Wrote %s" % ProjectSettings.globalize_path(path)
+		OS.shell_open(ProjectSettings.globalize_path(FrameWorkbench.EXPORT_DIRECTORY))
+	else:
+		_status_label.text = "NOT EXPORTED — %s" % String(result["reason"])
+
+
+static func _safe_export_name(text: String) -> String:
+	var out := ""
+	for index in text.length():
+		var character := text[index]
+		out += character if character.is_valid_identifier() or character.is_valid_int() \
+			or character == "-" else "_"
+	return "part" if out.is_empty() else out
 
 
 func _on_design_blade_requested(prop: Dictionary) -> void:

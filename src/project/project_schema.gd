@@ -81,7 +81,12 @@ extends RefCounted
 ## would be worth nothing, and this one does not.
 
 ## Bumped when a field is ADDED. Old Lothals still open the file.
-const SCHEMA_MINOR := 0
+##
+## 1 (P10f, 2026-09-08): `guard` joined the optional categories. An older Lothal reading a file
+## that names one ignores the key and opens the aircraft without its guard, which is the correct
+## outcome for a version that has no guard physics at all — and is exactly why an added field is a
+## MINOR bump rather than a major one.
+const SCHEMA_MINOR := 1
 ## Bumped when a field CHANGES MEANING. Old Lothals refuse the file.
 const SCHEMA_MAJOR := 1
 
@@ -94,7 +99,14 @@ const REQUIRED_CATEGORIES := ["frame", "motor", "propeller", "battery", "esc", "
 ##
 ## ADDING A CATEGORY IS A ONE-LINE CHANGE HERE. Rule 2 is what makes it a one-line change: every
 ## existing file gets "" for it, because their writer had never heard of it.
-const OPTIONAL_CATEGORIES := ["camera", "vtx", "antenna", "receiver"]
+##
+## `guard` arrived with P10f and is the first entry that proves the claim on a real category: every
+## project file written before it exists reopens with no guard fitted, which is the aircraft it was
+## saved as. It is NOT one of `Build.OPTIONAL_COMPONENTS` — those four are a payload the mass model
+## weighs from a dictionary, and the guard is a trailing argument to `Build.from_ids` because it is
+## the one optional part that also changes the aerodynamics. `Project.to_build` pulls it out of the
+## components block and hands it over separately for that reason.
+const OPTIONAL_CATEGORIES := ["camera", "vtx", "antenna", "receiver", "guard"]
 
 ## Sparse blocks under `decisions`. Named here rather than in Project so that adding a block is a
 ## data change in one place — the unknown-field carry, the round trip and the defaults all read

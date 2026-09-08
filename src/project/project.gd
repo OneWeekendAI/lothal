@@ -294,10 +294,17 @@ func to_build(catalog: PartsCatalog, missing: Array = []) -> Build:
 	if not missing.is_empty():
 		return null
 
+	# The guard leaves the components dictionary and becomes the trailing argument, because
+	# `Build.from_ids` reads `component_ids` for `Build.OPTIONAL_COMPONENTS` only and the guard is
+	# not one of them — it is the optional part that also changes the aerodynamics, so it arrives
+	# on its own parameter. Erased rather than left in place, so the two paths cannot both claim it.
+	var guard_id := String(components.get("guard", ""))
+	components.erase("guard")
+
 	return Build.from_ids(catalog,
 		String(parts["frame"]), String(parts["motor"]), String(parts["propeller"]),
 		String(parts["battery"]), String(parts["esc"]), String(parts["flight_controller"]),
-		components, to_air())
+		components, to_air(), guard_id)
 
 
 ## Sea-level standard when the block is absent — Build's own default, so a project written before
