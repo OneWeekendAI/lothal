@@ -56,15 +56,6 @@ const MAX_INSPECTOR_FRACTION := 0.45
 ## How far the floating columns stop short of the bottom, so they never collide with the
 ## bottom-left tool cluster or the bottom-right toggle.
 const BOTTOM_KEEPOUT := 76.0
-## The height of the blade designer's close button, and so of the strip reserved for it above the
-## room. Named rather than inlined because two places have to agree on it: the button's own
-## geometry, and the room's top offset that clears it. They did not agree — the button was pinned
-## over the room's first toolbar row, hiding the Pitch and RPM controls behind it. See
-## `_build_blade_room`.
-const BLADE_CLOSE_HEIGHT := 30.0
-## The bottom edge of that strip, measured from the top of the window. Everything the blade designer
-## draws starts below it.
-const BLADE_CLOSE_STRIP_BOTTOM := TOP_BAR_HEIGHT + CLUSTER_MARGIN * 2.0 + BLADE_CLOSE_HEIGHT
 
 ## Which CanvasLayer the Lab/Sim toggle rides. Ten, matching the old tab bar, and for the identical
 ## reason: Sim's HUD is on a layer of its own and draws straight over anything in the ordinary tree.
@@ -312,6 +303,9 @@ var _overlays_menu_button: MenuButton
 ## system that HAS a room reachable that way — today, Propulsion. See `_build_top_cluster`.
 var _room_door: Button
 var _room_door_glass: PanelContainer
+## The way back out of the blade designer, and the glass behind it. In the top bar beside the door
+## rather than floating over the room — see `_build_blade_room` for what floating cost.
+var _blade_room_close_glass: PanelContainer
 
 
 func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
@@ -533,6 +527,12 @@ func _build_top_cluster() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(spacer)
 
+	# The way out sits at the RIGHT-HAND end of the strip, beside "Contact us", rather than beside
+	# the door it undoes. The bar's left end is the project's — chip, system, room door — and a
+	# button that only exists while a room is open reads as an action on the room, not part of that
+	# identity. Added before `contact` so the ordering is close-then-contact.
+	_build_close_door(bar)
+
 	# The way to reach us, carried over from the old tab row. A browser, not an in-app view, for
 	# the reason ActivationScreen's button gave: anything resembling a sign-in window with no
 	# address bar is shaped like the phishing people are taught to refuse.
@@ -553,6 +553,47 @@ func _build_top_cluster() -> void:
 ## horizontally, which is component work. Worth naming precisely because the screenshots make the
 ## cost visible — with glass on both sides the model keeps about half the window, which is closer
 ## to the old three-column layout than to the design.
+
+## THE WAY OUT OF THE BLADE DESIGNER, BESIDE THE WAY IN.
+##
+## It is on the shell rather than in the room for the reason it always was: the room is a workspace
+## and the shell owns where a workspace sits. What changed is WHERE on the shell.
+##
+## It used to float, pinned to the top-right corner of the viewport at the same height the room
+## starts at — so it sat on the right-hand end of the room's own toolbar and buried the pitch
+## spinbox and the rpm slider behind the words "Close blade designer".
+##
+## THE FIRST REPAIR WAS TO RESERVE A 54 PX STRIP ABOVE THE ROOM, and it is worth recording why that
+## was wrong, because it looks obviously right. This room's content does not fit in less height than
+## the window gives it: at 1280x720 the column ends 2 px above the room's own bottom edge. A
+## `Control` does not clip its children, so taking 54 px off the top does not scroll or squash
+## anything — the mount profile and the status line simply draw through the bottom of the room and
+## under the Lab/Sim/Rooms cluster, which is what the second screenshot showed. Any repair that
+## costs the room height has this consequence, so the repair must cost it none.
+##
+## The top bar is where this button always belonged anyway: `_room_door` — the way IN to this same
+## room — is already in that bar for its own stated reason. The bar has a spacer in it, so a button
+## costs the viewport nothing at all, and the way in and the way out end up in the same strip, which
+## is an arrangement a builder learns once — at the right-hand end of it, beside "Contact us", so
+## the strip's left end stays the project's identity and the room's own action sits apart from it.
+##
+## 2 px is a thin margin and it is not defended by anything here; `tests/test_shell_layout.gd` is
+## what will notice when a pane's minimum grows past it.
+##
+## Built here rather than in `_build_blade_room` for the dull reason that `_init` builds the room
+## first and the bar does not exist yet at that point.
+func _build_close_door(bar: HBoxContainer) -> void:
+	var close_glass := _glass_panel()
+	_blade_room_close = Button.new()
+	_blade_room_close.text = "Close blade designer"
+	_blade_room_close.custom_minimum_size = Vector2(0, 28)
+	_blade_room_close.pressed.connect(func() -> void: set_blade_room_open(false))
+	close_glass.add_child(_blade_room_close)
+	close_glass.visible = false
+	_blade_room_close_glass = close_glass
+	bar.add_child(close_glass)
+
+
 func _build_rail_glass() -> void:
 	_rail_glass = _glass_panel()
 	_rail_glass.set_anchors_preset(Control.PRESET_LEFT_WIDE)
@@ -643,12 +684,7 @@ func _build_blade_room() -> void:
 	_blade_room.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_blade_room.offset_left = CLUSTER_MARGIN
 	_blade_room.offset_right = -CLUSTER_MARGIN
-	# BELOW THE CLOSE STRIP, not level with it. The room's own toolbar is its first row, and with
-	# the room starting at the same height as the button that closes it, the button sat on top of
-	# that row: the pitch spinbox and the rpm slider were behind "Close blade designer". The rails
-	# and the inspector are hidden while the room is up, so the strip costs nothing that is on
-	# screen — it is empty window either way.
-	_blade_room.offset_top = BLADE_CLOSE_STRIP_BOTTOM + CLUSTER_MARGIN
+	_blade_room.offset_top = TOP_BAR_HEIGHT + CLUSTER_MARGIN
 	_blade_room.offset_bottom = -BOTTOM_KEEPOUT
 	_blade_room.visible = false
 	add_child(_blade_room)
@@ -667,18 +703,8 @@ func _build_blade_room() -> void:
 	# where a Build that outlives the reload can honour it.
 	_blade_room.parts_published.connect(func(_record: Dictionary) -> void: lab.reload_catalog())
 
-	# The way out. On the shell rather than in the room, for the same reason the room does not open
-	# itself: the room is a workspace and the shell owns where a workspace sits.
-	_blade_room_close = Button.new()
-	_blade_room_close.text = "Close blade designer"
-	_blade_room_close.visible = false
-	_blade_room_close.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_blade_room_close.offset_left = -180.0 - CLUSTER_MARGIN
-	_blade_room_close.offset_right = -CLUSTER_MARGIN
-	_blade_room_close.offset_top = BLADE_CLOSE_STRIP_BOTTOM - BLADE_CLOSE_HEIGHT
-	_blade_room_close.offset_bottom = BLADE_CLOSE_STRIP_BOTTOM
-	_blade_room_close.pressed.connect(func() -> void: set_blade_room_open(false))
-	add_child(_blade_room_close)
+	# The way out is built with the way in, in `_build_top_cluster` — see `_build_close_door` for
+	# why it lives in the top bar and not over the room.
 
 	lab.propeller_details.design_blade_requested.connect(_on_design_blade_requested)
 
@@ -999,7 +1025,7 @@ func set_blade_room_open(open: bool) -> void:
 	if _blade_room == null:
 		return
 	_blade_room.visible = open
-	_blade_room_close.visible = open
+	_blade_room_close_glass.visible = open
 	_rail_glass.visible = not open and _rail_glass.visible
 	_tools_glass.visible = not open and _tools_glass.visible
 	# The overlay retracts with the tools, and comes back if the toggle was left on. The room
@@ -1390,7 +1416,7 @@ func _select_system(index: int) -> void:
 	# that function ends by calling THIS one and the two would recurse.
 	if _blade_room != null:
 		_blade_room.visible = false
-		_blade_room_close.visible = false
+		_blade_room_close_glass.visible = false
 	var modelled := _is_modelled(system)
 
 	# The door into this system's room, if it has one. Hidden rather than disabled for the eight
@@ -1769,7 +1795,7 @@ func _show_empty_state() -> void:
 		_workbench.visible = false
 	if _blade_room != null:
 		_blade_room.visible = false
-		_blade_room_close.visible = false
+		_blade_room_close_glass.visible = false
 	_tools_glass.visible = false
 	if _bottom_right_glass != null:
 		_bottom_right_glass.visible = false

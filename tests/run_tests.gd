@@ -42,6 +42,24 @@ func _init() -> void:
 			total += 1
 			print("[%s] %s (%s)" % [status, result.name, result.detail])
 
+	# THE LAID-OUT SUITE, LAST AND ON ITS OWN. Every suite above is synchronous by design; this one
+	# needs frames, because the defects it covers are about where a container ENDED UP and no
+	# container has a size until one has been processed. See `tests/test_shell_layout.gd` for why
+	# that exception exists and what belongs in it. Run under --headless like the rest: these are
+	# 2D control rects, which the dummy driver produces correctly — unlike a SubViewport's 3D
+	# contents, which is why the capture tools are not headless.
+	var layout_results: Array = await TestShellLayout.run(self)
+	if layout_results.is_empty():
+		fail_count += 1
+		total += 1
+		print("[FAIL] suite \"shell layout\" produced no results (crashed, or class not registered)")
+	for result in layout_results:
+		var status: String = "PASS" if result.passed else "FAIL"
+		if not result.passed:
+			fail_count += 1
+		total += 1
+		print("[%s] %s (%s)" % [status, result.name, result.detail])
+
 	print("")
 	if fail_count == 0:
 		print("ALL %d TESTS PASSED" % total)
