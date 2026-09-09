@@ -228,6 +228,90 @@ func camera_eye() -> Node3D:
 	return (component_meshes["camera"] as ComponentMesh).get_node_or_null("Eye")
 
 
+## Where the lens is IN THE AIRFRAME'S OWN FRAME, metres, or null when no camera is fitted.
+##
+## The same eye `camera_eye()` returns, as a number rather than as a node. Both come off the same
+## marker — this reads the node's own `position` and the mesh's, and adds them — so there is one
+## answer to where the lens is and not a second derivation that could drift from the drawing.
+##
+## It exists because `global_transform` is unusable for this: a `Node3D` outside the tree returns
+## identity, so a check written against it silently measures an aircraft whose every part sits on
+## the origin. That is the exact defect the 2026-08-28 review found in the guard polygon, and it
+## would be a worse one here because the eye is the thing every angle is measured FROM.
+##
+## No rotation is composed in, and that is not an omission: `ComponentMesh` seats the camera with no
+## rotation and no tilt (see `FpvView` for why tilt is its own slice), so the eye's basis is the
+## airframe's. When tilt lands it lands on the component's transform and this must compose it —
+## `camera_boresight()` below is where that change goes.
+func camera_eye_m() -> Variant:
+	if not component_meshes.has("camera"):
+		return null
+	var mesh: ComponentMesh = component_meshes["camera"]
+	var eye := mesh.get_node_or_null("Eye") as Node3D
+	if eye == null:
+		return null
+	return mesh.position + eye.position
+
+
+## The direction the fitted camera looks, in the airframe's own frame.
+##
+## Forward is -Z (physics.md §1). Constant today because there is no camera tilt in the model at
+## all; a named function rather than callers writing `Vector3(0, 0, -1)` so that the tilt slice has
+## one place to land instead of every angle in the app being a second opinion about which way a
+## camera points.
+func camera_boresight() -> Vector3:
+	return Vector3(0.0, 0.0, -1.0)
+
+
+## Everything the camera can be blocked by, `{name: PackedVector3Array}` in the airframe's own
+## frame — what `CameraView` measures angles to.
+##
+## TWO KINDS OF THING ARE IN HERE AND THERE IS NO THIRD BY OVERSIGHT:
+##
+##   - every drawn plate, by node name. THE ARMS ARE THESE. Frames are plates in this app, so an
+##     arm is part of a plate's outline rather than a solid of its own, and the outline IS the
+##     silhouette. `FrameModel.plate_polygons_m()` publishes them; the plan-to-world mapping is
+##     `AirframeDocument.world_m`, the same one `PlateMesh` extrudes through, so the polygon
+##     measured here is the polygon drawn.
+##   - every fitted guard ring, from `guard_ring_polygons_m()` unchanged — the polygon P10c shipped
+##     and left waiting for exactly this caller.
+##
+## The propellers are NOT here, and that is a decision rather than a gap: a spinning disc is in
+## front of an FPV camera on most builds and everyone flying knows it, so reporting it as an
+## obstruction would bury the two findings that are actually actionable under four that are not.
+## The disc's geometry is already published by `PropellerMesh` if that judgement is ever revisited.
+##
+## Empty for a moulded frame with no plates and no guard, which is a real aircraft and not a
+## failure: `FrameModel` draws a stand-in body precisely because the plate model cannot describe
+## that shape, and inventing an outline for it would be a claim about a frame nobody measured.
+func camera_obstruction_points_m() -> Dictionary:
+	var out := {}
+
+	for record in frame_model.plate_polygons_m():
+		var points := PackedVector3Array()
+		var y: float = record["y_m"]
+		for plan_mm in record["outline_mm"]:
+			points.append(AirframeDocument.world_m(plan_mm, 0.0) + Vector3(0.0, y, 0.0))
+		if not points.is_empty():
+			out[str(record["name"])] = points
+
+	var rings := guard_ring_polygons_m()
+	for motor_name in rings:
+		var guard: GuardMesh = guard_meshes[motor_name]
+		# The ring's height is the propeller disc plane, which is where GuardMesh puts it and why —
+		# a shroud wraps the disc. Read off the node under the arm-tip pad and added to the pad's
+		# own height, because the polygon above is in the AIRCRAFT's plan frame and the node's Y is
+		# in the pad's.
+		var pad: Node3D = frame_model.arm_tips[motor_name]
+		var y: float = pad.position.y + guard.position.y
+		var points := PackedVector3Array()
+		for plan_m in rings[motor_name]:
+			points.append(Vector3(plan_m.x, y, plan_m.y))
+		out["guard %s" % motor_name] = points
+
+	return out
+
+
 ## One of the frame's mount points by id, or null. Named accessor rather than callers walking
 ## frame_model.mount_points, so the airframe stays the one place that knows what is mounted where.
 func mount_point(id: String) -> MountPoint:
@@ -349,6 +433,87 @@ func guard_ring_polygons_m() -> Dictionary:
 		var polygon := guard.ring_polygon_m(Vector2(hub.x, hub.z))
 		if not polygon.is_empty():
 			out[motor_name] = polygon
+	return out
+
+
+## What the fitted camera is looking past, in words — plans/2026-08-26-propulsion-room-design.md
+## §5 P10c's check, in the vocabulary every other check here speaks.
+##
+## ## THE COMPARISON IS AGAINST THE FRAME, AND THAT IS WHAT MAKES IT SAYABLE
+##
+## The first version of this reported everything forward of the lens plane — a hard geometric
+## boundary needing no field of view, which was the point. It fired on EVERY build with a plate
+## frame, because the arms of a standard X sit about 54 deg off centre and are therefore in shot on
+## any real 150 deg lens. That is true, and it is noise: it is the same objection that keeps the
+## propellers out of `camera_obstruction_points_m()` — four findings nobody can act on bury the one
+## they can.
+##
+## So the thing reported is a FITTED PART THAT IS MORE IN SHOT THAN THE AIRCRAFT ITSELF. The
+## frame's own silhouette is the baseline, and it is not a free constant: every build has one, it
+## is measured rather than chosen, and it moves with the frame — which is exactly right, because a
+## deadcat frame EXISTS to get the arms out of the picture, and against a deadcat's baseline a
+## guard has further to go before it is worth mentioning.
+##
+## Still no field of view anywhere. See `CameraView` for why none exists to test against and why
+## inventing one here would be a fabricated spec inside a build warning. The sentence carries the
+## angle, and the builder — who knows what lens they own — reads the verdict off it: a part at
+## 20 deg is in shot on anything wider than 40. Doubling is arithmetic, not a claim about a camera.
+##
+## CHARACTERISTIC, never LIMITING, and BuildWarning's own rule is why: there is no boundary in the
+## physics being crossed. Ducts in the corners of the picture are what a cinewhoop IS, and telling
+## somebody who built one that they have made a mistake is the exact failure that file's header was
+## written about.
+func camera_view_warnings() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	var eye = camera_eye_m()
+	if eye == null:
+		return out
+
+	var report := CameraView.off_axis_report(eye, camera_boresight(), camera_obstruction_points_m())
+
+	# The frame's own silhouette is the baseline. INF when there is no plate geometry at all — a
+	# moulded whoop — which is the right answer rather than a missing one: nothing of the airframe
+	# is in the picture to compare against, so anything fitted has nothing to beat.
+	var frame_deg := INF
+	var fitted: Array = []
+	for part_name in report:
+		var angle: float = report[part_name]
+		if str(part_name).begins_with("Plate"):
+			frame_deg = minf(frame_deg, angle)
+		else:
+			fitted.append({"name": part_name, "deg": angle})
+
+	# Sorted so the sentence names the most intrusive part rather than whichever one the dictionary
+	# happened to yield first — the order IS the finding.
+	fitted.sort_custom(func(a, b): return a["deg"] < b["deg"])
+
+	var worse: Array = []
+	for entry in fitted:
+		# Forward of the lens plane AND further into the picture than the aircraft already is.
+		if entry["deg"] < 90.0 and entry["deg"] < frame_deg:
+			worse.append(entry)
+	if worse.is_empty():
+		return out
+
+	var closest: Dictionary = worse[0]
+	var message := "%s enters the camera's view %.0f° off centre — visible on any lens wider than %.0f°" % [
+		closest["name"], closest["deg"], closest["deg"] * 2.0]
+	if is_inf(frame_deg):
+		message += ", and this frame has no plate silhouette to hide behind."
+	else:
+		message += ", ahead of the airframe's own %.0f°." % frame_deg
+	if worse.size() > 1:
+		message += " %d other fitted part%s the same." % [
+			worse.size() - 1, " does" if worse.size() == 2 else "s do"]
+	message += " No lens angle is published for any camera in the catalog, so this is geometry rather than a verdict."
+
+	out.append(BuildWarning.characteristic(&"camera_obstruction", message, {
+		"closest_name": closest["name"],
+		"closest_deg": closest["deg"],
+		"frame_deg": frame_deg,
+		"worse_count": worse.size(),
+		"off_axis_deg": report,
+	}))
 	return out
 
 

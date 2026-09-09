@@ -260,6 +260,9 @@ func _render_fit(airframe: AirframeModel) -> void:
 	var warnings := airframe.mount_warnings()
 	warnings.append_array(airframe.battery_fit_warnings())
 	warnings.append_array(airframe.component_fit_warnings())
+	# And what the fitted camera is looking past. Same block, because a builder looking for "what is
+	# wrong with how this went together" is looking for this too — see AirframeModel.camera_view_warnings.
+	warnings.append_array(airframe.camera_view_warnings())
 	_fit_warnings.show_warnings(warnings)
 
 
