@@ -384,6 +384,20 @@ static func _capacitor_for_pack(build: Build) -> String:
 	return String(CAPACITOR_ROWS[CAPACITOR_ROWS.size() - 1][1])
 
 
+## The catalog rows the two fitted ids resolve to. Public because PW3's checks read the connector's
+## rating, its family and its contact resistance, and PW5's inspector shows all three: a caller that
+## did its own `catalog.get_part(harness.value(...))` would be a second place the override table is
+## consulted, which is the one thing `value()` exists to prevent.
+##
+## Empty for nothing fitted, which is a real state and not an error — see `_connector_for_pack`.
+func connector_row(build: Build) -> Dictionary:
+	return _row_for(build, CONNECTOR)
+
+
+func capacitor_row(build: Build) -> Dictionary:
+	return _row_for(build, CAPACITOR)
+
+
 func _row_for(build: Build, key: String) -> Dictionary:
 	if build.catalog == null:
 		return {}

@@ -1837,6 +1837,14 @@ func warnings() -> Array[BuildWarning]:
 	# datasheet-backed and its bias is illustrative.
 	out.append_array(EscPlausibility.warnings_for(self))
 	out.append_array(FcPlausibility.warnings_for(self))
+
+	# And the path the current takes to get there (plans/2026-09-10-power-room-plan.md PW3): wire
+	# ampacity per segment, the harness's own voltage drop reported APART from the pack's sag, the
+	# plug's rating and — the one hard refusal in the set — whether the plug on the aircraft mates
+	# with the one on the pack. Last of the list because it is the only entry that reads a primed
+	# powertrain, and a reader meeting "your leads lose 0.4 V" before they have been told what the
+	# build draws has been handed a consequence with no premise.
+	out.append_array(HarnessChecks.warnings_for(self))
 	return out
 
 
