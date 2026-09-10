@@ -14,10 +14,11 @@ extends PartDetails
 ## down. The rows above it are the terms; if they do not visibly add to it, that is a real
 ## disagreement and it should be on screen rather than papered over.
 ##
-## The wiring row is here for a reason beyond completeness: it is 14 g of the 55, it is flat, and
-## at the small end it is the dominant term — more than the whole of a real whoop's harness. A
-## builder looking at why a whoop reports 67 g against a real 20–25 g has to be able to see that.
-## See Build.wiring_mass_g() for why it is flat and what would change it.
+## The wiring row used to be 14 g of a flat 55 — the budget's remainder, the same on every
+## aircraft, and at the small end the dominant term. PW2 replaced it with a real harness that is
+## weighed off the build's own gauges and lengths, so this row now MOVES with the aircraft. The row
+## itself is unchanged and so is its reason for being here: a builder looking at why a whoop
+## reports what it reports has to be able to see the harness term. See `Harness`.
 
 const SPEC_ROWS := [
 	{"key": "camera", "label": "Camera"},
@@ -60,7 +61,7 @@ func _read(_part: Dictionary, key: String) -> String:
 
 	match key:
 		"wiring":
-			return "%.1f g" % Build.wiring_mass_g()
+			return "%.1f g" % _build.harness_mass_g()
 		"total":
 			return "%.1f g" % _build.electronics_mass_g()
 

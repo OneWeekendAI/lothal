@@ -28,9 +28,9 @@ const LIBRARY_PATH := "user://test_air_courses.json"
 const PUBLISHED_ISA_TOL_FRACTION := 0.002
 
 ## The three fixed points, at standard air, to the tolerances the rest of the suite uses.
-const INVARIANT_MASS_G := 496.0
-const INVARIANT_TWR := 11.69
-const INVARIANT_HOVER_PCT := 29.6
+const INVARIANT_MASS_G := 507.48
+const INVARIANT_TWR := 11.43
+const INVARIANT_HOVER_PCT := 29.92
 
 ## The default circuit's fingerprint BEFORE air existed. Captured by running fingerprint() against
 ## the shipped code with this slice's changes stashed, not by pasting whatever the new code prints
@@ -175,15 +175,15 @@ static func _invariants_at_standard() -> Array:
 	var results: Array = []
 	var standard := ReferenceBuild.build()
 	results.append(TestResult.new(
-		"all-up weight at standard air is still 496.0 g",
+		"all-up weight at standard air is still 507.5 g",
 		absf(standard.all_up_weight_g() - INVARIANT_MASS_G) < 0.05,
 		"%.2f g" % standard.all_up_weight_g()))
 	results.append(TestResult.new(
-		"thrust-to-weight at standard air is still 11.69:1",
+		"thrust-to-weight at standard air is still 11.43:1",
 		absf(standard.thrust_to_weight() - INVARIANT_TWR) < 0.01,
 		"%.4f:1" % standard.thrust_to_weight()))
 	results.append(TestResult.new(
-		"hover throttle at standard air is still 29.6%",
+		"hover throttle at standard air is still 29.9%",
 		absf(standard.hover_throttle() * 100.0 - INVARIANT_HOVER_PCT) < 0.05,
 		"%.2f%%" % (standard.hover_throttle() * 100.0)))
 
@@ -251,7 +251,7 @@ static func _oracle_cannot_see_the_field() -> Array:
 		absf(oracle.air.kgm3() - AirDensity.standard_kgm3()) < 1.0e-12,
 		"oracle air %.6f, field air %.6f" % [oracle.air.kgm3(), selected_rho]))
 	results.append(TestResult.new(
-		"and therefore still reads 11.69:1 / 29.6% with that field selected",
+		"and therefore still reads 11.43:1 / 29.9% with that field selected",
 		absf(oracle.thrust_to_weight() - INVARIANT_TWR) < 0.01
 			and absf(oracle.hover_throttle() * 100.0 - INVARIANT_HOVER_PCT) < 0.05,
 		"%.4f:1, %.2f%%" % [oracle.thrust_to_weight(), oracle.hover_throttle() * 100.0]))

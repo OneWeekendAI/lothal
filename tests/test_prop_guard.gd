@@ -584,10 +584,10 @@ static func _the_reference_build_fits_no_guard() -> Array:
 				plain.mass_properties.total_mass_kg, explicit.mass_properties.total_mass_kg,
 				plain.k_t, explicit.k_t]),
 		TestResult.new(
-			"[P10b] and the 496 g / 11.69:1 / 29.6% oracles are where they were",
-			absf(explicit.mass_properties.total_mass_kg - 0.496) < 1.0e-9
-				and absf(explicit.thrust_to_weight() - 11.6935) < 1.0e-3
-				and absf(explicit.hover_throttle() - 0.29571) < 1.0e-4
+			"[P10b] and the 507.5 g / 11.43:1 / 29.9% oracles are where they were",
+			absf(explicit.mass_properties.total_mass_kg - 0.5074807) < 1.0e-6
+				and absf(explicit.thrust_to_weight() - 11.4290) < 1.0e-3
+				and absf(explicit.hover_throttle() - 0.29919) < 1.0e-4
 				and explicit.guard_closure == 0.0,
 			"%.1f g, %.4f:1, %.5f hover, closure %.1f" % [
 				explicit.mass_properties.total_mass_kg * 1000.0, explicit.thrust_to_weight(),

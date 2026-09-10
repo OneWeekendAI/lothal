@@ -262,15 +262,16 @@ static func _test_details_panel(catalog: PartsCatalog) -> Array:
 			panel.detail_text({}, "total"), build.electronics_mass_g()]
 	))
 
-	# The remainder is shown as its own row, because it is 14 g of the 55 and it is the dominant
-	# term at the small end — a builder looking at a whoop's mass budget has to be able to see
-	# that the wiring is most of it. (parts.md, and LTHL-43.)
+	# The harness is shown as its own row. It used to be a flat 14 g of the 55 and it is now weighed
+	# off the build's own gauges and lengths (PW2), which makes the row MORE worth having rather than
+	# less: a builder looking at a whoop's mass budget can now see a harness that is actually that
+	# whoop's. (parts.md, and LTHL-43.)
 	results.append(TestResult.new(
-		"the flat wiring remainder is a visible row of its own",
-		panel.detail_text({}, "wiring") == "%.1f g" % Build.wiring_mass_g()
+		"the harness is a visible row of its own, at the build's own harness mass",
+		panel.detail_text({}, "wiring") == "%.1f g" % build.harness_mass_g()
 			and text.to_lower().contains("wiring"),
 		"wiring row %s vs %.1f g; panel:\n%s" % [
-			panel.detail_text({}, "wiring"), Build.wiring_mass_g(), text]
+			panel.detail_text({}, "wiring"), build.harness_mass_g(), text]
 	))
 
 	# An empty bay reads as empty, not as 0 g and not as an em dash: "0 g" is a component that
@@ -374,8 +375,8 @@ static func _test_build_panel_dropdowns(catalog: PartsCatalog) -> Array:
 	panel._rebuild()
 
 	results.append(TestResult.new(
-		"a selection naming no components still opens on the reference 496 g aircraft",
-		absf(panel.build.all_up_weight_g() - 496.0) < 1.0
+		"a selection naming no components still opens on the reference 507.5 g aircraft",
+		absf(panel.build.all_up_weight_g() - 507.48) < 1.0
 			and panel.build.components.size() == Build.OPTIONAL_COMPONENTS.size(),
 		"%.1f g with %d components" % [
 			panel.build.all_up_weight_g(), panel.build.components.size()]

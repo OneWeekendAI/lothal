@@ -176,7 +176,7 @@ static func _test_a_custom_motor_does_not_move_the_reference_build() -> TestResu
 
 	_restore(CustomMotors.SAVE_PATH, previous)
 	return TestResult.new(
-		"a defined custom motor does not move the reference build's 496 g / 11.69 / 29.6%",
+		"a defined custom motor does not move the reference build's 507.5 g / 11.43 / 29.9%",
 		merged_has_it and pinned and merged_pinned and merged_motors == shipped_motors + 1,
 		"merged sees it=%s, %d shipped vs %d merged motors, shipped build %.2f g / %.2f TWR, merged build %.2f g / %.2f TWR" % [
 			merged_has_it, shipped_motors, merged_motors,
@@ -185,9 +185,9 @@ static func _test_a_custom_motor_does_not_move_the_reference_build() -> TestResu
 
 
 static func _is_the_oracle(build: Build) -> bool:
-	return absf(build.all_up_weight_g() - 496.0) < EPS \
-		and absf(build.thrust_to_weight() - 11.69) < 0.01 \
-		and absf(build.hover_throttle() - 0.296) < 0.001
+	return absf(build.all_up_weight_g() - 507.48) < EPS \
+		and absf(build.thrust_to_weight() - 11.43) < 0.01 \
+		and absf(build.hover_throttle() - 0.299) < 0.001
 
 
 # ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ extends RefCounted
 
 ## Pre-slice oracle, measured 2026-09-01 on the reference build. See the header: these are the
 ## numbers a catalog prop must still produce once the resolver stands between it and the physics.
-const REF_HOVER_THROTTLE := 0.295714000144
+const REF_HOVER_THROTTLE := 0.299194500000
 const REF_CHORD_SUM_MM := 416.467705201470
 const REF_TIP_CHORD_MM := 1.920962440934
 const REF_THRUST_RATIO_AXIAL_12 := 0.837473619

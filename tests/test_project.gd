@@ -101,7 +101,7 @@ static func _test_a_round_trip_survives_json(catalog: PartsCatalog) -> Array:
 	var build := reloaded.to_build(catalog)
 	results.append(TestResult.new(
 		"the reloaded document builds the reference aircraft, to the gram",
-		build != null and absf(build.all_up_weight_g() - 496.0) < 0.05,
+		build != null and absf(build.all_up_weight_g() - 507.48) < 0.05,
 		"%.2f g" % (0.0 if build == null else build.all_up_weight_g())
 	))
 	return results

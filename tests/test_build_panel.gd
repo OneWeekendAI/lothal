@@ -30,7 +30,7 @@ static func run() -> Array:
 	results.append(TestResult.new(
 		"build panel builds the reference selection and emits it",
 		emitted.size() == 1 and panel.build != null
-			and absf(panel.build.all_up_weight_g() - 496.0) < 1.0,
+			and absf(panel.build.all_up_weight_g() - 507.48) < 1.0,
 		"emitted %d build(s), %.0f g" % [emitted.size(), panel.build.all_up_weight_g() if panel.build else -1.0]
 	))
 
@@ -47,7 +47,7 @@ static func run() -> Array:
 
 	results.append(TestResult.new(
 		"stat readout renders the reference build in UI units",
-		panel._stat_values["weight"].text == "496 g"
+		panel._stat_values["weight"].text == "507 g"
 			and panel._stat_values["hover"].text.ends_with("%")
 			and panel._stat_values["speed"].text.ends_with("km/h"),
 		"%s | %s | %s | %s | %s" % [

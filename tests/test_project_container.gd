@@ -105,7 +105,7 @@ static func _test_a_drone_survives_the_app_closing() -> Array:
 	var build := reopened.project.to_build(PartsCatalog.load_default())
 	results.append(TestResult.new(
 		"and it is still the same aircraft, to the gram",
-		build != null and absf(build.all_up_weight_g() - 496.0) < 0.05,
+		build != null and absf(build.all_up_weight_g() - 507.48) < 0.05,
 		"%.2f g" % (0.0 if build == null else build.all_up_weight_g())
 	))
 	return results

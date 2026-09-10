@@ -15,7 +15,7 @@ const CATEGORY_FILES := {
 	"battery": "res://data/parts/batteries.json",
 	"esc": "res://data/parts/escs.json",
 	"flight_controller": "res://data/parts/flight_controllers.json",
-	# The four LTHL-11 unbundled out of Build.ELECTRONICS_MASS_G. Unlike the six above, a build
+	# The four LTHL-11 unbundled out of Build.ELECTRONICS_BUDGET_G. Unlike the six above, a build
 	# may fit NONE of these — see Build.OPTIONAL_COMPONENTS — so their presence in this table is
 	# what makes them selectable, not what makes them required.
 	"camera": "res://data/parts/cameras.json",
@@ -30,6 +30,16 @@ const CATEGORY_FILES := {
 	# lets parallel-axis supply the R² bite exactly once — P9's row spells out the double-count
 	# trap that would otherwise result.
 	"guard": "res://data/parts/guards.json",
+	# PW1 (plans/2026-09-10-power-room-design.md §4.1). The two halves of the current path that are
+	# products you buy; the third — wire — is deliberately NOT here, because wire is a gauge and a
+	# length rather than a part, and a row per gauge could not answer "what if I shorten these
+	# leads". That lives in src/power/wire_gauge.gd on HardwareMass's argument.
+	#
+	# `connector` carries the join this slice exists to get right: its catalog.family must match
+	# batteries.json's catalog.connector character for character, or PW3's compatibility check
+	# compares two strings that never match and passes on every build forever.
+	"connector": "res://data/parts/connectors.json",
+	"capacitor": "res://data/parts/capacitors.json",
 }
 
 ## The id prefix a builder-entered part MUST carry, and which a SHIPPED part may never carry.

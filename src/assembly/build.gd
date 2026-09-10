@@ -38,26 +38,43 @@ const SAG_WORTH_NAMING := 0.75
 ## than where it was aimed.
 const UNLOADING_WORTH_NAMING := 0.50
 
-## Fixed electronics package (parts.md): FC+ESC stack, camera, VTX, antenna, receiver,
-## wiring. Not selectable in v1, but it is 55 g of real mass, so it stays in the
-## mass-properties calculation. A constant, not an omission.
+## THE 55 g ELECTRONICS BUDGET, AND WHAT PW2 DID TO IT.
 ##
-## THIS IS A BUDGET, AND IT DOES NOT GROW. As components come out of the lump and get physical
-## form, they take their share OUT of this number rather than being added beside it — see
-## STACK_MASS_G below and mass_parts(). The reference build's 496 g, 11.7:1 and 29% hover were
-## computed with the whole 55 g included, so a component that gained mass on its way to becoming
-## visible would silently move two of the project's three fixed points for what was meant to be a
-## change to the picture.
-const ELECTRONICS_MASS_G := 55.0
-## The part of the lump still lumped: WIRING AND STRAPS, as one box at the origin. Its SIZE stayed
-## as it was rather than shrinking with the mass — an inertia box is linear in mass, and the
-## boards' own boxes below carry the difference honestly.
+## It was: a flat fixed electronics package — FC+ESC stack, camera, VTX, antenna, receiver, wiring
+## — 55 g of real mass carried as a constant, with each component that grew a physical form taking
+## its share OUT of it rather than being added beside it. That is what CARVED_SHARES below records,
+## and the REMAINDER was `wiring_mass_g()`: 14 g standing for wiring, connector, capacitor, solder
+## and straps, lumped at the origin.
 ##
-## It used to be camera, VTX, antenna, receiver and wiring; LTHL-11 took the first four out of it.
+## THE REMAINDER MECHANISM IS RETIRED (plans/2026-09-10-power-room-design.md §4.4). The harness is
+## now real objects with real masses in real places — see `Harness` and `mass_parts()` — so there
+## is nothing left for a budget to be the leftover of, and this aircraft's electronics no longer
+## sum to 55 g. That is why this constant is no longer called ELECTRONICS_MASS_G: it stopped being
+## the mass of anything, and a constant that keeps its name while changing its meaning is the
+## quietest kind of wrong.
+##
+## WHAT IT STILL IS: the budget the six shares in CARVED_SHARES were cut from, which is exactly
+## what makes "does the budget still balance" an arithmetic question rather than an inspection —
+## a seventh share that grew past what the budget has left is still an error worth catching. It is
+## also the figure FramePlausibility quotes at the builder when it says how much of a small
+## aircraft is electronics; replacing that sentence with the build's own electronics mass is PW4's,
+## not this slice's.
+##
+## WHAT IT IS NOT, ANY MORE: a bound on the aircraft. The reference build's all-up weight moved
+## when the harness became real, and the whole point of PW2 being its own slice is that the figure
+## follows the model rather than the other way round. See docs/lothal/parts.md for the new number.
+const ELECTRONICS_BUDGET_G := 55.0
+## The box the SURVIVING REMAINDER is carried in: straps, tape, solder and heat-shrink, at the
+## origin, which is where a thing that genuinely is everywhere belongs. Its SIZE stayed as it was
+## rather than shrinking with the mass — an inertia box is linear in mass, and every entry that has
+## since come out of the lump carries the difference honestly in its own box.
+##
+## It used to hold camera, VTX, antenna, receiver and wiring; LTHL-11 took the first four out and
+## PW2 took the wiring, the connector and the capacitor. What is left is `Harness.REMAINDER_MASS_G`.
 const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
 
 ## The FC/ESC stack's share of that budget, straight off parts.md's published breakdown of the
-## fixed electronics package rather than re-estimated here. Taken OUT of ELECTRONICS_MASS_G, not
+## fixed electronics package rather than re-estimated here. Taken OUT of ELECTRONICS_BUDGET_G, not
 ## added to it, which leaves 35 g of camera, VTX, antenna, receiver and wiring lumped at the origin.
 ## (This line read 43 g until build-level validation went looking for the number: 43 was the remainder
 ## when only the ESC had been carved out, and nothing updated it when the FC's 8 g followed. The code
@@ -84,7 +101,7 @@ const ESC_BUDGET_MASS_G := 12.0
 const STACK_MASS_G := FC_BUDGET_MASS_G + ESC_BUDGET_MASS_G
 
 ## The CAMERA's budgeted share, and the three that follow it: the same shape FC_BUDGET_MASS_G and
-## ESC_BUDGET_MASS_G have, for the same reason, and taken OUT of ELECTRONICS_MASS_G rather than
+## ESC_BUDGET_MASS_G have, for the same reason, and taken OUT of ELECTRONICS_BUDGET_G rather than
 ## added beside it. The default part in each category weighs exactly its share, so the reference
 ## build is unchanged at 496.0 g to the gram; fit a heavier one and the aircraft gains exactly the
 ## excess, which is the pattern the H743's 4 g overage already established.
@@ -100,7 +117,7 @@ const RECEIVER_BUDGET_MASS_G := 2.0
 
 ## Every share carved out of the budget, by the category that carved it. ONE TABLE RATHER THAN SIX
 ## CONSTANTS READ SIX PLACES, so "does the budget still balance" is a question with an arithmetic
-## answer instead of an inspection: wiring_mass_g() is the remainder, and a share that grew past
+## answer instead of an inspection: budget_remainder_g() is the remainder, and a share that grew past
 ## what the budget has left makes it negative rather than making the aircraft heavier.
 const CARVED_SHARES := {
 	"flight_controller": FC_BUDGET_MASS_G,
@@ -137,24 +154,21 @@ const DEFAULT_COMPONENT_IDS := {
 	"receiver": "rx_elrs_2400",
 }
 
-## What is left of the budget once every share above has been taken out of it: WIRING, connectors,
-## solder, heat-shrink, the battery strap, and the double-sided tape holding the receiver on. 14 g
-## on the reference build.
+## WHAT THE BUDGET HAS LEFT once every share above has been taken out of it: 14 g, and it is a
+## FIGURE RATHER THAN A MASS NOW.
 ##
-## IT IS FLAT, AND FLAT IS A DECISION HERE RATHER THAN THE LEFTOVER IT LOOKS LIKE. Wiring mass on a
-## real aircraft scales with something — arm length, current, cell count, how many things are
-## soldered to how many other things — and every one of those is a plausible-sounding law with
-## nothing behind it. Lothal has no measurements of harness mass at any size, so any exponent put
-## here would be invented, and physics.md is written to keep invented laws out. A flat remainder is
-## wrong in a way that is stated and bounded; a scaled one would be wrong in a way that looked
-## derived. When somebody weighs the harnesses off three builds at three sizes, this becomes a
-## function of something and the argument changes.
+## It used to be `wiring_mass_g()` — the mass of the wiring, connectors, capacitor, solder,
+## heat-shrink and straps, lumped at the origin because a harness is everywhere on the aircraft by
+## definition. PW2 replaced every one of those with a real object at a real place (`Harness`,
+## `harness_mass_g()`), so nothing reads this as a mass any more. It survives as the arithmetic
+## that keeps CARVED_SHARES honest: a seventh share that grew past what the budget has left makes
+## this negative rather than making the aircraft heavier, and the check that watches it is the
+## reason the table exists.
 ##
-## THIS IS THE DOMINANT TERM AT THE SMALL END and this slice does not fix it: it is more than the
-## whole of a real whoop's wiring, and it is the largest single piece of the residual error the
-## unbundling leaves behind. See docs/lothal/parts.md for the measured before/after span.
-static func wiring_mass_g() -> float:
-	return ELECTRONICS_MASS_G - carved_total_g()
+## The 14 g it returns is NOT what the reference build's harness weighs. That number is on the
+## harness now, and it is bigger — see the re-baseline in docs/lothal/parts.md.
+static func budget_remainder_g() -> float:
+	return ELECTRONICS_BUDGET_G - carved_total_g()
 
 
 ## Every optional component omitted, in the shape from_ids takes. What a whoop on an AIO passes,
@@ -309,6 +323,20 @@ var components: Dictionary = {}
 ## field the closure the BEMT solve reads through `forward_ratios()` would have nothing to close
 ## against — a duct fitted on paper and forgotten in flight.
 var guard: Dictionary = {}
+## THE CURRENT PATH, as data — plans/2026-09-10-power-room-design.md §4.2, slice PW2. Connector,
+## capacitor, and a gauge and length for each of the two wire runs, every one of them a default
+## DERIVED from this build with an authored override on top.
+##
+## An object rather than six fields, and a HARNESS rather than a resolved dictionary — which is the
+## opposite of the call `assembly` makes above, so it is worth saying why they differ. `assembly`
+## is resolved because AssemblyTweaks reads a user file and clamps against limits computed FROM a
+## Build, so a Build holding one would be a cycle. `Harness` clamps against nothing and reads no
+## file: it holds a sparse override table and asks the build for the rest, which means a Build can
+## hold one without the cycle and without a second copy of the defaults living anywhere.
+##
+## Never null. A Build assembled field by field — several fixtures still do — gets the derived
+## harness for the parts it was given, which is the same answer `from_ids` would have produced.
+var harness := Harness.new()
 var catalog: PartsCatalog
 
 ## THE IDS THIS BUILD IS AN AIRCRAFT MADE OF, kept beside the resolved dictionaries so the build can
@@ -413,7 +441,8 @@ const DEFAULT_ASSEMBLY := {
 static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String,
 		battery_id: String, esc_id: String = DEFAULT_ESC_ID,
 		fc_id: String = DEFAULT_FC_ID, component_ids: Dictionary = {},
-		p_air: AirDensity = null, guard_id: String = "") -> Build:
+		p_air: AirDensity = null, guard_id: String = "",
+		harness_overrides: Dictionary = {}) -> Build:
 	var b := Build.new()
 	# `null` rather than AirDensity.standard() as the default value, because a GDScript default
 	# argument is evaluated once and shared: a literal object default would hand every Build in the
@@ -429,6 +458,11 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 		"fc": fc_id,
 		"guard": guard_id,
 	}
+	# The harness grows here the way the guard did in P10b — one more trailing argument, defaulting
+	# to what the parts imply, so every call site written before Power existed builds exactly the
+	# aircraft it used to except for the harness it was always carrying. SPARSE: only what the
+	# caller authored is stored, and everything else follows the frame and the pack.
+	b.harness = Harness.from_overrides(harness_overrides)
 	for category in OPTIONAL_COMPONENTS:
 		b._part_ids[category] = String(component_ids.get(category, DEFAULT_COMPONENT_IDS[category]))
 	b.refit_from(p_catalog)
@@ -515,6 +549,11 @@ func at_air(p_air: AirDensity) -> Build:
 	var twin := Build.from_ids(catalog, str(frame["part_id"]), str(motor["part_id"]),
 		str(propeller["part_id"]), str(battery["part_id"]), str(esc["part_id"]),
 		str(fc["part_id"]), ids, p_air, g_id)
+	# The harness comes with it, for the assembly's reason: a twin that forgot the builder's lead
+	# lengths would answer a question about a different aircraft. The OVERRIDES travel, not the
+	# resolved values — the twin re-derives its defaults from its own parts, which is the whole
+	# point of a sparse table.
+	twin.harness = Harness.from_overrides(harness.overrides())
 	twin.set_assembly(assembly)
 	return twin
 
@@ -767,14 +806,16 @@ func mass_parts() -> Array:
 		# strap slots — falls back to the top plate rather than dropping the pack at the origin.
 		# Same rule as AirframeModel's drawing: the pack is somewhere on every real aircraft.
 		battery_mount = MountLayout.by_id(mount_points(), "strap_top")
-	parts.append(PartMass.new(battery_mass_kg,
-		MountLayout.seated_centre_m(battery_mount, battery_size,
-			float(assembly_value("battery_offset_m"))),
+	var battery_position := MountLayout.seated_centre_m(battery_mount, battery_size,
+		float(assembly_value("battery_offset_m")))
+	parts.append(PartMass.new(battery_mass_kg, battery_position,
 		InertiaPrimitives.box(battery_mass_kg, battery_size), "Pack"))
 
-	# The electronics, in two entries that sum to ELECTRONICS_MASS_G exactly. The stack is separate
-	# because it is a real object with a real footprint, and its 36.5 mm board has a different
-	# tensor from the 30 mm cube the lump stands on; the two together weigh what the one did.
+	# The electronics: the two stack boards, at their carved shares. They summed with the old lump
+	# to ELECTRONICS_BUDGET_G exactly, and PW2 ended that — the harness below is weighed rather than
+	# left over, so this aircraft's electronics no longer add to 55 g. The stack is separate from
+	# the lump for the reason it always was: it is a real object with a real footprint, and its
+	# 36.5 mm board has a different tensor from the 30 mm cube the remainder stands on.
 	#
 	# BOTH BOARDS NOW SIT WHERE THEY ARE DRAWN: on the standoff stack's seat — the bottom plate's
 	# upper face — each raised by its own offset within the stack, ESC below and FC above it. Both
@@ -831,15 +872,109 @@ func mass_parts() -> Array:
 			InertiaPrimitives.box(component_mass_kg, component_size),
 			str(component.get("name", category))))
 
-	# WHAT IS STILL LUMPED AT THE ORIGIN IS THE WIRING, and it is the honest remainder rather than
-	# the entry that got forgotten. A harness is everywhere on the aircraft by definition — that is
-	# what makes the origin the right place for it and not a shrug — and its mass is what the
-	# budget has left once every share is carved out. See wiring_mass_g() for why it does not
-	# scale, and for the fact that it is the dominant term at the small end and this slice did not
-	# fix it.
-	var loose_mass_kg := wiring_mass_g() / 1000.0
-	parts.append(PartMass.new(loose_mass_kg, Vector3.ZERO,
-		InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M), "Wiring"))
+	# THE HARNESS, and this is the block PW2 exists for. It was ONE 14 g lump at the origin — the
+	# budget's remainder, standing for wiring, connector, capacitor, solder, heat-shrink and straps,
+	# put at the origin because a harness is everywhere on the aircraft by definition. That was
+	# honest about the mass and silent about the distribution, and the distribution is the half that
+	# is actually knowable: the connector is at the pack, the trunk runs down the spine, four leads
+	# run out to the motors, and the cap stands on the ESC.
+	#
+	# So it is now five entries and a remainder, each weighed off `Harness` (which is where the
+	# gauges, lengths and part ids live) and each placed by the same geometry everything else on
+	# this aircraft is placed by. What is left at the origin is straps, tape, solder and shrink,
+	# which genuinely is everywhere.
+	#
+	# ---------------------------------------------------------------------------
+	# THE TRAP, AND THIS CODEBASE HAS PAID FOR IT ONCE
+	# ---------------------------------------------------------------------------
+	#
+	# Every entry below goes in as a `PartMass` at a position with a LOCAL DIAGONAL — the part's own
+	# tensor about its own centre — so that `MassProperties.compute`'s parallel-axis step supplies
+	# the m·d² term EXACTLY ONCE. Handing a local diagonal a term that already contains the offset
+	# (a pre-shifted scalar, the way P10a's guard row nearly did) counts it twice, and the four
+	# motor leads are precisely the geometry where that would happen and not be noticed.
+	#
+	# And the sharper half of P10b's review finding applies unchanged: ROLL IS I_ZZ. A double-count
+	# wired into the X entry of a local diagonal lands in PITCH, and a roll check looks straight
+	# past it. That is why tests/test_harness.gd asserts the zero-offset property and the tensor
+	# term as a PAIR — neither is sufficient alone, and the pair is what makes the mutation visible
+	# whichever axis it is misfiled under.
+	var harness_connector_kg := harness.connector_mass_g(self) / 1000.0
+	var harness_main_kg := harness.main_lead_mass_g(self) / 1000.0
+	var harness_motor_lead_kg := harness.motor_lead_mass_g(self) / 1000.0
+	var harness_cap_kg := harness.capacitor_mass_g(self) / 1000.0
+
+	# The connector, at the pack's own position. A plug is bolted to nothing and hangs off the end
+	# of the lead, so the pack is the only place on the aircraft it is definitely near. Point mass:
+	# an XT60 pair is 16 mm long and its own tensor is four orders under the parallel-axis term.
+	if harness_connector_kg > 0.0:
+		parts.append(PartMass.new(harness_connector_kg, battery_position, Vector3.ZERO,
+			"Connector"))
+
+	# The main lead, as a ROD and not a point. It is dressed ALONG THE FRAME between the ESC's pads
+	# and the connector at the pack: mid-way between the two in plan, and at the STACK'S OWN HEIGHT
+	# rather than anywhere between the plates and the pack.
+	#
+	# THE HEIGHT IS THE PART THAT WAS GOT WRONG TWICE BEFORE IT WAS GOT RIGHT, so it is written down.
+	# Running the rod out by half its own length towards the pack pointed it nearly straight up — a
+	# lead is 120 mm and the pack sits about 20 mm above the plate — and put eight grams of copper
+	# sixty millimetres in the air. Putting its centroid at the geometric midpoint of the stack and
+	# the pack was better and still wrong in the same direction: it lifted the modelled centre of
+	# mass and pushed the airframe's perpendicular-axis relation (I_yaw ≈ I_roll + I_pitch, which
+	# tests/test_frame_bench.gd holds to the parts' own thickness) from 11.5% out to 12.0%.
+	#
+	# A battery lead does not fly through the air to meet the pack. It comes off the pads, lies on
+	# the plate, and the slack is coiled there — so its mass is in the PLANE OF THE FRAME, which is
+	# what the model now says. Length is mass and slack, not reach.
+	#
+	# Three properties this project asserts elsewhere survive because of that, and would each have
+	# broken silently otherwise: a build with no components fitted is still FORE/AFT SYMMETRIC,
+	# sliding the pack does not change how HIGH the centre of mass sits, and sliding it fore and aft
+	# still leaves ROLL inertia alone.
+	var main_length_m := float(harness.value(Harness.MAIN_LEAD_LENGTH_MM, self)) / 1000.0
+	var run := battery_position - stack_position
+	var main_position := Vector3(
+		stack_position.x + run.x * 0.5, stack_position.y, stack_position.z + run.z * 0.5)
+	# The rod lies along the spine: a lead is dressed fore and aft, never across the airframe.
+	if harness_main_kg > 0.0:
+		parts.append(PartMass.new(harness_main_kg, main_position,
+			Harness.rod_diag_kg_m2(harness_main_kg, main_length_m, Vector3(0.0, 0.0, 1.0)),
+			"Main lead"))
+
+	# FOUR MOTOR LEADS, one at each motor's plan position. This is the previously absent
+	# contribution to roll and pitch inertia the re-baseline was expected to surface: four masses at
+	# the arm ends, each carrying its own rod tensor about its own centre and NOTHING ELSE. The R²
+	# bite is `MassProperties`'s to add.
+	#
+	# `motor_lead_mass_g` is the wire the HARNESS adds, not the whole run — see
+	# `Harness.MOTOR_SUPPLIED_LEAD_MM` for why, and it is the same double-count argument that
+	# governs `pigtail_mass_g`. Zero on a build whose arms are shorter than a motor's own leads,
+	# which appends nothing rather than four zero-mass entries.
+	if harness_motor_lead_kg > 0.0:
+		var motor_lead_length_m := float(
+			harness.value(Harness.MOTOR_LEAD_LENGTH_MM, self)) / 1000.0
+		for motor_name in MotorLayout.MOTOR_NAMES:
+			var lead_position := MotorLayout.motor_position(motor_name, arm_m)
+			parts.append(PartMass.new(harness_motor_lead_kg, lead_position,
+				Harness.rod_diag_kg_m2(harness_motor_lead_kg, motor_lead_length_m,
+					lead_position),
+				"Motor lead %s" % motor_name))
+
+	# The capacitor, standing on the ESC's pads — the same seat and the same height StackMesh draws
+	# the board at, so the can is where the picture puts it. A real object with published body
+	# dimensions, so it gets a real box rather than a point.
+	if harness_cap_kg > 0.0:
+		var cap_size := harness.capacitor_size_m(self)
+		parts.append(PartMass.new(harness_cap_kg,
+			stack_position + Vector3(0.0, StackMesh.esc_centre_height_m(), 0.0),
+			InertiaPrimitives.box(harness_cap_kg, cap_size), "Capacitor"))
+
+	# What is genuinely everywhere: straps, tape, solder and heat-shrink, at the origin. The
+	# honest remainder rather than the entry that got forgotten, and — unlike the 14 g it replaces —
+	# AUTHORED at what those things weigh instead of being whatever a budget had left over.
+	var remainder_kg := Harness.REMAINDER_MASS_G / 1000.0
+	parts.append(PartMass.new(remainder_kg, Vector3.ZERO,
+		InertiaPrimitives.box(remainder_kg, ELECTRONICS_SIZE_M), "Harness remainder"))
 
 	# Prop guards, one ring at each motor — the P10a `as_part_mass` finally has a caller
 	# (§3.4 shipped in P10b). PartMass carries the guard's mass at the motor's plan position
@@ -886,13 +1021,24 @@ static func component_size_of(part: Dictionary) -> Vector3:
 ## What this build's electronics actually weigh: the two stack boards at their own masses, every
 ## optional component that is fitted at its own mass, and the wiring remainder.
 ##
-## Exactly ELECTRONICS_MASS_G when the default part is fitted in every category, which is what
-## keeps the reference build at 496 g. It is LOWER when something is omitted and HIGHER when a
-## heavier-than-budget part is fitted, and both of those are the point — this is the number that
-## replaced a flat 55 g in the one place that was quoting it at the builder
-## (FramePlausibility._electronics_lump).
+## What this build's harness weighs, all of it: connector, main lead, four motor leads, capacitor
+## and the straps-and-tape remainder. THE SAME CLAIM `mass_parts()` MAKES, computed the same way —
+## `Harness.total_mass_g` is the one place the five terms are added up, so an entry appended above
+## and not counted here (or the reverse) is a discrepancy a check can see rather than a number two
+## functions quietly disagree about.
+func harness_mass_g() -> float:
+	return harness.total_mass_g(self)
+
+
+## NO LONGER PINNED TO THE BUDGET, and that is PW2's doing rather than a drift. It used to come out
+## at exactly ELECTRONICS_BUDGET_G with the default part in every category, because the harness term
+## in it was the budget's own remainder; the harness is weighed now, so this is the sum of what the
+## build actually carries and the 55 g is a figure it happens to be near. It is still LOWER when
+## something is omitted and HIGHER when a heavier-than-budget part is fitted, which was always the
+## point — this is the number that replaced a flat 55 g in the one place that was quoting it at the
+## builder (FramePlausibility._electronics_lump).
 func electronics_mass_g() -> float:
-	var total := fc_mass_g() + esc_mass_g() + wiring_mass_g()
+	var total := fc_mass_g() + esc_mass_g() + harness_mass_g()
 	for category in OPTIONAL_COMPONENTS:
 		if components.has(category):
 			total += float(components[category].get("mass_g", 0.0))

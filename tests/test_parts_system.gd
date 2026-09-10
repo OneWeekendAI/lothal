@@ -337,8 +337,8 @@ static func _reference_build_matches_the_documented_table(_catalog: PartsCatalog
 	var results: Array = []
 
 	results.append(TestResult.new(
-		"reference build from JSON: 496 g all-up",
-		absf(b.all_up_weight_g() - 496.0) < 1.0,
+		"reference build from JSON: 507.5 g all-up",
+		absf(b.all_up_weight_g() - 507.48) < 1.0,
 		"got %.1f g" % b.all_up_weight_g()
 	))
 	results.append(TestResult.new(

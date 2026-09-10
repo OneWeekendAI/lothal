@@ -3,7 +3,7 @@ extends RefCounted
 ## The FC/ESC stack: a real board in the standoff stack, at real scale — and, more importantly,
 ## an unchanged aircraft on the scales.
 ##
-## THE ORACLE HAZARD THIS SUITE EXISTS FOR. Build has carried ELECTRONICS_MASS_G := 55 g since day
+## THE ORACLE HAZARD THIS SUITE EXISTS FOR. Build has carried ELECTRONICS_BUDGET_G := 55 g since day
 ## 2: a lump at the origin standing in for the FC, the ESC, the camera, the VTX, the antenna and
 ## the receiver. The reference build's 496 g, 11.7:1 and 29% hover were all computed WITH that lump
 ## included. Giving one of those six components physical form is a VISUAL change, so if it also
@@ -125,9 +125,14 @@ static func _test_the_stack_sits_in_the_standoff_stack(catalog: PartsCatalog) ->
 	return TestResult.new("the stack is mounted in the standoff stack", passed, detail)
 
 
-## The budget, held shut from both ends. The two electronics contributions must sum to exactly
-## ELECTRONICS_MASS_G, and neither may be zero — drawing a component and giving it no mass is the
-## other way to get this wrong, and it would leave the picture and the scales disagreeing.
+## The electronics, held shut from both ends. Everything on the aircraft that is not frame, pack or
+## motor-and-prop must sum to the six carved shares PLUS the harness, and neither the stack nor the
+## harness may be zero — drawing a component and giving it no mass is the other way to get this
+## wrong, and it would leave the picture and the scales disagreeing.
+##
+## IT USED TO BE `ELECTRONICS_BUDGET_G` ON THE RIGHT-HAND SIDE, flat, on every build. PW2 weighed
+## the harness instead of leaving it as the budget's remainder, so the sum is now the shares plus a
+## real harness and this check follows the model rather than holding it to a retired constant.
 static func _test_the_electronics_budget_still_totals_the_lump(_catalog: PartsCatalog) -> TestResult:
 	var build := ReferenceBuild.build()
 
@@ -142,36 +147,38 @@ static func _test_the_electronics_budget_still_totals_the_lump(_catalog: PartsCa
 	var accounted_g := motor_prop_g + float(build.frame["mass_g"]) + float(build.battery["mass_g"])
 	var electronics_g := total_g - accounted_g
 
-	var passed := absf(electronics_g - Build.ELECTRONICS_MASS_G) < MASS_EPS_G \
+	var expected_g := Build.carved_total_g() + build.harness_mass_g()
+	var passed := absf(electronics_g - expected_g) < MASS_EPS_G \
 		and Build.STACK_MASS_G > 0.0 \
-		and Build.STACK_MASS_G < Build.ELECTRONICS_MASS_G
+		and build.harness_mass_g() > 0.0 \
+		and Build.STACK_MASS_G < expected_g
 
 	return TestResult.new(
-		"the electronics still weigh exactly what the lump always did",
+		"the electronics weigh the carved shares plus the harness, and nothing is drawn weightless",
 		passed,
-		"%.4f g of electronics (budget %.1f g): %.1f g given form as the stack, %.1f g as the four LTHL-11 unbundled, %.1f g of wiring still lumped" % [
-			electronics_g, Build.ELECTRONICS_MASS_G, Build.STACK_MASS_G,
-			Build.ELECTRONICS_MASS_G - Build.STACK_MASS_G - Build.wiring_mass_g(),
-			Build.wiring_mass_g()])
+		"%.4f g of electronics against %.1f carved + %.4f harness: %.1f g given form as the stack, %.1f g as the four LTHL-11 unbundled" % [
+			electronics_g, Build.carved_total_g(), build.harness_mass_g(), Build.STACK_MASS_G,
+			Build.carved_total_g() - Build.STACK_MASS_G])
 
 
 ## The three fixed points, restated here rather than only in test_validation.gd, because this is
 ## the slice that could move them and a failure should say so next to the change that caused it.
-## 496 g, 11.7:1 and 29% are parts.md's hand-verified reference build.
+## 507.5 g, 11.43:1 and 30% are parts.md's reference build after PW2 re-baselined it (the harness
+## stopped being a flat 14 g lump); it was 496 g / 11.7 : 1 / 29% before that.
 static func _test_the_reference_oracles_did_not_move() -> TestResult:
 	var build := ReferenceBuild.build()
 	var weight_g := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
 
-	var passed := absf(weight_g - 496.0) < 0.5 \
-		and absf(twr - 11.7) < 0.1 \
-		and absf(hover - 0.29) < 0.01
+	var passed := absf(weight_g - 507.48) < 0.5 \
+		and absf(twr - 11.43) < 0.1 \
+		and absf(hover - 0.30) < 0.01
 
 	return TestResult.new(
 		"mounting the stack moved neither the weight, the thrust-to-weight, nor the hover throttle",
 		passed,
-		"%.1f g (want 496), %.2f:1 (want 11.7), %.1f%% hover (want 29)" % [
+		"%.1f g (want 507.5), %.2f:1 (want 11.43), %.1f%% hover (want 29.9)" % [
 			weight_g, twr, hover * 100.0])
 
 

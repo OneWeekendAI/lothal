@@ -26,9 +26,9 @@ extends RefCounted
 ## The three fixed points, to the digit. Hover and static, i.e. J = 0 — a correct implementation
 ## leaves them BIT-IDENTICAL, not merely close, because the forward-flight terms short-circuit at
 ## zero velocity rather than evaluating to something that rounds to one.
-const REFERENCE_AUW_G := 496.0
-const REFERENCE_TWR := 11.69
-const REFERENCE_HOVER_THROTTLE := 0.296
+const REFERENCE_AUW_G := 507.5
+const REFERENCE_TWR := 11.43
+const REFERENCE_HOVER_THROTTLE := 0.299
 
 const CRUISE_MPS := 10.0
 
@@ -90,13 +90,13 @@ static func _translational_lift_is_not_missing(build: Build) -> TestResult:
 ## them is that the static path stayed static. That is the next check, and these two are a pair.
 static func _the_three_oracles_have_not_moved(build: Build) -> Array:
 	return [
-		TestResult.new("the reference build still weighs exactly 496.0 g",
+		TestResult.new("the reference build still weighs exactly 507.5 g",
 			is_equal_approx(snappedf(build.all_up_weight_g(), 0.1), REFERENCE_AUW_G),
 			"%.4f g" % build.all_up_weight_g()),
-		TestResult.new("thrust-to-weight is still exactly 11.69:1",
+		TestResult.new("thrust-to-weight is still exactly 11.43:1",
 			is_equal_approx(snappedf(build.thrust_to_weight(), 0.01), REFERENCE_TWR),
 			"%.6f:1" % build.thrust_to_weight()),
-		TestResult.new("hover throttle is still exactly 29.6%",
+		TestResult.new("hover throttle is still exactly 29.9%",
 			is_equal_approx(snappedf(build.hover_throttle(), 0.001), REFERENCE_HOVER_THROTTLE),
 			"%.6f%%" % (build.hover_throttle() * 100.0)),
 	]
@@ -295,7 +295,7 @@ static func _top_speed_is_unchanged_for_the_reference_build(build: Build) -> Tes
 	var kmh := build.top_speed_kmh()
 	return TestResult.new(
 		"top speed for the reference build is unmoved, and still inside the 100-130 km/h band",
-		absf(kmh - 107.0) < 1.0,
+		absf(kmh - 108.2) < 1.0,
 		"%.1f km/h" % kmh
 	)
 

@@ -69,16 +69,16 @@ static func _test_loader_refuses_a_custom_prefixed_entry() -> TestResult:
 			impostor_rejected, ordinary_loaded, error_named, catalog.load_errors])
 
 
-## The 496 g / 11.69 / 29.6% oracle, asserted here as well as in the day-2 tests, because THIS is
+## The 507.5 g / 11.43 / 29.9% oracle, asserted here as well as in the day-2 tests, because THIS is
 ## the suite that would notice it moving for a custom-frames reason.
 static func _test_reference_build_is_out_of_reach() -> TestResult:
 	var build := ReferenceBuild.build()
 	var auw := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
-	var ok := absf(auw - 496.0) < EPS and absf(twr - 11.69) < 0.01 and absf(hover - 0.296) < 0.001
+	var ok := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.299) < 0.001
 	return TestResult.new(
-		"the reference build is 496 g / 11.69 : 1 / 29.6% hover",
+		"the reference build is 507.5 g / 11.43 : 1 / 29.9% hover",
 		ok, "AUW %.2f g, TWR %.2f, hover %.1f%%" % [auw, twr, hover * 100.0])
 
 
@@ -279,7 +279,7 @@ static func _test_a_custom_frame_does_not_move_the_reference_build() -> TestResu
 	var auw := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
-	var pinned := absf(auw - 496.0) < EPS and absf(twr - 11.69) < 0.01 and absf(hover - 0.296) < 0.001
+	var pinned := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.299) < 0.001
 
 	# And the shipped frame count is unchanged in load_default(), so nothing leaked sideways.
 	var shipped_frames: int = PartsCatalog.load_default().list_category("frame").size()
@@ -287,7 +287,7 @@ static func _test_a_custom_frame_does_not_move_the_reference_build() -> TestResu
 
 	_restore(CustomFrames.SAVE_PATH, previous)
 	return TestResult.new(
-		"a defined custom frame does not move the reference build's 496 g / 11.69 / 29.6%",
+		"a defined custom frame does not move the reference build's 507.5 g / 11.43 / 29.9%",
 		merged_has_it and pinned and merged_frames == shipped_frames + 1,
 		"merged sees it=%s, %d shipped vs %d merged frames, AUW %.2f g, TWR %.2f, hover %.1f%%" % [
 			merged_has_it, shipped_frames, merged_frames, auw, twr, hover * 100.0])
@@ -476,7 +476,7 @@ static func _test_an_implausible_frame_still_flies() -> TestResult:
 			flies, arm != null, mass != null, overlap != null])
 
 
-## LTHL-11 made visible. ELECTRONICS_MASS_G is a flat 55 g on every aircraft, and on a build light
+## LTHL-11 made visible. ELECTRONICS_BUDGET_G is a flat 55 g on every aircraft, and on a build light
 ## enough for that lump to be a quarter of all-up weight the number a builder is reading is mostly
 ## Lothal's constant rather than their frame. The warning names the number and names the ticket.
 static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestResult:
@@ -499,8 +499,8 @@ static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestRe
 		light != null and heavy == null and names_the_ticket and names_the_number,
 		"whoop AUW=%.1f g (want 85.8), TWR=%.2f (want 1.31), hover=%.1f%% (want 80.2), warns=%s (%.1f%% of AUW), reference warns=%s (%.1f%% of AUW)" % [
 			whoop.all_up_weight_g(), whoop.thrust_to_weight(), whoop.hover_throttle() * 100.0,
-			light != null, Build.ELECTRONICS_MASS_G / whoop.all_up_weight_g() * 100.0,
-			heavy != null, Build.ELECTRONICS_MASS_G / ReferenceBuild.build().all_up_weight_g() * 100.0])
+			light != null, Build.ELECTRONICS_BUDGET_G / whoop.all_up_weight_g() * 100.0,
+			heavy != null, Build.ELECTRONICS_BUDGET_G / ReferenceBuild.build().all_up_weight_g() * 100.0])
 
 
 ## The third row of FramePlausibility's header table, docs/lothal/parts.md's quoted copy of it,
@@ -529,14 +529,14 @@ static func _test_the_long_range_rows_third_row_is_a_real_build() -> TestResult:
 	var twr := long_range.thrust_to_weight()
 	var hover := long_range.hover_throttle() * 100.0
 
-	var matches_auw := absf(auw - 1220.0) < 0.05
-	var matches_twr := absf(twr - 7.20) < 0.005
-	var matches_hover := absf(hover - 29.7) < 0.05
+	var matches_auw := absf(auw - 1251.24) < 0.05
+	var matches_twr := absf(twr - 7.021) < 0.005
+	var matches_hover := absf(hover - 29.71) < 0.05
 
 	return TestResult.new(
 		"the header table's 10\" long-range row is a real build, not an unchecked figure",
 		matches_auw and matches_twr and matches_hover,
-		"AUW=%.2f g (want 1220.0), TWR=%.3f (want 7.20), hover=%.2f%% (want 29.7)" % [
+		"AUW=%.2f g (want 1251.24), TWR=%.3f (want 7.021), hover=%.2f%% (want 29.71)" % [
 			auw, twr, hover])
 
 

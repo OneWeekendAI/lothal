@@ -108,7 +108,7 @@ func _init(p_catalog: PartsCatalog) -> void:
 	note.theme_type_variation = &"MutedLabel"
 	note.text = ("Each of these was a share of the flat %.0f g electronics budget until it "
 		+ "became a part. Take one off and the aircraft is lighter by what it actually "
-		+ "weighs — an AIO whoop carries none of the four.") % Build.ELECTRONICS_MASS_G
+		+ "weighs — an AIO whoop carries none of the four.") % Build.ELECTRONICS_BUDGET_G
 	root.add_child(note)
 
 

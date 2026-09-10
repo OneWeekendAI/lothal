@@ -24,7 +24,7 @@ extends RefCounted
 ## THE BUDGET DOES NOT GROW
 ## ---------------------------------------------------------------------------
 ##
-## The ESC's mass comes OUT of Build.ELECTRONICS_MASS_G, exactly as the flight controller's did.
+## The ESC's mass comes OUT of Build.ELECTRONICS_BUDGET_G, exactly as the flight controller's did.
 ## The reference build must still weigh 496 g to the gram, and a heavier board must still make the
 ## aircraft heavier — both, or the unbundling has either moved a fixed point or achieved nothing.
 
@@ -226,26 +226,27 @@ static func _test_the_mass_came_out_of_the_lump(catalog: PartsCatalog) -> Array:
 	var built := ReferenceBuild.build()
 
 	results.append(TestResult.new(
-		"the reference build still weighs 496 g to the gram with the ESC unbundled",
-		absf(built.all_up_weight_g() - 496.0) < 0.5,
-		"%.1f g (FC %.0f g + ESC %.0f g + %.0f g of camera, VTX, antenna and receiver + %.0f g of wiring = %.0f g of electronics)" % [
+		"the reference build still weighs its re-baselined 507.5 g with the ESC unbundled",
+		absf(built.all_up_weight_g() - 507.48) < 0.5,
+		"%.1f g (FC %.0f g + ESC %.0f g + %.0f g of camera, VTX, antenna and receiver + %.1f g of harness = %.1f g of electronics)" % [
 			built.all_up_weight_g(), Build.FC_BUDGET_MASS_G, built.esc_mass_g(),
 			built.electronics_mass_g() - built.fc_mass_g() - built.esc_mass_g()
-				- Build.wiring_mass_g(),
-			Build.wiring_mass_g(), built.electronics_mass_g()]
+				- built.harness_mass_g(),
+			built.harness_mass_g(), built.electronics_mass_g()]
 	))
 
-	# The budget is spent, not exceeded: the parts of the electronics package still sum to the
-	# constant they always did, for the boards the budget was sized around. The identity used to be
-	# written out here as FC + ESC + remainder, which was a restatement of arithmetic this file
-	# performed itself; since LTHL-11 carved four more shares out of the same budget it is asked of
-	# the BUILD instead, which is the same claim about a number that now has six terms in it.
+	# The SHARES are spent, not exceeded: the six carved categories still weigh exactly what they
+	# were budgeted, for the boards the budget was sized around. What is no longer asserted is that
+	# the electronics total lands on 55 g — PW2 stopped the harness being the budget's remainder, so
+	# the total is the shares plus a weighed harness and the constant bounds only the shares.
 	results.append(TestResult.new(
-		"the electronics package still sums to its budget rather than growing beside it",
-		is_equal_approx(built.electronics_mass_g(), Build.ELECTRONICS_MASS_G)
+		"the carved shares are still spent exactly, with the harness weighed beside them",
+		is_equal_approx(built.electronics_mass_g(),
+				Build.carved_total_g() + built.harness_mass_g())
 			and is_equal_approx(built.esc_mass_g(), Build.ESC_BUDGET_MASS_G),
-		"%.1f g of fitted electronics against a %.1f g budget, ESC at its %.0f g share" % [
-			built.electronics_mass_g(), Build.ELECTRONICS_MASS_G, Build.ESC_BUDGET_MASS_G]
+		"%.1f g of fitted electronics = %.1f g of carved shares + %.1f g of harness, ESC at its %.0f g share" % [
+			built.electronics_mass_g(), Build.carved_total_g(), built.harness_mass_g(),
+			Build.ESC_BUDGET_MASS_G]
 	))
 
 	# ...and a heavier board makes a heavier aircraft. Without this the unbundling would be

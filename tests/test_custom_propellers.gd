@@ -98,7 +98,7 @@ static func _with_scratch_savepath(body: Callable) -> Variant:
 # ---------------------------------------------------------------------------
 
 ## Defining a custom prop — any custom prop, including one wearing an id that tries to shadow the
-## reference build's — must not move 496 g / 11.69 / 29.6% by a gram or a point. Same shape as
+## reference build's — must not move 507.5 g / 11.43 / 29.9% by a gram or a point. Same shape as
 ## test_custom_motors.gd's oracle test, and for the same reason: load_default() is what the
 ## reference build reads, and load_with_custom() is what Lab flies, and the isolation between
 ## the two IS the whole of the collision defence.
@@ -135,7 +135,7 @@ static func _test_reference_build_is_untouched_by_any_custom_prop() -> TestResul
 	var counts_agree: bool = int(out["merged_count"]) == int(out["shipped_count"]) + 1
 
 	return TestResult.new(
-		"a defined custom prop does not move the reference build's 496 g / 11.69 / 29.6%",
+		"a defined custom prop does not move the reference build's 507.5 g / 11.43 / 29.9%",
 		pinned and counts_agree,
 		"%d shipped vs %d merged props, reference %.2f g / %.2f TWR, merged reference %.2f g / %.2f TWR" % [
 			out["shipped_count"], out["merged_count"],
@@ -144,9 +144,9 @@ static func _test_reference_build_is_untouched_by_any_custom_prop() -> TestResul
 
 
 static func _is_the_oracle(build: Build) -> bool:
-	return absf(build.all_up_weight_g() - 496.0) < EPS \
-		and absf(build.thrust_to_weight() - 11.69) < 0.01 \
-		and absf(build.hover_throttle() - 0.296) < 0.001
+	return absf(build.all_up_weight_g() - 507.48) < EPS \
+		and absf(build.thrust_to_weight() - 11.43) < 0.01 \
+		and absf(build.hover_throttle() - 0.299) < 0.001
 
 
 # ---------------------------------------------------------------------------

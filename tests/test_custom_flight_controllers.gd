@@ -118,10 +118,10 @@ static func _test_reference_build_is_out_of_reach() -> TestResult:
 	var auw := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
-	var pinned := absf(auw - 496.0) < EPS and absf(twr - 11.69) < 0.01 and absf(hover - 0.296) < 0.001
+	var pinned := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.299) < 0.001
 
 	return TestResult.new(
-		"a defined custom FC does not move the reference build's 496 g / 11.69 / 29.6%",
+		"a defined custom FC does not move the reference build's 507.5 g / 11.43 / 29.9%",
 		bool(seen) and pinned,
 		"merged sees it=%s, AUW %.2f g, TWR %.2f, hover %.1f%%" % [
 			seen, auw, twr, hover * 100.0])
@@ -329,12 +329,12 @@ static func _test_a_heavy_fc_adds_exactly_its_excess() -> TestResult:
 				"heavy": _build_on(merged, "custom_shed_heavy_fc").all_up_weight_g(),
 			})
 
-	var at_budget := absf(float(result["budget"]) - 496.0) < EPS
+	var at_budget := absf(float(result["budget"]) - 507.48) < EPS
 	var excess := float(result["heavy"]) - float(result["budget"])
 	var exact := absf(excess - 4.0) < EPS
 
 	return TestResult.new(
-		"an FC at the budget mass leaves the aircraft at 496 g; 4 g over adds exactly 4 g",
+		"an FC at the budget mass leaves the aircraft at 507.5 g; 4 g over adds exactly 4 g",
 		at_budget and exact,
 		"at budget %.2f g, heavy %.2f g, difference %.2f g (want 4.00)" % [
 			result["budget"], result["heavy"], excess])

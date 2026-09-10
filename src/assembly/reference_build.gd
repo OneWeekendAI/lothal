@@ -4,6 +4,16 @@ extends RefCounted
 ## mass-properties and motor/propeller test is checked against. Hand-verified on paper
 ## before any code was written: 496 g all-up, 11.7:1 thrust-to-weight, 29% hover throttle.
 ##
+## THOSE THREE FIGURES WERE RE-BASELINED BY PW2 AND THIS FIXTURE NOW READS 507.5 g, 11.43 : 1 AND
+## 29.9 % HOVER. Nothing about the aircraft changed: `Build.wiring_mass_g()`'s flat 14 g lump at
+## the origin became a weighed harness — half an XT60, a 120 mm 14 AWG main lead, the wire four
+## motor leads add beyond what the motors ship with, a 470 uF can and 5 g of straps and shrink —
+## which comes to 25.5 g. The hand-verified 496 g is what this build weighed while its harness was
+## too light to cover its own plug and capacitor, and design §4.4 is explicit that the figure
+## follows the model rather than the other way round: no default was chosen to land back on it.
+## tests/test_harness.gd asserts the new trio, and would catch a default quietly edited to protect
+## the old one.
+##
 ## Since day 5 this is no longer a hard-coded parts list: it is a named SELECTION from the
 ## JSON catalog, so the fixture and the thing the user assembles in the UI are the same
 ## code path. If loading the catalog or the parts pipeline breaks, the day 2 oracle tests
@@ -13,11 +23,11 @@ const FRAME_ID := "frame_5in_freestyle"
 const MOTOR_ID := "motor_2207_1960kv"
 const PROPELLER_ID := "prop_5x43x3"
 const BATTERY_ID := "battery_4s_1500"
-## The reference board. Its 12 g is exactly the ESC's share of the electronics budget, so the
-## reference build still weighs 496 g; see Build.ESC_BUDGET_MASS_G.
+## The reference board. Its 12 g is exactly the ESC's share of the electronics budget, so fitting
+## it moves the reference build's weight by nothing; see Build.ESC_BUDGET_MASS_G.
 const ESC_ID := Build.DEFAULT_ESC_ID
-## The reference board. Its 8 g is exactly the FC's share of the electronics budget, so the
-## reference build still weighs 496 g; see Build.FC_BUDGET_MASS_G. Its four gyro specs are
+## The reference board. Its 8 g is exactly the FC's share of the electronics budget, so fitting it
+## moves the reference build's weight by nothing; see Build.FC_BUDGET_MASS_G. Its four gyro specs are
 ## Gyro's DEFAULT_* exactly, and a test pins them together.
 const FC_ID := Build.DEFAULT_FC_ID
 

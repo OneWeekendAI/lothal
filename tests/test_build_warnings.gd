@@ -30,7 +30,14 @@ const CINELIFTER := ["frame_7in_cinelifter", "motor_2808_1300kv", "prop_5x43x2",
 ## whoop's 5 A board. Nothing about this one is a matter of taste.
 const CANNOT_FLY := ["frame_3in_toothpick", "motor_1103_8000kv", "prop_3x3x3",
 	"battery_6s_4000_liion", "esc_aio_5a_whoop"]
-## The vehicle for the field/altitude tests. Those tests need a build that hovers at 3500 m
+## THE ALTITUDE CAME DOWN FROM 3500 m TO 3000 m IN PW2, and the reason is the whole slice: the
+## harness stopped being a flat 14 g lump and became real parts, which put 11.5 g on this aircraft.
+## It hovered at 3500 m at 100% throttle with nothing in hand; 11.5 g heavier it does not, so the
+## quoted field moved down 500 m to keep the fixture doing the job it was chosen for. The BUILD is
+## unchanged and so is what is being tested — a build that hovers on almost nothing at one field
+## and cannot at a higher one — and 5000 m is still past its ceiling.
+##
+## The vehicle for the field/altitude tests. Those tests need a build that hovers at 3000 m
 ## (barely — "almost nothing in hand") but cannot hover at 5000 m, flipping exactly once.
 ## The CINELIFTER can no longer serve that role: under the BEMT cross-prop law it is 1.54:1 at
 ## sea level and stops hovering at ~2900 m, which is before the 3500 m the test quotes. This
@@ -245,8 +252,8 @@ static func _test_the_cinelifter_is_described_not_scolded(catalog: PartsCatalog)
 		# The wording is only right if the numbers under it did not move to make it right.
 		TestResult.new(
 			"...and the figures it is described by are the ones the pilot flew",
-			absf(build.thrust_to_weight() - 1.54) < 0.02
-				and absf(build.hover_throttle() - 0.813) < 0.005
+			absf(build.thrust_to_weight() - 1.504) < 0.02
+				and absf(build.hover_throttle() - 0.822) < 0.005
 				and build.can_hover(),
 			"%.2f:1, hover %.1f%%, can_hover=%s" % [build.thrust_to_weight(),
 				build.hover_throttle() * 100.0, build.can_hover()]
@@ -265,7 +272,7 @@ static func _test_climb_margin_is_the_acceleration_it_actually_has(catalog: Part
 		"climb margin is g(TWR - 1), reported as an acceleration and not as a verdict",
 		entry != null and entry.severity == BuildWarning.Severity.CHARACTERISTIC
 			and absf(float(entry.values.get("climb_accel_mps2", -1.0)) - expected) < 1e-6
-			and absf(expected - 5.28) < 0.05
+			and absf(expected - 4.94) < 0.05
 			and entry.message.contains("m/s"),
 		"expected %.2f m/s^2; %s" % [expected, "absent" if entry == null else entry.message]
 	)
@@ -289,7 +296,7 @@ static func _test_manoeuvre_headroom_comes_from_the_mixer(catalog: PartsCatalog)
 		"manoeuvre headroom is the mixer's own clipping point, not a threshold typed into a branch",
 		entry != null and entry.severity == BuildWarning.Severity.CHARACTERISTIC
 			and absf(float(entry.values.get("attitude_demand_fraction", -1.0)) - expected) < 0.005
-			and absf(expected - 0.312) < 0.02,
+			and absf(expected - 0.297) < 0.02,
 		"expected %.3f of full demand; %s" % [expected, "absent" if entry == null else entry.message]
 	)
 
@@ -538,21 +545,21 @@ static func _test_the_field_is_described_and_only_physics_warns(catalog: PartsCa
 	# THE HEADROOM SENTENCE FOLLOWS THE FIELD, which is the whole product in one line: the same
 	# aircraft, described at two places, and the difference is in the numbers rather than in a
 	# change of tone.
-	var thin := _at(catalog, FIELD_VEHICLE, AirDensity.new(3500.0, 35.0))
+	var thin := _at(catalog, FIELD_VEHICLE, AirDensity.new(3000.0, 35.0))
 	var here := _find(thin.warnings(), &"manoeuvre_headroom")
 	var there := _find(at_sea_level.warnings(), &"manoeuvre_headroom")
 	results.append(TestResult.new(
 		"the manoeuvre headroom is quoted at the field, and it is still a description",
 		here != null and there != null and here.message != there.message
 			and here.severity == BuildWarning.Severity.CHARACTERISTIC,
-		"sea level: %s\n            3500 m: %s" % [
+		"sea level: %s\n            3000 m: %s" % [
 			"" if there == null else there.message, "" if here == null else here.message]))
 
-	# ...and it is still not impossible at 3500 m, where it hovers at 100% with almost nothing left.
+	# ...and it is still not impossible at 3000 m, where it hovers at 100% with almost nothing left.
 	# A build with no stick demand in hand is in real trouble and Lothal still does not call
 	# it broken, because it is not: it flies, and the numbers say exactly how well.
 	results.append(TestResult.new(
-		"at 3500 m it hovers on almost nothing and is STILL not called impossible",
+		"at 3000 m it hovers on almost nothing and is STILL not called impossible",
 		thin.can_hover() and _find(thin.warnings(), &"cannot_hover") == null,
 		"%.2f:1, %.0f%% hover, %.0f%% of a full demand in hand" % [
 			thin.thrust_to_weight(), thin.hover_throttle() * 100.0,

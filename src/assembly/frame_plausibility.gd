@@ -43,7 +43,7 @@ extends RefCounted
 ##   than inventing it.
 ##
 ## ELECTRONICS_LUMP_FRACTION — 0.25.
-##   Build.ELECTRONICS_MASS_G is a FLAT 55 g — camera, VTX, antenna, receiver and wiring, the same
+##   Build.ELECTRONICS_BUDGET_G is a FLAT 55 g — camera, VTX, antenna, receiver and wiring, the same
 ##   on every aircraft — and it is wrong at both ends of the catalog's own span:
 ##
 ##       frame_65mm_whoop      AUW   85.8 g | TWR  1.31 | hover 80.2%
@@ -168,6 +168,6 @@ static func _electronics_lump(build: Build) -> Array[BuildWarning]:
 		return out
 	out.append(BuildWarning.characteristic(&"electronics_lump",
 		"%.0f%% of this aircraft's %.0f g is its electronics: %.0f g of stack, camera, VTX, antenna, receiver and wiring, against Lothal's %.0f g allowance for all of it. The wiring share of that is a flat figure on every build regardless of size, so at this weight you are partly reading a constant rather than your own parts, and a real aircraft this light carries less. Tracked as LTHL-11; until the wiring term scales, treat everything derived from all-up weight here as an upper bound." % [
-			fraction * 100.0, auw, electronics_g, Build.ELECTRONICS_MASS_G],
+			fraction * 100.0, auw, electronics_g, Build.ELECTRONICS_BUDGET_G],
 		{"electronics_g": electronics_g, "all_up_g": auw, "fraction": fraction}))
 	return out
