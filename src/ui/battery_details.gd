@@ -15,6 +15,22 @@ extends PartDetails
 ## quad rather than a derived figure — it is a fixed yardstick chosen so two packs can be compared
 ## at the same load, which is exactly what the battery bench then does properly against the motors
 ## actually fitted. It is a label, not a model: nothing reads it.
+##
+## **THE PACK BENCH OPENS FROM HERE** (PW4). It was the first entry in the Rooms menu — a machine
+## that loads one pack, sitting in a list of destinations beside the field editor — and
+## `room_menu.gd`'s own header states the arrangement that menu is a holding position for: *a bench
+## belongs to the system it tests, reached from that system's inspector.* The two rows directly
+## above the button, "Internal resistance" and "Sag at 30 A", are the yardstick version of exactly
+## what the bench measures properly: this panel quotes one fixed punch current as a label, and the
+## bench runs the pack down against the motors actually fitted. The button is under them for that
+## reason and no other.
+##
+## Same posture as the ESC panel's bench and the Motor panel's thrust stand: the button says what
+## happened and the shell decides what to do about it. This panel opens nothing, and the room
+## lifecycle stays `RoomHost`'s.
+
+## Emitted when the builder asks for the pack bench. The shell opens it.
+signal pack_bench_requested()
 
 const SPEC_ROWS := [
 	{"key": "cell_class", "label": "Cells"},
@@ -34,6 +50,21 @@ const SAG_REFERENCE_A := 30.0
 
 func _init() -> void:
 	super(SPEC_ROWS)
+
+## The bench door, under the spec rows and above PartDetails' own footer — the same placement and
+## the same argument as the ESC panel's.
+func _build_footer(root: VBoxContainer) -> void:
+	var bench_button := Button.new()
+	bench_button.text = "Open pack bench…"
+	bench_button.tooltip_text = ("Run this pack down against the motors actually fitted: what it "
+		+ "sags to under a real punch, and how long it holds up — the measured form of the two "
+		+ "rows above.")
+	bench_button.pressed.connect(func() -> void: pack_bench_requested.emit())
+	root.add_child(bench_button)
+
+	# PartDetails' stat block still has to be built: `render()` writes into the labels it creates.
+	super(root)
+
 
 func _read(battery: Dictionary, key: String) -> String:
 	var specs: Dictionary = battery.get("specs", {})

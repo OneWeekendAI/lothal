@@ -1,7 +1,7 @@
 class_name RoomMenu
 extends MenuButton
-## The way into every room that is not Lab or Sim and is not reached from an inspector — two
-## benches, the field editor and Studio.
+## The way into every room that is not Lab or Sim and is not reached from an inspector — the frame
+## bench, the field editor and Studio.
 ##
 ## ---------------------------------------------------------------------------
 ## WHY THIS IS A MENU AND NOT SIX MORE DROPDOWN ENTRIES
@@ -20,18 +20,25 @@ extends MenuButton
 ## capability, which is §4's whole method: port one system at a time, keep everything working,
 ## delete the tab bar last.
 ##
-## ## THE THRUST STAND AND THE ESC BENCH HAVE LEFT THIS LIST (P10f, then this slice)
+## ## EVERY COMPONENT BENCH HAS LEFT THIS LIST (P10f, then PW4)
 ##
 ## The thrust stand went first, reached from the Motor inspector's own "Open thrust bench…" button
-## — the same door the blade designer already uses on the Prop panel. P10f named the ESC bench as
-## the next one and did not move it; it has now followed the same pattern, from the ESC panel,
-## under the two rows ("Passes in total", "Limited by") that are what the bench measures.
+## — the same door the blade designer already uses on the Prop panel. The ESC bench followed the
+## same pattern, from the ESC panel, under the two rows ("Passes in total", "Limited by") that are
+## what the bench measures. **PW4 moved the pack bench**, from the Pack panel, under the two rows
+## ("Internal resistance", "Sag at 30 A") that are the yardstick version of what it measures.
 ##
-## **The pack bench and the frame bench are still here, and the reason is that neither move is
-## obvious.** The frame bench belongs under Airframe, whose inspector the room has taken over
-## entirely — so its door is a question about where the Airframe room puts one, not about this
-## menu. The pack bench tests a component the Power system owns, and that move is available; it is
-## simply not this slice. A room without a door is worse than a room in a menu.
+## An earlier version of this header said that last move "is available; it is simply not this
+## slice." It became this slice. PW4 gave the ESC to Power — the ESC is where the pack's current is
+## consumed, and every harness check asks about the pack and the board in one breath — and once the
+## ESC panel and the Pack panel were in the same room, a Power system that reached its ESC bench
+## from an inspector and its pack bench from a global menu was two different answers to one
+## question inside one room. The move stopped being optional at that point.
+##
+## **THE FRAME BENCH IS THE ONE STILL HERE, and its reason is unchanged and is not laziness.** It
+## belongs under Airframe, whose inspector the Airframe room has taken over entirely — so its door
+## is a question about where that room puts one, not about this menu. A room without a door is
+## worse than a room in a menu.
 ##
 ## **A room leaving this list does not stop being covered.** `tests/test_room_host.gd` derives the
 ## room list from `RoomHost`'s own `show_*` methods and asserts every one of them has a door; P10f
@@ -49,11 +56,11 @@ signal room_chosen(room_id: String)
 ## Every room reachable from here, in the order the work happens in: you bench the parts, you lay
 ## out where you are going to fly, and then you look at what the flight left behind.
 ##
-## `separator_before` marks where a group ends. The benches are one kind of thing — a machine
-## running under load — and the field editor and Studio are not, and the line is the only thing
-## saying so in a list this short.
+## `separator_before` marks where a group ends. The bench is one kind of thing — a machine running
+## under load — and the field editor and Studio are not, and the line is the only thing saying so
+## in a list this short. One bench is left, so the group above the line has one member; that reads
+## as a list mid-migration, which is exactly what it is.
 const ENTRIES := [
-	{"id": "battery_bench", "label": "Pack bench", "separator_before": false},
 	{"id": "frame_bench", "label": "Frame bench", "separator_before": false},
 	{"id": "field_editor", "label": "Field — lay out the course", "separator_before": true},
 	{"id": "studio", "label": "Studio — flights already flown", "separator_before": false},
@@ -65,9 +72,10 @@ var _id_by_index := {}
 func _init() -> void:
 	text = "Rooms"
 	custom_minimum_size = Vector2(96, 30)
-	tooltip_text = ("The benches, the field editor and Studio — unchanged, and reached from here "
-		+ "until each one lands where it belongs (a bench under the system it tests). Two have "
-		+ "moved: the thrust stand opens from the Motor inspector, the ESC bench from the ESC panel.")
+	tooltip_text = ("The frame bench, the field editor and Studio — unchanged, and reached from "
+		+ "here until each one lands where it belongs (a bench under the system it tests). Three "
+		+ "have moved: the thrust stand opens from the Motor inspector, the ESC bench from the ESC "
+		+ "panel, the pack bench from the Pack panel.")
 
 	var popup := get_popup()
 	for entry in ENTRIES:

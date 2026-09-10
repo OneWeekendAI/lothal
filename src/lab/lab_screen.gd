@@ -118,6 +118,7 @@ var _frame_document_id := ""
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
 var battery_details: BatteryDetails
+var harness_stub: HarnessStub
 var esc_details: EscDetails
 var fc_details: FcDetails
 var electronics_details: ElectronicsDetails
@@ -297,6 +298,13 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	esc_details = EscDetails.new()
 	esc_details.name = "ESC"
 	panels.add_child(esc_details)
+
+	# Power's third panel (PW4). It sits beside Pack and ESC because that is the system it belongs
+	# to — every ampere from cell to motor lead — and it holds its place with a note saying the
+	# model is shipped and the view is PW5's. A named panel in SYSTEMS with no tab behind it routes
+	# to nothing and hides silently; see GlassShell._show_only_tabs.
+	harness_stub = HarnessStub.new()
+	panels.add_child(harness_stub)
 
 	fc_details = FcDetails.new()
 	fc_details.name = "FC"

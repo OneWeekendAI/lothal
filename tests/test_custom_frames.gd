@@ -476,9 +476,18 @@ static func _test_an_implausible_frame_still_flies() -> TestResult:
 			flies, arm != null, mass != null, overlap != null])
 
 
-## LTHL-11 made visible. ELECTRONICS_BUDGET_G is a flat 55 g on every aircraft, and on a build light
-## enough for that lump to be a quarter of all-up weight the number a builder is reading is mostly
-## Lothal's constant rather than their frame. The warning names the number and names the ticket.
+## LTHL-11 made visible. ELECTRONICS_BUDGET_G is a flat 55 g allowance on every aircraft, and on a
+## build light enough for the electronics to be a quarter of all-up weight the builder has to be
+## told which way to look. The warning names the number and names the ticket.
+##
+## **PW4 ADDED THE SECOND HALF, AND IT IS A CONTRADICTION CHECK RATHER THAN A WORDING ONE.** Until
+## PW4 this warning also told the builder "the wiring share of that is a flat figure on every build
+## regardless of size" — which PW2 made false, because `Harness` weighs four gauged wire runs off
+## the lengths this build specifies. The cost was not abstract: on this exact whoop that sentence
+## sat in the same warning list as an ampacity warning naming the build's own lead gauge, so one
+## warning called the wiring a constant one line under a warning derived from it. A builder who
+## catches two warnings disagreeing learns to read neither. So the assertion is: this message must
+## not claim the wiring is flat WHILE a harness warning on the same build is quoting a gauge.
 static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestResult:
 	var catalog := PartsCatalog.load_default()
 
@@ -494,13 +503,24 @@ static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestRe
 	var names_the_ticket: bool = light != null and light.message.contains("LTHL-11")
 	var names_the_number: bool = light != null and light.message.contains("55")
 
+	# The other warnings this same build raises about its own wiring, by the gauge they name.
+	var gauge_warnings: Array = []
+	for warning in whoop.warnings():
+		if warning.values.has("awg"):
+			gauge_warnings.append("%s (%d AWG)" % [warning.id, int(warning.values["awg"])])
+	var contradicts: bool = light != null and (
+		light.message.contains("flat figure on every build")
+		or light.message.contains("regardless of size"))
+
 	return TestResult.new(
-		"a build where the flat 55 g electronics lump dominates says so and names LTHL-11",
-		light != null and heavy == null and names_the_ticket and names_the_number,
-		"whoop AUW=%.1f g (want 85.8), TWR=%.2f (want 1.31), hover=%.1f%% (want 80.2), warns=%s (%.1f%% of AUW), reference warns=%s (%.1f%% of AUW)" % [
+		"a build where the electronics dominate says so, names LTHL-11, and does not call the wiring flat while a harness warning names its gauge",
+		light != null and heavy == null and names_the_ticket and names_the_number
+			and not contradicts and not gauge_warnings.is_empty(),
+		"whoop AUW=%.1f g (want 85.8), TWR=%.2f (want 1.31), hover=%.1f%% (want 80.2), warns=%s (%.1f%% of AUW), reference warns=%s (%.1f%% of AUW), calls the wiring flat=%s, harness warnings naming a gauge=%s" % [
 			whoop.all_up_weight_g(), whoop.thrust_to_weight(), whoop.hover_throttle() * 100.0,
 			light != null, Build.ELECTRONICS_BUDGET_G / whoop.all_up_weight_g() * 100.0,
-			heavy != null, Build.ELECTRONICS_BUDGET_G / ReferenceBuild.build().all_up_weight_g() * 100.0])
+			heavy != null, Build.ELECTRONICS_BUDGET_G / ReferenceBuild.build().all_up_weight_g() * 100.0,
+			contradicts, gauge_warnings])
 
 
 ## The third row of FramePlausibility's header table, docs/lothal/parts.md's quoted copy of it,

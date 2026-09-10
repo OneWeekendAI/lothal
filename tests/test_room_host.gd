@@ -201,6 +201,14 @@ static func _test_sim_retracts_the_chrome_and_lab_restores_it() -> Array:
 	return results
 
 
+## One system's rail titles, off GlassShell's own table.
+static func _rails_of(system_name: String) -> Array:
+	for system in GlassShell.SYSTEMS:
+		if str(system["name"]) == system_name:
+			return system["rails"]
+	return []
+
+
 ## The nearest CanvasLayer above a node, or null if it is in the ordinary tree.
 static func _canvas_layer_over(node: Node) -> CanvasLayer:
 	var walk := node
@@ -224,7 +232,10 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 	shell.rooms.show_lab()
 	results.append(TestResult.new(
 		"returning from the field lands on the system you left, not the first one",
-		_visible_rail_titles(shell) == ["Pack"],
+		# Derived from Power's own entry rather than written out, because this check is about WHICH
+		# SYSTEM came back, not about which rails Power has — PW4 gave it a second one and a typed
+		# list would have failed for a reason that had nothing to do with what is being asserted.
+		_visible_rail_titles(shell) == _rails_of("Power"),
 		"rail shows %s" % [_visible_rail_titles(shell)]))
 
 	# Config has no model: stubs, and no rail column at all. A restore that unhides both columns
@@ -253,7 +264,7 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 ## Adding to it is therefore a claim, and the claim is checked one assertion down: every id here
 ## must be a door RoomHost actually has, so a typo or a room that is later deleted fails rather
 ## than quietly excusing nothing.
-const INSPECTOR_DOORS := ["bench", "esc_bench"]
+const INSPECTOR_DOORS := ["battery_bench", "bench", "esc_bench"]
 
 
 ## The rooms that are neither Lab nor Sim, reached the way a builder reaches them.
@@ -317,6 +328,13 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 	results.append(TestResult.new(
 		"the Rooms menu no longer lists the ESC bench",
 		not RoomMenu.room_ids().has("esc_bench"),
+		"menu offers %s" % [RoomMenu.room_ids()]))
+
+	# And the pack bench, PW4's move, for the same reason again. Three rooms, three assertions: a
+	# failure has to name the bench that came back, and one shared assertion could not.
+	results.append(TestResult.new(
+		"the Rooms menu no longer lists the pack bench",
+		not RoomMenu.room_ids().has("battery_bench"),
 		"menu offers %s" % [RoomMenu.room_ids()]))
 
 	host.free()

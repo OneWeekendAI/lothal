@@ -132,16 +132,28 @@ const SYSTEMS := [
 		"decided_by": ["motor", "propeller"],
 	},
 	{
+		# EVERY AMPERE FROM CELL TO MOTOR LEAD, and that sentence is the whole membership rule.
+		#
+		# The ESC used to sit under Control beside the FC and the tune, which was an accident of
+		# when each part arrived rather than a statement about the aircraft: the ESC is where the
+		# pack's current is CONSUMED, and every harness check asks about the pack and the board in
+		# one breath — ampacity against what the board passes, sag against what the board sees.
+		# Splitting them put the two halves of one question behind two dropdown entries.
+		#
+		# The FC stays in Control. It draws no meaningful current, so it fails the rule.
 		"name": "Power",
-		"rails": ["Pack"],
-		"panels": ["Pack"],
-		"decided_by": ["battery"],
+		"rails": ["Pack", "ESC"],
+		"panels": ["Pack", "ESC", "Harness"],
+		"decided_by": ["battery", "esc"],
 	},
 	{
+		# `esc` LEFT THIS LIST WITH THE PANEL. Both halves of the move have to happen together:
+		# `decided_by` is what the completeness ring counts, and a category named by two systems is
+		# credited twice by arithmetic that assumes each decision belongs somewhere once.
 		"name": "Control",
-		"rails": ["ESC", "FC"],
-		"panels": ["ESC", "FC", "Tune"],
-		"decided_by": ["esc", "flight_controller"],
+		"rails": ["FC"],
+		"panels": ["FC", "Tune"],
+		"decided_by": ["flight_controller"],
 	},
 	{
 		# The receiver belongs to Control and is reached from here, because ElectronicsPicker emits
@@ -214,13 +226,37 @@ const SYSTEMS := [
 	},
 ]
 
-## Which 3D nodes belong to which system, matched against the nearest ancestor whose name matches.
-## Anything matching nothing belongs to Airframe — the frame is what is left when every fitted part
-## is accounted for, which is also literally true of a frame.
+## Which 3D nodes belong to which system, matched against the nearest name that matches — the
+## node's own first, and failing that the nearest ancestor's. Anything matching nothing belongs to
+## Airframe — the frame is what is left when every fitted part is accounted for, which is also
+## literally true of a frame.
+##
+## ## THE STACK IS SHARED, AND IT IS TWO BOARDS RATHER THAN ONE MESH
+##
+## The ESC moved to Power and the FC stayed in Control, so `Stack` — one node — now holds one part
+## from each of two systems. I went looking for the "they are one mesh, so let both light it" case
+## and it is not this: `StackMesh.rebuild` builds `Board_ESC` and `Board_FC` as separate
+## `MeshInstance3D`s at their own two heights, which is the same split the mass model already makes
+## (`Build.mass_parts` puts ESC mass at `esc_centre_height_m` and FC mass at `fc_centre_height_m`).
+## Two nameable objects can be lit separately and should be, so Power lights the lower board and
+## Control lights the upper one.
+##
+## **`Stack` stays under Control**, and that is a decision rather than a leftover. What is left
+## under that name once the two boards are claimed is the four standoffs and the USB connector —
+## hardware that belongs to neither board, holds both, and would read as a rendering fault if it
+## faded out from under a board that stayed lit. Control is the system whose part is on top of it.
+##
+## **This is what makes the OWN-NAME-FIRST rule load-bearing**, and it did not used to be. While
+## every prefix named a top-level node, "nearest matching ancestor" and "nearest matching node"
+## were the same rule. `Board_ESC` sits UNDER `Stack`, so ancestor-only classification never asks
+## it its name — Power would dim the board it had just been given. Checked against every other node
+## name the airframe builds: none of `Cell_`, `Groove_`, `Shrink`, `Strap_`, `Lead_`, `Standoff_`,
+## `Connector`, `Arm_`, `Pad_`, `Plate*` or `GuardRing` begins with a prefix in this table, so no
+## other classification changes.
 const SYSTEM_NODE_PREFIXES := {
 	"Propulsion": ["Motor_", "Propeller_"],
-	"Power": ["Battery"],
-	"Control": ["Stack", "Component_receiver"],
+	"Power": ["Battery", "Board_ESC"],
+	"Control": ["Stack", "Board_FC", "Component_receiver"],
 	"Video": ["Component_camera", "Component_vtx", "Component_antenna"],
 }
 
@@ -716,6 +752,11 @@ func _build_blade_room() -> void:
 	# tests — the move P10f named and left. Through the same `_open_room` as every other room, so
 	# the lifecycle stays RoomHost's and there is no second construction path.
 	lab.esc_details.esc_bench_requested.connect(func() -> void: _open_room("esc_bench"))
+	# The pack bench, the third and the last one this menu had that tests a component (PW4). Its
+	# panel did not change owner — Pack was already Power's — but the ESC's did, and a Power system
+	# that reaches its ESC bench from an inspector while its pack bench is still in a global menu
+	# would be two different answers to the same question inside one room.
+	lab.battery_details.pack_bench_requested.connect(func() -> void: _open_room("battery_bench"))
 	lab.motor_details.mount_stl_requested.connect(_on_mount_stl_requested)
 	lab.propeller_details.guard_stl_requested.connect(_on_guard_stl_requested)
 
@@ -1579,9 +1620,10 @@ static func _has_rails(system: Dictionary) -> bool:
 ##
 ## Walks the airframe rather than consulting AirframeModel's dictionaries of meshes, because the
 ## dictionaries hold the roots and the transparency has to reach the GeometryInstance3D leaves — a
-## motor is a node with meshes under it, not a mesh. Classification is by nearest matching ANCESTOR
-## for the same reason: a propeller blade knows nothing about being propulsion, and the node three
-## levels up is the one that does.
+## motor is a node with meshes under it, not a mesh. Classification INHERITS DOWNWARDS for the same
+## reason: a propeller blade knows nothing about being propulsion, and the node three levels up is
+## the one that does. A node that names a system itself overrides what it inherited — which is how
+## the two boards inside one `Stack` end up in two systems.
 ##
 ## An unmodelled system dims NOTHING rather than dimming everything. A screen where the whole
 ## aircraft has faded out would read as a rendering fault, and the stub beside it is already saying
@@ -1601,9 +1643,11 @@ func _apply_focus() -> void:
 
 
 func _fade_below(node: Node, inherited_system: String, focused: String) -> void:
-	var system := inherited_system
-	if system == "":
-		system = _system_of_name(node.name)
+	# A NODE'S OWN NAME BEATS THE ONE IT INHERITS. See SYSTEM_NODE_PREFIXES: the ESC board and the
+	# FC board are two children of one `Stack`, so a rule that stopped at the nearest matching
+	# ANCESTOR could never see either of them.
+	var own := _system_of_name(node.name)
+	var system := own if own != "" else inherited_system
 	if node is GeometryInstance3D:
 		var owning := system if system != "" else "Airframe"
 		(node as GeometryInstance3D).transparency = (
