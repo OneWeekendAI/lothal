@@ -19,7 +19,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs",
 	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "camera view",
-	"wire gauge", "power parts", "harness", "harness checks"]
+	"wire gauge", "power parts", "harness", "harness checks", "power room"]
 
 func _init() -> void:
 	var total := 0
@@ -78,6 +78,7 @@ func _run_suite(suite_name: String) -> Array:
 		"power parts": return TestPowerParts.run()
 		"harness": return TestHarness.run()
 		"harness checks": return TestHarnessChecks.run()
+		"power room": return TestPowerRoom.run()
 		"authored blade": return TestAuthoredBlade.run()
 		"thrust overlay": return TestThrustOverlay.run()
 		"campbell overlay": return TestCampbellOverlay.run()

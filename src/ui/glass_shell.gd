@@ -314,7 +314,21 @@ var _workbench: FrameWorkbench
 ## The blade designer — Propulsion's room, opened on request rather than with the system. See
 ## `_build_blade_room` for why the two rooms differ in that.
 var _blade_room: PropulsionWorkbench
-var _blade_room_close: Button
+## The Power room — the harness designer, PW5. An overlay on the same terms as the blade designer:
+## Power has two rails and they are still the point, so the room opens on request rather than with
+## the system. See `_build_power_room`.
+var _power_room: PowerWorkbench
+
+## Every overlay room and the close button that belongs to it, as `{room, close_glass}` rows.
+##
+## **THIS LIST EXISTS BECAUSE OF W0.7's DEFECT FAMILY.** Three code paths retracted the shell's
+## chrome and one of them omitted a term, and the fix there was to remove the argument a caller
+## could omit. There are now two overlay rooms and four paths that have to put them away —
+## `_select_system`, `_show_empty_state`, `_on_room_changed` and each room's own opener — so the
+## same shape would be eight lines that have to agree, written in four places. `_retract_rooms()`
+## walks this list instead, which means a THIRD room is one append here and nothing else, and a
+## room that is not in the list is a room `tests/test_power_room.gd` names.
+var _overlay_rooms: Array[Dictionary] = []
 
 ## P10e's five analysis overlays, keyed by `OverlayTray.ENTRIES` id. Held on the shell rather than
 ## inside the tools cluster so the tray can be driven by a test without synthesising a click on a
@@ -342,6 +356,10 @@ var _room_door_glass: PanelContainer
 ## The way back out of the blade designer, and the glass behind it. In the top bar beside the door
 ## rather than floating over the room — see `_build_blade_room` for what floating cost.
 var _blade_room_close_glass: PanelContainer
+## And the Power room's. A second button rather than one that renames itself: the two rooms can
+## never be open at once, but a button whose text is the only thing saying which room you are in is
+## a button that lies for one frame every time that changes.
+var _power_room_close_glass: PanelContainer
 
 
 func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
@@ -370,6 +388,7 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	_build_rail_glass()
 	_build_workbench()
 	_build_blade_room()
+	_build_power_room()
 	_build_thrust_overlay()
 	_build_inspector()
 	# Between the inspector and the top cluster, so the chip draws over it but it covers the model
@@ -619,15 +638,53 @@ func _build_top_cluster() -> void:
 ## Built here rather than in `_build_blade_room` for the dull reason that `_init` builds the room
 ## first and the bar does not exist yet at that point.
 func _build_close_door(bar: HBoxContainer) -> void:
+	_blade_room_close_glass = _close_button("Close blade designer",
+		func() -> void: set_blade_room_open(false))
+	bar.add_child(_blade_room_close_glass)
+	_power_room_close_glass = _close_button("Close harness designer",
+		func() -> void: set_power_room_open(false))
+	bar.add_child(_power_room_close_glass)
+
+	# THE LIST THE RETRACT PATHS WALK, assembled where both halves of both rooms finally exist. A
+	# room registered here is a room every path puts away; a room that forgets to register is what
+	# `tests/test_power_room.gd` is looking for, and it looks by comparing this list against the
+	# overlay rooms the shell actually holds rather than against a second hand-written list.
+	_overlay_rooms = [
+		{"name": "the blade designer", "room": _blade_room,
+			"close_glass": _blade_room_close_glass},
+		{"name": "the harness designer", "room": _power_room,
+			"close_glass": _power_room_close_glass},
+	]
+
+
+## One glass-backed way out of a room, in the top strip. Two rooms, one shape — see
+## `_build_close_door`'s header for why the button is up here rather than over the room.
+func _close_button(text: String, action: Callable) -> PanelContainer:
 	var close_glass := _glass_panel()
-	_blade_room_close = Button.new()
-	_blade_room_close.text = "Close blade designer"
-	_blade_room_close.custom_minimum_size = Vector2(0, 28)
-	_blade_room_close.pressed.connect(func() -> void: set_blade_room_open(false))
-	close_glass.add_child(_blade_room_close)
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(0, 28)
+	button.pressed.connect(action)
+	close_glass.add_child(button)
 	close_glass.visible = false
-	_blade_room_close_glass = close_glass
-	bar.add_child(close_glass)
+	return close_glass
+
+
+## Puts EVERY overlay room away, and its way out with it.
+##
+## The single retraction, called by every path that has to end with no room on screen. W0.7 shipped
+## the version of this where each path did it by hand and one path forgot a term; the argument a
+## caller could omit was removed there, and here the whole list is removed from the caller's hands.
+## It does not touch the rail, the inspector or the tools — those are per-system and
+## `_select_system` owns them.
+func _retract_rooms() -> void:
+	for entry in _overlay_rooms:
+		var room: Control = entry["room"]
+		var close_glass: Control = entry["close_glass"]
+		if room != null:
+			room.visible = false
+		if close_glass != null:
+			close_glass.visible = false
 
 
 func _build_rail_glass() -> void:
@@ -759,6 +816,40 @@ func _build_blade_room() -> void:
 	lab.battery_details.pack_bench_requested.connect(func() -> void: _open_room("battery_bench"))
 	lab.motor_details.mount_stl_requested.connect(_on_mount_stl_requested)
 	lab.propeller_details.guard_stl_requested.connect(_on_guard_stl_requested)
+
+
+## The harness designer — Power's room, PW5 — built hidden and opened from the Harness panel's own
+## door and from the top strip.
+##
+## AN OVERLAY, on the blade designer's terms and for its reasons: Power has a Pack rail and an ESC
+## rail and a builder in Power is usually choosing a pack, not re-gauging phase wire. So the room
+## opens on request, sits in the same rect, and retracts through the same list.
+##
+## It is handed `lab.build_with_open_harness()` at OPEN time rather than at construction, because
+## the harness a room edits is the harness of the aircraft currently selected — and at `_init` the
+## rails have not chosen anything yet.
+func _build_power_room() -> void:
+	_power_room = PowerWorkbench.new()
+	_power_room.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_power_room.offset_left = CLUSTER_MARGIN
+	_power_room.offset_right = -CLUSTER_MARGIN
+	_power_room.offset_top = TOP_BAR_HEIGHT + CLUSTER_MARGIN
+	_power_room.offset_bottom = -BOTTOM_KEEPOUT
+	_power_room.visible = false
+	add_child(_power_room)
+
+	# THE EDIT HAS TO REACH THE AIRCRAFT. The harness is real mass at real positions, so a main lead
+	# that just got 60 mm longer moved the centre of mass and changed what every panel says. This is
+	# the same rebuild a part change takes — `LabScreen.refresh_build` — rather than a second path
+	# that could fall behind it.
+	#
+	# It does NOT re-open the room. `refresh_build` makes a new `Build`; handing that back to the
+	# room would re-enter `_refresh` and emit again, forever. The room keeps the aircraft it was
+	# opened with, and that aircraft carries Lab's own `Harness` object — which is the whole reason
+	# `build_with_open_harness` exists.
+	_power_room.document_changed.connect(func(_harness: Harness) -> void: lab.refresh_build())
+
+	lab.harness_panel.harness_room_requested.connect(_on_harness_room_requested)
 
 
 ## The five analysis overlays — P10e — built once and placed by `OverlayTray`.
@@ -1034,6 +1125,9 @@ static func room_door_label(system: Dictionary) -> String:
 		return ""
 	match str(system["name"]):
 		"Propulsion": return "Design blade…"
+		# PW5. Power keeps its Pack and ESC rails, so its room is a door rather than the system's
+		# view — the same arrangement, one entry, and no second branch at the call site.
+		"Power": return "Design harness…"
 		_: return ""
 
 
@@ -1045,7 +1139,24 @@ static func room_door_label(system: Dictionary) -> String:
 func _on_room_door_pressed() -> void:
 	if lab == null:
 		return
-	_on_design_blade_requested(lab.propeller_picker.selected_part())
+	# Matched on the SYSTEM, the same key `room_door_label` matched on to decide the button existed
+	# at all. A door whose label and whose destination were chosen by two different rules is a door
+	# that can say one thing and open another.
+	match str(SYSTEMS[_focused_index]["name"]):
+		"Propulsion": _on_design_blade_requested(lab.propeller_picker.selected_part())
+		"Power": _on_harness_room_requested()
+
+
+## The Harness panel's own door, and the top strip's. Both land here rather than one of them
+## opening the room directly — `EscDetails`' posture: the panel says what happened and the shell
+## decides what to do about it.
+func _on_harness_room_requested() -> void:
+	set_power_room_open(true)
+
+
+## The Power room — PW5. Same accessor and same reason as `blade_room()` above.
+func power_room() -> PowerWorkbench:
+	return _power_room
 
 
 func _on_design_blade_requested(prop: Dictionary) -> void:
@@ -1063,10 +1174,39 @@ func _on_design_blade_requested(prop: Dictionary) -> void:
 ## Public because it is what a test drives, and what the capture tooling drives, rather than
 ## synthesising a click on a button whose position is a layout decision.
 func set_blade_room_open(open: bool) -> void:
-	if _blade_room == null:
+	_set_room_open(_blade_room, _blade_room_close_glass, open)
+
+
+## Opens or closes the harness designer (PW5). The blade designer's twin, through the same one
+## function, so the two rooms cannot come to disagree about what a room costs the chrome.
+##
+## Public for `set_blade_room_open`'s reason: it is what a test drives, rather than synthesising a
+## click on a button whose position is a layout decision.
+func set_power_room_open(open: bool) -> void:
+	if open and _power_room != null and lab != null:
+		# THE AIRCRAFT IS FETCHED ON THE WAY IN, not held. `build_with_open_harness` seats LAB'S OWN
+		# `Harness` in a build made from the rails as they stand now, so the room edits the document
+		# the rest of the app reads — see that function for why a copy would silently lose the edit.
+		_power_room.set_build(lab.build_with_open_harness())
+	_set_room_open(_power_room, _power_room_close_glass, open)
+
+
+## Puts one overlay room up or down, and takes the same three things away from the viewport while
+## it is up: the 3D world (switched OFF rather than covered — a viewport nobody can see should not
+## be rendering), the viewport tools that act on a model the room is over, and the rail and
+## inspector columns whose space the room needs.
+##
+## ONE FUNCTION FOR BOTH ROOMS. The alternative — a `set_power_room_open` that repeated these eight
+## lines — is W0.7's defect written on purpose: eight things to retract, two places to remember
+## them, and the day a ninth is added it goes into one of the two.
+func _set_room_open(room: Control, close_glass: Control, open: bool) -> void:
+	if room == null:
 		return
-	_blade_room.visible = open
-	_blade_room_close_glass.visible = open
+	# EVERY room goes down first, including this one. Opening the harness designer while the blade
+	# designer is up would stack two opaque overlays and hand the builder one close button.
+	_retract_rooms()
+	room.visible = open
+	close_glass.visible = open
 	_rail_glass.visible = not open and _rail_glass.visible
 	_tools_glass.visible = not open and _tools_glass.visible
 	# The overlay retracts with the tools, and comes back if the toggle was left on. The room
@@ -1434,6 +1574,12 @@ func _on_room_changed() -> void:
 		# are now flying, opaque, on top of the one room that owns the whole window.
 		if _workbench != null:
 			_workbench.visible = false
+		# AND SO DO THE OVERLAY ROOMS, which this path did not do. Same argument as the canvas above,
+		# and the same omission W0.7 named: the blade designer and the harness designer are children
+		# of the shell, drawn over `rooms`, so walking to the field with one open flew the course
+		# under a planform editor. It went unnoticed because the way back always ends in
+		# `_select_system`, which retracts them — so the room was only wrong while you were flying.
+		_retract_rooms()
 
 
 # ---------------------------------------------------------------------------
@@ -1451,13 +1597,11 @@ func _select_system(index: int) -> void:
 	_focused_index = index
 	var system: Dictionary = SYSTEMS[index]
 
-	# THE BLADE DESIGNER DOES NOT SURVIVE A SYSTEM CHANGE. It is an overlay over Propulsion, and
-	# leaving it up while the builder walked to Power would put a planform editor over a pack they
-	# had just asked to look at. Hidden directly rather than through `set_blade_room_open`, because
-	# that function ends by calling THIS one and the two would recurse.
-	if _blade_room != null:
-		_blade_room.visible = false
-		_blade_room_close_glass.visible = false
+	# NO OVERLAY ROOM SURVIVES A SYSTEM CHANGE. Leaving the blade designer up while the builder
+	# walked to Power would put a planform editor over a pack they had just asked to look at, and
+	# the harness designer has the mirror of that problem. Retracted directly rather than through
+	# `set_*_room_open`, because those functions end by calling THIS one and the two would recurse.
+	_retract_rooms()
 	var modelled := _is_modelled(system)
 
 	# The door into this system's room, if it has one. Hidden rather than disabled for the eight
@@ -1839,9 +1983,7 @@ func _show_empty_state() -> void:
 	_inspector.visible = false
 	if _workbench != null:
 		_workbench.visible = false
-	if _blade_room != null:
-		_blade_room.visible = false
-		_blade_room_close_glass.visible = false
+	_retract_rooms()
 	_tools_glass.visible = false
 	if _bottom_right_glass != null:
 		_bottom_right_glass.visible = false

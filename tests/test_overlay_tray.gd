@@ -271,12 +271,21 @@ static func _door_checks() -> Array:
 		GlassShell.room_door_label(by_name["Airframe"]) == "",
 		"Airframe door reads \"%s\"" % GlassShell.room_door_label(by_name["Airframe"])))
 
-	# A modelled system with no room of its own. Power has a pack bench, and it is reached from the
-	# inspector — `INSPECTOR_DOORS`' arrangement, which this must not quietly duplicate.
+	# PW5 gave Power a room of its own — the harness designer — on Propulsion's terms: Power keeps
+	# its Pack and ESC rails, so the room is a door rather than the system's permanent view. This
+	# row USED to assert Power carried none, and it was right until this slice.
 	out.append(TestResult.new(
-		"[door] Power carries none",
-		GlassShell.room_door_label(by_name["Power"]) == "",
+		"[door] Power carries a door into the harness designer",
+		GlassShell.room_door_label(by_name["Power"]) != "",
 		"Power door reads \"%s\"" % GlassShell.room_door_label(by_name["Power"])))
+
+	# A MODELLED system with no room of its own, which is what stops "give every system a door"
+	# from passing the rows above. Control's parts are all reached from its own inspector — the FC
+	# and the tune — and it has no workspace to open.
+	out.append(TestResult.new(
+		"[door] Control carries none — it has no room to open",
+		GlassShell.room_door_label(by_name["Control"]) == "",
+		"Control door reads \"%s\"" % GlassShell.room_door_label(by_name["Control"])))
 
 	# An unmodelled system must never offer a door, whatever its name — the greyed dropdown entry
 	# is the whole of what it may promise.

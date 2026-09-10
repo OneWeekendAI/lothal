@@ -71,8 +71,82 @@ static func run(tree: SceneTree) -> Array:
 	results.append(_nothing_reaches_the_bottom_cluster(shell))
 	results.append(_the_close_button_is_in_the_top_bar(shell))
 
+	# PW5's room, on the same window. Opened after the blade room's checks rather than instead of
+	# them, because `set_power_room_open` retracts every other room on its way in — which is itself
+	# part of what is being measured.
+	shell.set_blade_room_open(false)
+	shell.select_system_by_name("Power")
+	shell.set_power_room_open(true)
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+
+	results.append(_the_power_room_fits_the_window(shell))
+	results.append(_the_power_rooms_two_columns_do_not_overlap(shell))
+
 	frame.queue_free()
 	return results
+
+
+## THE ROOM FITS THE WINDOW THE APP OPENS AT — W0.7's rule, applied to the room PW5 adds.
+##
+## W0.7 laid five Propulsion charts out to 1428 px against a 1280-wide window whose inspector
+## started at 904, because a COUNT had been fixed and a WIDTH had never been measured. So this
+## measures the width, off the chrome actually on screen: the room's own rect after layout, against
+## what its content column asks for.
+##
+## Both axes, because the same room can fail either — the blade room failed the vertical one two px
+## at a time and the frame room failed the horizontal one by 148.
+##
+## MUTATION CONFIRMED RED: `HarnessInspector.COLUMN_WIDTH` 320 -> 840. **The plan's own figure for
+## this row — "widen one column by 200 px" — does NOT turn it red, and that is a fact about the
+## room rather than a weakness in the check.** The room is 1256 px wide at 1280x720 and its content
+## wants 748, so there are 508 px of genuine slack: at +200 the content wants 948 and fits, which
+## it really does. The boundary is at +492, and +520 was the widening confirmed red — content
+## wanting 1268 against the 1240 the room's gutters leave.
+static func _the_power_room_fits_the_window(shell: GlassShell) -> TestResult:
+	var room: Control = shell.power_room()
+	var column: Control = null
+	for child in room.get_children():
+		if child is VBoxContainer:
+			column = child as VBoxContainer
+			break
+	var wanted: Vector2 = column.get_combined_minimum_size() if column != null else Vector2.INF
+	# MEASURED AGAINST THE ROOM'S RECT LESS ITS INSETS — never against the column's own rect, and
+	# that distinction is a check that could not fail. A `Container` in Godot expands its rect to its
+	# combined minimum whatever its anchors say, so `column.get_combined_minimum_size() <=
+	# column.get_global_rect().size` is a tautology: the first draft here asserted exactly that and
+	# passed a 520 px widening that ran 32 px past the window. The room's rect is set by the SHELL's
+	# offsets and does not grow, which is what makes it a bound.
+	var have: Vector2 = room.get_global_rect().size - Vector2.ONE * PowerWorkbench.GUTTER * 2.0
+	return TestResult.new(
+		"the Power room's content fits the window the app opens at (1280x720)",
+		column != null and wanted.x <= have.x and wanted.y <= have.y,
+		"the room is %.0fx%.0f px, leaving %.0fx%.0f inside its gutters, and its content wants %.0fx%.0f" % [
+			room.get_global_rect().size.x, room.get_global_rect().size.y, have.x, have.y,
+			wanted.x, wanted.y])
+
+
+## And the two columns inside it do not meet. The schematic is the subject of the room and the
+## inspector is the only way to change what it draws, so an overlap is not a cosmetic fault: it is
+## one of the two things a builder came here for, drawn over the other.
+##
+## Measured off the two panes' global rects rather than off their minimum-size constants, for the
+## reason `test_glass_shell.gd`'s own 1280 row gives: those constants are floors, not widths.
+static func _the_power_rooms_two_columns_do_not_overlap(shell: GlassShell) -> TestResult:
+	var room: PowerWorkbench = shell.power_room()
+	var drawing: Rect2 = room.schematic.get_global_rect()
+	var inspector: Rect2 = room.inspector.get_global_rect()
+	var gap: float = inspector.position.x - drawing.end.x
+	# Against the ROOM's rect less its gutters, for the reason above: the body is a Container and its
+	# rect grows to whatever its children demand, so measuring against it asserts nothing.
+	var body: Rect2 = room.get_global_rect().grow(-PowerWorkbench.GUTTER)
+	var inside: bool = drawing.position.x >= body.position.x and inspector.end.x <= body.end.x
+	return TestResult.new(
+		"the schematic and the inspector share the Power room without overlapping",
+		drawing.size.x > 0.0 and gap >= 0.0 and inside,
+		"the schematic is %.0f px wide and ends at x=%.0f, the inspector starts at x=%.0f (gap %.0f) and ends at x=%.0f inside a room whose gutter ends at x=%.0f" % [
+			drawing.size.x, drawing.end.x, inspector.position.x, gap, inspector.end.x,
+			body.end.x])
 
 
 ## Defect 2, stated as the rule it broke: the room's content column must fit in the room.
@@ -124,7 +198,10 @@ static func _nothing_reaches_the_bottom_cluster(shell: GlassShell) -> TestResult
 ## the two belonging together is the arrangement, not a pair of numbers that happen to agree today.
 static func _the_close_button_is_in_the_top_bar(shell: GlassShell) -> TestResult:
 	var bar: Control = shell._top_bar
-	var button: Button = shell._blade_room_close
+	# Fetched out of the glass rather than off a named member: there are two of these buttons now
+	# (PW5 added the harness designer's), they are built by one function, and a member per room is
+	# the shape that lets a third room ship without one.
+	var button: Button = shell._blade_room_close_glass.get_child(0) as Button
 	var in_the_bar: bool = bar != null and button != null and bar.is_ancestor_of(button)
 	# And it is on screen, or "in the bar" is satisfied by a button nobody can reach.
 	var up: bool = shell._blade_room_close_glass.visible and shell.blade_room().visible

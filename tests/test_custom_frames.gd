@@ -533,6 +533,14 @@ static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestRe
 ## frame under the reference build's 5"-class stack (that mistake is exactly what happened to the
 ## original whoop fixture in this file, before Task 4's coordinator caught it).
 ##
+## **The numbers are PARSED out of the header row, not written here.** They were not, and the row
+## and this check spent PW2 onwards disagreeing in public: the row read 1220.0 / 7.20 / 29.3 while
+## the assertion underneath it — in a function whose NAME says it pins that row — demanded
+## 1251.24 / 7.021 / 29.71. A test holding its own copy of the thing it is checking cannot notice
+## the copy drifting, which is the whole defect, so this now reads the row the way
+## `_test_the_header_tables_whoop_row_is_a_real_build` reads its own. Editing the row without
+## re-measuring fails here.
+##
 ## Parts, and why: motor_2808_1300kv is the only motor in the catalog whose 19x19 mount_pattern
 ## matches the frame's 19x19 motor_mount. prop_10x5x2 is the only propeller in the catalog whose
 ## catalog.intended_use is literally "long-range", and its 10" diameter is exactly the frame's
@@ -542,6 +550,16 @@ static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestRe
 ## (rather than the catalog's 60A option) is headroom over the motor's 50 A max_amps rating, which
 ## is the conventional margin an ESC is chosen with, not a number reached-for to hit a target mass.
 static func _test_the_long_range_rows_third_row_is_a_real_build() -> TestResult:
+	var source := FileAccess.get_file_as_string("res://src/assembly/frame_plausibility.gd")
+	var pattern := RegEx.create_from_string(
+		"frame_10in_long_range\\s+AUW\\s+([0-9.]+) g \\| TWR\\s+([0-9.]+) \\| hover ([0-9.]+)%")
+	var row := pattern.search(source)
+	if row == null:
+		return TestResult.new(
+			"the header table's 10\" long-range row is a real build, not an unchecked figure",
+			false,
+			"no 10\" row found in src/assembly/frame_plausibility.gd's header table")
+
 	var catalog := PartsCatalog.load_default()
 	var long_range := Build.from_ids(catalog, "frame_10in_long_range", "motor_2808_1300kv",
 		"prop_10x5x2", "battery_6s_4000_liion", "esc_4in1_80a_30x30", "fc_f405_30x30")
@@ -550,15 +568,17 @@ static func _test_the_long_range_rows_third_row_is_a_real_build() -> TestResult:
 	var twr := long_range.thrust_to_weight()
 	var hover := long_range.hover_throttle() * 100.0
 
-	var matches_auw := absf(auw - 1251.24) < 0.05
-	var matches_twr := absf(twr - 7.021) < 0.005
-	var matches_hover := absf(hover - 29.71) < 0.05
+	# Half a unit in the last place the row prints, the whoop row's own tolerance and its reason:
+	# tighter would fail on the rounding itself, looser would let a real drift through.
+	var matches_auw := absf(auw - row.get_string(1).to_float()) < 0.05
+	var matches_twr := absf(twr - row.get_string(2).to_float()) < 0.005
+	var matches_hover := absf(hover - row.get_string(3).to_float()) < 0.05
 
 	return TestResult.new(
 		"the header table's 10\" long-range row is a real build, not an unchecked figure",
 		matches_auw and matches_twr and matches_hover,
-		"AUW=%.2f g (want 1251.24), TWR=%.3f (want 7.021), hover=%.2f%% (want 29.71)" % [
-			auw, twr, hover])
+		"AUW=%.2f g (row says %s), TWR=%.3f (row says %s), hover=%.2f%% (row says %s)" % [
+			auw, row.get_string(1), twr, row.get_string(2), hover, row.get_string(3)])
 
 
 ## The FIRST row of FramePlausibility's header table, read out of the header rather than retyped.

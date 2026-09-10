@@ -118,7 +118,15 @@ var _frame_document_id := ""
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
 var battery_details: BatteryDetails
-var harness_stub: HarnessStub
+var harness_panel: HarnessPanel
+## THE OPEN HARNESS DOCUMENT, and it lives here for `tweaks`' reason exactly: `current_build()`
+## makes a fresh `Build` on every selection change, so anything the builder authored has to be held
+## by the room that outlives the build rather than by the build. `AssemblyTweaks` is the same shape
+## one field up — a sparse override table owned by Lab and pushed into every aircraft it makes.
+##
+## Sparse, so the defaults keep following the parts: swapping a 5" frame for a 7" moves the main
+## lead the builder never touched and leaves the one they did.
+var harness := Harness.new()
 var esc_details: EscDetails
 var fc_details: FcDetails
 var electronics_details: ElectronicsDetails
@@ -299,12 +307,13 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	esc_details.name = "ESC"
 	panels.add_child(esc_details)
 
-	# Power's third panel (PW4). It sits beside Pack and ESC because that is the system it belongs
-	# to — every ampere from cell to motor lead — and it holds its place with a note saying the
-	# model is shipped and the view is PW5's. A named panel in SYSTEMS with no tab behind it routes
-	# to nothing and hides silently; see GlassShell._show_only_tabs.
-	harness_stub = HarnessStub.new()
-	panels.add_child(harness_stub)
+	# Power's third panel. It sits beside Pack and ESC because that is the system it belongs to —
+	# every ampere from cell to motor lead. PW4 held this place with a stub that said the view was
+	# PW5's; PW5 is here, so the stub is gone and the panel summarises the current path and opens
+	# the room that draws it. A named panel in SYSTEMS with no tab behind it routes to nothing and
+	# hides silently; see GlassShell._show_only_tabs.
+	harness_panel = HarnessPanel.new()
+	panels.add_child(harness_panel)
 
 	fc_details = FcDetails.new()
 	fc_details.name = "FC"
@@ -671,6 +680,9 @@ func _on_selection_changed() -> void:
 	propeller_details.render(build.propeller, build)
 	battery_details.render(build.battery, build)
 	esc_details.render(build.esc, build)
+	# The harness rows follow the parts as well as the authored values: a bigger frame lengthens the
+	# motor leads nobody typed, so this cannot be rendered only when the harness is edited.
+	harness_panel.render(build)
 	# The tune is derived BEFORE the FC panel is rendered, because that panel quotes what the
 	# board's noise costs at the D gain actually installed — and "actually installed" is this
 	# object. Derived from scratch on every selection change rather than patched: a part change
@@ -761,6 +773,28 @@ func show_panel(panel_name: String) -> bool:
 ## app passed one, so every number Lab reported was a number about an unguarded aircraft even when
 ## the ring was on screen. The trailing argument rather than a seventh picker, because the row is
 ## a dropdown on an inspector — see `PropellerDetails.guard_changed` for why it lives there.
+## The aircraft as it stands with the OPEN harness ON it, rather than a copy of it.
+##
+## `current_build()` hands every caller a fresh `Build` carrying a fresh `Harness` rebuilt from the
+## override table — which is right for everything that only READS. The Power room WRITES, and a
+## room editing a copy would be a room whose edits vanished on the next selection change with
+## nothing on screen to say so. So the room is handed the aircraft with Lab's own harness object
+## seated in it: one document, edited in one place.
+func build_with_open_harness() -> Build:
+	var build := current_build()
+	build.set_assembly(tweaks.resolved_m(build))
+	build.harness = harness
+	return build
+
+
+## Re-derives everything from the parts and repaints every panel. Public because the Power room
+## edits a document Lab owns and the consequence — a heavier harness, a moved centre of mass — has
+## to reach the panels; it is the same path a part change takes, so there is one rebuild rather
+## than a second one that could fall behind it.
+func refresh_build() -> void:
+	_on_selection_changed()
+
+
 func current_build() -> Build:
 	return Build.from_ids(
 		catalog,
@@ -772,7 +806,8 @@ func current_build() -> Build:
 		fc_picker.selected_part()["part_id"],
 		electronics_picker.component_ids(),
 		air,
-		propeller_details.guard_id()
+		propeller_details.guard_id(),
+		harness.overrides()
 	)
 
 
