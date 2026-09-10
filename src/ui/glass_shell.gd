@@ -77,7 +77,7 @@ const GLASS_ALPHA := 0.86
 ## what there is to judge.
 const DIM_TRANSPARENCY := 0.82
 
-## The nine systems of §5, in order, each carrying the rails and panels it owns.
+## The ten systems of §5, in order, each carrying the rails and panels it owns.
 ##
 ## `rails` and `panels` are TAB TITLES, matched against the containers LabScreen built. Titles
 ## rather than indices because indices are a property of the order LabScreen happens to add its
@@ -89,8 +89,8 @@ const DIM_TRANSPARENCY := 0.82
 ## there. A tooltip was the alternative and it is worse, because the honest content of these four
 ## is a list of parts, and a list does not fit in a tooltip.
 ##
-## Whether nine collapses to six is open question §8.1 and is NOT settled here. Nine is what the
-## design says, so nine is what the frame is drawn with — the point of building the shape is to
+## Whether ten collapses to six is open question §8.1 and is NOT settled here. Ten is what the
+## design says, so ten is what the frame is drawn with — the point of building the shape is to
 ## look at it and then answer that, not to answer it in advance.
 const SYSTEMS := [
 	{
@@ -1557,9 +1557,11 @@ func select_system_by_name(system_name: String) -> bool:
 ## Brings the first tab named in `titles` to the front, then hides every tab not named there.
 ##
 ## Hidden rather than removed, which is what keeps LabScreen's `tab_changed → panels.current_tab`
-## sync correct: hiding does not renumber the tabs, so index 4 is still ESC on both sides. Removing
-## them would renumber one container and not the other, and the two columns would start describing
-## different components — the exact bug that sync exists to prevent.
+## sync working on a stable list: hiding does not renumber the tabs, so a title still names the same
+## tab either side of a system change. The claim this comment USED to make — "index 4 is still ESC
+## on both sides" — was the index sync's justification and had been false since Airframe's four
+## panels landed between Frame and Motor. Seven rails, fourteen panels, and the ESC rail routed to
+## Layout. LabScreen resolves that by title now, which is what makes hiding-not-removing enough.
 ##
 ## **Unhide, then select, then hide — three passes, and the order is the whole function.**
 ##
@@ -1676,10 +1678,10 @@ static func _system_of_name(node_name: StringName) -> String:
 ## Decided, not scored. §9 forbids an aggregate quality score and the ring is deliberately "how much
 ## you have decided", not "how good the drone is" — so this counts slots that hold a choice and says
 ## nothing whatever about whether the choice is good. A system with no model can never be decided,
-## which is why the figure starts at five of nine rather than at zero.
+## which is why the figure starts at six of ten rather than at zero.
 ##
-## **Today it is constant at five of nine, and that is worth saying rather than hiding.** Every rail
-## opens on a selection and none can be cleared, so all five modelled systems are decided from the
+## **Today it is constant at six of ten, and that is worth saying rather than hiding.** Every rail
+## opens on a selection and none can be cleared, so all six modelled systems are decided from the
 ## first frame and the arc never moves. I expected Video to make it live — a whoop publishes no
 ## camera or VTX bay — but the picker keeps its ids regardless of the frame, so `selection()` never
 ## returns an empty one. Checked, not assumed.

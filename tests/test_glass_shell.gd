@@ -63,6 +63,8 @@ static func run() -> Array:
 	results.append(_test_unknown_titles_change_nothing())
 	results.append_array(_test_power_owns_the_current_path())
 	results.append(_test_no_category_is_decided_by_two_systems())
+	results.append_array(_test_every_rail_routes_to_its_own_panel())
+	results.append(_test_the_status_strip_says_how_many_systems_there_are())
 	results.append(_test_the_columns_fit_the_window_the_app_opens_at())
 	return results
 
@@ -127,17 +129,17 @@ static func _test_power_owns_the_current_path() -> Array:
 
 ## No category appears in two systems' `decided_by`.
 ##
-## **THIS IS THE SILENT ONE.** The completeness ring is arithmetic over `decided_by` across nine
+## **THIS IS THE SILENT ONE.** The completeness ring is arithmetic over `decided_by` across ten
 ## systems, and nothing on screen looks wrong when a category is named twice: the arc still lands
-## between nothing and everything, the strip still reads "n of 9". What breaks is what the fraction
-## MEANS — one choice credited to two systems moves the arc by two ninths, so a builder who picks
-## an ESC is told they have decided two of the nine things there are to decide. Leaving `esc` under
+## between nothing and everything, the strip still reads "n of 10". What breaks is what the fraction
+## MEANS — one choice credited to two systems moves the arc by two tenths, so a builder who picks
+## an ESC is told they have decided two of the ten things there are to decide. Leaving `esc` under
 ## Control while adding it to Power is exactly that mistake, and it is a one-word omission in a
 ## two-word edit.
 ##
 ## Note for anyone reading the plan beside this: the plan says the duplicate makes the ring "count
-## ten things out of nine". It does not — `_decided_count` counts SYSTEMS satisfied, never
-## categories, so the numerator is capped at nine and the arc cannot overflow. The defect is real
+## more things than there are". It does not — `_decided_count` counts SYSTEMS satisfied, never
+## categories, so the numerator is capped at ten and the arc cannot overflow. The defect is real
 ## and the described symptom is not, which is precisely why a check that only looked at whether the
 ## ring rendered sensibly would have passed.
 static func _test_no_category_is_decided_by_two_systems() -> TestResult:
@@ -176,9 +178,9 @@ static func _test_no_category_is_decided_by_two_systems() -> TestResult:
 ## `frame` is named by Drone and by Airframe, and has been since W0.4 split them. There is a real
 ## argument for it — Drone is "which of fifteen frames", Airframe is "what that frame implies", and
 ## the second genuinely is settled by answering the first — and there is a real cost, which is that
-## picking a frame moves the arc by two ninths. **It is not obviously wrong the way a shared `esc`
+## picking a frame moves the arc by two tenths. **It is not obviously wrong the way a shared `esc`
 ## would be, and deciding it means deciding whether Airframe is a decision at all**, which is open
-## question §8.1 (whether nine collapses to six). Recorded here so that the answer is a visible
+## question §8.1 (whether ten collapses to six). Recorded here so that the answer is a visible
 ## edit rather than the current state being mistaken for one.
 const SHARED_DECISIONS := ["frame: Drone and Airframe"]
 
@@ -316,3 +318,106 @@ static func _fixture(titles: Array) -> TabContainer:
 		page.name = str(title)
 		container.add_child(page)
 	return container
+
+
+# ---------------------------------------------------------------------------
+# The rail column and the panel column are two different lists
+# ---------------------------------------------------------------------------
+
+## Choosing a rail brings up the panel OF THE SAME NAME, for every rail every system owns.
+##
+## The two columns were synced by index, on a comment claiming "index 4 is still ESC on both
+## sides". That stopped being true when Airframe's four panels landed between Frame and Motor:
+## seven rails against fourteen panels, so the ESC rail resolved to the Layout panel and the FC
+## rail to Motor. Nothing errored, because `TabContainer` refuses a hidden tab — inside Power,
+## Layout is hidden, the assignment did not take, and the column simply kept showing whatever was
+## there before. A wrong panel that looks like an unchanged one is why this survived two slices.
+##
+## **The resolution is asserted, not the selection.** `current_tab` does not take effect until the
+## container is laid out and the runner processes no frames — this suite's header says so about
+## `_show_only_tabs` and it is no less true here — so reading the selection back would agree with
+## index wiring and title wiring alike. `panel_for_rail()` returns the index it resolved, and that
+## index's TITLE is what is compared, which is the thing index wiring gets wrong.
+##
+## One result per system rather than one over all of them, so the failure count says how much of
+## the shell is mis-routed rather than only that something is.
+static func _test_every_rail_routes_to_its_own_panel() -> Array:
+	var results: Array = []
+	var shell := GlassShell.new()
+	var lab := shell.lab
+	var rail_titles := _titles_of(lab.rails())
+
+	for system in GlassShell.SYSTEMS:
+		var owned: Array = system.get("rails", [])
+		if owned.is_empty():
+			continue
+		var wrong: Array = []
+		for title in owned:
+			var rail_index := rail_titles.find(str(title))
+			var panel_index := lab.panel_for_rail(rail_index)
+			var landed := "nothing" if panel_index < 0 \
+				else lab.panels.get_tab_title(panel_index)
+			if landed != str(title):
+				wrong.append("%s (rail %d) -> %s (panel %d)" % [
+					title, rail_index, landed, panel_index])
+		results.append(TestResult.new(
+			"%s: every rail brings up the panel of its own name" % system["name"],
+			wrong.is_empty(),
+			"rails %s resolve correctly" % [owned] if wrong.is_empty()
+				else "mis-routed: %s" % [wrong]))
+
+	# And the rails no system claims are routed too — a rail reachable in the app but named by no
+	# SYSTEMS entry would be invisible to every check above.
+	var unclaimed: Array = []
+	var claimed: Array = []
+	for system in GlassShell.SYSTEMS:
+		claimed.append_array(system.get("rails", []))
+	for title in rail_titles:
+		if not claimed.has(title):
+			unclaimed.append(title)
+	var stray: Array = []
+	for title in unclaimed:
+		var panel_index := lab.panel_for_rail(rail_titles.find(str(title)))
+		if panel_index < 0 or lab.panels.get_tab_title(panel_index) != str(title):
+			stray.append(title)
+	shell.free()
+
+	results.append(TestResult.new(
+		"and every rail LabScreen builds is claimed by a system, or at least routes to its own panel",
+		stray.is_empty(),
+		"claimed by no system: %s · of those, mis-routed: %s" % [unclaimed, stray]))
+	return results
+
+
+## What the file SAYS about how many systems there are agrees with how many there are.
+##
+## Ten entries under a comment reading "the nine systems", and a status strip documented as constant
+## at "five of nine" while it renders six of ten. Both figures are derived here from `SYSTEMS`
+## itself, so this cannot be satisfied by writing today's numbers into the prose — it is satisfied
+## by the prose agreeing with the table, whatever the table becomes.
+static func _test_the_status_strip_says_how_many_systems_there_are() -> TestResult:
+	const WORDS := ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+		"nine", "ten", "eleven", "twelve"]
+	var decided := 0
+	for system in GlassShell.SYSTEMS:
+		if not (system["decided_by"] as Array).is_empty():
+			decided += 1
+	var total_word: String = WORDS[GlassShell.SYSTEMS.size()]
+	var decided_word: String = WORDS[decided]
+
+	var source := FileAccess.get_file_as_string("res://src/ui/glass_shell.gd")
+	var wanted := [
+		"The %s systems of §5" % total_word,
+		"starts at %s of %s rather than at zero" % [decided_word, total_word],
+		"constant at %s of %s" % [decided_word, total_word],
+	]
+	var absent: Array = []
+	for phrase in wanted:
+		if not source.contains(phrase):
+			absent.append(phrase)
+
+	return TestResult.new(
+		"glass_shell.gd's prose counts the systems the table actually holds",
+		absent.is_empty() and not source.is_empty(),
+		"%d systems, %d decided; missing from the file: %s" % [
+			GlassShell.SYSTEMS.size(), decided, absent])

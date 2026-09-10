@@ -25,6 +25,7 @@ static func run() -> Array:
 	results.append(_test_an_implausible_frame_still_flies())
 	results.append(_test_the_electronics_lump_names_itself_on_a_light_build())
 	results.append(_test_the_long_range_rows_third_row_is_a_real_build())
+	results.append(_test_the_header_tables_whoop_row_is_a_real_build())
 	results.append(_test_the_picker_marks_a_custom_frame())
 	results.append(_test_the_details_panel_names_the_provenance())
 	results.append(_test_the_dialog_saves_a_frame_and_refuses_a_bad_one())
@@ -516,7 +517,7 @@ static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestRe
 		"a build where the electronics dominate says so, names LTHL-11, and does not call the wiring flat while a harness warning names its gauge",
 		light != null and heavy == null and names_the_ticket and names_the_number
 			and not contradicts and not gauge_warnings.is_empty(),
-		"whoop AUW=%.1f g (want 85.8), TWR=%.2f (want 1.31), hover=%.1f%% (want 80.2), warns=%s (%.1f%% of AUW), reference warns=%s (%.1f%% of AUW), calls the wiring flat=%s, harness warnings naming a gauge=%s" % [
+		"whoop AUW=%.1f g (want 79.9), TWR=%.2f (want 1.40), hover=%.1f%% (want 80.2), warns=%s (%.1f%% of AUW), reference warns=%s (%.1f%% of AUW), calls the wiring flat=%s, harness warnings naming a gauge=%s" % [
 			whoop.all_up_weight_g(), whoop.thrust_to_weight(), whoop.hover_throttle() * 100.0,
 			light != null, Build.ELECTRONICS_BUDGET_G / whoop.all_up_weight_g() * 100.0,
 			heavy != null, Build.ELECTRONICS_BUDGET_G / ReferenceBuild.build().all_up_weight_g() * 100.0,
@@ -558,6 +559,48 @@ static func _test_the_long_range_rows_third_row_is_a_real_build() -> TestResult:
 		matches_auw and matches_twr and matches_hover,
 		"AUW=%.2f g (want 1251.24), TWR=%.3f (want 7.021), hover=%.2f%% (want 29.71)" % [
 			auw, twr, hover])
+
+
+## The FIRST row of FramePlausibility's header table, read out of the header rather than retyped.
+##
+## The row is a claim about a build, and it went stale the moment PW2 replaced the flat wiring
+## allowance with four gauged runs: it still read 85.8 g / TWR 1.31 against a build that measures
+## 79.9 / 1.40. Nothing caught it, because the figures lived only in prose and in a detail string
+## nobody asserts — the same gap `_test_the_long_range_rows_third_row_is_a_real_build` was written
+## to close for the 10" row.
+##
+## **The numbers are PARSED out of the comment, not written here.** A test carrying its own copy
+## would go stale in exactly the way the comment did, and this defect is precisely a copy drifting
+## from the thing it copies. Editing the row without re-measuring now fails here.
+static func _test_the_header_tables_whoop_row_is_a_real_build() -> TestResult:
+	var source := FileAccess.get_file_as_string("res://src/assembly/frame_plausibility.gd")
+	var pattern := RegEx.create_from_string(
+		"frame_65mm_whoop\\s+AUW\\s+([0-9.]+) g \\| TWR\\s+([0-9.]+) \\| hover ([0-9.]+)%")
+	var row := pattern.search(source)
+	if row == null:
+		return TestResult.new(
+			"the header table's 65 mm whoop row is a real build, not an unchecked figure",
+			false,
+			"no whoop row found in src/assembly/frame_plausibility.gd's header table")
+
+	var catalog := PartsCatalog.load_default()
+	var whoop := Build.from_ids(catalog, "frame_65mm_whoop", "motor_0802_19000kv",
+		"prop_16x12x4", "battery_1s_300", "esc_aio_5a_whoop", "fc_f411_25x25_whoop")
+	var auw := whoop.all_up_weight_g()
+	var twr := whoop.thrust_to_weight()
+	var hover := whoop.hover_throttle() * 100.0
+
+	# Half a unit in the last place the row prints, which is what "the row rounds to the build"
+	# means. Tighter would fail on the rounding itself; looser would let a real drift through.
+	var matches_auw := absf(auw - row.get_string(1).to_float()) < 0.05
+	var matches_twr := absf(twr - row.get_string(2).to_float()) < 0.005
+	var matches_hover := absf(hover - row.get_string(3).to_float()) < 0.05
+
+	return TestResult.new(
+		"the header table's 65 mm whoop row is a real build, not an unchecked figure",
+		matches_auw and matches_twr and matches_hover,
+		"build AUW=%.2f g, TWR=%.3f, hover=%.2f%% against the row's %s / %s / %s" % [
+			auw, twr, hover, row.get_string(1), row.get_string(2), row.get_string(3)])
 
 
 static func _test_the_picker_marks_a_custom_frame() -> TestResult:

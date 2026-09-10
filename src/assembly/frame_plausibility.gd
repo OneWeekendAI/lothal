@@ -64,7 +64,7 @@ extends RefCounted
 ##   wiring were budgeted against, no longer the mass of any of them — and it is wrong at both ends
 ##   of the catalog's own span:
 ##
-##       frame_65mm_whoop      AUW   85.8 g | TWR  1.31 | hover 80.2%
+##       frame_65mm_whoop      AUW   79.9 g | TWR  1.40 | hover 80.2%
 ##       frame_5in_freestyle   AUW  496.0 g | TWR 11.69 | hover 29.6%   <- exact
 ##       frame_10in_long_range AUW 1220.0 g | TWR  7.20 | hover 29.3%
 ##

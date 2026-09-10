@@ -337,10 +337,24 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	# survives a reload_catalog() even though its children (the rails) do not.
 	# Ignore the transient -1 TabContainer emits while reload_catalog() tears the rails down —
 	# panels does not allow deselection, and _build_rails() reselects a real tab right after.
+	#
+	# BY TITLE, NOT BY INDEX. The two columns stopped being the same list the moment Airframe's
+	# four panels landed between Frame and Motor: seven rails against fourteen panels, so the ESC
+	# rail used to route to the Layout panel. GlassShell.SYSTEMS already matches rails to panels by
+	# tab title for exactly this reason, and this is the same arrangement one layer down.
 	_rails.tab_changed.connect(func(index: int) -> void:
 		if index < 0:
 			return
-		panels.current_tab = index)
+		var panel := panel_for_rail(index)
+		if panel < 0:
+			# LOUD, because quiet is what hid the index bug for two slices. Leaving the previous
+			# panel up is still what happens — there is no honest panel to show for a rail nothing
+			# describes, and blanking the column would be a worse lie than a stale one — but a rail
+			# with no panel of its name is a wiring mistake in this file, not a runtime condition,
+			# so it says so instead of looking like a design.
+			push_error("no panel titled \"%s\" for that rail" % _rails.get_tab_title(index))
+			return
+		panels.current_tab = panel)
 
 	# Lab opens on the reference build rather than on whatever happens to be first in each
 	# catalog file — a 65 mm whoop frame under a 2807 and a 10" prop is a strange thing to
@@ -703,6 +717,24 @@ func _on_tune_changed() -> void:
 ## for the same reason a tweak is: there is no exit to save on.
 func _on_charge_changed() -> void:
 	pack_charge.save()
+
+
+## Which panel describes the part a given rail chooses, by TAB TITLE, or -1 when no panel carries
+## that rail's title.
+##
+## Public and index-returning rather than folded into the signal handler, because what has to be
+## checkable is the RESOLUTION and not its effect: `TabContainer.current_tab` does not take until
+## the container has been laid out, and the test runner processes no frames, so a check that read
+## the selection back would agree with any wiring at all (tests/test_glass_shell.gd says the same
+## thing about `_show_only_tabs`).
+func panel_for_rail(rail_index: int) -> int:
+	if rail_index < 0 or rail_index >= _rails.get_tab_count():
+		return -1
+	var title := _rails.get_tab_title(rail_index)
+	for i in panels.get_tab_count():
+		if panels.get_tab_title(i) == title:
+			return i
+	return -1
 
 
 ## Brings one of the right-hand panels to the front by its tab name ("Frame", "Motor", "Prop",
