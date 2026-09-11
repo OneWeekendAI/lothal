@@ -272,6 +272,14 @@ func fit_row_text(key: String) -> String:
 	return (_fit_values[key] as Label).text if _fit_values.has(key) else ""
 
 
+## What one tweak row currently reads, in the panel's own words and formatting. Named accessor for
+## `fit_row_text`'s reason — the panel's internals stay its own — and public because PW6's pack view
+## shows this same value in the Power room, and the check that the two cannot diverge has to be able
+## to ask both what they SAY rather than what they hold.
+func tweak_row_text(key: String) -> String:
+	return (_values[key] as Label).text if _values.has(key) else ""
+
+
 func fit_warning_text() -> String:
 	return _fit_warnings.ordered_text() if _fit_warnings.visible else ""
 

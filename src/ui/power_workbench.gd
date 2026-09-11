@@ -4,8 +4,23 @@ extends Control
 ##
 ## A builder in here has a warning that says their motor leads are 22 AWG and too thin, and no way
 ## to see what that means or to do anything about it. This room is the harness as a picture and as
-## two editable numbers per segment. §2.2's pack view is PW6 and is deliberately not here; the
-## right-hand column is the inspector until it arrives.
+## two editable numbers per segment.
+##
+## PW6 added the room's SECOND view beside it (§2.2): the pack on the frame in plan and elevation,
+## with the centre of mass marked. Two views, one subject, and nothing else shared — the harness
+## question and the where-is-the-mass question are answered on the same bench because a builder
+## moving 60 mm of 12 AWG lead has just moved the centre of mass, and until now nothing said so.
+##
+## ---------------------------------------------------------------------------
+## THE OFFSET LIVES IN `AssemblyTweaks`, AND THIS ROOM DOES NOT KEEP A COPY OF IT
+## ---------------------------------------------------------------------------
+##
+## `AssemblyPanel` already shows and edits `battery_offset_mm`, and the configuration itself lives
+## in the `AssemblyTweaks` Lab owns. So the slider below READS `tweaks.value_mm` on every refresh and
+## its edits go OUT through `pack_offset_edited` to the one path a tweak already takes
+## (`AssemblyPanel.set_tweak_mm`, which snaps to the step and clamps to the derived range) rather
+## than writing anything of its own. A room holding its own offset would be a third place the number
+## lives, and the two would agree right up until somebody moved the panel's slider.
 ##
 ## ---------------------------------------------------------------------------
 ## THE RULE THIS ROOM IS BUILT ON
@@ -51,6 +66,12 @@ extends Control
 ## of mass. Carries the harness rather than the build, because the harness is what changed.
 signal document_changed(harness: Harness)
 
+## Emitted when the pack's fore/aft slider is moved, carrying millimetres. NOT a write: the room
+## announces the intent and the shell hands it to the path that already owns the value — see the
+## header. What comes back is whatever that path actually stored, which is why the readout is
+## re-read from the tweaks afterwards rather than taken from the slider.
+signal pack_offset_edited(millimetres: float)
+
 ## The gap between the two columns and the room's own inset, in the shell's spacing vocabulary.
 const GUTTER := LothalTheme.SPACE_2
 
@@ -59,16 +80,32 @@ const GUTTER := LothalTheme.SPACE_2
 ## for a copy of it.
 var build: Build = null
 
+## The assembly configuration the pack's offset lives in — Lab's own object, not a copy of it. See
+## the header: this room reads it and never stores what it read.
+var tweaks: AssemblyTweaks = null
+
+## The frame the pack is drawn on. Lab's document rather than one derived here, because Lab
+## regenerates it only when the frame changes and an edit made in the Airframe room has to survive a
+## pack change — `PackView.show_pack` states the same thing from the other end.
+var frame: AirframeDocument = null
+
 ## Where the harness has been. Public for `PropulsionWorkbench.history`'s reason: the toolbar asks
 ## it whether its buttons mean anything.
 var history := HarnessHistory.new()
 
 var schematic: HarnessSchematic
 var inspector: HarnessInspector
+var pack_view: PackView
 
 var _undo_button: Button
 var _redo_button: Button
 var _status: Label
+var _offset_slider: HSlider
+var _offset_value: Label
+var _com_label: Label
+## Set while the room is writing its own controls from the model, so a programmatic slider move does
+## not read back as the builder having dragged something. `AssemblyPanel._updating` exactly.
+var _updating := false
 
 
 func _init() -> void:
@@ -99,6 +136,8 @@ func _init() -> void:
 	schematic = HarnessSchematic.new()
 	schematic.selection_changed.connect(_on_selected)
 	body.add_child(schematic)
+
+	body.add_child(_build_pack_column())
 
 	inspector = HarnessInspector.new()
 	inspector.value_edited.connect(_on_value_edited)
@@ -131,6 +170,47 @@ func _build_toolbar() -> Control:
 	return row
 
 
+## The second view and the one control that moves what it draws — §2.2.
+##
+## The slider is HERE and not on the drawing for the reason the gauge picker is on the inspector:
+## the room is the only writer, and a canvas that wrote would be a second path to a value this room
+## does not even own.
+func _build_pack_column() -> Control:
+	var column := VBoxContainer.new()
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_theme_constant_override("separation", LothalTheme.SPACE_1)
+
+	var title := Label.new()
+	title.text = "Pack on the frame"
+	title.theme_type_variation = &"TitleLabel"
+	column.add_child(title)
+
+	pack_view = PackView.new()
+	column.add_child(pack_view)
+
+	var row := HBoxContainer.new()
+	var caption := Label.new()
+	caption.text = "Fore/aft"
+	caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(caption)
+	_offset_value = Label.new()
+	_offset_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(_offset_value)
+	column.add_child(row)
+
+	_offset_slider = HSlider.new()
+	_offset_slider.step = AssemblyPanel.STEP_MM
+	_offset_slider.value_changed.connect(_on_offset_moved)
+	column.add_child(_offset_slider)
+
+	_com_label = Label.new()
+	_com_label.theme_type_variation = &"SmallLabel"
+	_com_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(_com_label)
+	return column
+
+
 func _button(text: String, action: Callable, tooltip: String) -> Button:
 	var button := Button.new()
 	button.text = text
@@ -149,8 +229,14 @@ func _button(text: String, action: Callable, tooltip: String) -> Button:
 ## The history is cleared, `BladeHistory.clear`'s reason applied to wire: an undo that reached
 ## across an open would put a cinelifter's 12 AWG trunk on the whoop now on screen, and the
 ## dropdown is one click away so it happens.
-func set_build(p_build: Build) -> void:
+## `p_tweaks` and `p_frame` are required rather than defaulted, and that is W0.7's finding applied
+## before it can bite: three code paths retracted the shell's chrome, one of them omitted a term,
+## and the fix was to remove the argument a caller could omit. A `set_build` that could be called
+## with the harness alone would leave the pack view drawing the previous aircraft's frame.
+func set_build(p_build: Build, p_tweaks: AssemblyTweaks, p_frame: AirframeDocument) -> void:
 	build = p_build
+	tweaks = p_tweaks
+	frame = p_frame
 	history.clear()
 	schematic.select("")
 	_refresh()
@@ -162,6 +248,7 @@ func _refresh() -> void:
 	if build == null:
 		schematic.show_harness(null, [] as Array[BuildWarning])
 		inspector.show_nothing()
+		pack_view.show_pack(null, null)
 		_refresh_toolbar()
 		return
 
@@ -169,6 +256,7 @@ func _refresh() -> void:
 	# for the check that depends on that being true.
 	var warnings := HarnessChecks.warnings_for(build)
 	schematic.show_harness(build, warnings)
+	refresh_pack()
 	_render_selection()
 	_refresh_toolbar()
 	_status.text = "Harness %.1f g — %s" % [build.harness.total_mass_g(build),
@@ -190,6 +278,61 @@ func _render_selection() -> void:
 			inspector.show_segment(build, segment)
 			return
 	inspector.show_nothing()
+
+
+## The pack view, its slider and its readout against the configuration AS IT STANDS.
+##
+## Public because the shell calls it after routing an offset edit to `AssemblyPanel.set_tweak_mm`:
+## what that path stored is not necessarily what the slider asked for — it snaps to the step and
+## clamps to the range the fitted parts allow — and a room that trusted its own slider would show a
+## number the aircraft is not built to.
+##
+## The assembly is RE-RESOLVED onto the aircraft on the bench, rather than a new `Build` being made.
+## `PowerWorkbench`'s aircraft carries Lab's own `Harness` object (`build_with_open_harness`), and
+## replacing it would lose the document this room is editing.
+func refresh_pack() -> void:
+	if build == null or tweaks == null:
+		return
+	build.set_assembly(tweaks.resolved_m(build))
+
+	var limits: Dictionary = AssemblyTweaks.limits(build)[AssemblyTweaks.BATTERY_OFFSET]
+	var current := tweaks.value_mm(AssemblyTweaks.BATTERY_OFFSET, build)
+	_updating = true
+	_offset_slider.min_value = limits["min"]
+	_offset_slider.max_value = limits["max"]
+	_offset_slider.value = current
+	_updating = false
+	_offset_value.text = "%.1f mm%s" % [current,
+		"" if tweaks.has_override(AssemblyTweaks.BATTERY_OFFSET) else "  (as built)"]
+
+	pack_view.show_pack(build, frame)
+	var com := pack_view.centre_of_mass_m()
+	# Fore/aft, in the words the drawing is in: forward is −Z (physics.md §1), so the sign is spoken
+	# rather than shown — "forward" beats making the builder remember which way negative points.
+	#
+	# Measured from the DATUM, which is the document's origin, and said that way rather than "from
+	# the frame's centre": the two are the same point only on a frame that is symmetric fore and aft,
+	# and a readout that quietly assumed that would be wrong on the first stretched frame somebody
+	# draws in the Airframe room.
+	_com_label.text = "Centre of mass %.1f mm %s of the frame datum, %.1f mm above it." % [
+		absf(com.z) * 1000.0, "aft" if com.z > 0.0 else "forward", com.y * 1000.0]
+
+
+## What the room's offset row reads. Named accessor rather than a test reaching into the label, and
+## the exact counterpart of `AssemblyPanel.tweak_row_text` — the check that the two screens show one
+## number compares the two STRINGS, because a room that agreed about the value and disagreed about
+## whether it was still the as-built default would still be two answers.
+func offset_row_text() -> String:
+	return _offset_value.text
+
+
+## The slider moved under the mouse. The room announces and re-reads; it does not write — see the
+## header for why the value does not live here.
+func _on_offset_moved(millimetres: float) -> void:
+	if _updating or build == null or tweaks == null:
+		return
+	pack_offset_edited.emit(millimetres)
+	refresh_pack()
 
 
 func _refresh_toolbar() -> void:

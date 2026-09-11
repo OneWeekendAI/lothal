@@ -81,7 +81,7 @@ static func run(tree: SceneTree) -> Array:
 		await tree.process_frame
 
 	results.append(_the_power_room_fits_the_window(shell))
-	results.append(_the_power_rooms_two_columns_do_not_overlap(shell))
+	results.append(_the_power_rooms_three_columns_do_not_overlap(shell))
 
 	frame.queue_free()
 	return results
@@ -126,27 +126,50 @@ static func _the_power_room_fits_the_window(shell: GlassShell) -> TestResult:
 			wanted.x, wanted.y])
 
 
-## And the two columns inside it do not meet. The schematic is the subject of the room and the
-## inspector is the only way to change what it draws, so an overlap is not a cosmetic fault: it is
-## one of the two things a builder came here for, drawn over the other.
+## And the THREE columns inside it do not meet. The schematic and the pack view are the two things
+## a builder came here for and the inspector is the only way to change what the first of them draws,
+## so an overlap is not a cosmetic fault: it is one of them drawn over another.
 ##
-## Measured off the two panes' global rects rather than off their minimum-size constants, for the
-## reason `test_glass_shell.gd`'s own 1280 row gives: those constants are floors, not widths.
-static func _the_power_rooms_two_columns_do_not_overlap(shell: GlassShell) -> TestResult:
+## PW6 is what makes this check earn its keep. PW5 had 468 px of slack between its two columns and
+## nothing to spend it on; the pack view is now the claimant, and a column that grew past its share
+## would land on a neighbour rather than on empty room.
+##
+## Measured off the panes' global rects rather than off their minimum-size constants, for the reason
+## `test_glass_shell.gd`'s own 1280 row gives: those constants are floors, not widths. And the
+## PACK VIEW is measured rather than the VBox it sits in, because the drawing is what would be
+## covered.
+##
+## WHICH CLAUSE BELOW ACTUALLY HAS TEETH, because three of them do not and it would be dishonest to
+## let the name suggest otherwise. The body is an `HBoxContainer`: it lays its children out in order
+## at a fixed separation, so `gaps` is ALWAYS that separation and the schematic ALWAYS starts at the
+## body's left edge, whatever the columns ask for. Two panes of a horizontal box cannot be made to
+## overlap each other, and `pack.size.x > 0.0` is floored by `PackView`'s own minimum. What an
+## over-wide column actually does is push the row PAST THE ROOM — so `inspector.end.x <= body.end.x`
+## is the assertion, and the rest are numbers in the message. The mutation below was run and it
+## failed exactly there: the inspector ended at x=1376 against a room ending at x=1260, while both
+## gaps stayed at 8.
+##
+## MUTATION CONFIRMED RED: raise `PackView`'s `custom_minimum_size.x` to 600 — the inspector is
+## pushed to x=1376 against a body ending at x=1260 (and the room's fit check above goes red too,
+## with the content wanting 1356 px inside 1240).
+static func _the_power_rooms_three_columns_do_not_overlap(shell: GlassShell) -> TestResult:
 	var room: PowerWorkbench = shell.power_room()
 	var drawing: Rect2 = room.schematic.get_global_rect()
+	var pack: Rect2 = room.pack_view.get_global_rect()
 	var inspector: Rect2 = room.inspector.get_global_rect()
-	var gap: float = inspector.position.x - drawing.end.x
 	# Against the ROOM's rect less its gutters, for the reason above: the body is a Container and its
 	# rect grows to whatever its children demand, so measuring against it asserts nothing.
 	var body: Rect2 = room.get_global_rect().grow(-PowerWorkbench.GUTTER)
+	var gaps := [pack.position.x - drawing.end.x, inspector.position.x - pack.end.x]
 	var inside: bool = drawing.position.x >= body.position.x and inspector.end.x <= body.end.x
+	var clear: bool = float(gaps[0]) >= 0.0 and float(gaps[1]) >= 0.0
 	return TestResult.new(
-		"the schematic and the inspector share the Power room without overlapping",
-		drawing.size.x > 0.0 and gap >= 0.0 and inside,
-		"the schematic is %.0f px wide and ends at x=%.0f, the inspector starts at x=%.0f (gap %.0f) and ends at x=%.0f inside a room whose gutter ends at x=%.0f" % [
-			drawing.size.x, drawing.end.x, inspector.position.x, gap, inspector.end.x,
-			body.end.x])
+		"the schematic, the pack view and the inspector share the Power room without overlapping",
+		drawing.size.x > 0.0 and pack.size.x > 0.0 and clear and inside,
+		"the schematic is %.0f px and ends at x=%.0f, the pack view is %.0f px from x=%.0f to x=%.0f (gaps %.0f and %.0f), the inspector runs x=%.0f to x=%.0f, inside a room whose gutters run x=%.0f to x=%.0f" % [
+			drawing.size.x, drawing.end.x, pack.size.x, pack.position.x, pack.end.x,
+			gaps[0], gaps[1], inspector.position.x, inspector.end.x,
+			body.position.x, body.end.x])
 
 
 ## Defect 2, stated as the rule it broke: the room's content column must fit in the room.

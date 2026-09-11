@@ -849,6 +849,15 @@ func _build_power_room() -> void:
 	# `build_with_open_harness` exists.
 	_power_room.document_changed.connect(func(_harness: Harness) -> void: lab.refresh_build())
 
+	# THE PACK'S OFFSET IS NOT THIS ROOM'S TO WRITE (PW6). It is one of the assembly tweaks, it is
+	# already shown and edited on the Fit panel, and `AssemblyPanel.set_tweak_mm` is the single path
+	# a tweak change takes — it snaps to the step, clamps to the range the fitted parts allow, and
+	# emits the signal Lab rebuilds and saves on. So the room's slider is routed straight into that
+	# path rather than given one of its own; a second writer would be a second place the number
+	# lives, and the two would agree until somebody moved the panel's slider.
+	_power_room.pack_offset_edited.connect(func(millimetres: float) -> void:
+		lab.assembly_panel.set_tweak_mm(AssemblyTweaks.BATTERY_OFFSET, millimetres))
+
 	lab.harness_panel.harness_room_requested.connect(_on_harness_room_requested)
 
 
@@ -1187,7 +1196,7 @@ func set_power_room_open(open: bool) -> void:
 		# THE AIRCRAFT IS FETCHED ON THE WAY IN, not held. `build_with_open_harness` seats LAB'S OWN
 		# `Harness` in a build made from the rails as they stand now, so the room edits the document
 		# the rest of the app reads — see that function for why a copy would silently lose the edit.
-		_power_room.set_build(lab.build_with_open_harness())
+		_power_room.set_build(lab.build_with_open_harness(), lab.tweaks, lab.frame_document)
 	_set_room_open(_power_room, _power_room_close_glass, open)
 
 
