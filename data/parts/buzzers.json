@@ -1,0 +1,81 @@
+{
+  "_schema": "The lost-model buzzer — plans/2026-09-12-control-room-design.md §2.4, slice C1. Two tiers, as in every other catalog file: `specs` is physics-bearing and `catalog` is browsing metadata only. Colour, price and vendor links are banned by name, from either block. WHAT THE PHYSICS READS IS THE MASS, THE THREE BOX DIMENSIONS AND `self_powered`. `self_powered` IS THE FIELD THE WHOLE COMPONENT IS FOR, and it is a binary knowable from the product rather than a number anybody has to estimate: a buzzer wired to the flight controller's 5 V rail IS SILENT THE MOMENT THE PACK DISCONNECTS — which is exactly the moment it is for, because the aircraft is in long grass and the pack has ejected on impact. A buzzer with its own cell keeps sounding. That is the difference between finding the aircraft and not, it costs nothing to model, and design §6.2 turns it into an amber BuildWarning: not an error, because wiring to the FC is a legitimate choice, but a cost the app should state. CONTINUE-HERE.md §7 files the buzzer beside the low-ESR capacitor as an essential part that is commonly forgotten, and that is the strongest argument for carrying it at all. `loudness_db` IS CARRIED AND READ BY NO CHECK — the same treatment capacitors.json gives esr_ohm and escs.json gives burst_a — and it is `null` where no figure is published rather than filled with an invention. Lothal has an audio engine and a buzzer that fed it would be a genuinely good feature and a DIFFERENT SLICE; carrying the number without claiming it is modelled is the honest position and it is already the house pattern. Mass is the whole module including its cell where it has one. Entries are ordered by mass. THE MASSES HERE ARE CLASS-TYPICAL RATHER THAN VENDOR-SOURCED and each entry's `source` says so.",
+  "parts": [
+    {
+      "part_id": "buzz_passive_pad",
+      "name": "Passive beeper, FC-powered",
+      "category": "buzzer",
+      "mass_g": 1.5,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 12.0,
+        "width_mm": 12.0,
+        "height_mm": 8.0,
+        "self_powered": false
+      },
+      "catalog": {
+        "loudness_db": null
+      },
+      "source": "class-typical bare piezo element soldered to the flight controller's beeper pad, not a specific product. Mass is ROUGH — under two grams and never published. loudness_db is null because this class is driven by whatever the board's beeper pad puts out, so the element itself has no sound pressure figure to publish."
+    },
+    {
+      "part_id": "buzz_active_5v",
+      "name": "Active buzzer, FC-powered",
+      "category": "buzzer",
+      "mass_g": 2.2,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 14.0,
+        "width_mm": 14.0,
+        "height_mm": 9.0,
+        "self_powered": false
+      },
+      "catalog": {
+        "loudness_db": 85.0
+      },
+      "source": "class-typical cased active buzzer on the FC's 5 V rail, not a specific product. Mass is ROUGH and class-typical. The 85 dB is a PUBLISHED-CLASS figure for this size of cased element — carried, shown, and read by no check, per _schema; it is not a measurement made for Lothal."
+    },
+    {
+      "part_id": "buzz_selfpowered_cell",
+      "name": "Self-powered buzzer with cell",
+      "category": "buzzer",
+      "mass_g": 3.2,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 20.0,
+        "width_mm": 15.0,
+        "height_mm": 9.0,
+        "self_powered": true
+      },
+      "catalog": {
+        "loudness_db": 100.0
+      },
+      "source": "class-typical self-powered finder with its own lithium cell and a signal lead to the FC, not a specific product. Mass includes the cell and is ROUGH. The 100 dB is a published-class figure, carried and not modelled. This is the row design §6.2's warning must NOT fire on, and the file needs one or that check has never been shown to stay quiet."
+    },
+    {
+      "part_id": "buzz_selfpowered_loud",
+      "name": "Self-powered buzzer, high output",
+      "category": "buzzer",
+      "mass_g": 4.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 24.0,
+        "width_mm": 17.0,
+        "height_mm": 10.0,
+        "self_powered": true
+      },
+      "catalog": {
+        "loudness_db": null
+      },
+      "source": "class-typical high-output self-powered finder, the heaviest in this file; the extra gram is a larger element and a larger cell. Mass is ROUGH and class-typical, not a specific product. loudness_db is null deliberately: this class advertises loudness in prose rather than a figure, and _schema's rule is null over an invention."
+    }
+  ]
+}

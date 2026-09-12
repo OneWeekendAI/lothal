@@ -40,6 +40,22 @@ const CATEGORY_FILES := {
 	# compares two strings that never match and passes on every build forever.
 	"connector": "res://data/parts/connectors.json",
 	"capacitor": "res://data/parts/capacitors.json",
+	# C1 (plans/2026-09-12-control-room-design.md §2.3, §2.4). The two things on the aircraft that
+	# TALK BACK — one to the flight controller, one to the person walking through long grass looking
+	# for it — and Control's membership rule (§1) is what puts them here rather than under Video
+	# beside the camera.
+	#
+	# Both are OPTIONAL in the strong sense: they join Build.OPTIONAL_COMPONENTS in C2 and
+	# DEFAULT_COMPONENT_IDS gets no entry for either, so a build fits neither unless asked and every
+	# existing oracle stays bit-identical (§3). Registration here is what makes them SELECTABLE, not
+	# what makes them required.
+	#
+	# The one physics-bearing field in each is the reason its file exists rather than a lump added to
+	# the harness remainder: gps.json's `mast_height_mm` puts mass ABOVE the top plate on a stalk,
+	# which moves the vertical centre of mass more than anything else fitted, and buzzers.json's
+	# `self_powered` decides whether the thing is still audible after the pack has ejected.
+	"gps": "res://data/parts/gps.json",
+	"buzzer": "res://data/parts/buzzers.json",
 }
 
 ## The id prefix a builder-entered part MUST carry, and which a SHIPPED part may never carry.
