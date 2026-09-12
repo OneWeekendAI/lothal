@@ -150,17 +150,29 @@ const SYSTEMS := [
 		# `esc` LEFT THIS LIST WITH THE PANEL. Both halves of the move have to happen together:
 		# `decided_by` is what the completeness ring counts, and a category named by two systems is
 		# credited twice by arithmetic that assumes each decision belongs somewhere once.
+		#
+		# `receiver` ARRIVED THE SAME WAY THE ESC LEFT, and the same two halves had to move
+		# together (C3). The rail came with it: `Link` is the receiver, the GPS and the buzzer —
+		# the aircraft's connection to the outside — and it is a second ElectronicsPicker rather
+		# than a share of Video's, so there is no longer any bay Control decides and Video renders.
+		# `decided_by` gains `receiver` ONLY here: Video never named it, so the ring has always
+		# counted it once, and this moves the credit rather than adding it.
 		"name": "Control",
-		"rails": ["FC"],
-		"panels": ["FC", "Tune"],
-		"decided_by": ["flight_controller"],
+		"rails": ["FC", "Link"],
+		"panels": ["FC", "Link", "Tune"],
+		"decided_by": ["flight_controller", "receiver"],
 	},
 	{
-		# The receiver belongs to Control and is reached from here, because ElectronicsPicker emits
-		# all four bays as one payload and there is no way to split its rail without splitting the
-		# picker. That is a real modelling asymmetry rather than a decision — the same family as the
-		# two §7 already names, where `antennas` is VTX antennas only and the receiver's antenna is a
-		# string on the receiver entry. Left visible rather than papered over.
+		# THREE BAYS, AND THEY ARE ALL VIDEO'S. Until C3 this rail carried the receiver too — not
+		# as a decision but because one ElectronicsPicker emitted all four bays as one payload and
+		# splitting it meant parameterising the picker. It is parameterised now: the picker takes
+		# its categories, both rails derive them from `Build.COMPONENT_SYSTEM`, and the receiver is
+		# picked under Control on the `Link` rail. `decided_by` is unchanged and always was
+		# correct — the receiver was never named here, so no ring arithmetic moves with it.
+		#
+		# The asymmetry that REMAINS is a different one, and it is the naming §7 records: `antennas`
+		# is VTX antennas only, and the receiver's antenna is a string on the receiver entry rather
+		# than a part. Left visible rather than papered over.
 		"name": "Video",
 		"rails": ["Electronics"],
 		"panels": ["Electronics"],
@@ -256,7 +268,7 @@ const SYSTEMS := [
 const SYSTEM_NODE_PREFIXES := {
 	"Propulsion": ["Motor_", "Propeller_"],
 	"Power": ["Battery", "Board_ESC"],
-	"Control": ["Stack", "Board_FC", "Component_receiver"],
+	"Control": ["Stack", "Board_FC", "Component_receiver", "Component_gps", "Component_buzzer"],
 	"Video": ["Component_camera", "Component_vtx", "Component_antenna"],
 }
 
@@ -444,7 +456,11 @@ func _ready() -> void:
 	for picker in [lab.picker, lab.motor_picker, lab.propeller_picker, lab.battery_picker,
 			lab.esc_picker, lab.fc_picker]:
 		picker.part_selected.connect(func(_part: Dictionary) -> void: _refresh_status())
-	lab.electronics_picker.components_changed.connect(_refresh_status)
+	# Both payload rails, by asking rather than by naming one: a bay emptied on either changes what
+	# the completeness ring and the status line have to say, and a shell that listened to one of
+	# the two would go stale on exactly the three components C3 moved.
+	for rail in lab.component_rails():
+		rail.components_changed.connect(_refresh_status)
 
 	# Re-applies whatever is currently chosen, which is NOT always index 0 — and that distinction is
 	# the whole reason this line is not `_select_system(0)`.

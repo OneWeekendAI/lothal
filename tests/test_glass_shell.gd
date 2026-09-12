@@ -46,14 +46,18 @@ extends RefCounted
 ## LabScreen's rail tabs, in LabScreen's order. Duplicated here rather than read off a LabScreen,
 ## because constructing one needs a catalog off disk — and because if these ever drift apart, the
 ## drift IS the bug this suite should report.
-const RAIL_TITLES := ["Frame", "Motor", "Prop", "Pack", "ESC", "FC", "Electronics"]
+## "Link" sits last, where LabScreen adds it — Control's second rail (C3), and the second
+## instance of ElectronicsPicker rather than a new class.
+const RAIL_TITLES := ["Frame", "Motor", "Prop", "Pack", "ESC", "FC", "Electronics", "Link"]
 ## The four Airframe tabs sit immediately after Frame, in LabScreen's order. They are the first
 ## panels in this list with no rail beside them — Airframe has none — which is the case
 ## `_show_only_tabs` had never been asked to route before.
 ## "Harness" sits immediately after ESC, where LabScreen puts it — Power's third panel (PW4), and
 ## the first entry in this list that is not a part at all.
+## "Link" sits immediately after "Electronics", where LabScreen puts it — Control's third panel
+## (C3), a stub until C6 writes LinkDetails.
 const PANEL_TITLES := ["Frame", "Structure", "Arms", "Fasteners", "Layout",
-	"Motor", "Prop", "Pack", "ESC", "Harness", "FC", "Electronics", "Fit", "Tune"]
+	"Motor", "Prop", "Pack", "ESC", "Harness", "FC", "Electronics", "Link", "Fit", "Tune"]
 
 
 static func run() -> Array:

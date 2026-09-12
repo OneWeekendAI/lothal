@@ -97,7 +97,13 @@ var propeller_picker: PropellerPicker
 var battery_picker: BatteryPicker
 var esc_picker: EscPicker
 var fc_picker: FcPicker
+## The two payload rails. Same class, same signal, same handler; they differ only in which
+## categories they render, and each derives that by filtering Build.OPTIONAL_COMPONENTS through
+## Build.COMPONENT_SYSTEM (C3). `electronics_picker` is Video's — camera, VTX, antenna — and
+## `link_picker` is Control's — receiver, GPS, buzzer. Neither name is a list of categories, which
+## is why every call site below routes by ASKING which rail carries a category rather than knowing.
 var electronics_picker: ElectronicsPicker
+var link_picker: ElectronicsPicker
 var details: FrameDetails
 ## The four Airframe tabs. Read-only inspectors over the airframe maths (airframe.md §3–§5); none
 ## of them owns state, so a reload rebuilds them with everything else and nothing is lost.
@@ -130,6 +136,8 @@ var harness := Harness.new()
 var esc_details: EscDetails
 var fc_details: FcDetails
 var electronics_details: ElectronicsDetails
+## Control's Link panel until C6 replaces it with LinkDetails. See LinkStub.
+var link_stub: LinkStub
 ## The charger. Lab's, because charging is a garage activity — there is a charger in the garage
 ## and there is not one in the field (labs-and-sim.md §5).
 var charge_panel: PackChargePanel
@@ -323,6 +331,14 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	electronics_details.name = "Electronics"
 	panels.add_child(electronics_details)
 
+	# Control's third panel (C3). It holds the place of design §5's LinkDetails, which C6 writes:
+	# Control's entry in SYSTEMS names "Link" from this slice on, and a named panel with no tab
+	# behind it makes panel_for_rail() push an error on every click of the new rail while
+	# _show_only_tabs shows two of Control's three panels and says nothing. Same arrangement PW4
+	# used for Harness, for the same reason and in the same voice.
+	link_stub = LinkStub.new()
+	panels.add_child(link_stub)
+
 	# A panel with no rail behind it, because a fit adjustment is not a part choice: there is
 	# nothing to browse and nothing to filter. It sits with the other panels rather than becoming a
 	# fourth column, which would take screen space from the airframe — the thing being judged.
@@ -416,13 +432,26 @@ func _build_rails() -> void:
 	fc_picker.name = "FC"
 	_rails.add_child(fc_picker)
 
-	electronics_picker = ElectronicsPicker.new(catalog)
-	electronics_picker.name = "Electronics"
+	# THE TWO PAYLOAD RAILS, and neither category list is written here. Video keeps camera, VTX
+	# and antenna; Control's new Link rail takes the receiver and the two parts C2 put on the
+	# aircraft. Both lists come out of Build.components_for_system, which refuses to answer at all
+	# if any optional component is claimed by no system — so a seventh component cannot end up on
+	# whichever rail happens to be built first, which is exactly how gps and buzzer arrived on
+	# Video's rail in C2.
+	electronics_picker = ElectronicsPicker.new(
+		catalog, Build.components_for_system("Video"), "Electronics")
 	_rails.add_child(electronics_picker)
-	# The one rail whose signal is not part_selected, because it does not select a part — it
-	# emits the whole payload at once. Same destination as all six others: one handler rebuilds
-	# the aircraft, so a bay emptied here cannot leave a panel describing a camera that is off.
-	electronics_picker.components_changed.connect(_on_selection_changed)
+
+	link_picker = ElectronicsPicker.new(
+		catalog, Build.components_for_system("Control"), "Link")
+	_rails.add_child(link_picker)
+
+	# The two rails whose signal is not part_selected, because they do not select a part — each
+	# emits its whole payload at once. Same destination as all six others, and the same one for
+	# both of these: one handler rebuilds the aircraft, so a bay emptied on either rail cannot
+	# leave a panel describing a camera that is off.
+	for rail in component_rails():
+		rail.components_changed.connect(_on_selection_changed)
 
 	# A frame added or deleted changes the CATALOG, not just the rail — the camera distance is
 	# computed from the largest arm in it, so the whole screen is rebuilt rather than the list
@@ -503,8 +532,8 @@ func reload_catalog() -> void:
 		# is a real selection rather than a missing one.
 		var fallback := str(Build.DEFAULT_COMPONENT_IDS.get(category, ""))
 		var previous_id := str(previous.get(category, fallback))
-		if not electronics_picker.select_component(category, previous_id):
-			electronics_picker.select_component(category, fallback)
+		if not select_component(category, previous_id):
+			select_component(category, fallback)
 
 	_on_selection_changed()
 
@@ -797,6 +826,40 @@ func refresh_build() -> void:
 	_on_selection_changed()
 
 
+## Both payload rails, in rail order. Every caller that used to name `electronics_picker` asks for
+## this instead: there are two of them since C3 and there is no reason for any call site outside
+## this file to know how many, or which categories are on which.
+func component_rails() -> Array[ElectronicsPicker]:
+	var out: Array[ElectronicsPicker] = []
+	if electronics_picker != null:
+		out.append(electronics_picker)
+	if link_picker != null:
+		out.append(link_picker)
+	return out
+
+
+## The WHOLE payload — both rails merged — in the shape Build.from_ids takes. Each rail answers
+## only for its own bays (ElectronicsPicker.component_ids), so merging is what makes a complete
+## payload; a caller that read one rail would hand Build a dictionary with three categories absent,
+## and absent means "fit the default", which is a camera nobody chose.
+func component_ids() -> Dictionary:
+	var out := {}
+	for rail in component_rails():
+		out.merge(rail.component_ids())
+	return out
+
+
+## Fits one optional component, on whichever rail carries its category. Reports whether it could,
+## exactly as ElectronicsPicker.select_component does — so a category no rail carries is `false`
+## rather than a crash, and the caller restoring a saved project reports it like any other id it
+## could not honour.
+func select_component(category: String, part_id: String) -> bool:
+	for rail in component_rails():
+		if rail.has_category(category):
+			return rail.select_component(category, part_id)
+	return false
+
+
 func current_build() -> Build:
 	return Build.from_ids(
 		catalog,
@@ -806,7 +869,7 @@ func current_build() -> Build:
 		battery_picker.selected_part()["part_id"],
 		esc_picker.selected_part()["part_id"],
 		fc_picker.selected_part()["part_id"],
-		electronics_picker.component_ids(),
+		component_ids(),
 		air,
 		propeller_details.guard_id(),
 		harness.overrides()
@@ -848,7 +911,7 @@ func apply_selection(selection_by_category: Dictionary) -> Array:
 			continue
 		var part_id := String(selection_by_category[category])
 		# "" is a real answer here — not fitted — and ElectronicsPicker takes it as one.
-		if not electronics_picker.select_component(category, part_id) and part_id != "":
+		if not select_component(category, part_id) and part_id != "":
 			failed.append({"category": category, "part_id": part_id})
 
 	# The guard, by the same rule as the rest: "" is a real answer (not fitted), and an id this
@@ -877,7 +940,7 @@ func selection() -> Dictionary:
 	# Merged rather than listed, for the reason this function exists at all: the payload is
 	# already a category -> id dictionary in exactly this shape, and copying its four keys out by
 	# hand would be the fifth place a component category has to be remembered.
-	out.merge(electronics_picker.component_ids())
+	out.merge(component_ids())
 	# The guard rides in the same dictionary as every other category, which is what lets the
 	# project file, the bench door and the field door all carry it without any of them knowing
 	# that it comes from an inspector row rather than from a rail.

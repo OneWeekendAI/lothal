@@ -155,6 +155,27 @@ const COMPONENT_MOUNTS := {
 	"buzzer": "buzzer_mount",
 }
 
+## Which SYSTEM owns each optional component — the single source for which rail a component is
+## picked on, which panel describes it, and which system lights it on the model.
+##
+## THE TABLE EXISTS BECAUSE THE ALTERNATIVE IS TWO HAND-WRITTEN LISTS. Until C3, one
+## `ElectronicsPicker` iterated OPTIONAL_COMPONENTS directly and rendered all of it on Video's
+## rail, which is why `gps` and `buzzer` arrived there in C2 without anybody choosing that. The
+## split could have been done with a list of three names per picker; that is exactly the shape
+## P10f found — *the two lists were never the same list* — so the pickers are built by FILTERING
+## OPTIONAL_COMPONENTS through this table instead, and a seventh component that is not named here
+## does not land quietly on one rail or the other.
+##
+## The system names are `GlassShell.SYSTEMS`' own, and C4 asserts that rather than trusting it.
+const COMPONENT_SYSTEM := {
+	"camera": "Video",
+	"vtx": "Video",
+	"antenna": "Video",
+	"receiver": "Control",
+	"gps": "Control",
+	"buzzer": "Control",
+}
+
 ## The part each category gets when a selection does not name one. Every Build call site written
 ## before these categories existed still means what it meant, and the reference build still weighs
 ## 496 g — each of these weighs exactly its share above. An EMPTY string means "not fitted", which
@@ -247,6 +268,49 @@ static func carved_components() -> Array[String]:
 	var out: Array[String] = []
 	for category in OPTIONAL_COMPONENTS:
 		if CARVED_SHARES.has(category):
+			out.append(String(category))
+	return out
+
+
+## The optional components one system owns, in the order the mass model weighs them — what each
+## payload rail is built from.
+##
+## **IT REFUSES RATHER THAN SHRUGS**, and that is the whole of why this is a function and not a
+## dictionary comprehension at the call site. The failure mode of two lists is SILENCE: a category
+## in OPTIONAL_COMPONENTS with no entry in COMPONENT_SYSTEM belongs to no system, so a filter that
+## skipped it would leave it weighed by the mass model, saved by the schema, drawn on the aircraft
+## — and pickable on no rail in the app. Nothing would be broken enough to notice. So an unclaimed
+## category is not skipped: this answers NOTHING for anybody until the table is fixed, pushes an
+## error naming the category, and leaves the rail that asked with no rows in it, which is the one
+## thing a builder cannot miss. A blank rail with an error in the log is a bug report; a component
+## that silently cannot be fitted is a mystery six months later.
+##
+## The two tables are parameters with the constants as defaults so the refusal itself can be
+## tested: `COMPONENT_SYSTEM` is a const Dictionary and therefore read-only at runtime, so a test
+## that could not pass its own seventh category in could only assert the happy path.
+static func components_for_system(system: String, p_categories: Array = OPTIONAL_COMPONENTS,
+		p_owner: Dictionary = COMPONENT_SYSTEM) -> Array[String]:
+	var unclaimed := unclaimed_components(p_categories, p_owner)
+	if not unclaimed.is_empty():
+		push_error(("Build.COMPONENT_SYSTEM claims no system for %s; "
+			+ "no component rail can be built until it does") % ", ".join(unclaimed))
+		return [] as Array[String]
+
+	var out: Array[String] = []
+	for category in p_categories:
+		if String(p_owner[category]) == system:
+			out.append(String(category))
+	return out
+
+
+## Every optional component no system owns. Empty is the only correct answer; it is returned as a
+## list rather than a bool so the error above can name what is missing, and so C4's coverage check
+## can report the category rather than just the fact.
+static func unclaimed_components(p_categories: Array = OPTIONAL_COMPONENTS,
+		p_owner: Dictionary = COMPONENT_SYSTEM) -> Array[String]:
+	var out: Array[String] = []
+	for category in p_categories:
+		if not p_owner.has(category):
 			out.append(String(category))
 	return out
 

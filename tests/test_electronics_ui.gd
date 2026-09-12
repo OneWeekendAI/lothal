@@ -64,16 +64,48 @@ static func run() -> Array:
 # The rail
 # ---------------------------------------------------------------------------
 
+## Both payload rails, built the way LabScreen builds them. TWO SINCE C3, and these checks are
+## written over the pair rather than over one: "the rail carries every optional component" became
+## "the RAILS carry every optional component between them", which is the property that still has
+## to hold. Which rail carries which is asserted in tests/test_control_rails.gd, next to the table
+## that decides it.
+static func _rails(catalog: PartsCatalog) -> Array:
+	return [
+		ElectronicsPicker.new(catalog, Build.components_for_system("Video"), "Electronics"),
+		ElectronicsPicker.new(catalog, Build.components_for_system("Control"), "Link"),
+	]
+
+
+static func _rail_for(rails: Array, category: String) -> ElectronicsPicker:
+	for rail in rails:
+		if (rail as ElectronicsPicker).has_category(category):
+			return rail
+	return null
+
+
+static func _payload_of(rails: Array) -> Dictionary:
+	var out := {}
+	for rail in rails:
+		out.merge((rail as ElectronicsPicker).component_ids())
+	return out
+
+
+static func _free_all(rails: Array) -> void:
+	for rail in rails:
+		(rail as ElectronicsPicker).free()
+
+
 static func _test_rail_lists_and_defaults(catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var rail := ElectronicsPicker.new(catalog)
+	var rails := _rails(catalog)
 
-	# Data-driven over Build.OPTIONAL_COMPONENTS rather than naming the four categories, so a
-	# fifth component added to the model shows up here as a failure rather than as silence.
+	# Data-driven over Build.OPTIONAL_COMPONENTS rather than naming the categories, so a seventh
+	# component added to the model shows up here as a failure rather than as silence.
 	var missing: Array = []
 	var miscounted: Array = []
 	for category in Build.OPTIONAL_COMPONENTS:
-		if not rail.has_category(category):
+		var rail := _rail_for(rails, category)
+		if rail == null:
 			missing.append(category)
 			continue
 		# Every part in the category, plus the one "Not fitted" row.
@@ -83,7 +115,7 @@ static func _test_rail_lists_and_defaults(catalog: PartsCatalog) -> Array:
 				category, rail.options_for(category).size(), expected])
 
 	results.append(TestResult.new(
-		"the rail carries every optional component category",
+		"the rails carry every optional component category between them",
 		missing.is_empty(),
 		"missing: %s" % ("none" if missing.is_empty() else ", ".join(missing))
 	))
@@ -98,7 +130,8 @@ static func _test_rail_lists_and_defaults(catalog: PartsCatalog) -> Array:
 	# answer "what is this costing me", so it must not be at the bottom of a scrolled list.
 	var not_first: Array = []
 	for category in Build.OPTIONAL_COMPONENTS:
-		if rail.options_for(category)[0] != "":
+		var owner_rail := _rail_for(rails, category)
+		if owner_rail == null or owner_rail.options_for(category)[0] != "":
 			not_first.append(category)
 	results.append(TestResult.new(
 		"\"not fitted\" is the first row in every list",
@@ -118,26 +151,28 @@ static func _test_rail_lists_and_defaults(catalog: PartsCatalog) -> Array:
 	for category in Build.OPTIONAL_COMPONENTS:
 		expected_payload[category] = str(Build.DEFAULT_COMPONENT_IDS.get(category, ""))
 	results.append(TestResult.new(
-		"the rail opens on Build's own default components, and on \"not fitted\" where there is none",
-		rail.component_ids() == expected_payload,
-		"rail %s vs Build %s" % [rail.component_ids(), expected_payload]
+		"the rails open on Build's own default components, and on \"not fitted\" where there is none",
+		_payload_of(rails) == expected_payload,
+		"rails %s vs Build %s" % [_payload_of(rails), expected_payload]
 	))
 
-	rail.free()
+	_free_all(rails)
 	return results
 
 
 static func _test_not_fitted_reaches_the_build(catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var rail := ElectronicsPicker.new(catalog)
+	var rails := _rails(catalog)
 
 	for category in Build.OPTIONAL_COMPONENTS:
-		rail.select_component(category, "")
+		var rail := _rail_for(rails, category)
+		if rail != null:
+			rail.select_component(category, "")
 
 	results.append(TestResult.new(
 		"choosing \"not fitted\" everywhere is exactly Build.no_components()",
-		rail.component_ids() == Build.no_components(),
-		"rail %s" % [rail.component_ids()]
+		_payload_of(rails) == Build.no_components(),
+		"rails %s" % [_payload_of(rails)]
 	))
 
 	# The arithmetic, end to end: a stripped aircraft is lighter than a fitted one by the sum of
@@ -148,7 +183,7 @@ static func _test_not_fitted_reaches_the_build(catalog: PartsCatalog) -> Array:
 		ReferenceBuild.FC_ID, Build.DEFAULT_COMPONENT_IDS)
 	var stripped := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
 		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
-		ReferenceBuild.FC_ID, rail.component_ids())
+		ReferenceBuild.FC_ID, _payload_of(rails))
 
 	# The carved four: those are the categories with a default, and therefore the only ones the
 	# "fitted" build above has anything in. C2's added two are unfitted on both sides and drop
@@ -165,7 +200,7 @@ static func _test_not_fitted_reaches_the_build(catalog: PartsCatalog) -> Array:
 		"dropped %.2f g, four parts weigh %.2f g" % [actual_drop, expected_drop]
 	))
 
-	rail.free()
+	_free_all(rails)
 	return results
 
 
