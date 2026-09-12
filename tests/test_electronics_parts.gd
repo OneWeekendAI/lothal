@@ -117,8 +117,12 @@ static func _the_reference_build_is_unmoved() -> Array:
 	# And the reason it holds: each default part weighs its own share. Asserted per category rather
 	# than only in the total, because two shares wrong in opposite directions would sum correctly
 	# and move the centre of mass without moving the weight.
+	# OVER THE CARVED FOUR, NOT OVER OPTIONAL_COMPONENTS. C2 added two components that have no
+	# share and no default by design, and a loop that indexed either table by every optional
+	# category would not have failed this check — it would have crashed it, which reads as a
+	# suite-level error rather than as the statement this check is making.
 	var mismatched: Array[String] = []
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		var default_mass := _catalog_mass_g(String(Build.DEFAULT_COMPONENT_IDS[category]))
 		var share := float(Build.CARVED_SHARES[category])
 		if absf(default_mass - share) > MASS_EPS:
@@ -126,8 +130,9 @@ static func _the_reference_build_is_unmoved() -> Array:
 				category, default_mass, share])
 	out.append(TestResult.new(
 		"every default component weighs exactly the share carved out for it",
-		mismatched.is_empty(),
-		"4 categories checked" if mismatched.is_empty() else str(mismatched)
+		mismatched.is_empty() and not Build.carved_components().is_empty(),
+		"%d carved categories checked" % Build.carved_components().size() \
+			if mismatched.is_empty() else str(mismatched)
 	))
 	return out
 
@@ -171,7 +176,7 @@ static func _omitting_one_component_costs_exactly_that_component() -> Array:
 	# All four categories, so that "omittable" is a property of the mechanism rather than of the
 	# one category the first two checks happen to use.
 	var not_omittable: Array[String] = []
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		var without := _reference_with({category: ""})
 		var expected := _catalog_mass_g(String(Build.DEFAULT_COMPONENT_IDS[category]))
 		var actual := fitted.all_up_weight_g() - without.all_up_weight_g()
@@ -179,8 +184,9 @@ static func _omitting_one_component_costs_exactly_that_component() -> Array:
 			not_omittable.append("%s: lost %.4f g, expected %.4f g" % [category, actual, expected])
 	out.append(TestResult.new(
 		"each of the four is omittable, and each costs its own mass",
-		not_omittable.is_empty(),
-		"4 categories checked" if not_omittable.is_empty() else str(not_omittable)
+		not_omittable.is_empty() and not Build.carved_components().is_empty(),
+		"%d carved categories checked" % Build.carved_components().size() \
+			if not_omittable.is_empty() else str(not_omittable)
 	))
 	return out
 
@@ -195,7 +201,7 @@ static func _a_build_with_none_of_the_four() -> Array:
 	var bare := _reference_with(_nothing_fitted())
 
 	var shares := 0.0
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		shares += float(Build.CARVED_SHARES[category])
 
 	out.append(TestResult.new(
@@ -304,18 +310,34 @@ static func _the_budget_cannot_be_exceeded_silently() -> Array:
 	# Every optional component has a share, and every share belongs to a category that exists. The
 	# failure this catches is a fifth component added to OPTIONAL_COMPONENTS whose mass is carried
 	# by the aircraft and paid for by nobody.
+	# REFORMULATED IN C2, AND IT IS STRONGER THAN IT WAS RATHER THAN LOOSER. It used to say that
+	# every optional component has a share, a mount and a default, which was true while all four
+	# were carved out of the 55 g lump. GPS and buzzer are ADDED mass with no share and no default
+	# (design §3), so the old wording would have failed on a correct build — and "relax it to the
+	# carved four" would have made the share half tautological, since the carved four ARE the
+	# optional categories CARVED_SHARES names.
+	#
+	# So it asks the question the partition makes meaningful: a mount for EVERYTHING, because
+	# nothing is weighed nowhere; a share and a default for exactly the carved ones; and NEITHER
+	# for the added ones, which is the property that keeps every oracle in the project still.
 	var orphans: Array[String] = []
 	for category in Build.OPTIONAL_COMPONENTS:
-		if not Build.CARVED_SHARES.has(category):
-			orphans.append("%s is weighed but has no share carved out of the budget" % category)
 		if not Build.COMPONENT_MOUNTS.has(category):
 			orphans.append("%s is weighed but has no mount" % category)
+	for category in Build.carved_components():
 		if not Build.DEFAULT_COMPONENT_IDS.has(category):
-			orphans.append("%s is weighed but has no default part" % category)
+			orphans.append("%s carves a share but has no default part" % category)
+	for category in Build.added_components():
+		if Build.CARVED_SHARES.has(category):
+			orphans.append("%s is added mass and carves a share as well" % category)
+		if Build.DEFAULT_COMPONENT_IDS.has(category):
+			orphans.append("%s is added mass and has a default, so it is fitted by surprise" % category)
 	out.append(TestResult.new(
-		"every component that is weighed has a share, a mount and a default",
-		orphans.is_empty(),
-		"%d components checked" % Build.OPTIONAL_COMPONENTS.size() if orphans.is_empty() else str(orphans)
+		"every component has a mount, the carved ones have shares and defaults, the added ones have neither",
+		orphans.is_empty() and not Build.added_components().is_empty(),
+		"%d components: %d carved, %d added" % [Build.OPTIONAL_COMPONENTS.size(),
+			Build.carved_components().size(), Build.added_components().size()] \
+			if orphans.is_empty() else str(orphans)
 	))
 	return out
 
@@ -335,9 +357,12 @@ static func _every_component_sits_where_mount_layout_puts_it() -> Array:
 	var build := ReferenceBuild.build()
 	var mounts := build.mount_points()
 
+	# Over what the REFERENCE BUILD fits, which is the carved four: the added two have no default
+	# and are not on this aircraft. Their own placement is asserted in test_control_components.gd,
+	# on builds that actually fit them.
 	var missing: Array[String] = []
 	var misplaced: Array[String] = []
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		var mount_id := String(Build.COMPONENT_MOUNTS[category])
 		var mount := MountLayout.by_id(mounts, mount_id)
 		if mount == null:
@@ -370,7 +395,7 @@ static func _every_component_sits_where_mount_layout_puts_it() -> Array:
 	var tall := ReferenceBuild.build()
 	tall.set_assembly({"plate_gap_m": MountLayout.max_plate_gap_m(build.arm_m)})
 	var unmoved: Array[String] = []
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		var name := str(build.components[category]["name"])
 		var before := _part_mass_named(build, name)
 		var after := _part_mass_named(tall, name)
@@ -500,18 +525,21 @@ static func _custom_components_work_in_all_four_categories() -> Array:
 		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
 		ReferenceBuild.FC_ID, overrides)
 
-	var fitted_all_four := custom_build.components.size() == Build.OPTIONAL_COMPONENTS.size()
+	# Against `records`, not against OPTIONAL_COMPONENTS: this fixture authors a custom part in the
+	# four categories that HAVE a custom-parts document, and C2's two do not have one yet.
+	var fitted_all_four := custom_build.components.size() == records.size()
 	out.append(TestResult.new(
 		"and it is loaded back into its own category and fitted to a build",
 		fitted_all_four and catalog.load_errors.is_empty(),
-		"%d of 4 fitted, load errors %s" % [custom_build.components.size(), catalog.load_errors]
+		"%d of %d fitted, load errors %s" % [custom_build.components.size(), records.size(),
+			catalog.load_errors]
 	))
 
 	# The mass rule, on parts nobody reviewed: 44 g of custom components against a 21 g share is
 	# 23 g of excess, and 23 g is exactly what the aircraft gains. Not 44.
 	var custom_total := 0.0
 	var shares := 0.0
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in records:
 		custom_total += float(records[category]["mass_g"])
 		shares += float(Build.CARVED_SHARES[category])
 	var gained := custom_build.all_up_weight_g() - ReferenceBuild.build().all_up_weight_g()

@@ -62,7 +62,7 @@ static func _project(p_name: String = "Weekend 5") -> Project:
 	# dictionary"; the guard is in the first and not the second, because it reaches `Build` as a
 	# trailing argument rather than through `component_ids`. This loop wants the four bays with
 	# defaults, so it reads the list that HAS defaults.
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		project.parts[category] = String(Build.DEFAULT_COMPONENT_IDS[category])
 	return project
 

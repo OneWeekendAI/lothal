@@ -128,25 +128,44 @@ const CARVED_SHARES := {
 	"receiver": RECEIVER_BUDGET_MASS_G,
 }
 
-## The four components that come out of the lump and MAY BE OMITTED, in the order they are weighed.
+## The components that come out of the lump and MAY BE OMITTED, in the order they are weighed.
 ## The stack's two are not here: a quad without a flight controller is not a build with something
 ## missing, it is not an aircraft.
-const OPTIONAL_COMPONENTS := ["camera", "vtx", "antenna", "receiver"]
+##
+## SIX SINCE C2, AND THE LAST TWO ARE A DIFFERENT KIND OF MEMBER. Camera, VTX, antenna and receiver
+## were CARVED out of ELECTRONICS_BUDGET_G — the 55 g lump stood for them, so unbundling them cost
+## the aircraft nothing. GPS and buzzer are ADDED: the lump was never their mass, the reference
+## build carries neither, and there is nothing to carve them out of. Fitting one therefore makes
+## the aircraft heavier, which — with navigation unmodelled — is the single most useful thing
+## Lothal can say about a GPS. `CARVED_SHARES` is what tells the two kinds apart, and
+## `added_components()` below derives the second list from it rather than restating it.
+const OPTIONAL_COMPONENTS := ["camera", "vtx", "antenna", "receiver", "gps", "buzzer"]
 
 ## Which mount each optional component sits on. The ids are MountLayout's, and this table is the
 ## only place a component is associated with a place — no component carries an offset of its own,
-## and nothing here is a coordinate.
+## and nothing here is a coordinate. A masted GPS is not an exception to that: the mast is the
+## MODULE's own published dimension, read the same way its box is, and it reaches the seat through
+## MountLayout.seated_centre_m's `rise_m`. See component_rise_m().
 const COMPONENT_MOUNTS := {
 	"camera": "camera_bay",
 	"vtx": "vtx_bay",
 	"antenna": "antenna_mount",
 	"receiver": "rx_bay",
+	"gps": "gps_mount",
+	"buzzer": "buzzer_mount",
 }
 
 ## The part each category gets when a selection does not name one. Every Build call site written
 ## before these categories existed still means what it meant, and the reference build still weighs
 ## 496 g — each of these weighs exactly its share above. An EMPTY string means "not fitted", which
 ## is what a whoop passes.
+##
+## GPS AND BUZZER ARE DELIBERATELY ABSENT, and the absence is the feature. A category with no entry
+## here resolves to "" — not fitted — through the `.get(category, "")` the two readers below use,
+## so every Build call site written before C2 builds the same aircraft it always did and every
+## oracle in the project is bit-identical. Giving either one a default would retrofit a few grams
+## and a centre-of-mass shift onto every build in the app, which is the same mistake
+## `project_schema.gd:43` uses a GPS as its worked example of.
 const DEFAULT_COMPONENT_IDS := {
 	"camera": "cam_micro_analog",
 	"vtx": "vtx_analog_400mw",
@@ -175,7 +194,7 @@ static func budget_remainder_g() -> float:
 ## and what a fixture passes when it needs an aircraft that is FORE/AFT SYMMETRIC.
 ##
 ## That second use is not a test convenience and it is worth stating where the mechanism lives.
-## The four components sit at real places, so a fitted build's centre of mass is 0.18 mm behind the
+## The fitted components sit at real places, so a fitted build's centre of mass is 0.18 mm behind the
 ## origin — small, correct, and enough to tip an aircraft over in three seconds if it is flown with
 ## four equal motor commands and no flight controller, because a constant torque integrates twice.
 ## Two suites do exactly that on purpose, to ask a question about the PACK with no controller in
@@ -197,6 +216,65 @@ static func carved_total_g() -> float:
 	for category in CARVED_SHARES:
 		total += float(CARVED_SHARES[category])
 	return total
+
+
+## The optional components the budget never stood for: everything in OPTIONAL_COMPONENTS that
+## CARVED_SHARES does not name. GPS and buzzer today.
+##
+## DERIVED, NOT WRITTEN DOWN, and that is the whole point of it — P10f's finding was that the two
+## lists were never the same list. A seventh component added to OPTIONAL_COMPONENTS and given a
+## carved share appears here automatically as carved; one added without a share appears as added.
+## There is no second table to forget to edit, and `electronics_mass_g()` splitting into carved and
+## added terms means the identity `electronics = carved + harness + added` holds by construction
+## rather than by two authors agreeing.
+static func added_components() -> Array[String]:
+	var out: Array[String] = []
+	for category in OPTIONAL_COMPONENTS:
+		if not CARVED_SHARES.has(category):
+			out.append(String(category))
+	return out
+
+
+## The other half of the same partition: the optional components the 55 g lump DID stand for.
+## Camera, VTX, antenna and receiver — CARVED_SHARES' other two entries are the stack's boards,
+## which are not optional at all.
+##
+## Its existence is what lets a caller say "the carved four" without writing them down, which
+## several checks needed the moment OPTIONAL_COMPONENTS stopped being four names: a loop that
+## indexes CARVED_SHARES or DEFAULT_COMPONENT_IDS by category is asking about THIS list, and
+## before C2 the two were accidentally the same.
+static func carved_components() -> Array[String]:
+	var out: Array[String] = []
+	for category in OPTIONAL_COMPONENTS:
+		if CARVED_SHARES.has(category):
+			out.append(String(category))
+	return out
+
+
+## How many grams the fitted ADDED components put on this aircraft, and therefore how much heavier
+## it is than the same build without them. Zero on every build that fits neither, which is every
+## build the project had before C2.
+func added_components_mass_g() -> float:
+	var total := 0.0
+	for category in added_components():
+		if components.has(category):
+			total += float((components[category] as Dictionary).get("mass_g", 0.0))
+	return total
+
+
+## How far a component's own centre stands off the face it mounts to, beyond half its own box: the
+## mast. Read from `specs.mast_height_mm`, in metres, zero for a part that publishes none.
+##
+## GENERIC RATHER THAN A GPS BRANCH. Nothing here asks what category the part is, so a future
+## masted antenna or a standoff-mounted receiver needs a spec field and no code. The one component
+## that publishes the field today is the GPS, and design §2.3 is why it is worth a mechanism: a
+## masted module puts several grams 45-70 mm above the top plate, which is the highest mass on the
+## aircraft and the one that moves the centre of mass vertically more than anything else fitted.
+##
+## The HEIGHT is a labelled default with a field beside it (design §0). WHERE THE MASS GOES is not
+## a default — it is wiring, and it is asserted.
+static func component_rise_m(part: Dictionary) -> float:
+	return float((part.get("specs", {}) as Dictionary).get("mast_height_mm", 0.0)) / 1000.0
 
 ## The FC/ESC stack's own bolt pattern. 30.5x30.5 is the full-size standard, and it is a property
 ## of the STACK rather than of the frame — which is the whole reason a fit check is worth having.
@@ -308,11 +386,12 @@ var propeller: Dictionary
 var battery: Dictionary
 var esc: Dictionary
 var fc: Dictionary
-## The optional components, by category — camera, VTX, antenna, receiver. A category ABSENT from
-## this dictionary is a component not fitted, which is a real build rather than an incomplete one,
-## and it costs the aircraft nothing. Held as one dictionary rather than four fields because
-## everything that reads them reads all four the same way (mass_parts, electronics_mass_g), and
-## four near-identical fields is four places a fifth component would have to be added.
+## The optional components, by category — camera, VTX, antenna, receiver, GPS, buzzer. A category
+## ABSENT from this dictionary is a component not fitted, which is a real build rather than an
+## incomplete one, and it costs the aircraft nothing. Held as one dictionary rather than a field
+## each because everything that reads them reads them all the same way (mass_parts,
+## electronics_mass_g), and near-identical fields are places a seventh component would have to be
+## added — a prediction C2 collected on, twice.
 var components: Dictionary = {}
 ## The prop guard, applied to every motor (v1: one guard for the whole build). Empty when nothing
 ## is fitted — the reference build's default, so its 496 g / 11.69:1 / 29.6% oracles are unmoved
@@ -464,7 +543,7 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 	# caller authored is stored, and everything else follows the frame and the pack.
 	b.harness = Harness.from_overrides(harness_overrides)
 	for category in OPTIONAL_COMPONENTS:
-		b._part_ids[category] = String(component_ids.get(category, DEFAULT_COMPONENT_IDS[category]))
+		b._part_ids[category] = String(component_ids.get(category, DEFAULT_COMPONENT_IDS.get(category, "")))
 	b.refit_from(p_catalog)
 	return b
 
@@ -501,7 +580,7 @@ func refit_from(p_catalog: PartsCatalog) -> void:
 	# and finds the aircraft still 8 g heavier would be reading a part that is gone.
 	components = {}
 	for category in OPTIONAL_COMPONENTS:
-		var part_id := String(_part_ids.get(category, DEFAULT_COMPONENT_IDS[category]))
+		var part_id := String(_part_ids.get(category, DEFAULT_COMPONENT_IDS.get(category, "")))
 		if part_id == "":
 			continue
 		var part: Dictionary = p_catalog.get_part(part_id)
@@ -845,8 +924,10 @@ func mass_parts() -> Array:
 		stack_position + Vector3(0.0, StackMesh.esc_centre_height_m(), 0.0),
 		InertiaPrimitives.box(esc_mass_kg, StackMesh.size_m(esc_mount_pattern())), "ESC"))
 
-	# The four components LTHL-11 took out of the lump: camera, VTX, antenna, receiver, each at its
-	# OWN catalog mass, in its OWN bay, and each of them omittable.
+	# The optional components, each at its OWN catalog mass, in its OWN bay, and each omittable:
+	# the four LTHL-11 took out of the lump (camera, VTX, antenna, receiver) and the two C2 ADDED
+	# beside it (GPS, buzzer). The loop does not know which kind it is holding, and it should not —
+	# the difference is in the budget's bookkeeping, not in how a part is weighed or placed.
 	#
 	# THIS IS THE LOOP THAT MOVES THE CENTRE OF MASS, and it is the reason the previous comment
 	# here refused to do it. What changed is not the appetite for precision but where the positions
@@ -867,8 +948,11 @@ func mass_parts() -> Array:
 		var component_mass_kg := float(component.get("mass_g", 0.0)) / 1000.0
 		var component_size := component_size_of(component)
 		var bay := MountLayout.by_id(mounts, String(COMPONENT_MOUNTS[category]))
+		# The mast, and it is the part's own published dimension rather than an offset this file
+		# carries — the same kind of read as component_size_of() on the line above. A part with no
+		# mast rises zero, which is every component in the app but a masted GPS.
 		parts.append(PartMass.new(component_mass_kg,
-			MountLayout.seated_centre_m(bay, component_size),
+			MountLayout.seated_centre_m(bay, component_size, 0.0, component_rise_m(component)),
 			InertiaPrimitives.box(component_mass_kg, component_size),
 			str(component.get("name", category))))
 
@@ -1037,6 +1121,11 @@ func harness_mass_g() -> float:
 ## something is omitted and HIGHER when a heavier-than-budget part is fitted, which was always the
 ## point — this is the number that replaced a flat 55 g in the one place that was quoting it at the
 ## builder (FramePlausibility._electronics_lump).
+##
+## It counts CARVED AND ADDED components alike, because it is the mass of the electronics this
+## aircraft carries and a GPS is electronics. What tells the two apart is the identity test_esc.gd
+## asserts — `electronics = carved shares + harness + added` — where the added term is what makes
+## the two ways of accounting for the aircraft agree on a build that fits a GPS.
 func electronics_mass_g() -> float:
 	var total := fc_mass_g() + esc_mass_g() + harness_mass_g()
 	for category in OPTIONAL_COMPONENTS:

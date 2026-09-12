@@ -499,10 +499,12 @@ func reload_catalog() -> void:
 	# was chosen, fall back". So the fallback is only taken when the id no longer resolves — a
 	# custom camera deleted out from under the rail — and never merely because it is empty.
 	for category in Build.OPTIONAL_COMPONENTS:
-		var previous_id := str(previous.get(category, Build.DEFAULT_COMPONENT_IDS[category]))
+		# "" for a category with no default — C2's added two — which is the "Not fitted" row and
+		# is a real selection rather than a missing one.
+		var fallback := str(Build.DEFAULT_COMPONENT_IDS.get(category, ""))
+		var previous_id := str(previous.get(category, fallback))
 		if not electronics_picker.select_component(category, previous_id):
-			electronics_picker.select_component(
-				category, str(Build.DEFAULT_COMPONENT_IDS[category]))
+			electronics_picker.select_component(category, fallback)
 
 	_on_selection_changed()
 

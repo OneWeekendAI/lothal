@@ -143,7 +143,12 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		var component := ComponentMesh.new()
 		component.name = "Component_%s" % category
 		component.rebuild(category, build.components[category])
-		component.position = MountLayout.seated_centre_m(bay, component.size_m)
+		# The mast rides along, and it has to: the moment this call and Build.mass_parts()'s call
+		# pass different arguments, a masted GPS is drawn on the plate and weighed 70 mm above it,
+		# and an inertia tensor does not appear on screen to say so. Same argument as the comment
+		# above, one slice later and with a new parameter to forget.
+		component.position = MountLayout.seated_centre_m(bay, component.size_m, 0.0,
+			Build.component_rise_m(build.components[category]))
 		frame_model.add_child(component)
 		component_meshes[category] = component
 

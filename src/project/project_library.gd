@@ -86,7 +86,11 @@ static func starting_project(p_name: String = "") -> Project:
 	project.parts["battery"] = ReferenceBuild.BATTERY_ID
 	project.parts["esc"] = ReferenceBuild.ESC_ID
 	project.parts["flight_controller"] = ReferenceBuild.FC_ID
-	for category in Build.OPTIONAL_COMPONENTS:
+	# The categories that HAVE a default: the carved four. C2's added two default to not fitted, so
+	# a new project simply does not name them — and ProjectSchema reads an absent category as "not
+	# fitted" rather than as "fit the default", which is the property its own §43 comment uses a
+	# GPS as the worked example of.
+	for category in Build.carved_components():
 		project.parts[category] = String(Build.DEFAULT_COMPONENT_IDS[category])
 	return project
 

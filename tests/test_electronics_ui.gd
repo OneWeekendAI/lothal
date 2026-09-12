@@ -109,10 +109,18 @@ static func _test_rail_lists_and_defaults(catalog: PartsCatalog) -> Array:
 	# The rail opens on what Build would have fitted anyway, so opening Lab and touching nothing
 	# is the same aircraft it was before this rail existed. If these disagree, every stat in Lab
 	# moves the day the rail is added and nothing says why.
+	# The payload is EVERY optional category, and "no default" is a real default: C2's added two
+	# have no entry in DEFAULT_COMPONENT_IDS and open on "Not fitted", which is exactly what keeps
+	# opening Lab and touching nothing from fitting a GPS nobody asked for. So the expectation is
+	# built the way `Build.from_ids` resolves it rather than compared against the table directly —
+	# a comparison against the table alone would now be a comparison of four keys against six.
+	var expected_payload := {}
+	for category in Build.OPTIONAL_COMPONENTS:
+		expected_payload[category] = str(Build.DEFAULT_COMPONENT_IDS.get(category, ""))
 	results.append(TestResult.new(
-		"the rail opens on Build's own default components",
-		rail.component_ids() == Build.DEFAULT_COMPONENT_IDS,
-		"rail %s vs Build %s" % [rail.component_ids(), Build.DEFAULT_COMPONENT_IDS]
+		"the rail opens on Build's own default components, and on \"not fitted\" where there is none",
+		rail.component_ids() == expected_payload,
+		"rail %s vs Build %s" % [rail.component_ids(), expected_payload]
 	))
 
 	rail.free()
@@ -142,8 +150,11 @@ static func _test_not_fitted_reaches_the_build(catalog: PartsCatalog) -> Array:
 		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
 		ReferenceBuild.FC_ID, rail.component_ids())
 
+	# The carved four: those are the categories with a default, and therefore the only ones the
+	# "fitted" build above has anything in. C2's added two are unfitted on both sides and drop
+	# nothing, which is the whole point of them having no default.
 	var expected_drop := 0.0
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		expected_drop += float(catalog.get_part(
 			Build.DEFAULT_COMPONENT_IDS[category]).get("mass_g", 0.0))
 	var actual_drop := fitted.all_up_weight_g() - stripped.all_up_weight_g()
@@ -173,9 +184,10 @@ static func _test_the_rail_moves_the_aircraft(catalog: PartsCatalog) -> Array:
 
 	results.append(TestResult.new(
 		"Lab opens with the default payload fitted",
-		before.components.size() == Build.OPTIONAL_COMPONENTS.size(),
-		"%d of %d components fitted" % [
-			before.components.size(), Build.OPTIONAL_COMPONENTS.size()]
+		before.components.size() == Build.carved_components().size(),
+		"%d of %d components with defaults fitted, %d added components left empty" % [
+			before.components.size(), Build.carved_components().size(),
+			Build.added_components().size()]
 	))
 
 	# Take the camera off. Chosen because it is the heaviest of the four shares and the one with
@@ -242,7 +254,7 @@ static func _test_details_panel(catalog: PartsCatalog) -> Array:
 	# RENDERED rather than what the build holds — the panel's whole job is putting the number on
 	# screen, and checking the build here would test the catalog twice and the panel not at all.
 	var unreported: Array = []
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		var part_name := str(build.components[category].get("name", ""))
 		if not text.contains(part_name):
 			unreported.append(category)
@@ -377,7 +389,7 @@ static func _test_build_panel_dropdowns(catalog: PartsCatalog) -> Array:
 	results.append(TestResult.new(
 		"a selection naming no components still opens on the reference 507.5 g aircraft",
 		absf(panel.build.all_up_weight_g() - 507.48) < 1.0
-			and panel.build.components.size() == Build.OPTIONAL_COMPONENTS.size(),
+			and panel.build.components.size() == Build.carved_components().size(),
 		"%.1f g with %d components" % [
 			panel.build.all_up_weight_g(), panel.build.components.size()]
 	))

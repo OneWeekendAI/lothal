@@ -162,6 +162,18 @@ static func for_frame(frame: Dictionary, plate_gap_m: float) -> Array[MountPoint
 ##   rx_bay          under the top plate, ON THE CENTRELINE. A receiver is taped wherever it fits;
 ##                   there is no edge it belongs to, so it is given none, and it contributes
 ##                   nothing fore or aft to the centre of mass whichever one is fitted.
+##   gps_mount       the top plate's UPPER face, on the centreline — for rx_bay's reason: there is
+##                   no edge a GPS belongs to across every frame, and rear-mounted (the commonest
+##                   real placement) is an AssemblyTweaks offset later rather than a coordinate
+##                   invented here. The bay is the FACE; a masted module's stalk is carried by
+##                   seated_centre_m's `rise_m`, which is the fitted part's own published spec and
+##                   is not a property of the frame. See that function.
+##   buzzer_mount    the bottom plate's LOWER surface — underneath the aircraft, not between the
+##                   plates — at the REAR edge. Underneath because that is where a buzzer is
+##                   zip-tied and because inside the shell the sound is muffled; at the rear
+##                   because the front of the bottom plate is the camera bay. Note the face:
+##                   `lower_face` below is the bottom plate's UPPER side, where the standoffs
+##                   start, and a buzzer seated on that would be inside the stack.
 ##
 ## Every frame offers all four, unconditionally, and that is the difference between these and the
 ## bottom strap mount above: a strap slot has to be CUT into carbon that may not be there, whereas
@@ -177,12 +189,18 @@ static func _component_bays(side: float, gap: float, thickness: float, span: Vec
 	var rear := side * 0.5
 	var lower_face := -gap * 0.5 + thickness * 0.5
 	var upper_face := gap * 0.5 + thickness * 0.5
+	# The bottom plate's other side: the outside of the aircraft. `lower_face` above is that
+	# plate's UPPER side; these two differ by one plate thickness, and the buzzer is the one
+	# component that belongs on the outer one.
+	var under_bottom := -(gap * 0.5 + thickness * 0.5)
 
 	return [
 		_bay("camera_bay", "the camera bay", Vector3(0.0, lower_face, front), 1, span),
 		_bay("vtx_bay", "the transmitter bay", Vector3(0.0, lower_face, rear), 1, span),
 		_bay("antenna_mount", "the antenna mount", Vector3(0.0, upper_face, rear), 1, span),
 		_bay("rx_bay", "under the top plate", Vector3(0.0, gap * 0.5 - thickness * 0.5, 0.0), -1, span),
+		_bay("gps_mount", "the GPS mount", Vector3(0.0, upper_face, 0.0), 1, span),
+		_bay("buzzer_mount", "under the bottom plate", Vector3(0.0, under_bottom, rear), -1, span),
 	] as Array[MountPoint]
 
 
@@ -219,7 +237,28 @@ static func by_id(mounts: Array[MountPoint], id: String) -> MountPoint:
 ## the face the mount names and grows AWAY from it — upward on the top plate, downward under the
 ## bottom one — so both terms come from the parts and this stays right for a 1S stick and a 6S brick
 ## alike. Forward is -Z (physics.md §1), which is why a positive offset subtracts.
-static func seated_centre_m(mount: MountPoint, size_m: Vector3, offset_m: float = 0.0) -> Vector3:
+##
+## `rise_m` IS THE MAST, and it is here rather than in the bay for a reason worth stating because
+## the alternatives were weighed first. A masted GPS puts its mass on a stalk above the face it
+## bolts to, and the stalk's length is published by the MODULE, not by the frame. `_component_bays`
+## above is a pure function of frame geometry — that is `for_frame`'s whole contract, and it is what
+## lets FrameModel list a frame's bays with no build in hand — so threading a part's spec into it
+## would make `mount_points()` depend on what is fitted, a far larger claim than a mast needs.
+## Summing it in the caller was the other option and the design forbids that: `COMPONENT_MOUNTS` is
+## the whole of what `build.gd` knows about where a component lives, the name of a place and never
+## a coordinate.
+##
+## So it goes where the seat is already computed FROM THE PART — beside `size_m`, which is the same
+## kind of quantity, read from the same block of the same file. A component's own published
+## dimension raises its own centre; the bay stays the frame's. It is applied along `mount.normal`
+## rather than as +Y, so a mast on a downward-facing mount raises the part DOWNWARD, away from the
+## plate — which is what a stalk does on either face.
+##
+## It does NOT grow the inertia box. A mast displaces the module, and the parallel-axis term that
+## displacement produces is the whole of what a mast does to the aircraft; the stalk's own few
+## tenths of a gram are not modelled and are not claimed to be (design §0).
+static func seated_centre_m(mount: MountPoint, size_m: Vector3, offset_m: float = 0.0,
+		rise_m: float = 0.0) -> Vector3:
 	if mount == null:
 		return Vector3.ZERO
-	return mount.position + Vector3(0.0, mount.normal * size_m.y * 0.5, -offset_m)
+	return mount.position + Vector3(0.0, mount.normal * (size_m.y * 0.5 + rise_m), -offset_m)
