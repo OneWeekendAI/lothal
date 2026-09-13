@@ -265,7 +265,11 @@ func _build_camera() -> void:
 	# The Eye is one of the children, so it RIDES the rotation — both where it is (it sits ahead of
 	# the box, so its position swings up) and which way it looks. That is what carries the tilt to
 	# AirframeModel.camera_boresight() and to Sim's feed without a second copy of the angle.
-	var tilt := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(tilt_deg)), Vector3.ZERO)
+	#
+	# The rotation itself is Build's (`camera_tilt_transform`), not written here: VideoPlausibility
+	# asks how tall a tipped camera stands without a node in hand, and two spellings of one rotation
+	# would agree right up until one of them flipped an axis.
+	var tilt := Build.camera_tilt_transform(tilt_deg)
 	for child in get_children():
 		(child as Node3D).transform = tilt * (child as Node3D).transform
 

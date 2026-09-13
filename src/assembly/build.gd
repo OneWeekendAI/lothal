@@ -1191,6 +1191,28 @@ static func component_size_of(part: Dictionary) -> Vector3:
 	return Vector3.ONE * 0.010
 
 
+## The camera's uptilt as a rotation about the camera's own centre: a positive rotation about +X,
+## so forward (-Z) goes to (0, sin θ, -cos θ) and the lens looks above the horizon (video-room
+## design §2). THE ONE PLACE THIS ROTATION IS WRITTEN — ComponentMesh tips the drawn camera with it
+## and VideoPlausibility measures the published box with it, so the picture and the clearance
+## warning cannot come to disagree about which way up is.
+static func camera_tilt_transform(tilt_deg: float) -> Transform3D:
+	return Transform3D(Basis(Vector3.RIGHT, deg_to_rad(tilt_deg)), Vector3.ZERO)
+
+
+## How tall a camera stands when tipped up by `tilt_deg`, in metres: the vertical extent of its
+## PUBLISHED box under `camera_tilt_transform`, which works out to l·sin θ + h·cos θ.
+##
+## Not written as that formula, and not read off the drawn mesh. Godot's AABB transform does the
+## trigonometry, so there is no second copy of the rotation to drift; and the published box rather
+## than the drawing, because the published box is what a builder can check against the part in
+## their hand. The drawn silhouette is a little shorter — the lens barrel is narrower than the body
+## — so a warning quoting this figure errs towards speaking, by 2.7 mm on a micro camera at 40°.
+static func camera_standing_height_m(part: Dictionary, tilt_deg: float) -> float:
+	var size := component_size_of(part)
+	return (camera_tilt_transform(tilt_deg) * AABB(-size * 0.5, size)).size.y
+
+
 ## What this build's electronics actually weigh: the two stack boards at their own masses, every
 ## optional component that is fitted at its own mass, and the wiring remainder.
 ##
@@ -2022,6 +2044,11 @@ func warnings() -> Array[BuildWarning]:
 	# port count, because no board in this catalog publishes one and a headroom figure derived from
 	# a number nobody published is the one thing design §0 still refuses.
 	out.append_array(ControlPlausibility.warnings_for(self))
+
+	# And what the picture passes through (video-room design §3, slice V4): a camera the builder's
+	# uptilt tips into the top plate, and a transmitter fitted with no antenna. Both read the build
+	# alone — the tilt comes out of `assembly`, never off a drawn node.
+	out.append_array(VideoPlausibility.warnings_for(self))
 
 	# And the path the current takes to get there (plans/2026-09-10-power-room-plan.md PW3): wire
 	# ampacity per segment, the harness's own voltage drop reported APART from the pack's sag, the

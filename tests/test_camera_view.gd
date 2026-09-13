@@ -28,6 +28,18 @@ extends RefCounted
 ##   - `global_transform` instead of local positions        -> `_the_eye_is_measured_without_a_tree`
 ##   - plate height captured at build time                  -> `_plate_heights_follow_the_seating`
 ##   - guard polygons centred on the node's own position    -> `_each_guard_ring_sits_on_its_own_motor`
+##   - AirframeModel hands ComponentMesh 0 deg, not the tweak -> `_the_ranking_flips_between_level_and_forty_degrees`
+##                                                              and `_tilt_separates_the_two_guards_and_changes_no_verdict`
+##
+## ## What the tilt did to the finding above (video slice V4)
+##
+## At the 25 deg default uptilt the pair is 0.65 deg (duct) against 7.83 (bumper), and at 40 deg
+## 3.6 against 16.1 — so tilt separates them, and the finding had to be re-read. It STANDS, for a
+## sharper reason than before: the separation is now a function of a number no catalog publishes
+## (the builder's uptilt, opening at a guessed 25) and a threshold between the two would still need
+## a field of view nobody publishes either. Both are deep inside any real FPV lens at every tilt.
+## What changed is the size of the angle, not what can be said about it, and
+## `_tilt_separates_the_two_guards_and_changes_no_verdict` pins exactly that.
 
 const EPS := 1e-9
 ## Degrees. See `_dead_ahead_is_zero_and_behind_is_180` — this is the float32 floor of the
@@ -52,6 +64,8 @@ static func run() -> Array:
 	results.append(_a_build_that_is_only_itself_says_nothing(catalog))
 	results.append(_a_moulded_frame_has_no_silhouette_to_hide_behind(catalog))
 	results.append(_the_two_five_inch_guards_are_not_separated(catalog))
+	results.append(_tilt_separates_the_two_guards_and_changes_no_verdict(catalog))
+	results.append(_the_ranking_flips_between_level_and_forty_degrees(catalog))
 	results.append(_no_field_of_view_is_read_anywhere())
 
 	return results
@@ -439,8 +453,9 @@ static func _a_moulded_frame_has_no_silhouette_to_hide_behind(catalog: PartsCata
 ##
 ## AT A LEVEL CAMERA (see `_level`), and the qualifier is now part of the finding: at the 25 deg
 ## default uptilt the duct comes to 0.65 deg and the bumper to 7.83, so tilt DOES separate them. That
-## is still no threshold this project can justify — there is no published FOV to put one at — but
-## "within a degree" is a statement about 0 deg, and V4 should decide what the tilted pair means.
+## is still no threshold this project can justify — there is no published FOV to put one at — and
+## "within a degree" is a statement about 0 deg. V4 decided what the tilted pair means: see the
+## header and `_tilt_separates_the_two_guards_and_changes_no_verdict` below.
 static func _the_two_five_inch_guards_are_not_separated(catalog: PartsCatalog) -> TestResult:
 	var angles := {}
 	for pair in [["frame_5in_cinewhoop", "guard_duct_5in_cinewhoop"],
@@ -465,6 +480,72 @@ static func _the_two_five_inch_guards_are_not_separated(catalog: PartsCatalog) -
 		"cinewhoop duct %.2f deg, freestyle bumper %.2f deg, apart by %.2f deg" % [
 			cinewhoop, freestyle, separation]
 	)
+
+
+## At the builder-facing 25 deg default the two 5" guards come apart by several degrees — and each
+## build still carries exactly one CHARACTERISTIC warning naming its guard. The angle moved; the
+## verdict did not, because there is still no field of view to put a threshold at.
+##
+## MUTATION (V4): AirframeModel passing 0.0 instead of the tweak to ComponentMesh.rebuild puts the
+## pair back at 0.4 deg apart and this goes red.
+static func _tilt_separates_the_two_guards_and_changes_no_verdict(catalog: PartsCatalog) -> TestResult:
+	var angles := {}
+	var verdicts_ok := true
+	for pair in [["frame_5in_cinewhoop", "guard_duct_5in_cinewhoop"],
+			["frame_5in_freestyle", "guard_bumper_5in_abs"]]:
+		var tweaks := AssemblyTweaks.new()
+		tweaks.set_mm(AssemblyTweaks.CAMERA_TILT, 25.0)
+		var airframe := AirframeModel.new()
+		airframe.rebuild(_build(catalog, pair[0], pair[1]), tweaks)
+		var warnings := airframe.camera_view_warnings()
+		if warnings.size() != 1 or warnings[0].severity != BuildWarning.Severity.CHARACTERISTIC \
+				or not str(warnings[0].values["closest_name"]).begins_with("guard "):
+			verdicts_ok = false
+		angles[pair[0]] = float(warnings[0].values["closest_deg"]) if warnings.size() == 1 else NAN
+		airframe.free()
+
+	var cinewhoop: float = angles["frame_5in_cinewhoop"]
+	var freestyle: float = angles["frame_5in_freestyle"]
+	return TestResult.new(
+		"at 25 deg uptilt the two 5\" guards separate by degrees, and each still reads one CHARACTERISTIC warning",
+		verdicts_ok and absf(cinewhoop - freestyle) > 5.0 and cinewhoop < 45.0 and freestyle < 45.0,
+		"cinewhoop duct %.2f deg, freestyle bumper %.2f deg, verdicts ok: %s" % [
+			cinewhoop, freestyle, verdicts_ok])
+
+
+## DESIGN §3's CASE: A RANKING THAT FLIPS WITH TILT. A case where the order stayed put would pass
+## with the tilt disconnected, so the fixture is one where it does not: a 65 mm whoop under the 5"
+## bumper. Level, the front pair of rings (M2/M4) is nearest the boresight and the other pair is
+## ~40 deg out; tipped up 40 deg the boresight has swung past the front rings and the other pair
+## (M1/M3) is the nearer. Every angle involved is inside 90 deg — the flip is in shot, not behind
+## the lens. A mismatched guard on purpose: it is the geometry that is under test, and the whoop's
+## own duct keeps its order at every tilt.
+static func _the_ranking_flips_between_level_and_forty_degrees(catalog: PartsCatalog) -> TestResult:
+	var reports := {}
+	for tilt in [0.0, 40.0]:
+		var tweaks := AssemblyTweaks.new()
+		tweaks.set_mm(AssemblyTweaks.CAMERA_TILT, tilt)
+		var airframe := AirframeModel.new()
+		airframe.rebuild(_build(catalog, "frame_65mm_whoop", "guard_bumper_5in_abs"), tweaks)
+		reports[tilt] = CameraView.off_axis_report(
+			airframe.camera_eye_m(), airframe.camera_boresight(), airframe.camera_obstruction_points_m())
+		airframe.free()
+
+	var level: Dictionary = reports[0.0]
+	var tipped: Dictionary = reports[40.0]
+	var front := "guard M2"
+	var other := "guard M1"
+	var present := level.has(front) and level.has(other) and tipped.has(front) and tipped.has(other)
+	var flipped := present \
+		and float(level[front]) < float(level[other]) \
+		and float(tipped[other]) < float(tipped[front]) \
+		and float(tipped[other]) < 90.0 and float(level[front]) < 90.0
+	return TestResult.new(
+		"the nearer guard pair swaps between a level camera and a 40 deg one",
+		flipped,
+		"level M2 %.1f / M1 %.1f, at 40 M2 %.1f / M1 %.1f" % [
+			level.get(front, NAN), level.get(other, NAN), tipped.get(front, NAN), tipped.get(other, NAN)]
+		if present else "missing names in %s" % [level.keys()])
 
 
 ## The refusal, asserted against the SOURCE rather than against behaviour, in the posture
