@@ -122,6 +122,15 @@ const BATTERY_OFFSET := "battery_offset_mm"
 ## weighed. See VibrationModel, which is what reads it.
 const PROP_IMBALANCE := "prop_imbalance_g"
 
+## How far the fitted GPS stands above the top plate, in millimetres.
+##
+## A BUILDER'S CHOICE RATHER THAN A PART PROPERTY, which is why it is a tweak. The catalog entry's
+## `mast_height_mm` is where the field starts, not what it means: the stalk you actually zip-tied
+## on is the answer, and design §9 says outright that nothing would sharpen the catalog's figure.
+## It is here rather than as a spec override for the same reason the pack's fore/aft offset is —
+## it is a fact about this assembly, not about the module.
+const MAST_HEIGHT := "mast_height_mm"
+
 ## Keys whose value is a plain number the panel draws as a slider.
 ##
 ## Every one of these was a length in millimetres until prop imbalance arrived, which is a mass in
@@ -129,7 +138,7 @@ const PROP_IMBALANCE := "prop_imbalance_g"
 ## quoted in". The machinery underneath (clamping to limits, sparse overrides, persistence) never
 ## cared about the unit, and renaming the function across the panel and its tests is a bigger diff
 ## than this slice should carry. Noted rather than hidden.
-const KEYS := [PROP_SPACER, SOFT_MOUNT, PLATE_GAP, BATTERY_OFFSET, PROP_IMBALANCE]
+const KEYS := [PROP_SPACER, SOFT_MOUNT, PLATE_GAP, BATTERY_OFFSET, PROP_IMBALANCE, MAST_HEIGHT]
 ## Keys whose value is one of a set of named options rather than a number. Held separately because
 ## a slider and a dropdown are read, clamped and persisted differently — but the four file rules
 ## above apply to both without change.
@@ -143,6 +152,7 @@ const ROWS := [
 	{"key": PLATE_GAP, "label": "Stack standoffs", "hint": "Height between the centre plates."},
 	{"key": BATTERY_OFFSET, "label": "Pack fore/aft", "hint": "Slide the pack along the strap. Forward is positive."},
 	{"key": PROP_IMBALANCE, "label": "Prop imbalance", "hint": "Residual offset mass per prop, in grams. Wind it up and watch the D term."},
+	{"key": MAST_HEIGHT, "label": "GPS mast", "hint": "How far the GPS stands above the top plate. Opens at what the module publishes; the stalk you fitted is the answer."},
 ]
 
 ## The choice rows, drawn as dropdowns rather than sliders. Same idea as ROWS and same reason: the
@@ -207,6 +217,22 @@ static func limits(build: Build) -> Dictionary:
 			"min": 0.0,
 			"max": 0.5,
 			"default": VibrationModel.DEFAULT_IMBALANCE_KG * 1000.0,
+		},
+		# THE MAX HERE IS A DRAWING BOUND, NOT A PLAUSIBILITY JUDGEMENT, and the distinction is the
+		# whole reason this row needed an argument rather than a number. Every other limit above is
+		# derived from a part — the spacer from the shaft, the gap from the arm — and there is
+		# nothing to derive this one from: a mast is a stalk somebody chose, and design §9 says so.
+		# A slider still needs two ends to draw between, so 250 mm is a judgement about how far the
+		# control should travel, set far beyond the tallest mast in the catalog (70 mm) precisely so
+		# that a builder who types a real number is never argued with. CLAMPING THIS TO SOMETHING
+		# "PLAUSIBLE" WOULD BE THE APP OVERRULING A MEASUREMENT IT DOES NOT HAVE.
+		#
+		# The default is the FITTED MODULE'S own published mast, so the field opens reading what the
+		# part says and a builder who never touches it gets the catalog's answer.
+		MAST_HEIGHT: {
+			"min": 0.0,
+			"max": 250.0,
+			"default": Build.component_rise_m(build.components.get("gps", {})) * 1000.0,
 		},
 	}
 
@@ -321,6 +347,10 @@ func resolved_m(build: Build) -> Dictionary:
 		# name is really about.
 		"battery_mount": value_choice(BATTERY_MOUNT, build),
 		"battery_offset_m": value_mm(BATTERY_OFFSET, build) / 1000.0,
+		# Millimetres in, metres out, like the lengths above it. It reaches the mass model through
+		# Build.rise_m_for, which prefers this over the catalog for any part that DECLARES a mast —
+		# so the GPS's several grams sit at the height the builder actually built.
+		"mast_height_m": value_mm(MAST_HEIGHT, build) / 1000.0,
 		# Grams, not metres — see PROP_IMBALANCE and the note on KEYS. It crosses here with the
 		# rest because this is still the ONE place the configuration reaches the physics, which is
 		# what the name is really about.

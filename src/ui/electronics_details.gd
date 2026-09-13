@@ -1,6 +1,11 @@
 class_name ElectronicsDetails
 extends PartDetails
-## What the payload costs — the four fitted components, the wiring remainder, and the total.
+## What the video payload costs — the three fitted components, the wiring remainder, and the total.
+##
+## THE RECEIVER LEFT THIS PANEL IN C6 and is reported by `LinkDetails` under Control, where it is
+## now also chosen. It was here because `ElectronicsPicker` emitted all four bays as one payload
+## and the panel followed the rail; C3 split the rail and this row followed it back. Video's
+## `decided_by` never named the receiver, so no ring arithmetic moved with it.
 ##
 ## The other details panels each describe ONE part; this one describes a budget, and that is the
 ## only useful thing to say about these four. A camera has no physics-bearing spec: it has a mass
@@ -24,7 +29,6 @@ const SPEC_ROWS := [
 	{"key": "camera", "label": "Camera"},
 	{"key": "vtx", "label": "Video TX"},
 	{"key": "antenna", "label": "Antenna"},
-	{"key": "receiver", "label": "Receiver"},
 	{"key": "wiring", "label": "Wiring, solder, tape"},
 	{"key": "total", "label": "Electronics total"},
 ]

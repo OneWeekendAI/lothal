@@ -20,7 +20,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs",
 	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "camera view",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
-	"control parts", "control components", "control rails", "component registration", "control persistence"]
+	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings"]
 
 func _init() -> void:
 	var total := 0
@@ -83,6 +83,8 @@ func _run_suite(suite_name: String) -> Array:
 		"component registration": return TestComponentRegistration.run()
 		# C5: gps and buzzer across a save and a reopen, incl. the pre-existence fixture.
 		"control persistence": return TestControlPersistence.run()
+		# C6: ControlPlausibility, LinkDetails and the GPS mast field.
+		"control warnings": return TestControlWarnings.run()
 		"control parts": return TestControlParts.run()
 		"control components": return TestControlComponents.run()
 		"control rails": return TestControlRails.run()

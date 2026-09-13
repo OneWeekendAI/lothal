@@ -148,7 +148,7 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		# and an inertia tensor does not appear on screen to say so. Same argument as the comment
 		# above, one slice later and with a new parameter to forget.
 		component.position = MountLayout.seated_centre_m(bay, component.size_m, 0.0,
-			Build.component_rise_m(build.components[category]))
+			build.rise_m_for(build.components[category]))
 		frame_model.add_child(component)
 		component_meshes[category] = component
 

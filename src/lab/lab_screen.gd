@@ -136,8 +136,8 @@ var harness := Harness.new()
 var esc_details: EscDetails
 var fc_details: FcDetails
 var electronics_details: ElectronicsDetails
-## Control's Link panel until C6 replaces it with LinkDetails. See LinkStub.
-var link_stub: LinkStub
+## Control's Link panel: the receiver, the GPS and the buzzer. See LinkDetails.
+var link_details: LinkDetails
 ## The charger. Lab's, because charging is a garage activity — there is a charger in the garage
 ## and there is not one in the field (labs-and-sim.md §5).
 var charge_panel: PackChargePanel
@@ -332,12 +332,13 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	panels.add_child(electronics_details)
 
 	# Control's third panel (C3). It holds the place of design §5's LinkDetails, which C6 writes:
-	# Control's entry in SYSTEMS names "Link" from this slice on, and a named panel with no tab
-	# behind it makes panel_for_rail() push an error on every click of the new rail while
-	# _show_only_tabs shows two of Control's three panels and says nothing. Same arrangement PW4
-	# used for Harness, for the same reason and in the same voice.
-	link_stub = LinkStub.new()
-	panels.add_child(link_stub)
+	# Control's Link panel. C3 stood a stub here so that panel_for_rail() — which resolves by TITLE
+	# — had a tab to find for the rail it had just registered in SYSTEMS; C6 replaces it with the
+	# real rows. The name is set explicitly for the same reason it is on Electronics: the title is
+	# the routing key, not a label.
+	link_details = LinkDetails.new()
+	link_details.name = "Link"
+	panels.add_child(link_details)
 
 	# A panel with no rail behind it, because a fit adjustment is not a part choice: there is
 	# nothing to browse and nothing to filter. It sits with the other panels rather than becoming a
@@ -723,6 +724,7 @@ func _on_selection_changed() -> void:
 	fc_details.render(build.fc, build, tune)
 	charge_panel.render(build)
 	electronics_details.render_components(build)
+	link_details.render_components(build)
 	# The fit panel is re-rendered on a PART change too, not only on a fit change: the limits are
 	# derived from the parts, so a smaller motor has to narrow the shim slider then and there.
 	# The airframe goes in as well as the build, because the fit rows are measured off the geometry

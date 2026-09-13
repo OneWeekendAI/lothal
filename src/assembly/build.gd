@@ -340,6 +340,22 @@ func added_components_mass_g() -> float:
 static func component_rise_m(part: Dictionary) -> float:
 	return float((part.get("specs", {}) as Dictionary).get("mast_height_mm", 0.0)) / 1000.0
 
+
+## The same height with the BUILDER'S value preferred, which is what the mass model and the drawing
+## both read. C6: the mast is a builder's choice — design §9 is explicit that nothing would sharpen
+## the catalog's figure, because the stalk you actually fitted is the answer — so the field beside
+## the row is the source and the catalog entry is only where it starts.
+##
+## GENERIC, and deliberately not keyed on "gps": the override applies to any part whose specs
+## DECLARE a mast, so a masted antenna arriving later needs a spec field and no code here. Keying
+## it on the category name would put a seventh hand-written list in a wave whose whole subject is
+## that two were already one too many.
+func rise_m_for(part: Dictionary) -> float:
+	var override := float(assembly_value("mast_height_m"))
+	if override >= 0.0 and (part.get("specs", {}) as Dictionary).has("mast_height_mm"):
+		return override
+	return component_rise_m(part)
+
 ## The FC/ESC stack's own bolt pattern. 30.5x30.5 is the full-size standard, and it is a property
 ## of the STACK rather than of the frame — which is the whole reason a fit check is worth having.
 ## Buy the wrong one and it does not bolt to your frame; frames.json drills the 3.5" freestyle
@@ -570,6 +586,10 @@ const DEFAULT_ASSEMBLY := {
 	"prop_spacer_m": 0.0, "soft_mount_m": 0.0, "plate_gap_m": -1.0,
 	"battery_mount": "strap_top", "battery_offset_m": 0.0,
 	"prop_imbalance_g": VibrationModel.DEFAULT_IMBALANCE_KG * 1000.0,
+	# The GPS mast, and -1.0 means "whatever the fitted module publishes" — the same sentinel
+	# plate_gap_m uses, and for the same reason: zero is a LEGITIMATE mast height (a flat module),
+	# so absence cannot be spelled 0.0 without making "flat" and "unset" the same answer.
+	"mast_height_m": -1.0,
 }
 
 ## `component_ids` names the optional components — camera, VTX, antenna, receiver — and anything it
@@ -1016,7 +1036,7 @@ func mass_parts() -> Array:
 		# carries — the same kind of read as component_size_of() on the line above. A part with no
 		# mast rises zero, which is every component in the app but a masted GPS.
 		parts.append(PartMass.new(component_mass_kg,
-			MountLayout.seated_centre_m(bay, component_size, 0.0, component_rise_m(component)),
+			MountLayout.seated_centre_m(bay, component_size, 0.0, rise_m_for(component)),
 			InertiaPrimitives.box(component_mass_kg, component_size),
 			str(component.get("name", category))))
 
@@ -1990,6 +2010,13 @@ func warnings() -> Array[BuildWarning]:
 	# datasheet-backed and its bias is illustrative.
 	out.append_array(EscPlausibility.warnings_for(self))
 	out.append_array(FcPlausibility.warnings_for(self))
+
+	# And what the pilot's intent passes through on its way to the motors
+	# (plans/2026-09-12-control-room-plan.md C6): an aircraft with no receiver at all, a buzzer that
+	# goes silent with the pack, and a COUNT of the parts wanting a serial port — stated without a
+	# port count, because no board in this catalog publishes one and a headroom figure derived from
+	# a number nobody published is the one thing design §0 still refuses.
+	out.append_array(ControlPlausibility.warnings_for(self))
 
 	# And the path the current takes to get there (plans/2026-09-10-power-room-plan.md PW3): wire
 	# ampacity per segment, the harness's own voltage drop reported APART from the pack's sag, the

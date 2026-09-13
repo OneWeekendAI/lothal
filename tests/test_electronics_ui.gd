@@ -288,13 +288,17 @@ static func _test_details_panel(catalog: PartsCatalog) -> Array:
 	# Every fitted component names itself and its mass. Asserted by reading back what the panel
 	# RENDERED rather than what the build holds — the panel's whole job is putting the number on
 	# screen, and checking the build here would test the catalog twice and the panel not at all.
+	# VIDEO'S OWN CATEGORIES, not `carved_components()`, and C6 is why: the receiver is carved out
+	# of the same 55 g budget as the other three, but it is reported by LinkDetails under Control
+	# now that it is chosen there. The question this panel has to answer is "did you name what you
+	# are responsible for", and COMPONENT_SYSTEM is what says which those are.
 	var unreported: Array = []
-	for category in Build.carved_components():
+	for category in Build.components_for_system("Video"):
 		var part_name := str(build.components[category].get("name", ""))
 		if not text.contains(part_name):
 			unreported.append(category)
 	results.append(TestResult.new(
-		"the panel names every fitted component",
+		"the panel names every fitted component Video is responsible for",
 		unreported.is_empty(),
 		"unreported: %s" % ("none" if unreported.is_empty() else ", ".join(unreported))
 	))
