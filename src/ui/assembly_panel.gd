@@ -233,7 +233,7 @@ func render(build: Build, airframe: AirframeModel = null) -> void:
 		var suffix := ""
 		if not tweaks.has_override(key):
 			suffix = "  (as built)"
-		_values[key].text = "%.1f mm%s" % [current, suffix]
+		_values[key].text = "%.1f %s%s" % [current, String(row.get("unit", "mm")), suffix]
 	_updating = false
 
 

@@ -131,14 +131,34 @@ const PROP_IMBALANCE := "prop_imbalance_g"
 ## it is a fact about this assembly, not about the module.
 const MAST_HEIGHT := "mast_height_mm"
 
+## How far the FPV camera is tipped up from level, in DEGREES — video-room design §1-§2, slice V1.
+##
+## A PROPERTY OF THE BUILD, NOT OF THE PART, and that is the whole reason it is a tweak. The same
+## camera is flown at 0 deg on a cinematic rig and 35 deg on a racer; nothing about the part says
+## which. It follows the GPS mast's path exactly: a key here, a slider row, a limit, one entry in
+## resolved_m(), and a fallback in Build.DEFAULT_ASSEMBLY.
+##
+## A SHIM, NOT A POSITION, under this file's own rule above. The camera rotates about its own centre,
+## so the centre of mass does not move; the few grams' box inertia does rotate, and at 8 g and ~20 mm
+## that is below anything the tune reads (design §6 names it, and it is not done). It changes the
+## drawing, the eye, the boresight and what the lens sees — and no flight number.
+##
+## Uptilt is a positive rotation about the airframe's +X: forward is -Z and up is +Y, so the
+## boresight goes from (0, 0, -1) to (0, sin θ, -cos θ). The sign is asserted off the boresight in
+## tests/test_camera_tilt.gd, never by reading the rotation back — this project has already shipped
+## one mirrored-pitch sign error, and a test that compares a rotation to itself would pass it.
+const CAMERA_TILT := "camera_tilt_deg"
+
 ## Keys whose value is a plain number the panel draws as a slider.
 ##
 ## Every one of these was a length in millimetres until prop imbalance arrived, which is a mass in
 ## grams — so `value_mm` is now a slightly wrong name for "the value in whatever unit its row is
 ## quoted in". The machinery underneath (clamping to limits, sparse overrides, persistence) never
 ## cared about the unit, and renaming the function across the panel and its tests is a bigger diff
-## than this slice should carry. Noted rather than hidden.
-const KEYS := [PROP_SPACER, SOFT_MOUNT, PLATE_GAP, BATTERY_OFFSET, PROP_IMBALANCE, MAST_HEIGHT]
+## than this slice should carry. Noted rather than hidden. Camera tilt, in degrees, is the second
+## key the name is wrong for, and the reason for not renaming has not changed.
+const KEYS := [PROP_SPACER, SOFT_MOUNT, PLATE_GAP, BATTERY_OFFSET, PROP_IMBALANCE, MAST_HEIGHT,
+	CAMERA_TILT]
 ## Keys whose value is one of a set of named options rather than a number. Held separately because
 ## a slider and a dropdown are read, clamped and persisted differently — but the four file rules
 ## above apply to both without change.
@@ -153,6 +173,9 @@ const ROWS := [
 	{"key": BATTERY_OFFSET, "label": "Pack fore/aft", "hint": "Slide the pack along the strap. Forward is positive."},
 	{"key": PROP_IMBALANCE, "label": "Prop imbalance", "hint": "Residual offset mass per prop, in grams. Wind it up and watch the D term."},
 	{"key": MAST_HEIGHT, "label": "GPS mast", "hint": "How far the GPS stands above the top plate. Opens at what the module publishes; the stalk you fitted is the answer."},
+	# `unit` because this is the first row whose number is not a length, and a slider reading
+	# "25.0 mm" for an angle is a label that lies. Absent means millimetres, which every other row is.
+	{"key": CAMERA_TILT, "label": "Camera uptilt", "unit": "°", "hint": "How far the camera is tipped up from level. Opens at 25°, a guess at what most builds fly; your camera mount is the answer."},
 ]
 
 ## The choice rows, drawn as dropdowns rather than sliders. Same idea as ROWS and same reason: the
@@ -233,6 +256,20 @@ static func limits(build: Build) -> Dictionary:
 			"min": 0.0,
 			"max": 250.0,
 			"default": Build.component_rise_m(build.components.get("gps", {})) * 1000.0,
+		},
+		# AUTHORED, LIKE PROP_IMBALANCE, AND FOR THE SAME REASON: there is nothing to derive an angle
+		# from. No camera publishes a mount angle and no frame publishes a bay angle, so these are
+		# labelled guesses. Real builds run 15-40 deg; 60 covers long-range and fast racing with
+		# margin. Zero is the floor because downtilt is not something anybody flies on an FPV camera,
+		# and a slider that invites it is a slider that acts on a mistake.
+		#
+		# The default is Build's, not a second copy here: the drawing falls back to
+		# DEFAULT_ASSEMBLY when no tweaks object exists, and two defaults would be two answers to
+		# "what does an untouched build look through".
+		CAMERA_TILT: {
+			"min": 0.0,
+			"max": 60.0,
+			"default": float(Build.DEFAULT_ASSEMBLY["camera_tilt_deg"]),
 		},
 	}
 
@@ -355,6 +392,11 @@ func resolved_m(build: Build) -> Dictionary:
 		# rest because this is still the ONE place the configuration reaches the physics, which is
 		# what the name is really about.
 		"prop_imbalance_g": value_mm(PROP_IMBALANCE, build),
+		# DEGREES, not metres — the second key in this dictionary that is not a length, and it keeps
+		# its unit in its name so nobody reads 25 as metres. It reaches the drawing (ComponentMesh
+		# rotates the camera) and through it the eye, the boresight and Sim's FPV feed. It reaches
+		# NO mass term: Build stores it beside the rest and nothing in the mass model reads it.
+		"camera_tilt_deg": value_mm(CAMERA_TILT, build),
 	}
 
 

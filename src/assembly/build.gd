@@ -590,6 +590,11 @@ const DEFAULT_ASSEMBLY := {
 	# plate_gap_m uses, and for the same reason: zero is a LEGITIMATE mast height (a flat module),
 	# so absence cannot be spelled 0.0 without making "flat" and "unset" the same answer.
 	"mast_height_m": -1.0,
+	# Camera uptilt in DEGREES (video-room design §2). A labelled guess: 25 is what most builds fly,
+	# and at 0 Sim makes you pitch hard to see the gate. No sentinel is needed, unlike the mast —
+	# nothing in the catalog publishes an angle for this to fall back to, so the default IS the
+	# answer. Touches no physics: the reference oracles do not read it, and that is asserted.
+	"camera_tilt_deg": 25.0,
 }
 
 ## `component_ids` names the optional components — camera, VTX, antenna, receiver — and anything it
