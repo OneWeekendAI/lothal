@@ -30,7 +30,7 @@ extends Node3D
 ## moment it is a second sum, the picture and the tensor can drift.
 ##
 ## Node layout after rebuild(), by category:
-##   camera    Body, Lens, Eye (a marker, not geometry)
+##   camera    Body, Lens, Eye (a marker, not geometry) — all three tipped up by the camera tilt
 ##   vtx       Board, Can
 ##   antenna   Whip (rotated), containing Pigtail and Tip
 ##   receiver  Board, Wire
@@ -87,6 +87,9 @@ const EYE_STANDOFF_M := 0.001
 var size_m := Vector3.ZERO
 ## Which of the four this is, kept so callers can name what they are looking at without a lookup.
 var category := ""
+## How far the camera is tipped up, in degrees — AssemblyTweaks.CAMERA_TILT, handed in as a number
+## by AirframeModel. Read only by the camera; the other three categories have no boresight to tip.
+var tilt_deg := 0.0
 
 
 ## Clears any previous component and rebuilds it as `p_category` from `part`. Safe to call on every
@@ -96,12 +99,17 @@ var category := ""
 ## weighs is centred on seated_centre_m(), so a mesh centred on its own origin is drawn exactly
 ## where that mass is. The antenna is the one silhouette that reaches outside its box — see
 ## _build_antenna() for why that is honest rather than sloppy.
-func rebuild(p_category: String, part: Dictionary) -> void:
+##
+## `p_tilt_deg` is the camera's uptilt and does nothing for any other category. A plain float with a
+## zero default, so every caller written before tilt existed — capture tools, the mesh tests — draws
+## the level camera it always drew; AirframeModel is the caller that passes the builder's number.
+func rebuild(p_category: String, part: Dictionary, p_tilt_deg: float = 0.0) -> void:
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
 
 	category = p_category
+	tilt_deg = p_tilt_deg
 	size_m = Build.component_size_of(part)
 
 	match category:
@@ -234,12 +242,32 @@ func _build_camera() -> void:
 	# It exists so that FpvView has ONE answer to where the lens is: this node is seated by the
 	# same MountLayout.seated_centre_m() call the mass model uses, so Sim's feed is taken from the
 	# camera that is drawn and weighed rather than from a third opinion about where a camera sits.
-	# A Node3D looks down its own -Z, which is already forward (physics.md §1), so there is no
-	# rotation here and no tilt — see FpvView for why tilt is a separate slice.
+	# A Node3D looks down its own -Z, which is already forward (physics.md §1), so level needs no
+	# rotation; the tilt below is the only one.
 	var eye := Marker3D.new()
 	eye.name = "Eye"
 	eye.position = Vector3(0.0, 0.0, -size_m.z * 0.5 - EYE_STANDOFF_M)
 	add_child(eye)
+
+	# THE TILT (video-room design §2, slice V2). Uptilt is a positive rotation about +X: forward is
+	# -Z and up is +Y, so -Z goes to (0, sin θ, -cos θ) and the lens looks above the horizon.
+	#
+	# Applied to the CHILDREN, about this node's origin — which is the published box's centre, where
+	# the mass model weighs it — rather than to this node's own transform, for two reasons:
+	#
+	#   - the camera rotates about its own centre, so nothing about where it is seated changes and
+	#     the centre of mass cannot move. AirframeModel still seats this node with position only.
+	#   - drawn_aabb_m() measures the children in THIS node's frame and component_aabb_m() adds only
+	#     the seat position. A rotation on the node itself would be invisible to every fit check; on
+	#     the children, a camera tipped up stands taller in the box the checks read, which is the
+	#     geometry V4's top-plate clearance needs.
+	#
+	# The Eye is one of the children, so it RIDES the rotation — both where it is (it sits ahead of
+	# the box, so its position swings up) and which way it looks. That is what carries the tilt to
+	# AirframeModel.camera_boresight() and to Sim's feed without a second copy of the angle.
+	var tilt := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(tilt_deg)), Vector3.ZERO)
+	for child in get_children():
+		(child as Node3D).transform = tilt * (child as Node3D).transform
 
 
 ## A board with a shield can, not a brick. The published boxes give it away — the 400 mW analog

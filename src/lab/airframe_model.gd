@@ -142,7 +142,9 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 			continue
 		var component := ComponentMesh.new()
 		component.name = "Component_%s" % category
-		component.rebuild(category, build.components[category])
+		# The tilt crosses as a number from the same resolved dictionary as the plate gap, and every
+		# category is handed it — only the camera reads it, so the loop stays free of a category branch.
+		component.rebuild(category, build.components[category], float(tweak_m["camera_tilt_deg"]))
 		# The mast rides along, and it has to: the moment this call and Build.mass_parts()'s call
 		# pass different arguments, a masted GPS is drawn on the plate and weighed 70 mm above it,
 		# and an inertia tensor does not appear on screen to say so. Same argument as the comment
@@ -244,28 +246,43 @@ func camera_eye() -> Node3D:
 ## the origin. That is the exact defect the 2026-08-28 review found in the guard polygon, and it
 ## would be a worse one here because the eye is the thing every angle is measured FROM.
 ##
-## No rotation is composed in, and that is not an omission: `ComponentMesh` seats the camera with no
-## rotation and no tilt (see `FpvView` for why tilt is its own slice), so the eye's basis is the
-## airframe's. When tilt lands it lands on the component's transform and this must compose it —
-## `camera_boresight()` below is where that change goes.
+## THE ROTATION IS COMPOSED IN, and since V2 it has to be. The camera tilt tips the eye marker up
+## about the camera's centre, and the eye sits AHEAD of the box — so tilt moves where the lens is,
+## not only which way it looks. Adding positions would put a 40 deg lens where a level one sits.
+## So the eye is placed by the full local transforms, mesh then marker, which is exactly what
+## `FpvView.world_transform_of` walks: the check and the feed cannot disagree about the lens.
 func camera_eye_m() -> Variant:
+	var placement = _camera_eye_transform()
+	if placement == null:
+		return null
+	return (placement as Transform3D).origin
+
+
+## The direction the fitted camera looks, in the airframe's own frame: (0, sin θ, -cos θ) for an
+## uptilt of θ, and plain forward (-Z, physics.md §1) when no camera is fitted.
+##
+## Composed from the eye marker's own basis rather than computed from the tilt setting, and that is
+## the point: the angle is stated ONCE, on the drawn camera, and this reads what was drawn. A second
+## `sin(tilt)` here would agree with the picture right up until the day one of them flipped a sign.
+## A named function rather than callers writing a vector, so `CameraView` is handed a number and
+## never a node.
+func camera_boresight() -> Vector3:
+	var placement = _camera_eye_transform()
+	if placement == null:
+		return Vector3(0.0, 0.0, -1.0)
+	return ((placement as Transform3D).basis * Vector3(0.0, 0.0, -1.0)).normalized()
+
+
+## The eye marker's transform in the airframe's frame, composed from LOCAL transforms because
+## `global_transform` outside the tree is identity (the 2026-08-28 defect). Null with no camera.
+func _camera_eye_transform() -> Variant:
 	if not component_meshes.has("camera"):
 		return null
 	var mesh: ComponentMesh = component_meshes["camera"]
 	var eye := mesh.get_node_or_null("Eye") as Node3D
 	if eye == null:
 		return null
-	return mesh.position + eye.position
-
-
-## The direction the fitted camera looks, in the airframe's own frame.
-##
-## Forward is -Z (physics.md §1). Constant today because there is no camera tilt in the model at
-## all; a named function rather than callers writing `Vector3(0, 0, -1)` so that the tilt slice has
-## one place to land instead of every angle in the app being a second opinion about which way a
-## camera points.
-func camera_boresight() -> Vector3:
-	return Vector3(0.0, 0.0, -1.0)
+	return mesh.transform * eye.transform
 
 
 ## Everything the camera can be blocked by, `{name: PackedVector3Array}` in the airframe's own

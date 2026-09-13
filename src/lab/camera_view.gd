@@ -41,10 +41,9 @@ extends RefCounted
 
 ## The angle from the camera's centreline to `point`, in degrees, both in the airframe's own frame.
 ##
-## Forward is -Z (physics.md §1) and there is no tilt anywhere in the model yet — see `FpvView`,
-## which names tilt as its own slice belonging in `AssemblyTweaks`. When it lands, it rotates the
-## boresight passed in here and every number below moves with it; nothing in this file assumes the
-## axis.
+## Forward is -Z (physics.md §1). Camera tilt is `AssemblyTweaks.CAMERA_TILT` (video slice V2): it
+## rotates the drawn camera, and `AirframeModel.camera_boresight()` hands the tipped axis in here as
+## a number, so every angle below moves with it. Nothing in this file assumes the axis.
 ##
 ## 180 for a point at the eye itself: a degenerate direction has no angle, and reporting 0 would
 ## claim the most intrusive possible obstruction from the least information.

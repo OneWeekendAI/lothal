@@ -32,6 +32,10 @@ static func run() -> Array:
 		"V1 persistence": [_the_tilt_survives_a_restart_and_is_sparse(catalog)],
 		"V1 unknown fields": [_a_file_with_the_tilt_keeps_what_it_does_not_know(catalog)],
 		"V1 physics": [_the_tilt_moves_no_flight_number(catalog)],
+		"V2 boresight": [_the_boresight_points_up_by_the_tilt(catalog)],
+		"V2 eye": [_the_eye_swings_up_with_the_camera(catalog)],
+		"V2 seat": [_the_camera_rotates_about_its_own_centre(catalog)],
+		"V2 camera view": [_the_camera_view_report_moves_with_the_tilt(catalog)],
 	}
 
 	var results: Array = []
@@ -246,3 +250,145 @@ static func _the_tilt_moves_no_flight_number(catalog: PartsCatalog) -> TestResul
 		problems.is_empty(),
 		"%.1f g, hover %.4f, CoM %s at both angles%s" % [untilted[0], untilted[2], untilted[5],
 			"" if problems.is_empty() else " — " + str(problems)])
+
+
+# ---------------------------------------------------------------------------
+# V2 — the tilt reaches the drawing
+# ---------------------------------------------------------------------------
+
+## An airframe drawn through the path Lab and Sim both use: a tweaks object, resolved inside
+## AirframeModel.rebuild. Caller frees it.
+static func _airframe_at(catalog: PartsCatalog, degrees: float) -> AirframeModel:
+	var tweaks := AssemblyTweaks.new()
+	tweaks.set_mm(AssemblyTweaks.CAMERA_TILT, degrees)
+	var airframe := AirframeModel.new()
+	airframe.rebuild(_build(catalog), tweaks)
+	return airframe
+
+
+## THE SIGN CHECK. Uptilt must point the lens ABOVE the horizon — `y > 0` is the assertion that a
+## mirrored rotation cannot pass — and by exactly the angle, (0, sin θ, -cos θ). The expected vector
+## is written from sin and cos here, not read back off any node, so the test and the code are two
+## statements of the angle rather than one statement compared with itself.
+##
+## Also checked with NO tweaks object: the drawing's own fallback must be Build's 25, not level.
+##
+## MUTATION (run for V2): flip the sign of the rotation in ComponentMesh — the lens then looks at the
+## ground, `y` goes negative, and this goes red.
+static func _the_boresight_points_up_by_the_tilt(catalog: PartsCatalog) -> TestResult:
+	var problems: Array[String] = []
+	var seen: Array[String] = []
+	for degrees in [40.0, 60.0]:
+		var airframe := _airframe_at(catalog, degrees)
+		var bore := airframe.camera_boresight()
+		airframe.free()
+		var theta := deg_to_rad(degrees)
+		var expected := Vector3(0.0, sin(theta), -cos(theta))
+		seen.append("%s° -> %s" % [degrees, bore])
+		if not bore.y > 0.0:
+			problems.append("at %s deg the boresight looks DOWN (%s)" % [degrees, bore])
+		if bore.distance_to(expected) > EPS:
+			problems.append("at %s deg the boresight is %s, sin/cos give %s" % [degrees, bore, expected])
+
+	var fallback := AirframeModel.new()
+	fallback.rebuild(_build(catalog))
+	var default_bore := fallback.camera_boresight()
+	fallback.free()
+	var t25 := deg_to_rad(25.0)
+	if default_bore.distance_to(Vector3(0.0, sin(t25), -cos(t25))) > EPS:
+		problems.append("an airframe drawn with no tweaks looks along %s, not 25 deg up" % default_bore)
+
+	var level := _airframe_at(catalog, 0.0)
+	var level_bore := level.camera_boresight()
+	level.free()
+	if level_bore.distance_to(Vector3(0.0, 0.0, -1.0)) > EPS:
+		problems.append("at 0 deg the boresight is %s, not straight forward" % level_bore)
+
+	return TestResult.new(
+		"the boresight points above the horizon by exactly the tilt — (0, sin θ, −cos θ)",
+		problems.is_empty(),
+		"%s; no tweaks -> %s; 0° -> %s%s" % [", ".join(seen), default_bore, level_bore,
+			"" if problems.is_empty() else " — " + str(problems)])
+
+
+## The eye sits AHEAD of the camera box, so tipping the box up must lift the eye and pull it back
+## toward the box's centre — not only turn it. Asserted as "higher, and still the same distance from
+## the camera's centre", both of which a position-plus-position composition fails.
+static func _the_eye_swings_up_with_the_camera(catalog: PartsCatalog) -> TestResult:
+	var level := _airframe_at(catalog, 0.0)
+	var tipped := _airframe_at(catalog, 40.0)
+	var eye_level: Vector3 = level.camera_eye_m()
+	var eye_tipped: Vector3 = tipped.camera_eye_m()
+	var centre_level: Vector3 = (level.component_meshes["camera"] as Node3D).position
+	var centre_tipped: Vector3 = (tipped.component_meshes["camera"] as Node3D).position
+	level.free()
+	tipped.free()
+
+	var arm_level := eye_level - centre_level
+	var arm_tipped := eye_tipped - centre_tipped
+	var theta := deg_to_rad(40.0)
+	# The arm is (0, 0, -r) level; tipped by θ it is (0, r sin θ, -r cos θ). Written out, not rotated.
+	var r := arm_level.length()
+	var expected := Vector3(0.0, r * sin(theta), -r * cos(theta))
+
+	var problems: Array[String] = []
+	if not eye_tipped.y > eye_level.y:
+		problems.append("the eye did not rise (%.5f -> %.5f m)" % [eye_level.y, eye_tipped.y])
+	if absf(arm_tipped.length() - r) > EPS:
+		problems.append("the eye changed its distance from the camera's centre")
+	if arm_tipped.distance_to(expected) > EPS:
+		problems.append("the eye is at %s from centre, expected %s" % [arm_tipped, expected])
+
+	return TestResult.new(
+		"the eye swings up with the camera, about the camera's own centre",
+		problems.is_empty(),
+		"eye %.1f mm ahead; level y %.2f mm -> 40° y %.2f mm%s" % [r * 1000.0,
+			eye_level.y * 1000.0, eye_tipped.y * 1000.0,
+			"" if problems.is_empty() else " — " + str(problems)])
+
+
+## Rotating about its own centre means the camera is SEATED identically at every tilt — its node
+## position is bit-identical — and the mass the physics weighs there does not move. The CoM half was
+## asserted through Build in V1; this is the drawing's half, so a slice that "helpfully" re-seated a
+## tilted camera would be caught on the picture as well as on the tensor.
+static func _the_camera_rotates_about_its_own_centre(catalog: PartsCatalog) -> TestResult:
+	var positions: Array = []
+	var coms: Array = []
+	for degrees in [0.0, 60.0]:
+		var airframe := _airframe_at(catalog, degrees)
+		positions.append((airframe.component_meshes["camera"] as Node3D).position)
+		airframe.free()
+		var build := _build(catalog)
+		var tweaks := AssemblyTweaks.new()
+		tweaks.set_mm(AssemblyTweaks.CAMERA_TILT, degrees)
+		build.set_assembly(tweaks.resolved_m(build))
+		coms.append(build.mass_properties.com_m)
+
+	return TestResult.new(
+		"the camera is seated identically and the CoM is bit-identical at 0° and 60°",
+		positions[0] == positions[1] and coms[0] == coms[1],
+		"seat %s vs %s; CoM %s vs %s" % [positions[0], positions[1], coms[0], coms[1]])
+
+
+## The camera-view report takes the eye and boresight as numbers, so tilt should move it with no
+## change to CameraView. Asserted as: the frame's plates go FURTHER off-axis when the lens looks up
+## — the bottom plate's front edge is below and ahead of the lens, so tipping away from it can only
+## widen the angle. A report that did not change would pass with the tilt disconnected.
+static func _the_camera_view_report_moves_with_the_tilt(catalog: PartsCatalog) -> TestResult:
+	var nearest := func(degrees: float) -> float:
+		var airframe := _airframe_at(catalog, degrees)
+		var report := CameraView.off_axis_report(airframe.camera_eye_m(), airframe.camera_boresight(),
+			airframe.camera_obstruction_points_m())
+		airframe.free()
+		var best := INF
+		for part_name in report:
+			if str(part_name).begins_with("Plate"):
+				best = minf(best, float(report[part_name]))
+		return best
+
+	var level: float = nearest.call(0.0)
+	var tipped: float = nearest.call(40.0)
+	return TestResult.new(
+		"the camera-view report moves with the tilt — the plates go further off-axis as the lens looks up",
+		level != INF and tipped > level + 1.0,
+		"nearest plate %.1f° level, %.1f° at 40°" % [level, tipped])

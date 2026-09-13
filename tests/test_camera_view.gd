@@ -320,9 +320,19 @@ static func _each_guard_ring_sits_on_its_own_motor(catalog: PartsCatalog) -> Tes
 	)
 
 
+## A LEVEL camera, explicitly. Since video slice V2 an untweaked build flies Build's 25 deg uptilt,
+## and the angles pinned in this file were measured at 0 — tilting toward the duct ring takes it
+## from ~20 deg to under 1. These checks are about what the warning says for a given geometry, not
+## about tilt, so they hold the tilt still; how the ranking moves WITH tilt is video slice V4's case.
+static func _level() -> AssemblyTweaks:
+	var tweaks := AssemblyTweaks.new()
+	tweaks.set_mm(AssemblyTweaks.CAMERA_TILT, 0.0)
+	return tweaks
+
+
 static func _the_warning_names_the_closest_part(catalog: PartsCatalog) -> TestResult:
 	var airframe := AirframeModel.new()
-	airframe.rebuild(_build(catalog, "frame_5in_cinewhoop", "guard_duct_5in_cinewhoop"))
+	airframe.rebuild(_build(catalog, "frame_5in_cinewhoop", "guard_duct_5in_cinewhoop"), _level())
 
 	var warnings := airframe.camera_view_warnings()
 	var passed := warnings.size() == 1
@@ -426,12 +436,17 @@ static func _a_moulded_frame_has_no_silhouette_to_hide_behind(catalog: PartsCata
 ## quietly reintroduced. See this file's header for the geometry. The two 5" guards land within a
 ## degree of each other, so no threshold fires on one and not the other, and the check reports the
 ## angle instead of pretending to a verdict it cannot reach.
+##
+## AT A LEVEL CAMERA (see `_level`), and the qualifier is now part of the finding: at the 25 deg
+## default uptilt the duct comes to 0.65 deg and the bumper to 7.83, so tilt DOES separate them. That
+## is still no threshold this project can justify — there is no published FOV to put one at — but
+## "within a degree" is a statement about 0 deg, and V4 should decide what the tilted pair means.
 static func _the_two_five_inch_guards_are_not_separated(catalog: PartsCatalog) -> TestResult:
 	var angles := {}
 	for pair in [["frame_5in_cinewhoop", "guard_duct_5in_cinewhoop"],
 			["frame_5in_freestyle", "guard_bumper_5in_abs"]]:
 		var airframe := AirframeModel.new()
-		airframe.rebuild(_build(catalog, pair[0], pair[1]))
+		airframe.rebuild(_build(catalog, pair[0], pair[1]), _level())
 		var warnings := airframe.camera_view_warnings()
 		angles[pair[0]] = float(warnings[0].values["closest_deg"]) if warnings.size() == 1 else NAN
 		# And on both builds the nearest thing is the guard, not the frame.
