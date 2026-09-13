@@ -173,9 +173,12 @@ const SYSTEMS := [
 		# The asymmetry that REMAINS is a different one, and it is the naming §7 records: `antennas`
 		# is VTX antennas only, and the receiver's antenna is a string on the receiver entry rather
 		# than a part. Left visible rather than papered over.
+		#
+		# `Camera` is V5's: the uptilt, found where the camera is rather than in Airframe's Fit tab.
+		# A panel and no rail, because a mount angle is a setting and not a part to pick.
 		"name": "Video",
 		"rails": ["Electronics"],
-		"panels": ["Electronics"],
+		"panels": ["Camera", "Electronics"],
 		"decided_by": ["camera", "vtx"],
 	},
 	{

@@ -171,7 +171,7 @@ const ROWS := [
 	{"key": SOFT_MOUNT, "label": "Motor soft mount", "hint": "Pad between the motor and the arm."},
 	{"key": PLATE_GAP, "label": "Stack standoffs", "hint": "Height between the centre plates."},
 	{"key": BATTERY_OFFSET, "label": "Pack fore/aft", "hint": "Slide the pack along the strap. Forward is positive."},
-	{"key": PROP_IMBALANCE, "label": "Prop imbalance", "hint": "Residual offset mass per prop, in grams. Wind it up and watch the D term."},
+	{"key": PROP_IMBALANCE, "label": "Prop imbalance", "unit": "g", "hint": "Residual offset mass per prop, in grams. Wind it up and watch the D term."},
 	{"key": MAST_HEIGHT, "label": "GPS mast", "hint": "How far the GPS stands above the top plate. Opens at what the module publishes; the stalk you fitted is the answer."},
 	# `unit` because this is the first row whose number is not a length, and a slider reading
 	# "25.0 mm" for an angle is a label that lies. Absent means millimetres, which every other row is.

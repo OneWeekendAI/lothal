@@ -138,6 +138,8 @@ var fc_details: FcDetails
 var electronics_details: ElectronicsDetails
 ## Control's Link panel: the receiver, the GPS and the buzzer. See LinkDetails.
 var link_details: LinkDetails
+## Video's Camera panel: the uptilt slider and the warnings the tilt moves. See CameraPanel.
+var camera_panel: CameraPanel
 ## The charger. Lab's, because charging is a garage activity — there is a charger in the garage
 ## and there is not one in the field (labs-and-sim.md §5).
 var charge_panel: PackChargePanel
@@ -326,6 +328,19 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	fc_details = FcDetails.new()
 	fc_details.name = "FC"
 	panels.add_child(fc_details)
+
+	# Video's Camera panel (video slice V5), added BEFORE Electronics so it is the tab in front when
+	# Video is chosen — `_show_only_tabs` fronts the first named tab in container order: the camera's uptilt, where a builder looking at the
+	# camera looks for it. Named for routing, like Electronics. Its slider writes nothing — the edit
+	# is routed into the Fit panel's `set_tweak_mm`, the single path every tweak takes, which emits
+	# the `tweaks_changed` this screen rebuilds and saves on. See CameraPanel's header, and GlassShell's
+	# pack-offset routing for the same shape one room over. Resolved at call time, so the Fit panel
+	# being built a few lines below is not an ordering problem.
+	camera_panel = CameraPanel.new()
+	camera_panel.name = "Camera"
+	camera_panel.tilt_edited.connect(func(degrees: float) -> void:
+		assembly_panel.set_tweak_mm(AssemblyTweaks.CAMERA_TILT, degrees))
+	panels.add_child(camera_panel)
 
 	electronics_details = ElectronicsDetails.new()
 	electronics_details.name = "Electronics"
@@ -736,6 +751,9 @@ func _on_selection_changed() -> void:
 	# that was just rebuilt two lines above — so the overhang on the panel is the overhang on the
 	# screen, in the same call, and cannot describe a pack that is no longer fitted.
 	assembly_panel.render(build, airframe)
+	# After the Fit panel and against the same rebuilt airframe, so the tilt row and the camera-view
+	# report describe the camera that was just drawn.
+	camera_panel.render(build, tweaks, airframe)
 	tune_panel.render(build, tune)
 
 

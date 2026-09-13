@@ -318,7 +318,7 @@ static func _test_leaving_a_system_takes_its_panels() -> Array:
 
 	var walk := ["Video", "Control", "Airframe"]
 	var expected := {
-		"Video": ["Electronics"],
+		"Video": ["Camera", "Electronics"],
 		"Control": ["FC", "Link", "Tune"],
 		"Airframe": ["Structure", "Arms", "Fasteners", "Layout"],
 	}

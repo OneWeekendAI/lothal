@@ -56,8 +56,10 @@ const RAIL_TITLES := ["Frame", "Motor", "Prop", "Pack", "ESC", "FC", "Electronic
 ## the first entry in this list that is not a part at all.
 ## "Link" sits immediately after "Electronics", where LabScreen puts it — Control's third panel
 ## (C3), a stub until C6 writes LinkDetails.
+## "Camera" sits immediately before "Electronics", where LabScreen puts it so it is Video's front tab — Video's second panel
+## (video slice V5), the uptilt.
 const PANEL_TITLES := ["Frame", "Structure", "Arms", "Fasteners", "Layout",
-	"Motor", "Prop", "Pack", "ESC", "Harness", "FC", "Electronics", "Link", "Fit", "Tune"]
+	"Motor", "Prop", "Pack", "ESC", "Harness", "FC", "Camera", "Electronics", "Link", "Fit", "Tune"]
 
 
 static func run() -> Array:

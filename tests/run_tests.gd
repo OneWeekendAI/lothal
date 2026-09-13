@@ -21,7 +21,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "camera view",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components",
-	"camera tilt", "video warnings"]
+	"camera tilt", "video warnings", "video panel"]
 
 func _init() -> void:
 	var total := 0
@@ -185,6 +185,8 @@ func _run_suite(suite_name: String) -> Array:
 		"camera tilt": return TestCameraTilt.run()
 		# V4 (plans/2026-09-13-video-room-design.md §3): VideoPlausibility.
 		"video warnings": return TestVideoWarnings.run()
+		# V5: Video's Camera panel, driven on a real shell.
+		"video panel": return TestVideoPanel.run()
 		"yaw authority": return TestYawAuthority.run()
 		"gyro": return TestGyro.run()
 		"vibration": return TestVibration.run()
