@@ -337,7 +337,8 @@ static func _each_guard_ring_sits_on_its_own_motor(catalog: PartsCatalog) -> Tes
 ## A LEVEL camera, explicitly. Since video slice V2 an untweaked build flies Build's 25 deg uptilt,
 ## and the angles pinned in this file were measured at 0 — tilting toward the duct ring takes it
 ## from ~20 deg to under 1. These checks are about what the warning says for a given geometry, not
-## about tilt, so they hold the tilt still; how the ranking moves WITH tilt is video slice V4's case.
+## about tilt, so they hold the tilt still; how the ranking moves WITH tilt is pinned below, in
+## `_the_ranking_flips_between_level_and_forty_degrees`.
 static func _level() -> AssemblyTweaks:
 	var tweaks := AssemblyTweaks.new()
 	tweaks.set_mm(AssemblyTweaks.CAMERA_TILT, 0.0)
