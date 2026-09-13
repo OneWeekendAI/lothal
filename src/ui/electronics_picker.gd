@@ -38,6 +38,9 @@ extends PanelContainer
 ## version control"), and it computes nothing: it emits ids and Build does the weighing.
 
 signal components_changed()
+## A custom part was saved or deleted from this rail. The CATALOG changed, not just the selection —
+## LabScreen reloads on it, exactly as it does on the six older rails' custom_*_changed.
+signal custom_components_changed()
 
 ## What the "" row reads as. One constant rather than a literal per list, so the four lists
 ## cannot drift into saying it three different ways.
@@ -73,6 +76,8 @@ var _selectors: Dictionary = {}   # category -> OptionButton
 ## never into catalog.list_category() — the lists differ by the "Not fitted" row, and reading a
 ## part out of the catalog by a selector index is off by one for the whole of every list here.
 var _ids: Dictionary = {}
+var _authoring_selector: OptionButton
+var _delete_button: Button
 
 
 func _init(p_catalog: PartsCatalog, p_categories: Array, p_title: String) -> void:
@@ -142,8 +147,12 @@ func _init(p_catalog: PartsCatalog, p_categories: Array, p_title: String) -> voi
 		var default_id := str(Build.DEFAULT_COMPONENT_IDS.get(category, ""))
 		selector.select(maxi(ids.find(default_id), 0))
 		selector.item_selected.connect(_on_selector_changed)
+		# Touching a bay makes it the one the authoring row below acts on — see that row's note.
+		selector.item_selected.connect(func(_i: int) -> void: _set_authoring_category(category))
 		grid.add_child(selector)
 		_selectors[category] = selector
+
+	_build_authoring_row(root)
 
 	root.add_child(HSeparator.new())
 
@@ -234,3 +243,102 @@ func select_component(category: String, part_id: String) -> bool:
 
 func _on_selector_changed(_index: int) -> void:
 	components_changed.emit()
+
+
+# ---------------------------------------------------------------------------
+# Authoring (C7)
+# ---------------------------------------------------------------------------
+
+## ONE ROW FOR THE WHOLE RAIL — a category dropdown, "New custom…" and "Delete" — rather than a New
+## and a Delete beside every bay, and the reason is Delete rather than New.
+##
+## A button pair per bay is two more columns in a 292 px rail whose selectors are already clipped to
+## fit (see the width note above), so it does not fit. A single "New custom…" menu listing the
+## categories would fit, and would answer the question for New — but it leaves Delete ambiguous: this
+## rail has three selections at once, and a lone Delete has to delete ONE of them. Whatever rule
+## picked it silently ("the last one touched") would be a rule the builder cannot see before pressing
+## a button that removes a file record.
+##
+## So the category is a visible control that BOTH buttons read: the builder can see what New will
+## create and which bay's part Delete will remove before pressing either. It follows the bay they last
+## touched, so the common path — pick the camera row, decide to enter your own — needs no extra click,
+## and Delete is disabled, not hidden, unless that bay holds a part the builder owns (FcPicker's rule,
+## so the row does not reflow as the selection moves).
+func _build_authoring_row(root: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	root.add_child(row)
+
+	_authoring_selector = OptionButton.new()
+	_authoring_selector.clip_text = true
+	_authoring_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for category in categories:
+		_authoring_selector.add_item(str(CATEGORY_LABELS.get(category, category)))
+	_authoring_selector.select(0)
+	_authoring_selector.item_selected.connect(func(_i: int) -> void: _refresh_delete_button())
+	row.add_child(_authoring_selector)
+
+	var new_button := Button.new()
+	new_button.text = "New custom…"
+	new_button.pressed.connect(_open_dialog)
+	row.add_child(new_button)
+
+	_delete_button = Button.new()
+	_delete_button.text = "Delete"
+	_delete_button.pressed.connect(_delete_selected)
+	row.add_child(_delete_button)
+
+	components_changed.connect(_refresh_delete_button)
+	_refresh_delete_button()
+
+
+## The category the New and Delete buttons act on. Public because it is what a test drives and what
+## the builder reads.
+func authoring_category() -> String:
+	if _authoring_selector == null or _authoring_selector.selected < 0:
+		return ""
+	return categories[_authoring_selector.selected]
+
+
+func _set_authoring_category(category: String) -> void:
+	var index := categories.find(category)
+	if _authoring_selector != null and index >= 0:
+		_authoring_selector.select(index)
+		_refresh_delete_button()
+
+
+func set_authoring_category(category: String) -> bool:
+	if not categories.has(category):
+		return false
+	_set_authoring_category(category)
+	return true
+
+
+func _refresh_delete_button() -> void:
+	var category := authoring_category()
+	_delete_button.disabled = category == "" or not PartsCatalog.is_custom(selected_id(category))
+
+
+## The dialog a New press opens. Returned so a test can reach it without a window server.
+func open_dialog() -> CustomComponentDialog:
+	return _open_dialog()
+
+
+func _open_dialog() -> CustomComponentDialog:
+	var dialog := CustomComponentDialog.new(authoring_category())
+	dialog.component_saved.connect(func(_part_id: String) -> void:
+		dialog.queue_free()
+		custom_components_changed.emit())
+	add_child(dialog)
+	dialog.popup_centered()
+	return dialog
+
+
+func _delete_selected() -> void:
+	var category := authoring_category()
+	var part_id := selected_id(category) if category != "" else ""
+	if not PartsCatalog.is_custom(part_id):
+		return
+	var document := CustomComponentDialog.document_for(category)
+	if document != null and document.remove(part_id):
+		document.save()
+		custom_components_changed.emit()

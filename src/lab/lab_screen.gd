@@ -453,6 +453,11 @@ func _build_rails() -> void:
 	# leave a panel describing a camera that is off.
 	for rail in component_rails():
 		rail.components_changed.connect(_on_selection_changed)
+		# C7: a component authored or deleted on either payload rail changes the CATALOG, so it takes
+		# the same full rebuild the six older rails take — below — and on BOTH rails, because a
+		# custom GPS saved from Link with only Video's rail wired would sit on disk, absent from the
+		# dropdown it was entered from, until the app restarted.
+		rail.custom_components_changed.connect(reload_catalog)
 
 	# A frame added or deleted changes the CATALOG, not just the rail — the camera distance is
 	# computed from the largest arm in it, so the whole screen is rebuilt rather than the list

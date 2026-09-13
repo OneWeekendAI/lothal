@@ -49,7 +49,56 @@ static func run() -> Array:
 	results.append_array(_every_component_lights_up_under_its_system(components))
 	results.append_array(_every_component_persists(components))
 	results.append_array(_every_component_is_claimed_by_exactly_one_rail(catalog, components))
+	results.append_array(_every_component_can_be_authored_and_comes_back(components))
 
+	return results
+
+
+## PROPERTY 6 (C7) — authoring, asked of the DIALOG and of `PartsCatalog.load_with_custom`.
+##
+## A sixth list that must stay in step: the category -> store table the component dialog and the
+## rail's Delete read, and the merge list in `load_with_custom`. A category missing from the first
+## cannot be authored at all; one missing from the second saves to disk and never appears in the
+## dropdown it was entered from — which is the gap C7 closed for `gps` and `buzzer`, silent both ways.
+##
+## Consumer-side, per this file's rule: the row does not compare the two tables, it DRIVES the real
+## dialog through submit() into a scratch save file and asks the merged catalog whether the part came
+## back in its own category. The extras are the two that make GPS and buzzer records acceptable at
+## all; every other category ignores keys it does not carry.
+##
+## The save path is swapped for the duration and restored, exactly as tests/test_custom_parts_ui.gd
+## does — the developer's own custom_parts.json is never left touched.
+static func _every_component_can_be_authored_and_comes_back(components: Array) -> Array:
+	var results: Array = []
+	var previous := ""
+	if FileAccess.file_exists(CustomParts.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(CustomParts.SAVE_PATH)
+
+	for category in components:
+		if FileAccess.file_exists(CustomParts.SAVE_PATH):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(CustomParts.SAVE_PATH))
+		var dialog := CustomComponentDialog.new(String(category))
+		var seen := {"id": ""}
+		dialog.component_saved.connect(func(part_id: String) -> void: seen["id"] = part_id)
+		dialog.set_fields("C4 row %s" % category, 5.0, 20.0, 20.0, 8.0,
+			{"mast_height_mm": 0.0, "self_powered": true}, "coverage fixture")
+		var problems := dialog.submit()
+		dialog.free()
+
+		var merged := PartsCatalog.load_with_custom()
+		var part := merged.get_part(String(seen["id"])) if seen["id"] != "" else {}
+		results.append(TestResult.new(
+			"%s can be authored from the payload rail's dialog and comes back in its own category" % category,
+			problems.is_empty() and not part.is_empty() and str(part.get("category", "")) == category,
+			"dialog problems=%s, saved id=\"%s\", merged category=\"%s\"" % [
+				problems, seen["id"], part.get("category", "<not in the catalog>")]))
+
+	if FileAccess.file_exists(CustomParts.SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(CustomParts.SAVE_PATH))
+	if previous != "":
+		var handle := FileAccess.open(CustomParts.SAVE_PATH, FileAccess.WRITE)
+		handle.store_string(previous)
+		handle.close()
 	return results
 
 

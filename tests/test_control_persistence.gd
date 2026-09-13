@@ -67,7 +67,73 @@ static func run() -> Array:
 	results.append_array(_test_a_file_written_before_they_existed_fits_neither(catalog))
 	results.append_array(_test_refused_is_not_the_same_as_never_heard_of(catalog))
 	results.append_array(_test_the_second_write_is_identical_to_the_first(catalog))
+	results.append_array(_test_custom_gps_and_buzzer_travel_in_the_container())
 
+	return results
+
+
+## C7: a builder's OWN GPS and buzzer, fitted, must travel inside the `.lothal` file — a shared drone
+## whose GPS id resolves in nobody else's catalog opens without its highest mass.
+##
+## VERIFIED RATHER THAN ASSUMED, and the verification found no production change was needed:
+## `ProjectContainer._collect_custom_parts` walks the document's sibling arrays and the project's
+## parts block without a category list, so `gps` and `buzzer` travel by the same code as a motor.
+## These rows are what keeps that true. The unfitted half is not decoration: "copy the whole file"
+## passes the fitted rows too.
+##
+## FAILS IF: `_collect_custom_parts` skips either category (a filter on project.parts, or on the
+## document's array keys), or copies everything regardless of what is fitted.
+## Scratch files under user://test_control_persistence/ only.
+static func _test_custom_gps_and_buzzer_travel_in_the_container() -> Array:
+	var results: Array = []
+	var dir := "user://test_control_persistence"
+	var custom_path := dir + "/custom_parts.json"
+	var container_path := dir + "/custom." + ProjectContainer.EXTENSION
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
+	for stale in [custom_path, container_path]:
+		if FileAccess.file_exists(stale):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(stale))
+
+	var gps := CustomGps.new()
+	gps.add(CustomGps.make_record("Shed mast", 12.0, 22.0, 22.0, 7.0, 65.0, "GPS", true, "UBX", "scale"))
+	gps.add(CustomGps.make_record("Shed spare", 5.0, 16.0, 16.0, 6.0, 0.0, "GPS", false, "UBX", "scale"))
+	gps.save(custom_path)
+	var buzzers := CustomBuzzers.load_from(custom_path)
+	buzzers.add(CustomBuzzers.make_record("Shed finder", 3.0, 20.0, 15.0, 9.0, true, null, "scale"))
+	buzzers.save(custom_path)
+
+	var project := _fitted_project()
+	project.parts["gps"] = CustomGps.id_for("Shed mast")
+	project.parts["buzzer"] = CustomBuzzers.id_for("Shed finder")
+	var wrote := ProjectContainer.make(project).write(container_path, custom_path)
+	var reopened := ProjectContainer.open(container_path)
+	var carried: Dictionary = reopened.custom_parts() if reopened != null else {}
+
+	var gps_ids: Array = []
+	for record in carried.get("gps", []):
+		gps_ids.append(str(record["part_id"]))
+	var buzzer_ids: Array = []
+	for record in carried.get("buzzers", []):
+		buzzer_ids.append(str(record["part_id"]))
+
+	results.append(TestResult.new(
+		"a fitted custom GPS travels inside the .lothal container, mast and all",
+		wrote and gps_ids.has(CustomGps.id_for("Shed mast"))
+			and float(((carried.get("gps", [{}]) as Array)[0] as Dictionary).get("specs", {}).get("mast_height_mm", -1.0)) == 65.0,
+		"written=%s, gps carried=%s" % [wrote, gps_ids]))
+	results.append(TestResult.new(
+		"a fitted custom buzzer travels inside the .lothal container",
+		wrote and buzzer_ids.has(CustomBuzzers.id_for("Shed finder")),
+		"written=%s, buzzers carried=%s" % [wrote, buzzer_ids]))
+	results.append(TestResult.new(
+		"and a custom GPS this drone does not fit stays out of its file",
+		wrote and not gps_ids.has(CustomGps.id_for("Shed spare")) and gps_ids.size() == 1,
+		"gps carried=%s" % [gps_ids]))
+
+	for stale in [custom_path, container_path]:
+		if FileAccess.file_exists(stale):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(stale))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(dir))
 	return results
 
 

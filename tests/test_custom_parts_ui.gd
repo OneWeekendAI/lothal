@@ -37,6 +37,36 @@ static func run() -> Array:
 	results.append(_test_prop_rail_deletes_an_independent_prop())
 	results.append(_test_esc_dialog_saves_a_record_the_model_accepts())
 	results.append(_test_fc_dialog_derives_noise_and_labels_the_bias_illustrative())
+	# C7 — the payload rails.
+	results.append(_test_payload_rail_reloads_the_catalog("Electronics"))
+	results.append(_test_payload_rail_reloads_the_catalog("Link"))
+	results.append(_test_payload_rail_delete("Electronics", "Video", "camera", "cam_micro_analog",
+		CustomCameras.make_record("Shed cam", 6.0, 19.0, 19.0, 20.0, "analog", "micro", "CMOS",
+			"measured on my scale")))
+	results.append(_test_payload_rail_delete("Link", "Control", "gps", "gps_micro_flat",
+		CustomGps.make_record("Shed gps", 9.0, 25.0, 25.0, 8.0, 40.0, "GPS", true, "UBX",
+			"measured on my scale")))
+	results.append(_test_link_rail_new_opens_the_chosen_category())
+	results.append(_test_component_dialog_saves("camera",
+		{"signal": "digital", "size_class": "nano", "sensor": "CMOS"},
+		func(r: Dictionary) -> bool: return r["catalog"]["size_class"] == "nano"))
+	results.append(_test_component_dialog_saves("vtx",
+		{"signal": "digital", "power_class": "1 W", "band": "5.8 GHz"},
+		func(r: Dictionary) -> bool: return r["catalog"]["power_class"] == "1 W"))
+	results.append(_test_component_dialog_saves("antenna",
+		{"polarisation": "LHCP", "connector": "u.FL", "gain_class": "3 dBi"},
+		func(r: Dictionary) -> bool: return r["catalog"]["connector"] == "u.FL"))
+	results.append(_test_component_dialog_saves("receiver",
+		{"protocol": "ExpressLRS", "band": "900 MHz", "antenna_type": "T"},
+		func(r: Dictionary) -> bool: return r["catalog"]["band"] == "900 MHz"))
+	results.append(_test_component_dialog_saves("gps",
+		{"mast_height_mm": 55.0, "constellations": "GPS", "protocol": "UBX", "compass": true},
+		func(r: Dictionary) -> bool: return is_equal_approx(float(r["specs"]["mast_height_mm"]), 55.0) \
+			and r["catalog"]["compass"] == true))
+	results.append(_test_component_dialog_saves("buzzer",
+		{"self_powered": false, "loudness_db": 85.0},
+		func(r: Dictionary) -> bool: return r["specs"]["self_powered"] is bool \
+			and r["specs"]["self_powered"] == false))
 	return results
 
 
@@ -85,6 +115,10 @@ static func _authoring_rails(catalog: PartsCatalog) -> Dictionary:
 		"battery": BatteryPicker.new(catalog),
 		"esc": EscPicker.new(catalog),
 		"flight_controller": FcPicker.new(catalog),
+		# C7: both payload rails, built the way LabScreen builds them — from Build's system table, not
+		# from a hand-written three names — so a category moved between rails is still covered.
+		"electronics": ElectronicsPicker.new(catalog, Build.components_for_system("Video"), "Electronics"),
+		"link": ElectronicsPicker.new(catalog, Build.components_for_system("Control"), "Link"),
 	}
 
 
@@ -149,7 +183,7 @@ static func _test_every_authoring_rail_offers_a_way_in() -> TestResult:
 	return TestResult.new(
 		"every rail with a custom-parts document offers New and Delete",
 		missing.is_empty(),
-		"all six reachable" if missing.is_empty() else "unreachable: %s" % ", ".join(missing))
+		"all %d reachable" % rails.size() if missing.is_empty() else "unreachable: %s" % ", ".join(missing))
 
 
 ## The signal LabScreen rebuilds from. A rail that had the button but no signal would save the part
@@ -164,6 +198,8 @@ static func _test_every_authoring_rail_has_a_change_signal() -> TestResult:
 		"battery": "custom_batteries_changed",
 		"esc": "custom_escs_changed",
 		"flight_controller": "custom_flight_controllers_changed",
+		"electronics": "custom_components_changed",
+		"link": "custom_components_changed",
 	}
 
 	var missing: Array[String] = []
@@ -175,7 +211,122 @@ static func _test_every_authoring_rail_has_a_change_signal() -> TestResult:
 	return TestResult.new(
 		"every authoring rail carries the change signal LabScreen reloads on",
 		missing.is_empty(),
-		"all six present" if missing.is_empty() else "missing: %s" % ", ".join(missing))
+		"all eight present" if missing.is_empty() else "missing: %s" % ", ".join(missing))
+
+
+## A signal nobody listens to is the button-with-no-rebuild failure one layer up: the part is saved
+## and the dropdown it was entered from does not show it until a restart. So the WIRING is asked of a
+## real LabScreen, per payload rail — one row each, because wiring one rail and forgetting the other
+## is the specific way this goes wrong when there are two instances of one class.
+##
+## FAILS IF: LabScreen._build_rails does not connect that rail's custom_components_changed to
+## reload_catalog.
+static func _test_payload_rail_reloads_the_catalog(rail_name: String) -> TestResult:
+	var lab := LabScreen.new(PartsCatalog.load_default(), AssemblyTweaks.new(), PackCharge.new())
+	var rail: ElectronicsPicker = null
+	for candidate in lab.component_rails():
+		if String(candidate.name) == rail_name:
+			rail = candidate
+	# Both read BEFORE the free: a freed rail compares equal to null, so a detail computed afterwards
+	# reports "rail found=false" on a rail that was found — which is what the first mutation run printed.
+	var found := rail != null
+	var wired := found and rail.custom_components_changed.is_connected(lab.reload_catalog)
+	lab.free()
+	return TestResult.new(
+		"LabScreen reloads the catalog when a custom part is saved or deleted on the %s rail" % rail_name,
+		wired,
+		"rail found=%s, connected=%s" % [found, wired])
+
+
+## Delete on a payload rail: dead on a shipped part, live on the builder's own, and — through the
+## real button — removes the record and asks Lab to reload. One row per rail, each on a category
+## that rail carries.
+##
+## FAILS IF: `_refresh_delete_button` stops consulting PartsCatalog.is_custom (enabled on a catalog
+## part, or never enabled), if Delete acts on a category other than the one shown, or if the button
+## is wired to nothing (the record survives and no reload is emitted).
+static func _test_payload_rail_delete(rail_name: String, system: String, category: String,
+		catalog_id: String, record: Dictionary) -> TestResult:
+	var check := func() -> Dictionary:
+		var document := CustomComponentDialog.document_for(category)
+		var added := document.add(record)
+		document.save()
+		var catalog := PartsCatalog.load_with_custom()
+		var rail := ElectronicsPicker.new(catalog, Build.components_for_system(system), rail_name)
+		var seen := {"reloaded": false}
+		rail.custom_components_changed.connect(func() -> void: seen["reloaded"] = true)
+		var delete := _find_button(rail, "Delete")
+
+		rail.set_authoring_category(category)
+		rail.select_component(category, catalog_id)
+		var off_on_catalog := delete.disabled
+		var custom_id := str(record["part_id"])
+		var selectable := rail.select_component(category, custom_id)
+		var on_on_custom := not delete.disabled
+		delete.pressed.emit()
+		var gone := CustomComponentDialog.document_for(category).get_record(custom_id).is_empty()
+		rail.free()
+		return {"added": added, "off": off_on_catalog, "selectable": selectable,
+			"on": on_on_custom, "gone": gone, "reloaded": seen["reloaded"]}
+
+	var out: Dictionary = _with_scratch_savepath(check)
+	return TestResult.new(
+		"%s rail: Delete is disabled on a catalog %s, enabled on the builder's own, and removes it" % [
+			rail_name, category],
+		(out["added"] as Array).is_empty() and out["off"] and out["selectable"] and out["on"]
+			and out["gone"] and out["reloaded"],
+		"added problems=%s, disabled on catalog=%s, custom selectable=%s, enabled on custom=%s, removed=%s, reload emitted=%s" % [
+			out["added"], out["off"], out["selectable"], out["on"], out["gone"], out["reloaded"]])
+
+
+## New on a payload rail opens the dialog for the category SHOWN, not for the first one the rail
+## carries. FAILS IF: the dialog is built from anything but authoring_category(), e.g. categories[0].
+static func _test_link_rail_new_opens_the_chosen_category() -> TestResult:
+	var rail := ElectronicsPicker.new(PartsCatalog.load_default(),
+		Build.components_for_system("Control"), "Link")
+	rail.set_authoring_category("buzzer")
+	var dialog := rail.open_dialog()
+	var opened := dialog.category
+	rail.free()
+	return TestResult.new("the Link rail's New opens the dialog for the category the builder chose",
+		opened == "buzzer", "chose buzzer, dialog opened for \"%s\"" % opened)
+
+
+## The component dialog's wiring, per category: fields in, a record the category's own store accepts
+## on disk, each dimension where it belongs and the category's own extra stored. Six rows, not a loop,
+## because the failure this catches is ONE category's make_record call with its arguments shifted.
+##
+## FAILS IF: submit() passes length/width/height in the wrong order for that category, calls the
+## wrong store, or drops that category's extra (the mast, the power answer, a metadata string).
+static func _test_component_dialog_saves(category: String, meta: Dictionary,
+		extra_check: Callable) -> TestResult:
+	var check := func() -> Dictionary:
+		var dialog := CustomComponentDialog.new(category)
+		var seen := {"id": ""}
+		dialog.component_saved.connect(func(part_id: String) -> void: seen["id"] = part_id)
+		dialog.set_fields("Shed %s" % category, 7.5, 31.0, 21.0, 11.0, meta, "measured on my scale")
+		var refusals := dialog.submit()
+		# Guarded, not dereferenced: a category the store table lost returns null, and calling through
+		# it would abort the whole runner instead of failing THIS row by name (the M15 mutation did).
+		var store := CustomComponentDialog.document_for(category)
+		var stored: Dictionary = store.get_record(seen["id"]) if store != null else {}
+		dialog.free()
+		return {"problems": refusals, "id": seen["id"], "stored": stored}
+
+	var out: Dictionary = _with_scratch_savepath(check)
+	var saved: Dictionary = out["stored"]
+	var specs: Dictionary = saved.get("specs", {})
+	var dims_ok := is_equal_approx(float(saved.get("mass_g", 0.0)), 7.5) \
+		and is_equal_approx(float(specs.get("length_mm", 0.0)), 31.0) \
+		and is_equal_approx(float(specs.get("width_mm", 0.0)), 21.0) \
+		and is_equal_approx(float(specs.get("height_mm", 0.0)), 11.0) \
+		and str(saved.get("category", "")) == category
+	var extra_ok: bool = not saved.is_empty() and extra_check.call(saved)
+	return TestResult.new(
+		"the component dialog saves a %s its store accepts, dimensions and extras in place" % category,
+		(out["problems"] as Array).is_empty() and out["id"] != "" and dims_ok and extra_ok,
+		"problems=%s, id=%s, dims ok=%s, extra ok=%s, stored=%s" % [out["problems"], out["id"],
+			dims_ok, extra_ok, JSON.stringify(saved)])
 
 
 ## Delete must be dead on a shipped part and live on the builder's own — on the two rails this
@@ -342,6 +493,17 @@ static func _test_the_save_button_does_not_close_a_dialog_on_a_refusal() -> Test
 			var d := CustomBatteryDialog.new()
 			_fill_pack(d, "")
 			return d,
+		# C7. The six component categories refused for no source — and the two refusals the component
+		# dialog exists to make: a GPS whose mast was left EMPTY, and a buzzer whose power question
+		# was left UNANSWERED, each with a source, so the refusal can only be the field itself.
+		"camera": func() -> AcceptDialog: return _component_dialog("camera", {}, ""),
+		"vtx": func() -> AcceptDialog: return _component_dialog("vtx", {}, ""),
+		"antenna": func() -> AcceptDialog: return _component_dialog("antenna", {}, ""),
+		"receiver": func() -> AcceptDialog: return _component_dialog("receiver", {}, ""),
+		"gps (no source)": func() -> AcceptDialog: return _component_dialog("gps", {"mast_height_mm": 0.0}, ""),
+		"gps (mast left empty)": func() -> AcceptDialog: return _component_dialog("gps", {}, "scale"),
+		"buzzer (no source)": func() -> AcceptDialog: return _component_dialog("buzzer", {"self_powered": true}, ""),
+		"buzzer (power unanswered)": func() -> AcceptDialog: return _component_dialog("buzzer", {}, "scale"),
 	}
 	var good := {
 		"frame": func() -> AcceptDialog:
@@ -361,6 +523,16 @@ static func _test_the_save_button_does_not_close_a_dialog_on_a_refusal() -> Test
 			var d := CustomBatteryDialog.new()
 			_fill_pack(d, "off the wrapper")
 			return d,
+		"camera": func() -> AcceptDialog: return _component_dialog("camera", {}, "scale"),
+		"vtx": func() -> AcceptDialog: return _component_dialog("vtx", {}, "scale"),
+		"antenna": func() -> AcceptDialog: return _component_dialog("antenna", {}, "scale"),
+		"receiver": func() -> AcceptDialog: return _component_dialog("receiver", {}, "scale"),
+		# Mast 0 on the good GPS on purpose: the flat module is the answer an over-eager refusal
+		# would wrongly bounce, so the "accepted closes" half watches that edge too.
+		"gps (no source)": func() -> AcceptDialog: return _component_dialog("gps", {"mast_height_mm": 0.0}, "scale"),
+		"gps (mast left empty)": func() -> AcceptDialog: return _component_dialog("gps", {"mast_height_mm": 0.0}, "scale"),
+		"buzzer (no source)": func() -> AcceptDialog: return _component_dialog("buzzer", {"self_powered": false}, "scale"),
+		"buzzer (power unanswered)": func() -> AcceptDialog: return _component_dialog("buzzer", {"self_powered": false}, "scale"),
 	}
 
 	var check := func() -> Array:
@@ -394,7 +566,16 @@ static func _test_the_save_button_does_not_close_a_dialog_on_a_refusal() -> Test
 	return TestResult.new(
 		"Save leaves a refused dialog open and closes an accepted one",
 		wrong.is_empty(),
-		"all four, both ways" if wrong.is_empty() else "; ".join(wrong))
+		"all %d, both ways" % bad.size() if wrong.is_empty() else "; ".join(wrong))
+
+
+## A component dialog filled with a plausible part and the given extras. Each good fixture gets a
+## name unique to its key's category AND extras, so two accepted dialogs of one category in the same
+## scratch file do not collide on part_id and turn a pass into a refusal.
+static func _component_dialog(category: String, meta: Dictionary, source: String) -> AcceptDialog:
+	var d := CustomComponentDialog.new(category)
+	d.set_fields("Shed %s %d" % [category, randi()], 6.0, 20.0, 20.0, 10.0, meta, source)
+	return d
 
 
 ## The derived panel is the only place a builder ever sees the two numbers the sim will fly on that

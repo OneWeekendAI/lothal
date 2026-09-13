@@ -132,6 +132,11 @@ static func load_with_custom(path: String = CustomParts.SAVE_PATH) -> PartsCatal
 	catalog._merge_custom(path, CustomVtxs.load_from(path))
 	catalog._merge_custom(path, CustomAntennas.load_from(path))
 	catalog._merge_custom(path, CustomReceivers.load_from(path))
+	# C7: C2's two ADDED components, last for the same reason and cross-referencing nothing. Merged
+	# here and nowhere else — neither has a default or a carved share, so a custom GPS nobody fits
+	# changes no aircraft, the reference build included.
+	catalog._merge_custom(path, CustomGps.load_from(path))
+	catalog._merge_custom(path, CustomBuzzers.load_from(path))
 	return catalog
 
 
