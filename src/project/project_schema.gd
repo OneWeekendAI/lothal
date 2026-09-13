@@ -106,7 +106,12 @@ const REQUIRED_CATEGORIES := ["frame", "motor", "propeller", "battery", "esc", "
 ## weighs from a dictionary, and the guard is a trailing argument to `Build.from_ids` because it is
 ## the one optional part that also changes the aerodynamics. `Project.to_build` pulls it out of the
 ## components block and hands it over separately for that reason.
-const OPTIONAL_CATEGORIES := ["camera", "vtx", "antenna", "receiver", "guard"]
+## `gps` and `buzzer` arrived with C2 and are registered here by C4 rather than by C5, which the
+## plan had owning this line. C4 asserts that every member of `Build.OPTIONAL_COMPONENTS` persists,
+## and that assertion is red for both of them until this list names them — so the slice that makes
+## the claim is the slice that has to make it true. C5 still owns the persistence BEHAVIOUR: the
+## round trip, the pre-existence fixture, and "" versus absent.
+const OPTIONAL_CATEGORIES := ["camera", "vtx", "antenna", "receiver", "guard", "gps", "buzzer"]
 
 ## Sparse blocks under `decisions`. Named here rather than in Project so that adding a block is a
 ## data change in one place — the unknown-field carry, the round trip and the defaults all read
