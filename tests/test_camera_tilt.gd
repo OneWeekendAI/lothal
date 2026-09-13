@@ -36,6 +36,9 @@ static func run() -> Array:
 		"V2 eye": [_the_eye_swings_up_with_the_camera(catalog)],
 		"V2 seat": [_the_camera_rotates_about_its_own_centre(catalog)],
 		"V2 camera view": [_the_camera_view_report_moves_with_the_tilt(catalog)],
+		"V3 lens": [_a_level_aircraft_looks_above_the_horizon_by_the_tilt(catalog)],
+		"V3 caption": [_the_caption_states_the_builders_uptilt(catalog)],
+		"V3 sim wiring": [_sim_builds_its_airframe_from_the_saved_tweaks()],
 	}
 
 	var results: Array = []
@@ -392,3 +395,121 @@ static func _the_camera_view_report_moves_with_the_tilt(catalog: PartsCatalog) -
 		"the camera-view report moves with the tilt — the plates go further off-axis as the lens looks up",
 		level != INF and tipped > level + 1.0,
 		"nearest plate %.1f° level, %.1f° at 40°" % [level, tipped])
+
+
+# ---------------------------------------------------------------------------
+# V3 — the tilt reaches Sim
+# ---------------------------------------------------------------------------
+
+## An airframe as Sim builds one: the tweaks READ BACK FROM A FILE, then `rebuild(build, tweaks)` —
+## main.gd's two lines, with a test path in place of the real one so the developer's own settings
+## are never touched. Parented to a level drone node, as main.tscn's Drone holds it. Returns
+## [drone, airframe]; freeing the drone frees the airframe with it.
+static func _sim_airframe(catalog: PartsCatalog, degrees: float) -> Array:
+	var written := AssemblyTweaks.new()
+	written.set_mm(AssemblyTweaks.CAMERA_TILT, degrees)
+	written.save(SAVE_PATH)
+	var tweaks := AssemblyTweaks.load_from(SAVE_PATH)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+
+	var drone := Node3D.new()
+	var airframe := AirframeModel.new()
+	drone.add_child(airframe)
+	airframe.rebuild(_build(catalog), tweaks)
+	return [drone, airframe]
+
+
+## A camera standing in for main.tscn's, carrying the chase lens it authors.
+static func _scene_camera() -> Camera3D:
+	var camera := Camera3D.new()
+	camera.fov = 75.0
+	camera.near = 0.02
+	camera.far = 600.0
+	return camera
+
+
+## THE V3 CLAIM. With the aircraft dead level, the lens Sim flies must look above the horizon by
+## EXACTLY the tilt the builder saved — elevation = asin(forward.y), compared with the number typed
+## in, not with anything read off the camera node. Checked at 35 deg and at 0, because a lens that
+## always looked 35 deg up would pass the first alone.
+##
+## No code was added to FpvView to make this pass: the lens is `world_transform_of(_eye)`, and the eye
+## was tipped in V2. This test is the proof that "inherits" is true rather than assumed.
+##
+## MUTATION (run for V3): disconnect the tilt from the eye — let ComponentMesh tip the Body and Lens
+## but not the Eye. The drawing still looks tilted and the feed flies level; this goes red.
+static func _a_level_aircraft_looks_above_the_horizon_by_the_tilt(catalog: PartsCatalog) -> TestResult:
+	var problems: Array[String] = []
+	var seen: Array[String] = []
+	for degrees in [35.0, 0.0]:
+		var pair := _sim_airframe(catalog, degrees)
+		var drone: Node3D = pair[0]
+		var airframe: AirframeModel = pair[1]
+		var view := FpvView.new()
+		var camera := _scene_camera()
+		view.attach(airframe.camera_eye())
+		view.toggle_main()
+		view.place_lenses(camera, Transform3D.IDENTITY)
+
+		var forward: Vector3 = (-camera.transform.basis.z).normalized()
+		var elevation := rad_to_deg(asin(forward.y))
+		var is_fpv := camera.fov == FpvView.PLACEHOLDER_FOV_DEG
+		seen.append("%s° saved -> lens %.4f° above the horizon" % [degrees, elevation])
+		if not is_fpv:
+			problems.append("the main camera is not wearing the FPV lens at %s deg" % degrees)
+		if absf(elevation - degrees) > 1e-4:
+			problems.append("saved %s deg, the lens looks %.4f deg up" % [degrees, elevation])
+		if degrees > 0.0 and not forward.y > 0.0:
+			problems.append("at %s deg the lens looks DOWN" % degrees)
+		if absf(forward.x) > EPS:
+			problems.append("the lens yawed off the centreline (%s)" % forward)
+
+		drone.free()
+		view.free()
+		camera.free()
+
+	return TestResult.new(
+		"a level aircraft's FPV lens looks above the horizon by exactly the saved tilt",
+		problems.is_empty(),
+		"%s%s" % ["; ".join(seen), "" if problems.is_empty() else " — " + str(problems)])
+
+
+## The caption states the builder's number in both modes, and it is the number the lens is actually
+## flying — `tilt_deg()` reads the eye, so under the V3 mutation the caption says 0 over a level feed
+## rather than 35 over one. It never says "no tilt" again.
+static func _the_caption_states_the_builders_uptilt(catalog: PartsCatalog) -> TestResult:
+	var pair := _sim_airframe(catalog, 35.0)
+	var drone: Node3D = pair[0]
+	var airframe: AirframeModel = pair[1]
+	var view := FpvView.new()
+	view.attach(airframe.camera_eye())
+	var inset := view.caption_text()
+	view.toggle_main()
+	var full := view.caption_text()
+	var read := view.tilt_deg()
+	drone.free()
+	view.free()
+
+	return TestResult.new(
+		"the FPV caption states the builder's uptilt in both modes, read off the lens",
+		inset.contains("uptilt 35°") and full.contains("uptilt 35°")
+			and not inset.contains("no tilt") and not full.contains("no tilt")
+			and absf(read - 35.0) < 1e-4,
+		"inset: %s | full: %s | tilt_deg() %.4f" % [inset, full, read])
+
+
+## The runtime checks above run main.gd's two lines; this one holds main.gd to BEING those two
+## lines. If Sim ever stops reading the tweaks file, or rebuilds its airframe without it, it flies
+## Build's 25 deg default whatever the builder saved — which looks entirely plausible in the air
+## and is exactly the kind of wrong nobody notices. Counts what it read, so a moved file fails.
+static func _sim_builds_its_airframe_from_the_saved_tweaks() -> TestResult:
+	var path := "res://src/scenes/main.gd"
+	var source := FileAccess.get_file_as_string(path)
+	var reads := source.contains("AssemblyTweaks.load_from()")
+	var rebuilds := source.contains("airframe.rebuild(build, tweaks)")
+	var attaches := source.contains("fpv_view.attach(airframe.camera_eye())")
+	return TestResult.new(
+		"Sim reads the saved tweaks and rebuilds the airframe it flies FPV from with them",
+		source.length() > 0 and reads and rebuilds and attaches,
+		"%s: %d chars read; load_from %s, rebuild(build, tweaks) %s, attach eye %s" % [
+			path, source.length(), reads, rebuilds, attaches])

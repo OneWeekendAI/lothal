@@ -253,8 +253,13 @@ static func _the_caption_says_the_angle_is_a_placeholder(catalog: PartsCatalog) 
 	airframe.free()
 	view.free()
 
+	# REWRITTEN IN VIDEO SLICE V3, deliberately rather than deleted. This used to assert both captions
+	# said "no tilt", which was true when the model had none. The camera now flies Build's 25 deg
+	# default on this untweaked build, so the honest caption states the uptilt — and "no tilt" still
+	# appearing would be the screen contradicting the feed it labels.
 	return TestResult.new(
-		"both modes say the angle is a placeholder and there is no tilt",
-		inset.contains("placeholder") and inset.contains("no tilt")
-			and full.contains("placeholder") and full.contains("no tilt"),
+		"both modes say the angle is a placeholder and state the uptilt the lens is flying",
+		inset.contains("placeholder") and inset.contains("uptilt 25°")
+			and full.contains("placeholder") and full.contains("uptilt 25°")
+			and not inset.contains("no tilt") and not full.contains("no tilt"),
 		"inset: %s | full: %s" % [inset, full])
