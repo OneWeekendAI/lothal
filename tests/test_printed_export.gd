@@ -27,6 +27,8 @@ static func run() -> Array:
 	results.append(_a_record_round_trips_through_the_file())
 	results.append_array(_one_refusal_refuses_only_itself(catalog))
 	results.append_array(_the_menu_entry_is_live_and_routes())
+	# PR12: the prop-guard branch of the whole-room export, which no fixture reached before.
+	results.append_array(_a_fitted_prop_guard_goes_through_the_room_export(catalog))
 	return results
 
 
@@ -202,6 +204,40 @@ static func _the_menu_entry_is_live_and_routes() -> Array:
 		button_sha != "" and button_sha == String(camera_record.get("geometry_sha256", "-")),
 		"button %s…, record %s…" % [button_sha.substr(0, 12), String(camera_record.get("geometry_sha256", "")).substr(0, 12)]))
 	return results
+
+
+## drone fits the 5" bumper, and the record's bytes must be exactly what Propulsion's own guard export
+## writes — so a room export that tessellated its own ring, or passed the wrong tip radius, fails.
+static func _a_fitted_prop_guard_goes_through_the_room_export(catalog: PartsCatalog) -> Array:
+	_clear_dir(DIR)
+	var guard := catalog.get_part("guard_bumper_5in_abs")
+	var build := ReferenceBuild.build()
+	build.guard = guard
+	var tip_radius_m := 0.0635
+	var container := ProjectContainer.make(Project.create("Guarded"))
+	var result := PrintedExport.export_all(build, tip_radius_m, DIR, container)
+	var record: Dictionary = {}
+	for r in result.get("written", []):
+		if String((r as Dictionary).get("part", "")) == "prop_guard":
+			record = r
+
+	var own_path := DIR.path_join("_propulsion_own_guard.stl")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(own_path))
+	var own := PropulsionExport.write_guard(guard, tip_radius_m, own_path)
+	# Propulsion names its solid by part id, which is also the room export's solid name for a guard.
+	var own_sha := FileAccess.get_file_as_string(own_path).sha256_text() if FileAccess.file_exists(own_path) else ""
+	var member := container.member_bytes(String(record.get("file", ""))).get_string_from_utf8()
+	return [
+		TestResult.new("a drone fitting the 5\" bumper exports its prop guard through the room export: one ring, print four",
+			not record.is_empty() and int(record.get("quantity", 0)) == 4
+				and String(record.get("generator", "")) == "prop_guard@1" and int(record.get("triangles", 0)) > 0,
+			"record %s" % [record]),
+		TestResult.new("and the bytes kept in the drone are exactly the ones Propulsion's own guard export writes",
+			bool(own.get("ok", false)) and own_sha != "" and member.sha256_text() == own_sha
+				and String(record.get("geometry_sha256", "")) == own_sha,
+			"propulsion %s…, member %s…, record %s…" % [own_sha.substr(0, 12), member.sha256_text().substr(0, 12),
+				String(record.get("geometry_sha256", "")).substr(0, 12)]),
+	]
 
 
 static func _parts(records: Array) -> Array:
