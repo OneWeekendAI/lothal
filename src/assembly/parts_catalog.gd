@@ -191,6 +191,17 @@ static func schema_for(category: String) -> String:
 		return ""
 	return str((parsed as Dictionary).get("_schema", ""))
 
+## Whether a catalog entry is printed, bought, or can be either (printed-room PR9, track.md W1P.2).
+## `""` means the catalog does not say — which is every shipped entry today, because no source publishes
+## it and none is invented. An unrecognised value reads as unstated rather than as a guess at intent.
+const FABRICATION_VALUES := ["printed", "bought", "either"]
+
+
+static func fabrication_of(part: Dictionary) -> String:
+	var raw: Variant = part.get("fabrication", null)
+	return String(raw) if raw is String and FABRICATION_VALUES.has(String(raw)) else ""
+
+
 func get_part(part_id: String) -> Dictionary:
 	return by_id.get(part_id, {})
 

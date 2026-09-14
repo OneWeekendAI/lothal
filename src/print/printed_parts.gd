@@ -18,6 +18,10 @@ const PROP_GUARD := "prop_guard"
 const ARM_GUARD := ArmGuard.PART_ID
 const CAMERA_MOUNT := CameraMount.PART_ID
 const ANTENNA_MOUNT := AntennaMount.PART_ID
+## A frame whose catalog entry says it can be printed (PR9). Listed only then.
+const FRAME := "frame"
+## Bumped BY HAND whenever the frame's exported triangles change for the same frame (persistence §7.4).
+const FRAME_GENERATOR_VERSION := 1
 ## Bumped BY HAND whenever the prop guard ring's triangles change for the same guard (persistence §7.4).
 const PROP_GUARD_GENERATOR_VERSION := 1
 
@@ -60,17 +64,61 @@ static func solid_for(build: Build, part_id: String, prop_tip_radius_m: float) -
 			if build.guard.is_empty():
 				out["reason"] = "%s: no prop guard is fitted" % part_id
 				return out
+			if PartsCatalog.fabrication_of(build.guard) == "bought":
+				out["reason"] = "%s: %s is a bought part in the catalog, not a printed one" % [
+					part_id, String(build.guard.get("part_id", part_id))]
+				return out
 			out["solid_name"] = String(build.guard.get("part_id", part_id))
 			out["generator"] = "%s@%d" % [part_id, PROP_GUARD_GENERATOR_VERSION]
 			out["quantity"] = MotorLayout.MOTOR_NAMES.size()
 			out["triangles"] = PropulsionExport.guard_triangles_mm(build.guard, prop_tip_radius_m)
 			dims = {"ok": not (out["triangles"] as Array).is_empty(),
 				"reason": "%s: %s has no ring to print" % [part_id, out["solid_name"]]}
+		FRAME:
+			var fabrication := PartsCatalog.fabrication_of(build.frame)
+			var frame_id := String(build.frame.get("part_id", part_id))
+			if fabrication != "printed" and fabrication != "either":
+				out["reason"] = "%s: %s is not marked printable in the catalog" % [part_id, frame_id]
+				return out
+			out["solid_name"] = "%s-%s" % [part_id, frame_id]
+			out["generator"] = "%s@%d" % [part_id, FRAME_GENERATOR_VERSION]
+			out["quantity"] = 1
+			out["triangles"] = frame_triangles_mm(build.frame)
+			if (out["triangles"] as Array).is_empty():
+				dims = {"ok": false, "reason": "%s: %s has no plate geometry to print" % [part_id, frame_id]}
+			else:
+				# Checked HERE, not left to the writer, so the row can say why before the button is pressed.
+				# A catalog frame is several plates that touch along identical edges; StlWriter counts edges
+				# across the whole file and cannot tell that from a bad winding, so every catalog frame is
+				# refused today. That is a limit of the check, recorded (track §7F), never overridden here.
+				var report := StlWriter.check_manifold(out["triangles"])
+				dims = {"ok": bool(report["ok"]), "reason": "%s: %s cannot be written as one checked solid (%s)" % [
+					part_id, frame_id, ", ".join(PackedStringArray(report["reasons"]))]}
 		_:
 			out["reason"] = "%s: not a printed part" % part_id
 			return out
 	out["ok"] = bool(dims.get("ok", false))
 	out["reason"] = "" if bool(out["ok"]) else String(dims.get("reason", ""))
+	return out
+
+
+## The frame as triangles, read back off FrameExport's own STL text rather than tessellated a second
+## time here: FrameExport is the one frame solid, and this is its second reader, not a second writer.
+static func frame_triangles_mm(frame: Dictionary) -> Array:
+	var text := FrameExport.to_stl(AirframeDocument.from_catalog_frame(frame))
+	var out: Array = []
+	var corners := PackedVector3Array()
+	for line in text.split("\n"):
+		var stripped := line.strip_edges()
+		if not stripped.begins_with("vertex "):
+			continue
+		var parts := stripped.substr(7).split(" ", false)
+		if parts.size() != 3:
+			continue
+		corners.append(Vector3(float(parts[0]), float(parts[1]), float(parts[2])))
+		if corners.size() == 3:
+			out.append(corners)
+			corners = PackedVector3Array()
 	return out
 
 
@@ -85,11 +133,31 @@ static func for_build(build: Build) -> Array:
 	if build.components.has("antenna"):
 		rows.append(_antenna_mount_row(build))
 	if not build.guard.is_empty():
+		var guard_fabrication := PartsCatalog.fabrication_of(build.guard)
+		var guard_note := "Chosen under Propulsion. One ring, print four. The catalog does not say whether this guard is bought or printed."
+		if guard_fabrication == "bought":
+			guard_note = "Chosen under Propulsion. A bought part in the catalog, so there is nothing to print."
+		elif guard_fabrication == "printed":
+			guard_note = "Chosen under Propulsion. A printed part in the catalog. One ring, print four."
+		elif guard_fabrication == "either":
+			guard_note = "Chosen under Propulsion. Bought or printed, per the catalog. One ring, print four."
 		rows.append({
 			"id": PROP_GUARD,
 			"label": "Prop guard — %s" % String(build.guard.get("name", build.guard.get("part_id", ""))),
-			"note": "Chosen under Propulsion. One ring, print four.",
-			"exportable": true,
+			"note": guard_note,
+			"exportable": guard_fabrication != "bought",
+			"fittable": false,
+			"fitted": true,
+		})
+	var frame_fabrication := PartsCatalog.fabrication_of(build.frame)
+	if frame_fabrication == "printed" or frame_fabrication == "either":
+		var frame_solid := solid_for(build, FRAME, 0.0)
+		rows.append({
+			"id": FRAME,
+			"label": "Frame — %s" % String(build.frame.get("name", build.frame.get("part_id", ""))),
+			"note": ("A %s frame in the catalog: the plates as one solid, from the frame export." % frame_fabrication) \
+				if bool(frame_solid["ok"]) else String(frame_solid["reason"]),
+			"exportable": bool(frame_solid["ok"]),
 			"fittable": false,
 			"fitted": true,
 		})

@@ -23,6 +23,7 @@ const LABELS := {
 	"camera_mount": "camera mount",
 	"antenna_mount": "antenna mount",
 	"prop_guard": "prop guard",
+	"frame": "frame",
 }
 
 

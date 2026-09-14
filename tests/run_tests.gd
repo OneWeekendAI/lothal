@@ -22,7 +22,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components",
 	"camera tilt", "video warnings", "video panel",
-	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence"]
+	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication"]
 
 func _init() -> void:
 	var total := 0
@@ -106,6 +106,8 @@ func _run_suite(suite_name: String) -> Array:
 		"printed export": return TestPrintedExport.run()
 		# PR5: on open, a printed part that no longer matches what the build generates is said, with why.
 		"printed divergence": return TestPrintedDivergence.run()
+		# PR9: printable vs bought, per catalog entry (W1P.2) — no shipped value invented.
+		"fabrication": return TestFabrication.run()
 		"authored blade": return TestAuthoredBlade.run()
 		"thrust overlay": return TestThrustOverlay.run()
 		"campbell overlay": return TestCampbellOverlay.run()
