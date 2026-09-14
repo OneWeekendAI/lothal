@@ -16,6 +16,7 @@ extends RefCounted
 
 const PROP_GUARD := "prop_guard"
 const ARM_GUARD := ArmGuard.PART_ID
+const CAMERA_MOUNT := CameraMount.PART_ID
 
 
 static func for_build(build: Build) -> Array:
@@ -24,6 +25,8 @@ static func for_build(build: Build) -> Array:
 		return rows
 	if not build.frame.is_empty():
 		rows.append(_arm_guard_row(build))
+	if build.components.has("camera"):
+		rows.append(_camera_mount_row(build))
 	if not build.guard.is_empty():
 		rows.append({
 			"id": PROP_GUARD,
@@ -34,6 +37,33 @@ static func for_build(build: Build) -> Array:
 			"fitted": true,
 		})
 	return rows
+
+
+## The camera mount's row (PR2). Listed whenever a camera is fitted, refused or not, because the gap
+## that decides whether it fits is edited on this row — a refused mount with no row would hide the
+## one field that fixes it. Carries `plate_spacing_mm` so the panel can show the gap slider.
+static func _camera_mount_row(build: Build) -> Dictionary:
+	var camera: Dictionary = build.components.get("camera", {})
+	var tilt := float(build.assembly_value("camera_tilt_deg"))
+	var dims := CameraMount.dimensions(camera, build.printing, tilt)
+	var gap_text := "Plate gap %.1f mm%s" % [float(dims["plate_spacing_mm"]),
+		" (guess)" if bool(dims["plate_spacing_guessed"]) else ""]
+	var note := ""
+	if not bool(dims["ok"]):
+		note = "%s. %s." % [String(dims["reason"]), gap_text]
+	else:
+		note = "Camera %.1f × %.1f × %.1f mm (published). %s → %.1f mm cheek each side. M2 screw at the box centre (guess). Printed at %.0f°, the Camera tilt shared by every drone. No weight of its own: the camera's mass is the camera as mounted. One cheek, print two." % [
+			float(dims["camera_length_mm"]), float(dims["camera_width_mm"]), float(dims["camera_height_mm"]),
+			gap_text, float(dims["cheek_thickness_mm"]), tilt]
+	return {
+		"id": CAMERA_MOUNT,
+		"label": "Camera mount — TPU cheeks",
+		"note": note,
+		"exportable": bool(dims["ok"]),
+		"fittable": false,
+		"fitted": false,
+		"plate_spacing_mm": float(dims["plate_spacing_mm"]),
+	}
 
 
 ## The arm guard's row. Its note is where the guesses are said: every number the sleeve is made from

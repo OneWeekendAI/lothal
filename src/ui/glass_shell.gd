@@ -1128,6 +1128,17 @@ func _on_printed_export_requested(part_id: String) -> void:
 			DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
 			_report_export(StlWriter.write(solid_name,
 				ArmGuard.triangles_mm(ArmGuard.dimensions(build.frame, lab.printing)), path), path)
+		PrintedParts.CAMERA_MOUNT:
+			# The build WITH the assembly on it: the cheek is printed at the tilt the Camera slider
+			# shows, and `current_build()` alone carries the default tilt.
+			var build := lab.build_with_open_harness()
+			var camera: Dictionary = build.components.get("camera", {})
+			var solid_name := _safe_export_name("%s-%s" % [CameraMount.PART_ID,
+				String(camera.get("part_id", "camera"))])
+			var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
+			DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
+			_report_export(StlWriter.write(solid_name, CameraMount.triangles_mm(CameraMount.dimensions(
+				camera, lab.printing, float(build.assembly_value("camera_tilt_deg")))), path), path)
 		_:
 			push_warning("no export for printed part '%s'" % part_id)
 

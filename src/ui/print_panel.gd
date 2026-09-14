@@ -15,6 +15,8 @@ signal clearance_edited(mm: float)
 signal export_requested(part_id: String)
 ## An arm-guard setting moved under the mouse: `ArmGuard.FITTED` with a bool, or a length key in mm.
 signal arm_guard_edited(key: String, value: Variant)
+## A camera-mount setting moved: `CameraMount.PLATE_SPACING` in mm.
+signal camera_mount_edited(key: String, value: Variant)
 
 var _slider: HSlider
 var _value: Label
@@ -22,6 +24,7 @@ var _hint: Label
 var _parts: VBoxContainer
 var _buttons: Dictionary = {}
 var _fit_toggles: Dictionary = {}
+var _gap_sliders: Dictionary = {}
 var _rows: Array = []
 var _updating := false
 
@@ -93,6 +96,7 @@ func render(build: Build, printing: Dictionary) -> void:
 		child.queue_free()
 	_buttons.clear()
 	_fit_toggles.clear()
+	_gap_sliders.clear()
 	_rows = PrintedParts.for_build(build)
 
 	if _rows.is_empty():
@@ -123,6 +127,17 @@ func render(build: Build, printing: Dictionary) -> void:
 			fit.toggled.connect(func(on: bool) -> void: arm_guard_edited.emit(ArmGuard.FITTED, on))
 			line.add_child(fit)
 			_fit_toggles[id] = fit
+		if id == PrintedParts.CAMERA_MOUNT and row.has("plate_spacing_mm"):
+			var gap := HSlider.new()
+			gap.min_value = CameraMount.MIN_PLATE_SPACING_MM
+			gap.max_value = CameraMount.MAX_PLATE_SPACING_MM
+			gap.step = 0.5
+			gap.value = float(row["plate_spacing_mm"])
+			gap.tooltip_text = CameraMount.PLATE_SPACING_HINT
+			gap.value_changed.connect(func(mm: float) -> void:
+				camera_mount_edited.emit(CameraMount.PLATE_SPACING, mm))
+			line.add_child(gap)
+			_gap_sliders[id] = gap
 		var button := Button.new()
 		button.text = "Export STL…"
 		button.disabled = not bool(row["exportable"])
