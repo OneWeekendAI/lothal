@@ -23,6 +23,8 @@ signal antenna_mount_edited(key: String, value: Variant)
 signal divergence_kept(part_id: String)
 ## PR10: a GPS-mast setting moved: `GpsMast.FITTED` with a bool, or a length key in mm.
 signal gps_mast_edited(key: String, value: Variant)
+## PR11: a battery-pad setting moved: `BatteryPad.FITTED` with a bool, or a length key in mm.
+signal battery_pad_edited(key: String, value: Variant)
 signal divergence_reprint_requested(part_id: String)
 
 var _slider: HSlider
@@ -147,6 +149,13 @@ func render(build: Build, printing: Dictionary) -> void:
 			mast_fit.toggled.connect(func(on: bool) -> void: gps_mast_edited.emit(GpsMast.FITTED, on))
 			line.add_child(mast_fit)
 			_fit_toggles[id] = mast_fit
+		if bool(row.get("fittable", false)) and id == PrintedParts.BATTERY_PAD:
+			var pad_fit := CheckBox.new()
+			pad_fit.text = "Fitted — count its weight"
+			pad_fit.button_pressed = bool(row["fitted"])
+			pad_fit.toggled.connect(func(on: bool) -> void: battery_pad_edited.emit(BatteryPad.FITTED, on))
+			line.add_child(pad_fit)
+			_fit_toggles[id] = pad_fit
 		if id == PrintedParts.CAMERA_MOUNT and row.has("plate_spacing_mm"):
 			var gap := HSlider.new()
 			gap.min_value = CameraMount.MIN_PLATE_SPACING_MM

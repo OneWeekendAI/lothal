@@ -748,6 +748,20 @@ func set_printing(p_printing: Dictionary) -> void:
 	_recompute()
 
 
+## Where the pack sits: `{"mount": MountPoint or null, "position": Vector3}`. THE ONE SEAT — `mass_parts`
+## weighs the pack here and the printed battery pad (PR11) hangs beneath it, so the two cannot disagree.
+##
+## A frame that does not offer the saved mount — a whoop whose bottom plate has no room for strap slots —
+## falls back to the top plate rather than dropping the pack at the origin. Same rule as AirframeModel's
+## drawing: the pack is somewhere on every real aircraft.
+func battery_seat() -> Dictionary:
+	var battery_mount := MountLayout.by_id(mount_points(), String(assembly_value("battery_mount")))
+	if battery_mount == null:
+		battery_mount = MountLayout.by_id(mount_points(), "strap_top")
+	return {"mount": battery_mount, "position": MountLayout.seated_centre_m(battery_mount, battery_size_m(),
+		float(assembly_value("battery_offset_m")))}
+
+
 ## One assembly value, with the parts-implied fallback applied. The single reader, so a caller
 ## cannot accidentally invent a different default for a key it happens to know about.
 func assembly_value(key: String) -> Variant:
@@ -979,14 +993,7 @@ func mass_parts() -> Array:
 	# are the same geometry" true of mass and not just of clearance.
 	var battery_mass_kg := float(battery["mass_g"]) / 1000.0
 	var battery_size := battery_size_m()
-	var battery_mount := MountLayout.by_id(mount_points(), String(assembly_value("battery_mount")))
-	if battery_mount == null:
-		# A frame that does not offer the saved mount — a whoop whose bottom plate has no room for
-		# strap slots — falls back to the top plate rather than dropping the pack at the origin.
-		# Same rule as AirframeModel's drawing: the pack is somewhere on every real aircraft.
-		battery_mount = MountLayout.by_id(mount_points(), "strap_top")
-	var battery_position := MountLayout.seated_centre_m(battery_mount, battery_size,
-		float(assembly_value("battery_offset_m")))
+	var battery_position: Vector3 = battery_seat()["position"]
 	parts.append(PartMass.new(battery_mass_kg, battery_position,
 		InertiaPrimitives.box(battery_mass_kg, battery_size), "Pack"))
 
@@ -1187,6 +1194,8 @@ func mass_parts() -> Array:
 	parts.append_array(ArmGuard.part_masses(self, printing))
 	# PR10: the printed GPS mast, on the same terms — only when fitted, over the GPS bay.
 	parts.append_array(GpsMast.part_masses(self, printing))
+	# PR11: the printed battery pad, only when fitted, beneath the pack's own seat.
+	parts.append_array(BatteryPad.part_masses(self, printing))
 
 	return parts
 

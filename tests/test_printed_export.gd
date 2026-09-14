@@ -77,12 +77,13 @@ static func _every_part_writes_and_records() -> Array:
 			disk_matches = false
 
 	return [
-		TestResult.new("the reference build exports its three printable parts, and refuses nothing",
-			parts == ["arm_guard", "camera_mount", "antenna_mount"] and parts == expected
+		# Four since PR11: every build fits a pack, so every build lists a battery pad.
+		TestResult.new("the reference build exports its four printable parts, and refuses nothing",
+			parts == ["arm_guard", "camera_mount", "antenna_mount", "battery_pad"] and parts == expected
 				and (result.get("refused", []) as Array).is_empty(),
 			"wrote %s, listed %s, refused %s" % [parts, expected, result.get("refused")]),
 		TestResult.new("each lands in the drone as printed/… with a record that describes those exact bytes at 0.35 mm",
-			written.size() == 3 and bad.is_empty() and container.project.print_records.size() == 3,
+			written.size() == 4 and bad.is_empty() and container.project.print_records.size() == 4,
 			"problems %s; %d records on the project" % [bad, container.project.print_records.size()]),
 		TestResult.new("and the STL written to the exports folder is byte-for-byte the one kept in the drone",
 			disk_matches, "disk copies match: %s" % disk_matches),
@@ -132,11 +133,11 @@ static func _one_refusal_refuses_only_itself(catalog: PartsCatalog) -> Array:
 		if String(f).begins_with("arm_guard"):
 			arm_files += 1
 	return [
-		TestResult.new("the whoop's arm guard is refused by name, and the camera and antenna mounts still write",
+		TestResult.new("the whoop's arm guard is refused by name, and the camera mount, antenna mount and battery pad still write",
 			refused.size() == 1 and String(refused[0]).begins_with("arm_guard:")
 				and String(refused[0]).contains("frame_65mm_whoop")
-				and _parts(result.get("written", [])) == ["camera_mount", "antenna_mount"]
-				and container.project.print_records.size() == 2 and arm_files == 0,
+				and _parts(result.get("written", [])) == ["camera_mount", "antenna_mount", "battery_pad"]
+				and container.project.print_records.size() == 3 and arm_files == 0,
 			"refused %s, wrote %s, %d arm-guard files" % [refused, _parts(result.get("written", [])), arm_files]),
 		TestResult.new("and the summary names both what was written and what was not",
 			summary.contains("camera_mount") and summary.contains("antenna_mount")

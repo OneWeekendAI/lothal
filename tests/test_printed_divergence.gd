@@ -52,9 +52,9 @@ static func _keep_hides_without_deleting() -> TestResult:
 	PrintedDivergence.acknowledge(printing, _for_part(before, "camera_mount"))
 	build.set_printing(printing.duplicate(true))
 	var after := PrintedDivergence.check(container.project, container, build, 0.0)
-	return TestResult.new("Keep hides the camera mount's message, leaves the other two, and deletes no record",
-		before.size() == 3 and after.size() == 2 and _for_part(after, "camera_mount").is_empty()
-			and container.project.print_records.size() == 3,
+	return TestResult.new("Keep hides the camera mount's message, leaves the other three, and deletes no record",
+		before.size() == 4 and after.size() == 3 and _for_part(after, "camera_mount").is_empty()
+			and container.project.print_records.size() == 4,
 		"before %d, after %s, %d records" % [before.size(), _messages(after), container.project.print_records.size()])
 
 
@@ -81,9 +81,9 @@ static func _reprint_adds_one_record_for_that_part_only() -> TestResult:
 	var result := PrintedExport.export_part(build, "camera_mount", 0.0, DIR, container)
 	var records := container.project.print_records
 	var after := PrintedDivergence.check(container.project, container, build, 0.0)
-	return TestResult.new("Reprint writes exactly one new record, for the camera mount, which then matches; the other two still diverge",
-		bool(result.get("ok", false)) and records.size() == 4 and String(records[records.size() - 1]["part"]) == "camera_mount"
-			and after.size() == 2 and _for_part(after, "camera_mount").is_empty(),
+	return TestResult.new("Reprint writes exactly one new record, for the camera mount, which then matches; the other three still diverge",
+		bool(result.get("ok", false)) and records.size() == 5 and String(records[records.size() - 1]["part"]) == "camera_mount"
+			and after.size() == 3 and _for_part(after, "camera_mount").is_empty(),
 		"ok %s, %d records (last %s), findings %s" % [result.get("ok"), records.size(),
 			records[records.size() - 1].get("part", "") if not records.is_empty() else "none", _messages(after)])
 
@@ -126,7 +126,7 @@ static func _keep_survives_reopen_and_the_panel_routes() -> TestResult:
 	if wrote:
 		between.open_project(path)
 	var kept_on_disk := _for_part(between.printed_divergence, "camera_mount").is_empty() \
-		and between.printed_divergence.size() == 2
+		and between.printed_divergence.size() == 3
 	between.free()
 	if reprint_button != null:
 		reprint_button.pressed.emit()
@@ -151,10 +151,10 @@ static func _keep_survives_reopen_and_the_panel_routes() -> TestResult:
 		handle.close()
 
 	return TestResult.new(
-		"the panel's Keep hides the camera mount and its Reprint re-exports the antenna mount; reopened, both stay quiet and only the arm guard speaks",
-		wrote and shown_before == 3 and keep_button != null and reprint_button != null and after_keep == 2
-			and records_after_keep == 3 and kept_on_disk
-			and after_reprint == 1 and records == 4 and still.is_empty() and reopened_count == 1,
+		"the panel's Keep hides the camera mount and its Reprint re-exports the antenna mount; reopened, both stay quiet and only the arm guard and battery pad speak",
+		wrote and shown_before == 4 and keep_button != null and reprint_button != null and after_keep == 3
+			and records_after_keep == 4 and kept_on_disk
+			and after_reprint == 2 and records == 5 and still.is_empty() and reopened_count == 2,
 		"wrote %s; shown %d, after keep %d (%d records, on disk %s), after reprint %d, %d records; reopened %d" % [
 			wrote, shown_before, after_keep, records_after_keep, kept_on_disk, after_reprint, records, reopened_count])
 
@@ -195,8 +195,8 @@ static func _an_unchanged_drone_says_nothing() -> TestResult:
 	var e := _exported({}, 25.0)
 	var container: ProjectContainer = e["container"]
 	var findings := PrintedDivergence.check(container.project, container, _build({}, 25.0), 0.0)
-	return TestResult.new("a drone whose parts still generate what was exported says nothing — with three records to compare",
-		(e["written"] as Array).size() == 3 and container.project.print_records.size() == 3 and findings.is_empty(),
+	return TestResult.new("a drone whose parts still generate what was exported says nothing — with four records to compare",
+		(e["written"] as Array).size() == 4 and container.project.print_records.size() == 4 and findings.is_empty(),
 		"%d records, findings %s" % [container.project.print_records.size(), _messages(findings)])
 
 
@@ -214,7 +214,7 @@ static func _a_clearance_change_is_named() -> TestResult:
 	return TestResult.new(
 		"0.20 → 0.35 mm clearance: the camera mount differs, dated, keep-or-reprint, naming the clearance from and to",
 		String(camera.get("kind", "")) == "differs" and message.contains(date) and message.contains("reprint")
-			and message.contains("clearance changed from 0.20 to 0.35 mm") and findings.size() == 3,
+			and message.contains("clearance changed from 0.20 to 0.35 mm") and findings.size() == 4,
 		"%d findings; camera \"%s\"" % [findings.size(), message])
 
 
@@ -243,7 +243,7 @@ static func _the_newest_record_decides() -> TestResult:
 	container.project.printing = {}
 	var findings := PrintedDivergence.check(container.project, container, _build({}, 25.0), 0.0)
 	return TestResult.new("with an older stale record and a newer matching one, the newest decides: nothing is said",
-		container.project.print_records.size() == 6 and (fresh.get("written", []) as Array).size() == 3
+		container.project.print_records.size() == 8 and (fresh.get("written", []) as Array).size() == 4
 			and findings.is_empty(),
 		"%d records, findings %s" % [container.project.print_records.size(), _messages(findings)])
 

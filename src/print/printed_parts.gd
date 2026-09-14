@@ -21,6 +21,7 @@ const ANTENNA_MOUNT := AntennaMount.PART_ID
 ## A frame whose catalog entry says it can be printed (PR9). Listed only then.
 const FRAME := "frame"
 const GPS_MAST := GpsMast.PART_ID
+const BATTERY_PAD := BatteryPad.PART_ID
 ## Bumped BY HAND whenever the frame's exported triangles change for the same frame (persistence §7.4).
 const FRAME_GENERATOR_VERSION := 1
 ## Bumped BY HAND whenever the prop guard ring's triangles change for the same guard (persistence §7.4).
@@ -70,6 +71,12 @@ static func solid_for(build: Build, part_id: String, prop_tip_radius_m: float) -
 			# The mast height is the GPS tweak, one global setting — recorded like the camera tilt.
 			out["inputs"] = {"mast_height_mm": float(dims.get("mast_height_mm", 0.0))}
 			out["triangles"] = GpsMast.triangles_mm(dims)
+		BATTERY_PAD:
+			dims = BatteryPad.dimensions(build.battery, build.printing)
+			out["solid_name"] = "%s-%s" % [part_id, String(build.battery.get("part_id", "battery"))]
+			out["generator"] = "%s@%d" % [part_id, BatteryPad.GENERATOR_VERSION]
+			out["quantity"] = 1
+			out["triangles"] = BatteryPad.triangles_mm(dims)
 		PROP_GUARD:
 			if build.guard.is_empty():
 				out["reason"] = "%s: no prop guard is fitted" % part_id
@@ -144,6 +151,8 @@ static func for_build(build: Build) -> Array:
 		rows.append(_antenna_mount_row(build))
 	if build.components.has("gps"):
 		rows.append(_gps_mast_row(build))
+	if not build.battery.is_empty():
+		rows.append(_battery_pad_row(build))
 	if not build.guard.is_empty():
 		var guard_fabrication := PartsCatalog.fabrication_of(build.guard)
 		var guard_note := "Chosen under Propulsion. One ring, print four. The catalog does not say whether this guard is bought or printed."
@@ -250,6 +259,30 @@ static func _gps_mast_row(build: Build) -> Dictionary:
 	return {
 		"id": GPS_MAST,
 		"label": "GPS mast — printed stalk",
+		"note": note,
+		"exportable": bool(dims["ok"]),
+		"fittable": bool(dims["ok"]),
+		"fitted": fitted and bool(dims["ok"]),
+	}
+
+
+## The battery pad's row (PR11). Listed whenever a pack is fitted, which is always; fittable.
+static func _battery_pad_row(build: Build) -> Dictionary:
+	var dims := BatteryPad.dimensions(build.battery, build.printing)
+	var fitted := BatteryPad.is_fitted(build.printing)
+	var note := ""
+	if not bool(dims["ok"]):
+		note = String(dims["reason"])
+	else:
+		note = "Pack %.1f × %.1f mm (published) plus a %.1f mm margin%s. %.1f mm thick%s, two %.1f mm strap slots%s. %.2f g%s." % [
+			float(dims["battery_length_mm"]), float(dims["battery_width_mm"]),
+			float(dims["margin_mm"]), " (guess)" if bool(dims["margin_guessed"]) else "",
+			float(dims["thickness_mm"]), " (guess)" if bool(dims["thickness_guessed"]) else "",
+			float(dims["slot_width_mm"]), " (guess)" if bool(dims["slot_guessed"]) else "",
+			BatteryPad.mass_kg(dims) * 1000.0, "" if fitted else " — not counted in the weight until fitted"]
+	return {
+		"id": BATTERY_PAD,
+		"label": "Battery pad — TPU grip pad",
 		"note": note,
 		"exportable": bool(dims["ok"]),
 		"fittable": bool(dims["ok"]),

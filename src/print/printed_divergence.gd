@@ -25,6 +25,7 @@ const LABELS := {
 	"prop_guard": "prop guard",
 	"frame": "frame",
 	"gps_mast": "GPS mast",
+	"battery_pad": "battery pad",
 }
 
 
