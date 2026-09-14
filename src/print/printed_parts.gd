@@ -131,9 +131,11 @@ static func _antenna_mount_row(build: Build) -> Dictionary:
 	if not bool(dims["ok"]):
 		note = "%s. %s." % [String(dims["reason"]), guesses]
 	else:
-		note = "Antenna %.1f mm wide (published) → %.1f mm bore. %s. The tube leans %.0f° aft, the angle the antenna is drawn at. No weight of its own: the antenna's share holds it." % [
-			float(dims["antenna_width_mm"]), 2.0 * float(dims["tube_bore_radius_mm"]), guesses,
-			float(dims["lean_deg"])]
+		var source := "%.1f mm mount diameter (published)" % float(dims["antenna_width_mm"])
+		if bool(dims["bore_from_width"]):
+			source = "%.1f mm, from published width — this antenna publishes no mount_diameter_mm, so the bore may be wider than the barrel it holds" % float(dims["antenna_width_mm"])
+		note = "Antenna bore %.1f mm: %s. %s. The tube leans %.0f° aft, the angle the antenna is drawn at. No weight of its own: the antenna's share holds it." % [
+			2.0 * float(dims["tube_bore_radius_mm"]), source, guesses, float(dims["lean_deg"])]
 	return {
 		"id": ANTENNA_MOUNT,
 		"label": "Antenna mount — standoff clamp and tube",

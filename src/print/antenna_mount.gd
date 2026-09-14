@@ -19,7 +19,10 @@ extends RefCounted
 ##
 ## ## What is published and what is guessed
 ##
-##   - **Antenna width: read.** An antenna that does not publish `width_mm` refuses by name. It is the
+##   - **Mount diameter: read when published (PR3b).** `specs.mount_diameter_mm` is the barrel the tube
+##     actually holds. No catalog antenna publishes one yet, and none is invented.
+##   - **Antenna width: the fallback.** Without a mount diameter the bore is the published `width_mm`,
+##     and the row says so. An antenna that publishes neither refuses by name. The width is the
 ##     published box's width, which for a whip is the element and for a circular-polarised antenna is
 ##     the widest part of its cloverleaf — so an RHCP antenna's tube is wide. Honest about the data,
 ##     not a claim about how every antenna is best held.
@@ -103,11 +106,16 @@ static func dimensions(antenna: Dictionary, printing: Dictionary) -> Dictionary:
 		return out
 	var antenna_id := String(antenna.get("part_id", "antenna"))
 	var specs: Dictionary = antenna.get("specs", {})
-	if specs.get("width_mm") == null or float(specs["width_mm"]) <= 0.0:
-		out["reason"] = "%s: %s publishes no width_mm, and the tube's bore is not guessed" % [PART_ID, antenna_id]
+	# PR3b: the barrel the tube holds, when the part publishes it; otherwise the published width, and the
+	# row says the bore came from width. Neither is invented for a part that publishes nothing.
+	var has_barrel := specs.get("mount_diameter_mm") != null and float(specs["mount_diameter_mm"]) > 0.0
+	var has_width := specs.get("width_mm") != null and float(specs["width_mm"]) > 0.0
+	if not has_barrel and not has_width:
+		out["reason"] = "%s: %s publishes no mount_diameter_mm or width_mm, and the tube's bore is not guessed" % [
+			PART_ID, antenna_id]
 		return out
 
-	var width := float(specs["width_mm"])
+	var width := float(specs["mount_diameter_mm"]) if has_barrel else float(specs["width_mm"])
 	var phi := deg_to_rad(ComponentMesh.WHIP_LEAN_DEGREES)
 	var ri := diameter * 0.5 + clearance
 	var ro := ri + RING_WALL_MM
@@ -115,6 +123,7 @@ static func dimensions(antenna: Dictionary, printing: Dictionary) -> Dictionary:
 	var big_rt := rt + TUBE_WALL_MM
 	out.merge({
 		"antenna_width_mm": width,
+		"bore_from_width": not has_barrel,
 		"standoff_bore_radius_mm": ri,
 		"ring_outer_radius_mm": ro,
 		# Tall enough that the leaning tube's forward rim still lands inside the bar it joins.

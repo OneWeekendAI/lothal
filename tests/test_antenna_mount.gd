@@ -36,7 +36,46 @@ static func run() -> Array:
 	results.append(_no_antenna_no_row())
 	results.append(_the_standoffs_are_labelled_guesses_edited_per_drone())
 	results.append(_a_set_diameter_bores_the_rings(rhcp))
+	results.append_array(_a_published_mount_diameter_wins_and_the_fallback_says_width(rhcp))
 	return results
+
+
+## PR3b. An antenna that publishes `mount_diameter_mm` (the barrel the tube actually holds) is bored to
+## it; one that does not falls back to its published width and SAYS so on the row. No catalog antenna
+## publishes one today, so the accepting fixture is a copy of the RHCP entry with the field added —
+## the only arrangement where "reads the field" and "reads width" give different bores.
+static func _a_published_mount_diameter_wins_and_the_fallback_says_width(rhcp: Dictionary) -> Array:
+	var barrel := rhcp.duplicate(true)
+	barrel["part_id"] = "antenna_rhcp_with_barrel"
+	(barrel["specs"] as Dictionary)["mount_diameter_mm"] = 6.0
+	var d_barrel := AntennaMount.dimensions(barrel, {})
+	var d_width := AntennaMount.dimensions(rhcp, {})
+
+	var build := ReferenceBuild.build()
+	var width_note := _antenna_note(build)
+	build.components["antenna"] = barrel
+	var barrel_note := _antenna_note(build)
+	return [
+		TestResult.new("a published 6 mm mount diameter bores the tube to 3.2 mm radius, not the 15 mm width",
+			absf(float(d_barrel.get("tube_bore_radius_mm", 0.0)) - 3.2) < 1e-6
+				and not bool(d_barrel.get("bore_from_width", true))
+				and absf(float(d_width.get("tube_bore_radius_mm", 0.0)) - 7.7) < 1e-6
+				and bool(d_width.get("bore_from_width", false)),
+			"barrel %.3f (from width %s), rhcp %.3f (from width %s)" % [d_barrel.get("tube_bore_radius_mm", 0.0),
+				d_barrel.get("bore_from_width"), d_width.get("tube_bore_radius_mm", 0.0), d_width.get("bore_from_width")]),
+		TestResult.new("the row says the fallback bore comes from the published width, and says nothing of width once a diameter is published",
+			width_note.contains("from published width") and width_note.contains("no mount_diameter_mm")
+				and barrel_note.contains("6.0 mm mount diameter (published)")
+				and not barrel_note.contains("from published width"),
+			"width \"%s\" | barrel \"%s\"" % [width_note, barrel_note]),
+	]
+
+
+static func _antenna_note(build: Build) -> String:
+	for row in PrintedParts.for_build(build):
+		if String(row["id"]) == AntennaMount.PART_ID:
+			return String(row["note"])
+	return ""
 
 
 static func _the_solid_is_rings_bar_and_tube(antenna: Dictionary) -> Array:
