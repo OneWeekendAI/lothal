@@ -31,6 +31,10 @@ var propeller_meshes: Dictionary = {}
 ## stale ring where a motor used to be. Reads its inner wall from PropGuard.tip_clearance_mm
 ## against the prop's own drawn radius (never a second geometry copy) — see guard_mesh.gd.
 var guard_meshes: Dictionary = {}
+## motor name -> ArmGuardMesh. Empty unless the build's printing block FITS arm guards (printed-room
+## PR1). Parented onto the frame body rather than the pad, because a sleeve sits inboard of the motor
+## along the arm and its seat is ArmGuard.seat_position_m — the point Build.mass_parts weighs it at.
+var arm_guard_meshes: Dictionary = {}
 ## The pack. Parented onto the frame for the same reason the motors hang off the arm-tip pads: the
 ## mount's height is FrameModel's, the standoff tweak moves it, and a frame rebuild frees it rather
 ## than leaving a stale pack behind.
@@ -80,6 +84,7 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 	motor_meshes.clear()
 	propeller_meshes.clear()
 	guard_meshes.clear()
+	arm_guard_meshes.clear()
 	arm_m = build.arm_m
 
 	# The pack, on whichever of the frame's strap mounts the builder chose, slid to wherever they
@@ -203,6 +208,20 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 			guard.position = Vector3(0, motor.position.y + propeller.position.y, 0)
 			pad.add_child(guard)
 			guard_meshes[motor_name] = guard
+
+		# The arm guard, when fitted and readable. Drawn from the same triangle list the export writes
+		# and seated where the mass model weighs it — never a second seat computed here.
+		if ArmGuard.is_fitted(build.printing):
+			var dims := ArmGuard.dimensions(build.frame, build.printing)
+			if bool(dims["ok"]):
+				var sleeve := ArmGuardMesh.new()
+				sleeve.name = "ArmGuard_%s" % motor_name
+				sleeve.rebuild(dims)
+				sleeve.transform = Transform3D(ArmGuardMesh.arm_basis(motor_name),
+					ArmGuard.seat_position_m(motor_name, build.arm_m,
+						ArmGuard.motor_stator_radius_m(build.motor), float(dims["length_mm"])))
+				frame_model.add_child(sleeve)
+				arm_guard_meshes[motor_name] = sleeve
 
 
 ## Hands each propeller the RPM of its own motor, in MotorLayout.MOTOR_NAMES order — which is the

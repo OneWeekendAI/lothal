@@ -387,6 +387,9 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	print_panel.clearance_edited.connect(func(mm: float) -> void:
 		PrintSettings.set_clearance_mm(printing, mm)
 		_on_selection_changed())
+	print_panel.arm_guard_edited.connect(func(key: String, value: Variant) -> void:
+		ArmGuard.set_value(printing, key, value)
+		_on_selection_changed())
 	panels.add_child(print_panel)
 
 	# Working on a rail should show the panel for the part being chosen, so the two columns
@@ -910,6 +913,14 @@ func set_printing(p_printing: Dictionary) -> void:
 
 
 func current_build() -> Build:
+	var build := _build_from_rails()
+	# Only when there is something to say: `set_printing` recomputes, and an empty block fits nothing.
+	if not printing.is_empty():
+		build.set_printing(printing)
+	return build
+
+
+func _build_from_rails() -> Build:
 	return Build.from_ids(
 		catalog,
 		picker.selected_part()["part_id"],

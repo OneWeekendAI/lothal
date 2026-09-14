@@ -1120,6 +1120,14 @@ func _on_printed_export_requested(part_id: String) -> void:
 		PrintedParts.PROP_GUARD:
 			_on_guard_stl_requested(lab.propeller_details.guard_id(),
 				lab.propeller_details.guard_tip_radius_m())
+		PrintedParts.ARM_GUARD:
+			var build := lab.current_build()
+			var solid_name := _safe_export_name("%s-%s" % [ArmGuard.PART_ID,
+				String(build.frame.get("part_id", "frame"))])
+			var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
+			DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
+			_report_export(StlWriter.write(solid_name,
+				ArmGuard.triangles_mm(ArmGuard.dimensions(build.frame, lab.printing)), path), path)
 		_:
 			push_warning("no export for printed part '%s'" % part_id)
 

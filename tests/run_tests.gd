@@ -22,7 +22,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components",
 	"camera tilt", "video warnings", "video panel",
-	"print room"]
+	"print room", "arm guard"]
 
 func _init() -> void:
 	var total := 0
@@ -96,6 +96,8 @@ func _run_suite(suite_name: String) -> Array:
 		"power room": return TestPowerRoom.run()
 		# Printed-room PR0 (plans/2026-09-14-printed-room-plan.md).
 		"print room": return TestPrintRoom.run()
+		# PR1: the arm guard — geometry, refusal, clearance, opt-in mass, drawn = exported.
+		"arm guard": return TestArmGuard.run()
 		"authored blade": return TestAuthoredBlade.run()
 		"thrust overlay": return TestThrustOverlay.run()
 		"campbell overlay": return TestCampbellOverlay.run()

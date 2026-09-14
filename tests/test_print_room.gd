@@ -21,6 +21,39 @@ static func run() -> Array:
 	results.append_array(_clearance_is_per_drone())
 	results.append(_an_edit_reaches_the_project())
 	results.append_array(_the_guard_row_follows_the_build())
+	results.append_array(_the_arm_guard_is_fitted_from_the_panel())
+	return results
+
+
+## PR1 check 7. The row is on the panel for a frame that publishes its arm thickness, names its
+## guesses, and its toggle moves the aircraft's weight by four sleeves — then back, on untick.
+static func _the_arm_guard_is_fitted_from_the_panel() -> Array:
+	var results: Array = []
+	var shell := GlassShell.new()
+	shell.apply_project(Project.create("Guarded"))
+	var panel := shell.lab.print_panel
+	var before := shell.lab.current_build().mass_properties.total_mass_kg
+	var toggle := panel.fit_toggle(PrintedParts.ARM_GUARD)
+	var note := panel.row_note(PrintedParts.ARM_GUARD)
+	results.append(TestResult.new(
+		"the default 5\" build lists arm guards, unfitted, with their guesses named on the row",
+		toggle != null and not toggle.button_pressed and note.contains("(guess)") and note.contains("guesses"),
+		"toggle %s, note \"%s\"" % [toggle, note]))
+
+	panel.arm_guard_edited.emit(ArmGuard.FITTED, true)
+	var build := shell.lab.current_build()
+	var after := build.mass_properties.total_mass_kg
+	var each := ArmGuard.mass_kg(ArmGuard.dimensions(build.frame, shell.lab.printing))
+	var ticked := panel.fit_toggle(PrintedParts.ARM_GUARD)
+	panel.arm_guard_edited.emit(ArmGuard.FITTED, false)
+	var untouched := shell.lab.current_build().mass_properties.total_mass_kg
+	results.append(TestResult.new(
+		"ticking Fitted adds four sleeves to the weight and shows ticked; unticking takes them off",
+		each > 0.0 and absf((after - before) - 4.0 * each) < 1e-12 and ticked != null
+			and ticked.button_pressed and absf(untouched - before) < 1e-12,
+		"%+.3f g for 4 × %.3f g; after untick %+.3f g" % [(after - before) * 1000.0, each * 1000.0,
+			(untouched - before) * 1000.0]))
+	shell.free()
 	return results
 
 

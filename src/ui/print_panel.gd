@@ -13,12 +13,15 @@ extends PanelContainer
 
 signal clearance_edited(mm: float)
 signal export_requested(part_id: String)
+## An arm-guard setting moved under the mouse: `ArmGuard.FITTED` with a bool, or a length key in mm.
+signal arm_guard_edited(key: String, value: Variant)
 
 var _slider: HSlider
 var _value: Label
 var _hint: Label
 var _parts: VBoxContainer
 var _buttons: Dictionary = {}
+var _fit_toggles: Dictionary = {}
 var _rows: Array = []
 var _updating := false
 
@@ -89,6 +92,7 @@ func render(build: Build, printing: Dictionary) -> void:
 		_parts.remove_child(child)
 		child.queue_free()
 	_buttons.clear()
+	_fit_toggles.clear()
 	_rows = PrintedParts.for_build(build)
 
 	if _rows.is_empty():
@@ -105,16 +109,23 @@ func render(build: Build, printing: Dictionary) -> void:
 		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		name_label.custom_minimum_size = Vector2(280, 0)
 		line.add_child(name_label)
-		var row_note := Label.new()
-		row_note.text = String(row["note"])
-		row_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		row_note.custom_minimum_size = Vector2(280, 0)
-		row_note.theme_type_variation = &"MutedLabel"
-		line.add_child(row_note)
+		var note_label := Label.new()
+		note_label.text = String(row["note"])
+		note_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		note_label.custom_minimum_size = Vector2(280, 0)
+		note_label.theme_type_variation = &"MutedLabel"
+		line.add_child(note_label)
+		var id := String(row["id"])
+		if bool(row.get("fittable", false)) and id == PrintedParts.ARM_GUARD:
+			var fit := CheckBox.new()
+			fit.text = "Fitted — count their weight"
+			fit.button_pressed = bool(row["fitted"])
+			fit.toggled.connect(func(on: bool) -> void: arm_guard_edited.emit(ArmGuard.FITTED, on))
+			line.add_child(fit)
+			_fit_toggles[id] = fit
 		var button := Button.new()
 		button.text = "Export STL…"
 		button.disabled = not bool(row["exportable"])
-		var id := String(row["id"])
 		button.pressed.connect(func() -> void: export_requested.emit(id))
 		line.add_child(button)
 		_parts.add_child(line)
@@ -141,6 +152,19 @@ func rows() -> Array:
 ## The Export button for one part, or null when the part is not listed. For tests.
 func export_button(part_id: String) -> Button:
 	return _buttons.get(part_id, null)
+
+
+## The fitted toggle for one part, or null. For tests.
+func fit_toggle(part_id: String) -> CheckBox:
+	return _fit_toggles.get(part_id, null)
+
+
+## The note printed under one part, or "" when it is not listed. For tests.
+func row_note(part_id: String) -> String:
+	for row in _rows:
+		if String(row["id"]) == part_id:
+			return String(row["note"])
+	return ""
 
 
 func _on_slider_moved(mm: float) -> void:
