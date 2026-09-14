@@ -20,6 +20,7 @@ const CAMERA_MOUNT := CameraMount.PART_ID
 const ANTENNA_MOUNT := AntennaMount.PART_ID
 ## A frame whose catalog entry says it can be printed (PR9). Listed only then.
 const FRAME := "frame"
+const GPS_MAST := GpsMast.PART_ID
 ## Bumped BY HAND whenever the frame's exported triangles change for the same frame (persistence §7.4).
 const FRAME_GENERATOR_VERSION := 1
 ## Bumped BY HAND whenever the prop guard ring's triangles change for the same guard (persistence §7.4).
@@ -60,6 +61,15 @@ static func solid_for(build: Build, part_id: String, prop_tip_radius_m: float) -
 			out["generator"] = "%s@%d" % [part_id, AntennaMount.GENERATOR_VERSION]
 			out["quantity"] = 1
 			out["triangles"] = AntennaMount.triangles_mm(dims)
+		GPS_MAST:
+			dims = GpsMast.dimensions(build, build.printing)
+			var gps: Dictionary = build.components.get("gps", {})
+			out["solid_name"] = "%s-%s" % [part_id, String(gps.get("part_id", "gps"))]
+			out["generator"] = "%s@%d" % [part_id, GpsMast.GENERATOR_VERSION]
+			out["quantity"] = 1
+			# The mast height is the GPS tweak, one global setting — recorded like the camera tilt.
+			out["inputs"] = {"mast_height_mm": float(dims.get("mast_height_mm", 0.0))}
+			out["triangles"] = GpsMast.triangles_mm(dims)
 		PROP_GUARD:
 			if build.guard.is_empty():
 				out["reason"] = "%s: no prop guard is fitted" % part_id
@@ -132,6 +142,8 @@ static func for_build(build: Build) -> Array:
 		rows.append(_camera_mount_row(build))
 	if build.components.has("antenna"):
 		rows.append(_antenna_mount_row(build))
+	if build.components.has("gps"):
+		rows.append(_gps_mast_row(build))
 	if not build.guard.is_empty():
 		var guard_fabrication := PartsCatalog.fabrication_of(build.guard)
 		var guard_note := "Chosen under Propulsion. One ring, print four. The catalog does not say whether this guard is bought or printed."
@@ -216,6 +228,32 @@ static func _antenna_mount_row(build: Build) -> Dictionary:
 		"fitted": false,
 		"standoff_spacing_mm": float(dims["standoff_spacing_mm"]),
 		"standoff_diameter_mm": float(dims["standoff_diameter_mm"]),
+	}
+
+
+## The GPS mast's row (PR10). Listed whenever a GPS is fitted, refused or not. Fittable, like the arm
+## guard: nothing budgets a printed stalk, so its weight counts only once ticked.
+static func _gps_mast_row(build: Build) -> Dictionary:
+	var dims := GpsMast.dimensions(build, build.printing)
+	var fitted := GpsMast.is_fitted(build.printing)
+	var note := ""
+	if not bool(dims["ok"]):
+		note = String(dims["reason"])
+	else:
+		note = "GPS %.1f × %.1f mm (published) on a %.1f mm mast (the GPS mast setting, shared by every drone). Lead bore %.1f mm%s, wall %.1f mm%s, pad %.1f mm%s, flange %.1f mm%s. %.2f g%s." % [
+			float(dims["gps_length_mm"]), float(dims["gps_width_mm"]), float(dims["mast_height_mm"]),
+			float(dims["bore_mm"]), " (guess)" if bool(dims["bore_guessed"]) else "",
+			float(dims["post_wall_mm"]), " (guess)" if bool(dims["wall_guessed"]) else "",
+			float(dims["pad_thickness_mm"]), " (guess)" if bool(dims["pad_guessed"]) else "",
+			float(dims["flange_mm"]), " (guess)" if bool(dims["flange_guessed"]) else "",
+			GpsMast.mass_kg(dims) * 1000.0, "" if fitted else " — not counted in the weight until fitted"]
+	return {
+		"id": GPS_MAST,
+		"label": "GPS mast — printed stalk",
+		"note": note,
+		"exportable": bool(dims["ok"]),
+		"fittable": bool(dims["ok"]),
+		"fitted": fitted and bool(dims["ok"]),
 	}
 
 

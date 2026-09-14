@@ -396,6 +396,9 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	print_panel.antenna_mount_edited.connect(func(key: String, value: Variant) -> void:
 		AntennaMount.set_value(printing, key, value)
 		_on_selection_changed())
+	print_panel.gps_mast_edited.connect(func(key: String, value: Variant) -> void:
+		GpsMast.set_value(printing, key, value)
+		_on_selection_changed())
 	panels.add_child(print_panel)
 
 	# Working on a rail should show the panel for the part being chosen, so the two columns

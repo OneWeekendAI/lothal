@@ -22,7 +22,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components",
 	"camera tilt", "video warnings", "video panel",
-	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication"]
+	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast"]
 
 func _init() -> void:
 	var total := 0
@@ -108,6 +108,8 @@ func _run_suite(suite_name: String) -> Array:
 		"printed divergence": return TestPrintedDivergence.run()
 		# PR9: printable vs bought, per catalog entry (W1P.2) — no shipped value invented.
 		"fabrication": return TestFabrication.run()
+		# PR10: the GPS mast — post, flange, pad; mast height from the tweak; opt-in mass on the mast.
+		"gps mast": return TestGpsMast.run()
 		"authored blade": return TestAuthoredBlade.run()
 		"thrust overlay": return TestThrustOverlay.run()
 		"campbell overlay": return TestCampbellOverlay.run()

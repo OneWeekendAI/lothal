@@ -1185,6 +1185,8 @@ func mass_parts() -> Array:
 	# what keeps the reference build at 507.48 g. The seats are ArmGuard's, the same ones ArmGuardMesh
 	# is drawn at.
 	parts.append_array(ArmGuard.part_masses(self, printing))
+	# PR10: the printed GPS mast, on the same terms — only when fitted, over the GPS bay.
+	parts.append_array(GpsMast.part_masses(self, printing))
 
 	return parts
 

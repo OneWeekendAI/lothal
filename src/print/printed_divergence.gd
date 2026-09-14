@@ -24,6 +24,7 @@ const LABELS := {
 	"antenna_mount": "antenna mount",
 	"prop_guard": "prop guard",
 	"frame": "frame",
+	"gps_mast": "GPS mast",
 }
 
 
@@ -124,6 +125,12 @@ static func _causes(record: Dictionary, solid: Dictionary, build: Build) -> Arra
 		if absf(was - now) > 1e-6:
 			causes.append("the camera tilt changed from %s° to %s° — the tilt is shared by every drone" % [
 				_deg(was), _deg(now)])
+	if record.has("mast_height_mm") and (solid.get("inputs", {}) as Dictionary).has("mast_height_mm"):
+		var was_m := float(record["mast_height_mm"])
+		var now_m := float(solid["inputs"]["mast_height_mm"])
+		if absf(was_m - now_m) > 1e-6:
+			causes.append("the GPS mast height changed from %.1f to %.1f mm — the mast is shared by every drone" % [
+				was_m, now_m])
 	if record.has("clearance_mm"):
 		var was_c := float(record["clearance_mm"])
 		var now_c := PrintSettings.clearance_mm(build.printing)
