@@ -58,6 +58,8 @@ const TPU_DENSITY_KG_M3 := 1220.0
 const INFILL_FRACTION := 1.0
 
 const PART_ID := "arm_guard"
+## Bumped BY HAND whenever `triangles_mm`'s output changes for the same inputs (persistence §7.4).
+const GENERATOR_VERSION := 1
 
 
 ## This drone's arm-guard block, or an empty one. Read-only: the caller owns `printing`.

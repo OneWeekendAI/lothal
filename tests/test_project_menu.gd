@@ -125,7 +125,7 @@ static func _test_the_menu_has_a_recent_section() -> Array:
 static func _test_which_entries_are_live() -> Array:
 	var results: Array = []
 	results.append(TestResult.new(
-		"everything the container made possible is live; the two exports are not",
+		"everything the container made possible is live, and so is the printed export (PR4); only the build sheet waits",
 		ProjectMenu.is_live("new")
 			and ProjectMenu.is_live("open")
 			and ProjectMenu.is_live("duplicate")
@@ -133,7 +133,7 @@ static func _test_which_entries_are_live() -> Array:
 			and ProjectMenu.is_live("reveal")
 			and ProjectMenu.is_live("delete")
 			and not ProjectMenu.is_live("export_build_sheet")
-			and not ProjectMenu.is_live("export_printed"),
+			and ProjectMenu.is_live("export_printed"),
 		"new=%s open=%s duplicate=%s reveal=%s delete=%s sheet=%s printed=%s" % [
 			ProjectMenu.is_live("new"), ProjectMenu.is_live("open"),
 			ProjectMenu.is_live("duplicate"), ProjectMenu.is_live("reveal"),
@@ -206,14 +206,14 @@ static func _test_no_project_greys_the_drone_entries() -> Array:
 	menu.set_has_project(false)
 	var wrong: Array = []
 	for pair in [["duplicate", "Duplicate — try a variant"], ["rename", "Rename"],
-			["delete", "Delete"]]:
+			["delete", "Delete"], ["export_printed", "Export printed parts…"]]:
 		if not menu.is_item_disabled(_item_index(menu, str(pair[1]))):
 			wrong.append("%s should be greyed with no drone" % pair[0])
 	for pair in [["new", "New drone"], ["open", "Open…"], ["reveal", "Reveal saved files"]]:
 		if menu.is_item_disabled(_item_index(menu, str(pair[1]))):
 			wrong.append("%s should stay clickable with no drone" % pair[0])
 	var results := [TestResult.new(
-		"with no drone open, only New, Open and Reveal stay clickable",
+		"with no drone open, only New, Open and Reveal stay clickable — Export printed parts greys too",
 		wrong.is_empty(),
 		"problems: %s" % [wrong]
 	)]

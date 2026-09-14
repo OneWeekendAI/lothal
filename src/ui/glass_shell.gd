@@ -289,6 +289,15 @@ var _system_dropdown: OptionButton
 ## The drone this shell is describing, and the file it lives in. Its `parts` are kept in step with
 ## the rails by _sync_project(), and AUTOSAVE_SECONDS later it is on disk.
 var container: ProjectContainer
+## Where the Printed room's exports are written — the per-part buttons and "Export printed parts…"
+## alike (printed-room PR4). A variable so a test can point it at a directory it clears first.
+var printed_export_dir: String = FrameWorkbench.EXPORT_DIRECTORY
+## What the last whole-room export said, exactly as the status line shows it. For tests.
+var last_printed_export_summary := ""
+## Whether a successful single-part export opens the exports folder. True for a builder; a test that
+## drives the Export buttons turns it off, because the status label exists from `_init` and a suite
+## that opens Finder on every run is a suite nobody runs.
+var open_folder_after_export := true
 var chip: ProjectChip
 var settings: AppSettings
 var _autosave: Timer
@@ -1116,40 +1125,39 @@ func _on_guard_stl_requested(guard_id: String, prop_tip_radius_m: float) -> void
 ## part — the prop guard goes through the same handler Propulsion's own button uses, so there is one
 ## guard export and two doors to it, never two exports.
 func _on_printed_export_requested(part_id: String) -> void:
-	match part_id:
-		PrintedParts.PROP_GUARD:
-			_on_guard_stl_requested(lab.propeller_details.guard_id(),
-				lab.propeller_details.guard_tip_radius_m())
-		PrintedParts.ARM_GUARD:
-			var build := lab.current_build()
-			var solid_name := _safe_export_name("%s-%s" % [ArmGuard.PART_ID,
-				String(build.frame.get("part_id", "frame"))])
-			var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
-			DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
-			_report_export(StlWriter.write(solid_name,
-				ArmGuard.triangles_mm(ArmGuard.dimensions(build.frame, lab.printing)), path), path)
-		PrintedParts.CAMERA_MOUNT:
-			# The build WITH the assembly on it: the cheek is printed at the tilt the Camera slider
-			# shows, and `current_build()` alone carries the default tilt.
-			var build := lab.build_with_open_harness()
-			var camera: Dictionary = build.components.get("camera", {})
-			var solid_name := _safe_export_name("%s-%s" % [CameraMount.PART_ID,
-				String(camera.get("part_id", "camera"))])
-			var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
-			DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
-			_report_export(StlWriter.write(solid_name, CameraMount.triangles_mm(CameraMount.dimensions(
-				camera, lab.printing, float(build.assembly_value("camera_tilt_deg")))), path), path)
-		PrintedParts.ANTENNA_MOUNT:
-			var build := lab.current_build()
-			var antenna: Dictionary = build.components.get("antenna", {})
-			var solid_name := _safe_export_name("%s-%s" % [AntennaMount.PART_ID,
-				String(antenna.get("part_id", "antenna"))])
-			var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
-			DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
-			_report_export(StlWriter.write(solid_name,
-				AntennaMount.triangles_mm(AntennaMount.dimensions(antenna, lab.printing)), path), path)
-		_:
-			push_warning("no export for printed part '%s'" % part_id)
+	if part_id == PrintedParts.PROP_GUARD:
+		_on_guard_stl_requested(lab.propeller_details.guard_id(),
+			lab.propeller_details.guard_tip_radius_m())
+		return
+	# Every generated part goes through the one dispatcher the whole-room export uses, on the build WITH
+	# the assembly on it: the camera mount prints at the Camera tilt, which `current_build()` alone lacks.
+	var solid := PrintedParts.solid_for(lab.build_with_open_harness(), part_id,
+		lab.propeller_details.guard_tip_radius_m())
+	if not bool(solid["ok"]):
+		_report_export({"ok": false, "reason": String(solid["reason"])}, "")
+		return
+	var solid_name := _safe_export_name(String(solid["solid_name"]))
+	var path := printed_export_dir.path_join("%s.stl" % solid_name)
+	DirAccess.make_dir_recursive_absolute(printed_export_dir)
+	_report_export(StlWriter.write(solid_name, solid["triangles"], path), path)
+
+
+## "Export printed parts…" — every part this drone prints, written to the exports folder AND into the
+## drone's own file under printed/, each with a print record (printed-room PR4). A refused part is
+## named and refuses only itself. The container is written at once when it has a home, so the record of
+## a print does not wait for the next autosave; a container with no path (a test's) writes nothing.
+func export_printed_parts() -> Dictionary:
+	if container == null or lab == null:
+		return {}
+	_sync_project()
+	var result := PrintedExport.export_all(lab.build_with_open_harness(),
+		lab.propeller_details.guard_tip_radius_m(), printed_export_dir, container)
+	if not (result.get("written", []) as Array).is_empty() and container.path != "":
+		container.write()
+	last_printed_export_summary = String(result.get("summary", ""))
+	if _status_label != null:
+		_status_label.text = last_printed_export_summary
+	return result
 
 
 ## Says what happened, and says it the way `StlWriter` said it. A refusal names the part and the
@@ -1160,18 +1168,16 @@ func _report_export(result: Dictionary, path: String) -> void:
 		return
 	if bool(result["ok"]):
 		_status_label.text = "Wrote %s" % ProjectSettings.globalize_path(path)
-		OS.shell_open(ProjectSettings.globalize_path(FrameWorkbench.EXPORT_DIRECTORY))
+		if open_folder_after_export:
+			OS.shell_open(ProjectSettings.globalize_path(path.get_base_dir()))
 	else:
 		_status_label.text = "NOT EXPORTED — %s" % String(result["reason"])
 
 
+## One spelling of a safe file name, shared with PrintedExport so a part exported from its button and
+## from the project menu lands under the same name.
 static func _safe_export_name(text: String) -> String:
-	var out := ""
-	for index in text.length():
-		var character := text[index]
-		out += character if character.is_valid_identifier() or character.is_valid_int() \
-			or character == "-" else "_"
-	return "part" if out.is_empty() else out
+	return PrintedExport.safe_name(text)
 
 
 ## What the top strip's door says for a system, or "" for a system that has none.
@@ -1960,6 +1966,8 @@ func _on_project_action(action_id: String) -> void:
 			adopt(ProjectLibrary.duplicate_of(container.project))
 		"open":
 			_open_dialog.popup_centered_ratio(0.6)
+		"export_printed":
+			export_printed_parts()
 		"reveal":
 			OS.shell_show_in_file_manager(ProjectSettings.globalize_path(
 				container.path if container.path != "" else ProjectLibrary.DIR))

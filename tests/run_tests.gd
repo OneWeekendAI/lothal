@@ -22,7 +22,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components",
 	"camera tilt", "video warnings", "video panel",
-	"print room", "arm guard", "camera mount", "antenna mount"]
+	"print room", "arm guard", "camera mount", "antenna mount", "printed export"]
 
 func _init() -> void:
 	var total := 0
@@ -102,6 +102,8 @@ func _run_suite(suite_name: String) -> Array:
 		"camera mount": return TestCameraMount.run()
 		# PR3: the antenna mount — rings, bar, a tube at the whip's lean, labelled standoff guesses.
 		"antenna mount": return TestAntennaMount.run()
+		# PR4: every printed part into the drone's printed/ with a print record; refusals refuse only themselves.
+		"printed export": return TestPrintedExport.run()
 		"authored blade": return TestAuthoredBlade.run()
 		"thrust overlay": return TestThrustOverlay.run()
 		"campbell overlay": return TestCampbellOverlay.run()

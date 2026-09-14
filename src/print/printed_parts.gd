@@ -18,6 +18,57 @@ const PROP_GUARD := "prop_guard"
 const ARM_GUARD := ArmGuard.PART_ID
 const CAMERA_MOUNT := CameraMount.PART_ID
 const ANTENNA_MOUNT := AntennaMount.PART_ID
+## Bumped BY HAND whenever the prop guard ring's triangles change for the same guard (persistence §7.4).
+const PROP_GUARD_GENERATOR_VERSION := 1
+
+
+## The one door from a row id to printable triangles (printed-room PR4). The per-part Export buttons
+## and the whole-room export both come through here, so the two cannot write different solids for one
+## part. Returns `{"ok", "reason", "part", "solid_name", "triangles", "generator", "quantity"}`:
+## `generator` is "<part>@<hand-bumped version>", `quantity` is how many of the one STL to print.
+##
+## The prop guard's triangles are PropulsionExport's, the same function Propulsion's own button writes.
+static func solid_for(build: Build, part_id: String, prop_tip_radius_m: float) -> Dictionary:
+	var out := {"ok": false, "reason": "", "part": part_id, "solid_name": part_id, "triangles": [],
+		"generator": "", "quantity": 1}
+	var dims := {}
+	match part_id:
+		ARM_GUARD:
+			dims = ArmGuard.dimensions(build.frame, build.printing)
+			out["solid_name"] = "%s-%s" % [part_id, String(build.frame.get("part_id", "frame"))]
+			out["generator"] = "%s@%d" % [part_id, ArmGuard.GENERATOR_VERSION]
+			out["quantity"] = MotorLayout.MOTOR_NAMES.size()
+			out["triangles"] = ArmGuard.triangles_mm(dims)
+		CAMERA_MOUNT:
+			var camera: Dictionary = build.components.get("camera", {})
+			dims = CameraMount.dimensions(camera, build.printing, float(build.assembly_value("camera_tilt_deg")))
+			out["solid_name"] = "%s-%s" % [part_id, String(camera.get("part_id", "camera"))]
+			out["generator"] = "%s@%d" % [part_id, CameraMount.GENERATOR_VERSION]
+			out["quantity"] = 2
+			out["triangles"] = CameraMount.triangles_mm(dims)
+		ANTENNA_MOUNT:
+			var antenna: Dictionary = build.components.get("antenna", {})
+			dims = AntennaMount.dimensions(antenna, build.printing)
+			out["solid_name"] = "%s-%s" % [part_id, String(antenna.get("part_id", "antenna"))]
+			out["generator"] = "%s@%d" % [part_id, AntennaMount.GENERATOR_VERSION]
+			out["quantity"] = 1
+			out["triangles"] = AntennaMount.triangles_mm(dims)
+		PROP_GUARD:
+			if build.guard.is_empty():
+				out["reason"] = "%s: no prop guard is fitted" % part_id
+				return out
+			out["solid_name"] = String(build.guard.get("part_id", part_id))
+			out["generator"] = "%s@%d" % [part_id, PROP_GUARD_GENERATOR_VERSION]
+			out["quantity"] = MotorLayout.MOTOR_NAMES.size()
+			out["triangles"] = PropulsionExport.guard_triangles_mm(build.guard, prop_tip_radius_m)
+			dims = {"ok": not (out["triangles"] as Array).is_empty(),
+				"reason": "%s: %s has no ring to print" % [part_id, out["solid_name"]]}
+		_:
+			out["reason"] = "%s: not a printed part" % part_id
+			return out
+	out["ok"] = bool(dims.get("ok", false))
+	out["reason"] = "" if bool(out["ok"]) else String(dims.get("reason", ""))
+	return out
 
 
 static func for_build(build: Build) -> Array:

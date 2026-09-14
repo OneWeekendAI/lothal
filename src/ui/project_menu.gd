@@ -72,8 +72,7 @@ const ENTRIES := [
 		"id": "export_printed",
 		"label": "Export printed parts…",
 		"key": KEY_NONE,
-		"waiting_on": "Waits on printable geometry: StlWriter, the manifold check, and a first "
-			+ "printable part. Nothing prints yet.",
+		"waiting_on": "",
 	},
 	{
 		"id": "reveal",
@@ -166,18 +165,20 @@ func _add_entry(entry: Dictionary) -> void:
 		set_item_tooltip(index, waiting_on)
 		return
 	# Live, but meaningless without a drone. A builder who just deleted their only drone should not
-	# be offered "Delete" on nothing — so the three project-dependent entries grey in that state,
+	# be offered "Delete" on nothing — so the project-dependent entries grey in that state,
 	# and the greying lives in the same table that decides what the entries do.
 	if not _has_project and needs_project(str(entry["id"])):
 		set_item_disabled(index, true)
 		set_item_tooltip(index, "No drone is open — New or Open one.")
 
 
-## Whether `action_id` needs a drone open to mean anything. The three that do: Duplicate, Rename
-## and Delete all act on the drone you are looking at, and with none open there is nothing to act
-## on. New, Open and Reveal work without one.
+## Whether `action_id` needs a drone open to mean anything. The four that do: Duplicate, Rename,
+## Delete and Export printed parts all act on the drone you are looking at (an export records its
+## prints ON that drone), and with none open there is nothing to act on. New, Open and Reveal work
+## without one.
 static func needs_project(action_id: String) -> bool:
-	return action_id == "duplicate" or action_id == "rename" or action_id == "delete"
+	return action_id == "duplicate" or action_id == "rename" or action_id == "delete" \
+		or action_id == "export_printed"
 
 
 ## Tells the menu whether a drone is open, and greys the entries that need one accordingly. The
