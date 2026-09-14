@@ -298,6 +298,9 @@ var last_printed_export_summary := ""
 ## drives the Export buttons turns it off, because the status label exists from `_init` and a suite
 ## that opens Finder on every run is a suite nobody runs.
 var open_folder_after_export := true
+## What opening this drone found about its printed parts (printed-room PR5): one finding per part whose
+## newest print record no longer matches what the build generates. Empty for a drone that matches.
+var printed_divergence: Array = []
 var chip: ProjectChip
 var settings: AppSettings
 var _autosave: Timer
@@ -1905,6 +1908,11 @@ static func _system_of_name(node_name: StringName) -> String:
 ## Left in anyway, because the ring is a slot in the frame and a frame is what this file is. What it
 ## must NOT become is a number that looks live and is not: when the four unmodelled systems arrive
 ## the arc starts moving on its own, and until then this comment is the honest label.
+## The status line as it reads now. For tests.
+func status_text() -> String:
+	return _status_label.text if _status_label != null else ""
+
+
 func _refresh_status() -> void:
 	_sync_project()
 	if _status_label == null:
@@ -2021,7 +2029,24 @@ func open_project(path: String) -> Array:
 	_show_project()
 	_remember(opened.path)
 	_refresh_status()
+	_report_printed_divergence()
 	return missing
+
+
+## Printed-room PR5: generates every printed part again and says which no longer match their print
+## records. After `_refresh_status`, so the finding is what the status line ends up saying.
+func _report_printed_divergence() -> void:
+	printed_divergence = []
+	if container == null or lab == null:
+		return
+	printed_divergence = PrintedDivergence.check(container.project, container,
+		lab.build_with_open_harness(), lab.propeller_details.guard_tip_radius_m())
+	if printed_divergence.is_empty() or _status_label == null:
+		return
+	var lines: Array = []
+	for finding in printed_divergence:
+		lines.append(String(finding["message"]))
+	_status_label.text = " ".join(PackedStringArray(lines))
 
 
 ## Fits a project's parts on the rails. Whatever could not be fitted comes back named — see

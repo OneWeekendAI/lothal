@@ -29,8 +29,10 @@ const PROP_GUARD_GENERATOR_VERSION := 1
 ##
 ## The prop guard's triangles are PropulsionExport's, the same function Propulsion's own button writes.
 static func solid_for(build: Build, part_id: String, prop_tip_radius_m: float) -> Dictionary:
+	# `inputs`: settings a print record keeps so a later divergence can name them from/to (PR5). Only the
+	# ones that live OUTSIDE this drone's own printing block need it — today, the global camera tilt.
 	var out := {"ok": false, "reason": "", "part": part_id, "solid_name": part_id, "triangles": [],
-		"generator": "", "quantity": 1}
+		"generator": "", "quantity": 1, "inputs": {}}
 	var dims := {}
 	match part_id:
 		ARM_GUARD:
@@ -45,6 +47,7 @@ static func solid_for(build: Build, part_id: String, prop_tip_radius_m: float) -
 			out["solid_name"] = "%s-%s" % [part_id, String(camera.get("part_id", "camera"))]
 			out["generator"] = "%s@%d" % [part_id, CameraMount.GENERATOR_VERSION]
 			out["quantity"] = 2
+			out["inputs"] = {"tilt_deg": float(build.assembly_value("camera_tilt_deg"))}
 			out["triangles"] = CameraMount.triangles_mm(dims)
 		ANTENNA_MOUNT:
 			var antenna: Dictionary = build.components.get("antenna", {})

@@ -68,6 +68,9 @@ static func export_all(build: Build, prop_tip_radius_m: float, export_dir: Strin
 			"quantity": int(solid["quantity"]),
 			"exported_to": path,
 		}
+		# The inputs from outside this drone's printing block (the global camera tilt), so PR5 can say
+		# "the camera tilt changed from 25° to 40°" rather than only "differs".
+		record.merge(solid.get("inputs", {}), false)
 		if container != null:
 			container.set_member_bytes(String(record["file"]), text.to_utf8_buffer())
 			container.project.print_records.append(record)

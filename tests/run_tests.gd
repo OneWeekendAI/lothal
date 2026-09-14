@@ -22,7 +22,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components",
 	"camera tilt", "video warnings", "video panel",
-	"print room", "arm guard", "camera mount", "antenna mount", "printed export"]
+	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence"]
 
 func _init() -> void:
 	var total := 0
@@ -104,6 +104,8 @@ func _run_suite(suite_name: String) -> Array:
 		"antenna mount": return TestAntennaMount.run()
 		# PR4: every printed part into the drone's printed/ with a print record; refusals refuse only themselves.
 		"printed export": return TestPrintedExport.run()
+		# PR5: on open, a printed part that no longer matches what the build generates is said, with why.
+		"printed divergence": return TestPrintedDivergence.run()
 		"authored blade": return TestAuthoredBlade.run()
 		"thrust overlay": return TestThrustOverlay.run()
 		"campbell overlay": return TestCampbellOverlay.run()
