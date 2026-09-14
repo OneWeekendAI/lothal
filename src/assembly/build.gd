@@ -739,7 +739,7 @@ func set_assembly(resolved: Dictionary) -> void:
 
 ## This drone's printing decisions (`Project.printing`) — printed-room PR1. Read by `mass_parts` for
 ## the printed parts a builder has FITTED, and by AirframeModel to draw them. Empty is every build
-## written before the Printed room, and fits nothing: the reference build's 496 g is unmoved.
+## written before the Printed room, and fits nothing: the reference build's 507.48 g is unmoved.
 var printing: Dictionary = {}
 
 
@@ -1182,7 +1182,7 @@ func mass_parts() -> Array:
 
 	# Printed parts the builder FITTED in this drone's Printed room (printed-room PR1). Added on top,
 	# not carved from a budget — nothing ever budgeted for them — and absent unless fitted, which is
-	# what keeps the reference build at 496 g. The seats are ArmGuard's, the same ones ArmGuardMesh
+	# what keeps the reference build at 507.48 g. The seats are ArmGuard's, the same ones ArmGuardMesh
 	# is drawn at.
 	parts.append_array(ArmGuard.part_masses(self, printing))
 

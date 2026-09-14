@@ -27,7 +27,7 @@ extends RefCounted
 ##
 ## ## Mass: opt-in, on top
 ##
-## Nothing is fitted until the builder says so (`fitted`), so the reference build weighs 496.0 g
+## Nothing is fitted until the builder says so (`fitted`), so the reference build weighs 507.48 g
 ## with this file present. When fitted, four sleeves are ADDED to the aircraft rather than carved out
 ## of any budget: no budget ever held them (plan, "Standing decisions"). Each is a point mass at the
 ## seat `seat_position_m` names — the same function the drawing reads, so the sleeve that is weighed
