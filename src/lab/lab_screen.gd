@@ -140,6 +140,12 @@ var electronics_details: ElectronicsDetails
 var link_details: LinkDetails
 ## Video's Camera panel: the uptilt slider and the warnings the tilt moves. See CameraPanel.
 var camera_panel: CameraPanel
+## The Printed room's panel: fit clearance and the parts to print. See PrintPanel.
+var print_panel: PrintPanel
+## THIS drone's printing decisions — a working copy of `Project.printing`, kept the way the rails keep
+## the part selection. GlassShell hands it in on open (`set_printing`) and copies it back out on
+## autosave; nothing here writes a file. Per drone by design (PrintSettings' header).
+var printing: Dictionary = {}
 ## The charger. Lab's, because charging is a garage activity — there is a charger in the garage
 ## and there is not one in the field (labs-and-sim.md §5).
 var charge_panel: PackChargePanel
@@ -372,6 +378,16 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	tune_panel.name = "Tune"
 	tune_panel.tune_changed.connect(_on_tune_changed)
 	panels.add_child(tune_panel)
+
+	# The Printed room's panel, after Tune: like Fit and Tune it has no rail, because printed parts
+	# are generated from the build rather than browsed (printed-room design §3). The clearance edit
+	# is a PRINTING decision, not an assembly tweak — it is stored per drone and is not saved here.
+	print_panel = PrintPanel.new()
+	print_panel.name = "Print"
+	print_panel.clearance_edited.connect(func(mm: float) -> void:
+		PrintSettings.set_clearance_mm(printing, mm)
+		_on_selection_changed())
+	panels.add_child(print_panel)
 
 	# Working on a rail should show the panel for the part being chosen, so the two columns
 	# never describe different components. Connected once, against the TabContainer itself, which
@@ -755,6 +771,7 @@ func _on_selection_changed() -> void:
 	# report describe the camera that was just drawn.
 	camera_panel.render(build, tweaks, airframe)
 	tune_panel.render(build, tune)
+	print_panel.render(build, printing)
 
 
 ## A shim, a pad or a standoff moved. Same single path as a part change — the geometry, the panels
@@ -883,6 +900,13 @@ func select_component(category: String, part_id: String) -> bool:
 		if rail.has_category(category):
 			return rail.select_component(category, part_id)
 	return false
+
+
+## Takes on a drone's printing decisions. A COPY, so the Project's own block changes only when the
+## shell syncs it back — the same one-way-per-direction rule the part selection follows.
+func set_printing(p_printing: Dictionary) -> void:
+	printing = p_printing.duplicate(true)
+	_on_selection_changed()
 
 
 func current_build() -> Build:

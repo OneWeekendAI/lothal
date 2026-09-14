@@ -372,6 +372,12 @@ func select_guard(p_guard_id: String) -> bool:
 ## the mass integral and the BEMT closure read. Not `diameter_inches / 2` computed here: that
 ## would be the second definition of a prop's radius, and the guard's whole inner wall hangs off
 ## it.
+## The same radius, for the Printed room's export door (printed-room PR0). Public so the shell does
+## not reach into a private member, and a wrapper so there is still one definition.
+func guard_tip_radius_m() -> float:
+	return _tip_radius_m()
+
+
 func _tip_radius_m() -> float:
 	var doc := document_for(_rendered_part)
 	if doc == null:

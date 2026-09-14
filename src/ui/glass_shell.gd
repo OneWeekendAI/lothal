@@ -182,17 +182,14 @@ const SYSTEMS := [
 		"decided_by": ["camera", "vtx"],
 	},
 	{
+		# Printed-room PR0: one panel and no rail. Printed parts are generated from the build, not
+		# browsed (plans/2026-09-14-printed-room-design.md §3), so the list sits on the panel beside
+		# the fit clearance that shapes every one of them. No `decided_by`: nothing here is a part
+		# choice the completeness ring should wait on.
 		"name": "Printed",
 		"rails": [],
-		"panels": [],
+		"panels": ["Print"],
 		"decided_by": [],
-		"stub": {
-			"why": "Nothing here is modelled. The printed parts a build needs are known; what "
-				+ "they weigh, where they mount and what they cost in fit are not.",
-			"items": ["TPU camera mount", "Antenna mount", "Prop guards", "Battery pad",
-				"Standoff spacers", "Payload mount"],
-			"source": "CONTINUE-HERE.md §7 — components with no category at all",
-		},
 	},
 	{
 		"name": "Config",
@@ -835,6 +832,7 @@ func _build_blade_room() -> void:
 	lab.battery_details.pack_bench_requested.connect(func() -> void: _open_room("battery_bench"))
 	lab.motor_details.mount_stl_requested.connect(_on_mount_stl_requested)
 	lab.propeller_details.guard_stl_requested.connect(_on_guard_stl_requested)
+	lab.print_panel.export_requested.connect(_on_printed_export_requested)
 
 
 ## The harness designer — Power's room, PW5 — built hidden and opened from the Harness panel's own
@@ -1112,6 +1110,18 @@ func _on_guard_stl_requested(guard_id: String, prop_tip_radius_m: float) -> void
 	var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
 	DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
 	_report_export(PropulsionExport.write_guard(guard, prop_tip_radius_m, path), path)
+
+
+## The Printed room's Export buttons. Each id routes into the export that already exists for that
+## part — the prop guard goes through the same handler Propulsion's own button uses, so there is one
+## guard export and two doors to it, never two exports.
+func _on_printed_export_requested(part_id: String) -> void:
+	match part_id:
+		PrintedParts.PROP_GUARD:
+			_on_guard_stl_requested(lab.propeller_details.guard_id(),
+				lab.propeller_details.guard_tip_radius_m())
+		_:
+			push_warning("no export for printed part '%s'" % part_id)
 
 
 ## Says what happened, and says it the way `StlWriter` said it. A refusal names the part and the
@@ -1908,6 +1918,9 @@ func _sync_project() -> void:
 	var selection := lab.selection()
 	for category in selection:
 		container.project.parts[category] = str(selection[category])
+	# The printing block follows the lab's working copy the same way (printed-room PR0). Copied, not
+	# shared, so the dirty check compares two objects rather than one object with itself.
+	container.project.printing = lab.printing.duplicate(true)
 
 
 ## Rename is ProjectChip's own; everything else lands here.
@@ -1980,6 +1993,8 @@ func open_project(path: String) -> Array:
 func apply_project(project: Project) -> Array:
 	if lab == null:
 		return []
+	# Printing first, so the rebuild the selection triggers already describes this drone's parts.
+	lab.set_printing(project.printing)
 	return lab.apply_selection(project.parts)
 
 

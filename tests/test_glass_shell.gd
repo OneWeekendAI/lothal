@@ -59,7 +59,8 @@ const RAIL_TITLES := ["Frame", "Motor", "Prop", "Pack", "ESC", "FC", "Electronic
 ## "Camera" sits immediately before "Electronics", where LabScreen puts it so it is Video's front tab — Video's second panel
 ## (video slice V5), the uptilt.
 const PANEL_TITLES := ["Frame", "Structure", "Arms", "Fasteners", "Layout",
-	"Motor", "Prop", "Pack", "ESC", "Harness", "FC", "Camera", "Electronics", "Link", "Fit", "Tune"]
+	"Motor", "Prop", "Pack", "ESC", "Harness", "FC", "Camera", "Electronics", "Link", "Fit", "Tune",
+	"Print"]
 
 
 static func run() -> Array:
