@@ -19,6 +19,9 @@ signal arm_guard_edited(key: String, value: Variant)
 signal camera_mount_edited(key: String, value: Variant)
 ## An antenna-mount setting moved: `AntennaMount.STANDOFF_SPACING` or `STANDOFF_DIAMETER`, in mm.
 signal antenna_mount_edited(key: String, value: Variant)
+## PR7: a "Printed before" finding's Keep or Reprint button, by part id.
+signal divergence_kept(part_id: String)
+signal divergence_reprint_requested(part_id: String)
 
 var _slider: HSlider
 var _value: Label
@@ -27,6 +30,8 @@ var _parts: VBoxContainer
 var _buttons: Dictionary = {}
 var _fit_toggles: Dictionary = {}
 var _gap_sliders: Dictionary = {}
+var _before: VBoxContainer
+var _divergence_buttons: Dictionary = {}
 var _rows: Array = []
 var _updating := false
 
@@ -85,6 +90,10 @@ func _init() -> void:
 
 	_parts = VBoxContainer.new()
 	root.add_child(_parts)
+
+	_before = VBoxContainer.new()
+	_before.visible = false
+	root.add_child(_before)
 
 
 func render(build: Build, printing: Dictionary) -> void:
@@ -162,6 +171,48 @@ func render(build: Build, printing: Dictionary) -> void:
 		line.add_child(button)
 		_parts.add_child(line)
 		_buttons[id] = button
+
+
+## The "Printed before" list (PR7): one line per divergence the shell found on open, each with Keep and
+## Reprint. Separate from `render`, which runs on every selection change; findings change only when the
+## shell checks again.
+func set_divergence(findings: Array) -> void:
+	for child in _before.get_children():
+		_before.remove_child(child)
+		child.queue_free()
+	_divergence_buttons.clear()
+	_before.visible = not findings.is_empty()
+	if findings.is_empty():
+		return
+	var title := Label.new()
+	title.text = "Printed before — differs from today"
+	_before.add_child(title)
+	for finding in findings:
+		var part := String(finding["part"])
+		var message := Label.new()
+		message.text = String(finding["message"])
+		message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		message.custom_minimum_size = Vector2(280, 0)
+		message.theme_type_variation = &"MutedLabel"
+		_before.add_child(message)
+		var row := HBoxContainer.new()
+		var keep := Button.new()
+		keep.text = "Keep the printed one"
+		keep.pressed.connect(func() -> void: divergence_kept.emit(part))
+		row.add_child(keep)
+		var reprint := Button.new()
+		reprint.text = "Reprint"
+		reprint.disabled = String(finding["kind"]) == "gone"
+		reprint.pressed.connect(func() -> void: divergence_reprint_requested.emit(part))
+		row.add_child(reprint)
+		_before.add_child(row)
+		_divergence_buttons["%s|keep" % part] = keep
+		_divergence_buttons["%s|reprint" % part] = reprint
+
+
+## A "Printed before" button, `which` = "keep" or "reprint", or null. For tests.
+func divergence_button(part_id: String, which: String) -> Button:
+	return _divergence_buttons.get("%s|%s" % [part_id, which], null)
 
 
 func clearance_row_text() -> String:

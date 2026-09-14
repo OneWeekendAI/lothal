@@ -27,7 +27,136 @@ static func run() -> Array:
 	results.append(_a_part_no_longer_generated_is_reported())
 	results.append(_a_missing_file_is_reported())
 	results.append(_opening_the_drone_says_it())
+	# PR7: Keep and Reprint.
+	results.append(_keep_hides_without_deleting())
+	results.append(_a_new_divergence_after_keep_shows_again())
+	results.append(_reprint_adds_one_record_for_that_part_only())
+	results.append(_keep_survives_reopen_and_the_panel_routes())
 	return results
+
+
+static func _loosened(mm: float) -> Dictionary:
+	var printing := {}
+	PrintSettings.set_clearance_mm(printing, mm)
+	return printing
+
+
+## PR7 check 1. Keep acknowledges the camera mount's 0.35 mm divergence: it is gone from the findings,
+## the other two parts still speak, and the drone still holds all three records.
+static func _keep_hides_without_deleting() -> TestResult:
+	var e := _exported({}, 25.0)
+	var container: ProjectContainer = e["container"]
+	var printing := _loosened(0.35)
+	var build := _build(printing, 25.0)
+	var before := PrintedDivergence.check(container.project, container, build, 0.0)
+	PrintedDivergence.acknowledge(printing, _for_part(before, "camera_mount"))
+	build.set_printing(printing.duplicate(true))
+	var after := PrintedDivergence.check(container.project, container, build, 0.0)
+	return TestResult.new("Keep hides the camera mount's message, leaves the other two, and deletes no record",
+		before.size() == 3 and after.size() == 2 and _for_part(after, "camera_mount").is_empty()
+			and container.project.print_records.size() == 3,
+		"before %d, after %s, %d records" % [before.size(), _messages(after), container.project.print_records.size()])
+
+
+## PR7 check 3. Kept at 0.35 mm; the drone moves on to 0.45 mm. That is a different divergence and it speaks.
+static func _a_new_divergence_after_keep_shows_again() -> TestResult:
+	var e := _exported({}, 25.0)
+	var container: ProjectContainer = e["container"]
+	var printing := _loosened(0.35)
+	var kept := PrintedDivergence.check(container.project, container, _build(printing, 25.0), 0.0)
+	PrintedDivergence.acknowledge(printing, _for_part(kept, "camera_mount"))
+	PrintSettings.set_clearance_mm(printing, 0.45)
+	var later := PrintedDivergence.check(container.project, container, _build(printing, 25.0), 0.0)
+	var camera := _for_part(later, "camera_mount")
+	return TestResult.new("a kept camera mount that diverges AGAIN (0.35 → 0.45 mm) shows again, naming the new clearance",
+		String(camera.get("kind", "")) == "differs" and String(camera.get("message", "")).contains("0.45 mm"),
+		"%s" % [_messages(later)])
+
+
+## PR7 check 4. Reprint the camera mount only: one new record, for it; its finding clears; the others stay.
+static func _reprint_adds_one_record_for_that_part_only() -> TestResult:
+	var e := _exported({}, 25.0)
+	var container: ProjectContainer = e["container"]
+	var build := _build(_loosened(0.35), 25.0)
+	var result := PrintedExport.export_part(build, "camera_mount", 0.0, DIR, container)
+	var records := container.project.print_records
+	var after := PrintedDivergence.check(container.project, container, build, 0.0)
+	return TestResult.new("Reprint writes exactly one new record, for the camera mount, which then matches; the other two still diverge",
+		bool(result.get("ok", false)) and records.size() == 4 and String(records[records.size() - 1]["part"]) == "camera_mount"
+			and after.size() == 2 and _for_part(after, "camera_mount").is_empty(),
+		"ok %s, %d records (last %s), findings %s" % [result.get("ok"), records.size(),
+			records[records.size() - 1].get("part", "") if not records.is_empty() else "none", _messages(after)])
+
+
+## PR7 checks 2 and 5, through the shell and the panel: a drone opened with a divergence shows Keep and
+## Reprint; pressing Keep hides it, writes the drone, and it stays hidden when the drone is opened again;
+## pressing Reprint on another part adds its record.
+static func _keep_survives_reopen_and_the_panel_routes() -> TestResult:
+	var previous: Variant = null
+	if FileAccess.file_exists(AppSettings.SAVE_PATH):
+		previous = FileAccess.get_file_as_string(AppSettings.SAVE_PATH)
+	_clear_dir(RT_DIR)
+	_clear_dir(DIR)
+	var path := RT_DIR + "/keeping.lothal"
+	var e := _exported({}, 25.0)
+	var container: ProjectContainer = e["container"]
+	container.project.parts["camera"] = "cam_micro_analog"
+	container.project.parts["antenna"] = "antenna_rhcp_ufl"
+	PrintSettings.set_clearance_mm(container.project.printing, 0.35)
+	var wrote := container.write(path, RT_DIR + "/no_custom_parts.json")
+
+	var shell := GlassShell.new()
+	shell.open_folder_after_export = false
+	shell.printed_export_dir = DIR
+	var shown_before := 0
+	var keep_button: Button = null
+	var reprint_button: Button = null
+	if wrote:
+		shell.open_project(path)
+		shown_before = shell.printed_divergence.size()
+		keep_button = shell.lab.print_panel.divergence_button("camera_mount", "keep")
+		reprint_button = shell.lab.print_panel.divergence_button("antenna_mount", "reprint")
+	if keep_button != null:
+		keep_button.pressed.emit()
+	var after_keep := shell.printed_divergence.size()
+	var records_after_keep := shell.container.project.print_records.size() if shell.container != null else -1
+	# Reopened BEFORE Reprint: Reprint writes the drone too, and would carry an unwritten Keep with it.
+	var between := GlassShell.new()
+	between.open_folder_after_export = false
+	if wrote:
+		between.open_project(path)
+	var kept_on_disk := _for_part(between.printed_divergence, "camera_mount").is_empty() \
+		and between.printed_divergence.size() == 2
+	between.free()
+	if reprint_button != null:
+		reprint_button.pressed.emit()
+	var after_reprint := shell.printed_divergence.size()
+	var records := shell.container.project.print_records.size() if shell.container != null else -1
+	shell.free()
+
+	var reopened := GlassShell.new()
+	reopened.open_folder_after_export = false
+	if wrote:
+		reopened.open_project(path)
+	var still := _for_part(reopened.printed_divergence, "camera_mount")
+	var reopened_count := reopened.printed_divergence.size()
+	reopened.free()
+
+	_clear_dir(RT_DIR)
+	if previous == null:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(AppSettings.SAVE_PATH))
+	else:
+		var handle := FileAccess.open(AppSettings.SAVE_PATH, FileAccess.WRITE)
+		handle.store_string(String(previous))
+		handle.close()
+
+	return TestResult.new(
+		"the panel's Keep hides the camera mount and its Reprint re-exports the antenna mount; reopened, both stay quiet and only the arm guard speaks",
+		wrote and shown_before == 3 and keep_button != null and reprint_button != null and after_keep == 2
+			and records_after_keep == 3 and kept_on_disk
+			and after_reprint == 1 and records == 4 and still.is_empty() and reopened_count == 1,
+		"wrote %s; shown %d, after keep %d (%d records, on disk %s), after reprint %d, %d records; reopened %d" % [
+			wrote, shown_before, after_keep, records_after_keep, kept_on_disk, after_reprint, records, reopened_count])
 
 
 ## A drone with camera and antenna mounts exported at `printing`, on a build at `tilt_deg`.
@@ -79,7 +208,9 @@ static func _a_clearance_change_is_named() -> TestResult:
 	var findings := PrintedDivergence.check(container.project, container, _build(looser, 25.0), 0.0)
 	var camera := _for_part(findings, "camera_mount")
 	var message := String(camera.get("message", ""))
-	var date := String(container.project.print_records[0]["printed_at"]).substr(0, 10)
+	# Guarded: a broken export records nothing, and an unguarded [0] aborts the runner instead of failing.
+	var date := String(container.project.print_records[0]["printed_at"]).substr(0, 10) \
+		if not container.project.print_records.is_empty() else "no record"
 	return TestResult.new(
 		"0.20 → 0.35 mm clearance: the camera mount differs, dated, keep-or-reprint, naming the clearance from and to",
 		String(camera.get("kind", "")) == "differs" and message.contains(date) and message.contains("reprint")
@@ -133,6 +264,9 @@ static func _a_part_no_longer_generated_is_reported() -> TestResult:
 static func _a_missing_file_is_reported() -> TestResult:
 	var e := _exported({}, 25.0)
 	var container: ProjectContainer = e["container"]
+	if container.project.print_records.size() < 2:
+		return TestResult.new("a record whose STL is missing from the drone is reported by name and file, never dropped",
+			false, "the export recorded %d parts, so there is no second record to strip" % container.project.print_records.size())
 	var record: Dictionary = container.project.print_records[1]
 	container.set_member_bytes(String(record["file"]), PackedByteArray())
 	var findings := PrintedDivergence.check(container.project, container, _build({}, 25.0), 0.0)

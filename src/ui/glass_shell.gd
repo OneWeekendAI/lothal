@@ -845,6 +845,8 @@ func _build_blade_room() -> void:
 	lab.motor_details.mount_stl_requested.connect(_on_mount_stl_requested)
 	lab.propeller_details.guard_stl_requested.connect(_on_guard_stl_requested)
 	lab.print_panel.export_requested.connect(_on_printed_export_requested)
+	lab.print_panel.divergence_kept.connect(keep_divergence)
+	lab.print_panel.divergence_reprint_requested.connect(reprint_part)
 
 
 ## The harness designer — Power's room, PW5 — built hidden and opened from the Harness panel's own
@@ -1908,6 +1910,33 @@ static func _system_of_name(node_name: StringName) -> String:
 ## Left in anyway, because the ring is a slot in the frame and a frame is what this file is. What it
 ## must NOT become is a number that looks live and is not: when the four unmodelled systems arrive
 ## the arc starts moving on its own, and until then this comment is the honest label.
+## Keep (PR7): acknowledges the finding for `part_id` in this drone's printing block, writes the drone
+## when it has a home, and checks again. The record stays.
+func keep_divergence(part_id: String) -> void:
+	for finding in printed_divergence:
+		if String(finding["part"]) == part_id:
+			PrintedDivergence.acknowledge(lab.printing, finding)
+	_sync_project()
+	if container != null and container.path != "":
+		container.write()
+	_report_printed_divergence()
+
+
+## Reprint (PR7): re-exports only `part_id` through the shared export, appending its record, writes the
+## drone when it has a home, and checks again.
+func reprint_part(part_id: String) -> void:
+	if container == null or lab == null:
+		return
+	_sync_project()
+	var result := PrintedExport.export_part(lab.build_with_open_harness(), part_id,
+		lab.propeller_details.guard_tip_radius_m(), printed_export_dir, container)
+	if bool(result["ok"]) and container.path != "":
+		container.write()
+	_report_printed_divergence()
+	if not bool(result["ok"]) and _status_label != null:
+		_status_label.text = "NOT REPRINTED — %s" % String(result["reason"])
+
+
 ## The status line as it reads now. For tests.
 func status_text() -> String:
 	return _status_label.text if _status_label != null else ""
@@ -2041,6 +2070,7 @@ func _report_printed_divergence() -> void:
 		return
 	printed_divergence = PrintedDivergence.check(container.project, container,
 		lab.build_with_open_harness(), lab.propeller_details.guard_tip_radius_m())
+	lab.print_panel.set_divergence(printed_divergence)
 	if printed_divergence.is_empty() or _status_label == null:
 		return
 	var lines: Array = []

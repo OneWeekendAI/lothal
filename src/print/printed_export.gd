@@ -35,48 +35,54 @@ static func export_all(build: Build, prop_tip_radius_m: float, export_dir: Strin
 		container: ProjectContainer) -> Dictionary:
 	var written: Array = []
 	var refused: Array = []
-	DirAccess.make_dir_recursive_absolute(export_dir)
-	var clearance := PrintSettings.clearance_mm(build.printing)
-	var material := PrintSettings.material(build.printing)
-
 	for row in PrintedParts.for_build(build):
-		var solid := PrintedParts.solid_for(build, String(row["id"]), prop_tip_radius_m)
-		if not bool(solid["ok"]):
-			refused.append(String(solid["reason"]))
-			continue
-		var solid_name := safe_name(String(solid["solid_name"]))
-		var triangles: Array = solid["triangles"]
-		var path := export_dir.path_join("%s.stl" % solid_name)
-		var result := StlWriter.write(solid_name, triangles, path)
-		if not bool(result["ok"]):
-			refused.append(String(result["reason"]))
-			continue
-
-		# The same text StlWriter just wrote, so the member, the file and the hash are one thing.
-		var text := StlWriter.to_ascii(solid_name, triangles)
-		var sha := text.sha256_text()
-		var record := {
-			"part": String(solid["part"]),
-			"file": "printed/%s-%s.stl" % [solid_name, sha.substr(0, 8)],
-			"printed_at": Time.get_datetime_string_from_system(true) + "Z",
-			"generator": String(solid["generator"]),
-			"geometry_sha256": sha,
-			"material": material,
-			"clearance_mm": clearance,
-			"triangles": triangles.size(),
-			"bbox_mm": bbox_mm(triangles),
-			"quantity": int(solid["quantity"]),
-			"exported_to": path,
-		}
-		# The inputs from outside this drone's printing block (the global camera tilt), so PR5 can say
-		# "the camera tilt changed from 25° to 40°" rather than only "differs".
-		record.merge(solid.get("inputs", {}), false)
-		if container != null:
-			container.set_member_bytes(String(record["file"]), text.to_utf8_buffer())
-			container.project.print_records.append(record)
-		written.append(record)
+		var one := export_part(build, String(row["id"]), prop_tip_radius_m, export_dir, container)
+		if bool(one["ok"]):
+			written.append(one["record"])
+		else:
+			refused.append(String(one["reason"]))
 
 	return {"written": written, "refused": refused, "summary": summary_text(written, refused)}
+
+
+## Exports ONE part — the loop body `export_all` runs per row, and Reprint's whole job (PR7). Returns
+## `{"ok", "reason", "record"}`; a refusal writes nothing and records nothing.
+static func export_part(build: Build, part_id: String, prop_tip_radius_m: float, export_dir: String,
+		container: ProjectContainer) -> Dictionary:
+	DirAccess.make_dir_recursive_absolute(export_dir)
+	var solid := PrintedParts.solid_for(build, part_id, prop_tip_radius_m)
+	if not bool(solid["ok"]):
+		return {"ok": false, "reason": String(solid["reason"]), "record": {}}
+	var solid_name := safe_name(String(solid["solid_name"]))
+	var triangles: Array = solid["triangles"]
+	var path := export_dir.path_join("%s.stl" % solid_name)
+	var result := StlWriter.write(solid_name, triangles, path)
+	if not bool(result["ok"]):
+		return {"ok": false, "reason": String(result["reason"]), "record": {}}
+
+	# The same text StlWriter just wrote, so the member, the file and the hash are one thing.
+	var text := StlWriter.to_ascii(solid_name, triangles)
+	var sha := text.sha256_text()
+	var record := {
+		"part": String(solid["part"]),
+		"file": "printed/%s-%s.stl" % [solid_name, sha.substr(0, 8)],
+		"printed_at": Time.get_datetime_string_from_system(true) + "Z",
+		"generator": String(solid["generator"]),
+		"geometry_sha256": sha,
+		"material": PrintSettings.material(build.printing),
+		"clearance_mm": PrintSettings.clearance_mm(build.printing),
+		"triangles": triangles.size(),
+		"bbox_mm": bbox_mm(triangles),
+		"quantity": int(solid["quantity"]),
+		"exported_to": path,
+	}
+	# The inputs from outside this drone's printing block (the global camera tilt), so PR5 can say
+	# "the camera tilt changed from 25° to 40°" rather than only "differs".
+	record.merge(solid.get("inputs", {}), false)
+	if container != null:
+		container.set_member_bytes(String(record["file"]), text.to_utf8_buffer())
+		container.project.print_records.append(record)
+	return {"ok": true, "reason": "", "record": record}
 
 
 ## What the status line says: what was written, then what was not and why, in one line.
