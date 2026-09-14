@@ -17,6 +17,8 @@ signal export_requested(part_id: String)
 signal arm_guard_edited(key: String, value: Variant)
 ## A camera-mount setting moved: `CameraMount.PLATE_SPACING` in mm.
 signal camera_mount_edited(key: String, value: Variant)
+## An antenna-mount setting moved: `AntennaMount.STANDOFF_SPACING` or `STANDOFF_DIAMETER`, in mm.
+signal antenna_mount_edited(key: String, value: Variant)
 
 var _slider: HSlider
 var _value: Label
@@ -138,6 +140,21 @@ func render(build: Build, printing: Dictionary) -> void:
 				camera_mount_edited.emit(CameraMount.PLATE_SPACING, mm))
 			line.add_child(gap)
 			_gap_sliders[id] = gap
+		if id == PrintedParts.ANTENNA_MOUNT and row.has("standoff_spacing_mm"):
+			for setting in [
+					[AntennaMount.STANDOFF_SPACING, AntennaMount.MIN_STANDOFF_SPACING_MM,
+						AntennaMount.MAX_STANDOFF_SPACING_MM, "standoff_spacing_mm", AntennaMount.STANDOFF_SPACING_HINT],
+					[AntennaMount.STANDOFF_DIAMETER, AntennaMount.MIN_STANDOFF_DIAMETER_MM,
+						AntennaMount.MAX_STANDOFF_DIAMETER_MM, "standoff_diameter_mm", AntennaMount.STANDOFF_DIAMETER_HINT]]:
+				var key: String = setting[0]
+				var slider := HSlider.new()
+				slider.min_value = float(setting[1])
+				slider.max_value = float(setting[2])
+				slider.step = 0.5
+				slider.value = float(row[setting[3]])
+				slider.tooltip_text = String(setting[4])
+				slider.value_changed.connect(func(mm: float) -> void: antenna_mount_edited.emit(key, mm))
+				line.add_child(slider)
 		var button := Button.new()
 		button.text = "Export STL…"
 		button.disabled = not bool(row["exportable"])

@@ -1139,6 +1139,15 @@ func _on_printed_export_requested(part_id: String) -> void:
 			DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
 			_report_export(StlWriter.write(solid_name, CameraMount.triangles_mm(CameraMount.dimensions(
 				camera, lab.printing, float(build.assembly_value("camera_tilt_deg")))), path), path)
+		PrintedParts.ANTENNA_MOUNT:
+			var build := lab.current_build()
+			var antenna: Dictionary = build.components.get("antenna", {})
+			var solid_name := _safe_export_name("%s-%s" % [AntennaMount.PART_ID,
+				String(antenna.get("part_id", "antenna"))])
+			var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
+			DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
+			_report_export(StlWriter.write(solid_name,
+				AntennaMount.triangles_mm(AntennaMount.dimensions(antenna, lab.printing)), path), path)
 		_:
 			push_warning("no export for printed part '%s'" % part_id)
 

@@ -17,6 +17,7 @@ extends RefCounted
 const PROP_GUARD := "prop_guard"
 const ARM_GUARD := ArmGuard.PART_ID
 const CAMERA_MOUNT := CameraMount.PART_ID
+const ANTENNA_MOUNT := AntennaMount.PART_ID
 
 
 static func for_build(build: Build) -> Array:
@@ -27,6 +28,8 @@ static func for_build(build: Build) -> Array:
 		rows.append(_arm_guard_row(build))
 	if build.components.has("camera"):
 		rows.append(_camera_mount_row(build))
+	if build.components.has("antenna"):
+		rows.append(_antenna_mount_row(build))
 	if not build.guard.is_empty():
 		rows.append({
 			"id": PROP_GUARD,
@@ -63,6 +66,32 @@ static func _camera_mount_row(build: Build) -> Dictionary:
 		"fittable": false,
 		"fitted": false,
 		"plate_spacing_mm": float(dims["plate_spacing_mm"]),
+	}
+
+
+## The antenna mount's row (PR3). Listed whenever an antenna is fitted, refused or not, for the camera
+## mount's reason: the two standoff guesses that decide it are edited here.
+static func _antenna_mount_row(build: Build) -> Dictionary:
+	var dims := AntennaMount.dimensions(build.components.get("antenna", {}), build.printing)
+	var guesses := "Rear standoffs %.1f mm apart%s, %.1f mm across%s" % [
+		float(dims["standoff_spacing_mm"]), " (guess)" if bool(dims["standoff_spacing_guessed"]) else "",
+		float(dims["standoff_diameter_mm"]), " (guess)" if bool(dims["standoff_diameter_guessed"]) else ""]
+	var note := ""
+	if not bool(dims["ok"]):
+		note = "%s. %s." % [String(dims["reason"]), guesses]
+	else:
+		note = "Antenna %.1f mm wide (published) → %.1f mm bore. %s. The tube leans %.0f° aft, the angle the antenna is drawn at. No weight of its own: the antenna's share holds it." % [
+			float(dims["antenna_width_mm"]), 2.0 * float(dims["tube_bore_radius_mm"]), guesses,
+			float(dims["lean_deg"])]
+	return {
+		"id": ANTENNA_MOUNT,
+		"label": "Antenna mount — standoff clamp and tube",
+		"note": note,
+		"exportable": bool(dims["ok"]),
+		"fittable": false,
+		"fitted": false,
+		"standoff_spacing_mm": float(dims["standoff_spacing_mm"]),
+		"standoff_diameter_mm": float(dims["standoff_diameter_mm"]),
 	}
 
 
