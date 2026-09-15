@@ -751,6 +751,10 @@ func set_printing(p_printing: Dictionary) -> void:
 ## Where the pack sits: `{"mount": MountPoint or null, "position": Vector3}`. THE ONE SEAT — `mass_parts`
 ## weighs the pack here and the printed battery pad (PR11) hangs beneath it, so the two cannot disagree.
 ##
+## A fitted, readable pad lifts the pack off its mount by the pad's thickness (PR17, `battery_rise_m`): the
+## pad sits on the plate and the pack on the pad. Before PR17 the pack stayed on the plate and the pad was
+## weighed inside it — found by drawing the pad where it is weighed.
+##
 ## A frame that does not offer the saved mount — a whoop whose bottom plate has no room for strap slots —
 ## falls back to the top plate rather than dropping the pack at the origin. Same rule as AirframeModel's
 ## drawing: the pack is somewhere on every real aircraft.
@@ -759,7 +763,16 @@ func battery_seat() -> Dictionary:
 	if battery_mount == null:
 		battery_mount = MountLayout.by_id(mount_points(), "strap_top")
 	return {"mount": battery_mount, "position": MountLayout.seated_centre_m(battery_mount, battery_size_m(),
-		float(assembly_value("battery_offset_m")))}
+		float(assembly_value("battery_offset_m")), battery_rise_m())}
+
+
+## How far the pack stands off its mount, metres: a fitted, readable battery pad's thickness, else zero.
+## AirframeModel seats the drawn pack with the same number.
+func battery_rise_m() -> float:
+	if not BatteryPad.is_fitted(printing):
+		return 0.0
+	var dims := BatteryPad.dimensions(battery, printing)
+	return float(dims["thickness_mm"]) / 1000.0 if bool(dims["ok"]) else 0.0
 
 
 ## One assembly value, with the parts-implied fallback applied. The single reader, so a caller

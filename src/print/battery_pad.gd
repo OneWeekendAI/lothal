@@ -24,7 +24,9 @@ extends RefCounted
 ## ## Mass: opt-in, under the pack
 ##
 ## Nothing budgets a pad, so when Fitted it is ADDED: one point mass directly beneath the pack's own seat,
-## half a pad below the pack's underside. The reference build is unchanged until the builder ticks Fitted.
+## half a pad below the pack's underside. Since PR17 a fitted pad also lifts the pack by its thickness
+## (`Build.battery_rise_m`), so that point is on the plate rather than inside it. The reference build is
+## unchanged until the builder ticks Fitted.
 
 const BLOCK := "battery_pad"
 const FITTED := "fitted"

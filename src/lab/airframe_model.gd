@@ -109,7 +109,7 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		# where the pack's mass is. That is what makes labs-and-sim.md §2.2 — "the fit check and the
 		# picture are the same geometry" — true of mass as well as of clearance.
 		battery_mesh.position = MountLayout.seated_centre_m(
-			battery_mount, battery_mesh.size_m, battery_offset_m)
+			battery_mount, battery_mesh.size_m, battery_offset_m, build.battery_rise_m())
 	frame_model.add_child(battery_mesh)
 
 	# The stack, in the frame's own standoff stack. Nothing here decides where that is: the mount

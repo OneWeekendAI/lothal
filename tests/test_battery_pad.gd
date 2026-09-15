@@ -24,11 +24,67 @@ static func run() -> Array:
 	results.append_array(_mass_is_opt_in_and_under_the_pack())
 	results.append(_its_guesses_are_labelled_and_fitted_from_the_panel())
 	results.append(_the_pad_follows_the_pack_when_it_is_slid())
+	results.append_array(_a_fitted_pad_lifts_the_pack_off_the_plate())
 	results.append(_each_guess_is_named_and_a_set_one_loses_its_marker(build))
 	return results
 
 
 ## that forgot the offset disagree.
+## PR17: the pad sits ON the plate and the pack on the pad. Before, the pack stayed on the plate and the
+## pad was weighed half a pad beneath it — inside the plate. Written out from the mount's own face: the pad's
+## centre is half a 3 mm pad off the face, the pack's centre is half a pack plus the pad off it, both in the
+## drawn pack and in the weighed one. A refused pad and an unticked one lift nothing.
+static func _a_fitted_pad_lifts_the_pack_off_the_plate() -> Array:
+	var printing := {}
+	BatteryPad.set_value(printing, BatteryPad.FITTED, true)
+	BatteryPad.set_value(printing, BatteryPad.THICKNESS, 3.0)
+	var fitted := ReferenceBuild.build()
+	fitted.set_printing(printing)
+	var bare := ReferenceBuild.build()
+	var refused := ReferenceBuild.build()
+	var wide := printing.duplicate(true)
+	# A 35 mm pack with no margin leaves 29 mm between the 3 mm rails; a 30 mm strap does not fit.
+	BatteryPad.set_value(wide, BatteryPad.SLOT, 30.0)
+	BatteryPad.set_value(wide, BatteryPad.MARGIN, 0.0)
+	refused.set_printing(wide)
+
+	var mount: MountPoint = fitted.battery_seat()["mount"]
+	var face := mount.position if mount != null else Vector3.INF
+	var normal := float(mount.normal) if mount != null else 0.0
+	var half_pack := fitted.battery_size_m().y * 0.5
+	var pad_seat := Vector3.INF
+	var pack_seat := Vector3.INF
+	for pm in fitted.mass_parts():
+		if (pm as PartMass).label == "Battery pad":
+			pad_seat = (pm as PartMass).position_m
+		if (pm as PartMass).label == "Pack":
+			pack_seat = (pm as PartMass).position_m
+	var bare_pack: Vector3 = bare.battery_seat()["position"]
+	var refused_pack: Vector3 = refused.battery_seat()["position"]
+	var refused_ok := bool(BatteryPad.dimensions(refused.battery, wide)["ok"])
+
+	var airframe := AirframeModel.new()
+	airframe.rebuild(fitted)
+	var drawn_pack := airframe.battery_mesh.position
+	airframe.free()
+
+	var expected_pad := face + Vector3(0.0, normal * 0.0015, 0.0)
+	var expected_pack := face + Vector3(0.0, normal * (half_pack + 0.003), 0.0)
+	return [
+		TestResult.new("a fitted 3 mm pad sits on the plate face and the pack sits on the pad, weighed and drawn",
+			# 1e-7 m: PartMass positions are single precision, and the pad's centre is 1.9e-9 m off exact.
+			pad_seat.distance_to(expected_pad) < 1e-7 and pack_seat.distance_to(expected_pack) < 1e-7
+				and drawn_pack.distance_to(expected_pack) < 1e-7,
+			"pad off by %.12f m, pack off by %.12f m, drawn pack off by %.12f m (pack %s)" % [
+				pad_seat.distance_to(expected_pad), pack_seat.distance_to(expected_pack),
+				drawn_pack.distance_to(expected_pack), pack_seat]),
+		TestResult.new("no pad, or a refused one (30 mm strap, no margin), leaves the pack on the plate",
+			bare_pack.distance_to(face + Vector3(0.0, normal * half_pack, 0.0)) < 1e-9
+				and not refused_ok and refused_pack.distance_to(bare_pack) < 1e-12,
+			"bare %s; refused ok %s, pack %s" % [bare_pack, refused_ok, refused_pack]),
+	]
+
+
 static func _the_pad_follows_the_pack_when_it_is_slid() -> TestResult:
 	var printing := {}
 	BatteryPad.set_value(printing, BatteryPad.FITTED, true)
