@@ -8,8 +8,13 @@ extends RefCounted
 ## Three closed shells that overlap where they join, which StlWriter allows and every slicer unions:
 ##
 ##   - a **flange** at the foot, a square slab that sits on the plate;
-##   - a hollow **post** the mast height tall, bored for the GPS lead;
+##   - a hollow **post**, bored for the GPS lead;
 ##   - a **pad** on top, the GPS module's published footprint, for the module to be taped or zip-tied to.
+##
+## Post and pad together are the mast height (PR16, generator 2), so the module's underside is where the
+## mast height puts it — where AirframeModel draws the module and Build weighs it. Generator 1 stood the
+## post the whole mast height and the pad on top, which raised the module by a pad thickness that nothing
+## else knew about; drawing the mast beside the drawn module is what showed it.
 ##
 ## Printed as it stands: Z up, the post on the Z axis, the flange at Z = 0.
 ##
@@ -46,7 +51,7 @@ const FLANGE := "flange_mm"
 const PART_ID := "gps_mast"
 
 ## Bumped BY HAND whenever `triangles_mm`'s output changes for the same inputs (persistence §7.4).
-const GENERATOR_VERSION := 1
+const GENERATOR_VERSION := 2
 
 const DEFAULT_BORE_MM := 3.0
 const DEFAULT_WALL_MM := 1.6
@@ -123,6 +128,12 @@ static func dimensions(build: Build, printing: Dictionary) -> Dictionary:
 	if mast_mm <= 0.0:
 		out["reason"] = "%s: %s sits on the plate with no mast, so there is nothing to print" % [PART_ID, gps_id]
 		return out
+	var post_mm := mast_mm - float(pad[0])
+	out["post_height_mm"] = post_mm
+	if post_mm <= 0.0:
+		out["reason"] = "%s: a %.1f mm mast leaves no post under a %.1f mm pad%s" % [PART_ID, mast_mm, float(pad[0]),
+			" (guess)" if bool(pad[1]) else ""]
+		return out
 	if float(flange[0]) < 2.0 * ro:
 		out["reason"] = "%s: a %.1f mm flange is narrower than the %.1f mm post" % [PART_ID, float(flange[0]), 2.0 * ro]
 		return out
@@ -136,7 +147,7 @@ static func shells_mm(dims: Dictionary) -> Dictionary:
 	if not bool(dims.get("ok", false)):
 		return out
 	var f := float(dims["flange_mm"]) * 0.5
-	var h := float(dims["mast_height_mm"])
+	var h := float(dims["post_height_mm"])
 	var l := float(dims["gps_length_mm"]) * 0.5
 	var w := float(dims["gps_width_mm"]) * 0.5
 	out["flange"] = AntennaMount._box(Vector3(-f, -f, 0.0), Vector3(f, f, float(dims["flange_thickness_mm"])))
@@ -164,7 +175,7 @@ static func volume_mm3(dims: Dictionary) -> float:
 	var gon := n * 0.5 * sin(TAU / n)
 	var ri := float(dims["bore_radius_mm"])
 	var ro := float(dims["post_outer_radius_mm"])
-	return gon * (ro * ro - ri * ri) * float(dims["mast_height_mm"]) \
+	return gon * (ro * ro - ri * ri) * float(dims["post_height_mm"]) \
 		+ pow(float(dims["flange_mm"]), 2.0) * float(dims["flange_thickness_mm"]) \
 		+ float(dims["gps_length_mm"]) * float(dims["gps_width_mm"]) * float(dims["pad_thickness_mm"])
 

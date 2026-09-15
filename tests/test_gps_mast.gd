@@ -25,6 +25,7 @@ static func run() -> Array:
 	results.append(_the_post_follows_the_mast_height(catalog))
 	results.append_array(_a_flat_or_unpublished_gps_is_refused(catalog))
 	results.append(_no_gps_no_row(catalog))
+	results.append(_a_mast_no_taller_than_its_pad_is_refused(catalog))
 	results.append_array(_mass_is_opt_in_and_seated_on_the_mast(catalog))
 	results.append(_its_guesses_are_labelled_and_fitted_from_the_panel())
 	results.append(_each_guess_is_named_and_a_set_one_loses_its_marker(catalog))
@@ -96,7 +97,8 @@ static func _the_solid_is_post_flange_and_pad(catalog: PartsCatalog) -> Array:
 	var ri := float(d.get("bore_radius_mm", 0.0))
 	var ro := float(d.get("post_outer_radius_mm", 0.0))
 	# Written out here: the post annulus over the mast height, the flange slab, the pad slab.
-	var expected := gon * (ro * ro - ri * ri) * float(d.get("mast_height_mm", 0.0)) \
+	# PR16: the post is the mast height LESS the pad, so the module's underside is at the mast height.
+	var expected := gon * (ro * ro - ri * ri) * (float(d.get("mast_height_mm", 0.0)) - float(d.get("pad_thickness_mm", 0.0))) \
 		+ float(d.get("flange_mm", 0.0)) * float(d.get("flange_mm", 0.0)) * float(d.get("flange_thickness_mm", 0.0)) \
 		+ 22.0 * 22.0 * float(d.get("pad_thickness_mm", 0.0))
 	var volume := float(report["volume_mm3"])
@@ -106,6 +108,10 @@ static func _the_solid_is_post_flange_and_pad(catalog: PartsCatalog) -> Array:
 		TestResult.new("they are closed outward shells whose volume is the post, the flange and a 22 × 22 mm pad",
 			bool(report["ok"]) and expected > 0.0 and absf(volume - expected) < 1e-4 * expected,
 			"ok %s, %.3f vs %.3f mm³, reasons %s" % [report["ok"], volume, expected, report["reasons"]]),
+		# The weight is volume_mm3's, so it must be the solid's volume, not a second opinion of it.
+		TestResult.new("the mast is weighed at the volume of the solid it exports",
+			volume > 0.0 and absf(GpsMast.volume_mm3(d) - volume) < 1e-4 * volume,
+			"volume_mm3 %.3f vs solid %.3f mm³" % [GpsMast.volume_mm3(d), volume]),
 	]
 
 
@@ -116,8 +122,8 @@ static func _the_post_follows_the_mast_height(catalog: PartsCatalog) -> TestResu
 	var span := _span_z(GpsMast.triangles_mm(d))
 	var pad := float(d.get("pad_thickness_mm", 0.0))
 	return TestResult.new(
-		"with the GPS mast tweak at 30 mm (not the module's 45), the part stands 30 mm plus its pad, and records the height",
-		absf(float(d.get("mast_height_mm", 0.0)) - 30.0) < 1e-6 and absf(span - (30.0 + pad)) < 1e-3,
+		"with the GPS mast tweak at 30 mm (not the module's 45), the part stands 30 mm pad included — the module sits at the mast height — and records the height",
+		absf(float(d.get("mast_height_mm", 0.0)) - 30.0) < 1e-6 and absf(span - 30.0) < 1e-3 and pad > 0.0,
 		"mast %.3f mm, solid %.3f mm tall, pad %.2f" % [d.get("mast_height_mm", 0.0), span, pad])
 
 
@@ -143,6 +149,26 @@ static func _a_flat_or_unpublished_gps_is_refused(catalog: PartsCatalog) -> Arra
 				and String(d_bare["reason"]).contains("length_mm") and bool(accepted["ok"]),
 			"%s; masted ok %s" % [d_bare.get("reason", ""), accepted["ok"]]),
 	]
+
+
+## PR16: the pad is inside the mast height, so a mast no taller than the pad leaves no post. At 4 mm with a
+## 5 mm pad the part refuses naming both; at 6 mm it prints a 1 mm post.
+static func _a_mast_no_taller_than_its_pad_is_refused(catalog: PartsCatalog) -> TestResult:
+	var printing := {}
+	GpsMast.set_value(printing, GpsMast.PAD, 5.0)
+	var short := _masted_build(catalog)
+	short.set_printing(printing)
+	short.set_assembly({"mast_height_m": 0.004})
+	var d_short := GpsMast.dimensions(short, printing)
+	var tall := _masted_build(catalog)
+	tall.set_printing(printing.duplicate(true))
+	tall.set_assembly({"mast_height_m": 0.006})
+	var d_tall := GpsMast.dimensions(tall, tall.printing)
+	var reason := String(d_short.get("reason", ""))
+	return TestResult.new("a 4 mm mast under a 5 mm pad is refused naming both; a 6 mm mast prints a 6 mm part",
+		not bool(d_short["ok"]) and reason.begins_with("gps_mast:") and reason.contains("4.0") and reason.contains("5.0")
+			and bool(d_tall["ok"]) and absf(_span_z(GpsMast.triangles_mm(d_tall)) - 6.0) < 1e-3,
+		"\"%s\"; tall ok %s" % [reason, d_tall["ok"]])
 
 
 static func _no_gps_no_row(catalog: PartsCatalog) -> TestResult:
