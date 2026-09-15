@@ -22,6 +22,39 @@ static func run() -> Array:
 	results.append(_an_edit_reaches_the_project())
 	results.append_array(_the_guard_row_follows_the_build())
 	results.append_array(_the_arm_guard_is_fitted_from_the_panel())
+	results.append_array(_the_panel_scrolls_above_the_dock())
+	return results
+
+
+## The Print panel's content must scroll inside the inspector, which ends BOTTOM_KEEPOUT above the
+## window's bottom edge so the Lab / Sim / Rooms dock never covers it. A panel that is not inside a
+## ScrollContainer reports its whole content height as its MINIMUM height, and a Control's minimum
+## beats its offsets: the inspector grows past the keepout and the rows run off the window. Measured
+## as minimum heights, so no render is needed. The fixture fits a camera and an antenna, because a
+## fresh project fits neither and its short panel would pass without scrolling at all.
+static func _the_panel_scrolls_above_the_dock() -> Array:
+	var results: Array = []
+	var project := Project.create("Tall")
+	project.parts["camera"] = "cam_micro_analog"
+	project.parts["antenna"] = "antenna_rhcp_ufl"
+	var shell := GlassShell.new()
+	shell.apply_project(project)
+	shell.select_system_by_name("Printed")
+	var content := shell.lab.print_panel.content_height()
+	for height: float in [720.0, 1837.0]:
+		var room: float = height - shell._inspector.offset_top - GlassShell.BOTTOM_KEEPOUT
+		# Measured on the panel, not the inspector: the shell moves the panels into the inspector in
+		# _ready, which never runs outside a tree, so the inspector alone reports 0 px and passes.
+		var wanted: float = shell.lab.print_panel.get_combined_minimum_size().y
+		results.append(TestResult.new(
+			"at %.0f px tall the Print panel fits between the top bar and the dock, and scrolls the rest" % height,
+			wanted <= room,
+			"panel needs %.0f px, %.0f px free above the dock; content is %.0f px" % [wanted, room, content]))
+	results.append(TestResult.new(
+		"the tall fixture really is taller than a 720 px window, so the check above can fail",
+		content > 720.0 - shell._inspector.offset_top - GlassShell.BOTTOM_KEEPOUT,
+		"content %.0f px" % content))
+	shell.free()
 	return results
 
 

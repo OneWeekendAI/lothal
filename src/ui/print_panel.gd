@@ -38,6 +38,13 @@ var _before: VBoxContainer
 var _divergence_buttons: Dictionary = {}
 var _rows: Array = []
 var _updating := false
+## The column of rows, kept so its natural height can be measured.
+var _root: VBoxContainer
+
+
+## How tall the panel's rows are, unscrolled.
+func content_height() -> float:
+	return _root.get_combined_minimum_size().y
 
 
 func _init() -> void:
@@ -46,7 +53,16 @@ func _init() -> void:
 
 	var root := VBoxContainer.new()
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	AssemblyPanel._padded(self).add_child(root)
+	_root = root
+	# Scrolls, on TunePanel's pattern: one row per printed part, each with its note and sliders, is
+	# taller than a laptop window. Without the ScrollContainer the rows' whole height becomes this
+	# panel's MINIMUM height, which beats the inspector's bottom offset, so the column grew past
+	# BOTTOM_KEEPOUT, ran under the Lab / Sim / Rooms dock and off the window. Vertical only.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	add_child(scroll)
+	AssemblyPanel._padded(scroll).add_child(root)
 
 	var title := Label.new()
 	title.text = "PRINTED"
