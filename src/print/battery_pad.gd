@@ -161,7 +161,7 @@ static func volume_mm3(dims: Dictionary) -> float:
 
 
 static func mass_kg(dims: Dictionary) -> float:
-	return volume_mm3(dims) * 1.0e-9 * ArmGuard.TPU_DENSITY_KG_M3 * ArmGuard.INFILL_FRACTION
+	return PrintSettings.printed_mass_kg(volume_mm3(dims))
 
 
 ## One point mass beneath the pack's own seat when fitted; nothing otherwise.

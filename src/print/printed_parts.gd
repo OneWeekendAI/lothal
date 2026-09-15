@@ -279,13 +279,13 @@ static func _gps_mast_row(build: Build) -> Dictionary:
 	if not bool(dims["ok"]):
 		note = String(dims["reason"])
 	else:
-		note = "GPS %.1f × %.1f mm (published) on a %.1f mm mast (the GPS mast setting, shared by every drone). Lead bore %.1f mm%s, wall %.1f mm%s, pad %.1f mm%s, flange %.1f mm%s. %.2f g%s." % [
+		note = "GPS %.1f × %.1f mm (published) on a %.1f mm mast (the GPS mast setting, shared by every drone). Lead bore %.1f mm%s, wall %.1f mm%s, pad %.1f mm%s, flange %.1f mm%s. %.2f g at %s%s." % [
 			float(dims["gps_length_mm"]), float(dims["gps_width_mm"]), float(dims["mast_height_mm"]),
 			float(dims["bore_mm"]), " (guess)" if bool(dims["bore_guessed"]) else "",
 			float(dims["post_wall_mm"]), " (guess)" if bool(dims["wall_guessed"]) else "",
 			float(dims["pad_thickness_mm"]), " (guess)" if bool(dims["pad_guessed"]) else "",
 			float(dims["flange_mm"]), " (guess)" if bool(dims["flange_guessed"]) else "",
-			GpsMast.mass_kg(dims) * 1000.0, "" if fitted else " — not counted in the weight until fitted"]
+			GpsMast.mass_kg(dims) * 1000.0, PrintSettings.infill_label(), "" if fitted else " — not counted in the weight until fitted"]
 	return {
 		"id": GPS_MAST,
 		"label": "GPS mast — printed stalk",
@@ -304,12 +304,12 @@ static func _battery_pad_row(build: Build) -> Dictionary:
 	if not bool(dims["ok"]):
 		note = String(dims["reason"])
 	else:
-		note = "Pack %.1f × %.1f mm (published) plus a %.1f mm margin%s. %.1f mm thick%s, two %.1f mm strap slots%s. %.2f g%s." % [
+		note = "Pack %.1f × %.1f mm (published) plus a %.1f mm margin%s. %.1f mm thick%s, two %.1f mm strap slots%s. %.2f g at %s%s." % [
 			float(dims["battery_length_mm"]), float(dims["battery_width_mm"]),
 			float(dims["margin_mm"]), " (guess)" if bool(dims["margin_guessed"]) else "",
 			float(dims["thickness_mm"]), " (guess)" if bool(dims["thickness_guessed"]) else "",
 			float(dims["slot_width_mm"]), " (guess)" if bool(dims["slot_guessed"]) else "",
-			BatteryPad.mass_kg(dims) * 1000.0, "" if fitted else " — not counted in the weight until fitted"]
+			BatteryPad.mass_kg(dims) * 1000.0, PrintSettings.infill_label(), "" if fitted else " — not counted in the weight until fitted"]
 	return {
 		"id": BATTERY_PAD,
 		"label": "Battery pad — TPU grip pad",
@@ -329,10 +329,10 @@ static func _arm_guard_row(build: Build) -> Dictionary:
 	if not bool(dims["ok"]):
 		note = String(dims["reason"])
 	else:
-		note = "Arm %.1f mm thick (published), %.1f mm wide%s. Wall %.1f mm, length %.0f mm (guesses). %.2f g each, print four%s." % [
+		note = "Arm %.1f mm thick (published), %.1f mm wide%s. Wall %.1f mm, length %.0f mm (guesses). %.2f g each at %s, print four%s." % [
 			float(dims["arm_thickness_mm"]), float(dims["tip_width_mm"]),
 			" (guess)" if bool(dims["tip_width_guessed"]) else "",
-			float(dims["wall_mm"]), float(dims["length_mm"]), ArmGuard.mass_kg(dims) * 1000.0,
+			float(dims["wall_mm"]), float(dims["length_mm"]), ArmGuard.mass_kg(dims) * 1000.0, PrintSettings.infill_label(),
 			"" if fitted else " — not counted in the weight until fitted"]
 	return {
 		"id": ARM_GUARD,

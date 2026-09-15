@@ -50,12 +50,6 @@ const MAX_LENGTH_MM := 40.0
 const MIN_TIP_WIDTH_MM := 4.0
 const MAX_TIP_WIDTH_MM := 30.0
 
-## TPU 95A, 1.22 g/cm³ — the class-typical datasheet figure (Ultimaker and Polymaker TPU 95A sheets
-## both sit at 1.20–1.23). A material's density, not this part's, and not re-sourced per brand.
-const TPU_DENSITY_KG_M3 := 1220.0
-## Fraction of the solid actually filled. A GUESS: a 1.6 mm wall is all perimeters at any slicer's
-## defaults, so it prints solid; an 18 mm sleeve with a thicker wall would not.
-const INFILL_FRACTION := 1.0
 
 const PART_ID := "arm_guard"
 ## Bumped BY HAND whenever `triangles_mm`'s output changes for the same inputs (persistence §7.4).
@@ -191,7 +185,7 @@ static func volume_mm3(dims: Dictionary) -> float:
 
 
 static func mass_kg(dims: Dictionary) -> float:
-	return volume_mm3(dims) * 1.0e-9 * TPU_DENSITY_KG_M3 * INFILL_FRACTION
+	return PrintSettings.printed_mass_kg(volume_mm3(dims))
 
 
 ## Where one sleeve's centre sits, body axes, metres: along the motor's arm, its outer end against the
