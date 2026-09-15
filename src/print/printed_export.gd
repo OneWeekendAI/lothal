@@ -56,7 +56,9 @@ static func export_part(build: Build, part_id: String, prop_tip_radius_m: float,
 	var solid_name := safe_name(String(solid["solid_name"]))
 	var triangles: Array = solid["triangles"]
 	var path := export_dir.path_join("%s.stl" % solid_name)
-	var result := StlWriter.write(solid_name, triangles, path)
+	# A solid that names its bodies (a frame's plates) is checked per body; every other part as one surface.
+	var result := StlWriter.write_bodies(solid_name, solid["bodies"], path) if solid.has("bodies") \
+		else StlWriter.write(solid_name, triangles, path)
 	if not bool(result["ok"]):
 		return {"ok": false, "reason": String(result["reason"]), "record": {}}
 

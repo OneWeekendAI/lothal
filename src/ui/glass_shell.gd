@@ -1144,7 +1144,8 @@ func _on_printed_export_requested(part_id: String) -> void:
 	var solid_name := _safe_export_name(String(solid["solid_name"]))
 	var path := printed_export_dir.path_join("%s.stl" % solid_name)
 	DirAccess.make_dir_recursive_absolute(printed_export_dir)
-	_report_export(StlWriter.write(solid_name, solid["triangles"], path), path)
+	_report_export(StlWriter.write_bodies(solid_name, solid["bodies"], path) if solid.has("bodies")
+		else StlWriter.write(solid_name, solid["triangles"], path), path)
 
 
 ## "Export printed parts…" — every part this drone prints, written to the exports folder AND into the

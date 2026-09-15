@@ -100,16 +100,16 @@ static func solid_for(build: Build, part_id: String, prop_tip_radius_m: float) -
 			out["solid_name"] = "%s-%s" % [part_id, frame_id]
 			out["generator"] = "%s@%d" % [part_id, FRAME_GENERATOR_VERSION]
 			out["quantity"] = 1
-			out["triangles"] = frame_triangles_mm(build.frame)
+			var bodies := frame_bodies_mm(build.frame)
+			out["bodies"] = bodies
+			out["triangles"] = StlWriter.flatten(bodies)
 			if (out["triangles"] as Array).is_empty():
 				dims = {"ok": false, "reason": "%s: %s has no plate geometry to print" % [part_id, frame_id]}
 			else:
-				# Checked HERE, not left to the writer, so the row can say why before the button is pressed.
-				# A catalog frame is several plates that touch along identical edges; StlWriter counts edges
-				# across the whole file and cannot tell that from a bad winding, so every catalog frame is
-				# refused today. That is a limit of the check, recorded (track §7F), never overridden here.
-				var report := StlWriter.check_manifold(out["triangles"])
-				dims = {"ok": bool(report["ok"]), "reason": "%s: %s cannot be written as one checked solid (%s)" % [
+				# Checked per PLATE (PR13): plates touch along identical edges, which is legal between bodies
+				# and was what the whole-file check refused. Inside each plate the check is as strict as ever.
+				var report := StlWriter.check_bodies(bodies)
+				dims = {"ok": bool(report["ok"]), "reason": "%s: %s cannot be written (%s)" % [
 					part_id, frame_id, ", ".join(PackedStringArray(report["reasons"]))]}
 		_:
 			out["reason"] = "%s: not a printed part" % part_id
@@ -122,7 +122,11 @@ static func solid_for(build: Build, part_id: String, prop_tip_radius_m: float) -
 ## The frame as triangles, read back off FrameExport's own STL text rather than tessellated a second
 ## time here: FrameExport is the one frame solid, and this is its second reader, not a second writer.
 static func frame_triangles_mm(frame: Dictionary) -> Array:
-	var text := FrameExport.to_stl(AirframeDocument.from_catalog_frame(frame))
+	return _stl_triangles(FrameExport.to_stl(AirframeDocument.from_catalog_frame(frame)))
+
+
+## Triangles read back off STL text FrameExport wrote.
+static func _stl_triangles(text: String) -> Array:
 	var out: Array = []
 	var corners := PackedVector3Array()
 	for line in text.split("\n"):
@@ -137,6 +141,32 @@ static func frame_triangles_mm(frame: Dictionary) -> Array:
 			out.append(corners)
 			corners = PackedVector3Array()
 	return out
+
+
+## The frame as BODIES, one per plate (PR13): FrameExport's own STL for a document holding that one plate,
+## read back. Plates first, then pads, in the order FrameExport writes them — so the bodies flattened are
+## exactly `frame_triangles_mm`, and a record hashes the same text either way.
+static func frame_bodies_mm(frame: Dictionary) -> Array:
+	return document_bodies_mm(AirframeDocument.from_catalog_frame(frame))
+
+
+## A document's plates and pads as bodies. No catalog frame has a pad today; FrameExport writes pads, so
+## they are kept here and tested on a document that has one.
+static func document_bodies_mm(document: AirframeDocument) -> Array:
+	var out: Array = []
+	for plate in document.plates:
+		out.append(_stl_triangles(_one_plate(document, [plate], [])))
+	for pad in document.pads:
+		out.append(_stl_triangles(_one_plate(document, [], [pad])))
+	return out
+
+
+static func _one_plate(source: AirframeDocument, plates: Array, pads: Array) -> String:
+	var single := AirframeDocument.from_catalog_frame({})
+	single.name = source.name
+	single.plates = plates
+	single.pads = pads
+	return FrameExport.to_stl(single)
 
 
 static func for_build(build: Build) -> Array:

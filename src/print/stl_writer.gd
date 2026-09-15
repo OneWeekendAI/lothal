@@ -173,6 +173,64 @@ static func check_manifold(triangles: Array) -> Dictionary:
 	}
 
 
+## Is each BODY a solid a slicer can print? Printed-room PR13. Returns check_manifold's shape, with every
+## reason prefixed "body N:" (1-based), and the volume and triangle count summed over the bodies.
+##
+## ## Why bodies, and why the whole-file check could not stay
+##
+## `check_manifold` counts directed edges across the whole list. That is exactly right inside one closed
+## surface, and wrong across two: a catalog frame is six plates, and where neighbouring arms meet their
+## plates share IDENTICAL edges running the same way. Each plate is closed and outward on its own; the
+## whole-file count sees the shared edge walked twice in one direction and calls it bad winding. Every
+## catalog frame was refused for that (PR9). A slicer unions touching bodies exactly as it unions
+## interpenetrating ones, which this file already allows.
+##
+## So the producer says where one body ends — it knows, because it built them one at a time — and each
+## body gets the FULL check on its own: closed, consistently wound, outward, enclosing something. Nothing
+## about the strictness inside a body is relaxed. A body is still refused for a single flipped facet, and
+## an empty body is refused rather than skipped, because a producer that emits one has lost a part.
+##
+## `check_manifold` and `write` are unchanged: a caller with one list still gets the whole-file check.
+static func check_bodies(bodies: Array) -> Dictionary:
+	if bodies.is_empty():
+		return {"ok": false, "reasons": ["there are no bodies"], "volume_mm3": 0.0, "triangle_count": 0}
+	var reasons: Array = []
+	var volume := 0.0
+	var count := 0
+	for index in bodies.size():
+		var report := check_manifold(bodies[index])
+		volume += float(report["volume_mm3"])
+		count += int(report["triangle_count"])
+		for reason in report["reasons"]:
+			reasons.append("body %d: %s" % [index + 1, String(reason)])
+	return {"ok": reasons.is_empty(), "reasons": reasons, "volume_mm3": volume, "triangle_count": count}
+
+
+## Checks each body, then writes all of them as one file — or refuses by name and writes nothing, as
+## `write` does. The file is the bodies' triangles in order, so its text is `to_ascii` of them flattened:
+## the same text a print record hashes.
+static func write_bodies(solid_name: String, bodies: Array, path: String) -> Dictionary:
+	var report := check_bodies(bodies)
+	if not bool(report["ok"]):
+		return {"ok": false, "volume_mm3": float(report["volume_mm3"]),
+			"reason": "%s: %s" % [solid_name, ", ".join(PackedStringArray(report["reasons"]))]}
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return {"ok": false, "volume_mm3": float(report["volume_mm3"]),
+			"reason": "%s: could not open %s for writing" % [solid_name, path]}
+	file.store_string(to_ascii(solid_name, flatten(bodies)))
+	file.close()
+	return {"ok": true, "reason": "", "volume_mm3": float(report["volume_mm3"])}
+
+
+## The bodies' triangles in body order, as one list.
+static func flatten(bodies: Array) -> Array:
+	var out: Array = []
+	for body in bodies:
+		out.append_array(body)
+	return out
+
+
 ## The solid as ASCII STL text, in millimetres. Does NOT check — `write` does, and a caller that
 ## wants the text of a broken solid to look at is a debugging case rather than an export.
 ##

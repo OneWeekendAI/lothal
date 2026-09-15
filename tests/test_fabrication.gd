@@ -106,14 +106,14 @@ static func _a_frame_is_listed_only_when_printable(catalog: PartsCatalog) -> Arr
 			not unstated.has(PrintedParts.FRAME) and not bought_ids.has(PrintedParts.FRAME)
 				and printed_ids.has(PrintedParts.FRAME),
 			"unstated %s, bought %s, either %s" % [unstated, bought_ids, printed_ids]),
-		# A catalog frame is six plates whose arms touch along identical edges, and StlWriter's whole-file
-		# edge count cannot tell that from a bad winding. So the honest outcome today is a REFUSAL by name,
-		# with the manifold reason, on the frame export's own triangles — never a quiet write.
-		TestResult.new("the printable frame's solid is the frame export's own tessellation, and it is refused by name with the manifold reason",
-			triangles.size() > 0 and triangles.size() == facets and not bool(report["ok"])
-				and not bool(solid.get("ok", true)) and String(solid.get("reason", "")).begins_with("frame:")
-				and String(solid.get("reason", "")).contains("frame_3in_toothpick")
-				and String(solid.get("reason", "")).contains(String(report["reasons"][0]) if not (report["reasons"] as Array).is_empty() else "-")
+		# PR9 pinned a refusal here, because the whole-file check refused every catalog frame. PR13 checks each
+		# plate as its own body, so a printable frame now passes — and inside each plate it is still strict.
+		# `report` is the OLD whole-file check on the same triangles, and it must still refuse: that is what
+		# makes "passes per plate" a statement about the per-body check rather than about a changed frame.
+		TestResult.new("the printable frame's solid is the frame export's own tessellation: refused whole-file, passed per plate",
+			triangles.size() > 0 and triangles.size() == facets and bool(solid.get("ok", false))
+				and not bool(report["ok"])
+				and bool(StlWriter.check_bodies(solid.get("bodies", []))["ok"])
 				and String(solid.get("generator", "")) == "frame@1",
 			"ok %s, %d triangles vs %d facets, reason \"%s\"" % [solid.get("ok"), triangles.size(), facets,
 				solid.get("reason", "")]),
