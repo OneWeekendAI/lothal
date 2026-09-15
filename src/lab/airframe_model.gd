@@ -35,6 +35,9 @@ var guard_meshes: Dictionary = {}
 ## PR1). Parented onto the frame body rather than the pad, because a sleeve sits inboard of the motor
 ## along the arm and its seat is ArmGuard.seat_position_m — the point Build.mass_parts weighs it at.
 var arm_guard_meshes: Dictionary = {}
+## part id -> PrintedPartMesh, for the printed parts other than arm guards that the build FITS
+## (printed-room PR16-PR18). Parented onto the frame body, drawn from each part's own `triangles_mm`.
+var printed_part_meshes: Dictionary = {}
 ## The pack. Parented onto the frame for the same reason the motors hang off the arm-tip pads: the
 ## mount's height is FrameModel's, the standoff tweak moves it, and a frame rebuild frees it rather
 ## than leaving a stale pack behind.
@@ -85,6 +88,7 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 	propeller_meshes.clear()
 	guard_meshes.clear()
 	arm_guard_meshes.clear()
+	printed_part_meshes.clear()
 	arm_m = build.arm_m
 
 	# The pack, on whichever of the frame's strap mounts the builder chose, slid to wherever they
@@ -222,6 +226,45 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 						ArmGuard.motor_stator_radius_m(build.motor), float(dims["length_mm"])))
 				frame_model.add_child(sleeve)
 				arm_guard_meshes[motor_name] = sleeve
+
+	_draw_printed_parts(build, tweak_m)
+
+
+## The fitted printed parts other than arm guards (printed-room PR18-PR20), each drawn from its own
+## `triangles_mm` — the list the export writes. The mast and the pad are seated from the point
+## `part_masses` weighs them at, never a second seat computed here. Not fitted, or refused, draws nothing.
+func _draw_printed_parts(build: Build, _tweak_m: Dictionary) -> void:
+	# The weighed point is the one gate: part_masses is empty unless the part is Fitted and readable.
+	var mast_masses := GpsMast.part_masses(build, build.printing)
+	if not mast_masses.is_empty():
+		var mast_dims := GpsMast.dimensions(build, build.printing)
+		var bay := mount_point(String(Build.COMPONENT_MOUNTS["gps"]))
+		if bool(mast_dims["ok"]) and bay != null:
+			var mast := _printed_mesh(GpsMast.PART_ID, GpsMast.triangles_mm(mast_dims), float(bay.normal))
+			# Weighed half the mast up the post; the flange's foot is on the bay.
+			mast.position = (mast_masses[0] as PartMass).position_m \
+				- Vector3(0.0, float(bay.normal) * float(mast_dims["mast_height_mm"]) * 0.0005, 0.0)
+
+	var pad_masses := BatteryPad.part_masses(build, build.printing)
+	if not pad_masses.is_empty():
+		var pad_dims := BatteryPad.dimensions(build.battery, build.printing)
+		if bool(pad_dims["ok"]) and battery_mount != null:
+			var pad := _printed_mesh(BatteryPad.PART_ID, BatteryPad.triangles_mm(pad_dims), float(battery_mount.normal))
+			# Weighed at its own centre; printed from the bed up, so the node sits half a pad back towards the plate.
+			pad.position = (pad_masses[0] as PartMass).position_m \
+				- Vector3(0.0, float(battery_mount.normal) * float(pad_dims["thickness_mm"]) * 0.0005, 0.0)
+
+
+## One printed part's node on the frame body, Z-up print frame, turned over for a mount facing down.
+func _printed_mesh(id: String, triangles: Array, normal: float) -> PrintedPartMesh:
+	var mesh := PrintedPartMesh.new()
+	mesh.name = "Printed_%s" % id
+	mesh.rebuild(triangles, PrintedPartMesh.Z_UP)
+	if normal < 0.0:
+		mesh.basis = Basis(Vector3.RIGHT, PI)
+	frame_model.add_child(mesh)
+	printed_part_meshes[id] = mesh
+	return mesh
 
 
 ## Hands each propeller the RPM of its own motor, in MotorLayout.MOTOR_NAMES order — which is the
