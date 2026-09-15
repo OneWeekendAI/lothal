@@ -34,7 +34,7 @@ const PROP_GUARD_GENERATOR_VERSION := 1
 ## `generator` is "<part>@<hand-bumped version>", `quantity` is how many of the one STL to print.
 ##
 ## The prop guard's triangles are PropulsionExport's, the same function Propulsion's own button writes.
-static func solid_for(build: Build, part_id: String, prop_tip_radius_m: float) -> Dictionary:
+static func solid_for(build: Build, part_id: String) -> Dictionary:
 	# `inputs`: settings a print record keeps so a later divergence can name them from/to (PR5). Only the
 	# ones that live OUTSIDE this drone's own printing block need it — today, the global camera tilt.
 	var out := {"ok": false, "reason": "", "part": part_id, "solid_name": part_id, "triangles": [],
@@ -88,7 +88,7 @@ static func solid_for(build: Build, part_id: String, prop_tip_radius_m: float) -
 			out["solid_name"] = String(build.guard.get("part_id", part_id))
 			out["generator"] = "%s@%d" % [part_id, PROP_GUARD_GENERATOR_VERSION]
 			out["quantity"] = MotorLayout.MOTOR_NAMES.size()
-			out["triangles"] = PropulsionExport.guard_triangles_mm(build.guard, prop_tip_radius_m)
+			out["triangles"] = PropulsionExport.guard_triangles_mm(build.guard)
 			dims = {"ok": not (out["triangles"] as Array).is_empty(),
 				"reason": "%s: %s has no ring to print" % [part_id, out["solid_name"]]}
 		FRAME:
@@ -202,7 +202,7 @@ static func for_build(build: Build) -> Array:
 		})
 	var frame_fabrication := PartsCatalog.fabrication_of(build.frame)
 	if frame_fabrication == "printed" or frame_fabrication == "either":
-		var frame_solid := solid_for(build, FRAME, 0.0)
+		var frame_solid := solid_for(build, FRAME)
 		rows.append({
 			"id": FRAME,
 			"label": "Frame — %s" % String(build.frame.get("name", build.frame.get("part_id", ""))),

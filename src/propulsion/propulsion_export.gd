@@ -45,9 +45,16 @@ const STACK_SEGMENTS := 32
 ## guard record in hand (an inspector row) is not the caller with the aircraft's ring node in hand
 ## (the 3D view), and asking the inspector to reach into the scene for it would make the export
 ## depend on the guard being on screen.
-static func guard_triangles_mm(guard: Dictionary, prop_tip_radius_m: float) -> Array:
+##
+## No prop tip radius is taken (printed-room PR14). The ring's inner wall is `outer_radius - wall`, a
+## fact of the guard's own spec: `GuardMesh` reaches it as `tip + clearance`, and the tip cancels. So
+## every prop gives the same ring, and a parameter for it changed nothing. The mesh still needs a
+## positive tip to build, so it is handed the spec's own outer radius — a number the guard already
+## carries, not a second definition of any propeller's radius. Deriving the ring FROM the prop is a
+## deferred Propulsion item (track.md), because it would move P9's inertia numbers.
+static func guard_triangles_mm(guard: Dictionary) -> Array:
 	var mesh := GuardMesh.new()
-	mesh.rebuild(guard, prop_tip_radius_m)
+	mesh.rebuild(guard, float(guard.get("specs", {}).get("outer_radius_mm", 0.0)) * 0.001)
 	var triangles := mesh.ring_triangles_mm()
 	mesh.free()
 	return triangles
@@ -58,9 +65,9 @@ static func guard_triangles_mm(guard: Dictionary, prop_tip_radius_m: float) -> A
 ## The solid is named for the part id rather than for the file, so a folder of exports opened in a
 ## slicer shows which catalog entry each one is — an STL's solid name is the only identity that
 ## survives being renamed on the way to somebody else's machine.
-static func write_guard(guard: Dictionary, prop_tip_radius_m: float, path: String) -> Dictionary:
+static func write_guard(guard: Dictionary, path: String) -> Dictionary:
 	var part_id := String(guard.get("part_id", "guard"))
-	return StlWriter.write(part_id, guard_triangles_mm(guard, prop_tip_radius_m), path)
+	return StlWriter.write(part_id, guard_triangles_mm(guard), path)
 
 
 ## The motor's mount stack as printable triangles, in millimetres, read off the cylinders

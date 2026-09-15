@@ -31,12 +31,12 @@ extends RefCounted
 
 ## Exports every listed part. Returns `{"written": [record…], "refused": [reason…], "summary": String}`.
 ## `container` may be null, in which case files are written and nothing is recorded.
-static func export_all(build: Build, prop_tip_radius_m: float, export_dir: String,
+static func export_all(build: Build, export_dir: String,
 		container: ProjectContainer) -> Dictionary:
 	var written: Array = []
 	var refused: Array = []
 	for row in PrintedParts.for_build(build):
-		var one := export_part(build, String(row["id"]), prop_tip_radius_m, export_dir, container)
+		var one := export_part(build, String(row["id"]), export_dir, container)
 		if bool(one["ok"]):
 			written.append(one["record"])
 		else:
@@ -47,10 +47,10 @@ static func export_all(build: Build, prop_tip_radius_m: float, export_dir: Strin
 
 ## Exports ONE part — the loop body `export_all` runs per row, and Reprint's whole job (PR7). Returns
 ## `{"ok", "reason", "record"}`; a refusal writes nothing and records nothing.
-static func export_part(build: Build, part_id: String, prop_tip_radius_m: float, export_dir: String,
+static func export_part(build: Build, part_id: String, export_dir: String,
 		container: ProjectContainer) -> Dictionary:
 	DirAccess.make_dir_recursive_absolute(export_dir)
-	var solid := PrintedParts.solid_for(build, part_id, prop_tip_radius_m)
+	var solid := PrintedParts.solid_for(build, part_id)
 	if not bool(solid["ok"]):
 		return {"ok": false, "reason": String(solid["reason"]), "record": {}}
 	var solid_name := safe_name(String(solid["solid_name"]))

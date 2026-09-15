@@ -53,8 +53,7 @@ static func is_kept(printing: Dictionary, key: String) -> bool:
 
 
 ## One finding per part that needs saying: `{"part", "kind", "message"}`.
-static func check(project: Project, container: ProjectContainer, build: Build,
-		prop_tip_radius_m: float) -> Array:
+static func check(project: Project, container: ProjectContainer, build: Build) -> Array:
 	var findings: Array = []
 	if project == null or build == null:
 		return findings
@@ -92,7 +91,7 @@ static func check(project: Project, container: ProjectContainer, build: Build,
 					label, date, file]})
 			continue
 
-		var solid := PrintedParts.solid_for(build, part, prop_tip_radius_m) if listed.has(part) else {}
+		var solid := PrintedParts.solid_for(build, part) if listed.has(part) else {}
 		if not listed.has(part) or not bool(solid.get("ok", false)):
 			var why := "this build does not list it" if not listed.has(part) else String(solid.get("reason", ""))
 			var gone_key := "%s|%s|gone" % [part, record_sha]

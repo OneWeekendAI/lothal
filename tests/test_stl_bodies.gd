@@ -141,7 +141,7 @@ static func _a_printable_frame_exports_end_to_end() -> Array:
 	var per_body := StlWriter.check_bodies(bodies)
 	var facets := FrameExport.to_stl(AirframeDocument.from_catalog_frame(frame)).count("facet normal")
 	var container := ProjectContainer.make(Project.create("Printed frame"))
-	var result := PrintedExport.export_part(build, PrintedParts.FRAME, 0.0, DIR, container)
+	var result := PrintedExport.export_part(build, PrintedParts.FRAME, DIR, container)
 	var record: Dictionary = result.get("record", {})
 	var on_disk := String(record.get("exported_to", ""))
 	var disk_sha := FileAccess.get_file_as_string(on_disk).sha256_text() if on_disk != "" and FileAccess.file_exists(on_disk) else ""

@@ -63,7 +63,7 @@ static func _a_guards_flag_decides_its_export(catalog: PartsCatalog) -> Array:
 	bought_part["fabrication"] = "bought"
 	build.guard = bought_part
 	var bought := _guard_row(build)
-	var bought_solid := PrintedParts.solid_for(build, PrintedParts.PROP_GUARD, 0.0635)
+	var bought_solid := PrintedParts.solid_for(build, PrintedParts.PROP_GUARD)
 	var printed_part := real.duplicate(true)
 	printed_part["fabrication"] = "printed"
 	build.guard = printed_part
@@ -97,7 +97,7 @@ static func _a_frame_is_listed_only_when_printable(catalog: PartsCatalog) -> Arr
 	printed["fabrication"] = "either"
 	build.frame = printed
 	var printed_ids := _ids(PrintedParts.for_build(build))
-	var solid := PrintedParts.solid_for(build, PrintedParts.FRAME, 0.0)
+	var solid := PrintedParts.solid_for(build, PrintedParts.FRAME)
 	var triangles: Array = solid.get("triangles", [])
 	var report := StlWriter.check_manifold(triangles)
 	var facets := FrameExport.to_stl(AirframeDocument.from_catalog_frame(printed)).count("facet normal")

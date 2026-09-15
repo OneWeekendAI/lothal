@@ -48,10 +48,10 @@ static func _keep_hides_without_deleting() -> TestResult:
 	var container: ProjectContainer = e["container"]
 	var printing := _loosened(0.35)
 	var build := _build(printing, 25.0)
-	var before := PrintedDivergence.check(container.project, container, build, 0.0)
+	var before := PrintedDivergence.check(container.project, container, build)
 	PrintedDivergence.acknowledge(printing, _for_part(before, "camera_mount"))
 	build.set_printing(printing.duplicate(true))
-	var after := PrintedDivergence.check(container.project, container, build, 0.0)
+	var after := PrintedDivergence.check(container.project, container, build)
 	return TestResult.new("Keep hides the camera mount's message, leaves the other three, and deletes no record",
 		before.size() == 4 and after.size() == 3 and _for_part(after, "camera_mount").is_empty()
 			and container.project.print_records.size() == 4,
@@ -63,10 +63,10 @@ static func _a_new_divergence_after_keep_shows_again() -> TestResult:
 	var e := _exported({}, 25.0)
 	var container: ProjectContainer = e["container"]
 	var printing := _loosened(0.35)
-	var kept := PrintedDivergence.check(container.project, container, _build(printing, 25.0), 0.0)
+	var kept := PrintedDivergence.check(container.project, container, _build(printing, 25.0))
 	PrintedDivergence.acknowledge(printing, _for_part(kept, "camera_mount"))
 	PrintSettings.set_clearance_mm(printing, 0.45)
-	var later := PrintedDivergence.check(container.project, container, _build(printing, 25.0), 0.0)
+	var later := PrintedDivergence.check(container.project, container, _build(printing, 25.0))
 	var camera := _for_part(later, "camera_mount")
 	return TestResult.new("a kept camera mount that diverges AGAIN (0.35 → 0.45 mm) shows again, naming the new clearance",
 		String(camera.get("kind", "")) == "differs" and String(camera.get("message", "")).contains("0.45 mm"),
@@ -78,9 +78,9 @@ static func _reprint_adds_one_record_for_that_part_only() -> TestResult:
 	var e := _exported({}, 25.0)
 	var container: ProjectContainer = e["container"]
 	var build := _build(_loosened(0.35), 25.0)
-	var result := PrintedExport.export_part(build, "camera_mount", 0.0, DIR, container)
+	var result := PrintedExport.export_part(build, "camera_mount", DIR, container)
 	var records := container.project.print_records
-	var after := PrintedDivergence.check(container.project, container, build, 0.0)
+	var after := PrintedDivergence.check(container.project, container, build)
 	return TestResult.new("Reprint writes exactly one new record, for the camera mount, which then matches; the other three still diverge",
 		bool(result.get("ok", false)) and records.size() == 5 and String(records[records.size() - 1]["part"]) == "camera_mount"
 			and after.size() == 3 and _for_part(after, "camera_mount").is_empty(),
@@ -166,7 +166,7 @@ static func _exported(printing: Dictionary, tilt_deg: float) -> Dictionary:
 	var project := Project.create("Diverging")
 	project.printing = printing.duplicate(true)
 	var container := ProjectContainer.make(project)
-	var result := PrintedExport.export_all(build, 0.0, DIR, container)
+	var result := PrintedExport.export_all(build, DIR, container)
 	return {"container": container, "written": result.get("written", [])}
 
 
@@ -194,7 +194,7 @@ static func _for_part(findings: Array, part: String) -> Dictionary:
 static func _an_unchanged_drone_says_nothing() -> TestResult:
 	var e := _exported({}, 25.0)
 	var container: ProjectContainer = e["container"]
-	var findings := PrintedDivergence.check(container.project, container, _build({}, 25.0), 0.0)
+	var findings := PrintedDivergence.check(container.project, container, _build({}, 25.0))
 	return TestResult.new("a drone whose parts still generate what was exported says nothing — with four records to compare",
 		(e["written"] as Array).size() == 4 and container.project.print_records.size() == 4 and findings.is_empty(),
 		"%d records, findings %s" % [container.project.print_records.size(), _messages(findings)])
@@ -205,7 +205,7 @@ static func _a_clearance_change_is_named() -> TestResult:
 	var container: ProjectContainer = e["container"]
 	var looser := {}
 	PrintSettings.set_clearance_mm(looser, 0.35)
-	var findings := PrintedDivergence.check(container.project, container, _build(looser, 25.0), 0.0)
+	var findings := PrintedDivergence.check(container.project, container, _build(looser, 25.0))
 	var camera := _for_part(findings, "camera_mount")
 	var message := String(camera.get("message", ""))
 	# Guarded: a broken export records nothing, and an unguarded [0] aborts the runner instead of failing.
@@ -223,7 +223,7 @@ static func _a_clearance_change_is_named() -> TestResult:
 static func _a_tilt_change_is_named_from_and_to() -> TestResult:
 	var e := _exported({}, 25.0)
 	var container: ProjectContainer = e["container"]
-	var findings := PrintedDivergence.check(container.project, container, _build({}, 40.0), 0.0)
+	var findings := PrintedDivergence.check(container.project, container, _build({}, 40.0))
 	var camera := _for_part(findings, "camera_mount")
 	var message := String(camera.get("message", ""))
 	return TestResult.new(
@@ -239,9 +239,9 @@ static func _the_newest_record_decides() -> TestResult:
 	PrintSettings.set_clearance_mm(looser, 0.35)
 	var old := _exported(looser, 25.0)
 	var container: ProjectContainer = old["container"]
-	var fresh := PrintedExport.export_all(_build({}, 25.0), 0.0, DIR, container)
+	var fresh := PrintedExport.export_all(_build({}, 25.0), DIR, container)
 	container.project.printing = {}
-	var findings := PrintedDivergence.check(container.project, container, _build({}, 25.0), 0.0)
+	var findings := PrintedDivergence.check(container.project, container, _build({}, 25.0))
 	return TestResult.new("with an older stale record and a newer matching one, the newest decides: nothing is said",
 		container.project.print_records.size() == 8 and (fresh.get("written", []) as Array).size() == 4
 			and findings.is_empty(),
@@ -253,7 +253,7 @@ static func _a_part_no_longer_generated_is_reported() -> TestResult:
 	var container: ProjectContainer = e["container"]
 	var build := _build({}, 25.0)
 	build.components.erase("antenna")
-	var findings := PrintedDivergence.check(container.project, container, build, 0.0)
+	var findings := PrintedDivergence.check(container.project, container, build)
 	var antenna := _for_part(findings, "antenna_mount")
 	return TestResult.new("an antenna taken off the build reports its printed mount as no longer generated, and only that",
 		String(antenna.get("kind", "")) == "gone" and String(antenna.get("message", "")).contains("antenna mount")
@@ -269,7 +269,7 @@ static func _a_missing_file_is_reported() -> TestResult:
 			false, "the export recorded %d parts, so there is no second record to strip" % container.project.print_records.size())
 	var record: Dictionary = container.project.print_records[1]
 	container.set_member_bytes(String(record["file"]), PackedByteArray())
-	var findings := PrintedDivergence.check(container.project, container, _build({}, 25.0), 0.0)
+	var findings := PrintedDivergence.check(container.project, container, _build({}, 25.0))
 	var hit := _for_part(findings, String(record["part"]))
 	return TestResult.new("a record whose STL is missing from the drone is reported by name and file, never dropped",
 		String(hit.get("kind", "")) == "missing_file" and String(hit.get("message", "")).contains(String(record["file"]))

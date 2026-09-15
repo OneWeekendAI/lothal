@@ -1116,14 +1116,14 @@ func _on_mount_stl_requested(motor: Dictionary) -> void:
 	_report_export(PropulsionExport.write_mount_stack(mesh, solid_name, path), path)
 
 
-func _on_guard_stl_requested(guard_id: String, prop_tip_radius_m: float) -> void:
+func _on_guard_stl_requested(guard_id: String) -> void:
 	if guard_id == "":
 		return
 	var guard := lab.catalog.get_part(guard_id)
 	var solid_name := _safe_export_name(guard_id)
 	var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
 	DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
-	_report_export(PropulsionExport.write_guard(guard, prop_tip_radius_m, path), path)
+	_report_export(PropulsionExport.write_guard(guard, path), path)
 
 
 ## The Printed room's Export buttons. Each id routes into the export that already exists for that
@@ -1131,13 +1131,11 @@ func _on_guard_stl_requested(guard_id: String, prop_tip_radius_m: float) -> void
 ## guard export and two doors to it, never two exports.
 func _on_printed_export_requested(part_id: String) -> void:
 	if part_id == PrintedParts.PROP_GUARD:
-		_on_guard_stl_requested(lab.propeller_details.guard_id(),
-			lab.propeller_details.guard_tip_radius_m())
+		_on_guard_stl_requested(lab.propeller_details.guard_id())
 		return
 	# Every generated part goes through the one dispatcher the whole-room export uses, on the build WITH
 	# the assembly on it: the camera mount prints at the Camera tilt, which `current_build()` alone lacks.
-	var solid := PrintedParts.solid_for(lab.build_with_open_harness(), part_id,
-		lab.propeller_details.guard_tip_radius_m())
+	var solid := PrintedParts.solid_for(lab.build_with_open_harness(), part_id)
 	if not bool(solid["ok"]):
 		_report_export({"ok": false, "reason": String(solid["reason"])}, "")
 		return
@@ -1157,7 +1155,7 @@ func export_printed_parts() -> Dictionary:
 		return {}
 	_sync_project()
 	var result := PrintedExport.export_all(lab.build_with_open_harness(),
-		lab.propeller_details.guard_tip_radius_m(), printed_export_dir, container)
+		printed_export_dir, container)
 	if not (result.get("written", []) as Array).is_empty() and container.path != "":
 		container.write()
 	last_printed_export_summary = String(result.get("summary", ""))
@@ -1930,7 +1928,7 @@ func reprint_part(part_id: String) -> void:
 		return
 	_sync_project()
 	var result := PrintedExport.export_part(lab.build_with_open_harness(), part_id,
-		lab.propeller_details.guard_tip_radius_m(), printed_export_dir, container)
+		printed_export_dir, container)
 	if bool(result["ok"]) and container.path != "":
 		container.write()
 	_report_printed_divergence()
@@ -2070,7 +2068,7 @@ func _report_printed_divergence() -> void:
 	if container == null or lab == null:
 		return
 	printed_divergence = PrintedDivergence.check(container.project, container,
-		lab.build_with_open_harness(), lab.propeller_details.guard_tip_radius_m())
+		lab.build_with_open_harness())
 	lab.print_panel.set_divergence(printed_divergence)
 	if printed_divergence.is_empty() or _status_label == null:
 		return

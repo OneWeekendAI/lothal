@@ -58,10 +58,10 @@ static func _a_moved_mast_height_is_named_on_open(catalog: PartsCatalog) -> Test
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(dir.path_join(f)))
 	var at_45 := _masted_build(catalog)
 	var container := ProjectContainer.make(Project.create("Masted"))
-	var exported := PrintedExport.export_part(at_45, GpsMast.PART_ID, 0.0, dir, container)
+	var exported := PrintedExport.export_part(at_45, GpsMast.PART_ID, dir, container)
 	var at_30 := _masted_build(catalog)
 	at_30.set_assembly({"mast_height_m": 0.030})
-	var findings := PrintedDivergence.check(container.project, container, at_30, 0.0)
+	var findings := PrintedDivergence.check(container.project, container, at_30)
 	var message := ""
 	for finding in findings:
 		if String(finding["part"]) == GpsMast.PART_ID:

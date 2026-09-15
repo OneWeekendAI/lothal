@@ -61,7 +61,8 @@ const RADIAL_SEGMENTS := 32
 
 ## The visible inner wall of the ring, in metres. Derived from PropGuard.tip_clearance_mm as
 ## `(prop_tip_radius + clearance) * 0.001`, so a mutation from `clearance` to
-## `outer_radius - prop_tip_radius` is caught by inner_radius_m alone.
+## `outer_radius - prop_tip_radius` is caught by inner_radius_m alone. The tip cancels: the wall
+## lands at the spec's `outer_radius - wall` for any prop, so the ring does not follow the prop.
 var inner_radius_m := 0.0
 ## The outer wall — inner + wall_mm. Not read directly from the spec, so a drift between the two
 ## definitions of the ring cannot happen.

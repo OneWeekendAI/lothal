@@ -39,7 +39,7 @@ static func _every_part_writes_and_records() -> Array:
 	PrintSettings.set_clearance_mm(printing, 0.35)
 	build.set_printing(printing)
 	var container := ProjectContainer.make(Project.create("Export"))
-	var result := PrintedExport.export_all(build, 0.0, DIR, container)
+	var result := PrintedExport.export_all(build, DIR, container)
 	var written: Array = result.get("written", [])
 
 	var expected: Array = []
@@ -97,7 +97,7 @@ static func _a_record_round_trips_through_the_file() -> TestResult:
 	_clear_dir(RT_DIR)
 	var path := RT_DIR + "/round_trip.lothal"
 	var container := ProjectContainer.make(Project.create("Round trip"))
-	var result := PrintedExport.export_all(ReferenceBuild.build(), 0.0, DIR, container)
+	var result := PrintedExport.export_all(ReferenceBuild.build(), DIR, container)
 	var wrote := container.write(path, RT_DIR + "/no_custom_parts.json")
 	var reopened := ProjectContainer.open(path) if wrote else null
 	var problems: Array = []
@@ -127,7 +127,7 @@ static func _one_refusal_refuses_only_itself(catalog: PartsCatalog) -> Array:
 	var build := ReferenceBuild.build()
 	build.frame = catalog.get_part("frame_65mm_whoop")
 	var container := ProjectContainer.make(Project.create("Whoop"))
-	var result := PrintedExport.export_all(build, 0.0, DIR, container)
+	var result := PrintedExport.export_all(build, DIR, container)
 	var refused: Array = result.get("refused", [])
 	var summary := String(result.get("summary", ""))
 	var arm_files := 0
@@ -207,15 +207,14 @@ static func _the_menu_entry_is_live_and_routes() -> Array:
 
 
 ## drone fits the 5" bumper, and the record's bytes must be exactly what Propulsion's own guard export
-## writes — so a room export that tessellated its own ring, or passed the wrong tip radius, fails.
+## writes — so a room export that tessellated its own ring, fails.
 static func _a_fitted_prop_guard_goes_through_the_room_export(catalog: PartsCatalog) -> Array:
 	_clear_dir(DIR)
 	var guard := catalog.get_part("guard_bumper_5in_abs")
 	var build := ReferenceBuild.build()
 	build.guard = guard
-	var tip_radius_m := 0.0635
 	var container := ProjectContainer.make(Project.create("Guarded"))
-	var result := PrintedExport.export_all(build, tip_radius_m, DIR, container)
+	var result := PrintedExport.export_all(build, DIR, container)
 	var record: Dictionary = {}
 	for r in result.get("written", []):
 		if String((r as Dictionary).get("part", "")) == "prop_guard":
@@ -223,7 +222,7 @@ static func _a_fitted_prop_guard_goes_through_the_room_export(catalog: PartsCata
 
 	var own_path := DIR.path_join("_propulsion_own_guard.stl")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(own_path))
-	var own := PropulsionExport.write_guard(guard, tip_radius_m, own_path)
+	var own := PropulsionExport.write_guard(guard, own_path)
 	# Propulsion names its solid by part id, which is also the room export's solid name for a guard.
 	var own_sha := FileAccess.get_file_as_string(own_path).sha256_text() if FileAccess.file_exists(own_path) else ""
 	var member := container.member_bytes(String(record.get("file", ""))).get_string_from_utf8()

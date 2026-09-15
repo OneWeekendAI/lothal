@@ -37,10 +37,11 @@ extends PartDetails
 signal design_blade_requested(prop: Dictionary)
 
 ## THE GUARD'S INSPECTOR ROW — P10f, and the row is on THIS panel rather than the Motor's for a
-## geometric reason: a guard wraps the propeller disc. Its inner wall is derived from
-## `PropGuard.tip_clearance_mm` against the tip radius of the prop these rows describe, so the
-## clearance a builder is choosing between is a fact about the part on this panel. The motor only
-## decides where the ring rides.
+## geometric reason: a guard wraps the propeller disc. The CLEARANCE is read from
+## `PropGuard.tip_clearance_mm` against the tip radius of the prop these rows describe, so the gap a
+## builder is choosing between is a fact about the part on this panel. The ring itself is NOT derived
+## from the prop: its inner wall is the spec's `outer_radius - wall` whatever prop it wraps (found in
+## printed-room PR12; deriving it is a deferred Propulsion item). The motor only decides where it rides.
 ##
 ## **This is also the row P10a and P10b both ended by naming as missing.** `Build.guard_id` has
 ## been reachable from `Build.from_ids` and from nowhere else: the physics was proved, the ring was
@@ -53,10 +54,10 @@ signal design_blade_requested(prop: Dictionary)
 ## is bit-identical only while that stays true.
 signal guard_changed(guard_id: String)
 
-## Emitted with the guard id and the tip radius the ring was fitted around — both, because the
-## annulus is a function of the pair and the panel is the one place that holds them together. The
-## shell owns the file dialog for the same reason it owns the rooms.
-signal guard_stl_requested(guard_id: String, prop_tip_radius_m: float)
+## Emitted with the guard id alone: the annulus is a function of the guard's spec, not of the prop
+## (printed-room PR14 removed a tip radius that changed nothing). The shell owns the file dialog for
+## the same reason it owns the rooms.
+signal guard_stl_requested(guard_id: String)
 
 var _design_button: Button
 
@@ -323,12 +324,12 @@ func _build_guard_row(root: VBoxContainer) -> void:
 	_guard_export = Button.new()
 	_guard_export.text = "Export guard (STL)…"
 	_guard_export.tooltip_text = ("The ring as a printable solid, in millimetres — the same "
-		+ "annulus the aircraft is drawn with, at the clearance these rows were computed for.")
+		+ "annulus the aircraft is drawn with.")
 	# DISABLED WITH NOTHING FITTED, rather than emitting a request the shell would have to refuse.
 	# A button that does nothing when pressed is indistinguishable from a broken one.
 	_guard_export.disabled = true
 	_guard_export.pressed.connect(func() -> void:
-		guard_stl_requested.emit(guard_id(), _tip_radius_m()))
+		guard_stl_requested.emit(guard_id()))
 	root.add_child(_guard_export)
 
 	var note := Label.new()
@@ -370,12 +371,7 @@ func select_guard(p_guard_id: String) -> bool:
 
 ## The tip radius of the propeller these rows describe, read through the SAME document the mesh,
 ## the mass integral and the BEMT closure read. Not `diameter_inches / 2` computed here: that
-## would be the second definition of a prop's radius, and the guard's whole inner wall hangs off
-## it.
-## The same radius, for the Printed room's export door (printed-room PR0). Public so the shell does
-## not reach into a private member, and a wrapper so there is still one definition.
-func guard_tip_radius_m() -> float:
-	return _tip_radius_m()
+## would be the second definition of a prop's radius, and the tip clearance hangs off it.
 
 
 func _tip_radius_m() -> float:

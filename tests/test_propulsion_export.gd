@@ -8,8 +8,8 @@ extends RefCounted
 ##
 ## The three entries in `data/parts/guards.json` are not three of the same thing. Two are ducts and
 ## one is a bumper; one is a 3" TPU shroud with a 2 mm wall and one is a 5" ABS ring with a 3 mm
-## one; and the ring's inner wall is derived per-guard from `PropGuard.tip_clearance_mm` against
-## the propeller it wraps, so the annulus is a different shape for each. A single fixture would
+## one; and each ring's inner wall is its own spec's `outer_radius - wall`, so the annulus is a
+## different shape for each. (Not derived from the prop: see PropulsionExport.guard_triangles_mm.) A single fixture would
 ## prove the writer works on the geometry somebody happened to test it with. The loop is written
 ## with an explicit `checked == 3` so that a renamed catalog category cannot empty it and pass
 ## silently — the vacuity guard `test_parts_system.gd`'s own guard checks already carry.
@@ -33,6 +33,7 @@ static func run() -> Array:
 	var catalog := PartsCatalog.load_default()
 
 	results.append_array(_every_catalog_guard_is_printable(catalog))
+	results.append_array(_the_export_is_the_drawn_ring_whatever_the_prop(catalog))
 	results.append(_the_ring_encloses_the_annulus_it_draws(catalog))
 	results.append(_a_ring_wound_the_other_way_is_refused(catalog))
 	results.append(_no_guard_exports_nothing_rather_than_an_empty_solid())
@@ -73,7 +74,7 @@ static func _every_catalog_guard_is_printable(catalog: PartsCatalog) -> Array:
 	var checked := 0
 	for guard in catalog.list_category("guard"):
 		checked += 1
-		var triangles := PropulsionExport.guard_triangles_mm(guard, _tip_radius_m(guard))
+		var triangles := PropulsionExport.guard_triangles_mm(guard)
 		var report := StlWriter.check_manifold(triangles)
 		results.append(TestResult.new(
 			"%s exports a closed, outward-wound solid" % guard["part_id"],
@@ -85,6 +86,28 @@ static func _every_catalog_guard_is_printable(catalog: PartsCatalog) -> Array:
 		"and all three catalog guards were actually checked",
 		checked == 3,
 		"checked %d" % checked))
+	return results
+
+
+## Printed-room PR14 removed the tip radius from the export. That is only honest if the ring the Lab DRAWS
+## around the real prop is the ring exported, and if a different prop draws the same ring too — the
+## second is the fact that made the parameter dead, pinned so a later derivation has to change this test.
+static func _the_export_is_the_drawn_ring_whatever_the_prop(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	for guard in catalog.list_category("guard"):
+		var exported := PropulsionExport.guard_triangles_mm(guard)
+		var drawn := {}
+		for tip_m in [_tip_radius_m(guard), _tip_radius_m(guard) * 0.5]:
+			var mesh := GuardMesh.new()
+			mesh.rebuild(guard, tip_m)
+			drawn[tip_m] = StlWriter.to_ascii("ring", mesh.ring_triangles_mm()).sha256_text()
+			mesh.free()
+		var own := StlWriter.to_ascii("ring", exported).sha256_text()
+		var shas: Array = drawn.values()
+		results.append(TestResult.new(
+			"%s: the export is the ring drawn around its own prop, and around a prop half that size" % guard["part_id"],
+			not exported.is_empty() and shas.size() == 2 and own == shas[0] and own == shas[1],
+			"export %s…, drawn %s" % [own.substr(0, 12), shas]))
 	return results
 
 
@@ -119,7 +142,7 @@ static func _the_ring_encloses_the_annulus_it_draws(catalog: PartsCatalog) -> Te
 ## check that says the export is a claim about winding rather than about triangles existing.
 static func _a_ring_wound_the_other_way_is_refused(catalog: PartsCatalog) -> TestResult:
 	var guard := catalog.get_part("guard_bumper_5in_abs")
-	var triangles := PropulsionExport.guard_triangles_mm(guard, _tip_radius_m(guard))
+	var triangles := PropulsionExport.guard_triangles_mm(guard)
 	var report := StlWriter.check_manifold(_reversed(triangles))
 	var named := false
 	for reason in report["reasons"]:
@@ -132,7 +155,7 @@ static func _a_ring_wound_the_other_way_is_refused(catalog: PartsCatalog) -> Tes
 
 
 static func _no_guard_exports_nothing_rather_than_an_empty_solid() -> TestResult:
-	var triangles := PropulsionExport.guard_triangles_mm({}, 0.0635)
+	var triangles := PropulsionExport.guard_triangles_mm({})
 	var result := StlWriter.write("nothing", triangles, "user://test_no_guard.stl")
 	var wrote := FileAccess.file_exists("user://test_no_guard.stl")
 	if wrote:
@@ -149,7 +172,7 @@ static func _a_refused_spec_exports_nothing(catalog: PartsCatalog) -> TestResult
 	var broken := catalog.get_part("guard_duct_5in_cinewhoop").duplicate(true)
 	var specs: Dictionary = broken["specs"]
 	specs.erase("kind")
-	var triangles := PropulsionExport.guard_triangles_mm(broken, 0.0635)
+	var triangles := PropulsionExport.guard_triangles_mm(broken)
 	return TestResult.new(
 		"a guard whose spec PropGuard refuses exports nothing rather than a default ring",
 		triangles.is_empty(),
