@@ -40,15 +40,16 @@ extends RefCounted
 ## The camera's catalog mass is the camera AS MOUNTED (cameras.json: "the camera with its bracket"),
 ## so a mount weighed on top would count the bracket twice. Nothing here reaches `Build.mass_parts`.
 ##
-## ## Not drawn, in this wave
+## ## Drawn when Fitted (PR19)
 ##
-## Arm guards are drawn because a builder fits them. The camera's fit checks (Wave V) measure the
-## camera component and what surrounds it, and a cheek drawn beside it is a change to those numbers
-## this slice has no reason to make. Export only; `triangles_mm` stays the one definition, so a drawing
-## added later has one thing to draw.
+## Ticking Fitted draws both cheeks in the Lab, from `triangles_mm`, either side of the drawn camera at
+## the drawn tilt. It adds no weight (above). The Wave V camera checks do not move: they measure the
+## plates, the guard rings and the component boxes, and a cheek lies wholly behind the lens plane —
+## more than 90° off the boresight — beside a camera whose box the checks already read.
 
 const BLOCK := "camera_mount"
 const PLATE_SPACING := "plate_spacing_mm"
+const FITTED := "fitted"
 const PART_ID := "camera_mount"
 
 ## Bumped BY HAND whenever `triangles_mm`'s output changes for the same inputs (persistence §7.4).
@@ -73,9 +74,15 @@ static func settings(printing: Dictionary) -> Dictionary:
 	return raw if raw is Dictionary else {}
 
 
+static func is_fitted(printing: Dictionary) -> bool:
+	return bool(settings(printing).get(FITTED, false))
+
+
 static func set_value(printing: Dictionary, key: String, value: Variant) -> void:
 	var block := settings(printing).duplicate(true)
 	match key:
+		FITTED:
+			block[FITTED] = bool(value)
 		PLATE_SPACING:
 			block[PLATE_SPACING] = clampf(float(value), MIN_PLATE_SPACING_MM, MAX_PLATE_SPACING_MM)
 		_:

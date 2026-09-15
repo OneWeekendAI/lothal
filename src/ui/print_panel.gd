@@ -15,7 +15,7 @@ signal clearance_edited(mm: float)
 signal export_requested(part_id: String)
 ## An arm-guard setting moved under the mouse: `ArmGuard.FITTED` with a bool, or a length key in mm.
 signal arm_guard_edited(key: String, value: Variant)
-## A camera-mount setting moved: `CameraMount.PLATE_SPACING` in mm.
+## A camera-mount setting moved: `CameraMount.FITTED` with a bool (PR19), or `PLATE_SPACING` in mm.
 signal camera_mount_edited(key: String, value: Variant)
 ## An antenna-mount setting moved: `AntennaMount.STANDOFF_SPACING` or `STANDOFF_DIAMETER`, in mm.
 signal antenna_mount_edited(key: String, value: Variant)
@@ -172,6 +172,13 @@ func render(build: Build, printing: Dictionary) -> void:
 			pad_fit.toggled.connect(func(on: bool) -> void: battery_pad_edited.emit(BatteryPad.FITTED, on))
 			line.add_child(pad_fit)
 			_fit_toggles[id] = pad_fit
+		if bool(row.get("fittable", false)) and id == PrintedParts.CAMERA_MOUNT:
+			var cheek_fit := CheckBox.new()
+			cheek_fit.text = "Fitted — draw them (no weight of their own)"
+			cheek_fit.button_pressed = bool(row["fitted"])
+			cheek_fit.toggled.connect(func(on: bool) -> void: camera_mount_edited.emit(CameraMount.FITTED, on))
+			line.add_child(cheek_fit)
+			_fit_toggles[id] = cheek_fit
 		if id == PrintedParts.CAMERA_MOUNT and row.has("plate_spacing_mm"):
 			var gap := HSlider.new()
 			gap.min_value = CameraMount.MIN_PLATE_SPACING_MM

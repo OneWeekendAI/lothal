@@ -15,6 +15,9 @@ static func run() -> Array:
 	results.append_array(_the_pad_is_drawn_under_the_pack_where_it_is_weighed())
 	results.append(_under_the_bottom_plate_the_pad_is_turned_over())
 	results.append(_nothing_is_drawn_until_fitted(catalog))
+	results.append_array(_the_cheeks_are_drawn_either_side_of_the_tipped_camera())
+	results.append_array(_the_cheeks_move_no_camera_check())
+	results.append(_the_cheeks_are_fitted_from_the_panel())
 	return results
 
 
@@ -183,3 +186,125 @@ static func _nothing_is_drawn_until_fitted(catalog: PartsCatalog) -> TestResult:
 	airframe.free()
 	return TestResult.new("a build that fits a GPS and a pack but ticks nothing draws no printed part",
 		count == 0 and children == 0, "%d meshes, %d nodes" % [count, children])
+
+
+## A reference build (micro camera, 19 × 19 × 21 mm) at a 40° tilt from the tweaks, a 26 mm gap and 0.35 mm
+## of clearance, all off their defaults so a drawing that ignored any of them is caught.
+static func _cheek_airframe(fitted: bool, gap_mm: float = 26.0) -> AirframeModel:
+	var printing := {}
+	CameraMount.set_value(printing, CameraMount.FITTED, fitted)
+	CameraMount.set_value(printing, CameraMount.PLATE_SPACING, gap_mm)
+	PrintSettings.set_clearance_mm(printing, 0.35)
+	var build := ReferenceBuild.build()
+	build.set_printing(printing)
+	var tweaks := AssemblyTweaks.new()
+	tweaks.set_mm(AssemblyTweaks.CAMERA_TILT, 40.0)
+	var airframe := AirframeModel.new()
+	airframe.rebuild(build, tweaks)
+	return airframe
+
+
+static func _the_cheeks_are_drawn_either_side_of_the_tipped_camera() -> Array:
+	var airframe := _cheek_airframe(true)
+	var camera_at: Vector3 = (airframe.component_meshes["camera"] as Node3D).position \
+		if airframe.component_meshes.has("camera") else Vector3.INF
+	var sides := {}
+	for side in ["left", "right"]:
+		var mesh: PrintedPartMesh = airframe.printed_part_meshes.get("%s_%s" % [CameraMount.PART_ID, side], null)
+		sides[side] = {"local": mesh.drawn_vertices_m() if mesh != null else PackedVector3Array(),
+			"seated": mesh.seated_vertices_m() if mesh != null else PackedVector3Array()}
+	airframe.free()
+	var refused := _cheek_airframe(true, 18.0)
+	var refused_count := refused.printed_part_meshes.size()
+	refused.free()
+
+	var fixture := {}
+	CameraMount.set_value(fixture, CameraMount.PLATE_SPACING, 26.0)
+	PrintSettings.set_clearance_mm(fixture, 0.35)
+	var dims := CameraMount.dimensions(ReferenceBuild.build().components["camera"], fixture, 40.0)
+	var triangles := CameraMount.triangles_mm(dims)
+	var printed_volume := signed_volume_m3(flatten(triangles)) * 1e-9
+	# Written out: 19 mm wide, so the inner face is 9.5 + 0.35 mm off the camera's centre and the outer face
+	# half the 26 mm gap; standing height at 40° is 19 sin 40° + 21 cos 40°.
+	var inner := (9.5 + 0.35) / 1000.0
+	var outer := 13.0 / 1000.0
+	var standing := (19.0 * sin(deg_to_rad(40.0)) + 21.0 * cos(deg_to_rad(40.0))) / 1000.0
+	var shape_ok := true
+	var detail := ""
+	for side in ["left", "right"]:
+		var local: PackedVector3Array = sides[side]["local"]
+		var seated: PackedVector3Array = sides[side]["seated"]
+		var side_sign := -1.0 if side == "left" else 1.0
+		var near := INF
+		var far := -INF
+		for v in seated:
+			near = minf(near, (v.x - camera_at.x) * side_sign)
+			far = maxf(far, (v.x - camera_at.x) * side_sign)
+		var box := bounds(seated)
+		var ok := (local.size() == triangles.size() * 3 and triangles.size() > 0
+			and absf(signed_volume_m3(local) - printed_volume) < 1e-6 * printed_volume
+			and absf(near - inner) < 1e-6 and absf(far - outer) < 1e-6
+			and absf(box.size.y - standing) < 1e-6
+			and absf(box.get_center().y - camera_at.y) < 1e-6)
+		shape_ok = shape_ok and ok
+		detail += "%s: %d verts for %d triangles, volume %.4f vs %.4f mm³, near off %.9f far off %.9f, tall off %.9f, centre y off %.9f; " % [
+			side, local.size(), triangles.size(), signed_volume_m3(local) * 1e9, printed_volume * 1e9,
+			near - inner, far - outer, box.size.y - standing, box.get_center().y - camera_at.y]
+	return [
+		TestResult.new("two fitted cheeks are drawn from the exported triangles, from clearance off the camera's side to half the gap, as tall as the camera tipped to 40°",
+			shape_ok and printed_volume > 0.0, detail),
+		TestResult.new("a 19 mm camera in an 18 mm gap is refused, so nothing is drawn beside it",
+			refused_count == 0, "%d meshes" % refused_count),
+	]
+
+
+## The Wave V numbers do not move: the camera-view report, its warnings and the component fit warnings are
+## identical with the cheeks drawn, and every drawn cheek point is behind the lens — over 90° off the boresight.
+static func _the_cheeks_move_no_camera_check() -> Array:
+	var reports := []
+	var worst := INF
+	for fitted in [false, true]:
+		var airframe := _cheek_airframe(fitted)
+		var eye: Vector3 = airframe.camera_eye_m()
+		var boresight := airframe.camera_boresight()
+		var view := CameraView.off_axis_report(eye, boresight, airframe.camera_obstruction_points_m())
+		var words := []
+		for w in airframe.camera_view_warnings():
+			words.append((w as BuildWarning).message)
+		for w in airframe.component_fit_warnings():
+			words.append((w as BuildWarning).message)
+		reports.append([view, words])
+		if fitted:
+			for id in airframe.printed_part_meshes:
+				for v in (airframe.printed_part_meshes[id] as PrintedPartMesh).seated_vertices_m():
+					worst = minf(worst, rad_to_deg(boresight.angle_to(v - eye)))
+		airframe.free()
+	return [
+		TestResult.new("fitting the cheeks changes no camera-view angle, view warning or fit warning",
+			str(reports[0]) == str(reports[1]) and not str(reports[0][0]).is_empty(),
+			"unfitted %s / fitted %s" % [reports[0], reports[1]]),
+		TestResult.new("every drawn cheek point is more than 90° off the boresight, so a cheek can never be in the picture",
+			worst > 90.0 and worst < INF, "nearest %.3f°" % worst),
+	]
+
+
+static func _the_cheeks_are_fitted_from_the_panel() -> TestResult:
+	var shell := GlassShell.new()
+	var project := Project.create("Cheeks")
+	project.parts["camera"] = "cam_micro_analog"
+	shell.apply_project(project)
+	var before := shell.lab.airframe.printed_part_meshes.size()
+	var mass_before := shell.lab.current_build().mass_properties.total_mass_kg
+	# The checkbox itself is pressed, so a toggle that emits nothing is caught.
+	var toggle := shell.lab.print_panel.fit_toggle(CameraMount.PART_ID)
+	if toggle != null:
+		toggle.button_pressed = true
+	var after := shell.lab.airframe.printed_part_meshes.keys()
+	var mass_after := shell.lab.current_build().mass_properties.total_mass_kg
+	var refreshed := shell.lab.print_panel.fit_toggle(CameraMount.PART_ID)
+	var pressed := refreshed != null and refreshed.button_pressed
+	shell.free()
+	return TestResult.new("the camera mount's Fitted toggle draws both cheeks and adds no weight",
+		before == 0 and after.has("camera_mount_left") and after.has("camera_mount_right") and pressed
+			and mass_after == mass_before,
+		"before %d, after %s, pressed %s, %+.6f g" % [before, after, pressed, (mass_after - mass_before) * 1000.0])

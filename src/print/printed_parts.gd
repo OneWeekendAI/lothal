@@ -236,8 +236,8 @@ static func _camera_mount_row(build: Build) -> Dictionary:
 		"label": "Camera mount — TPU cheeks",
 		"note": note,
 		"exportable": bool(dims["ok"]),
-		"fittable": false,
-		"fitted": false,
+		"fittable": bool(dims["ok"]),
+		"fitted": CameraMount.is_fitted(build.printing) and bool(dims["ok"]),
 		"plate_spacing_mm": float(dims["plate_spacing_mm"]),
 	}
 

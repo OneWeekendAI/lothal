@@ -233,7 +233,23 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 ## The fitted printed parts other than arm guards (printed-room PR18-PR20), each drawn from its own
 ## `triangles_mm` — the list the export writes. The mast and the pad are seated from the point
 ## `part_masses` weighs them at, never a second seat computed here. Not fitted, or refused, draws nothing.
-func _draw_printed_parts(build: Build, _tweak_m: Dictionary) -> void:
+func _draw_printed_parts(build: Build, tweak_m: Dictionary) -> void:
+	# PR19: the cheeks either side of the DRAWN camera, at the drawn tilt (tweak_m's, the number the camera
+	# was just drawn with). Each cheek's inner face is clearance off the camera's side; its outer face is
+	# half the plate gap out.
+	if CameraMount.is_fitted(build.printing) and component_meshes.has("camera"):
+		var cam_dims := CameraMount.dimensions(build.components["camera"], build.printing,
+			float(tweak_m["camera_tilt_deg"]))
+		if bool(cam_dims["ok"]):
+			var camera: ComponentMesh = component_meshes["camera"]
+			var across := (float(cam_dims["camera_width_mm"]) * 0.5 + float(cam_dims["clearance_mm"])
+				+ float(cam_dims["cheek_thickness_mm"]) * 0.5) / StlWriter.MM_PER_M
+			var triangles := CameraMount.triangles_mm(cam_dims)
+			for side in [["left", -1.0], ["right", 1.0]]:
+				var cheek := _printed_mesh("%s_%s" % [CameraMount.PART_ID, side[0]], triangles, 1.0,
+					PrintedPartMesh.CHEEK)
+				cheek.position = camera.position + Vector3(float(side[1]) * across, 0.0, 0.0)
+
 	# The weighed point is the one gate: part_masses is empty unless the part is Fitted and readable.
 	var mast_masses := GpsMast.part_masses(build, build.printing)
 	if not mast_masses.is_empty():
@@ -256,10 +272,11 @@ func _draw_printed_parts(build: Build, _tweak_m: Dictionary) -> void:
 
 
 ## One printed part's node on the frame body, Z-up print frame, turned over for a mount facing down.
-func _printed_mesh(id: String, triangles: Array, normal: float) -> PrintedPartMesh:
+func _printed_mesh(id: String, triangles: Array, normal: float,
+		print_frame: Basis = PrintedPartMesh.Z_UP) -> PrintedPartMesh:
 	var mesh := PrintedPartMesh.new()
 	mesh.name = "Printed_%s" % id
-	mesh.rebuild(triangles, PrintedPartMesh.Z_UP)
+	mesh.rebuild(triangles, print_frame)
 	if normal < 0.0:
 		mesh.basis = Basis(Vector3.RIGHT, PI)
 	frame_model.add_child(mesh)
