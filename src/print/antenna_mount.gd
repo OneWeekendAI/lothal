@@ -38,12 +38,14 @@ extends RefCounted
 ##
 ## ## Mass and drawing
 ##
-## None, and not drawn, for the camera mount's reasons: the antenna's share already holds what it is
-## mounted with, and nothing about the drawn whip needs a second object beside it this wave.
+## No mass: the antenna's share already holds what it is mounted with. Drawn when Fitted (PR20): the
+## tube's axis is put on the drawn whip — through its base, along its lean — with the bed on the plate the
+## antenna stands on. The rings then land at the standoff spacing guess, which is drawn as the guess it is.
 
 const BLOCK := "antenna_mount"
 const STANDOFF_SPACING := "standoff_spacing_mm"
 const STANDOFF_DIAMETER := "standoff_diameter_mm"
+const FITTED := "fitted"
 const PART_ID := "antenna_mount"
 
 ## Bumped BY HAND whenever `triangles_mm`'s output changes for the same inputs (persistence §7.4).
@@ -72,9 +74,15 @@ static func settings(printing: Dictionary) -> Dictionary:
 	return raw if raw is Dictionary else {}
 
 
+static func is_fitted(printing: Dictionary) -> bool:
+	return bool(settings(printing).get(FITTED, false))
+
+
 static func set_value(printing: Dictionary, key: String, value: Variant) -> void:
 	var block := settings(printing).duplicate(true)
 	match key:
+		FITTED:
+			block[FITTED] = bool(value)
 		STANDOFF_SPACING:
 			block[STANDOFF_SPACING] = clampf(float(value), MIN_STANDOFF_SPACING_MM, MAX_STANDOFF_SPACING_MM)
 		STANDOFF_DIAMETER:
@@ -174,9 +182,25 @@ static func shells_mm(dims: Dictionary) -> Dictionary:
 	var axis := Vector3(0.0, sin(phi), cos(phi))
 	var u := Vector3(1.0, 0.0, 0.0)
 	var v := axis.cross(u)
-	var base := Vector3(0.0, wb + big_rt * cos(phi) - TUBE_WALL_MM * 0.5, big_rt * sin(phi))
+	var base := _tube_base_mm(dims)
 	out["tube"] = _annulus(base, u, v, axis, rt, big_rt, float(dims["tube_length_mm"]), n)
 	return out
+
+
+## Where the tube's annulus starts, mm, print frame: aft of the bar, lifted so its lowest rim is on the bed.
+static func _tube_base_mm(dims: Dictionary) -> Vector3:
+	var phi := deg_to_rad(float(dims["lean_deg"]))
+	var big_rt := float(dims["tube_outer_radius_mm"])
+	return Vector3(0.0, float(dims["bar_half_width_mm"]) + big_rt * cos(phi) - TUBE_WALL_MM * 0.5, big_rt * sin(phi))
+
+
+## Where the tube's axis meets the bed (Z = 0), mm, print frame: the point the antenna's base stands on.
+static func tube_foot_mm(dims: Dictionary) -> Vector3:
+	if not bool(dims.get("ok", false)):
+		return Vector3.ZERO
+	var phi := deg_to_rad(float(dims["lean_deg"]))
+	var base := _tube_base_mm(dims)
+	return Vector3(0.0, base.y - base.z * tan(phi), 0.0)
 
 
 ## The whole mount: the three shells in one list, which is what is written and what is hashed.

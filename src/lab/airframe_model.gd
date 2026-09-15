@@ -250,6 +250,19 @@ func _draw_printed_parts(build: Build, tweak_m: Dictionary) -> void:
 					PrintedPartMesh.CHEEK)
 				cheek.position = camera.position + Vector3(float(side[1]) * across, 0.0, 0.0)
 
+	# PR20: the tube's axis on the DRAWN whip — through its base (the antenna box's underside, on the plate) and
+	# along its lean, which is the tube's own lean because both read ComponentMesh.WHIP_LEAN_DEGREES.
+	if AntennaMount.is_fitted(build.printing) and component_meshes.has("antenna"):
+		var ant_dims := AntennaMount.dimensions(build.components["antenna"], build.printing)
+		if bool(ant_dims["ok"]):
+			var antenna: ComponentMesh = component_meshes["antenna"]
+			var whip := antenna.get_node_or_null("Whip") as Node3D
+			if whip != null:
+				var mount := _printed_mesh(AntennaMount.PART_ID, AntennaMount.triangles_mm(ant_dims), 1.0,
+					PrintedPartMesh.AFT_Y)
+				mount.position = antenna.position + whip.position \
+					- PrintedPartMesh.AFT_Y * AntennaMount.tube_foot_mm(ant_dims) / StlWriter.MM_PER_M
+
 	# The weighed point is the one gate: part_masses is empty unless the part is Fitted and readable.
 	var mast_masses := GpsMast.part_masses(build, build.printing)
 	if not mast_masses.is_empty():

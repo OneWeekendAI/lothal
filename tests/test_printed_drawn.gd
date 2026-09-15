@@ -18,6 +18,8 @@ static func run() -> Array:
 	results.append_array(_the_cheeks_are_drawn_either_side_of_the_tipped_camera())
 	results.append_array(_the_cheeks_move_no_camera_check())
 	results.append(_the_cheeks_are_fitted_from_the_panel())
+	results.append_array(_the_antenna_mount_holds_the_drawn_whip())
+	results.append(_the_antenna_mount_is_fitted_from_the_panel())
 	return results
 
 
@@ -308,3 +310,77 @@ static func _the_cheeks_are_fitted_from_the_panel() -> TestResult:
 		before == 0 and after.has("camera_mount_left") and after.has("camera_mount_right") and pressed
 			and mass_after == mass_before,
 		"before %d, after %s, pressed %s, %+.6f g" % [before, after, pressed, (mass_after - mass_before) * 1000.0])
+
+
+## The reference build's RHCP antenna (bore from its 15 mm width) with the mount fitted at a 36 mm spacing and
+## 0.35 mm clearance. The tube's bore and wall must lie on circles about the DRAWN whip's axis — read off the
+## Whip node, not recomputed — and the mount's bed on the plate the antenna stands on.
+static func _the_antenna_mount_holds_the_drawn_whip() -> Array:
+	var printing := {}
+	AntennaMount.set_value(printing, AntennaMount.FITTED, true)
+	AntennaMount.set_value(printing, AntennaMount.STANDOFF_SPACING, 36.0)
+	PrintSettings.set_clearance_mm(printing, 0.35)
+	var build := ReferenceBuild.build()
+	build.set_printing(printing)
+	var dims := AntennaMount.dimensions(build.components["antenna"], printing)
+	var shells := AntennaMount.shells_mm(dims)
+	var triangles := AntennaMount.triangles_mm(dims)
+
+	var airframe := AirframeModel.new()
+	airframe.rebuild(build)
+	var mesh: PrintedPartMesh = airframe.printed_part_meshes.get(AntennaMount.PART_ID, null)
+	var local := mesh.drawn_vertices_m() if mesh != null else PackedVector3Array()
+	var seated := mesh.seated_vertices_m() if mesh != null else PackedVector3Array()
+	var foot := Vector3.INF
+	var axis := Vector3.ZERO
+	if airframe.component_meshes.has("antenna"):
+		var antenna: Node3D = airframe.component_meshes["antenna"]
+		var whip := antenna.get_node_or_null("Whip") as Node3D
+		if whip != null:
+			foot = antenna.position + whip.position
+			axis = (whip.basis * Vector3.UP).normalized()
+	airframe.free()
+
+	# Bore 15 + 2 × 0.35 mm across; wall 1.2 mm outside it.
+	var bore := (7.5 + 0.35) / 1000.0
+	var wall := bore + 0.0012
+	var tube_count := (shells["tube"] as Array).size() * 3
+	var worst := 0.0
+	var on_circles := seated.size() == triangles.size() * 3 and tube_count > 0
+	for i in range(maxi(seated.size() - tube_count, 0), seated.size()):
+		var offset := seated[i] - foot
+		var radial := (offset - axis * offset.dot(axis)).length()
+		worst = maxf(worst, minf(absf(radial - bore), absf(radial - wall)))
+	var box := bounds(seated)
+	var printed_volume := signed_volume_m3(flatten(triangles)) * 1e-9
+	return [
+		TestResult.new("the fitted antenna mount is drawn from the exported triangles, wound as printed",
+			triangles.size() > 0 and local.size() == triangles.size() * 3
+				and printed_volume > 0.0 and absf(signed_volume_m3(local) - printed_volume) < 1e-6 * printed_volume,
+			"%d vertices for %d triangles" % [local.size(), triangles.size()]),
+		TestResult.new("every tube vertex lies on the 7.85 mm bore or the 9.05 mm wall about the drawn whip's axis, and the bed is the whip's foot",
+			on_circles and worst < 1e-7 and axis.z > 0.0 and absf(box.position.y - foot.y) < 1e-9,
+			"worst %.9f m over %d tube vertices; axis %s; bed %.6f vs foot %.6f" % [worst, tube_count, axis,
+				box.position.y, foot.y]),
+	]
+
+
+static func _the_antenna_mount_is_fitted_from_the_panel() -> TestResult:
+	var shell := GlassShell.new()
+	var project := Project.create("Tube")
+	project.parts["antenna"] = "antenna_rhcp_ufl"
+	shell.apply_project(project)
+	var before := shell.lab.airframe.printed_part_meshes.size()
+	var mass_before := shell.lab.current_build().mass_properties.total_mass_kg
+	# The checkbox itself is pressed, so a toggle that emits nothing is caught.
+	var toggle := shell.lab.print_panel.fit_toggle(AntennaMount.PART_ID)
+	if toggle != null:
+		toggle.button_pressed = true
+	var after := shell.lab.airframe.printed_part_meshes.keys()
+	var mass_after := shell.lab.current_build().mass_properties.total_mass_kg
+	var refreshed := shell.lab.print_panel.fit_toggle(AntennaMount.PART_ID)
+	var pressed := refreshed != null and refreshed.button_pressed
+	shell.free()
+	return TestResult.new("the antenna mount's Fitted toggle draws it and adds no weight",
+		before == 0 and after.has(AntennaMount.PART_ID) and pressed and mass_after == mass_before,
+		"before %d, after %s, pressed %s" % [before, after, pressed])

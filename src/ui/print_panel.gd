@@ -17,7 +17,7 @@ signal export_requested(part_id: String)
 signal arm_guard_edited(key: String, value: Variant)
 ## A camera-mount setting moved: `CameraMount.FITTED` with a bool (PR19), or `PLATE_SPACING` in mm.
 signal camera_mount_edited(key: String, value: Variant)
-## An antenna-mount setting moved: `AntennaMount.STANDOFF_SPACING` or `STANDOFF_DIAMETER`, in mm.
+## An antenna-mount setting moved: `AntennaMount.FITTED` with a bool (PR20), or `STANDOFF_SPACING` or `STANDOFF_DIAMETER` in mm.
 signal antenna_mount_edited(key: String, value: Variant)
 ## PR7: a "Printed before" finding's Keep or Reprint button, by part id.
 signal divergence_kept(part_id: String)
@@ -190,6 +190,13 @@ func render(build: Build, printing: Dictionary) -> void:
 				camera_mount_edited.emit(CameraMount.PLATE_SPACING, mm))
 			line.add_child(gap)
 			_gap_sliders[id] = gap
+		if bool(row.get("fittable", false)) and id == PrintedParts.ANTENNA_MOUNT:
+			var tube_fit := CheckBox.new()
+			tube_fit.text = "Fitted — draw it (no weight of its own)"
+			tube_fit.button_pressed = bool(row["fitted"])
+			tube_fit.toggled.connect(func(on: bool) -> void: antenna_mount_edited.emit(AntennaMount.FITTED, on))
+			line.add_child(tube_fit)
+			_fit_toggles[id] = tube_fit
 		if id == PrintedParts.ANTENNA_MOUNT and row.has("standoff_spacing_mm"):
 			for setting in [
 					[AntennaMount.STANDOFF_SPACING, AntennaMount.MIN_STANDOFF_SPACING_MM,

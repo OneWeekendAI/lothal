@@ -263,8 +263,8 @@ static func _antenna_mount_row(build: Build) -> Dictionary:
 		"label": "Antenna mount — standoff clamp and tube",
 		"note": note,
 		"exportable": bool(dims["ok"]),
-		"fittable": false,
-		"fitted": false,
+		"fittable": bool(dims["ok"]),
+		"fitted": AntennaMount.is_fitted(build.printing) and bool(dims["ok"]),
 		"standoff_spacing_mm": float(dims["standoff_spacing_mm"]),
 		"standoff_diameter_mm": float(dims["standoff_diameter_mm"]),
 	}
