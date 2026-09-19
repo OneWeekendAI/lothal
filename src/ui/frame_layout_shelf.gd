@@ -152,6 +152,6 @@ class LayoutDiagram extends Control:
 				draw_arc(tip, 9.5, 0.0, TAU, 20,
 					LothalTheme.WARNING if clockwise else LothalTheme.SUCCESS, 1.0)
 
-		draw_string(ThemeDB.fallback_font, Vector2(0.0, size.y - 3.0),
+		draw_string(LothalTheme.draw_font(), Vector2(0.0, size.y - 3.0),
 			str(entry.get("name", "")), HORIZONTAL_ALIGNMENT_CENTER, size.x,
 			LothalTheme.FONT_SIZE_SMALL, LothalTheme.TEXT_MAIN)

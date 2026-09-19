@@ -487,7 +487,12 @@ func _draw() -> void:
 	var plot := _plot_rect()
 	draw_rect(Rect2(Vector2.ZERO, size), BACKGROUND, true)
 
-	var font := ThemeDB.fallback_font
+	# The chrome around this chart is themed, so the chart must draw in the theme's own face.
+	# ThemeDB.fallback_font is the ENGINE's face, and while the theme set only a font size the two
+	# happened to agree; the moment a real interface typeface was set as theme.default_font, that
+	# call put a second typeface on the same screen. LothalTheme.draw_font() is cached — _draw runs
+	# every frame, so a font must never be constructed here.
+	var font := LothalTheme.draw_font()
 	var font_size := 11
 
 	if _channels.is_empty() or times.size() < 2:
@@ -590,7 +595,11 @@ func _legend_layout(font: Font, plot: Rect2) -> Array:
 ## assert every channel is accounted for on some row rather than trusting that the pixels drawn
 ## happen to match the model.
 func legend_rows() -> Array:
-	return _legend_layout(ThemeDB.fallback_font, _plot_rect())
+	# Must be the SAME face _draw() lays the legend out with, or this model and the pixels disagree
+	# about entry widths and so about which row an entry lands on. The font is used to MEASURE here,
+	# not to draw, which is exactly why a wrong face mis-sizes the legend box rather than merely
+	# mis-lettering it.
+	return _legend_layout(LothalTheme.draw_font(), _plot_rect())
 
 
 ## A row of swatch + name + value above the plot. Left to right in draw order, wrapping to up to

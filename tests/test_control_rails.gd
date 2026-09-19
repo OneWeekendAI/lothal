@@ -88,18 +88,35 @@ static func _test_the_system_entry() -> Array:
 ## The same claim against a real `LabScreen`, which is what catches a name that routes to nothing:
 ## the entry above is a list of strings, and strings agree with each other whether or not the tab
 ## exists. Driven through `select_system_by_name` so a screenshot and this check take one path.
+static func _index_of(system_name: String) -> int:
+	for i in GlassShell.SYSTEMS.size():
+		if str(GlassShell.SYSTEMS[i]["name"]) == system_name:
+			return i
+	return -1
+
+
 static func _test_the_rails_on_a_real_lab(_catalog: PartsCatalog) -> Array:
 	var results: Array = []
 	var shell := GlassShell.new()
 	shell.select_system_by_name("Control")
 	var rails_shown := _shown_titles(shell.lab.rails())
 	var panels_shown := _shown_titles(shell.lab.panels)
+	# QC5 RETIRED THE COLUMN, SO "SHOWN" SPLIT IN TWO. The FC is a one-category shelf and is now
+	# reached through the summoned finder; `Link` is an `ElectronicsPicker` fitting three bays at
+	# once, which a one-category finder cannot open, so it keeps the column. Both halves are
+	# asserted rather than only the one that still draws — the claim this check has always made is
+	# that Control owns exactly these two shelves and reaches both, and a version that only looked
+	# at the column would have gone quietly from "exactly FC and Link" to "Link" and called that a
+	# pass.
+	var finder_shelves: Array = []
+	for entry in shell._finder_categories(_index_of("Control")):
+		finder_shelves.append(str((entry as Dictionary)["title"]))
 	shell.free()
 
 	results.append(TestResult.new(
-		"selecting Control shows exactly the FC and Link rails",
-		rails_shown == ["FC", "Link"],
-		"showing %s" % [rails_shown]))
+		"selecting Control reaches exactly the FC and Link shelves — FC in the finder, Link in the column",
+		finder_shelves == ["FC"] and rails_shown == ["Link"],
+		"the finder offers %s, the column shows %s" % [finder_shelves, rails_shown]))
 
 	results.append(TestResult.new(
 		"selecting Control shows exactly the FC, Link and Tune panels",

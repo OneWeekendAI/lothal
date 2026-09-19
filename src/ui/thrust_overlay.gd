@@ -33,12 +33,6 @@ extends Control
 ## nothing more.
 const MARGIN_PX := 34.0
 
-## How opaque the backing plate is. Matched to `GlassShell.GLASS_ALPHA` in intent rather than
-## imported from it: a curve read against a turning airframe needs the same treatment the panels
-## carrying numbers get, and an overlay that borrowed the shell's constant would not be usable
-## over anything else.
-const PLATE_ALPHA := 0.86
-
 ## `[r_m, dT_N]` interleaved, exactly as `Build.thrust_distribution()` returned it. Empty means
 ## the solve DECLINED this rotor — a different answer from a blade that makes no thrust, and
 ## drawn differently below.
@@ -210,9 +204,8 @@ func _inner_rect() -> Rect2:
 # ---------------------------------------------------------------------------
 
 func _draw() -> void:
-	var font := ThemeDB.fallback_font
-	var plate := Color(0.06, 0.07, 0.09, PLATE_ALPHA)
-	draw_rect(Rect2(Vector2.ZERO, size), plate, true)
+	var font := LothalTheme.draw_font()
+	draw_style_box(LothalTheme.card_plate(), Rect2(Vector2.ZERO, size))
 
 	var title := "Thrust along the blade"
 	draw_string(font, Vector2(MARGIN_PX * 0.4, MARGIN_PX * 0.75), title,

@@ -482,7 +482,7 @@ func _draw_scale_bar() -> void:
 	draw_line(start, end, LothalTheme.TEXT_MUTED, 2.0)
 	draw_line(start + Vector2(0.0, -4.0), start + Vector2(0.0, 4.0), LothalTheme.TEXT_MUTED, 2.0)
 	draw_line(end + Vector2(0.0, -4.0), end + Vector2(0.0, 4.0), LothalTheme.TEXT_MUTED, 2.0)
-	var font := ThemeDB.fallback_font
+	var font := LothalTheme.draw_font()
 	draw_string(font, start + Vector2(0.0, -8.0), "%.0f mm" % step,
 		HORIZONTAL_ALIGNMENT_LEFT, -1.0, LothalTheme.FONT_SIZE_SMALL, LothalTheme.TEXT_MUTED)
 

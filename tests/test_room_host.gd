@@ -164,13 +164,25 @@ static func _test_sim_retracts_the_chrome_and_lab_restores_it() -> Array:
 	shell.rooms.show_lab()
 	var back_chrome := _chrome_of(shell)
 
-	var all_up: bool = lab_chrome["top"] and lab_chrome["tools"] and lab_chrome["rail"] \
-		and lab_chrome["inspector"]
+	# THREE clusters, not four, and the rail is deliberately NOT among them (QC5). The garage's
+	# default focus is Airframe, whose shelves the finder now opens, so its column is down — a
+	# check that still demanded `rail` would be asserting the thing the slice removed.
+	#
+	# The rail's absence is asserted SEPARATELY rather than dropped. Deleting the term would have
+	# left a check that passes whether the column is down because QC5 retired it or up because a
+	# regression brought it back, and "the garage shows its clusters" is exactly the check that
+	# should notice a column reappearing.
+	var all_up: bool = lab_chrome["top"] and lab_chrome["tools"] and lab_chrome["inspector"]
 	results.append(TestResult.new(
-		"the garage shows all four clusters",
+		"the garage shows its three clusters",
 		all_up,
-		"top=%s tools=%s rail=%s inspector=%s" % [lab_chrome["top"], lab_chrome["tools"],
-			lab_chrome["rail"], lab_chrome["inspector"]]))
+		"top=%s tools=%s inspector=%s" % [lab_chrome["top"], lab_chrome["tools"],
+			lab_chrome["inspector"]]))
+
+	results.append(TestResult.new(
+		"and the garage does NOT show a parts rail — the finder opens Airframe's shelves",
+		not lab_chrome["rail"],
+		"rail=%s" % [lab_chrome["rail"]]))
 
 	var all_gone: bool = not sim_chrome["top"] and not sim_chrome["tools"] \
 		and not sim_chrome["rail"] and not sim_chrome["inspector"]
@@ -209,6 +221,19 @@ static func _rails_of(system_name: String) -> Array:
 	return []
 
 
+## Where a system sits in `GlassShell.SYSTEMS`, by name.
+##
+## Derived from the same array the shell indexes rather than written out, for `_rails_of`'s reason
+## one line up: a hardcoded 2 would keep passing if a system were inserted above Power and would be
+## asserting the wrong aircraft. Returns -1 for a name that is not there, which cannot equal a real
+## focus index, so a typo in the name fails the check instead of quietly matching nothing.
+static func _index_of(system_name: String) -> int:
+	for i in GlassShell.SYSTEMS.size():
+		if str(GlassShell.SYSTEMS[i]["name"]) == system_name:
+			return i
+	return -1
+
+
 ## The nearest CanvasLayer above a node, or null if it is in the ordinary tree.
 static func _canvas_layer_over(node: Node) -> CanvasLayer:
 	var walk := node
@@ -232,11 +257,15 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 	shell.rooms.show_lab()
 	results.append(TestResult.new(
 		"returning from the field lands on the system you left, not the first one",
-		# Derived from Power's own entry rather than written out, because this check is about WHICH
-		# SYSTEM came back, not about which rails Power has — PW4 gave it a second one and a typed
-		# list would have failed for a reason that had nothing to do with what is being asserted.
-		_visible_rail_titles(shell) == _rails_of("Power"),
-		"rail shows %s" % [_visible_rail_titles(shell)]))
+		# Asserted on the FOCUS, not on the visible rail titles. The original read
+		# `_visible_rail_titles(shell) == _rails_of("Power")`, which was the right idea while every
+		# system wore its shelves in a column: QC5 made both of Power's shelves finder-reachable, so
+		# its column is down and the titles come back `[]` — the check failed for a reason that had
+		# nothing to do with what it asserts. The focus index is what "which system came back"
+		# actually means, and it survives a shelf moving from the column into the finder.
+		shell._focused_index == _index_of("Power"),
+		"focus is %d, Power is %d, rail shows %s" % [
+			shell._focused_index, _index_of("Power"), _visible_rail_titles(shell)]))
 
 	# Config has no model: stubs, and no rail column at all. A restore that unhides both columns
 	# comes back with a Frame rail under a dropdown reading "Config".
@@ -357,14 +386,23 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 
 	# The chrome retracts for a bench exactly as it does for Sim: a rail floating over a thrust
 	# stand would be a part picker on a screen where changing a part means nothing.
+	# QC4 gave the inspector a second way to be invisible: it now gates on selection, so with
+	# nothing selected it is simply absent. `not _inspector.visible` therefore no longer means
+	# "retraction happened" on its own — it also holds for a shell whose inspector never appeared
+	# at all, which is the one failure this check exists to catch. So the precondition is captured
+	# and asserted BEFORE the door opens: the check now states the state it started in, and a
+	# shell that stopped showing the inspector fails here instead of sliding through the
+	# conclusion.
+	var inspector_up_before := shell._inspector.visible
 	shell._open_room("frame_bench")
 	var retracted := not shell._top_bar.visible and not shell._rail_glass.visible \
 		and not shell._inspector.visible and not shell._tools_glass.visible
 	shell.rooms.show_lab()
 	results.append(TestResult.new(
 		"a bench retracts the chrome the same way the field does",
-		retracted,
-		"chrome retracted on the frame bench: %s" % retracted))
+		inspector_up_before and retracted,
+		"inspector up beforehand: %s · chrome retracted on the frame bench: %s" % [
+			inspector_up_before, retracted]))
 
 	# AND THE INSPECTOR PATH DOES THE SAME — P10f moved this assertion onto the new door, which is
 	# where the design doc says it should now live. Driven through the SIGNAL the Motor panel
@@ -372,6 +410,9 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 	# already proved and would say nothing about whether the button is connected to anything. The
 	# bench must be open afterwards, which is what distinguishes "the chrome went away" from "the
 	# signal did nothing and the chrome was already down".
+	# Same QC4 precondition as above, and needed independently here: this site opens a different
+	# door, so it has to prove for itself that the inspector was up before the signal fired.
+	var inspector_up_before_bench := shell._inspector.visible
 	shell.lab.motor_details.thrust_bench_requested.emit()
 	var bench_open := shell.rooms.bench != null
 	var bench_retracted := not shell._top_bar.visible and not shell._rail_glass.visible \
@@ -379,8 +420,9 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 	shell.rooms.show_lab()
 	results.append(TestResult.new(
 		"the thrust stand opens from the Motor inspector, and retracts the chrome identically",
-		bench_open and bench_retracted,
-		"opened=%s retracted=%s" % [bench_open, bench_retracted]))
+		inspector_up_before_bench and bench_open and bench_retracted,
+		"inspector up beforehand=%s opened=%s retracted=%s" % [
+			inspector_up_before_bench, bench_open, bench_retracted]))
 
 	# §7.5's "no room is left running" on the new path rather than assumed from the old. Asserted
 	# on `is_instance_valid` of the instance captured while it was up: asserting the FIELD is null

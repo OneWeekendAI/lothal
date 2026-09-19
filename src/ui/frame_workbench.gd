@@ -292,12 +292,19 @@ static func _compact(control: Control) -> void:
 
 ## The room's own ground. Opaque, and a shade off the canvas so the drawing still reads as a surface
 ## sitting on a bench rather than as the bench itself.
+##
+## A FLOOR, NOT A PANEL — fill only. This used to carry a 1 px border and a radius-6 corner, which
+## put a rounded outline immediately inside the rounded outline of every cluster floating over it:
+## two concentric boxes a few pixels apart, which the eye reads as a rendering fault rather than as
+## depth. Every themed panel now draws zero border for exactly that reason, and the room floor is
+## the same argument one level out. The radius went with it: 6 was off the 10/7/5 scale, and a
+## full-rect backdrop has no visible corner to round anyway.
+##
+## Deliberately identical to `propulsion_workbench.gd`'s `_backdrop_stylebox` — two rooms standing
+## on two different floors is a difference a builder notices and cannot explain.
 static func _backdrop_stylebox() -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
-	box.bg_color = Color(LothalTheme.PANEL_BG, 0.97)
-	box.border_color = LothalTheme.BORDER
-	box.set_border_width_all(1)
-	box.set_corner_radius_all(6)
+	box.bg_color = LothalTheme.SURFACE_BASE
 	return box
 
 

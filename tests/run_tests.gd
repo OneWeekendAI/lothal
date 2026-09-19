@@ -18,7 +18,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs",
-	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "camera view",
+	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "dock", "camera view", "part finder",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components",
 	"camera tilt", "video warnings", "video panel",
@@ -76,6 +76,8 @@ func _run_suite(suite_name: String) -> Array:
 	match suite_name:
 		"airframe tabs": return TestAirframeTabs.run()
 		"camera view": return TestCameraView.run()
+		# QC3: the dock lost nothing — every action the three retired clusters offered, by name.
+		"dock": return TestDock.run()
 		# PW1 (plans/2026-09-10-power-room-plan.md). Pure data and pure code — no UI, no physics.
 		"wire gauge": return TestWireGauge.run()
 		"power parts": return TestPowerParts.run()
@@ -139,6 +141,9 @@ func _run_suite(suite_name: String) -> Array:
 		"propulsion export": return TestPropulsionExport.run()
 		"guard row": return TestGuardRow.run()
 		"overlay tray": return TestOverlayTray.run()
+		# QC1/QC2 (plans/2026-09-19-quiet-canvas-design.md §6): the summoned finder — browse mode
+		# with nothing typed, and preview-and-restore across any number of previews.
+		"part finder": return TestPartFinder.run()
 		"prop guard": return TestPropGuard.run()
 		"guard mesh": return TestGuardMesh.run()
 		"planform edits": return TestPlanformEdits.run()

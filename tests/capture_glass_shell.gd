@@ -2,7 +2,7 @@ extends SceneTree
 ## Dev tool, not a test: photographs GlassShell — the new UI frame — so the arrangement can be
 ## looked at rather than reasoned about. The companion to capture_lab.gd, which shoots the old one.
 ##
-##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH] [menu|sim|3d|overlay]
+##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH] [menu|sim|3d|overlay|finder]
 ##
 ## A fifth argument of `menu` drops the project menu open before the shot, which is the only way
 ## to photograph an entry that is greyed — and greyed entries are most of that menu today. `sim`
@@ -26,6 +26,9 @@ func _init() -> void:
 	var to_sim: bool = args.size() > 4 and args[4] == "sim"
 	var to_3d: bool = args.size() > 4 and args[4] == "3d"
 	var overlay: bool = args.size() > 4 and args[4] == "overlay"
+	# QC5: the summoned finder, which is the control the whole slice is about and the one thing on
+	# this screen that cannot be photographed without being opened first.
+	var to_finder: bool = args.size() > 4 and args[4] == "finder"
 
 	if args.size() > 3 and args[3] != "":
 		var res_parts := args[3].split("x")
@@ -63,6 +66,16 @@ func _init() -> void:
 	shell.lab.set_orbit(deg_to_rad(28.0), deg_to_rad(18.0))
 	for i in 2:
 		await process_frame
+
+	# The finder, summoned the way a builder summons it — through the dock's own signal, which is
+	# what a click on a system icon emits. Calling `open_finder` here would photograph a code path
+	# nobody takes.
+	if to_finder:
+		for i in GlassShell.SYSTEMS.size():
+			if str(GlassShell.SYSTEMS[i]["name"]) == system:
+				shell._dock.system_chosen.emit(i)
+		for i in 6:
+			await process_frame
 
 	# The drone menu, if asked for. It is a Window, so it only lands in this shot because Godot
 	# embeds subwindows by default — worth knowing before anybody wonders why the menu is missing

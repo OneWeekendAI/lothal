@@ -430,15 +430,30 @@ static func _shell_checks() -> Array:
 	# And the ESC bench's new door, mirroring the thrust stand's in test_room_host.gd: driven
 	# through the panel's SIGNAL, because calling `_open_room` directly would say nothing about
 	# whether the button is connected to anything.
+	# And the same QC4 precondition test_room_host.gd carries: since the inspector gates on
+	# selection, `not _inspector.visible` is true both for the retraction this line means and for
+	# an inspector that never appeared, so the starting state is captured and asserted rather than
+	# assumed.
+	var inspector_up_before_esc := shell._inspector.visible
 	shell.lab.esc_details.esc_bench_requested.emit()
 	var esc_open := shell.rooms.esc_bench != null
-	var esc_retracted := not shell._top_bar.visible and not shell._rail_glass.visible \
+	# `_rail_glass` is NOT among these terms any more, and its removal is the point. QC5 retired the
+	# parts rail, so `not shell._rail_glass.visible` is true in every state this suite can reach — a
+	# term that has stopped watching. Left in place it would read as four things being checked while
+	# only three could ever fail, which is the shape of a clause that outlives the thing it guarded.
+	#
+	# It is dropped rather than swapped for a dock term, because `_tools_glass` already IS one:
+	# `glass_shell.gd` assigns `_tools_glass = _dock.tools_group`. The dock's PANEL deliberately
+	# stays up on a bench — the mode group is the way back to the garage, and a bench that hid it
+	# would be a room with no door — so asserting `not _dock.visible` here would assert a bug.
+	var esc_retracted := not shell._top_bar.visible \
 		and not shell._inspector.visible and not shell._tools_glass.visible
 	shell.rooms.show_lab()
 	results.append(TestResult.new(
 		"[shell] the ESC bench opens from the ESC inspector, and retracts the chrome identically",
-		esc_open and esc_retracted,
-		"opened=%s retracted=%s" % [esc_open, esc_retracted]))
+		inspector_up_before_esc and esc_open and esc_retracted,
+		"inspector up beforehand=%s opened=%s retracted=%s" % [
+			inspector_up_before_esc, esc_open, esc_retracted]))
 
 	shell.free()
 	return results

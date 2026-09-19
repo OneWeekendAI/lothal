@@ -42,9 +42,6 @@ extends Control
 ## their axes at different insets would read as two charts about two aircraft.
 const MARGIN_PX := 34.0
 
-## How opaque the backing plate is. Matched to `ThrustOverlay.PLATE_ALPHA` for the same reason.
-const PLATE_ALPHA := 0.86
-
 ## HALF-WIDTH OF THE RESONANCE BAND, as a fraction of the resonance frequency. NOT a free
 ## constant: it is `ArmBeam`'s own error bar, quoted twice in `src/airframe/arm_beam.gd` — "first
 ## bending mode ... honestly +/-20%" in its honesty tiers, and again where its integration error
@@ -244,8 +241,8 @@ func _inner_rect() -> Rect2:
 # ---------------------------------------------------------------------------
 
 func _draw() -> void:
-	var font := ThemeDB.fallback_font
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.07, 0.09, PLATE_ALPHA), true)
+	var font := LothalTheme.draw_font()
+	draw_style_box(LothalTheme.card_plate(), Rect2(Vector2.ZERO, size))
 	draw_string(font, Vector2(MARGIN_PX * 0.4, MARGIN_PX * 0.75), "Where this airframe rings",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.92, 0.94, 0.98))
 

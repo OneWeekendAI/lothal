@@ -174,8 +174,17 @@ static func display_name(part: Dictionary) -> String:
 	return part_name
 
 
-func no_match_text() -> String:
-	return "No %s matches these filters" % noun
+## The refusal wording, in ONE place. STATIC, and that is the whole point of the signature: this is
+## an instance method on a `PanelContainer` that `PartFinder` must not construct, so for as long as
+## it needed a live picker the finder held a character-identical copy of the string and the two
+## rails could drift apart without either one noticing. Static, it takes the noun as an argument
+## and the finder calls through — one spelling, one test that bites for both.
+##
+## `p_noun` and not `noun`: the picker has a `noun` member, and a static parameter of that name is
+## SHADOWED_VARIABLE, which this project treats as an error. The prefix is the same one `_init`
+## uses for the same reason.
+static func no_match_text(p_noun: String) -> String:
+	return "No %s matches these filters" % p_noun
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +299,7 @@ func _refresh(emit := true) -> void:
 	if _visible_parts.is_empty():
 		# Not an empty list: a row that explains itself, unselectable so it cannot be mistaken
 		# for a part.
-		_list.add_item(no_match_text())
+		_list.add_item(no_match_text(noun))
 		_list.set_item_selectable(0, false)
 		_list.set_item_disabled(0, true)
 		_empty_hint.text = "Nothing in the catalog is a %s. Set a filter back to \"%s\" to widen the search." % [

@@ -134,8 +134,21 @@ func _init(p_catalog: PartsCatalog = null) -> void:
 	column.set_anchors_preset(Control.PRESET_FULL_RECT)
 	column.offset_left = LothalTheme.SPACE_2
 	column.offset_right = -LothalTheme.SPACE_2
-	column.offset_top = LothalTheme.SPACE_2
-	column.offset_bottom = -LothalTheme.SPACE_2
+	# THE VERTICAL INSET IS SPACE_1, NOT SPACE_2, AND THE HORIZONTAL ONE IS NOT.
+	#
+	# The two axes are not in the same situation. Sideways this room has 546 px of slack at 1280x720
+	# and the gutter is free. Vertically it has none: the right-hand column alone asks for 510 px of
+	# fixed minimums, the toolbar and the status line take the rest, and the room is 588 px tall.
+	# After the toolbar was put on compact buttons the content still stood 4 px proud of the room's
+	# bottom edge — and a `Control` does not clip its children, so those 4 px are not a squashed
+	# panel, they are the mount profile drawn through the floor of the room and into the
+	# Lab/Sim/Rooms cluster underneath it (`tests/test_shell_layout.gd`, defect 2).
+	#
+	# Giving back 4 px at the top is what closes it, and the room does not look any tighter for it:
+	# the shell already insets this room from the window, so the gutter a builder sees above the
+	# toolbar is that inset plus this, not this alone.
+	column.offset_top = LothalTheme.SPACE_1
+	column.offset_bottom = -LothalTheme.SPACE_1
 	column.add_theme_constant_override("separation", LothalTheme.SPACE_1)
 	add_child(column)
 
@@ -249,6 +262,10 @@ func _build_toolbar() -> Control:
 	# who had measured their blade had no way to say so. It is a CheckButton rather than a menu
 	# item because it is a statement about the open document, and the document is what the room is.
 	_assumed_button = CheckButton.new()
+	# The compact CheckButton, for the reason the variation carries: at the ordinary padding this
+	# one control was the tallest thing in the toolbar's first row and set the height of the whole
+	# row, pushing the room's content column past the bottom of a 1280x720 window.
+	_assumed_button.theme_type_variation = &"CompactCheckButton"
 	_assumed_button.text = "Chord measured"
 	_assumed_button.tooltip_text = ("On: this planform is authored, and figures derived from it "
 		+ "drop the \"blade chord assumed\" caveat. Off: it is the generator's guess.")
@@ -332,6 +349,7 @@ func _build_view_buttons() -> Control:
 	row.add_theme_constant_override("separation", LothalTheme.SPACE_1)
 	for view_id in BladeView3D.VIEWS.keys():
 		var button := Button.new()
+		button.theme_type_variation = "CompactButton"
 		button.text = str(view_id).capitalize()
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.pressed.connect(blade_view.snap_to.bind(view_id))
@@ -339,8 +357,12 @@ func _build_view_buttons() -> Control:
 	return row
 
 
+## Every button this room makes is a workbench control, so they are all compact. The room's column
+## has no vertical slack at 1280x720 — see `CompactButton` in `lothal_theme.gd`, which exists
+## because this room is what overflowed.
 func _button(text: String, on_press: Callable, tooltip: String = "") -> Button:
 	var button := Button.new()
+	button.theme_type_variation = "CompactButton"
 	button.text = text
 	button.tooltip_text = tooltip
 	button.pressed.connect(on_press)

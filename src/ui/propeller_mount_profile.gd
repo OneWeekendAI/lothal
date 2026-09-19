@@ -157,5 +157,5 @@ func _draw() -> void:
 	var caption := "pad %.1f mm   seat %.1f mm   stack %.1f mm   f_n %s" % [
 		soft_mount_m * 1000.0, motor_mesh.prop_mount_height_m * 1000.0,
 		drawn_height_m() * 1000.0, frequency]
-	draw_string(ThemeDB.fallback_font, Vector2(MARGIN_PX * 0.5, size.y - 3.0), caption,
+	draw_string(LothalTheme.draw_font(), Vector2(MARGIN_PX * 0.5, size.y - 3.0), caption,
 		HORIZONTAL_ALIGNMENT_LEFT, -1.0, LothalTheme.FONT_SIZE_SMALL, LothalTheme.TEXT_MUTED)

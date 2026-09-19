@@ -146,7 +146,12 @@ func _draw() -> void:
 	var plot := _plot_rect()
 	draw_rect(Rect2(Vector2.ZERO, size), BACKGROUND, true)
 
-	var font := ThemeDB.fallback_font
+	# The chrome around this chart is themed, so the chart must draw in the theme's own face.
+	# ThemeDB.fallback_font is the ENGINE's face, and while the theme set only a font size the two
+	# happened to agree; the moment a real interface typeface was set as theme.default_font, that
+	# call put a second typeface on the same screen. LothalTheme.draw_font() is cached — _draw runs
+	# every frame, so a font must never be constructed here.
+	var font := LothalTheme.draw_font()
 	var font_size := 10
 
 	if mags.size() < 2 or bin_hz <= 0.0:

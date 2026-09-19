@@ -40,9 +40,6 @@ extends Control
 ## charts about four aircraft.
 const MARGIN_PX := 34.0
 
-## How opaque the backing plate is. `ThrustOverlay.PLATE_ALPHA`'s value for the same reason.
-const PLATE_ALPHA := 0.86
-
 ## How many time constants the axis runs for. A ZOOM LEVEL, not a physical claim, in the same
 ## category as `VibrationOverlay.AXIS_SPAN_MULTIPLE`: a first-order response is 99.3% arrived at
 ## five tau, so an axis that stopped earlier would cut off the arrival and one that ran longer
@@ -179,8 +176,8 @@ func _inner_rect() -> Rect2:
 # ---------------------------------------------------------------------------
 
 func _draw() -> void:
-	var font := ThemeDB.fallback_font
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.07, 0.09, PLATE_ALPHA), true)
+	var font := LothalTheme.draw_font()
+	draw_style_box(LothalTheme.card_plate(), Rect2(Vector2.ZERO, size))
 	draw_string(font, Vector2(MARGIN_PX * 0.4, MARGIN_PX * 0.75), "How fast the motor arrives",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.92, 0.94, 0.98))
 

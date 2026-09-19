@@ -66,9 +66,6 @@ extends Control
 ## together and rule their axes at different insets read as three charts about three aircraft.
 const MARGIN_PX := 34.0
 
-## How opaque the backing plate is. Matched to the other two overlays for the same reason.
-const PLATE_ALPHA := 0.86
-
 ## How many samples the curve is drawn from. Resolution of a polyline, in the same category as
 ## MARGIN_PX — it changes how smooth the picture is and nothing about what it says.
 const SAMPLE_COUNT := 160
@@ -363,8 +360,8 @@ func _inner_rect() -> Rect2:
 # ---------------------------------------------------------------------------
 
 func _draw() -> void:
-	var font := ThemeDB.fallback_font
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.07, 0.09, PLATE_ALPHA), true)
+	var font := LothalTheme.draw_font()
+	draw_style_box(LothalTheme.card_plate(), Rect2(Vector2.ZERO, size))
 	draw_string(font, Vector2(MARGIN_PX * 0.4, MARGIN_PX * 0.75), "What the pad lets through",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.92, 0.94, 0.98))
 

@@ -48,6 +48,6 @@ func _draw() -> void:
 		outline.append(lower[i])
 	draw_colored_polygon(outline, Color(LothalTheme.ACCENT, 0.35))
 
-	draw_string(ThemeDB.fallback_font, Vector2(8.0, size.y - 8.0), caption,
+	draw_string(LothalTheme.draw_font(), Vector2(8.0, size.y - 8.0), caption,
 		HORIZONTAL_ALIGNMENT_LEFT, size.x - 16.0, LothalTheme.FONT_SIZE_SMALL,
 		LothalTheme.TEXT_MAIN)

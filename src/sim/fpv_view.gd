@@ -97,7 +97,7 @@ func _init() -> void:
 
 	_caption = Label.new()
 	_caption.name = "Caption"
-	_caption.add_theme_font_size_override("font_size", 11)
+	_caption.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	column.add_child(_caption)
 
 	var container := SubViewportContainer.new()
@@ -128,7 +128,7 @@ func _empty_label() -> Label:
 	_empty = Label.new()
 	_empty.name = "NotFitted"
 	_empty.text = "no camera fitted"
-	_empty.add_theme_font_size_override("font_size", 12)
+	_empty.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	_empty.set_anchors_preset(Control.PRESET_CENTER)
 	return _empty
 

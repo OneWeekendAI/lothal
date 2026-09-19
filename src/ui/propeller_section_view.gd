@@ -113,5 +113,5 @@ func _draw() -> void:
 	var caption := "r/R %.2f   c %.2f mm   beta %.1f deg   t/c %.0f%%" % [
 		r_frac, document.chord_at(r_frac), rad_to_deg(document.beta_rad(r_frac)),
 		document.thickness_ratio * 100.0]
-	draw_string(ThemeDB.fallback_font, Vector2(MARGIN_PX * 0.5, size.y - 6.0), caption,
+	draw_string(LothalTheme.draw_font(), Vector2(MARGIN_PX * 0.5, size.y - 6.0), caption,
 		HORIZONTAL_ALIGNMENT_LEFT, -1.0, LothalTheme.FONT_SIZE_SMALL, LothalTheme.TEXT_MUTED)

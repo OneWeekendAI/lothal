@@ -46,7 +46,15 @@ extends Control
 const TOP_BAR_HEIGHT := 44.0
 const CLUSTER_MARGIN := 12.0
 const RAIL_WIDTH := 300.0
-const INSPECTOR_WIDTH := 348.0
+## QC4 (§5): ~320 px, down from 348. It can narrow because it stops repeating what the rail shows
+## beside it — the part's identity is the panel's header, not a row of it.
+##
+## STILL A FLOOR AND NOT A WIDTH. `_fit_columns` measures the panels and takes the larger, so on
+## every system whose rows already want more than this the number below changes nothing at all —
+## including the one `tests/test_shell_layout.gd` measures the overlay tray's band against. That is
+## why this edit could be made without moving the band, and it was verified by measuring rather
+## than by reasoning.
+const INSPECTOR_WIDTH := 320.0
 ## The most of the window the inspector may claim, however long its rows get. Under half: past that
 ## the thing being inspected has less room than the description of it, which inverts what a
 ## full-bleed viewport is for. 0.45 rather than 0.42 because the widest tab in the app — Layout, at
@@ -60,7 +68,7 @@ const BOTTOM_KEEPOUT := 76.0
 ## Which CanvasLayer the Lab/Sim toggle rides. Ten, matching the old tab bar, and for the identical
 ## reason: Sim's HUD is on a layer of its own and draws straight over anything in the ordinary tree.
 ## The toggle is the ONLY way out of the field, so a toggle underneath the HUD is an app you cannot
-## leave. See _build_bottom_right_cluster.
+## leave. See _build_dock.
 const TOGGLE_LAYER := 10
 
 ## How much of the panel's opacity glass keeps. Not fully opaque — the whole argument for a
@@ -283,9 +291,20 @@ var lab: LabScreen:
 
 var _rail_glass: PanelContainer
 var _inspector: PanelContainer
-var _rail_stub: SystemStub
+## QC4's overlay, and the two nodes that make it modal.
+##
+## `_dim` is added to the tree BEFORE the inspector and `_finder_glass` AFTER the dock, and that
+## ordering is the whole of §5's "the inspector is not dimmed with the canvas": a sibling added
+## later draws later, so the dim covers the viewport, the rail and the rooms and stops underneath
+## the one panel that has to stay readable while a choice is being made.
+var _dim: ColorRect
+var _finder_glass: PanelContainer
+## Rebuilt on every open rather than kept and re-pointed. The finder is derived entirely from the
+## rail it is summoned over — category, noun and filter keys all come off that PartPicker — so a
+## retained instance would need every one of those swapped, which is a second construction path
+## that only runs on the second open.
+var _finder: PartFinder
 var _inspector_stub: SystemStub
-var _system_dropdown: OptionButton
 ## The drone this shell is describing, and the file it lives in. Its `parts` are kept in step with
 ## the rails by _sync_project(), and AUTOSAVE_SECONDS later it is on disk.
 var container: ProjectContainer
@@ -320,13 +339,23 @@ var _ring: CompletenessRing
 ## enforces "Sim authors nothing" — a shell that searched for its own panels by name could miss one
 ## and leave a part picker floating over a flight.
 var _top_bar: HBoxContainer
-var _tools_glass: PanelContainer
-## The dropdown's own glass, held so the empty state can hide it while keeping the chip — the two
-## live project actions ride the chip, not the dropdown.
-var _dropdown_glass: PanelContainer
-## The whole Lab/Sim cluster, held so the empty state can hide it: there is no build to take to
+## THE DOCK — QC3. One centred cluster at the bottom that carries what three separate clusters used
+## to: the system dropdown out of the top bar, the bottom-left tools and the bottom-right Lab/Sim.
+## See `src/ui/dock.gd` for why it is its own file and where the status readout and the ring went.
+var _dock: Dock
+## The three members below are no longer three panels — they are the dock's three GROUPS, and they
+## keep their old names on purpose. Every retraction path in this file already talks about "the
+## tools" and "the Lab/Sim cluster" by these names (`_on_room_changed`, `_select_system`,
+## `_set_room_open`, `_show_empty_state`), and each one hides a different subset: Sim takes the
+## systems and the tools, Airframe takes the tools alone. Renaming them would have meant re-deciding
+## four retraction rules at once in a slice that is about geometry.
+var _tools_glass: Control
+## The system icons, held so the empty state can hide them while keeping the chip — the two live
+## project actions ride the chip, not the systems.
+var _dropdown_glass: Control
+## The Lab/Sim/Rooms group, held so the empty state can hide it: there is no build to take to
 ## the field, and a toggle that flies nothing would be a button that lies.
-var _bottom_right_glass: PanelContainer
+var _bottom_right_glass: Control
 ## The "No drone open" panel that replaces the chrome after a Delete.
 var _empty_state: Control
 var _sim_button: Button
@@ -414,14 +443,23 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	_build_blade_room()
 	_build_power_room()
 	_build_thrust_overlay()
+	# THE DIM GOES IN HERE, between the canvas and the inspector, and the position IS the rule.
+	# §5: the build summary is the consequence of the choice being made, so it stays readable while
+	# the choice is made. Godot draws siblings in tree order, so everything added above this line
+	# is dimmed by it and everything added below is not.
+	_build_dim()
 	_build_inspector()
 	# Between the inspector and the top cluster, so the chip draws over it but it covers the model
 	# and the floating columns. The empty state must never hide the project chip — New and Open are
 	# the only way out of it.
 	_build_empty_state()
 	_build_top_cluster()
-	_build_bottom_left_cluster()
-	_build_bottom_right_cluster()
+	_build_dock()
+	# Last, so it is over every piece of chrome in this layer. The dock rides its own CanvasLayer
+	# and is therefore still above it, which is correct rather than tolerated: the overlay is 368 px
+	# wide and centred, the dock stands in the bottom keepout, and a finder that could cover the way
+	# out of the garage would be a modal with no escape that is not a keystroke.
+	_build_finder_glass()
 
 
 func _ready() -> void:
@@ -439,7 +477,6 @@ func _ready() -> void:
 	# correct where they are — text over a turning airframe is unreadable — but it means the panel's
 	# own translucency only shows in its margins. Accepted: the glass here is the frame around the
 	# content, and the content is a spec sheet.
-	_rail_glass.move_child(_rail_stub, -1)
 	_inspector.move_child(_inspector_stub, -1)
 
 	_autosave = Timer.new()
@@ -533,10 +570,11 @@ func _fit_columns() -> void:
 	# have been the constant-versus-measurement mistake one more time, in the corner that already
 	# made it once.
 	_layout_overlays()
+	_layout_dock()
 
 
 # ---------------------------------------------------------------------------
-# The four clusters
+# The clusters
 # ---------------------------------------------------------------------------
 
 ## Top: project chip → system dropdown.
@@ -565,24 +603,10 @@ func _build_top_cluster() -> void:
 	chip.recent_chosen.connect(open_project)
 	bar.add_child(chip)
 
-	var dropdown_glass := _glass_panel()
-	_system_dropdown = OptionButton.new()
-	_system_dropdown.custom_minimum_size = Vector2(180, 0)
-	for i in SYSTEMS.size():
-		var system: Dictionary = SYSTEMS[i]
-		_system_dropdown.add_item(
-			str(system["name"]) if _is_modelled(system) else "%s   soon" % system["name"], i)
-		# Greyed but NOT disabled — see SYSTEMS. A builder who cannot see that Config exists cannot
-		# know the app has an opinion about it, and one who cannot click it cannot find out what
-		# that opinion is.
-		if not _is_modelled(system):
-			_system_dropdown.set_item_disabled(i, false)
-			_system_dropdown.set_item_tooltip(i, "No model behind this yet — shows what belongs.")
-	_system_dropdown.select(0)
-	_system_dropdown.item_selected.connect(_select_system)
-	dropdown_glass.add_child(_system_dropdown)
-	_dropdown_glass = dropdown_glass
-	bar.add_child(dropdown_glass)
+	# THE SYSTEM DROPDOWN IS NOT HERE ANY MORE — it is the dock's six icons plus its overflow menu
+	# (QC3). The bar keeps the project's identity: the chip, the door into this system's room, and
+	# the way out of it. What left was a 180 px control whose whole job was navigation, and
+	# navigation is what the dock is.
 
 	# THE ROOM DOOR, beside the system it belongs to.
 	#
@@ -715,6 +739,25 @@ func _retract_rooms() -> void:
 			close_glass.visible = false
 
 
+## QC5 (§6): THE COLUMN IS RETIRED, AND THE PICKERS INSIDE IT ARE NOT.
+##
+## `_rail_glass` still exists and Lab's rail column is still reparented into it, because
+## `PartPicker` is the app's only implementation of "fit this part on the live build" —
+## `RailFitter._fit` is `rail.select_id()`, the rail emits `part_selected`, LabScreen rebuilds the
+## aircraft and the panels re-render. Freeing the pickers would mean writing a second fitting path
+## that the status line, the autosave and the 3D model do not hear about, which is the defect
+## `rail_fitter.gd`'s header is entirely about.
+##
+## So the pickers stay ALIVE, IN THE TREE, AND OFF THE SCREEN: they are the model behind the
+## finder. `visible` is what QC5 changes, and `_select_system` is the one place that sets it —
+## it is false for every system whose shelves the finder can open, which is all of them except
+## the two that own an `ElectronicsPicker` (see `_column_rail_titles`).
+##
+## Alive-and-hidden rather than removed from the tree for a second reason: the authoring dialogs
+## are `add_child`ed onto the picker itself (`MotorPicker._open_dialog`), so a picker outside the
+## tree is a "New custom motor…" that opens nothing.
+##
+## The rail's stub half went with the column — see `_build_inspector` and `SystemStub`.
 func _build_rail_glass() -> void:
 	_rail_glass = _glass_panel()
 	_rail_glass.set_anchors_preset(Control.PRESET_LEFT_WIDE)
@@ -723,19 +766,23 @@ func _build_rail_glass() -> void:
 	_rail_glass.offset_top = CLUSTER_MARGIN + TOP_BAR_HEIGHT + LothalTheme.SPACE_2
 	_rail_glass.offset_right = CLUSTER_MARGIN + RAIL_WIDTH
 	_rail_glass.offset_bottom = -BOTTOM_KEEPOUT
+	_rail_glass.visible = false
 	add_child(_rail_glass)
-
-	_rail_stub = SystemStub.new(true)
-	_rail_stub.visible = false
-	_rail_glass.add_child(_rail_stub)
 
 
 ## Right: the inspector, plus the stub that replaces it for an unmodelled system.
 ##
-## §5 says the inspector appears only when something is selected. In Lab something is ALWAYS
-## selected — the app opens on the reference build, so there is no empty state — which is why it is
-## always shown here. The "only when selected" rule is real, but it belongs to the systems that have
-## no default, and those are exactly the four that show a stub instead.
+## §5 SAYS IT APPEARS ONLY WHEN SOMETHING IS SELECTED, AND SINCE QC4 IT DOES. The paragraph that
+## used to stand here argued the opposite — that Lab always has a selection, so the rule belonged
+## to some other screen — and that argument was only true because this shell had no way to select
+## NOTHING. It has one now: `_focused_index` may be -1, `clear_selection()` puts it there, and
+## Escape over the canvas is the builder's route to it. That state is the resting state Quiet
+## Canvas is named after: the drone, undimmed, with a dock under it and no panel describing
+## anything.
+##
+## The panel is still CONSTRUCTED unconditionally — it holds Lab's reparented columns, which exist
+## from `_ready` whatever is selected. What gates is `visible`, in `_select_system`, which is also
+## the one place that knows what "selected" currently means.
 ## The Airframe room's own workspace, filling the viewport area whenever Airframe is the focused
 ## system — airframe.md §7.1.
 ##
@@ -1367,9 +1414,314 @@ func _build_inspector() -> void:
 	_inspector.offset_bottom = -BOTTOM_KEEPOUT
 	add_child(_inspector)
 
-	_inspector_stub = SystemStub.new(false)
+	_inspector_stub = SystemStub.new()
 	_inspector_stub.visible = false
 	_inspector.add_child(_inspector_stub)
+
+
+# ---------------------------------------------------------------------------
+# The finder — QC4's other half: the overlay wired to the live build
+# ---------------------------------------------------------------------------
+
+## The sheet of dark over the canvas while the finder is up.
+##
+## A `ColorRect` and not a modulate on the viewport, because three separate things have to go dim
+## together — the 3D view, the rail column and whichever room is open — and they are not siblings
+## of one node. Mouse-stopping: the drone behind it turns on drag, and a click that fell through a
+## dimmed canvas would rotate the model the builder cannot see.
+func _build_dim() -> void:
+	_dim = ColorRect.new()
+	_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_dim.anchor_right = 1.0
+	_dim.anchor_bottom = 1.0
+	_dim.color = Color(0.02, 0.03, 0.05, 0.62)
+	_dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_dim.visible = false
+	add_child(_dim)
+
+
+## The glass the summoned finder sits in. Built once and empty; the finder itself is made on each
+## open, because it is derived from the rail it is opened over.
+##
+## Centred by ANCHORS rather than by arithmetic — all four at 0.5 with both grow directions BOTH —
+## so it stays centred through a resize without the shell being told. A `PanelContainer` takes its
+## size from its child, and the child is 368 px wide by §4, so nothing here names a size.
+func _build_finder_glass() -> void:
+	_finder_glass = _glass_panel()
+	_finder_glass.anchor_left = 0.5
+	_finder_glass.anchor_top = 0.5
+	_finder_glass.anchor_right = 0.5
+	_finder_glass.anchor_bottom = 0.5
+	_finder_glass.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_finder_glass.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_finder_glass.add_theme_constant_override("margin_left", LothalTheme.SPACE_3)
+	_finder_glass.add_theme_constant_override("margin_right", LothalTheme.SPACE_3)
+	_finder_glass.add_theme_constant_override("margin_top", LothalTheme.SPACE_3)
+	_finder_glass.add_theme_constant_override("margin_bottom", LothalTheme.SPACE_3)
+	_finder_glass.visible = false
+	add_child(_finder_glass)
+
+
+## The rail a system's finder is summoned over: the PartPicker behind that system's FIRST rail tab,
+## which is §4's "that system's first category" read off the tree rather than retyped.
+##
+## Found by walking the rails and matching the tab title, not by a system-name-to-member table. A
+## table would be a second list of which rail belongs to which system, and `SYSTEMS[i]["rails"]` is
+## already that list — P10f's finding was two such lists that were never the same list.
+##
+## Returns null for a system with no rail at all (Airframe, Printed, and the four unmodelled ones)
+## and for a slot holding an `ElectronicsPicker`: that rail fits three bays at once and has no
+## single category, so there is nothing for a one-category finder to open on. Named here rather
+## than left to be discovered, because "the Video icon does not open a finder" looks like a wiring
+## omission and is not one.
+##
+## `slot` is the position in `SYSTEMS[index]["rails"]`, because a system owns more than one shelf
+## and QC5 made all of them reachable — see `_finder_categories`.
+func _rail_for_system(index: int, slot := 0) -> PartPicker:
+	if index < 0 or index >= SYSTEMS.size():
+		return null
+	var titles: Array = SYSTEMS[index].get("rails", [])
+	if slot < 0 or slot >= titles.size():
+		return null
+	for child in lab.rails().get_children():
+		if child is PartPicker and str(child.name) == str(titles[slot]):
+			return child as PartPicker
+	return null
+
+
+## Every shelf of a system the finder CAN open, as `{"position": i, "title": t}` — the header
+## segments of §4, and the reason retiring the rail did not delete half the catalog.
+##
+## Propulsion owns Motor and Prop, Power owns Pack and ESC, Control owns FC and Link. The rail
+## column showed all of them as tabs; a finder that only ever opened on `rails[0]` would have made
+## propellers, ESCs and receivers unreachable the moment the column came down — and every existing
+## check opens on the first shelf, so nothing would have gone red.
+##
+## Derived by ASKING THE TREE what each title resolves to, not by a second table of which systems
+## have two shelves. `SYSTEMS[i]["rails"]` is already that list, and P10f's finding was two lists
+## that were never the same list.
+func _finder_categories(index: int) -> Array:
+	var out: Array = []
+	if index < 0 or index >= SYSTEMS.size():
+		return out
+	var titles: Array = SYSTEMS[index].get("rails", [])
+	for i in titles.size():
+		if _rail_for_system(index, i) != null:
+			out.append({"position": i, "title": str(titles[i])})
+	return out
+
+
+## The titles that still need a COLUMN, because the finder cannot open them: the shelves whose rail
+## is an `ElectronicsPicker`. Video's `Electronics` and Control's `Link`.
+##
+## **This is the honest remainder of QC5 and it is named rather than hidden.** A payload rail fits
+## three bays at once from one control — it has no single category, no single noun and no single
+## selection — so `PartFinder`, which is built from exactly those three things, cannot be summoned
+## over it. Deleting the column for those two systems would have deleted the camera, the VTX, the
+## antenna, the receiver, the GPS and the buzzer from the app; keeping it is the affordance staying
+## reachable, which the alternative was not.
+##
+## Computed as the complement of `_finder_categories` over the same title list, so a shelf cannot
+## fall out of both and be reachable from neither.
+func _column_rail_titles(index: int) -> Array:
+	var out: Array = []
+	if index < 0 or index >= SYSTEMS.size():
+		return out
+	var titles: Array = SYSTEMS[index].get("rails", [])
+	for i in titles.size():
+		if _rail_for_system(index, i) == null:
+			out.append(str(titles[i]))
+	return out
+
+
+## Clicking a system icon in the dock: focus the system, then summon its finder (§4, "Opening").
+##
+## Separate from `select_system_by_name`, deliberately, and the split is the interaction. A CLICK
+## is a builder saying "I want to choose a part of this"; a programmatic selection is the capture
+## tool, a room closing, or `_ready` restoring what was chosen — and a finder that popped up every
+## time a room closed would be the app interrupting work nobody asked it to interrupt.
+func _on_system_chosen(index: int) -> void:
+	_select_system(index)
+	open_finder(index)
+
+
+## Summons the finder over the focused system's first category, listing, highlighted on the part
+## that is fitted right now.
+##
+## Returns false for a system with no single-category rail, which is not a failure — it is the
+## honest answer for Airframe and the four stubs, and the caller (a dock click) has already done
+## the half of its job that always applies.
+func open_finder(index: int, slot := 0) -> bool:
+	var rail := _rail_for_system(index, slot)
+	if rail == null:
+		return false
+	# Removed before freeing rather than queue_free()d in place: a queued node is still a child
+	# until the frame ends, so opening twice in one frame would leave the PanelContainer sizing
+	# itself around two finders.
+	if _finder != null:
+		_finder_glass.remove_child(_finder)
+		_finder.queue_free()
+		_finder = null
+	# EVERY ARGUMENT BUT THE SYSTEM NAME COMES OFF THE RAIL. The category, the noun and the three
+	# filter axes are the rail's own, so the finder browses the same shelf along the same facets
+	# the rail browses — which is what makes QC5's deletion of the rail a deletion rather than a
+	# rewrite of what it knew.
+	_finder = PartFinder.new(lab.catalog, str(SYSTEMS[index]["name"]),
+		rail.category, rail.noun, rail.filter_keys)
+	_finder.set_fitter(RailFitter.new(rail))
+	# THE OTHER SHELVES OF THIS SYSTEM, and the authoring row that used to sit under the rail's
+	# list. Both are what make the retirement a move rather than a deletion — see
+	# `_finder_categories` and `_on_finder_authoring`.
+	_finder.set_categories(_finder_categories(index), slot)
+	_finder.category_chosen.connect(func(other: int) -> void: open_finder(index, other))
+	var actions := _rail_action_buttons(rail)
+	if actions.size() >= 2:
+		# The rail's own wording — "New custom motor…" — carried across rather than composed here,
+		# so there is still one spelling of it.
+		_finder.set_actions((actions[0] as Button).text)
+		_finder.new_part_requested.connect(func() -> void: _on_finder_authoring(index, slot, 0))
+		_finder.delete_part_requested.connect(func() -> void: _on_finder_authoring(index, slot, 1))
+	_finder_glass.add_child(_finder)
+	# The id the build is wearing, which is what the snapshot is taken of. §4.1: this highlights it
+	# and does NOT preview it — re-fitting the part already fitted would put a phantom entry in the
+	# seam's log and make "how many previews happened" unanswerable.
+	_finder.open_on(str(rail.selected_part().get("part_id", "")))
+	_finder_glass.visible = true
+	_dim.visible = true
+	return true
+
+
+## Escape. Closes the overlay and puts the build back to the record it was wearing when the finder
+## opened — after any number of previews, and restoring NOTHING when nothing was fitted (§4.1).
+## Both of those rules live in `PartFinder.cancel()`; this function must not re-implement either,
+## which is why it does not look at what was previewed.
+func close_finder() -> void:
+	if not finder_open():
+		return
+	_finder.cancel()
+	_retract_finder()
+
+
+## Enter. Commits the highlighted part through the same seam the previews went through, so the
+## build is already wearing it and the commit is the overlay coming down.
+func commit_finder() -> void:
+	if not finder_open():
+		return
+	_finder.accept()
+	_retract_finder()
+
+
+## THE TWO AUTHORING BUTTONS UNDER A RAIL'S LIST, found on the rail rather than rebuilt.
+##
+## `PartPicker.add_custom_buttons` puts one `HBoxContainer` of `[New custom …, Delete]` under every
+## authoring rail, and each subclass wires its own dialog and its own `CustomMotors`/`CustomFrames`
+## document to them. Those handlers ARE the implementation of writing a custom part, and this shell
+## must not grow a second one: a "New custom motor…" in the finder that saved through its own path
+## would be a second way to write the same file.
+##
+## So the finder's row is a proxy, and this is what it proxies to. WALKED rather than reached for by
+## member name, because the slot is private to `PartPicker` and this slice may not edit that file.
+## `OptionButton` is excluded because it IS a `Button` and the filter dropdowns would otherwise come
+## back first; a `Window` is not descended into, because an open authoring dialog is a child of the
+## picker and its OK button is not an action of this rail.
+static func _rail_action_buttons(rail: PartPicker) -> Array:
+	var out: Array = []
+	_collect_action_buttons(rail, out)
+	return out
+
+
+static func _collect_action_buttons(node: Node, into: Array) -> void:
+	for child in node.get_children():
+		if child is Window:
+			continue
+		if child is Button and not (child is OptionButton) and not (child is MenuButton):
+			into.append(child)
+		_collect_action_buttons(child, into)
+
+
+## A press on the finder's New or Delete, routed to the rail's own button.
+##
+## **THE FINDER COMES DOWN FIRST, AND THAT IS NOT TIDINESS.** Both actions end in
+## `LabScreen.reload_catalog()`, which `remove_child`s and `queue_free`s every rail and builds new
+## ones. The live `RailFitter` holds the picker it was constructed with, and in GDScript
+## `freed_object != null` is TRUE — this codebase has been bitten by exactly that once already — so
+## a finder left up over a deleted custom motor would arrow into a freed `PartPicker`. Retracting is
+## the one answer that cannot get this wrong; the builder re-opens the finder from the dock and
+## their new part is in the list.
+##
+## The rail is looked up FRESH on every press rather than captured, for the same reason.
+func _on_finder_authoring(index: int, slot: int, action: int) -> void:
+	var rail := _rail_for_system(index, slot)
+	if rail == null:
+		return
+	var actions := _rail_action_buttons(rail)
+	if action < 0 or action >= actions.size():
+		return
+	var button: Button = actions[action]
+	if button.disabled:
+		return
+	_retract_finder()
+	if _finder != null:
+		_finder_glass.remove_child(_finder)
+		_finder.queue_free()
+		_finder = null
+	button.pressed.emit()
+
+
+func _retract_finder() -> void:
+	_finder_glass.visible = false
+	_dim.visible = false
+
+
+func finder_open() -> bool:
+	return _finder != null and _finder_glass != null and _finder_glass.visible and _finder.is_open()
+
+
+## The live finder, for tests and for the capture tool. Null until one has been summoned.
+func finder() -> PartFinder:
+	return _finder
+
+
+## Whether the canvas is currently dimmed. A function rather than a member read so a test asserts
+## the same thing the screen shows.
+func canvas_dimmed() -> bool:
+	return _dim != null and _dim.visible
+
+
+## Deselects: no system focused, no rail, no inspector, nothing on the model dimmed. §5's resting
+## state, and the state the inspector's "only when something is selected" rule needs in order to
+## mean anything — a rule whose false branch is unreachable is a rule no check can fail.
+func clear_selection() -> void:
+	_select_system(-1)
+
+
+## Escape, and the one key this shell binds. Two meanings, innermost first: close the finder if one
+## is up, otherwise let go of the selection. That is the same "back out of what you are in" the key
+## means everywhere else, and it is why the resting state is reachable without a tenth control.
+##
+## `_unhandled_key_input` and not `_input`: the finder's own LineEdit has to keep every keystroke
+## that is a character, and an `_input` handler upstream of it would eat the query as it was typed.
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key_event := event as InputEventKey
+	if key_event == null or not key_event.pressed or key_event.echo:
+		return
+	if finder_open():
+		match key_event.keycode:
+			KEY_ESCAPE:
+				close_finder()
+			KEY_ENTER, KEY_KP_ENTER:
+				commit_finder()
+			KEY_UP:
+				_finder.move_highlight(-1)
+			KEY_DOWN:
+				_finder.move_highlight(1)
+			_:
+				return
+		accept_event()
+		return
+	if key_event.keycode == KEY_ESCAPE:
+		clear_selection()
+		accept_event()
 
 
 ## The panel that replaces the whole workspace after a Delete.
@@ -1423,76 +1775,97 @@ func _build_empty_state() -> void:
 	row.add_child(open_button)
 
 
-## Bottom left: the tools, the live status, and the completeness ring.
+## THE DOCK. One centred cluster at the bottom, carrying what `_build_bottom_left_cluster` and
+## `_build_bottom_right_cluster` used to carry separately, plus the system dropdown out of the top
+## bar — QC3 of the Quiet Canvas plan, and three of the four floating clusters gone.
 ##
-## The four tools are drawn and disabled. That is the honest state — each is a feature, and §5's
-## argument is that they arrive as OVERLAYS rather than as rooms. Drawing them now is what makes
-## that claim checkable: if four disabled buttons already crowd this corner, the overlay idea has a
-## problem worth knowing about before four features are built on top of it.
-func _build_bottom_left_cluster() -> void:
-	var glass := _glass_panel()
-	glass.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	glass.anchor_top = 1.0
-	glass.anchor_bottom = 1.0
-	glass.offset_left = CLUSTER_MARGIN
-	glass.offset_top = -(BOTTOM_KEEPOUT - CLUSTER_MARGIN)
-	glass.offset_bottom = -CLUSTER_MARGIN
-	add_child(glass)
-	_tools_glass = glass
+## ## It rides the CanvasLayer, and that is the way back
+##
+## Sim puts its HUD and its build panel on a CanvasLayer of its own, which draws over everything in
+## the ordinary tree. The first working Lab/Sim toggle was an ordinary Control, so the moment it
+## took you to the field it vanished under Sim's HUD and the app had no way back short of quitting.
+## The old shell knew this — it is why the tab bar rode `layer = 10` — and now that the toggle is
+## one end of a cluster carrying eight other things, the whole cluster inherits the requirement.
+## `test_room_host.gd` asserts it by walking up from the Lab button to a CanvasLayer.
+##
+## The tools and the system icons are retracted in Sim anyway, so nothing of theirs is ever under a
+## HUD; they lose the shell's theme inheritance by being on a layer, which is why the panel sets
+## `theme` explicitly below — unthemed is a state a screenshot shows and a test does not.
+##
+## ## What stayed disabled, and why that is honest
+##
+## Explode, X-ray and Measure are still three slots with no feature behind them, exactly as they
+## were in the corner. Turning them on together would make this row a menu of promises, and QC3 is
+## about where the controls live and not about what they do.
+func _build_dock() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = TOGGLE_LAYER
+	add_child(layer)
 
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	glass.add_child(row)
+	_dock = Dock.new(SYSTEMS, _glass_stylebox())
+	_dock.theme = LothalTheme.get_theme()
+	_dock.system_chosen.connect(_on_system_chosen)
+	layer.add_child(_dock)
 
-	for tool_name in ["Overlays", "Explode", "X-ray", "Measure"]:
-		var button := Button.new()
-		button.text = tool_name
-		button.disabled = true
-		button.custom_minimum_size = Vector2(0, 28)
-		button.tooltip_text = "%s is a frame slot — no overlay behind it yet." % tool_name
-		row.add_child(button)
-		# THE FIRST BUTTON NOW HAS SOMETHING BEHIND IT (P10e). Overlays is a toggle rather than a
-		# door: it puts a chart over the viewport and takes it away again, and nothing else on
-		# screen moves. That is the whole of the "an overlay is not a room" claim this corner was
-		# drawn early to test, now carrying one real feature instead of four slots.
-		#
-		# The other three stay disabled and keep their tooltip. Turning them on together would
-		# have made the corner a menu of promises again.
-		if tool_name == "Overlays":
-			button.disabled = false
-			button.toggle_mode = true
-			button.button_pressed = false
-			button.tooltip_text = ("Analysis charts over the Lab. The chevron chooses which — "
-				+ "five exist and the window decides how many fit at once.")
-			button.toggled.connect(set_thrust_overlay_visible)
-			_overlays_button = button
+	_dropdown_glass = _dock.systems_group
+	_tools_glass = _dock.tools_group
+	_bottom_right_glass = _dock.mode_group
 
-			# The chooser. A separate control from the toggle because they are two actions, and
-			# because the alternative shipped: five charts up at once, laid out for a screen nobody
-			# has, two of them under the inspector. Which charts is now a decision the builder makes
-			# instead of one the window makes badly.
-			#
-			# `about_to_popup` rather than a rebuild on every tick, because the menu has to show the
-			# CURRENT band's capacity and nothing notifies it of a window resize.
-			var chooser := MenuButton.new()
-			chooser.text = "▾"
-			chooser.flat = false
-			chooser.custom_minimum_size = Vector2(0, 28)
-			chooser.tooltip_text = "Choose which analysis charts are up."
-			var popup := chooser.get_popup()
-			popup.id_pressed.connect(_on_overlay_chosen)
-			popup.about_to_popup.connect(_populate_overlay_menu)
-			row.add_child(chooser)
-			_overlays_menu_button = chooser
+	_overlays_button = _dock.overlays_button
+	_overlays_button.toggled.connect(set_thrust_overlay_visible)
+	_overlays_menu_button = _dock.overlays_menu
+	var popup := _overlays_menu_button.get_popup()
+	popup.id_pressed.connect(_on_overlay_chosen)
+	# `about_to_popup` rather than a rebuild on every tick, because the menu has to show the CURRENT
+	# band's capacity and nothing notifies it of a window resize.
+	popup.about_to_popup.connect(_populate_overlay_menu)
 
-	row.add_child(VSeparator.new())
-
-	_status_label = Label.new()
-	_status_label.theme_type_variation = "SmallLabel"
-	row.add_child(_status_label)
-
+	_status_label = _dock.status_label
+	# The ring is built here and handed over rather than built inside the dock, because it is an
+	# inner class of this file — a `Dock` that named `GlassShell` would be a parse cycle.
 	_ring = CompletenessRing.new()
-	row.add_child(_ring)
+	_dock.adopt_ring(_ring)
+
+	_lab_button = _dock.lab_button
+	_lab_button.pressed.connect(func() -> void: rooms.show_lab())
+	_sim_button = _dock.sim_button
+	_sim_button.pressed.connect(func() -> void: rooms.show_sim())
+	_room_menu = _dock.room_menu
+	_room_menu.room_chosen.connect(_open_room)
+
+	# A CENTRED CONTROL SIZED BY ITS CONTENT HAS TO BE TOLD WHEN EITHER CHANGES, and this is the one
+	# way the dock differs from the four anchored clusters it replaces. `minimum_size_changed` fires
+	# when the row grows — a longer Rooms menu, a bigger UI scale — and `resized` on this shell fires
+	# when the window does. Neither can recurse into the other: `layout_in` writes offsets, which
+	# change no minimum.
+	_dock.minimum_size_changed.connect(_layout_dock)
+	resized.connect(_layout_dock)
+	_layout_dock.call_deferred()
+
+
+## Puts the dock against the bottom of the window, centred.
+##
+## Separate from `_build_dock` because it runs again on every resize, and deferred at build time for
+## the reason `_fit_columns` is: a Control that has never been laid out reports a combined minimum
+## size of (0, 0), so a dock positioned at construction would be centred on nothing.
+func _layout_dock() -> void:
+	if _dock == null:
+		return
+	_dock.layout_in(size, CLUSTER_MARGIN, BOTTOM_KEEPOUT)
+
+
+## Opens one of the rooms behind the Rooms menu. A match rather than a dictionary of Callables,
+## because an id that names no room must be a visible error rather than a menu entry that silently
+## does nothing.
+func _open_room(room_id: String) -> void:
+	match room_id:
+		"bench": rooms.show_bench()
+		"battery_bench": rooms.show_battery_bench()
+		"esc_bench": rooms.show_esc_bench()
+		"frame_bench": rooms.show_frame_bench()
+		"field_editor": rooms.show_field_editor()
+		"studio": rooms.show_studio()
+		_: push_error("no such room: %s" % room_id)
 
 
 ## The bar that says a newer Lothal exists, and the link out to us.
@@ -1524,93 +1897,6 @@ func _build_update_notice() -> void:
 	layer.add_child(notice)
 
 
-## Bottom right: Lab / Sim. Two states, nothing else (§5).
-##
-## **On a CanvasLayer, and that is not a detail — it is the way back.** Sim puts its HUD and its
-## build panel on a CanvasLayer of its own, which draws over everything in the ordinary tree. The
-## first working version of this toggle was an ordinary Control, so the moment it took you to the
-## field it disappeared underneath Sim's HUD and the app had no way back to the garage short of
-## quitting. The old shell already knew this — it is why the tab bar rode `layer = 10` — and the
-## knowledge had to travel with the control that replaced it.
-##
-## The other three clusters stay in the ordinary tree deliberately. They are retracted in Sim
-## anyway, so nothing of theirs is ever underneath a HUD, and a Control inside the shell's own tree
-## inherits its theme and its layout without a second root to keep in step.
-##
-## **Live.** The door is RoomHost's, not this shell's — these two buttons ask, and the retraction of
-## the chrome that follows is `_on_room_changed`. That split is what lets the toggle be real without
-## this file becoming a second owner of "no room is left running".
-##
-## §5's argument is that Sim is "the same window with the chrome retracted", and the toggle is what
-## makes that literally true: the same window, the same viewport position, four clusters that go
-## away. A tab in a row of eight could never have expressed it, because a tab bar is chrome that
-## stays.
-func _build_bottom_right_cluster() -> void:
-	var layer := CanvasLayer.new()
-	layer.layer = TOGGLE_LAYER
-	add_child(layer)
-
-	var glass := _glass_panel()
-	_bottom_right_glass = glass
-	# The layer is not a Control, so the theme does not reach this panel down the tree the way it
-	# reaches the other three. Set here rather than left to inherit, because unthemed is a state a
-	# screenshot shows and a test does not.
-	glass.theme = LothalTheme.get_theme()
-	glass.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	glass.anchor_left = 1.0
-	glass.anchor_top = 1.0
-	glass.anchor_right = 1.0
-	glass.anchor_bottom = 1.0
-	glass.offset_left = -292.0 - CLUSTER_MARGIN
-	glass.offset_top = -(BOTTOM_KEEPOUT - CLUSTER_MARGIN)
-	glass.offset_right = -CLUSTER_MARGIN
-	glass.offset_bottom = -CLUSTER_MARGIN
-	layer.add_child(glass)
-
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	glass.add_child(row)
-
-	_lab_button = Button.new()
-	_lab_button.text = "Lab"
-	_lab_button.toggle_mode = true
-	_lab_button.button_pressed = true
-	_lab_button.custom_minimum_size = Vector2(80, 30)
-	_lab_button.tooltip_text = "The garage. Choose parts, assemble, bench, tune."
-	_lab_button.pressed.connect(func() -> void: rooms.show_lab())
-	row.add_child(_lab_button)
-
-	_sim_button = Button.new()
-	_sim_button.text = "Sim"
-	_sim_button.toggle_mode = true
-	_sim_button.custom_minimum_size = Vector2(80, 30)
-	_sim_button.tooltip_text = ("The field. Flies what the garage built, and authors nothing "
-		+ "except what the flight actually cost the pack.")
-	_sim_button.pressed.connect(func() -> void: rooms.show_sim())
-	row.add_child(_sim_button)
-
-	# The six rooms that are neither Lab nor Sim. Beside the toggle rather than inside it, because
-	# they are not a third state of the same thing — see RoomMenu for why this is a holding
-	# position and what replaces it.
-	_room_menu = RoomMenu.new()
-	_room_menu.room_chosen.connect(_open_room)
-	row.add_child(_room_menu)
-
-
-## Opens one of the rooms behind the Rooms menu. A match rather than a dictionary of Callables,
-## because an id that names no room must be a visible error rather than a menu entry that silently
-## does nothing.
-func _open_room(room_id: String) -> void:
-	match room_id:
-		"bench": rooms.show_bench()
-		"battery_bench": rooms.show_battery_bench()
-		"esc_bench": rooms.show_esc_bench()
-		"frame_bench": rooms.show_frame_bench()
-		"field_editor": rooms.show_field_editor()
-		"studio": rooms.show_studio()
-		_: push_error("no such room: %s" % room_id)
-
-
 ## Retracts the chrome for Sim and puts it back for Lab (§5).
 ##
 ## Everything except this toggle goes away out at the field: no dropdown, no project chip, no rail,
@@ -1633,6 +1919,12 @@ func _on_room_changed() -> void:
 
 	_top_bar.visible = in_lab
 	_tools_glass.visible = in_lab
+	# THE SYSTEM ICONS GO OUT TO THE FIELD WITH THE TOOLS, and this line is new because the thing it
+	# hides used to be inside `_top_bar` — the dropdown retracted for free as part of the strip. The
+	# dock is not in the strip, so the retraction has to be said. Without it the field would carry
+	# six icons that change what is fitted, which is precisely the authoring §5 says Sim must make
+	# impossible BY THE SHAPE OF THE SCREEN rather than by discipline.
+	_dropdown_glass.visible = in_lab
 	# The overlay goes with the tools that switch it on. It draws a chart about the aircraft in
 	# the garage, and left up over a bench or the field it would be a chart about a drone that is
 	# not the subject of the screen it is floating on.
@@ -1671,6 +1963,16 @@ func _on_room_changed() -> void:
 ## a replacement for three.
 func _select_system(index: int) -> void:
 	_focused_index = index
+	# NOTHING SELECTED — §5's resting state, and the branch that makes "the inspector appears only
+	# when something is selected" a rule with a false side. Everything the focused system would
+	# have asked for is put away and nothing replaces it: no rail, no inspector, no room, no plan
+	# editor, and the model lit in full rather than dimmed around a focus that no longer exists.
+	#
+	# Before the branch below rather than inside it, because `SYSTEMS[index]` on the next line is
+	# what -1 would crash on.
+	if index < 0:
+		_deselect()
+		return
 	var system: Dictionary = SYSTEMS[index]
 
 	# NO OVERLAY ROOM SURVIVES A SYSTEM CHANGE. Leaving the blade designer up while the builder
@@ -1694,11 +1996,12 @@ func _select_system(index: int) -> void:
 	# what the chosen system asks for, and the two columns inside them are separate: the panel is
 	# the frame, and a stub is what the frame holds for a system with no model.
 	var has_rails := _has_rails(system)
-
-	# A modelled system with no rails (Airframe) hides the whole left column — glass and all —
-	# rather than floating an empty panel there. An UNMODELLED system still shows it, because that
-	# is where its stub lives and the stub is the point.
-	_rail_glass.visible = has_rails or not modelled
+	# QC5: THE COLUMN IS UP ONLY FOR A SHELF THE FINDER CANNOT OPEN. That is the whole retirement,
+	# in one expression, and it is derived from the tree rather than from a list of exceptions —
+	# see `_column_rail_titles`. An unmodelled system no longer shows it either: its stub is one
+	# panel now, in the inspector.
+	var column_titles := _column_rail_titles(index)
+	_rail_glass.visible = modelled and not column_titles.is_empty()
 	_inspector.visible = true
 	# THE PLAN EDITOR IS THE AIRFRAME ROOM. Shown for that system and hidden for every other one,
 	# because a canvas floating over the Propulsion room would be editing a frame nobody was looking
@@ -1740,18 +2043,21 @@ func _select_system(index: int) -> void:
 	# omission cannot recur silently, but the call still has to be made from the path that changes
 	# the state.
 	_sync_thrust_overlay()
-	lab.rails().visible = modelled and has_rails
+	lab.rails().visible = _rail_glass.visible
 	lab.panels.visible = modelled
-	_rail_stub.visible = not modelled
 	_inspector_stub.visible = not modelled
 
 	if modelled:
-		if has_rails:
-			_show_only_tabs(lab.rails(), system["rails"])
+		if has_rails and not column_titles.is_empty():
+			_show_only_tabs(lab.rails(), column_titles)
 		_show_only_tabs(lab.panels, system["panels"])
 	else:
-		_rail_stub.show_system(system)
 		_inspector_stub.show_system(system)
+
+	# The dock's icon for this system, lit. Here rather than in `select_system_by_name`, because
+	# every route in ends here and only one of them goes through that function.
+	if _dock != null:
+		_dock.set_focused(index)
 
 	_apply_focus()
 	_refresh_status()
@@ -1761,14 +2067,52 @@ func _select_system(index: int) -> void:
 	_fit_columns.call_deferred()
 
 
-## Selects a system by its name, keeping the dropdown in step. The seam the capture tool drives, so
-## a screenshot goes through the same path a click does rather than a private one beside it.
+## The nothing-selected half of `_select_system`, kept beside it rather than folded into it.
+##
+## Written out rather than expressed as "the same thing with empty lists" because the two are not
+## the same shape: a focused system HIDES things (the rail Airframe has none of, the viewport the
+## plan editor covers) and this state hides the chrome and shows the canvas. The one line the two
+## must agree on is `_dock.set_focused`, which already answers -1 by lighting nothing — QC3 wrote
+## it that way for `select_system_by_name` being callable before the dock was ever clicked.
+##
+## The thrust overlay goes with the selection. It is a chart about the Propulsion system, and left
+## floating over an unfocused drone it would be describing a system nobody had chosen.
+func _deselect() -> void:
+	_retract_rooms()
+	if _room_door_glass != null:
+		_room_door_glass.visible = false
+	_rail_glass.visible = false
+	# THE POINT OF THE WHOLE SLICE, in one line. Everything else here was already reachable.
+	_inspector.visible = false
+	if _workbench != null:
+		_workbench.visible = false
+	# The canvas comes BACK — the plan editor was covering it and the viewport was switched off
+	# with it, and a resting state showing a blank rectangle where the drone should be would be
+	# worse than any panel.
+	var viewport_container := lab.viewport().get_parent()
+	if viewport_container is Control:
+		(viewport_container as Control).visible = true
+	if _tools_glass != null:
+		_tools_glass.visible = true
+	_sync_thrust_overlay()
+	if _dock != null:
+		_dock.set_focused(-1)
+	_apply_focus()
+	_refresh_status()
+	_fit_columns.call_deferred()
+
+
+## Selects a system by its name. The seam the capture tool drives, so a screenshot goes through the
+## same path a click does rather than a private one beside it.
+##
+## It no longer has to put a dropdown in step, because `_select_system` lights the dock's icon — one
+## place, reached by every route in. The old two-line version was a pair that could disagree, and
+## did: a caller that used `_select_system` directly left the dropdown reading the previous system.
 ## Safe to call before the shell is inside the tree: it records the choice on `_focused_index`, and
 ## `_ready()` re-applies whatever it finds there.
 func select_system_by_name(system_name: String) -> bool:
 	for i in SYSTEMS.size():
 		if str(SYSTEMS[i]["name"]) == system_name:
-			_system_dropdown.select(i)
 			_select_system(i)
 			return true
 	return false
@@ -1852,6 +2196,11 @@ static func _has_rails(system: Dictionary) -> bool:
 ## the honest thing.
 func _apply_focus() -> void:
 	if lab == null or lab.airframe == null:
+		return
+	# Nothing focused dims nothing, which is the same answer this function already gives for Drone
+	# and for an unmodelled system, reached one line earlier.
+	if _focused_index < 0 or _focused_index >= SYSTEMS.size():
+		_fade_below(lab.airframe, "", "")
 		return
 	var focused := str(SYSTEMS[_focused_index]["name"])
 	if not _is_modelled(SYSTEMS[_focused_index]):
@@ -1965,8 +2314,13 @@ func _refresh_status() -> void:
 			break
 
 	var decided := _decided_count()
+	# The system's name, or the em-dash that stands for "none chosen". The readout is the one place
+	# the focused system is named in words, so with nothing focused it has to say that rather than
+	# index -1 into SYSTEMS and take the shell down with it.
+	var focused_name := str(SYSTEMS[_focused_index]["name"]) if _focused_index >= 0 \
+		and _focused_index < SYSTEMS.size() else "No system"
 	_status_label.text = "%s  ·  %d of %d systems decided" % [
-		SYSTEMS[_focused_index]["name"], decided, SYSTEMS.size()]
+		focused_name, decided, SYSTEMS.size()]
 	if _ring != null:
 		_ring.fraction = float(decided) / float(SYSTEMS.size())
 		_ring.tooltip_text = (
@@ -2118,8 +2472,14 @@ func _show_empty_state() -> void:
 		_workbench.visible = false
 	_retract_rooms()
 	_tools_glass.visible = false
+	_dropdown_glass.visible = false
 	if _bottom_right_glass != null:
 		_bottom_right_glass.visible = false
+	# AND THE DOCK ITSELF, not only its three groups. Three hidden groups inside a visible panel is
+	# an empty glass pill floating over "No drone open" — a piece of chrome describing nothing,
+	# which is the one thing the empty state exists to avoid.
+	if _dock != null:
+		_dock.visible = false
 	var viewport_container := lab.viewport().get_parent()
 	if viewport_container is Control:
 		(viewport_container as Control).visible = false
@@ -2131,6 +2491,8 @@ func _show_empty_state() -> void:
 func _show_project() -> void:
 	_empty_state.visible = false
 	_dropdown_glass.visible = true
+	if _dock != null:
+		_dock.visible = true
 	if _bottom_right_glass != null:
 		_bottom_right_glass.visible = true
 	_select_system(_focused_index)
@@ -2187,11 +2549,29 @@ static func _glass_stylebox() -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = Color(
 		LothalTheme.PANEL_BG.r, LothalTheme.PANEL_BG.g, LothalTheme.PANEL_BG.b, GLASS_ALPHA)
-	box.border_color = Color(
-		LothalTheme.BORDER.r, LothalTheme.BORDER.g, LothalTheme.BORDER.b, 0.9)
+	# THE TOKEN, WHOLE — alpha included. This line used to read BORDER's three channels and force
+	# alpha to 0.9, which is the trap worth naming: re-mixing a colour token's channels while
+	# forcing a different alpha silently INVERTS the token's meaning the moment the token changes
+	# representation. BORDER was once an opaque grey, so rgb(BORDER)+0.9 happened to land on a dim
+	# hairline; BORDER is now white-at-low-alpha, and the identical expression started painting a
+	# near-solid white outline — measured at RGB (231, 232, 232) on the tools cluster, the
+	# brightest thing on screen. The alpha IS the token here; discarding it discards the line.
+	# A cluster does want a firmer edge than a panel nested inside it, and the theme already has a
+	# name for that, so ask for BORDER_STRONG rather than mixing one by hand.
+	box.border_color = LothalTheme.BORDER_STRONG
 	box.set_border_width_all(1)
-	box.set_corner_radius_all(8)
+	# RADIUS_PANEL (10), not a hand-written 8. The panels a cluster contains are RADIUS_CONTROL (7),
+	# and 8-around-7 is a one-pixel difference that reads as a slip rather than as nesting — the
+	# outer corner has to be visibly rounder than the inner one for the containment to be legible.
+	box.set_corner_radius_all(LothalTheme.RADIUS_PANEL)
 	box.set_content_margin_all(LothalTheme.SPACE_2)
+	# A cluster that FLOATS over the viewport casts a shadow onto it. Without one these are
+	# translucent rectangles painted on the picture rather than panels in front of it, which is
+	# most of why the shell read as flat while being named for glass.
+	box.shadow_color = LothalTheme.SHADOW
+	box.shadow_size = LothalTheme.SHADOW_SIZE
+	box.shadow_offset = LothalTheme.SHADOW_OFFSET
+	box.anti_aliasing = true
 	return box
 
 
@@ -2204,17 +2584,17 @@ static func _glass_stylebox() -> StyleBoxFlat:
 ##
 ## §9: never invent a spec to unlock a feature. A stub that listed plausible masses for parts nobody
 ## has weighed would be exactly that, so these carry NO numbers at all.
+## QC5: THERE IS ONE STUB, AND IT IS THE INSPECTOR'S. There used to be two halves — the rail side
+## carried "WHAT BELONGS HERE" and the list, the inspector side carried the reasoning and the
+## source. The rail column is retired, so the half that lived in it had to go somewhere or the
+## list of parts would have been deleted along with the panel that happened to hold it. It is the
+## most visible half of a stub: "why there is nothing here" is an explanation, and the list is the
+## content being explained.
 class SystemStub extends VBoxContainer:
-	## The rail side is the short form — a title and the list. The inspector side carries the
-	## reasoning. Splitting them this way keeps each column doing on a stub what it does on a real
-	## system: the rail is what you could pick, the inspector is what it means.
-	var _rail_side: bool
-
 	var _title: Label
 	var _body: VBoxContainer
 
-	func _init(p_rail_side: bool) -> void:
-		_rail_side = p_rail_side
+	func _init() -> void:
 		size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		size_flags_vertical = Control.SIZE_EXPAND_FILL
 		add_theme_constant_override("separation", LothalTheme.SPACE_3)
@@ -2241,16 +2621,14 @@ class SystemStub extends VBoxContainer:
 		if stub.is_empty():
 			return
 
-		if _rail_side:
-			var heading := Label.new()
-			heading.text = "WHAT BELONGS HERE"
-			heading.theme_type_variation = "SmallLabel"
-			_body.add_child(heading)
-			for item in stub["items"]:
-				var line := Label.new()
-				line.text = "·  %s" % item
-				_body.add_child(line)
-			return
+		var heading := Label.new()
+		heading.text = "WHAT BELONGS HERE"
+		heading.theme_type_variation = "SmallLabel"
+		_body.add_child(heading)
+		for item in stub["items"]:
+			var line := Label.new()
+			line.text = "·  %s" % item
+			_body.add_child(line)
 
 		var why := Label.new()
 		why.text = str(stub["why"])
