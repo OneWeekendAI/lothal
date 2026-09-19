@@ -42,6 +42,20 @@ const SETTLE_FRAMES := 3
 ## every builder's first run.
 const WINDOW := Vector2i(1280, 720)
 
+## The smallest window `project.godot` will let a builder make (`window/size/min_size`). Anything
+## the shell draws has to fit THIS, not the size it opens at — the finder's height defect was
+## invisible at 1280x720 on a three-facet shelf and unmissable here on a four-facet one.
+const MIN_WINDOW := Vector2i(1024, 600)
+
+
+## One key press, for the Escape path. Built here rather than pushed through `Input` because the
+## shell's handler is `_unhandled_key_input` and the dummy display server delivers nothing.
+static func _key(code: Key) -> InputEventKey:
+	var event := InputEventKey.new()
+	event.keycode = code
+	event.pressed = true
+	return event
+
 
 static func run(tree: SceneTree) -> Array:
 	var results: Array = []
@@ -193,6 +207,82 @@ static func run(tree: SceneTree) -> Array:
 	shell.close_finder()
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
+
+	# -----------------------------------------------------------------------
+	# THE VISUAL PASS ON THE FINDER (the five defects in bugs/*.png, plus density and the × ).
+	#
+	# Power's shelf and NOT Propulsion's, deliberately: Power's rail filters on four facets where
+	# Propulsion's filters on three, so its column is a row taller — and every height defect the
+	# screenshots caught was on the taller one while the three-facet shelf looked fine. A check
+	# written on Propulsion is a check written on the case that already passed.
+	# -----------------------------------------------------------------------
+	# THE INSPECTOR'S OWN CLIPPING, before the finder is opened over it. A value longer than the
+	# panel is not hypothetical — `8 kHz (not modelled here)` and `0.16 °/s RMS` are real FC rows,
+	# and both were cut off at the window's edge in `bugs/`. Forced to an extreme here so the check
+	# does not depend on which spec happens to be the longest today.
+	shell.select_system_by_name("Propulsion")
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	var stretched := _stretch_an_inspector_row(shell)
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	results.append(_the_inspector_wraps_rather_than_running_off_the_edge(shell, stretched))
+
+	var power := _index_of("Power")
+	shell._dock.system_chosen.emit(power)
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+
+	results.append(_the_finder_is_opaque(shell))
+	results.append(_the_rows_clear_the_scrollbar(shell))
+	results.append(_no_row_repeats_itself_in_a_tooltip(shell))
+	results.append(_the_finder_is_denser_than_the_page_around_it(shell))
+
+	# THE SMALLEST WINDOW THE APP CAN BE PUT IN, which is `project.godot`'s own floor and not a
+	# number invented here. Everything above is measured at 1280x720; this is the case the
+	# screenshots were taken in — a column whose height was a sum of constants, in a window with
+	# less room than the sum.
+	frame.size = MIN_WINDOW
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	shell._dock.system_chosen.emit(power)
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	results.append(_the_finder_fits_the_smallest_window(shell))
+	results.append(_the_squeezed_list_is_still_a_list(shell))
+
+	# THE WAY OUT, BOTH PATHS, AND WHAT NEITHER OF THEM MAY DO. Back at the shipping window so the
+	# finder is not being dismissed from its most cramped state.
+	frame.size = WINDOW
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	var power_rail := shell._rail_for_system(power)
+	var worn_before := str(power_rail.selected_part().get("part_id", "")) if power_rail != null else ""
+	shell._dock.system_chosen.emit(power)
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	shell.finder().move_highlight(1)
+	shell.finder().move_highlight(1)
+	var previewed_onto := str(power_rail.selected_part().get("part_id", "")) if power_rail != null else ""
+	shell.finder().press_close()
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	results.append(_the_close_button_dismisses_the_finder(shell))
+	results.append(_closing_commits_nothing(
+		shell, power_rail, worn_before, previewed_onto, "the × "))
+
+	shell._dock.system_chosen.emit(power)
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	shell.finder().move_highlight(1)
+	shell.finder().move_highlight(1)
+	var escaped_onto := str(power_rail.selected_part().get("part_id", "")) if power_rail != null else ""
+	shell._unhandled_key_input(_key(KEY_ESCAPE))
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	results.append(_escape_dismisses_the_finder(shell))
+	results.append(_closing_commits_nothing(
+		shell, power_rail, worn_before, escaped_onto, "Escape"))
 
 	# AND THE STATE THE WHOLE SLICE EXISTS FOR. Asserted last because it is destructive: nothing
 	# after this point has a focused system.
@@ -896,7 +986,8 @@ static func _the_finder_is_a_real_panel_and_not_a_sliver(shell: GlassShell) -> T
 	var glass: Rect2 = shell._finder_glass.get_global_rect()
 	return TestResult.new(
 		"the finder's glass is a real panel, not the 16 px sliver its Control root asked for",
-		shell._finder_glass.visible and glass.size.x >= 368.0 and glass.size.y >= 380.0,
+		shell._finder_glass.visible and glass.size.x >= PartFinder.PANEL_WIDTH
+			and glass.size.y >= 300.0,
 		"the finder's glass is %.0fx%.0f px at (%.0f, %.0f)" % [
 			glass.size.x, glass.size.y, glass.position.x, glass.position.y])
 
@@ -934,3 +1025,260 @@ static func _the_finder_fits_the_window_and_clears_the_dock(shell: GlassShell) -
 		inside and lowest <= dock_top,
 		"the glass runs x=%.0f-%.0f y=%.0f-%.0f, its lowest drawn edge is y=%.0f, the dock starts at y=%.0f" % [
 			glass.position.x, glass.end.x, glass.position.y, glass.end.y, lowest, dock_top])
+
+
+## THE FINDER IS OPAQUE, and this is the defect that made two panels share one set of pixels.
+##
+## `GLASS_ALPHA` is right for a panel over the MODEL and wrong for a panel over another panel: at
+## 0.86 the FC inspector's "Processor F40", "Gyro MPU-600" and two amber warning paragraphs read
+## straight through the list of flight controllers, and the charger's "1356 of 1500 mAh" read
+## through the battery shelf. Both are in `bugs/`.
+##
+## The border and the shadow are asserted with the alpha, because "make it opaque" done carelessly
+## is a flat rectangle with no edge — the panel would stop being see-through and stop reading as
+## being in front of anything.
+##
+## MUTATION CONFIRMED RED: drop the `add_theme_stylebox_override` from `_build_finder_glass` so the
+## finder goes back to the shared glass box — alpha reads 0.86.
+static func _the_finder_is_opaque(shell: GlassShell) -> TestResult:
+	var box := shell._finder_glass.get_theme_stylebox("panel") as StyleBoxFlat
+	var alpha: float = box.bg_color.a if box != null else 0.0
+	var border: int = box.border_width_left if box != null else 0
+	var shadow: int = box.shadow_size if box != null else 0
+	return TestResult.new(
+		"the finder's panel is opaque, with an edge and a shadow to sit in front of",
+		alpha >= 0.99 and border >= 1 and shadow > 0,
+		"bg alpha %.2f, border %d px, shadow %d px" % [alpha, border, shadow])
+
+
+## AND THE ROWS ARE NOT UNDER THE SCROLLBAR. QC5 widened the bar from zero so it could be seen and
+## left the rows where they were, so the grabber was drawn on top of `GEPRC SPEEDX2 2107.5
+## 1960KV  30 g`. Measured off the row's real rect against the list's real width, both of which
+## exist only after a layout pass — which is why this check is in this file.
+##
+## MUTATION CONFIRMED RED: delete `list_box.content_margin_right = ROW_GUTTER` from
+## `PartFinder._init` — the row runs to x=296 of a 300 px list with an 8 px bar over it.
+static func _the_rows_clear_the_scrollbar(shell: GlassShell) -> TestResult:
+	var finder: PartFinder = shell.finder()
+	var list: ItemList = finder._list
+	var row: Rect2 = list.get_item_rect(0)
+	var bar: float = finder.scrollbar_width()
+	return TestResult.new(
+		"a row's right-hand edge stops before the scrollbar rather than running under it",
+		row.end.x + bar <= list.size.x,
+		"the row ends at x=%.0f, the %.0f px bar starts at x=%.0f of a %.0f px list" % [
+			row.end.x, bar, list.size.x - bar, list.size.x])
+
+
+## AND NO ROW CARRIES A FLOATING COPY OF ITSELF. `ItemList` falls back to an item's own text when no
+## tooltip is set, and the engine draws that popup on the row the cursor is on — `2.5" Micro Whoop
+## 28 g` over the row reading `2.5" Micro Whoop   28 g`, in two of the screenshots.
+##
+## Asserted here as well as in `tests/test_part_finder.gd` because the truncation rule is measured
+## against the list's FONT, and outside the tree that is the engine's fallback font rather than the
+## app's — a suppression that worked on the fallback metrics and not on the shipping ones would be
+## green there and wrong here.
+##
+## MUTATION CONFIRMED RED: delete the `set_item_tooltip_enabled(...)` line from `PartFinder._refresh`
+## — every row on the shelf repeats itself.
+static func _no_row_repeats_itself_in_a_tooltip(shell: GlassShell) -> TestResult:
+	var finder: PartFinder = shell.finder()
+	var repeats: Array = []
+	for i in finder.row_count():
+		if finder.row_tooltip(i) == finder.row_text(i) and finder.row_text(i) != "":
+			repeats.append(finder.row_text(i))
+	return TestResult.new(
+		"no row in the finder shows a tooltip that only repeats the row",
+		repeats.is_empty(),
+		"%d of %d rows repeat themselves, e.g. %s" % [
+			repeats.size(), finder.row_count(), repeats.slice(0, 2)])
+
+
+## AND IT READS AS A PICKER. The type in the finder and in the inspector beside it is set one step
+## below the shell's body scale; the column is narrower than the 368 px QC5 gave it.
+##
+## The inspector is measured in the SAME check as the finder, because "bring them into the same
+## scale" is a relation between two panels and a check on either one alone is satisfied by
+## shrinking that one.
+##
+## MUTATION CONFIRMED RED: `PartFinder`'s list font override back to `FONT_SIZE_BODY` — the rows
+## report 13 px against a body of 13.
+static func _the_finder_is_denser_than_the_page_around_it(shell: GlassShell) -> TestResult:
+	var finder: PartFinder = shell.finder()
+	var rows: int = finder._list.get_theme_font_size("font_size")
+	var title: int = finder._header.get_theme_font_size("font_size")
+	var glass: Rect2 = shell._finder_glass.get_global_rect()
+	# The inspector's own rows, found through the panel that is on screen for this system.
+	var spec_size := 0
+	for panel in _spec_panels(shell):
+		for pair in (panel as SpecPanel)._row_labels:
+			spec_size = maxi(spec_size, (pair[0] as Label).get_theme_font_size("font_size"))
+	return TestResult.new(
+		"the finder and the inspector beside it are set below the shell's body scale",
+		rows < LothalTheme.FONT_SIZE_BODY and rows >= LothalTheme.FONT_SIZE_SMALL
+			and title <= LothalTheme.FONT_SIZE_SUBTITLE
+			and spec_size > 0 and spec_size < LothalTheme.FONT_SIZE_BODY
+			and glass.size.x <= 340.0,
+		"finder rows %d px, title %d px, inspector rows %d px, the panel is %.0f px wide" % [
+			rows, title, spec_size, glass.size.x])
+
+
+## THE HEIGHT DEFECT, AT THE SIZE IT SHOWS AT. 1024x600 is `project.godot`'s own minimum window, and
+## Power's four-facet shelf is the tall one: the column asked for 483 px in a window with about 448
+## to give, a `PanelContainer` obliged its child's minimum, and a `Control` does not clip — so the
+## last rows, the bottom of the scrollbar and both authoring buttons were painted through the
+## bottom of the window and under the dock, which rides its own CanvasLayer and draws over them.
+##
+## Every child is walked rather than trusting the glass's rect, for the reason
+## `_the_finder_fits_the_window_and_clears_the_dock` gives: the panel sizes itself to what its child
+## ASKS for, and the sliver proved those are two numbers.
+##
+## MUTATION CONFIRMED RED: delete the `_fit_finder()` call from `GlassShell.open_finder` — the
+## authoring row's bottom edge lands below the dock's top.
+static func _the_finder_fits_the_smallest_window(shell: GlassShell) -> TestResult:
+	var glass: Rect2 = shell._finder_glass.get_global_rect()
+	var window := Vector2(MIN_WINDOW)
+	var dock_top: float = shell._dock.get_global_rect().position.y
+	var lowest := glass.end.y
+	for child in shell.finder().get_children():
+		if child is Control:
+			lowest = maxf(lowest, (child as Control).get_global_rect().end.y)
+	return TestResult.new(
+		"the finder fits the smallest window the app allows and still clears the dock",
+		glass.position.y >= 0.0 and lowest <= window.y and lowest <= dock_top,
+		"the glass runs y=%.0f-%.0f, its lowest drawn edge is y=%.0f, the dock starts at y=%.0f" % [
+			glass.position.y, glass.end.y, lowest, dock_top])
+
+
+## AND WHAT GAVE WAY WAS THE LIST. The fit above is satisfiable by a finder that dropped its
+## authoring row or its facet chips off the bottom, which is the repair doing the damage the defect
+## did; this names what was allowed to shrink and checks the rest is still there.
+##
+## MUTATION CONFIRMED RED: `PartFinder.fit_to_height` returning `LIST_HEIGHT` unconditionally — the
+## list is still 232 px in a window that cannot hold it.
+static func _the_squeezed_list_is_still_a_list(shell: GlassShell) -> TestResult:
+	var finder: PartFinder = shell.finder()
+	var height: float = finder.list_height()
+	return TestResult.new(
+		"the squeeze came out of the list, and the header and authoring row survived it",
+		height < PartFinder.LIST_HEIGHT and height >= PartFinder.LIST_HEIGHT_MIN
+			and finder.action_labels().size() == 2
+			and finder.facet_labels().size() == 4,
+		"the list is %.0f px (full %.0f, floor %.0f), %d facets and %d actions remain" % [
+			height, PartFinder.LIST_HEIGHT, PartFinder.LIST_HEIGHT_MIN,
+			finder.facet_labels().size(), finder.action_labels().size()])
+
+
+## THE × TAKES THE OVERLAY DOWN. Before this the finder could only be dismissed by a key nobody was
+## told about: there was no control on the panel at all, in any of the five screenshots.
+##
+## The dim is asserted with it for `_escape_takes_the_overlay_and_the_dim_down_together`'s reason —
+## a sheet of dim left over a live app with no overlay on it is an app that has stopped responding.
+##
+## MUTATION CONFIRMED RED: remove the `_finder.close_requested.connect(close_finder)` line from
+## `GlassShell.open_finder` — the button emits and nothing happens.
+static func _the_close_button_dismisses_the_finder(shell: GlassShell) -> TestResult:
+	return TestResult.new(
+		"the × in the finder's corner closes it, and takes the dim with it",
+		not shell.finder_open() and not shell._finder_glass.visible and not shell._dim.visible,
+		"open %s, glass %s, dim %s" % [
+			shell.finder_open(), shell._finder_glass.visible, shell._dim.visible])
+
+
+## AND SO DOES ESCAPE, through the shell's own key handler rather than by calling `close_finder`.
+##
+## MUTATION CONFIRMED RED: remove the `KEY_ESCAPE` branch from `GlassShell._unhandled_key_input` —
+## the overlay stays up.
+static func _escape_dismisses_the_finder(shell: GlassShell) -> TestResult:
+	return TestResult.new(
+		"Escape closes the finder through the shell's key handler",
+		not shell.finder_open() and not shell._finder_glass.visible and not shell._dim.visible,
+		"open %s, glass %s, dim %s" % [
+			shell.finder_open(), shell._finder_glass.visible, shell._dim.visible])
+
+
+## AND NEITHER WAY OUT CHOOSES ANYTHING. Both paths run through `PartFinder.cancel()`, so the build
+## goes back to the pack it was wearing when the finder opened — after two previews that really did
+## reach it.
+##
+## `previewed_onto` is asserted to be a DIFFERENT pack from the one worn before, and that is what
+## stops this passing for the wrong reason: if the previews never reached the rail, "the fit is
+## unchanged" is trivially true and a close that committed would look identical.
+##
+## MUTATION CONFIRMED RED: `GlassShell.close_finder` calling `_finder.accept()` instead of
+## `_finder.cancel()` — the rail keeps the previewed pack.
+static func _closing_commits_nothing(shell: GlassShell, rail: PartPicker, worn_before: String,
+		previewed_onto: String, how: String) -> TestResult:
+	var worn_now := str(rail.selected_part().get("part_id", "")) if rail != null else ""
+	return TestResult.new(
+		"closing with %s leaves the build wearing the part it had, not the one previewed" % how,
+		worn_now == worn_before and previewed_onto != worn_before and not shell.finder_open(),
+		"wore %s, previewed onto %s, wears %s" % [worn_before, previewed_onto, worn_now])
+
+
+## Every SpecPanel in the shell, found by walking the tree.
+##
+## Walked rather than read off `lab.panels.get_children()`: the inspector's panels are nested
+## inside the tab machinery on some systems and direct children on others, and a check that read
+## one level found ZERO rows on Power and reported the inspector's type scale as 0 px — a number
+## that satisfies "smaller than body" while measuring nothing at all.
+static func _spec_panels(node: Node) -> Array:
+	var out: Array = []
+	if node is SpecPanel:
+		out.append(node)
+	for child in node.get_children():
+		out.append_array(_spec_panels(child))
+	return out
+
+
+## Puts a value longer than any panel into the first row of every on-screen inspector, and returns
+## how many it reached. Returned rather than assumed: a check that stretched nothing would then
+## measure an inspector holding its ordinary short values and pass without exercising anything.
+static func _stretch_an_inspector_row(shell: GlassShell) -> int:
+	var touched := 0
+	for panel in _spec_panels(shell):
+		var spec: SpecPanel = panel
+		if not spec.is_visible_in_tree() or spec._row_labels.is_empty():
+			continue
+		(spec._row_labels[0][1] as Label).text = \
+			"8 kHz (not modelled here, and this is what a long one looks like)"
+		touched += 1
+	return touched
+
+
+## THE INSPECTOR WRAPS RATHER THAN RUNNING OFF THE RIGHT-HAND EDGE.
+##
+## The shell clamps this panel at 45% of the window, and a clamp is only half an answer: a Label
+## that may not wrap keeps its full minimum width, the grid keeps it, and the row is painted past
+## the panel and past the window with it. `bugs/` shows four rows of the FC inspector ending
+## mid-word at the screen edge — `8 kHz (not modelled`, `0.16 °/s RM`, `109 km/`, `11.3 :`. The
+## ScrollContainer that was supposed to be the escape hatch could not be reached, because the
+## theme's scrollbars report zero width and paint nothing.
+##
+## Measured against the PANEL's inner edge and the window's, and against every row rather than the
+## stretched one: a wrap rule applied to one Label and not to the grid is the repair half-done.
+##
+## MUTATION CONFIRMED RED: delete `value_label.autowrap_mode = ...` from `SpecPanel._add_row` — the
+## stretched row's label runs past both edges.
+static func _the_inspector_wraps_rather_than_running_off_the_edge(
+		shell: GlassShell, stretched: int) -> TestResult:
+	var panel_right: float = shell._inspector.get_global_rect().end.x
+	var window := Vector2(WINDOW)
+	var worst := 0.0
+	var offender := ""
+	for panel in _spec_panels(shell):
+		var spec: SpecPanel = panel
+		if not spec.is_visible_in_tree():
+			continue
+		for pair in spec._row_labels:
+			for label in pair:
+				var rect: Rect2 = (label as Label).get_global_rect()
+				var over := rect.end.x - minf(panel_right, window.x)
+				if over > worst:
+					worst = over
+					offender = (label as Label).text
+	return TestResult.new(
+		"a long inspector value wraps inside the panel instead of running off the window",
+		stretched > 0 and worst <= 0.0,
+		"%d row(s) stretched, worst overhang %.0f px (%s), panel ends at x=%.0f of %d" % [
+			stretched, worst, offender.substr(0, 28), panel_right, WINDOW.x])

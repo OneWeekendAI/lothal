@@ -65,8 +65,64 @@ signal category_chosen(position: int)
 ## each one back to the rail's own button, which is still the only implementation.
 signal new_part_requested()
 signal delete_part_requested()
+## The × in the corner. A finder that can only be dismissed by a key nobody was told about is a
+## modal with no way out for anyone using the mouse — which is the audience §2 names. Routed to the
+## shell rather than closed here for cancel()'s reason: closing is the BUILD being put back, and
+## only the shell can take the overlay and the dim down together.
+signal close_requested()
 
 const ALL := PartPicker.ALL
+
+## THE FINDER IS A PICKER, NOT A PAGE (the density pass).
+##
+## QC5's finder was laid out at the shell's body scale: an 18 px title, 13 px rows, 8 px between
+## every child and a 368 px column. On screen that read as a document that happened to contain a
+## list — it covered the aircraft it was there to help choose a part FOR, and on a short window it
+## did not fit at all. Every number below is one step down the scales the theme already publishes;
+## nothing here invents a size. `FONT_SIZE_SMALL` (11) is the floor the rest of the app uses for
+## real text and this does not go under it.
+const PANEL_WIDTH := 300.0
+## The list's width inside the column. The gutter below is taken out of it, not added to it, so
+## widening the scroll affordance can never widen the overlay.
+const LIST_WIDTH := 284.0
+## What the list asks for when the window has room, and the least it may be squeezed to before
+## `fit_to_height` stops shrinking it. The floor is about five rows: a list shorter than that is a
+## dropdown, and the whole argument of §2 is that a beginner browses.
+const LIST_HEIGHT := 232.0
+const LIST_HEIGHT_MIN := 96.0
+## The scroll affordance's width, and the gutter reserved for it. See the comment on the
+## `custom_minimum_size.x` line for why the bar has to be widened here at all.
+const SCROLLBAR_WIDTH := 8.0
+const ROW_GUTTER := SCROLLBAR_WIDTH + LothalTheme.SPACE_1
+
+
+## The list, subclassed for ONE reason: where its tooltip is drawn.
+##
+## `ItemList` has no hook for tooltip placement, and the engine puts a tooltip a few pixels below
+## and right of the cursor — which, over a list of 24 px rows, lands squarely on the row the cursor
+## is on. The screenshot that prompted this showed `H743 30.5x30.5   12 g` hovering over the row
+## reading `H743 30.5x30.5   12 g`, hiding it. `_make_custom_tooltip` is the only place a Control
+## can move its own tooltip, so the row list owns one.
+##
+## It is a `MarginContainer` with a top inset rather than a repositioned popup because the engine
+## owns the popup's position outright; padding the contents downward is the one lever that is ours.
+class RowList extends ItemList:
+	## The inset, in px. A row is the font's height plus the theme's `v_separation` and the
+	## selected stylebox's margins, and this clears it with a little to spare.
+	const TOOLTIP_DROP := 22
+
+	func _make_custom_tooltip(for_text: String) -> Object:
+		var margin := MarginContainer.new()
+		margin.add_theme_constant_override("margin_top", TOOLTIP_DROP)
+		var panel := PanelContainer.new()
+		panel.theme_type_variation = &"TooltipPanel"
+		margin.add_child(panel)
+		var label := Label.new()
+		label.theme_type_variation = &"TooltipLabel"
+		label.text = for_text
+		panel.add_child(label)
+		return margin
+
 
 var catalog: PartsCatalog
 ## The category this finder lists, e.g. "motor".
@@ -83,6 +139,8 @@ var filter_keys: Array
 var _fitter: Object = null
 
 var _header: Label
+var _header_row: HBoxContainer
+var _close_button: Button
 var _category_row: HBoxContainer
 var _facet_grid: GridContainer
 var _facet_selectors: Dictionary = {}   # filter key -> OptionButton
@@ -115,9 +173,12 @@ func _init(p_catalog: PartsCatalog, p_system: String, p_category: String, p_noun
 
 	# ~23em at the shell's body size, per §4. Mouse-stopping because the canvas behind is dimmed
 	# and a click that fell through would rotate the drone the overlay is covering.
-	custom_minimum_size = Vector2(368, 0)
+	custom_minimum_size = Vector2(PANEL_WIDTH, 0)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	add_theme_constant_override("separation", LothalTheme.SPACE_2)
+	# SPACE_1 and not SPACE_2: eight children at 8 px apart is 56 px of air in a column that has to
+	# clear the dock on a 720 px window, and it was most of what pushed the authoring row off the
+	# bottom edge.
+	add_theme_constant_override("separation", LothalTheme.SPACE_1)
 
 	# The rail's title used to carry system and category, and §4 says that information must survive
 	# the rail — without it the overlay is a list of names with no statement of what is being
@@ -128,10 +189,30 @@ func _init(p_catalog: PartsCatalog, p_system: String, p_category: String, p_noun
 		_filters[key] = ALL
 		_options[key] = _derive_options(entry)
 
+	# THE TITLE AND THE WAY OUT, ON ONE LINE. The row exists for the × — a title Label that filled
+	# the column left nowhere for it that was not a second row of chrome.
+	_header_row = HBoxContainer.new()
+	add_child(_header_row)
+
 	_header = Label.new()
 	_header.text = "%s · %s" % [p_system, _title_case(p_category)]
 	_header.theme_type_variation = &"TitleLabel"
-	add_child(_header)
+	# One step down the published scale — SUBTITLE, not TITLE. A picker's title names what is being
+	# chosen; it is not the page's heading, because this is not a page.
+	_header.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SUBTITLE)
+	_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_header_row.add_child(_header)
+
+	# ×, in the corner every window in this app puts it. `CompactButton` and not a bare Button: the
+	# icon buttons of the dock and the room toolbars are that variation, and a close that looked
+	# like nothing else on screen would read as part of the list.
+	_close_button = Button.new()
+	_close_button.text = "×"
+	_close_button.theme_type_variation = &"CompactButton"
+	_close_button.tooltip_text = "Close (Esc)"
+	_close_button.focus_mode = Control.FOCUS_NONE
+	_close_button.pressed.connect(func() -> void: close_requested.emit())
+	_header_row.add_child(_close_button)
 
 	# The segments that reach a system's OTHER shelves. Empty and hidden until set_categories() is
 	# called, because a finder constructed for a test knows nothing about systems — and because the
@@ -152,13 +233,16 @@ func _init(p_catalog: PartsCatalog, p_system: String, p_category: String, p_noun
 		var key: String = entry["key"]
 		var label := Label.new()
 		label.text = entry["label"]
+		label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		_facet_grid.add_child(label)
 		var selector := OptionButton.new()
 		selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		# Clipped and width-capped for PartPicker's reason: one long derived value like
 		# "injection-moulded nylon (PA12)" would otherwise set the whole overlay's width.
 		selector.clip_text = true
-		selector.custom_minimum_size = Vector2(200, 0)
+		selector.theme_type_variation = &"CompactButton"
+		selector.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+		selector.custom_minimum_size = Vector2(150, 0)
 		for value in _options[key]:
 			selector.add_item(value)
 		selector.select(0)
@@ -170,21 +254,22 @@ func _init(p_catalog: PartsCatalog, p_system: String, p_category: String, p_noun
 	# Placeholder, never a gate: the list below it is already full. The words say the query is an
 	# accelerator so that nobody reads the empty field as a thing they must satisfy first.
 	_query_edit.placeholder_text = "Type to narrow — or just browse"
+	_query_edit.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	_query_edit.text_changed.connect(set_query)
 	add_child(_query_edit)
 
-	_list = ItemList.new()
-	# 272 AND NOT 320, AND THE NUMBER IS THE WINDOW'S. QC5 gave the header three facet chips, a
-	# category segment row and an authoring row, and at 320 the finished column measured 620 px:
-	# centred in a 720 px window that put its bottom edge at y=670, under a dock whose top is 656
-	# and which rides its own CanvasLayer — so the last two rows and both authoring buttons were
-	# behind Lab/Sim. 272 brings the column to 572 and leaves the dock alone, MEASURED by
-	# `tests/test_shell_layout.gd` rather than reasoned about.
-	#
-	# The rows that no longer fit are still reachable: the list scrolls, and `_select_row` calls
-	# `ensure_current_is_visible()` so the arrow keys carry the viewport with them.
-	_list.custom_minimum_size = Vector2(348, 272)
+	_list = RowList.new()
+	# THE LIST'S HEIGHT IS A REQUEST NOW, NOT A CONSTANT. It used to be a hand-measured 272 that
+	# held for exactly one window and one facet count: QC5's number was derived against Propulsion's
+	# three dropdowns at 1280x720, and Power's shelf has FOUR, which put the authoring row and the
+	# bottom of the list under the dock on a window a third taller. `fit_to_height` squeezes this
+	# number down to whatever the window can actually spare — see that function.
+	_list.custom_minimum_size = Vector2(LIST_WIDTH, LIST_HEIGHT)
 	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_list.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	# Row pitch. The theme's SPACE_1 between rows is right for a panel of readouts and loose for a
+	# list of 18 near-identical names, where tighter rows mean more of the shelf visible at once.
+	_list.add_theme_constant_override("v_separation", 2)
 	_list.item_selected.connect(highlight_index)
 	# A SCROLLBAR YOU CAN SEE, and this line is a workaround with a named cause.
 	#
@@ -199,14 +284,26 @@ func _init(p_catalog: PartsCatalog, p_system: String, p_category: String, p_noun
 	# Fixed here and not in the theme because widening every scrollbar in the app changes the
 	# minimum width of every ScrollContainer in it, which is a measurement this slice has not made.
 	# The theme is where it belongs and that is recorded rather than done quietly.
-	_list.get_v_scroll_bar().custom_minimum_size.x = 8.0
+	_list.get_v_scroll_bar().custom_minimum_size.x = SCROLLBAR_WIDTH
+	# AND A GUTTER SO THE BAR IS NOT STANDING ON THE WORDS. Widening the bar (above) gave it
+	# pixels; it did not move the rows out from under it, and the screenshot showed `GEPRC SPEEDX2
+	# 2107.5 1960KV  30 g` running beneath the grabber. `ItemList` lays its rows out inside its
+	# `panel` stylebox's content margins, and the theme's is a `StyleBoxEmpty` with none — so the
+	# gutter is a stylebox on this list and not a property, because the property does not exist.
+	var list_box := StyleBoxEmpty.new()
+	list_box.content_margin_left = LothalTheme.SPACE_1
+	list_box.content_margin_top = LothalTheme.SPACE_1
+	list_box.content_margin_bottom = LothalTheme.SPACE_1
+	list_box.content_margin_right = ROW_GUTTER
+	_list.add_theme_stylebox_override("panel", list_box)
 	add_child(_list)
 
 	_empty_hint = Label.new()
 	# Wraps against the list's width rather than its own text, or the overlay widens the moment a
 	# query goes empty and the dimmed canvas behind it jumps.
 	_empty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_empty_hint.custom_minimum_size = Vector2(348, 0)
+	_empty_hint.custom_minimum_size = Vector2(LIST_WIDTH, 0)
+	_empty_hint.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	_empty_hint.theme_type_variation = &"WarnLabel"
 	# Exception: Warning label explicit amber color override
 	_empty_hint.add_theme_color_override("font_color", LothalTheme.WARNING)
@@ -360,6 +457,8 @@ func set_categories(titles: Array, current: int) -> void:
 		var slot := int((titles[i] as Dictionary)["position"])
 		var button := Button.new()
 		button.text = str((titles[i] as Dictionary)["title"])
+		button.theme_type_variation = &"CompactButton"
+		button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		button.toggle_mode = true
 		button.button_pressed = slot == current
 		button.pressed.connect(func() -> void: category_chosen.emit(slot))
@@ -391,9 +490,13 @@ func category_labels() -> PackedStringArray:
 func set_actions(p_new_label: String) -> void:
 	if _new_button == null:
 		_new_button = Button.new()
+		_new_button.theme_type_variation = &"CompactButton"
+		_new_button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		_new_button.pressed.connect(func() -> void: new_part_requested.emit())
 		_actions_row.add_child(_new_button)
 		_delete_button = Button.new()
+		_delete_button.theme_type_variation = &"CompactButton"
+		_delete_button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		_delete_button.text = "Delete"
 		_delete_button.pressed.connect(func() -> void: delete_part_requested.emit())
 		_actions_row.add_child(_delete_button)
@@ -460,6 +563,107 @@ func no_match_text() -> String:
 ## pixel wide" are different answers and only one of them is a scrollbar.
 func scrollbar_width() -> float:
 	return _list.get_v_scroll_bar().get_combined_minimum_size().x
+
+
+## The clear space reserved to the RIGHT of a row, inside the list, in px. The scroll affordance
+## stands in it. Zero means the bar is drawn on top of the words, which is what the screenshot of
+## the motor shelf showed and is a different defect from the bar being invisible — the check above
+## stayed green through it.
+func row_gutter() -> float:
+	return _list.get_theme_stylebox("panel").content_margin_right
+
+
+## The right-hand edge a row's text may reach, in px from the list's left edge. Derived from the
+## same three numbers the truncation test uses, so "is this row cut off" and "where does a row end"
+## cannot disagree.
+func row_text_width() -> float:
+	var box := _list.get_theme_stylebox("panel")
+	var selected := _list.get_theme_stylebox("selected")
+	return LIST_WIDTH - box.content_margin_left - box.content_margin_right \
+		- selected.get_minimum_size().x
+
+
+## The tooltip a row would show, or "" when it shows none.
+##
+## A STRING AND NOT A BOOL, because the two failure modes are different: a row with the tooltip
+## still enabled returns its own text (the defect), and a truncated row must return something. A
+## bool would collapse them.
+func row_tooltip(index: int) -> String:
+	if index < 0 or index >= _list.item_count:
+		return ""
+	if not _list.is_item_tooltip_enabled(index):
+		return ""
+	var own := _list.get_item_tooltip(index)
+	# ItemList falls back to the item's own text when no tooltip string was set, and that fallback
+	# IS the defect — so report what the builder would actually see, not the empty field.
+	return own if own != "" else _list.get_item_text(index)
+
+
+## Whether a row's text runs past the column, measured against the font the list actually draws in.
+##
+## Measured and not guessed: the answer changes with the font size (the density pass moved it), with
+## the gutter (the scrollbar reserves one) and with the selected stylebox's own padding, and a
+## hand-picked character count would have been wrong the moment any of the three moved.
+func _row_is_truncated(text: String) -> bool:
+	var font := _list.get_theme_font("font")
+	if font == null:
+		return false
+	var font_size := _list.get_theme_font_size("font_size")
+	return font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > row_text_width()
+
+
+## The × in the corner, by name, for the by-name capability check.
+func close_label() -> String:
+	return _close_button.text if _close_button != null else ""
+
+
+## Presses the close control. The BUTTON'S OWN signal, emitted through it rather than re-emitting
+## `close_requested` here: a check that called the signal directly would pass against a finder whose
+## button was never wired to anything, which is exactly the defect "there is no way to dismiss it"
+## describes.
+func press_close() -> void:
+	if _close_button != null:
+		_close_button.pressed.emit()
+
+
+## The height of everything in the column EXCEPT the list, separations included.
+##
+## Walked over the visible children rather than summed from constants, because two of them —
+## the category row and the authoring row — are hidden on some shelves and present on others, and
+## a constant would have been right for Propulsion and wrong for Power. That difference is the
+## defect this function exists for.
+func _chrome_height() -> float:
+	var total := 0.0
+	var shown := 0
+	for child in get_children():
+		if child is Control and (child as Control).visible:
+			shown += 1
+			if child != _list:
+				total += (child as Control).get_combined_minimum_size().y
+	return total + float(get_theme_constant("separation")) * float(maxi(shown - 1, 0))
+
+
+## Squeezes the list so the whole column fits in `available` px, and returns the height the list
+## ended up asking for.
+##
+## THE OVERLAY MUST SHRINK RATHER THAN OVERFLOW, and it did neither before this: the column's
+## height was the sum of a set of constants, a `PanelContainer` obliges its child's minimum, and a
+## `Control` does not clip — so on Power's four-facet shelf the list's last rows, the scrollbar's
+## bottom end and both authoring buttons drew straight through the bottom of the window and under
+## the dock. Nothing was clipped in the sense of being trimmed; it was simply painted off the end.
+##
+## Clamped at `LIST_HEIGHT_MIN` deliberately: below about five rows the finder has stopped being a
+## list, and a window too short for that is a window the overlay cannot honestly fit — better to
+## keep a usable list and let the check say so than to squeeze to nothing and call it fitted.
+func fit_to_height(available: float) -> float:
+	var height := clampf(available - _chrome_height(), LIST_HEIGHT_MIN, LIST_HEIGHT)
+	_list.custom_minimum_size.y = height
+	return height
+
+
+## The height the list is currently asking for. For the check that the squeeze happened at all.
+func list_height() -> float:
+	return _list.custom_minimum_size.y
 
 
 ## Whether the highlighted row is inside the part of the list a builder can SEE.
@@ -591,7 +795,16 @@ func _refresh() -> void:
 		# display_name and _format_mass come from PartPicker unchanged: the mark on a custom part
 		# and the two mass formats (a 0.5 g propeller and a 265 g frame cannot share one) are rules
 		# that must read identically on every surface, and a second copy would decay on its own.
-		_list.add_item("%s   %s g" % [PartPicker.display_name(part), PartPicker._format_mass(part)])
+		var text := "%s   %s g" % [PartPicker.display_name(part), PartPicker._format_mass(part)]
+		var index_added := _list.add_item(text)
+		# A TOOLTIP THAT REPEATS THE ROW IS NOISE, AND IT COVERS THE ROW IT REPEATS.
+		#
+		# `ItemList` falls back to an item's own text when no tooltip is set, so every row in this
+		# list carried a floating copy of itself — `2.5" Micro Whoop   28 g` hovering over the row
+		# reading `2.5" Micro Whoop   28 g`, hiding the thing the cursor was pointing at. A tooltip
+		# earns its place only when it says something the row does not, which here means exactly
+		# one case: the label is too long for the column and the end of it is cut off.
+		_list.set_item_tooltip_enabled(index_added, _row_is_truncated(text))
 
 	# Keep the highlight on the same PART across a keystroke where possible. Narrowing the list by
 	# typing should not silently move the preview to a different motor.

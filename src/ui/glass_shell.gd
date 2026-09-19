@@ -65,6 +65,10 @@ const MAX_INSPECTOR_FRACTION := 0.45
 ## bottom-left tool cluster or the bottom-right toggle.
 const BOTTOM_KEEPOUT := 76.0
 
+## How far the summoned finder keeps from the dock above which it must fit, and from the top of the
+## window. See `_fit_finder`.
+const FINDER_EDGE_GAP := 12.0
+
 ## Which CanvasLayer the Lab/Sim toggle rides. Ten, matching the old tab bar, and for the identical
 ## reason: Sim's HUD is on a layer of its own and draws straight over anything in the ordinary tree.
 ## The toggle is the ONLY way out of the field, so a toggle underneath the HUD is an app you cannot
@@ -1448,18 +1452,65 @@ func _build_dim() -> void:
 ## size from its child, and the child is 368 px wide by §4, so nothing here names a size.
 func _build_finder_glass() -> void:
 	_finder_glass = _glass_panel()
+	# THE ONE PANEL IN THIS SHELL THAT IS NOT GLASS.
+	#
+	# `GLASS_ALPHA` is 0.86, and the argument for it holds for every panel that sits over the
+	# MODEL: a part inspector you can see the airframe through is why the viewport is full-bleed.
+	# The finder is not over the model. It is over the inspector on one side and the rail column or
+	# the frame designer on the other, and 14% of a panel of dense right-aligned numbers came
+	# through it as legible text — the FC inspector's "Processor F40", "Gyro MPU-600" and two
+	# paragraphs of amber warning read straight through the list of flight controllers, and the
+	# charger's "1356 of 1500 mAh" read through the battery shelf. Two columns of text occupying the
+	# same pixels is not a transparency effect, it is two documents on one page.
+	#
+	# Opaque, therefore, with the shadow doubled so the panel still reads as being IN FRONT rather
+	# than drawn on — which was the whole job the alpha was doing.
+	var solid := _glass_stylebox()
+	solid.bg_color = Color(LothalTheme.PANEL_BG.r, LothalTheme.PANEL_BG.g, LothalTheme.PANEL_BG.b)
+	solid.shadow_size = LothalTheme.SHADOW_SIZE * 2
+	_finder_glass.add_theme_stylebox_override("panel", solid)
 	_finder_glass.anchor_left = 0.5
 	_finder_glass.anchor_top = 0.5
 	_finder_glass.anchor_right = 0.5
 	_finder_glass.anchor_bottom = 0.5
 	_finder_glass.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_finder_glass.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_finder_glass.add_theme_constant_override("margin_left", LothalTheme.SPACE_3)
-	_finder_glass.add_theme_constant_override("margin_right", LothalTheme.SPACE_3)
-	_finder_glass.add_theme_constant_override("margin_top", LothalTheme.SPACE_3)
-	_finder_glass.add_theme_constant_override("margin_bottom", LothalTheme.SPACE_3)
+	# The four `margin_*` constants that used to be set here are GONE, and their absence is the
+	# note: `margin_left` and friends are `MarginContainer` constants. A `PanelContainer` insets its
+	# child by its stylebox's content margins and by nothing else, so those four lines styled
+	# nothing at all while reading, to every later editor, like the panel's padding.
 	_finder_glass.visible = false
 	add_child(_finder_glass)
+	# The column is re-squeezed on every resize, not only when it opens: a window dragged shorter
+	# with the finder up is exactly the case the fixed height got wrong.
+	resized.connect(_fit_finder)
+
+
+## Squeezes the open finder into the room between the top of the window and the dock.
+##
+## THE ARITHMETIC IS THE PANEL'S, NOT THE WINDOW'S, and that is the part worth stating. The glass is
+## centred by anchors — all four at 0.5, both grow directions BOTH — so it grows from the middle in
+## BOTH directions at once: a column `h` tall on a window `H` tall has its bottom edge at
+## `H/2 + h/2`. Clearing a dock whose top is `d` therefore allows `h <= 2*(d - gap) - H`, not
+## `h <= d - gap`. A check written against the second form passes on a tall window and ships an
+## overlay whose last two rows are behind Lab/Sim on a short one.
+func _fit_finder() -> void:
+	if _finder == null or _dock == null or not _finder_glass.visible:
+		return
+	var height := size.y
+	if height <= 0.0:
+		return
+	var dock_top := _dock.get_global_rect().position.y - get_global_rect().position.y
+	if dock_top <= 0.0:
+		dock_top = height
+	var allowance := minf(
+		2.0 * (dock_top - FINDER_EDGE_GAP) - height,
+		height - 2.0 * FINDER_EDGE_GAP)
+	# What the PanelContainer's own stylebox takes off the top and bottom before the column gets
+	# any of it. Asked of the stylebox rather than written as SPACE_2 * 2, because the panel is
+	# handed its box above and a constant here would be a second copy of that decision.
+	var chrome: float = _finder_glass.get_theme_stylebox("panel").get_minimum_size().y
+	_finder.fit_to_height(allowance - chrome)
 
 
 ## The rail a system's finder is summoned over: the PartPicker behind that system's FIRST rail tab,
@@ -1581,6 +1632,10 @@ func open_finder(index: int, slot := 0) -> bool:
 		_finder.set_actions((actions[0] as Button).text)
 		_finder.new_part_requested.connect(func() -> void: _on_finder_authoring(index, slot, 0))
 		_finder.delete_part_requested.connect(func() -> void: _on_finder_authoring(index, slot, 1))
+	# The × in the finder's corner and Escape are THE SAME PATH — `close_finder`, which cancels and
+	# retracts. A close that only hid the overlay would leave the build wearing the last part
+	# previewed, which is the one thing the builder did not choose.
+	_finder.close_requested.connect(close_finder)
 	_finder_glass.add_child(_finder)
 	# The id the build is wearing, which is what the snapshot is taken of. §4.1: this highlights it
 	# and does NOT preview it — re-fitting the part already fitted would put a phantom entry in the
@@ -1588,6 +1643,9 @@ func open_finder(index: int, slot := 0) -> bool:
 	_finder.open_on(str(rail.selected_part().get("part_id", "")))
 	_finder_glass.visible = true
 	_dim.visible = true
+	# Squeezed BEFORE the first frame it is visible for, so it is never drawn at its unconstrained
+	# height even once.
+	_fit_finder()
 	return true
 
 

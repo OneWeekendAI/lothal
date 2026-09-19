@@ -29,6 +29,10 @@ var spec_rows: Array = []
 
 var _title: Label
 var _detail_values: Dictionary = {}   # spec key -> Label
+## Both labels of every row, as [name, value] pairs, kept so the panel can measure the width its
+## text WANTS. See `content_width`: the value labels wrap, and a wrapping Label reports a minimum
+## width of one pixel, so the container can no longer answer that question on its own.
+var _row_labels: Array = []
 ## The column of rows, kept so the panel can be asked how wide its CONTENT wants to be. See
 ## `content_width`.
 var _content: VBoxContainer
@@ -62,6 +66,9 @@ func _init(p_spec_rows: Array) -> void:
 	_title = Label.new()
 	_title.text = "—"
 	_title.theme_type_variation = &"TitleLabel"
+	# One step down the published scale, matching the finder's title. The inspector is a column of
+	# readouts beside a picker, not a page with a heading.
+	_title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SUBTITLE)
 	root.add_child(_title)
 
 	root.add_child(HSeparator.new())
@@ -129,7 +136,38 @@ func rendered_text() -> String:
 func content_width() -> float:
 	if _content == null:
 		return custom_minimum_size.x
-	return _content.get_combined_minimum_size().x + LothalTheme.SPACE_2 * 2
+	# MEASURED OFF THE TEXT, not only off the container, and the reason is the wrap added in
+	# `_add_row`. `Label.get_minimum_size()` returns a width of 1 for an autowrapping label — that
+	# is what makes wrapping possible — so a panel that asked its container how wide it wanted to be
+	# would have answered "as narrow as you like" and then wrapped every row of every inspector to
+	# the 316 px floor. The container is still consulted for the title and the footer, which do not
+	# wrap; the rows are measured directly.
+	return maxf(_content.get_combined_minimum_size().x, _rows_natural_width()) \
+		+ LothalTheme.SPACE_2 * 2
+
+
+## How wide the spec grid would be if nothing wrapped: the widest name plus the widest value, plus
+## the separation between the two columns.
+func _rows_natural_width() -> float:
+	var names := 0.0
+	var values := 0.0
+	for pair in _row_labels:
+		names = maxf(names, _label_width(pair[0] as Label))
+		values = maxf(values, _label_width(pair[1] as Label))
+	if _row_labels.is_empty():
+		return 0.0
+	var separation := 0.0
+	if _content != null and _content.is_inside_tree():
+		separation = float(_content.get_theme_constant("h_separation", "GridContainer"))
+	return names + values + maxf(separation, float(LothalTheme.SPACE_4))
+
+
+static func _label_width(label: Label) -> float:
+	var font := label.get_theme_font("font")
+	if font == null:
+		return 0.0
+	return font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+		label.get_theme_font_size("font_size")).x
 
 
 ## Inset the panel's contents so right-aligned values do not sit flush against the window edge,
@@ -146,12 +184,29 @@ static func _padded(parent: Control) -> MarginContainer:
 func _add_row(grid: GridContainer, label_text: String) -> Label:
 	var name_label := Label.new()
 	name_label.text = label_text
+	name_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	grid.add_child(name_label)
 
 	var value_label := Label.new()
 	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	value_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	value_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	# WRAP RATHER THAN RUN OFF THE EDGE.
+	#
+	# The shell clamps this panel at `MAX_INSPECTOR_FRACTION` of the window (45%), and a clamp is
+	# only half an answer: a Label that is not allowed to wrap keeps its full minimum width, the
+	# grid keeps it, and the row draws past the panel and past the window with it. The screenshot
+	# that prompted this shows `8 kHz (not modelled`, `0.16 °/s RM`, `109 km/` and `11.3 :` — four
+	# rows of the FC inspector ending mid-word at the right-hand edge of the screen. The horizontal
+	# scroll below is the escape hatch for that and it was not reachable: the theme's scrollbars
+	# report zero width, so the bar that would have let you drag the rest into view painted nothing.
+	#
+	# With this on, an over-long value takes a second line inside the panel instead. `content_width`
+	# below is what stops that happening on every row of every panel — it keeps asking for the width
+	# the text would like, and wrapping is what happens when the window refuses.
+	value_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	grid.add_child(value_label)
+	_row_labels.append([name_label, value_label])
 	return value_label
 
 

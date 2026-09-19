@@ -63,6 +63,11 @@ static func run() -> Array:
 		"facets": _facet_checks(),
 		"preview": _preview_checks(),
 		"restore": _restore_checks(),
+		"tooltips": _tooltip_checks(),
+		"gutter": _gutter_checks(),
+		"density": _density_checks(),
+		"close": _close_checks(),
+		"squeeze": _squeeze_checks(),
 	}
 	for section_name in sections:
 		var section: Array = sections[section_name]
@@ -527,5 +532,201 @@ static func _restore_checks() -> Array:
 		"[finder] with no fitter injected, previewing and cancelling are quiet no-ops",
 		str(unwired.cancel().get("part_id", "")) == "motor_2207_1960kv",
 		"restored = %s" % unwired.cancel().get("part_id", "")))
+
+	return out
+
+
+# ---------------------------------------------------------------------------
+# The tooltip that repeated the row it covered.
+#
+# `ItemList` falls back to an item's own text when no tooltip is set, so every row in the finder
+# carried a floating copy of itself, drawn over the row the cursor was on. The fix suppresses the
+# tooltip per row and keeps it for the one case where it says something new — a label too long for
+# the column.
+#
+# Three checks and not one, because the three ways this can be wrong fail independently: the
+# tooltip can be on when the row fits (the defect), off when the row is cut off (the repair
+# overshooting and hiding information), and the popup can be drawn on top of the hovered row even
+# when it is the right popup to show.
+# ---------------------------------------------------------------------------
+
+static func _tooltip_checks() -> Array:
+	var out: Array = []
+	var finder := _finder(_catalog())
+
+	# EVERY ROW ON THE MOTOR SHELF, not a sample. A suppression that missed one row would be a
+	# tooltip that appeared on one motor out of eighteen, which reads as a glitch and is the exact
+	# shape of an off-by-one in the loop that sets it.
+	var repeats: Array = []
+	for i in finder.row_count():
+		var tip := finder.row_tooltip(i)
+		if tip != "" and tip == finder.row_text(i):
+			repeats.append(finder.row_text(i))
+	out.append(TestResult.new(
+		"[finder] no row shows a tooltip that only repeats the row",
+		repeats.is_empty(),
+		"%d of %d rows repeat themselves: %s" % [
+			repeats.size(), finder.row_count(), repeats.slice(0, 3)]))
+
+	# AND THE CASE THE TOOLTIP IS FOR IS STILL SERVED. A row wide enough to be cut off keeps it,
+	# because there the popup is the only way to read the end of the name. Asserted against
+	# `_row_is_truncated` on a string long enough that no plausible column width fits it.
+	var long_row := "X".repeat(120)
+	out.append(TestResult.new(
+		"[finder] a row too long for the column is still judged truncated",
+		finder._row_is_truncated(long_row) and not finder._row_is_truncated("2207 1960KV   32 g"),
+		"120 chars truncated = %s, a real row truncated = %s, the column fits %.0f px" % [
+			finder._row_is_truncated(long_row),
+			finder._row_is_truncated("2207 1960KV   32 g"),
+			finder.row_text_width()]))
+
+	# AND WHEN IT DOES APPEAR IT DOES NOT COVER THE ROW UNDER THE CURSOR. The engine puts a tooltip
+	# a few pixels below the cursor, which over a 20 px row lands on the row itself; the list's own
+	# `_make_custom_tooltip` is the only lever, and it insets the popup downward.
+	var tip_control := finder._list._make_custom_tooltip("H743 30.5x30.5   12 g") as MarginContainer
+	var drop: int = tip_control.get_theme_constant("margin_top") if tip_control != null else 0
+	out.append(TestResult.new(
+		"[finder] the tooltip it does show is dropped clear of the row under the cursor",
+		tip_control != null and drop >= 16,
+		"the tooltip is inset %d px below the cursor" % drop))
+
+	return out
+
+
+# ---------------------------------------------------------------------------
+# The scrollbar standing on the words.
+#
+# QC5 widened the bar from zero so it could be SEEN; it did not move the rows out from under it,
+# and the screenshot showed `GEPRC SPEEDX2 2107.5 1960KV  30 g` running beneath the grabber. The
+# two are separate defects and the first check stayed green through the second.
+# ---------------------------------------------------------------------------
+
+static func _gutter_checks() -> Array:
+	var out: Array = []
+	var finder := _finder(_catalog())
+
+	out.append(TestResult.new(
+		"[finder] the list reserves a gutter wide enough for the scrollbar that stands in it",
+		finder.row_gutter() >= finder.scrollbar_width(),
+		"the gutter is %.0f px, the scrollbar %.0f px" % [
+			finder.row_gutter(), finder.scrollbar_width()]))
+
+	# And the gutter is taken OUT of the column rather than added to it: a fix that widened the
+	# overlay to make room would have undone the density pass in the same commit.
+	out.append(TestResult.new(
+		"[finder] the gutter comes out of the list, not out of the window",
+		finder.row_text_width() < PartFinder.LIST_WIDTH
+			and PartFinder.LIST_WIDTH <= PartFinder.PANEL_WIDTH,
+		"rows have %.0f px of a %.0f px list in a %.0f px column" % [
+			finder.row_text_width(), PartFinder.LIST_WIDTH, PartFinder.PANEL_WIDTH]))
+
+	return out
+
+
+# ---------------------------------------------------------------------------
+# Density. The finder was laid out at the shell's body scale and read as a page.
+#
+# Asserted against the theme's own published scales rather than against bare numbers, so a later
+# change to the type ramp moves these with it instead of breaking them.
+# ---------------------------------------------------------------------------
+
+static func _density_checks() -> Array:
+	var out: Array = []
+	var finder := _finder(_catalog())
+
+	var title_size: int = finder._header.get_theme_font_size("font_size")
+	out.append(TestResult.new(
+		"[finder] the title is a picker's, not a page's",
+		title_size <= LothalTheme.FONT_SIZE_SUBTITLE,
+		"the title is %d px, the page scale is %d" % [title_size, LothalTheme.FONT_SIZE_TITLE]))
+
+	var row_size: int = finder._list.get_theme_font_size("font_size")
+	out.append(TestResult.new(
+		"[finder] the rows are set one step down from body, and no smaller than the legible floor",
+		row_size < LothalTheme.FONT_SIZE_BODY and row_size >= LothalTheme.FONT_SIZE_SMALL,
+		"rows are %d px against a body of %d and a floor of %d" % [
+			row_size, LothalTheme.FONT_SIZE_BODY, LothalTheme.FONT_SIZE_SMALL]))
+
+	# The column itself, which is what covers the aircraft. 368 was QC5's.
+	out.append(TestResult.new(
+		"[finder] the column is narrower than the one it replaces",
+		PartFinder.PANEL_WIDTH <= 320.0,
+		"the column is %.0f px wide" % PartFinder.PANEL_WIDTH))
+
+	return out
+
+
+# ---------------------------------------------------------------------------
+# The way out. §4 gave the finder Escape and nothing a mouse could reach.
+# ---------------------------------------------------------------------------
+
+static func _close_checks() -> Array:
+	var out: Array = []
+	var finder := _finder(_catalog())
+
+	out.append(TestResult.new(
+		"[finder] there is a close control in the panel, by name",
+		finder.close_label() == "×",
+		"the close control reads \"%s\"" % finder.close_label()))
+
+	# AND IT IS WIRED. Pressing the BUTTON — not emitting the signal by hand — has to reach the
+	# shell's seam, or the × is a decoration that dismisses nothing.
+	var heard: Array = []
+	finder.close_requested.connect(func() -> void: heard.append("closed"))
+	finder.press_close()
+	out.append(TestResult.new(
+		"[finder] pressing it asks to be closed",
+		heard == ["closed"],
+		"the finder emitted %s" % [heard])) 
+
+	# AND CLOSING COMMITS NOTHING. The shell routes the × to `close_finder`, which cancels — so the
+	# seam must see a restore and never a commit, after several previews.
+	var spy := FitterSpy.new()
+	var cancelling := _finder(_catalog())
+	cancelling.set_fitter(spy)
+	cancelling.open_on("motor_2207_1960kv")
+	cancelling.move_highlight(1)
+	cancelling.move_highlight(1)
+	cancelling.cancel()
+	out.append(TestResult.new(
+		"[finder] closing leaves the build wearing what it had, and commits nothing",
+		spy.committed.is_empty() and spy.restored == ["motor_2207_1960kv"],
+		"committed = %s, restored = %s" % [spy.committed, spy.restored]))
+
+	return out
+
+
+# ---------------------------------------------------------------------------
+# The squeeze. The column's height was a sum of constants and a `PanelContainer` obliges its
+# child's minimum, so on a short window the list, the scrollbar's bottom and both authoring
+# buttons drew through the bottom edge — a `Control` does not clip.
+# ---------------------------------------------------------------------------
+
+static func _squeeze_checks() -> Array:
+	var out: Array = []
+	var finder := _finder(_catalog())
+	finder.set_actions("New custom motor…")
+
+	var full := finder.fit_to_height(10000.0)
+	out.append(TestResult.new(
+		"[finder] given room, the list asks for its full height and no more",
+		is_equal_approx(full, PartFinder.LIST_HEIGHT),
+		"the list asked for %.0f px against a maximum of %.0f" % [full, PartFinder.LIST_HEIGHT]))
+
+	# THE CASE THE SCREENSHOT SHOWED. A short window, and the list has to give ground rather than
+	# the column overflowing it.
+	var squeezed := finder.fit_to_height(200.0)
+	out.append(TestResult.new(
+		"[finder] on a window with less room, the LIST shrinks rather than the column overflowing",
+		squeezed < full and finder.list_height() == squeezed,
+		"the list shrank from %.0f px to %.0f" % [full, squeezed]))
+
+	# And it stops being a list before it stops being visible. A squeeze to nothing would satisfy
+	# "it fits" while deleting the thing the overlay is for.
+	out.append(TestResult.new(
+		"[finder] and never squeezes below a browsable list",
+		finder.fit_to_height(0.0) >= PartFinder.LIST_HEIGHT_MIN,
+		"squeezed to %.0f px against a floor of %.0f" % [
+			finder.fit_to_height(0.0), PartFinder.LIST_HEIGHT_MIN]))
 
 	return out
