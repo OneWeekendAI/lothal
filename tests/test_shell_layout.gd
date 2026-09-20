@@ -293,7 +293,118 @@ static func run(tree: SceneTree) -> Array:
 	results.append(_the_inspector_is_absent_with_nothing_selected(shell, present_before))
 
 	frame.queue_free()
+
+	# -----------------------------------------------------------------------
+	# AND WHAT BOOT ITSELF DOES TO THE DISK.
+	#
+	# Here rather than in `test_project_wiring.gd` for this file's own reason: the defect is in
+	# `GlassShell._ready`, and `_ready` needs a tree and processed frames. The wiring suite drives
+	# `ProjectLibrary` directly and is structurally unable to see it — which is exactly how the app
+	# accumulated 465 untouched containers while every project suite stayed green.
+	# -----------------------------------------------------------------------
+	results.append_array(await _test_a_second_boot_writes_no_new_drone(tree))
+
 	return results
+
+
+# ---------------------------------------------------------------------------
+# Boot resumes; it does not mint
+# ---------------------------------------------------------------------------
+
+## Every `.lothal` in `user://builds`, sorted. Names only — the comparison below is set-shaped and a
+## full path would make the cleanup depend on how `globalize_path` spells things.
+static func _lothal_files() -> Array:
+	var absolute := ProjectSettings.globalize_path(ProjectLibrary.DIR)
+	var found: Array = []
+	if not DirAccess.dir_exists_absolute(absolute):
+		return found
+	for file in DirAccess.get_files_at(absolute):
+		if file.ends_with(".%s" % ProjectContainer.EXTENSION):
+			found.append(file)
+	found.sort()
+	return found
+
+
+## LAUNCHING THE APP TWICE LEAVES ONE DRONE, NOT TWO.
+##
+## `_ready` used to call `adopt(container.project)` unconditionally, and `adopt` writes before it
+## shows — so every launch put a fresh `Untitled build N` in `user://builds` whether or not the
+## builder touched anything. The folder reached 465 files and the next default name, which counts
+## what is on disk, read "Untitled build 422" to somebody who had saved nothing.
+##
+## ## The two checks are a pair, and neither one alone is the rule
+##
+## **File count alone** passes against a boot that resumes nothing and writes nothing — which is the
+## other way to make the number stop growing, and it is the version that loses work, because a
+## document with no path cannot autosave (`ProjectLibrary`'s own header). So the second check
+## asserts the second shell came up ON the first one's container, by path.
+##
+## **Path alone** passes against a boot that opens the last drone and then writes a new file beside
+## it. So the first check asserts the count did not move.
+##
+## ## Why it does not need an empty builds folder to be meaningful
+##
+## If the builder already has drones, the FIRST shell here resumes one too and writes nothing; both
+## checks still hold, and under the old code both still fail, because the old code wrote on every
+## boot regardless of what was there. The check is about the delta across the second boot, which is
+## the quantity the defect is made of.
+##
+## Anything this check caused to be written is removed afterwards — and only that: the `before`
+## snapshot is what protects the builder's own files from the cleanup.
+static func _test_a_second_boot_writes_no_new_drone(tree: SceneTree) -> Array:
+	ProjectLibrary.ensure_dir()
+	var absolute := ProjectSettings.globalize_path(ProjectLibrary.DIR)
+	var before := _lothal_files()
+
+	var first_frame := SubViewport.new()
+	first_frame.size = WINDOW
+	tree.root.add_child(first_frame)
+	var first := GlassShell.new()
+	first_frame.add_child(first)
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	var first_path: String = first.container.path
+	var after_first := _lothal_files()
+	# The first shell is taken down before the second comes up, so the two are a relaunch rather
+	# than two copies running at once — and so its autosave timer cannot write underneath the
+	# snapshot the second boot is being measured against.
+	first_frame.queue_free()
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+
+	var second_frame := SubViewport.new()
+	second_frame.size = WINDOW
+	tree.root.add_child(second_frame)
+	var second := GlassShell.new()
+	second_frame.add_child(second)
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	var second_path: String = second.container.path
+	var after_second := _lothal_files()
+	second_frame.queue_free()
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+
+	for file in after_second:
+		if not before.has(file):
+			DirAccess.remove_absolute("%s/%s" % [absolute, file])
+
+	var grew: int = after_second.size() - after_first.size()
+	return [
+		{
+			"name": "a second boot writes no new drone",
+			"passed": grew == 0,
+			"detail": "builds/ held %d containers after the first launch and %d after the second"
+				% [after_first.size(), after_second.size()],
+		},
+		{
+			"name": "a second boot comes up on the drone the first one left",
+			"passed": second_path != "" and second_path == first_path,
+			"detail": "first launch opened %s, second opened %s"
+				% [first_path if first_path != "" else "(nothing)",
+					second_path if second_path != "" else "(nothing)"],
+		},
+	]
 
 
 ## QC5's headline, and the one line that is the slice: the column Quiet Canvas exists to remove is

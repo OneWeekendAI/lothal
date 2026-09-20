@@ -499,7 +499,24 @@ func _ready() -> void:
 
 	# The drone this shell opened with needs a home too, or the first minute of work is the one
 	# minute autosave cannot protect.
-	adopt(container.project)
+	#
+	# But a NEW drone is only born when there is nothing to come back to. Adopting unconditionally
+	# wrote a fresh container on every single launch, so `user://builds` filled with hundreds of
+	# untouched "Untitled build N" files and the next default name counted them all — a builder who
+	# had saved nothing was shown "Untitled build 422". Reopening the last drone is also what an app
+	# with no save button owes a builder: closing it was never a decision to discard it.
+	#
+	# A recent entry that will not open is skipped rather than fatal, and a shell that resumes
+	# nothing falls through to the fresh drone `_init` already made. `open_project` leaves the
+	# container untouched when a file is bad, which is what `container.path` is being asked here.
+	var resumed := false
+	for path in settings.existing_recent_projects():
+		open_project(path)
+		if container.path == path:
+			resumed = true
+			break
+	if not resumed:
+		adopt(container.project)
 
 	# The shell has no signal from Lab to listen to — LabScreen emits none — so it listens to the
 	# rails directly. Fine for an experiment, and worth naming as the reason it is not fine
