@@ -525,6 +525,15 @@ static func _the_garage_asks_the_site() -> Array:
 	var had_courses := FileAccess.file_exists(real_courses)
 	var saved_sites := FileAccess.get_file_as_string(real_sites) if had_sites else ""
 	var saved_courses := FileAccess.get_file_as_string(real_courses) if had_courses else ""
+	# AND THE THIRD FILE, SINCE F2. This section parks 30 C on a real site and writes a v1 courses
+	# file carrying 28 C, then builds a RoomHost twice — and `RoomHost._init` now ABSORBS those
+	# into `user://conditions.json`, invents a "30 °C" and a "28 °C" row, saves it and leaves the
+	# selection on 28 °C. Restoring two of the three files left a builder's weather permanently on
+	# a 28 C afternoon, and left every later suite that builds a RoomHost or an AppShell quoting
+	# that air. Found in review, on this developer's own file, with both invented rows in it.
+	var real_weather := ConditionsLibrary.SAVE_PATH
+	var had_weather := FileAccess.file_exists(real_weather)
+	var saved_weather := FileAccess.get_file_as_string(real_weather) if had_weather else ""
 
 	var high := Site.new()
 	high.site_id = "test_high_field"
@@ -604,7 +613,32 @@ static func _the_garage_asks_the_site() -> Array:
 	# worse bug than any it could catch, and it would poison every suite that runs after it.
 	_restore(real_sites, had_sites, saved_sites)
 	_restore(real_courses, had_courses, saved_courses)
+	_restore(real_weather, had_weather, saved_weather)
+
+	# ASSERTED RATHER THAN ASSUMED, for all three. A restore that silently stopped working is
+	# invisible from inside this suite — it shows up as somebody else's field, weeks later, in a
+	# different file. The weather one is here because it is the one that was missing.
+	results.append(TestResult.new(
+		"and the builder's own sites, courses and conditions are put back the way they were found",
+		FileAccess.file_exists(real_sites) == had_sites
+			and (not had_sites or FileAccess.get_file_as_string(real_sites) == saved_sites)
+			and FileAccess.file_exists(real_courses) == had_courses
+			and (not had_courses or FileAccess.get_file_as_string(real_courses) == saved_courses)
+			and FileAccess.file_exists(real_weather) == had_weather
+			and (not had_weather or FileAccess.get_file_as_string(real_weather) == saved_weather),
+		"sites %s, courses %s, conditions %s" % [
+			_restored_state(real_sites, had_sites, saved_sites),
+			_restored_state(real_courses, had_courses, saved_courses),
+			_restored_state(real_weather, had_weather, saved_weather)]))
 	return results
+
+
+static func _restored_state(path: String, had_file: bool, contents: String) -> String:
+	if FileAccess.file_exists(path) != had_file:
+		return "no file" if had_file else "A FILE THAT WAS NOT THERE BEFORE"
+	if not had_file:
+		return "still absent"
+	return "identical" if FileAccess.get_file_as_string(path) == contents else "CHANGED"
 
 
 static func _restore(path: String, had_file: bool, contents: String) -> void:

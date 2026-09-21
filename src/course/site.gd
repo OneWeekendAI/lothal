@@ -153,8 +153,10 @@ func contains(position: Vector3) -> bool:
 ## ever once F2 drained the slot. Ask `AirDensity.compose(site, conditions)` instead — the one
 ## place that knows which two typed facts the density comes from.
 ##
-## It also breaks a cycle: `AirDensity.compose()` names `Site`, so `Site` naming `AirDensity` back
-## would be two class_name scripts each depending on the other.
+## NOT because of a class cycle. That reason was written here and it is false: `Conditions` names
+## `AirDensity.STANDARD_TEMPERATURE_C` and `AirDensity.compose()` names `Conditions`, which is the
+## same shape and compiles. A false constraint left in a comment steers a later slice away from
+## something it is allowed to do, so it is corrected rather than quietly dropped.
 
 
 # ---------------------------------------------------------------------------

@@ -61,6 +61,18 @@ static func run() -> Array:
 	return results
 
 
+## Rewrites a JSON document with a tab indent — the same document, in bytes the app's own writer
+## would never produce. See the use site: this is what makes "nothing wrote this file" detectable
+## without depending on a second boundary.
+static func _reindent(path: String) -> void:
+	if not FileAccess.file_exists(path):
+		return
+	var document := JsonStore.read_document(path)
+	var handle := FileAccess.open(path, FileAccess.WRITE)
+	handle.store_string(JSON.stringify(document, "\t"))
+	handle.close()
+
+
 static func _forget(path: String) -> void:
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
@@ -278,12 +290,23 @@ static func _switching_writes_nothing() -> Array:
 	# that cannot fail on the mutation it exists for, which is exactly what the first version of
 	# this was. Both real files are recorded here and compared below; nothing in this section edits
 	# them, so there is nothing to restore.
-	var real_sites_before := FileAccess.get_file_as_string(SiteLibrary.SAVE_PATH) \
-		if FileAccess.file_exists(SiteLibrary.SAVE_PATH) else ""
-	var real_courses_before := FileAccess.get_file_as_string(CourseLibrary.SAVE_PATH) \
-		if FileAccess.file_exists(CourseLibrary.SAVE_PATH) else ""
 	var real_sites_existed := FileAccess.file_exists(SiteLibrary.SAVE_PATH)
 	var real_courses_existed := FileAccess.file_exists(CourseLibrary.SAVE_PATH)
+	# The builder's own bytes, captured BEFORE the re-indent below so that they are what goes back.
+	var real_sites_original := FileAccess.get_file_as_string(SiteLibrary.SAVE_PATH) \
+		if real_sites_existed else ""
+	var real_courses_original := FileAccess.get_file_as_string(CourseLibrary.SAVE_PATH) \
+		if real_courses_existed else ""
+	# AND THEY ARE RE-INDENTED AND PUT BACK, exactly as the two scratch files below are, because
+	# the mtime alone is not a reliable instrument: it has one-second resolution, and whether a
+	# rewrite lands on a later second than the read depends on where in the second the section
+	# started. Measured — the same mutant reddened this check when run alone and passed it when run
+	# straight after another suite had touched the file. Flaky-green is the worse direction, so the
+	# real files are put into a form the app's own writer does not emit for the length of this
+	# section and restored byte-exactly at the end of it. Whitespace only; not one value moves.
+	_reindent(SiteLibrary.SAVE_PATH)
+	_reindent(CourseLibrary.SAVE_PATH)
+
 	# AND THEIR MODIFICATION TIMES, because bytes alone cannot see this one. Both libraries
 	# round-trip byte-identically by design, so a `select()` that loaded and re-saved the real
 	# sites file would leave every byte where it was and still have rewritten a builder's file.
@@ -291,10 +314,25 @@ static func _switching_writes_nothing() -> Array:
 	# added. A second's resolution is enough — the assertion is "not rewritten", and a rewrite
 	# lands on a later second than the read that preceded the whole section often enough to catch
 	# it; what makes it airtight is the pair, bytes for content and stamp for the act.
+	var real_sites_before := FileAccess.get_file_as_string(SiteLibrary.SAVE_PATH) \
+		if real_sites_existed else ""
+	var real_courses_before := FileAccess.get_file_as_string(CourseLibrary.SAVE_PATH) \
+		if real_courses_existed else ""
 	var real_sites_stamp := FileAccess.get_modified_time(SiteLibrary.SAVE_PATH) \
 		if real_sites_existed else 0
 	var real_courses_stamp := FileAccess.get_modified_time(CourseLibrary.SAVE_PATH) \
 		if real_courses_existed else 0
+
+	# THE TWO SCRATCH FILES ARE RE-WRITTEN WITH A TAB INDENT, and that is the instrument rather
+	# than untidiness. `FileAccess.get_modified_time()` has one-second resolution and these files
+	# were written microseconds ago, so a mutant that loaded and re-saved them would land inside
+	# the same second and leave the stamp alone — and the bytes alone cannot see it either, because
+	# both libraries round-trip byte-identically by design. Flaky-green is the worse direction, so
+	# the watched bytes are put into a form the writer does NOT emit: `JsonStore` indents with two
+	# spaces, so any save at all normalises these and the byte comparison reddens without waiting
+	# for a clock tick. The documents are unchanged; only their whitespace is.
+	_reindent(SITES_PATH)
+	_reindent(COURSES_PATH)
 
 	var sites_before := FileAccess.get_file_as_string(SITES_PATH)
 	var courses_before := FileAccess.get_file_as_string(COURSES_PATH)
@@ -335,6 +373,23 @@ static func _switching_writes_nothing() -> Array:
 				else "REWRITTEN",
 			"untouched" if real_sites_same else "REWRITTEN",
 			"untouched" if real_courses_same else "REWRITTEN"]))
+	# AND THE INSTRUMENT IS PROVED, not assumed. The check above can only catch a write if a write
+	# would show — so a COPY of the watched file is loaded and re-saved here, and its bytes must
+	# move. If `_reindent` ever stopped mattering, this goes red and says so, instead of the
+	# check above going quietly blind.
+	var probe := "user://test_conditions_probe_sites.json"
+	_forget(probe)
+	var probe_handle := FileAccess.open(probe, FileAccess.WRITE)
+	probe_handle.store_string(sites_before)
+	probe_handle.close()
+	SiteLibrary.load_from(probe).save(probe)
+	results.append(TestResult.new(
+		"and a save really would change those bytes, so the check above is not blind to one",
+		FileAccess.get_file_as_string(probe) != sites_before,
+		"a load and re-save of the same document %s the bytes" % [
+			"CHANGED" if FileAccess.get_file_as_string(probe) != sites_before else "left"]))
+	_forget(probe)
+
 	# And the elevation is still coming off the site through all of that, so the check above is
 	# about the temperature rather than about nothing.
 	results.append(TestResult.new(
@@ -342,9 +397,36 @@ static func _switching_writes_nothing() -> Array:
 		AirDensity.compose(sites.selected(), weather.selected()).elevation_m == 920.0,
 		"%.1f m" % AirDensity.compose(sites.selected(), weather.selected()).elevation_m))
 
+	# The builder's own two files go back exactly as they were found — whitespace included.
+	_put_back(SiteLibrary.SAVE_PATH, real_sites_existed, real_sites_original)
+	_put_back(CourseLibrary.SAVE_PATH, real_courses_existed, real_courses_original)
+	results.append(TestResult.new(
+		"and the builder's own sites.json and courses.json are put back byte for byte",
+		(FileAccess.file_exists(SiteLibrary.SAVE_PATH) == real_sites_existed)
+			and (not real_sites_existed
+				or FileAccess.get_file_as_string(SiteLibrary.SAVE_PATH) == real_sites_original)
+			and (FileAccess.file_exists(CourseLibrary.SAVE_PATH) == real_courses_existed)
+			and (not real_courses_existed
+				or FileAccess.get_file_as_string(CourseLibrary.SAVE_PATH)
+					== real_courses_original),
+		"sites %s, courses %s" % [
+			"identical" if FileAccess.get_file_as_string(SiteLibrary.SAVE_PATH)
+				== real_sites_original else "CHANGED",
+			"identical" if FileAccess.get_file_as_string(CourseLibrary.SAVE_PATH)
+				== real_courses_original else "CHANGED"]))
+
 	for scratch in [CONDITIONS_PATH, SITES_PATH, COURSES_PATH]:
 		_forget(scratch)
 	return results
+
+
+static func _put_back(path: String, had_file: bool, contents: String) -> void:
+	if not had_file:
+		_forget(path)
+		return
+	var handle := FileAccess.open(path, FileAccess.WRITE)
+	handle.store_string(contents)
+	handle.close()
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +496,43 @@ static func _the_parked_temperature() -> Array:
 			and library.at_temperature(5.0).is_calm(),
 		"%s at %.1f C" % [library.at_temperature(5.0).conditions_name,
 			library.at_temperature(5.0).temperature_c]))
+
+	# THE PLACE IS AN ARGUMENT, NOT `sites.selected()`, and this is the check for it. The coverage
+	# for this distinction lived entirely in `test_site.gd` §5 — a file this slice did not write —
+	# and the section above only ever exercises the default. The case is the real one: on a first
+	# launch against a v1 file the migration appends a site per course and leaves the library's own
+	# selection on the DEFAULT field, while the place the builder is at is the site of the selected
+	# course. Reading the library's selection absorbs the wrong site's temperature and the garage
+	# quotes the right elevation at the wrong degree.
+	var elsewhere := SiteLibrary.with_default()
+	elsewhere.selected().parked_temperature_c = 15.0
+	var away := elsewhere.create("Hill bando")
+	away.elevation_m = 2500.0
+	away.parked_temperature_c = 28.0
+	var told := ConditionsLibrary.with_default()
+	var told_moved := told.absorb_parked_temperatures(elsewhere, away)
+	results.append(TestResult.new(
+		"told which site the builder is at, it selects THAT site's temperature, not the library's",
+		told_moved and absf(told.selected().temperature_c - 28.0) < 1.0e-9,
+		"selected \"%s\" at %.1f C" % [told.selected_id, told.selected().temperature_c]))
+
+	# And left to itself it follows the library's selection — so the argument is doing something,
+	# rather than the two answers being the same and the check passing either way.
+	var untold_sites := SiteLibrary.with_default()
+	untold_sites.selected().parked_temperature_c = 15.0
+	var untold_away := untold_sites.create("Hill bando")
+	untold_away.elevation_m = 2500.0
+	untold_away.parked_temperature_c = 28.0
+	var untold := ConditionsLibrary.with_default()
+	var untold_moved := untold.absorb_parked_temperatures(untold_sites)
+	results.append(TestResult.new(
+		"and left to itself it follows the library's own selection, so the argument is not inert",
+		untold_moved
+			and absf(untold.selected().temperature_c - AirDensity.STANDARD_TEMPERATURE_C) < 1.0e-9
+			and untold.selected_id != told.selected_id,
+		"untold selected \"%s\" at %.1f C, told selected \"%s\" at %.1f C" % [
+			untold.selected_id, untold.selected().temperature_c,
+			told.selected_id, told.selected().temperature_c]))
 
 	# A WINDY SET AT THE SAME TEMPERATURE IS NOT A MATCH. Handing it back would add a wind nobody
 	# asked for to a garage figure, silently.
@@ -545,10 +664,20 @@ static func _four_authored_fields() -> Array:
 			authored.append(key)
 	results.append(TestResult.new(
 		"and the four authored ones are wind speed, wind bearing, gustiness and temperature",
-		authored == ["gustiness_mps", "temperature_c", "wind_from_deg", "wind_speed_mps"]
-			and Conditions.AUTHORED_KEYS.size() == 4,
-		"authored %s, the class names %d of them" % [
-			str(authored), Conditions.AUTHORED_KEYS.size()]))
+		authored == ["gustiness_mps", "temperature_c", "wind_from_deg", "wind_speed_mps"],
+		"authored %s" % str(authored)))
+
+	# AND `AUTHORED_KEYS` SAYS THE SAME FOUR. It was asserted by its SIZE alone, which is the
+	# cannot-fail class: swap a field inside it for another and a count of four still passes.
+	# Nothing in src/ reads this constant, so the literal is the only thing that can hold it to
+	# what the class claims about itself — and it is the SAME literal the check above uses, sorted,
+	# rather than a second spelling free to drift from it.
+	var named: Array = Conditions.AUTHORED_KEYS.duplicate()
+	named.sort()
+	results.append(TestResult.new(
+		"and AUTHORED_KEYS names those same four, by content rather than by count",
+		named == authored,
+		"AUTHORED_KEYS = %s against the keys actually written %s" % [named, authored]))
 	return results
 
 

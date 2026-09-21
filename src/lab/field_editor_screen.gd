@@ -669,7 +669,7 @@ func set_field_elevation_m(elevation_m: float) -> void:
 func set_field_temperature_c(temperature_c: float) -> void:
 	var chosen := conditions.at_temperature(AirDensity.new(0.0, temperature_c).temperature_c)
 	conditions.select(chosen.conditions_id)
-	_changed()
+	_changed(true)
 
 
 ## The place the open course is laid out in. A course pointing at a site that is not there falls
@@ -730,11 +730,23 @@ func _on_course_row_selected(index: int) -> void:
 ## are re-read, and the library is written to disk. One path, in the manner of LabScreen's
 ## _on_selection_changed, and for the same reason — there is no ordering in which the panel could
 ## be describing a gate the viewport is no longer drawing.
-func _changed() -> void:
+## Writes the world back and redraws. `p_weather_changed` IS NOT A CONVENIENCE FLAG.
+##
+## The conditions file is written only by the one edit that touches the weather. Without the flag,
+## dragging a gate or renaming a course rewrites a file that edit never looked at — and on a fresh
+## install the FIRST gate drag materialises a `conditions.json` holding a `Standard` row nobody
+## authored. `RoomHost._init` refuses exactly this for exactly this reason, and §4 of
+## `tests/test_conditions.gd` asserts that reading the weather never writes it; the editor doing
+## the reverse one room over would be the same rule broken from the other side.
+##
+## The courses and sites files are still written every time, which is F1's precedent rather than a
+## judgement — a gate drag genuinely edits the course, and an elevation genuinely edits the site.
+func _changed(p_weather_changed := false) -> void:
 	library.put(course())
 	library.save(save_path)
 	sites.save(sites_path)
-	conditions.save(conditions_path)
+	if p_weather_changed:
+		conditions.save(conditions_path)
 	render()
 	course_changed.emit()
 

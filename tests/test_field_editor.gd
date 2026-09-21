@@ -356,6 +356,35 @@ static func _the_field_itself() -> Array:
 			"none" if weather_on_disk == null else weather_on_disk.conditions_name,
 			-999.0 if weather_on_disk == null else weather_on_disk.temperature_c]))
 
+	# AND AN EDIT THAT IS NOT ABOUT THE WEATHER DOES NOT WRITE THE WEATHER FILE. Dragging a gate
+	# rewriting `conditions.json` is not cosmetic: on a fresh install the first drag materialises a
+	# file holding a `Standard` row nobody authored, and `RoomHost._init` refuses exactly that on
+	# the way in. Bytes AND stamp, because the document would come back identical — the act is what
+	# is being forbidden, not the content.
+	# Re-indented first, for the reason `tests/test_conditions.gd` §4 spells out: an mtime has
+	# one-second resolution and a save landing inside the same second leaves it alone, while the
+	# bytes of a document that round-trips are identical either way. Written in a form the app's
+	# own writer does not emit, any save at all normalises it and the bytes say so.
+	var weather_document := JsonStore.read_document(CONDITIONS_PATH)
+	var weather_handle := FileAccess.open(CONDITIONS_PATH, FileAccess.WRITE)
+	weather_handle.store_string(JSON.stringify(weather_document, "\t"))
+	weather_handle.close()
+	var weather_bytes := FileAccess.get_file_as_string(CONDITIONS_PATH)
+	var weather_stamp := FileAccess.get_modified_time(CONDITIONS_PATH)
+	editor.select_gate(1)
+	editor.set_gate_height_m(2.5)
+	editor.rename_course("Bando, renamed")
+	editor.set_field_elevation_m(920.0)
+	results.append(TestResult.new(
+		"moving a gate, renaming a course and nudging the elevation do not write conditions.json",
+		FileAccess.get_file_as_string(CONDITIONS_PATH) == weather_bytes
+			and FileAccess.get_modified_time(CONDITIONS_PATH) == weather_stamp,
+		"%s, stamp %s" % [
+			"untouched" if FileAccess.get_file_as_string(CONDITIONS_PATH) == weather_bytes
+				else "REWRITTEN",
+			"unmoved" if FileAccess.get_modified_time(CONDITIONS_PATH) == weather_stamp
+				else "MOVED"]))
+
 	# THE FIELD BELONGS TO THE WORLD, NOT TO THE EDITOR. This is the check that would catch air
 	# being stored on the screen or in a single app-wide setting: a second course must have its own
 	# field, and switching back must bring the first one's back with it.
