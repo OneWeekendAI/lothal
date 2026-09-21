@@ -78,7 +78,13 @@ const BLOCK_KEYS := ["shape", "width_m", "length_m", "center_x_m", "center_z_m"]
 const DEFAULT_WIDTH_M := 120.0
 const DEFAULT_LENGTH_M := 120.0
 
-var shape: StringName = FLAT
+## Written through a setter for ONE reason: choosing a shape has to clear `_unknown_shape`. See
+## `to_data()` — without that, flat is the one shape a builder can never select on a file written
+## by a newer build, because the writer keeps putting the newer name back.
+var shape: StringName = FLAT:
+	set(value):
+		shape = value
+		_unknown_shape = ""
 var width_m := DEFAULT_WIDTH_M
 var length_m := DEFAULT_LENGTH_M
 var center_x_m := 0.0
@@ -128,8 +134,16 @@ func center() -> Vector2:
 ## the same hair of tolerance `Site.contains()` uses — a gate exactly on the boundary of a field
 ## sized to contain it is contained.
 func contains(x: float, z: float) -> bool:
-	return absf(x - center_x_m) <= width_m * 0.5 + 1.0e-6 \
-		and absf(z - center_z_m) <= length_m * 0.5 + 1.0e-6
+	return absf(x - center_x_m) <= half_extent().x + 1.0e-6 \
+		and absf(z - center_z_m) <= half_extent().y + 1.0e-6
+
+
+## Half the width and half the length, and the ONE place either is halved. `contains()` used
+## `width_m * 0.5` while `height_at()` used `absf(width_m) * 0.5`, which is two rules for one
+## question: a negative width made a point outside every field and still gave it a height. Trivial
+## today and exactly how the two answers drift apart tomorrow.
+func half_extent() -> Vector2:
+	return Vector2(absf(width_m), absf(length_m)) * 0.5
 
 
 ## The ground height in metres at a WORLD point. Relative to the site's own datum: a flat field is
@@ -139,8 +153,9 @@ func contains(x: float, z: float) -> bool:
 ## this per gate per frame and a cache keyed on x alone would answer the previous z.
 func height_at(x: float, z: float) -> float:
 	# The boundary, not zero. See the header.
-	var half_x := absf(width_m) * 0.5
-	var half_z := absf(length_m) * 0.5
+	var half := half_extent()
+	var half_x := half.x
+	var half_z := half.y
 	var dx := clampf(x - center_x_m, -half_x, half_x)
 	var dz := clampf(z - center_z_m, -half_z, half_z)
 
@@ -246,6 +261,17 @@ func _num(key: String) -> float:
 		return float(value)
 	var fallback: Variant = DIM_DEFAULTS.get(shape, {}).get(key, 0.0)
 	return float(fallback) if fallback is float or fallback is int else 0.0
+
+
+## Whether this is the untouched default: the shape, the size, the centre and the dims all as a
+## `Terrain` arrives with nothing said about it. `Site` asks this rather than remembering whether
+## the file it loaded had a block, because a remembered flag goes stale the moment a builder picks
+## a shape on a record that never had one — which is precisely the regression this answers.
+func is_default() -> bool:
+	return shape == FLAT and _unknown_shape == "" and dims.is_empty() \
+		and absf(width_m - DEFAULT_WIDTH_M) < 1.0e-9 \
+		and absf(length_m - DEFAULT_LENGTH_M) < 1.0e-9 \
+		and absf(center_x_m) < 1.0e-9 and absf(center_z_m) < 1.0e-9
 
 
 # ---------------------------------------------------------------------------

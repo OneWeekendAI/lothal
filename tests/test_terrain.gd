@@ -47,6 +47,7 @@ static func run() -> Array:
 		"fingerprint term": _fingerprint_term(),
 		"purity": _purity(),
 		"the site": _the_site(),
+		"one rule, one number": _one_rule_one_number(),
 	}
 	# A runtime error partway through a section aborts only that section and its append never runs,
 	# so the suite would pass with its best checks silently deleted. Asserting each section produced
@@ -504,6 +505,21 @@ static func _round_trip() -> Array:
 			"identical" if opened != null and JSON.stringify(opened.to_data()) == future
 				else "REWRITTEN"]))
 
+	# AND THE BUILDER WHO DELIBERATELY CHOOSES FLAT. Keeping the unknown name is right only while
+	# nobody has touched the shape; re-emitting it unconditionally makes flat the one shape that
+	# cannot be selected on a file a newer build wrote. There is no error and no way to tell from
+	# the screen — the editor says flat and the file says volcano.
+	var chosen := Terrain.from_data(JSON.parse_string(future))
+	chosen.shape = Terrain.FLAT
+	var also := Terrain.from_data(JSON.parse_string(future))
+	also.shape = Terrain.BOWL
+	results.append(TestResult.new(
+		"round trip: choosing a shape clears the unknown name — flat is selectable again",
+		String(chosen.to_data().get("shape", "")) == String(Terrain.FLAT)
+			and String(also.to_data().get("shape", "")) == String(Terrain.BOWL),
+		"chose flat -> %s; chose bowl -> %s" % [
+			chosen.to_data().get("shape", "?"), also.to_data().get("shape", "?")]))
+
 	# And the two other ways a file arrives damaged, on JsonStore's rule that a bad file is not a
 	# fatal error: a block that is not a dictionary at all, and one with nothing in it.
 	var nonsense := Terrain.from_data("not a terrain")
@@ -648,6 +664,31 @@ static func _the_site() -> Array:
 			and reopened.extent().x > 0.0,
 		JSON.stringify(reopened.to_data())))
 
+	# THE BLOCK A BUILDER AUTHORS ON A RECORD THAT NEVER HAD ONE. F3 shipped this as a regression:
+	# the "was there a block in the file" flag is set at load and never again, so picking a shape on
+	# a hand-edited site and saving erased it — no error, and the bowl is simply gone on reload.
+	# Under F1 the predicate was on the value and could not go stale.
+	var hand_edited := {"id": "bando", "name": "Bando", "elevation_m": 12.0}
+	var authored := Site.from_data(hand_edited)
+	authored.terrain = Terrain.shaped(Terrain.BOWL, 120.0, 120.0, {"depth_m": 4.0})
+	var saved: Dictionary = authored.to_data()
+	var reloaded := Site.from_data(saved)
+	results.append(TestResult.new(
+		"the site: a terrain authored on a record with no block is written, and survives a reload",
+		saved.has("terrain") and reloaded.terrain.shape == Terrain.BOWL
+			and absf(reloaded.terrain.height_at(0.0, 0.0) + 4.0) < TOL,
+		"%s; reloaded as %s at %.2f m"
+			% [JSON.stringify(saved), reloaded.terrain.shape,
+				reloaded.terrain.height_at(0.0, 0.0)]))
+
+	# And the silence it must not break: the SAME record, untouched, still does not grow a block.
+	var untouched := Site.from_data(hand_edited)
+	results.append(TestResult.new(
+		"the site: and the same record, left alone, still does not grow one",
+		not untouched.to_data().has("terrain")
+			and JSON.stringify(untouched.to_data()) == JSON.stringify(hand_edited),
+		JSON.stringify(untouched.to_data())))
+
 	# The site's own centre reaches the terrain: a height asked in WORLD coordinates on an off-origin
 	# site is the height at that place, not at the same offset from the origin. F4's ground authority
 	# is built on this and nothing before F4 would notice it being wrong.
@@ -663,6 +704,55 @@ static func _the_site() -> Array:
 		"centre %.3f, west edge %.3f, east edge %.3f, origin %.3f" % [
 			away.terrain.height_at(200.0, 0.0), away.terrain.height_at(150.0, 0.0),
 			away.terrain.height_at(250.0, 0.0), away.terrain.height_at(0.0, 0.0)]))
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 12. One rule for the half-extent, one number for the default
+# ---------------------------------------------------------------------------
+
+static func _one_rule_one_number() -> Array:
+	var results: Array = []
+
+	# `contains()` halved the width and `height_at()` halved its absolute value: two rules for one
+	# question, which answered differently for a field whose width was typed negative — outside
+	# every field, and still on a slope. Nothing in F3 needed a negative width; the point is that
+	# the two answers must come from the same place or they drift.
+	var ground := Terrain.shaped(Terrain.SLOPE, -80.0, 60.0,
+		{"rise_m": 4.0, "direction_deg": 0.0})
+	var inside := ground.contains(39.0, 0.0)
+	var outside := ground.contains(45.0, 0.0)
+	var boundary_agrees := absf(ground.height_at(45.0, 0.0) - ground.height_at(40.0, 0.0)) < TOL
+	results.append(TestResult.new(
+		"one rule: contains() and height_at() halve the extent the same way, negative width and all",
+		inside and not outside and boundary_agrees
+			and ground.half_extent() == Vector2(40.0, 30.0),
+		"inside %s, outside %s, boundary agrees %s, half %s"
+			% [inside, outside, boundary_agrees, ground.half_extent()]))
+
+	# ONE NUMBER, NAMED TWICE. `Terrain.to_data()` omits a key still equal to the default the reader
+	# supplies, so a second, independent 120 in `Site` means a width authored at Site's new default
+	# is written absent and read back as Terrain's old one — an authored value silently changing.
+	# Asserted by name, because the two being equal today is exactly what makes the drift invisible.
+	results.append(TestResult.new(
+		"one number: Site's default extent IS Terrain's, not a second copy of it",
+		Site.DEFAULT_WIDTH_M == Terrain.DEFAULT_WIDTH_M
+			and Site.DEFAULT_LENGTH_M == Terrain.DEFAULT_LENGTH_M,
+		"site %.1f x %.1f, terrain %.1f x %.1f" % [Site.DEFAULT_WIDTH_M, Site.DEFAULT_LENGTH_M,
+			Terrain.DEFAULT_WIDTH_M, Terrain.DEFAULT_LENGTH_M]))
+
+	# And the consequence, demonstrated rather than argued: a width equal to the default is written
+	# absent, and reading it back gives the same number. The moment the two constants differ, this
+	# is the check that goes red with a real value in its detail.
+	var authored_at_default := Terrain.from_data(
+		JSON.parse_string('{"length_m":150.0,"shape":"flat"}'))
+	authored_at_default.width_m = Site.DEFAULT_WIDTH_M
+	var written: Dictionary = authored_at_default.to_data()
+	results.append(TestResult.new(
+		"one number: a width authored at Site's default is written absent and reads back the same",
+		not written.has("width_m")
+			and absf(Terrain.from_data(written).width_m - Site.DEFAULT_WIDTH_M) < TOL,
+		"%s -> %.1f m" % [JSON.stringify(written), Terrain.from_data(written).width_m]))
 	return results
 
 

@@ -68,8 +68,14 @@ const FLAT_SHAPE := "flat"
 ## The default field's extent. A chosen number, not a measured one: 120 m square is comfortably
 ## bigger than the 18 m default circuit and small enough to see the far edge of, which is the whole
 ## of the reasoning. A builder who cares types their own.
-const DEFAULT_WIDTH_M := 120.0
-const DEFAULT_LENGTH_M := 120.0
+##
+## ONE NUMBER, NAMED TWICE. These are `Terrain`'s, not copies of them, and the aliasing is
+## load-bearing rather than tidiness: `Terrain.to_data()` omits a key whose value still equals the
+## default the reader would supply, so two independent 120s mean that editing this one alone makes
+## a width authored at the new default absent from the file and read back as the old one. An
+## authored value silently changing — the failure the persistence rules in this file exist for.
+const DEFAULT_WIDTH_M := Terrain.DEFAULT_WIDTH_M
+const DEFAULT_LENGTH_M := Terrain.DEFAULT_LENGTH_M
 
 ## Stable and machine-readable — what a library keys on and what a course's `site_id` names.
 var site_id := DEFAULT_ID
@@ -87,6 +93,12 @@ var elevation_m := 0.0
 var terrain: Terrain = flat_terrain(DEFAULT_WIDTH_M, DEFAULT_LENGTH_M)
 ## Whether the record this site came from carried a terrain block. The same statement-versus-
 ## silence split `_had_obstacles` makes: a block that was never in the file is not written back.
+##
+## IT IS NOT THE WHOLE TEST, and F3 shipped a regression by treating it as one. A flag set at load
+## and never set again erases a terrain a builder authored on a record that had no block — pick
+## "bowl, 4 m deep" on a hand-edited site, save, and the bowl is gone on reload with no error.
+## Under F1 the predicate was on the VALUE (`terrain.is_empty()`), which could not go stale. So
+## `to_data()` asks both: the file had a block, OR the terrain is no longer the default one.
 var _had_terrain := true
 ## What is standing in the field. F6 fills this; until then it is empty and round-trips untouched,
 ## which is what stops a builder on a later version losing theirs by opening this one.
@@ -213,7 +225,7 @@ func to_data() -> Dictionary:
 	record["id"] = site_id
 	record["name"] = site_name
 	record["elevation_m"] = elevation_m
-	if not _had_terrain:
+	if not _had_terrain and terrain.is_default():
 		record.erase("terrain")
 	else:
 		record["terrain"] = terrain.to_data()
