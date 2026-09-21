@@ -73,7 +73,7 @@ static func _a_fresh_install() -> Array:
 		"a fresh install has exactly one site: the default field, flat, at sea level",
 		fresh != null and fresh.ids().size() == 1 and fresh.selected_id == Site.DEFAULT_ID
 			and only != null and only.site_id == Site.DEFAULT_ID
-			and String(only.terrain.get("shape", "")) == Site.FLAT_SHAPE
+			and String(only.terrain.shape) == Site.FLAT_SHAPE
 			and absf(only.elevation_m) < 1.0e-9,
 		"%d site(s): %s" % [
 			0 if fresh == null else fresh.ids().size(),

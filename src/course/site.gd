@@ -53,9 +53,10 @@ extends RefCounted
 ## centre is why `contains()` exists beside `extent()`, and F4 needs the same origin the moment
 ## `height_at(x, z)` becomes the ground authority, so this is a debt paid now rather than deferred.
 ##
-## It is a plain Dictionary rather than a `Terrain` class because `Terrain` does not exist yet, and
-## inventing an empty one to hold two numbers would be the class arriving before its behaviour.
-## `extent()` is the seam: it exists from day one so that F3 changes its body and no caller.
+## SINCE F3 IT IS A `Terrain`, AND THE FILE FORMAT DID NOT MOVE. The block on disk is the same five
+## keys, with the shape's own numbers as siblings beside them; `Terrain` reads it, answers
+## `height_at(x, z)` over it, and writes it back byte-identically. `extent()` was the seam and it
+## held: its body changed and no caller did.
 
 const DEFAULT_ID := "default_site"
 const DEFAULT_NAME := "Field"
@@ -83,7 +84,10 @@ var elevation_m := 0.0
 ##
 ## EMPTY MEANS THE RECORD DID NOT HAVE ONE, which is different from a block saying "flat, 120 by
 ## 120". An empty block reads as the defaults and is not written back out — see `to_data()`.
-var terrain: Dictionary = flat_terrain(DEFAULT_WIDTH_M, DEFAULT_LENGTH_M)
+var terrain: Terrain = flat_terrain(DEFAULT_WIDTH_M, DEFAULT_LENGTH_M)
+## Whether the record this site came from carried a terrain block. The same statement-versus-
+## silence split `_had_obstacles` makes: a block that was never in the file is not written back.
+var _had_terrain := true
 ## What is standing in the field. F6 fills this; until then it is empty and round-trips untouched,
 ## which is what stops a builder on a later version losing theirs by opening this one.
 var obstacles: Array = []
@@ -105,31 +109,21 @@ var _unknown: Dictionary = {}
 
 
 static func flat_terrain(width_m: float, length_m: float,
-		center_x_m := 0.0, center_z_m := 0.0) -> Dictionary:
-	return {
-		"shape": FLAT_SHAPE,
-		"width_m": width_m,
-		"length_m": length_m,
-		"center_x_m": center_x_m,
-		"center_z_m": center_z_m,
-	}
+		center_x_m := 0.0, center_z_m := 0.0) -> Terrain:
+	return Terrain.flat(width_m, length_m, center_x_m, center_z_m)
 
 
 ## Width and length in metres. THE SEAM: F3 gives this a body that asks the terrain's shape, and
 ## no caller changes.
 func extent() -> Vector2:
-	return Vector2(
-		float(terrain.get("width_m", DEFAULT_WIDTH_M)),
-		float(terrain.get("length_m", DEFAULT_LENGTH_M)))
+	return terrain.extent()
 
 
 ## Where the middle of the ground is, in world x and z. Zero for every site anybody authored by
 ## hand, and not zero for one the migration sized around a course that was laid out away from the
 ## origin. The second seam F3 and F4 need: a height at (x, z) is meaningless without it.
 func center() -> Vector2:
-	return Vector2(
-		float(terrain.get("center_x_m", 0.0)),
-		float(terrain.get("center_z_m", 0.0)))
+	return terrain.center()
 
 
 ## Whether a point in the world is on this site's ground. Horizontal only — how high a gate is hung
@@ -139,10 +133,7 @@ func center() -> Vector2:
 ## it is contained, and a strict comparison would make the migration's own arithmetic fail its own
 ## test by a floating-point hair.
 func contains(position: Vector3) -> bool:
-	var half := extent() * 0.5
-	var middle := center()
-	return absf(position.x - middle.x) <= half.x + 1.0e-6 \
-		and absf(position.z - middle.y) <= half.y + 1.0e-6
+	return terrain.contains(position.x, position.z)
 
 
 ## THERE IS NO `air()` HERE, AND THAT IS F2's ANSWER RATHER THAN AN OMISSION.
@@ -186,7 +177,9 @@ static func from_data(data: Variant) -> Site:
 	# `to_data()` can put the file back exactly as it found it; `extent()` and `center()` read the
 	# defaults out of the emptiness, which is the same answer without the invented key.
 	var block: Variant = record.get("terrain")
-	out.terrain = (block as Dictionary).duplicate(true) if block is Dictionary else {}
+	out._had_terrain = block is Dictionary and not (block as Dictionary).is_empty()
+	out.terrain = Terrain.from_data(block) if out._had_terrain \
+		else Terrain.flat(DEFAULT_WIDTH_M, DEFAULT_LENGTH_M)
 	out._had_obstacles = record.has("obstacles")
 	var standing: Variant = record.get("obstacles")
 	if standing is Array:
@@ -220,10 +213,10 @@ func to_data() -> Dictionary:
 	record["id"] = site_id
 	record["name"] = site_name
 	record["elevation_m"] = elevation_m
-	if terrain.is_empty():
+	if not _had_terrain:
 		record.erase("terrain")
 	else:
-		record["terrain"] = terrain.duplicate(true)
+		record["terrain"] = terrain.to_data()
 	if obstacles.is_empty() and not _had_obstacles:
 		record.erase("obstacles")
 	else:
