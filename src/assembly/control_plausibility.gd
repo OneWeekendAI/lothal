@@ -9,37 +9,53 @@ extends RefCounted
 ## every Power check follows.
 ##
 ## ---------------------------------------------------------------------------
-## WHY THE PORT ROW STATES NO NUMBER, AND WHY THAT IS THE POINT
+## WHY THE PORT ROW NOW STATES A NUMBER, AND WHAT IT SAYS IN THE SAME BREATH
 ## ---------------------------------------------------------------------------
 ##
 ## A GPS needs a UART and so does a receiver. A buzzer does not — it takes a dedicated beeper pad.
-## So "do the peripherals fit the board" is a real question a builder has to answer, and Lothal
-## CANNOT ANSWER IT: there are zero occurrences of `uart` in `src/`, and not one of the six boards
-## in `flight_controllers.json` publishes a port count. None ever has.
+## So "do the peripherals fit the board" is a real question a builder has to answer, and until C5
+## Lothal REFUSED TO ANSWER IT: no board published a port count, and a headroom figure derived from
+## a count nobody published would have been a construction wearing a measurement's confidence.
 ##
-## The honest thing available is the half that is knowable: count the fitted parts that need a
-## serial port, state that count, and say plainly that the board's own count is not published in
-## this catalog. That is a row a builder can act on — two peripherals, go and look up your board —
-## and it is not a claim Lothal cannot support.
+## C5 does not source those counts — config-room design §0.1 declines that route, because sourcing
+## tasks stall. It ships a CLASS-TYPICAL RANGE per entry plus an editable per-build override, and
+## the refusal above is replaced by a narrower and still honest one: THE ROW STATES THE FIGURE AND
+## ITS PROVENANCE TOGETHER, NEVER THE FIGURE ALONE. Three provenances, three different kinds of
+## claim — the catalog's guess about a class, the builder's own typed number, and the silence that
+## is still reachable for an entry carrying no range at all. `PortBudget` owns all three, and this
+## file asks it rather than reading the catalog itself.
 ##
-## THE FAILURE MODE HERE IS NOT A WRONG NUMBER, IT IS A CONFIDENT ONE. A headroom figure derived
-## from a port count nobody published would be a construction wearing a measurement's confidence,
-## which is the one thing design §0's relaxation still refuses: values may be rough, but a guess
-## may never be presented as measured. `tests/test_control_warnings.gd` asserts the ABSENCE of the
-## claim, which is an odd-looking check and the most important one in this file.
-##
-## Adding `uarts` to the six catalog entries turns this row into a real check. It is a sourcing
-## task rather than a code task, and it is the first item on design §9's list.
+## What is still refused: a headroom or spare-port count. The verdict ("four does not fit") is what
+## a builder acts on and it survives the range; "you have two ports spare" would not.
+## `tests/test_control_warnings.gd` and `tests/test_config_ports.gd` assert both halves — the
+## figure's provenance, and the absence of the spare count.
 
 ## Which fitted components occupy a serial port on the flight controller.
 ##
-## The buzzer is deliberately absent: it lands on the beeper pad, which is not a UART, and folding
-## it in would inflate a count whose whole value is that it is truthful.
-const SERIAL_PERIPHERALS := ["receiver", "gps"]
+## WAS `["receiver", "gps"]`, and config-room design §4.2 calls that short IN THE DANGEROUS
+## DIRECTION: it under-reports demand, so a build reads as fitting when it does not. A VTX is the
+## row that was missing — an analog board's channel and power control (SmartAudio, Tramp) takes a
+## UART, and a digital board's OSD and telemetry link takes one too. Which sentence applies is read
+## off `catalog.signal`, which every VTX entry already carries; NO CATALOG ENTRY WAS EDITED TO ADD
+## ANY OF THIS.
+##
+## The buzzer is still deliberately absent: it lands on the beeper pad, which is not a UART, and
+## folding it in would inflate a count whose whole value is that it is truthful. The camera is
+## absent too — joystick-over-UART OSD control exists, but whether a given analog camera has it is
+## not in any field here, and a row that fires on every camera would be a guess counted as a fact.
+##
+## THE ESC IS NOT IN THIS LIST AND IS NOT AN OVERSIGHT: whether it wants a port depends on its
+## protocol rather than on its presence. See `_esc_telemetry_demand`.
+const SERIAL_PERIPHERALS := ["receiver", "gps", "vtx"]
 
-## What the board's port count reads as, everywhere it is shown. A single constant rather than a
-## literal per site, so the row and the panel beside it cannot come to say it two different ways.
-const PORTS_UNPUBLISHED := "not published in this catalog"
+## How a protocol name announces that the ESC can return telemetry on the signal wire it already
+## has. Matched as a PREFIX on the lowered string, so DShot300 and DShot600 both answer, and
+## Multishot — which contains no such thing — does not.
+const DSHOT_PREFIX := "dshot"
+
+## What a board publishing no range reads as. Re-exported from `PortBudget`, which owns the supply
+## side outright, under the name this row shipped with in C4 so the text has one spelling.
+const PORTS_UNPUBLISHED := PortBudget.UNPUBLISHED_TEXT
 
 
 static func warnings_for(build: Build) -> Array[BuildWarning]:
@@ -110,14 +126,32 @@ static func _buzzer_dies_with_the_pack(build: Build, out: Array[BuildWarning]) -
 ## rather than a fault and a builder comparing two boards wants it either way. CHARACTERISTIC for
 ## exactly that reason: this is what the build IS, not something wrong with it.
 ##
-## `values` carries the count and the names. It carries NO port count, no headroom, and no
-## remaining-ports figure, and there is no key here for one to arrive in later by accident — see
-## the header, and see the check that asserts this absence.
+## SLICE C4 WIDENED THE DEMAND SIDE AND NOT THE SUPPLY SIDE. A VTX now counts, and an ESC counts
+## when its protocol cannot carry telemetry home on the signal wire. C5 THEN GAVE IT A SUPPLY SIDE:
+## the board's figure comes from `PortBudget` with its provenance attached, and the row ends on a
+## verdict when one can be reached.
+##
+## An ESC that publishes no protocol at all is counted, deliberately: the failure this row exists
+## to prevent is under-reporting demand, so the unknown case errs toward wanting a wire and the
+## sentence names what it did not know.
+##
+## `values` carries the demand count, the names, and the board's figure WITH `uart_provenance`
+## beside it — never one without the other, because the sheet and the panel read `values` rather
+## than the sentence. It still carries NO headroom and no spare-ports figure; see the header.
 static func _serial_peripherals(build: Build, out: Array[BuildWarning]) -> void:
 	var fitted: Array[String] = []
+	var reasons := {}
 	for category in SERIAL_PERIPHERALS:
-		if build.components.has(category):
-			fitted.append(str(build.components[category].get("name", category)))
+		if not build.components.has(category):
+			continue
+		var part: Dictionary = build.components[category]
+		fitted.append(str(part.get("name", category)))
+		reasons[category] = _reason_for(category, part)
+
+	var esc_reason := _esc_telemetry_demand(build)
+	if not esc_reason.is_empty():
+		fitted.append(str(build.esc.get("name", "esc")))
+		reasons["esc"] = esc_reason
 
 	var subject := "Nothing fitted needs a serial port"
 	if fitted.size() == 1:
@@ -125,9 +159,66 @@ static func _serial_peripherals(build: Build, out: Array[BuildWarning]) -> void:
 	elif fitted.size() > 1:
 		subject = "%d fitted parts need a serial port (%s)" % [fitted.size(), ", ".join(fitted)]
 
-	out.append(BuildWarning.characteristic(&"serial_peripherals",
-		("%s. How many this board has is %s, so Lothal cannot tell you whether they fit — check "
-		+ "your board's own documentation. The buzzer is not counted: it lands on the beeper pad, "
-		+ "not a UART.") % [subject, PORTS_UNPUBLISHED],
-		{"serial_peripherals": fitted.size(), "peripherals": fitted,
-			"fc": str(build.fc.get("name", ""))}))
+	# The supply side, asked of the one accessor that owns it. The sentence it returns CARRIES ITS
+	# OWN PROVENANCE, which is why it is pasted in whole rather than having a number picked out of
+	# it here — a caller that took `low` and `high` and wrote its own sentence is exactly how a
+	# guess loses its label.
+	var budget := PortBudget.for_build(build)
+	var verdict := PortBudget.verdict(fitted.size(), budget)
+
+	var values := {"serial_peripherals": fitted.size(), "peripherals": fitted, "reasons": reasons,
+		"fc": str(build.fc.get("name", "")), "uart_provenance": String(budget["provenance"])}
+	# NO PORT FIGURE IN `values` WHEN NONE IS KNOWN, rather than a zero that reads as a count.
+	if String(budget["provenance"]) != PortBudget.UNPUBLISHED:
+		values["uart_low"] = int(budget["low"])
+		values["uart_high"] = int(budget["high"])
+
+	var sentences: Array[String] = ["%s." % subject, String(budget["sentence"])]
+	if not verdict.is_empty():
+		sentences.append(verdict)
+	sentences.append("The buzzer is not counted: it lands on the beeper pad, not a UART.")
+
+	out.append(BuildWarning.characteristic(&"serial_peripherals", " ".join(sentences), values))
+
+
+## WHY EACH COUNTED PART WANTS A PORT, in the words a builder acts on — they go to different wires,
+## and one sentence covering both VTX kinds would send half of them to the wrong pad.
+##
+## Read off `catalog.signal` alone. A VTX entry with no signal published gets the weaker sentence,
+## because the control link is the reason that is true of analog and digital boards alike.
+static func _reason_for(category: String, part: Dictionary) -> String:
+	if category != "vtx":
+		if category == "gps":
+			return "position over a UART; its compass rides I²C and costs no port"
+		return "the link from the transmitter"
+
+	var signal_kind := str((part.get("catalog", {}) as Dictionary).get("signal", "")).to_lower()
+	if signal_kind == "digital":
+		return "the OSD and telemetry link of a digital system"
+	if signal_kind == "analog":
+		return "channel and power control over SmartAudio or Tramp"
+	return "its control link, whichever the board speaks"
+
+
+## The ESC telemetry wire — design §4.2's third correction, and the one that is CONDITIONAL.
+##
+## A DShot ESC can return rpm and temperature bidirectionally on the signal wire it already has, so
+## it costs no port. An older protocol has no return path there and wants a dedicated telemetry
+## UART. That is a lookup against `catalog.protocol`, which every entry already carries — design
+## §8's third row, the one that is explicitly not a guess.
+##
+## Returns the reason, or an empty string when the ESC wants nothing. NOT a claim that bidirectional
+## DShot is switched ON: it is the weaker and true claim that the wire is there, and it stayed that
+## way when C6 gave the setting somewhere to live (`FailsafeSettings.bidir_dshot`). A DShot ESC has
+## its return path whether or not the feature is enabled, so the port count does not move with the
+## switch — `ConfigPlausibility._bidir_dshot_unsupported` asks the OTHER question of the same field,
+## which is whether the setting can do what it says.
+static func _esc_telemetry_demand(build: Build) -> String:
+	if build.esc.is_empty():
+		return ""
+	var protocol := str((build.esc.get("catalog", {}) as Dictionary).get("protocol", ""))
+	if protocol.to_lower().begins_with(DSHOT_PREFIX):
+		return ""
+	return ("telemetry over a wire of its own: %s has no return path on the signal wire, "
+		+ "which a DShot ESC would have") % [protocol if not protocol.is_empty()
+			else "this ESC's protocol"]

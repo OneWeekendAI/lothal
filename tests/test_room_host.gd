@@ -267,9 +267,14 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 		"focus is %d, Power is %d, rail shows %s" % [
 			shell._focused_index, _index_of("Power"), _visible_rail_titles(shell)]))
 
-	# Config has no model: stubs, and no rail column at all. A restore that unhides both columns
-	# comes back with a Frame rail under a dropdown reading "Config".
-	shell.select_system_by_name("Config")
+	# Ground kit has no model: stubs, and no rail column at all. A restore that unhides both columns
+	# comes back with a Frame rail under a dropdown reading "Ground kit".
+	#
+	# This used to be Config, which stopped being unmodelled in Config-room slice C3 — it has a
+	# Motors panel now. The fixture moved to the next system that is genuinely a stub rather than
+	# the check being relaxed: what is asserted here is about a system with NO model, so it needs
+	# one to stand on.
+	shell.select_system_by_name("Ground kit")
 	var stub_before := shell.lab.rails().visible
 	shell.rooms.show_sim()
 	shell.rooms.show_lab()

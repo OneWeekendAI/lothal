@@ -16,6 +16,8 @@ const MASTED_GPS := "gps_masted_long_range"
 const FLAT_GPS := "gps_micro_flat"
 const FC_POWERED_BUZZER := "buzz_active_5v"
 const SELF_POWERED_BUZZER := "buzz_selfpowered_cell"
+const ANALOG_VTX := "vtx_analog_400mw"
+const DIGITAL_VTX := "vtx_digital_hd"
 
 
 static func run() -> Array:
@@ -29,6 +31,7 @@ static func run() -> Array:
 	results.append_array(_test_no_receiver_warns(catalog))
 	results.append_array(_test_a_buzzer_on_the_fc_rail_warns(catalog))
 	results.append_array(_test_the_port_row_states_a_count_and_never_a_headroom(catalog))
+	results.append_array(_test_the_demand_side_counts_every_part_that_wants_a_port(catalog))
 	results.append(_test_every_control_warning_carries_its_values(catalog))
 
 	return results
@@ -39,7 +42,8 @@ static func run() -> Array:
 ## for the wrong reason on almost every row in this file.
 static func _test_the_fixtures_are_really_in_the_catalog(catalog: PartsCatalog) -> TestResult:
 	var missing: Array[String] = []
-	for id in [MASTED_GPS, FLAT_GPS, FC_POWERED_BUZZER, SELF_POWERED_BUZZER]:
+	for id in [MASTED_GPS, FLAT_GPS, FC_POWERED_BUZZER, SELF_POWERED_BUZZER, ANALOG_VTX,
+			DIGITAL_VTX]:
 		if catalog.get_part(id).is_empty():
 			missing.append(id)
 
@@ -238,9 +242,20 @@ static func _test_a_buzzer_on_the_fc_rail_warns(catalog: PartsCatalog) -> Array:
 
 ## §6.3 — THE HONESTY CHECK, and the one this slice is most likely to get wrong by being helpful.
 ##
-## The row states a COUNT of fitted parts wanting a serial port. It must never state how many ports
-## the board has, or how many are left, because nothing in this catalog knows. Asserted as the
-## absence of a claim: no headroom key in `values`, and the message says the count is unpublished.
+## AMENDED BY C5, DELIBERATELY, IN THE EDIT THAT EARNED IT. Until C5 no board published a port count
+## at all, so this check asserted the ABSENCE of one: the message said "not published in this
+## catalog" and `values` carried no port key. C5 gave every entry a CLASS-TYPICAL `uart_range` plus
+## an editable per-build override, so the reference board now has a figure and the old assertion
+## would be asserting a refusal Lothal no longer has to make.
+##
+## WHAT IS NOT AMENDED IS WHAT THE CHECK IS FOR. The failure guarded against was never a wrong
+## number — it was a CONFIDENT one, a figure wearing a measurement's confidence. So the absence
+## becomes conditional and the honesty stays absolute: a port figure may appear in `values` only
+## with `uart_provenance` beside it and only with the provenance said in the message, and the
+## headroom and spare-port keys stay forbidden outright, because a range that decides "four does not
+## fit" still cannot support "you have two ports spare". The unpublished sentence has not been
+## deleted, it has moved to the build that still earns it — `tests/test_config_ports.gd` asserts it
+## on a board carrying no range.
 static func _test_the_port_row_states_a_count_and_never_a_headroom(catalog: PartsCatalog) -> Array:
 	var results: Array = []
 
@@ -254,26 +269,128 @@ static func _test_the_port_row_states_a_count_and_never_a_headroom(catalog: Part
 		"counted %s with a buzzer also fitted" % [
 			"<missing>" if warning == null else warning.values.get("serial_peripherals", -1)]))
 
+	# THE AMENDED ROW. The board's figure is stated, and the sentence stating it says in the same
+	# breath that it is typical of a class rather than read off this board.
 	results.append(TestResult.new(
-		"and it says the board's own port count is not published in this catalog",
-		warning != null and warning.message.contains(ControlPlausibility.PORTS_UNPUBLISHED),
+		"and it states the board's own port figure together with the fact that it is a class-typical guess",
+		warning != null and warning.message.to_lower().contains("typical")
+			and String(warning.values.get("uart_provenance", "")) == PortBudget.CLASS_TYPICAL,
 		"message: %s" % ["<missing>" if warning == null else warning.message]))
 
-	# THE ABSENCE OF THE CLAIM. Any of these keys appearing means somebody has taught the row to
-	# assert a number no board publishes.
+	# THE ABSENCE OF THE CLAIM THAT IS STILL REFUSED. A headroom or spare-port key means somebody
+	# has turned a range into an arithmetic nobody's board supports. A port figure without its
+	# provenance counts as the same offence, which is why the list is checked twice.
 	var claimed: Array[String] = []
 	if warning != null:
-		for key in ["uarts", "uart_ports", "ports", "ports_available", "headroom", "ports_free",
-				"spare_ports", "uarts_available"]:
+		for key in ["headroom", "ports_free", "spare_ports", "ports_remaining", "uarts_spare"]:
 			if warning.values.has(key):
 				claimed.append(key)
+		for key in ["uarts", "uart_ports", "ports", "ports_available", "uarts_available",
+				"uart_low", "uart_high"]:
+			if warning.values.has(key) and not warning.values.has("uart_provenance"):
+				claimed.append("%s (unprovenanced)" % key)
 
 	results.append(TestResult.new(
-		"and it states no port count, no headroom and nothing else it cannot know",
+		"and it states no headroom, no spare-port count, and no port figure without its provenance",
 		warning != null and claimed.is_empty(),
 		"values carries %s; forbidden keys present: %s" % [
 			"<missing>" if warning == null else str(warning.values.keys()),
 			"none" if claimed.is_empty() else str(claimed)]))
+
+	return results
+
+
+## Config design §4.2, slice C4 — THE DEMAND SIDE, CORRECTED, AND STILL STATING NO PORT COUNT.
+##
+## `SERIAL_PERIPHERALS` was `["receiver", "gps"]`, which is short in the dangerous direction: it
+## under-reports demand, so a build reads as fitting when it does not. Every row added here comes
+## out of `catalog.signal` and `catalog.protocol`, which the catalog already carries — no entry was
+## edited to make these pass, and the supply side (how many ports the board HAS) is untouched and
+## stays unknown. That separation is what the absence check above is the proof of.
+static func _test_the_demand_side_counts_every_part_that_wants_a_port(
+		catalog: PartsCatalog) -> Array:
+	var results: Array = []
+
+	var bare := _build_with_vtx(catalog, "")
+	var analog := _build_with_vtx(catalog, ANALOG_VTX)
+	var digital := _build_with_vtx(catalog, DIGITAL_VTX)
+
+	# Receiver + GPS = 2 on every one of these; the VTX is the third.
+	results.append(TestResult.new(
+		"an analog VTX is counted — SmartAudio or Tramp control rides a UART",
+		_count(analog) == _count(bare) + 1,
+		"%d fitted with the analog VTX against %d without" % [_count(analog), _count(bare)]))
+
+	results.append(TestResult.new(
+		"a digital VTX is counted too — its OSD and telemetry link is a UART",
+		_count(digital) == _count(bare) + 1,
+		"%d fitted with the digital VTX against %d without" % [_count(digital), _count(bare)]))
+
+	var warning := _find(analog, &"serial_peripherals")
+	results.append(TestResult.new(
+		"and the VTX is named in the row, not merely added to its total",
+		warning != null and str(warning.values.get("peripherals", [])).contains(
+			str(analog.components["vtx"].get("name", ""))),
+		"peripherals: %s" % ["<missing>" if warning == null else str(
+			warning.values.get("peripherals", []))]))
+
+	# WHY THE TWO VTX ROWS MUST NOT SAY THE SAME THING: a builder acts on the reason. One goes to
+	# the VTX's control pad, the other is the whole video link, and a row that gives one sentence
+	# for both is telling half of them to look at the wrong wire.
+	var analog_reasons := str(_find(analog, &"serial_peripherals").values.get("reasons", {}))
+	var digital_reasons := str(_find(digital, &"serial_peripherals").values.get("reasons", {}))
+	results.append(TestResult.new(
+		"the analog VTX's reason and the digital VTX's reason are not the same sentence",
+		analog_reasons != digital_reasons and analog_reasons.contains("vtx"),
+		"analog: %s / digital: %s" % [analog_reasons, digital_reasons]))
+
+	# THE ESC TELEMETRY WIRE. A DShot ESC returns telemetry on the signal wire it already has, so
+	# it costs no port; anything older wants a dedicated telemetry UART. This is a lookup against
+	# `catalog.protocol`, not a guess — design §8's third row.
+	results.append(TestResult.new(
+		"a DShot ESC costs no serial port, because telemetry returns on the signal wire",
+		_count(bare) == 2,
+		"counted %d on a build whose only serial parts are the receiver and the GPS" % [
+			_count(bare)]))
+
+	var older := _build_with_vtx(catalog, "")
+	older.esc = older.esc.duplicate(true)
+	(older.esc["catalog"] as Dictionary)["protocol"] = "Multishot"
+	results.append(TestResult.new(
+		"an ESC that does not speak DShot wants a telemetry port, and it is counted",
+		_count(older) == _count(bare) + 1,
+		"counted %d with a Multishot ESC against %d with the DShot one" % [
+			_count(older), _count(bare)]))
+
+	# THE HONESTY SURVIVES THE CORRECTION, and C5 amended what honesty means here in the same edit
+	# that gave the row a supply figure: the demand having grown, the board's figure still arrives
+	# labelled as the class-typical guess it is — on this build too, where the ESC pushed the count
+	# up and the temptation to sound certain is greatest.
+	var older_warning := _find(older, &"serial_peripherals")
+	results.append(TestResult.new(
+		"and even then the board's figure is stated as a class-typical guess, never as this board's",
+		older_warning != null and older_warning.message.to_lower().contains("typical")
+			and String(older_warning.values.get("uart_provenance", "")) == PortBudget.CLASS_TYPICAL,
+		"message: %s" % ["<missing>" if older_warning == null else older_warning.message]))
+
+	# VACUITY GUARD for the DShot row above: it passes trivially if the field it reads is missing
+	# from every entry, which would make "no ESC costs a port" true for the wrong reason.
+	var non_dshot: Array[String] = []
+	var seen_protocols := 0
+	for part in catalog.list_category("esc"):
+		var protocol := str((part.get("catalog", {}) as Dictionary).get("protocol", ""))
+		if protocol.is_empty():
+			non_dshot.append(str(part.get("part_id", "?")))
+			continue
+		seen_protocols += 1
+		if not protocol.to_lower().begins_with("dshot"):
+			non_dshot.append(str(part.get("part_id", "?")))
+
+	results.append(TestResult.new(
+		"every ESC in the catalog today publishes a DShot protocol, so the no-port row is real",
+		seen_protocols > 0 and non_dshot.is_empty(),
+		"%d entries carry a protocol; not DShot or unpublished: %s" % [
+			seen_protocols, "none" if non_dshot.is_empty() else ", ".join(non_dshot)]))
 
 	return results
 
@@ -332,6 +449,24 @@ static func _build_with(catalog: PartsCatalog, gps_id: String, buzzer_id: String
 		build.assembly = assembly
 		build._recompute()
 	return build
+
+
+## The reference build with the receiver fitted and a VTX optionally in the bay, for §4.2's
+## corrected demand side. Through `Build.from_ids`, so the production path runs.
+static func _build_with_vtx(catalog: PartsCatalog, vtx_id: String) -> Build:
+	return Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID,
+		{"camera": "", "vtx": vtx_id, "antenna": "", "receiver": "rx_elrs_2400",
+			"gps": MASTED_GPS, "buzzer": ""})
+
+
+## How many fitted parts the port row says want a serial port.
+static func _count(build: Build) -> int:
+	var warning := _find(build, &"serial_peripherals")
+	if warning == null:
+		return -1
+	return int(warning.values.get("serial_peripherals", -1))
 
 
 static func _build_without_receiver(catalog: PartsCatalog) -> Build:

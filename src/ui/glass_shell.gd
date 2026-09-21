@@ -204,18 +204,22 @@ const SYSTEMS := [
 		"decided_by": [],
 	},
 	{
+		# CONFIG STOPS BEING A STUB (C3), and both halves move in one edit: the panel exists and the
+		# system is modelled, so the dropdown stops greying it. The stub's own reason was wrong and
+		# is recorded as such in design §2.1 — stage 5 was believed to be blocked on Betaflight
+		# SITL, and only the tune-transfer half of it ever was. Motor direction needs no emulator:
+		# it is a property of the aircraft's layout, and the mixer has read it as one fact since C2.
+		#
+		# `rails: []` and an empty `decided_by`, like Printed and Airframe: nothing here is a part
+		# picked from a catalog, so the finder is not summoned and the completeness ring must not
+		# start waiting on a decision that is not a part.
+		#
+		# Four panels of settings, then the door out: Sheet (C9) is the artifact the other four
+		# feed, and it is LAST because it is what you reach for once the room is done with.
 		"name": "Config",
 		"rails": [],
-		"panels": [],
+		"panels": ["Motors", "Ports", "Failsafe", "Rates", "Sheet"],
 		"decided_by": [],
-		"stub": {
-			"why": "Stage 5 of ten, and the one that kills more first builds than physics does. "
-				+ "Zero model today. Betaflight SITL does not exist — flight_controller.gd:16 "
-				+ "reserves the slot and nothing listens on port 9002.",
-			"items": ["Motor direction and order", "ESC protocol", "Rates and modes", "Failsafe",
-				"OSD layout", "Blackbox logging"],
-			"source": "CONTINUE-HERE.md §3 and §6",
-		},
 	},
 	{
 		"name": "Ground kit",
@@ -2118,6 +2122,9 @@ func _select_system(index: int) -> void:
 	# omission cannot recur silently, but the call still has to be made from the path that changes
 	# the state.
 	_sync_thrust_overlay()
+	# THE MOTOR MAP IS CONFIG'S, and it goes up and down with the system that asks the question
+	# (C3). Left up, four labels would float over a drone whose builder had walked to Power.
+	lab.set_motor_map_visible(modelled and str(system["name"]) == "Config")
 	lab.rails().visible = _rail_glass.visible
 	lab.panels.visible = modelled
 	_inspector_stub.visible = not modelled
@@ -2170,6 +2177,8 @@ func _deselect() -> void:
 	if _tools_glass != null:
 		_tools_glass.visible = true
 	_sync_thrust_overlay()
+	# Nothing is focused, so nothing annotates the model — the resting state is the aircraft.
+	lab.set_motor_map_visible(false)
 	if _dock != null:
 		_dock.set_focused(-1)
 	_apply_focus()
@@ -2420,6 +2429,9 @@ func _sync_project() -> void:
 	# The printing block follows the lab's working copy the same way (printed-room PR0). Copied, not
 	# shared, so the dirty check compares two objects rather than one object with itself.
 	container.project.printing = lab.printing.duplicate(true)
+	# And the config block the same way (Config C1/C3): the motor map is per drone, so it follows
+	# the lab's working copy into the document rather than living anywhere global.
+	container.project.config = lab.config.duplicate(true)
 
 
 ## Rename is ProjectChip's own; everything else lands here.
@@ -2514,6 +2526,12 @@ func apply_project(project: Project) -> Array:
 		return []
 	# Printing first, so the rebuild the selection triggers already describes this drone's parts.
 	lab.set_printing(project.printing)
+	# Before the selection too, for the same reason printing is: the rebuild the selection triggers
+	# draws the propellers, and they turn the way THIS drone is configured.
+	lab.set_config(project.config)
+	# And the name, for the sheet's header and its file name (C9). Set here with the rest of the
+	# per-drone state, so a sheet cannot go out carrying the previously-opened drone's name.
+	lab.drone_name = project.name
 	return lab.apply_selection(project.parts)
 
 

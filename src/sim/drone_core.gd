@@ -32,6 +32,12 @@ var drag_coefficient: float
 ## should read physics internals directly.
 var observables: Observables
 
+## The build's `config` decision block (C1), for the one value of it that reaches the physics:
+## motor spin direction, read through MotorLayout.spin_map() — design §5. Empty means today's
+## constants, so a core built by any caller that has never heard of Config is the aircraft it
+## always was.
+var config: Dictionary = {}
+
 func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m: float, p_k_t: float, p_k_q: float, p_battery: BatteryModel, p_motor_max_amps: float, p_rated_rpm: float, p_drag_coefficient: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635, p_gyro: Gyro = null, p_prop_pitch_m: float = 0.10922,
 		p_air_density_kgm3: float = AirDensity.standard_kgm3(),
 		p_blade_chord_mm: PackedFloat64Array = PackedFloat64Array(),
@@ -91,6 +97,9 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	var total_torque := Vector3.ZERO
 	var total_thrust_body_n := 0.0
 
+	# Resolved once per step rather than per motor, and from the SAME accessor the mixer reads.
+	var spin_map := MotorLayout.spin_map(config)
+
 	for i in MotorLayout.MOTOR_NAMES.size():
 		var name: String = MotorLayout.MOTOR_NAMES[i]
 		var thrust_n: float = powertrain.observables.thrust_n[i]
@@ -108,7 +117,7 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 		# product; this loop must not grow a second one, which is the duplication that made the
 		# reference point possible to get wrong in only one of two places.
 		var tau := MotorLayout.thrust_torque(name, thrust_n, arm_m, mass_properties.com_m)
-		var spin: float = MotorLayout.SPIN[name]
+		var spin: float = spin_map[name]
 		var reaction_about_y := -spin * reaction_n_m   # Newton's third law: opposes the rotor's own spin
 		total_torque += Vector3(tau.x, reaction_about_y, tau.z)
 

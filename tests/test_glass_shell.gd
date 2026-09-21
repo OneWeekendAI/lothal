@@ -58,9 +58,17 @@ const RAIL_TITLES := ["Frame", "Motor", "Prop", "Pack", "ESC", "FC", "Electronic
 ## (C3), a stub until C6 writes LinkDetails.
 ## "Camera" sits immediately before "Electronics", where LabScreen puts it so it is Video's front tab — Video's second panel
 ## (video slice V5), the uptilt.
+## "Motors" sits immediately before "Print", where LabScreen puts it — Config's first panel (C3),
+## and the first tab of a system that was a stub until this slice.
+## "Ports" sits immediately after "Motors", where LabScreen puts it — Config's second panel (C5),
+## the serial-port budget and the override field beside it.
+## "Failsafe" sits immediately after "Ports", where LabScreen puts it — Config's third panel (C6),
+## what happens when the link drops and the three checks predictable from the build.
+## "Rates" sits immediately after "Failsafe", where LabScreen puts it — Config's fourth panel (C8),
+## the pilot's max rate and expo and the sim-versus-real statement over them.
 const PANEL_TITLES := ["Frame", "Structure", "Arms", "Fasteners", "Layout",
 	"Motor", "Prop", "Pack", "ESC", "Harness", "FC", "Camera", "Electronics", "Link", "Fit", "Tune",
-	"Print"]
+	"Motors", "Ports", "Failsafe", "Rates", "Sheet", "Print"]
 
 
 static func run() -> Array:

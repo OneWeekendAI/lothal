@@ -20,7 +20,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs",
 	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "dock", "camera view", "part finder",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
-	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components",
+	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config motor map", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
 	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "stl bodies", "printed infill", "printed drawn"]
 
@@ -90,6 +90,20 @@ func _run_suite(suite_name: String) -> Array:
 		"custom control components": return TestCustomControlComponents.run()
 		# C6: ControlPlausibility, LinkDetails and the GPS mast field.
 		"control warnings": return TestControlWarnings.run()
+		# C2: spin direction from the build, one accessor, today's constants pinned as the default.
+		"config motors": return TestConfigMotors.run()
+		# C3: the motor map drawn on the aircraft, and the props-in/props-out control behind it.
+		"config motor map": return TestConfigMotorMap.run()
+		# C5: the supply side of the port budget — uart_range, the typed override, the provenance.
+		"config ports": return TestConfigPorts.run()
+		# C6: the failsafe panel and the three checks predictable from a build.
+		"config failsafe": return TestConfigFailsafe.run()
+		# C7: the teaching half of §4.4 — the arming list, in the firmware's own flag names.
+		"config arming": return TestConfigArming.run()
+		# C8: rates and modes, and the sim-versus-real max-rate statement.
+		"config rates": return TestConfigRates.run()
+		# C9: the config sheet — the artifact that leaves the room.
+		"config sheet": return TestConfigSheet.run()
 		"control parts": return TestControlParts.run()
 		"control components": return TestControlComponents.run()
 		"control rails": return TestControlRails.run()

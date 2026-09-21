@@ -62,11 +62,19 @@ var component_meshes: Dictionary = {}
 ## Arm length of the build currently drawn, kept so clearance can be reported against the
 ## geometry actually on screen rather than against whatever Build was asked about last.
 var arm_m := 0.0
+## The motor map drawn on the aircraft — Config room C3 (design §4.3): M1..M4 in Betaflight's
+## numbering, each with the direction it is configured to turn. A child of the airframe rather than
+## of the frame, because it is annotation ON the aircraft rather than a part of it, and it must not
+## be freed and re-parented by a frame rebuild. Hidden until Config is the focused system; the
+## default picture of a drone is the drone.
+var motor_map: MotorMapMarkers
 
 func _init() -> void:
 	frame_model = FrameModel.new()
 	frame_model.name = "Frame"
 	add_child(frame_model)
+	motor_map = MotorMapMarkers.new()
+	add_child(motor_map)
 
 
 ## Regenerates the whole airframe from `build`. Safe to call on every part change; the frame
@@ -163,6 +171,10 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		frame_model.add_child(component)
 		component_meshes[category] = component
 
+	# Read once, outside the loop, and handed to the drawing and the map alike — one dictionary, so
+	# the propeller a builder watches and the label beside it cannot come from two reads.
+	var spin_map := MotorLayout.spin_map(build.config)
+
 	for motor_name in MotorLayout.MOTOR_NAMES:
 		var pad: Node3D = frame_model.arm_tips[motor_name]
 
@@ -192,7 +204,13 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		# Direction from MotorLayout, not from anything this file decides: it is the same table the
 		# yaw torque is computed from, so the rotor you can see and the rotor the physics is
 		# integrating cannot disagree about which way they go. Diagonals together, adjacents opposed.
-		propeller.spin = MotorLayout.SPIN[motor_name]
+		# Direction through MotorLayout's ONE ACCESSOR, not from the constant table: C2 made the
+		# map an authored value that reaches the mixer, and C3 is what stops the drawing being the
+		# one reader left behind. A props-in build whose propellers kept turning the old way would
+		# teach a builder that Lothal's controls are decorative — the most expensive lesson this
+		# app can give (design §5). Diagonals together, adjacents opposed, unless the builder said
+		# otherwise, in which case it is drawn as they said.
+		propeller.spin = float(spin_map[motor_name])
 		motor.add_child(propeller)
 		propeller_meshes[motor_name] = propeller
 
@@ -228,6 +246,13 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 				arm_guard_meshes[motor_name] = sleeve
 
 	_draw_printed_parts(build, tweak_m)
+
+	# The map last, so the propeller it is sized from has been generated. The radius is the drawn
+	# propeller's own — never a second copy of it here.
+	var disc_radius := 0.0
+	if propeller_meshes.has(MotorLayout.MOTOR_NAMES[0]):
+		disc_radius = (propeller_meshes[MotorLayout.MOTOR_NAMES[0]] as PropellerMesh).radius_m
+	motor_map.rebuild(build, disc_radius)
 
 
 ## The fitted printed parts other than arm guards (printed-room PR18-PR20), each drawn from its own

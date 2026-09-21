@@ -226,6 +226,10 @@ func _on_build_changed(new_build: Build) -> void:
 	# lands on, so there is no ordering in which the airframe on screen is one aircraft and the
 	# loop flying it is tuned for another.
 	fc.rate_loop.adopt_tune(pid_tunes.tune_for(build))
+	# And the motor map the builder configured, on the same one path, for the same reason: the
+	# core above already flies it, and a mixer commanding yaw through a different map than the
+	# physics reacts with is the disagreement config-room design §5.1 exists to prevent.
+	fc.rate_loop.config = build.config
 	# One call, and the airframe on screen is the airframe being flown — frame, motors and
 	# props, all from this same Build. There is no second description of the aircraft to keep
 	# in step, which is what the old _fit_drone_mesh_to_arm was: a scale factor applied to a

@@ -46,6 +46,7 @@ static func run() -> Array:
 	results.append_array(_test_missing_parts_are_named_not_substituted(catalog))
 	results.append_array(_test_a_version_restores_parts_but_not_the_name())
 	results.append_array(_test_an_atomic_write_cannot_lose_the_previous_file())
+	results.append_array(_test_the_config_block_persists())
 
 	return results
 
@@ -350,3 +351,104 @@ static func _clean() -> void:
 	DirAccess.remove_absolute(absolute.path_join("doc.json"))
 	DirAccess.remove_absolute(absolute.path_join("doc.json.tmp"))
 	DirAccess.remove_absolute(absolute)
+
+
+# ---------------------------------------------------------------------------
+# Config (C1) — the `config` decision block, added at schema minor 2.
+#
+# The checks that could have passed while proving nothing:
+#
+#   - "config round-trips" passes against a loader that carried `config` through as an UNRECOGNISED
+#     field, because rule 3 preserves those too. So the round trip is not the only check: one below
+#     asserts the block is absent from the unknown-field carry, which is the difference between
+#     "config is a block this version knows" and "config is a stranger being politely kept".
+#   - "the schema minor is 2" passes against a constant nobody reads. So the minor is asserted on
+#     the DOCUMENT a save produces, and a minor-1 file with no config is opened and required to
+#     come back with an empty block rather than a missing one — the `guard` precedent, exercised.
+# ---------------------------------------------------------------------------
+
+static func _test_the_config_block_persists() -> Array:
+	var results: Array = []
+
+	var project := _reference_project()
+	project.config["motor_spin"] = "props_out"
+	project.config["uart_count"] = 2
+	project.config["failsafe"] = {"stage_2": "drop"}
+
+	var reloaded := _through_json(project)
+	results.append(TestResult.new(
+		"the config block survives being written and read as JSON",
+		reloaded != null
+			and String(reloaded.config.get("motor_spin", "")) == "props_out"
+			and int(reloaded.config.get("uart_count", 0)) == 2
+			and String((reloaded.config.get("failsafe", {}) as Dictionary).get("stage_2", ""))
+				== "drop",
+		"config=%s" % ("(null)" if reloaded == null else str(reloaded.config))
+	))
+
+	# `config` is a NAMED block, not a stranger. If it were merely carried by rule 3 the round trip
+	# above would still pass — and the block would be written out twice, once from the unknown carry
+	# and once from the field, which is how a block acquires two sources of truth.
+	var carried: Dictionary = reloaded._unknown.get("decisions", {})
+	results.append(TestResult.new(
+		"config is a recognised decision block, not an unknown field being carried",
+		not carried.has("config") and ProjectSchema.DECISION_BLOCKS.has("config"),
+		"unknown decisions keys=%s; DECISION_BLOCKS=%s"
+			% [str(carried.keys()), str(ProjectSchema.DECISION_BLOCKS)]
+	))
+
+	# An ADDED field, so the minor goes up and the major does not. Asserted on the document a save
+	# actually produces, because a constant nobody writes out is not a format version.
+	var schema: Dictionary = project.to_dict()["schema"]
+	results.append(TestResult.new(
+		"a saved document declares schema minor 2, major 1",
+		int(schema.get("minor", -1)) == 2 and int(schema.get("major", -1)) == 1,
+		"major %s minor %s" % [schema.get("major"), schema.get("minor")]
+	))
+
+	# The `guard` precedent: a file written before config existed opens as the aircraft it was
+	# saved as, with an EMPTY block rather than a missing one — so every reader downstream can say
+	# `project.config.get(...)` without first asking whether the key is there.
+	var old_document := _reference_project().to_dict()
+	old_document["schema"] = {"major": 1, "minor": 1}
+	(old_document["decisions"] as Dictionary).erase("config")
+	var opened := Project.from_dict(JSON.parse_string(JSON.stringify(old_document)))
+	results.append(TestResult.new(
+		"a minor-1 file with no config block opens with an empty one",
+		opened != null and opened.config is Dictionary and opened.config.is_empty()
+			and opened.load_warnings.is_empty(),
+		"config=%s warnings=%s" % ["(null)" if opened == null else str(opened.config),
+			"(null)" if opened == null else str(opened.load_warnings)]
+	))
+
+	# Unrecognised keys INSIDE the block survive, the way they do inside `assembly` — the block has
+	# no key whitelist, and C2..C9 each add keys to it without touching this file.
+	var future := _reference_project().to_dict()
+	var future_decisions: Dictionary = future["decisions"]
+	# Defensively: the block is planted into the DOCUMENT whether or not a save wrote one, so this
+	# check reports a named failure rather than crashing when the writing half is missing.
+	var future_config: Dictionary = (future_decisions.get("config", {}) as Dictionary).duplicate()
+	future_config["rate_profile"] = "actual"
+	future_decisions["config"] = future_config
+	var future_out := _through_json(Project.from_dict(
+		JSON.parse_string(JSON.stringify(future)))).to_dict()
+	var out_config: Dictionary = (future_out["decisions"] as Dictionary).get("config", {})
+	results.append(TestResult.new(
+		"a config key this version has never heard of survives the round trip",
+		String(out_config.get("rate_profile", "")) == "actual",
+		"config out=%s" % str((future_out["decisions"] as Dictionary).get("config"))
+	))
+
+	# A version snapshot is the WHOLE decisions block, so a config change lands in a named version
+	# for free (design §6). Restoring must bring it back — and must not leave the newer value.
+	var versioned := _reference_project()
+	versioned.config["motor_spin"] = "props_out"
+	var entry := versioned.add_version("before the flip")
+	versioned.config["motor_spin"] = "props_in"
+	var restored := versioned.restore_version(String(entry["version_id"]))
+	results.append(TestResult.new(
+		"restoring a version restores the config block it was saved with",
+		restored and String(versioned.config.get("motor_spin", "")) == "props_out",
+		"restored=%s config=%s" % [restored, str(versioned.config)]
+	))
+	return results

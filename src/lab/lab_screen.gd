@@ -142,10 +142,35 @@ var link_details: LinkDetails
 var camera_panel: CameraPanel
 ## The Printed room's panel: fit clearance and the parts to print. See PrintPanel.
 var print_panel: PrintPanel
+## Config's Motors panel: the motor map in words, and the convention behind it. See ConfigMotorsPanel.
+var motors_panel: ConfigMotorsPanel
+
+## Config's Ports panel: the serial-port budget and the override field. See ConfigPortsPanel.
+var ports_panel: ConfigPortsPanel
+
+## Config's Failsafe panel: what happens when the link drops, and the three checks predictable from
+## the build behind it (C6). See ConfigFailsafePanel.
+var failsafe_panel: ConfigFailsafePanel
+
+## Config's Rates panel: the pilot's max rate and expo, and the sentence that says where the sim
+## stops being this aircraft (C8). See ConfigRatesPanel.
+var rates_panel: ConfigRatesPanel
+
+## Config's Sheet panel: the door the artifact leaves the room by (C9). See ConfigSheetPanel.
+var sheet_panel: ConfigSheetPanel
+
+## THIS drone's name, for the sheet's header and its file name. A working copy the way `config` and
+## `printing` are — GlassShell hands it over when a project is opened, and nothing here writes it
+## back. A sheet with no name on it is indistinguishable from the next one on the same bench.
+var drone_name: String = "Untitled build"
 ## THIS drone's printing decisions — a working copy of `Project.printing`, kept the way the rails keep
 ## the part selection. GlassShell hands it in on open (`set_printing`) and copies it back out on
 ## autosave; nothing here writes a file. Per drone by design (PrintSettings' header).
 var printing: Dictionary = {}
+## THIS drone's configuration decisions — a working copy of `Project.config`, kept exactly the way
+## `printing` above is kept: GlassShell hands it in on open (`set_config`) and copies it back out
+## on sync. Per drone, never per app (design §6): a motor map describes THIS aircraft.
+var config: Dictionary = {}
 ## The charger. Lab's, because charging is a garage activity — there is a charger in the garage
 ## and there is not one in the field (labs-and-sim.md §5).
 var charge_panel: PackChargePanel
@@ -382,6 +407,60 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	# The Printed room's panel, after Tune: like Fit and Tune it has no rail, because printed parts
 	# are generated from the build rather than browsed (printed-room design §3). The clearance edit
 	# is a PRINTING decision, not an assembly tweak — it is stored per drone and is not saved here.
+	# Config's Motors panel (C3). The props-in/props-out choice, and the same four directions in
+	# words that the markers draw on the aircraft. It writes nothing itself — the edit lands on this
+	# screen's `config` working copy, which is what the Build, the mixer and the drawing all read.
+	motors_panel = ConfigMotorsPanel.new()
+	motors_panel.name = "Motors"
+	motors_panel.motor_spin_edited.connect(func(value: String) -> void:
+		config["motor_spin"] = value
+		_on_selection_changed())
+	panels.add_child(motors_panel)
+
+	# Config's Ports panel (C5). The demand count, the board's class-typical figure WITH its
+	# provenance, and the field that replaces the guess with the builder's own number. Like the
+	# Motors panel it writes nothing: the edit lands on this screen's `config` working copy.
+	ports_panel = ConfigPortsPanel.new()
+	ports_panel.name = "Ports"
+	ports_panel.uart_count_edited.connect(func(count: int) -> void:
+		PortBudget.set_count(config, count)
+		_on_selection_changed())
+	panels.add_child(ports_panel)
+
+	# Config's Failsafe panel (C6). Like its two siblings it writes nothing: both edits land on this
+	# screen's `config` working copy, through FailsafeSettings so the checks and the panel read one
+	# spelling of each value.
+	failsafe_panel = ConfigFailsafePanel.new()
+	failsafe_panel.name = "Failsafe"
+	failsafe_panel.failsafe_stage2_edited.connect(func(value: String) -> void:
+		FailsafeSettings.set_stage2(config, value)
+		_on_selection_changed())
+	failsafe_panel.bidir_dshot_edited.connect(func(on: bool) -> void:
+		FailsafeSettings.set_bidir_dshot(config, on)
+		_on_selection_changed())
+	panels.add_child(failsafe_panel)
+
+	# Config's Rates panel (C8). Same arrangement as its three siblings: the panel announces, this
+	# screen writes, and both values go through RateSettings so the panel and the sheet read one
+	# spelling of each.
+	rates_panel = ConfigRatesPanel.new()
+	rates_panel.name = "Rates"
+	rates_panel.max_rate_edited.connect(func(deg_s: float) -> void:
+		RateSettings.set_max_rate_deg_s(config, deg_s)
+		_on_selection_changed())
+	rates_panel.expo_edited.connect(func(value: float) -> void:
+		RateSettings.set_expo(config, value)
+		_on_selection_changed())
+	panels.add_child(rates_panel)
+
+	# Config's Sheet panel (C9). The artifact that leaves the room. Like its four siblings the panel
+	# writes nothing itself: it announces, and this screen writes the file and says where it went —
+	# because this screen is the thing that knows which drone this is.
+	sheet_panel = ConfigSheetPanel.new()
+	sheet_panel.name = "Sheet"
+	sheet_panel.export_requested.connect(_on_config_sheet_requested)
+	panels.add_child(sheet_panel)
+
 	print_panel = PrintPanel.new()
 	print_panel.name = "Print"
 	print_panel.clearance_edited.connect(func(mm: float) -> void:
@@ -787,6 +866,35 @@ func _on_selection_changed() -> void:
 	camera_panel.render(build, tweaks, airframe)
 	tune_panel.render(build, tune)
 	print_panel.render(build, printing)
+	# Against the same Build the airframe was rebuilt from, so the four rows and the four markers on
+	# the aircraft are one map read twice rather than two answers.
+	motors_panel.render(build)
+	ports_panel.render(build)
+	failsafe_panel.render(build)
+	rates_panel.render(build)
+	# The preview is the file. Rebuilt with everything else so the sheet on screen is never one
+	# edit behind the aircraft it describes.
+	sheet_panel.render(build, drone_name)
+
+
+## The sheet leaves the room. The panel asked; this screen knows which drone it is and writes it,
+## then says where it went — BOTH ways, because a save that failed silently is an evening lost at a
+## bench with nothing in your hand (build-sheet design §7).
+##
+## The folder is opened rather than only named, on `FrameWorkbench._on_export_chosen`'s precedent:
+## a file you cannot find has not been exported. Headless, `OS.shell_open` does nothing and the
+## status line still carries the path, which is why the path is in the message as well.
+func _on_config_sheet_requested() -> void:
+	var build := current_build()
+	if build == null:
+		return
+	DirAccess.make_dir_recursive_absolute(ConfigSheet.DIRECTORY)
+	var path := ConfigSheet.default_path(drone_name,
+		Time.get_date_string_from_system())
+	var landed := ConfigSheet.write(build, drone_name, path, Time.get_date_string_from_system())
+	sheet_panel.show_result(ProjectSettings.globalize_path(path), landed)
+	if landed:
+		OS.shell_open(ProjectSettings.globalize_path(ConfigSheet.DIRECTORY))
 
 
 ## A shim, a pad or a standoff moved. Same single path as a part change — the geometry, the panels
@@ -924,11 +1032,27 @@ func set_printing(p_printing: Dictionary) -> void:
 	_on_selection_changed()
 
 
+## Takes on a drone's configuration decisions. A COPY, on `set_printing`'s rule and for its reason.
+func set_config(p_config: Dictionary) -> void:
+	config = p_config.duplicate(true)
+	_on_selection_changed()
+
+
+## Puts the motor map on the aircraft, or takes it off. Called by the shell when Config is focused:
+## the markers belong to the section that asks the question, not to every screen.
+func set_motor_map_visible(shown: bool) -> void:
+	if airframe != null and airframe.motor_map != null:
+		airframe.motor_map.visible = shown
+
+
 func current_build() -> Build:
 	var build := _build_from_rails()
 	# Only when there is something to say: `set_printing` recomputes, and an empty block fits nothing.
 	if not printing.is_empty():
 		build.set_printing(printing)
+	# The configuration reaches the Build unconditionally, because an EMPTY config block is a real
+	# answer here rather than a missing one: it is props-out, today's constants, bit for bit.
+	build.set_config(config)
 	return build
 
 

@@ -743,6 +743,18 @@ func set_assembly(resolved: Dictionary) -> void:
 var printing: Dictionary = {}
 
 
+## This drone's configuration decisions (`Project.config`) — Config room C1/C2. Only one key of it
+## reaches the physics today, `motor_spin`, and it does so through `MotorLayout.spin_map()` alone.
+## Empty is every build written before the Config room, and is today's constants exactly.
+var config: Dictionary = {}
+
+
+## No `_recompute()`: nothing in the config block changes a mass, a coefficient or a geometry, so
+## the 507.48 g / 11.43:1 / 29.9 % oracles cannot move by setting it. It is read where it is used.
+func set_config(p_config: Dictionary) -> void:
+	config = p_config
+
+
 func set_printing(p_printing: Dictionary) -> void:
 	printing = p_printing
 	_recompute()
@@ -1551,10 +1563,14 @@ func battery_model() -> BatteryModel:
 
 func build_drone_core() -> DroneCore:
 	var geometry := _prop_geometry(propeller)
-	return DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
+	var core := DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
 		effective_max_amps, rated_rpm(), drag_coefficient,
 		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m,
 		air.kgm3(), blade_chord(), guard_closure)
+	# The aircraft the sim flies is the aircraft the builder configured, including a spin map
+	# Lothal has warned about: design §5.3 — fly it badly, do not refuse it.
+	core.config = config
+	return core
 
 ## Electrical frequency is per POLE PAIR, not per pole — a 14-pole motor turns through
 ## seven electrical cycles per revolution, not fourteen. Getting this wrong is a factor of
@@ -2098,6 +2114,11 @@ func warnings() -> Array[BuildWarning]:
 	# powertrain, and a reader meeting "your leads lose 0.4 V" before they have been told what the
 	# build draws has been handed a consequence with no premise.
 	out.append_array(HarnessChecks.warnings_for(self))
+
+	# And what the builder will type into a configurator (config-room design §5, slice C2): today,
+	# a motor map that cannot fly. Registered here exactly as the eleven modules above are, because
+	# a check the aggregate does not carry is a check nobody sees.
+	out.append_array(ConfigPlausibility.warnings_for(self))
 	return out
 
 
