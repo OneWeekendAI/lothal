@@ -81,6 +81,13 @@ var course_library: CourseLibrary
 ## beside the courses and for the same reason: two rooms touch it, and one instance within a
 ## session is what stops the door from handing over a stale copy.
 var site_library: SiteLibrary
+## The WEATHER those places are flown in — the wind, the gustiness and the temperature. Held beside
+## the sites and for the same reason: the field editor switches it and the garage reads it, and two
+## copies would be two opinions.
+##
+## LOADED IN `_init`, NOT HERE, like the two above, and for the same load-bearing reason — see the
+## block comment there.
+var conditions_library: ConditionsLibrary
 ## How much charge is in each pack right now. Loaded once on startup and held here rather than in
 ## any one room, because it is the one piece of state every room touches: two benches and the
 ## field all drain it, and Lab is where it gets charged back up. It is saved whenever a room that
@@ -135,6 +142,19 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	site_library = SiteLibrary.migrate_courses()
 	course_library = CourseLibrary.load_from()
 
+	# AND THE ABSORPTION RUNS AFTER THE MIGRATION, for the same reason the migration runs before
+	# the courses: it drains the slot the migration fills. Run first, it would find nothing parked
+	# on a v1 install, and a builder who typed 35 C into a v1 course would walk into the garage
+	# reading 15 C — the typed fact lost silently on the one launch that was supposed to rescue it.
+	#
+	# The two files are written only when something actually moved. Saving unconditionally here
+	# would rewrite `sites.json` and `conditions.json` on every launch for ever, which is exactly
+	# the quiet rewrite of a builder's own file that the byte-identity checks exist to prevent.
+	conditions_library = ConditionsLibrary.load_from()
+	if conditions_library.absorb_parked_temperatures(site_library, site_of_selected_course()):
+		site_library.save()
+		conditions_library.save()
+
 	pack_charge = p_pack_charge if p_pack_charge != null else PackCharge.load_from()
 
 	# Lab's Controls go in a host inset below whatever chrome the shell draws. Sim is added as a
@@ -163,14 +183,23 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 ## A course pointing at a site that is not there falls back to the selected site rather than to
 ## standard air, on the same rule: the builder is somewhere, and the nearest true answer to where
 ## is where they are.
+##
+## THE TEMPERATURE COMES FROM THE SELECTED CONDITIONS, not from the site, and not from a hard-coded
+## standard — the second of which reads identically on a fresh install and is wrong for everybody
+## who has switched to a hot day. `compose` handles a null on either side as the standard half.
 func air_of_selected_course() -> AirDensity:
+	return AirDensity.compose(site_of_selected_course(), conditions_library.selected())
+
+
+## The place the selected course is laid out in — where the builder is. Split out of
+## `air_of_selected_course()` because the absorption in `_init` needs the same answer before there
+## is any air to ask for, and two spellings of "where are we" is how the two would come to disagree.
+func site_of_selected_course() -> Site:
 	var course := course_library.selected()
 	var where: Site = null
 	if course != null:
 		where = site_library.site(course.site_id)
-	if where == null:
-		where = site_library.selected()
-	return where.air() if where != null else AirDensity.standard()
+	return where if where != null else site_library.selected()
 
 
 func catalog_for_lab() -> PartsCatalog:
@@ -285,7 +314,8 @@ func show_field_editor() -> void:
 	# The SHARED site library, not one loaded fresh here, for course_library's reason: the editor
 	# writes the elevation and the garage reads it, and two copies would be two opinions.
 	field_editor = FieldEditorScreen.new(
-		course_library, lab.current_build(), CourseLibrary.SAVE_PATH, site_library)
+		course_library, lab.current_build(), CourseLibrary.SAVE_PATH, site_library,
+		conditions_library)
 	# Editing the field changes what the aircraft next door CAN DO, so Lab's readout has to follow
 	# it. Without this the builder types 3500 m, walks back to the garage and reads a
 	# thrust-to-weight for a place they are not — which is the exact stale reading this feature

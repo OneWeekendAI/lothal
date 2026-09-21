@@ -256,7 +256,11 @@ static func _oracle_cannot_see_the_field() -> Array:
 	library.save(real_path)
 	var reloaded := SiteLibrary.load_from(real_sites)
 
-	var selected_rho := reloaded.selected().air().kgm3()
+	# RE-POINTED IN F2: a site has no `air()` any more, because half of it is not a fact about a
+	# place. The parked 30 C above is what the absorption would move into a set, and the check here
+	# is about ELEVATION reaching the oracle, so it is composed against standard weather.
+	var selected_rho: float = AirDensity.compose(
+		reloaded.selected(), Conditions.standard()).kgm3()
 	var oracle := ReferenceBuild.build()
 	results.append(TestResult.new(
 		"a 3500 m field really is selected and saved, so this check has something to fail on",
@@ -320,9 +324,12 @@ static func _persistence() -> Array:
 	var where := SiteLibrary.with_default().site(loaded.selected().site_id)
 	results.append(TestResult.new(
 		"a course that says nothing about where it is is flown in standard sea-level air",
-		where != null and absf(where.air().kgm3() - AirDensity.standard_kgm3()) < 1.0e-12,
+		where != null and absf(AirDensity.compose(where, Conditions.standard()).kgm3()
+			- AirDensity.standard_kgm3()) < 1.0e-12,
 		"nowhere" if where == null else "%.6f kg/m3, elevation %.1f m, temperature %.1f C" % [
-			where.air().kgm3(), where.air().elevation_m, where.air().temperature_c]))
+			AirDensity.compose(where, Conditions.standard()).kgm3(),
+			AirDensity.compose(where, Conditions.standard()).elevation_m,
+			AirDensity.compose(where, Conditions.standard()).temperature_c]))
 
 	# And saving it back must not INVENT the block. A course nobody has told about its field has to
 	# round-trip untouched, or this slice rewrites every course file on the planet on first launch
@@ -408,14 +415,26 @@ static func _persistence() -> Array:
 	var migrated_sites := SiteLibrary.migrate_courses(v1_path, v1_sites)
 	var authored := CourseLibrary.load_from(v1_path)
 	var authored_site := migrated_sites.site(authored.selected().site_id)
+	# RE-POINTED IN F2, AND STRENGTHENED RATHER THAN RELAXED. The temperature no longer stops on
+	# the site: `ConditionsLibrary.absorb_parked_temperatures()` moves it into a named set and
+	# clears the slot. So the claim "both numbers survive" is now asked of the pair that actually
+	# holds them — the site's elevation and the absorbed set's temperature — and it is asked
+	# through `compose`, which is what the garage runs on.
+	var absorbed := ConditionsLibrary.with_default()
+	var carried := absorbed.absorb_parked_temperatures(migrated_sites, authored_site)
+	var authored_air := AirDensity.compose(authored_site, absorbed.selected())
 	results.append(TestResult.new(
 		"an authored field survives the migration, and a save and load after it",
-		authored_site != null
-			and absf(authored_site.air().elevation_m - 920.0) < 1.0e-9
-			and absf(authored_site.air().temperature_c - 35.0) < 1.0e-9,
+		authored_site != null and carried
+			and absf(authored_air.elevation_m - 920.0) < 1.0e-9
+			and absf(authored_air.temperature_c - 35.0) < 1.0e-9,
 		"nowhere" if authored_site == null else "%.1f m, %.1f C, %.4f kg/m3" % [
-			authored_site.air().elevation_m, authored_site.air().temperature_c,
-			authored_site.air().kgm3()]))
+			authored_air.elevation_m, authored_air.temperature_c, authored_air.kgm3()]))
+	results.append(TestResult.new(
+		"and the parking slot it came out of is cleared, back to null rather than to 15 C",
+		authored_site != null and authored_site.parked_temperature_c == null,
+		"slot holds %s" % ("nowhere" if authored_site == null
+			else str(authored_site.parked_temperature_c))))
 	# And the course it was lifted off is still the same track, so the best lap set on it at 920 m
 	# is still reachable after the file changed schema underneath it.
 	results.append(TestResult.new(
@@ -513,9 +532,11 @@ static func _library_always_has_a_selection() -> Array:
 				where = sites.selected()
 		results.append(TestResult.new(
 			"%s still resolves to a course, and to a place with air" % label,
-			course != null and where != null and where.air().kgm3() > 0.0,
+			course != null and where != null
+				and AirDensity.compose(where, Conditions.standard()).kgm3() > 0.0,
 			"selected \"%s\", air %s" % [library.selected_id,
-				"nowhere" if where == null else "%.4f kg/m3" % where.air().kgm3()]))
+				"nowhere" if where == null else "%.4f kg/m3" % AirDensity.compose(
+					where, Conditions.standard()).kgm3()]))
 
 	DirAccess.remove_absolute(LIBRARY_PATH)
 	return results

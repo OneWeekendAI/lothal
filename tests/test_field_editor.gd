@@ -11,16 +11,32 @@ const LIBRARY_PATH := "user://test_field_editor_courses.json"
 ## The sites file that pairs with it. SiteLibrary owns the pairing rule; this is the same answer,
 ## spelled here so the teardown can delete it.
 const SITES_PATH := "user://test_field_editor_courses_sites.json"
+## And the conditions file beside it, on the same pairing rule — this room switches the weather now
+## that the temperature has left the site (F2).
+const CONDITIONS_PATH := "user://test_field_editor_courses_conditions.json"
 
 
 static func run() -> Array:
 	var results: Array = []
-	results.append_array(_editing_gates())
-	results.append_array(_the_renderer_follows())
-	results.append_array(_courses())
-	results.append_array(_it_writes_what_sim_flies())
-	results.append_array(_it_costs_nothing())
-	results.append_array(_the_field_itself())
+	var sections := {
+		"editing gates": _editing_gates(),
+		"the renderer": _the_renderer_follows(),
+		"courses": _courses(),
+		"what sim flies": _it_writes_what_sim_flies(),
+		"it costs nothing": _it_costs_nothing(),
+		"the field itself": _the_field_itself(),
+	}
+	# ADDED IN F2, AFTER THIS FILE PROVED THE NEED FOR IT. A runtime error partway through a
+	# section aborts only that section and its append never runs, so the suite passes with its best
+	# checks silently deleted. Measured here: `Site.air()` went away, "the field itself" aborted at
+	# its fourth check, and the whole run still printed ALL 2668 TESTS PASSED with an error line
+	# scrolled past above it. Every other suite in this directory had this guard; this one did not.
+	for label in sections:
+		var section: Array = sections[label]
+		results.append(TestResult.new(
+			"section \"%s\" produced results" % label, not section.is_empty(),
+			"%d checks" % section.size()))
+		results.append_array(section)
 	return results
 
 
@@ -32,6 +48,7 @@ static func _forget(path: String) -> void:
 static func _editor() -> FieldEditorScreen:
 	_forget(LIBRARY_PATH)
 	_forget(SITES_PATH)
+	_forget(CONDITIONS_PATH)
 	return FieldEditorScreen.new(
 		CourseLibrary.load_from(LIBRARY_PATH), ReferenceBuild.build(), LIBRARY_PATH)
 
@@ -316,25 +333,57 @@ static func _the_field_itself() -> Array:
 		"readout says: %s" % editor._air_readout.text))
 
 	# Written through immediately, like every other edit here — there is no exit to save on.
+	# RE-POINTED IN F2, AND IT NOW READS TWO FILES BECAUSE THE NUMBER LIVES IN TWO FILES. The
+	# elevation is a fact about the place and is on the site; the temperature is a fact about the
+	# day and is on the selected conditions. Composing them off disk is also a SECOND opinion — it
+	# never asks the editor what it thinks it wrote.
 	var from_disk := CourseLibrary.load_from(LIBRARY_PATH)
 	var site_on_disk := SiteLibrary.load_from(SITES_PATH).site(from_disk.selected().site_id)
+	var weather_on_disk := ConditionsLibrary.load_from(CONDITIONS_PATH).selected()
+	var disk_air := AirDensity.compose(site_on_disk, weather_on_disk)
 	results.append(TestResult.new(
 		"the field is on disk immediately",
-		site_on_disk != null and absf(site_on_disk.air().kgm3() - expected) < 1.0e-12,
+		site_on_disk != null and weather_on_disk != null
+			and absf(disk_air.kgm3() - expected) < 1.0e-12,
 		"nowhere on disk" if site_on_disk == null else "%.4f m, %.1f C on disk" % [
-			site_on_disk.air().elevation_m, site_on_disk.air().temperature_c]))
+			disk_air.elevation_m, disk_air.temperature_c]))
+	results.append(TestResult.new(
+		"and the temperature is on the conditions rather than parked on the site",
+		site_on_disk != null and site_on_disk.parked_temperature_c == null
+			and weather_on_disk != null and absf(weather_on_disk.temperature_c - 35.0) < 1.0e-9,
+		"site slot %s, weather \"%s\" at %.1f C" % [
+			"nowhere" if site_on_disk == null else str(site_on_disk.parked_temperature_c),
+			"none" if weather_on_disk == null else weather_on_disk.conditions_name,
+			-999.0 if weather_on_disk == null else weather_on_disk.temperature_c]))
 
 	# THE FIELD BELONGS TO THE WORLD, NOT TO THE EDITOR. This is the check that would catch air
 	# being stored on the screen or in a single app-wide setting: a second course must have its own
 	# field, and switching back must bring the first one's back with it.
+	# RE-POINTED IN F2: A COURSE HAS ITS OWN ELEVATION, AND THE TEMPERATURE IS NOT ITS OWN.
+	#
+	# This check used to demand that a new course read as standard on BOTH halves, and half of that
+	# was never a fact about the course. Where a field sits above sea level belongs to the place;
+	# how warm it is is the question you are asking, and it stays put when you open a different
+	# route (design §3.1). So a new course is at sea level, still in the 35 C the builder chose —
+	# and the property this check exists for, "the field is not one app-wide setting on the
+	# screen", is still asked below on the half that carries it.
 	editor.new_course("Sea level bando")
+	var sea_level_hot := AirDensity.new(0.0, 35.0).kgm3()
 	results.append(TestResult.new(
-		"a new course has its own field and does not inherit the last one's",
-		editor.air().is_standard(),
-		"%.4f kg/m3" % editor.air().kgm3()))
+		"a new course has its own elevation and does not inherit the last one's",
+		absf(editor.air().elevation_m) < 1.0e-9
+			and absf(editor.air().kgm3() - sea_level_hot) < 1.0e-12,
+		"%.4f kg/m3 at %.0f m, %.0f C" % [editor.air().kgm3(),
+			editor.air().elevation_m, editor.air().temperature_c]))
+	results.append(TestResult.new(
+		"and the temperature stayed, because the weather is not a property of the route",
+		absf(editor.air().temperature_c - 35.0) < 1.0e-9
+			and absf(sea_level_hot - AirDensity.standard_kgm3()) > 0.05,
+		"%.1f C, %.4f kg/m3 against %.4f at 15 C" % [
+			editor.air().temperature_c, sea_level_hot, AirDensity.standard_kgm3()]))
 	results.append(TestResult.new(
 		"and the readout followed the course rather than staying on the old numbers",
-		editor._air_readout.text.contains("standard sea-level air"),
+		editor._air_readout.text.contains("%.3f" % sea_level_hot),
 		"readout says: %s" % editor._air_readout.text))
 
 	# AND THE SECOND COURSE IS GIVEN A DIFFERENT FIELD BEFORE SWITCHING BACK. Without this line the
@@ -345,19 +394,23 @@ static func _the_field_itself() -> Array:
 	editor.set_field_elevation_m(1610.0)
 	editor.set_field_temperature_c(30.0)
 	var denver := AirDensity.new(1610.0, 30.0).kgm3()
+	# The temperature is now global, so the first course is at 920 m in the SAME 30 C — which is
+	# what makes the pair below a test of the elevation belonging to the course rather than of two
+	# numbers moving together.
+	var first_again := AirDensity.new(920.0, 30.0).kgm3()
 
 	editor.choose_course("default_circuit")
 	results.append(TestResult.new(
 		"switching back brings the first course's field back with it",
-		absf(editor.air().kgm3() - expected) < 1.0e-12,
+		absf(editor.air().kgm3() - first_again) < 1.0e-12,
 		"%.0f m, %.0f C" % [editor.air().elevation_m, editor.air().temperature_c]))
 
 	editor.choose_course("sea_level_bando")
 	results.append(TestResult.new(
 		"and the second course kept its own, so the two fields are not one shared setting",
 		absf(editor.air().kgm3() - denver) < 1.0e-12
-			and absf(denver - expected) > 0.01,
-		"course A %.4f kg/m3, course B %.4f kg/m3" % [expected, editor.air().kgm3()]))
+			and absf(denver - first_again) > 0.01,
+		"course A %.4f kg/m3, course B %.4f kg/m3" % [first_again, editor.air().kgm3()]))
 	editor.choose_course("default_circuit")
 
 	# The domain guard, driven the way a hand-written caller would drive it rather than through a
@@ -393,6 +446,12 @@ static func _the_garage_follows_the_field() -> Array:
 	var had_sites := FileAccess.file_exists(real_sites)
 	var saved_contents := FileAccess.get_file_as_string(real_path) if had_file else ""
 	var saved_sites := FileAccess.get_file_as_string(real_sites) if had_sites else ""
+	# AND THE THIRD FILE, since F2: switching the temperature selects a set of conditions, which
+	# this room writes to `user://conditions.json`. A restore that forgot it would leave somebody's
+	# weather on a 30 C afternoon for ever.
+	var real_weather := ConditionsLibrary.SAVE_PATH
+	var had_weather := FileAccess.file_exists(real_weather)
+	var saved_weather := FileAccess.get_file_as_string(real_weather) if had_weather else ""
 
 	var shell := AppShell.new()
 
@@ -426,8 +485,12 @@ static func _the_garage_follows_the_field() -> Array:
 	var on_disk := SiteLibrary.load_from(SiteLibrary.SAVE_PATH)
 	var flown_site := on_disk.site(
 		CourseLibrary.load_from(CourseLibrary.SAVE_PATH).selected().site_id)
-	var independent := (AirDensity.new(flown_site.elevation_m,
-		float(flown_site.parked_temperature_c)).kgm3() if flown_site != null else -1.0)
+	# RE-POINTED IN F2: the temperature is no longer parked on the site, it is on the selected
+	# conditions. Both halves are still read off DISK and composed here, which is what keeps this a
+	# second opinion rather than a call to the function that set the value.
+	var weather_on_disk := ConditionsLibrary.load_from(ConditionsLibrary.SAVE_PATH).selected()
+	var independent := (AirDensity.compose(flown_site, weather_on_disk).kgm3()
+		if flown_site != null else -1.0)
 	results.append(TestResult.new(
 		"and the build handed to Sim carries the same air",
 		flown_site != null
@@ -452,6 +515,12 @@ static func _the_garage_follows_the_field() -> Array:
 		restore_sites.close()
 	else:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(real_sites))
+	if had_weather:
+		var restore_weather := FileAccess.open(real_weather, FileAccess.WRITE)
+		restore_weather.store_string(saved_weather)
+		restore_weather.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(real_weather))
 
 	results.append(TestResult.new(
 		"and the builder's own courses are put back the way they were found",

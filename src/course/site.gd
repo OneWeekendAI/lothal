@@ -23,16 +23,17 @@ extends RefCounted
 ## afternoon — so it belongs to the conditions, which are switchable while the place and the route
 ## are held still.
 ##
-## `parked_temperature_c` below is the one exception, and it is a TEMPORARY one with an owner
-## named: it is where a temperature waits until F2's conditions exist to receive it.
+## `parked_temperature_c` below is the one exception, and F2 has now landed on the other side of
+## it. It had TWO writers — the v1 migration and the field editor's temperature spinbox — and
+## nothing distinguished them, which is why F2 does the same thing with both:
+## `ConditionsLibrary.absorb_parked_temperatures()` MOVES the value into a named set and clears
+## this back to `null`.
 ##
-## IT HAS TWO WRITERS, AND F2 MUST NOT ASSUME OTHERWISE. It was called `migrated_temperature_c`
-## and documented as "what the v1 migration parked", and that name was a trap: the field editor
-## writes it too, because the elevation and the temperature are one panel and the panel could not
-## lose half of itself for a slice. So a value in here may be a v1 course's, or it may be one the
-## builder typed this morning, and nothing distinguishes them — which is fine, because F2 does the
-## same thing with both: MOVE it into the conditions, then clear it. What F2 must not do is clear
-## it on the strength of "only the migration writes this", because that is false.
+## SINCE F2 THE FIELD EDITOR IS NO LONGER ONE OF THE WRITERS. Its spinbox selects the calm
+## conditions set at the temperature typed, creating one if there is none, so a builder's
+## temperature reaches the weather directly instead of via this slot. What is left here is the
+## migration's, and it is drained at startup — the slot survives only because a v1 file on a
+## builder's disk can still arrive on any future launch.
 ##
 ## ---------------------------------------------------------------------------
 ## THE TERRAIN IS A BLOCK FROM DAY ONE, THOUGH TODAY IT ONLY HOLDS TWO NUMBERS
@@ -144,17 +145,16 @@ func contains(position: Vector3) -> bool:
 		and absf(position.z - middle.y) <= half.y + 1.0e-6
 
 
-## The air at this site, composed rather than stored (design §3.1). Two typed facts in, one number
-## out, and one place that knows the formula.
+## THERE IS NO `air()` HERE, AND THAT IS F2's ANSWER RATHER THAN AN OMISSION.
 ##
-## The temperature half is whatever is parked until F2 lands, and standard when there is
-## nothing parked — which is the correct reading of a site nobody has told about its weather,
-## exactly as an absent `air` block always read as 1.225.
-func air() -> AirDensity:
-	var temperature := AirDensity.STANDARD_TEMPERATURE_C
-	if parked_temperature_c is float or parked_temperature_c is int:
-		temperature = float(parked_temperature_c)
-	return AirDensity.new(elevation_m, temperature)
+## F1 had one, and it read the parked temperature. It could not survive this slice: half of the
+## air is not a fact about a place, so a site asked what air it is has to make the other half up,
+## and the version that made it up out of the parking slot would go on quietly answering 15 °C for
+## ever once F2 drained the slot. Ask `AirDensity.compose(site, conditions)` instead — the one
+## place that knows which two typed facts the density comes from.
+##
+## It also breaks a cycle: `AirDensity.compose()` names `Site`, so `Site` naming `AirDensity` back
+## would be two class_name scripts each depending on the other.
 
 
 # ---------------------------------------------------------------------------

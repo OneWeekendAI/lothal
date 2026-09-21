@@ -109,6 +109,11 @@ var library: CourseLibrary
 ## writer, which is what §1's "Lab authors the world" asks for.
 var sites: SiteLibrary
 var sites_path: String
+## The weathers, and which one is being flown in. Held beside the sites for the same reason: this
+## room's temperature control writes it, the garage next door reads it, and two copies would be two
+## opinions about the one number the whole air panel exists to communicate.
+var conditions: ConditionsLibrary
+var conditions_path: String
 ## The build the course is being laid out for. Read-only here — this room does not touch the
 ## aircraft — and used for exactly one thing: comparing a ring's aperture against the span of the
 ## machine that has to fly through it.
@@ -152,7 +157,8 @@ var _updating := false
 
 
 func _init(p_library: CourseLibrary, p_build: Build,
-		p_save_path: String = CourseLibrary.SAVE_PATH, p_sites: SiteLibrary = null) -> void:
+		p_save_path: String = CourseLibrary.SAVE_PATH, p_sites: SiteLibrary = null,
+		p_conditions: ConditionsLibrary = null) -> void:
 	library = p_library
 	build = p_build
 	save_path = p_save_path
@@ -160,6 +166,9 @@ func _init(p_library: CourseLibrary, p_build: Build,
 	# cannot overwrite the builder's own fields. SiteLibrary owns that pairing; this room only asks.
 	sites_path = SiteLibrary.path_beside(p_save_path)
 	sites = p_sites if p_sites != null else SiteLibrary.load_from(sites_path)
+	conditions_path = ConditionsLibrary.path_beside(p_save_path)
+	conditions = p_conditions if p_conditions != null else ConditionsLibrary.load_from(
+		conditions_path)
 
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	anchor_right = 1.0
@@ -641,15 +650,25 @@ func set_field_elevation_m(elevation_m: float) -> void:
 	_changed()
 
 
-## How warm it is where this course is.
+## How warm it is. NOT "where this course is" any more, and the change of subject is the point.
 ##
-## WRITTEN INTO THE PARK SLOT, which makes this room its SECOND writer alongside the v1 migration —
-## see site.gd's header, which now says so. The alternative was a second field, and a second field
-## would mean F2 has two places to look for one number. What F2 must take from this: a value in
-## there did not necessarily come from a migration, so consuming it means moving it, not discarding
-## it as stale.
+## Until F2 this wrote the park slot on the site, which made a temperature a property of a PLACE.
+## It is not one: how warm it is is what you switch while holding the place and the route still
+## (design §3.1). So the spinbox now selects the calm conditions set at the temperature typed, and
+## `at_temperature()` finds one before it makes one — typing 15 lands back on `Standard` and makes
+## nothing, and typing 35 twice makes one "35 °C", not two.
+##
+## THE VISIBLE CONSEQUENCE, stated rather than discovered: the temperature is now global. Typing
+## 35 here and switching to a different course shows THAT course's field at 35 °C. Its elevation
+## still belongs to its own site, which is the half of "a course has its own field" that was ever
+## a fact about the field.
+##
+## A NEW AirDensity RATHER THAN A RAW FLOAT, for `set_field_elevation_m`'s reason: AirDensity
+## clamps in its constructor, so this is what stops a hand-driven caller naming a set after a
+## temperature the formula cannot take.
 func set_field_temperature_c(temperature_c: float) -> void:
-	site().parked_temperature_c = AirDensity.new(0.0, temperature_c).temperature_c
+	var chosen := conditions.at_temperature(AirDensity.new(0.0, temperature_c).temperature_c)
+	conditions.select(chosen.conditions_id)
 	_changed()
 
 
@@ -661,11 +680,11 @@ func site() -> Site:
 	return where if where != null else sites.selected()
 
 
-## The air the open course is flown in, composed from the site's elevation and the temperature
-## (design §3.1). This is the number the panel quotes and the number the physics runs on — one
-## derivation, not a second copy of it.
+## The air the open course is flown in: the site's elevation and the selected conditions'
+## temperature, put together by the one place that knows how (design §3.1). This is the number the
+## panel quotes and the number the physics runs on — one derivation, not a second copy of it.
 func air() -> AirDensity:
-	return site().air()
+	return AirDensity.compose(site(), conditions.selected())
 
 
 ## Renames without changing the id, so nothing that pointed at the course — a saved selection, a
@@ -715,6 +734,7 @@ func _changed() -> void:
 	library.put(course())
 	library.save(save_path)
 	sites.save(sites_path)
+	conditions.save(conditions_path)
 	render()
 	course_changed.emit()
 

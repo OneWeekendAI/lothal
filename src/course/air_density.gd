@@ -131,6 +131,26 @@ static func standard() -> AirDensity:
 	return AirDensity.new()
 
 
+## The air at a place, on a day (design §3.1). The elevation comes from the SITE, because where a
+## field sits above sea level is a fact about that field; the temperature comes from the
+## CONDITIONS, because how warm it is is the thing you switch while holding the place still.
+##
+## This is the only new surface this slice puts on AirDensity. The model, its constants and its
+## clamps are untouched — `compose` decides nothing about air, it decides which two typed facts
+## the existing constructor is handed, and it exists so that decision is made in ONE place instead
+## of at every call site. Composed here rather than as `Site.air()` because a site cannot answer
+## what air it is: half the answer is not a fact about it.
+##
+## A missing half reads as the standard one, on `from_data`'s rule: standard air is not a fallback
+## papering over missing data, it is the correct reading of a world nobody has told about its
+## weather, and it is exactly what every number in this project was quoted in before any of this
+## existed.
+static func compose(p_site: Site, p_conditions: Conditions) -> AirDensity:
+	var where := p_site if p_site != null else Site.new()
+	var weather := p_conditions if p_conditions != null else Conditions.standard()
+	return AirDensity.new(where.elevation_m, weather.temperature_c)
+
+
 ## Pressure at this elevation, from the barometric formula on the standard lapse rate.
 ##
 ##     P = P0 * (1 - L*h/T0) ^ (g*M / (R*L))
