@@ -141,7 +141,7 @@ static func _the_file() -> Array:
 			"elevation_m": 920.5,
 			"terrain": {"shape": "flat", "width_m": 200.0, "length_m": 150.0},
 			"obstacles": [],
-			"migrated_temperature_c": 35.0,
+			"parked_temperature_c": 35.0,
 		}],
 	}
 	JsonStore.write_document(SITES_PATH, fixture)
@@ -182,6 +182,41 @@ static func _the_file() -> Array:
 			and absf(bando.extent().y - 150.0) < 1.0e-9,
 		"nothing" if bando == null else "%.1f x %.1f m" % [bando.extent().x, bando.extent().y]))
 
+	# A RECORD THAT CARRIES ONLY THE MANDATORY THREE. The fixture above has every key there is, so
+	# it can catch a key being dropped or a number being reformatted and CANNOT catch a key being
+	# INVENTED — and inventing one is the same quiet rewrite of a builder's file, arriving through
+	# the writer instead of through a number. A hand-edited record with no terrain and no obstacle
+	# list must come back with no terrain and no obstacle list.
+	var bare_path := "user://test_site_bare.json"
+	_forget(bare_path)
+	JsonStore.write_document(bare_path, {
+		"schema": 1,
+		"selected": "bare",
+		"sites": [{"id": "bare", "name": "Bare", "elevation_m": 610.0}],
+	})
+	var bare_before := FileAccess.get_file_as_string(bare_path)
+	SiteLibrary.load_from(bare_path).save(bare_path)
+	var bare_after := FileAccess.get_file_as_string(bare_path)
+	results.append(TestResult.new(
+		"a record carrying only id, name and elevation does not grow a terrain or obstacle block",
+		bare_before == bare_after,
+		"%s%s" % [
+			"unchanged" if bare_before == bare_after else "CHANGED, now: ",
+			"" if bare_before == bare_after else bare_after.replace("\n", " ")]))
+
+	# And it still answers every question a site is asked, out of the defaults rather than out of
+	# an invented block — which is what makes "do not write it" affordable.
+	var bare_site := SiteLibrary.load_from(bare_path).site("bare")
+	results.append(TestResult.new(
+		"and it still has an extent, a centre and an elevation to answer with",
+		bare_site != null and bare_site.extent().x > 0.0 and bare_site.extent().y > 0.0
+			and bare_site.center() == Vector2.ZERO
+			and absf(bare_site.elevation_m - 610.0) < 1.0e-9,
+		"nothing" if bare_site == null else "%.0f x %.0f m centred on %v at %.0f m" % [
+			bare_site.extent().x, bare_site.extent().y, bare_site.center(),
+			bare_site.elevation_m]))
+	_forget(bare_path)
+
 	# CHECK 11. There has to be somewhere to fly. Removing the last site is allowed — an editor
 	# that refuses is an editor with a site you can never get rid of — but it leaves the default
 	# behind rather than an empty library, and the selection has to resolve.
@@ -190,12 +225,16 @@ static func _the_file() -> Array:
 	emptied.select("bando")
 	emptied.remove(Site.DEFAULT_ID)
 	emptied.remove("bando")
+	# ASSERTED BY ID, not by "there is at least one". A remove() that refilled the library with a
+	# copy of the site it had just removed would satisfy a count and would be the bug — the builder
+	# deletes a field and it comes back. What has to be there is the DEFAULT field.
 	results.append(TestResult.new(
-		"removing the last site leaves the default field behind and a selection that resolves",
-		emptied.ids().size() >= 1 and emptied.selected() != null
-			and emptied.has(emptied.selected_id),
-		"%d site(s), selected \"%s\" which %s" % [
-			emptied.ids().size(), emptied.selected_id,
+		"removing the last site leaves the DEFAULT field behind and a selection that resolves",
+		emptied.ids().size() == 1 and emptied.ids()[0] == Site.DEFAULT_ID
+			and emptied.selected_id == Site.DEFAULT_ID and emptied.selected() != null
+			and emptied.selected().site_id == Site.DEFAULT_ID,
+		"%d site(s) [%s], selected \"%s\" which %s" % [
+			emptied.ids().size(), ", ".join(emptied.ids()), emptied.selected_id,
 			"resolves" if emptied.selected() != null else "RESOLVES TO NOTHING"]))
 
 	_forget(SITES_PATH)
@@ -232,18 +271,54 @@ static func _v1_fixture() -> Dictionary:
 				"air": {"elevation_m": 3500.0, "temperature_c": 5.0},
 				"gates": GateCourse.gates_to_data(_gates_spanning(40.0, 80.0)),
 			},
+			# A COURSE THAT IS NOT AT THE ORIGIN, which is what you get the moment somebody drags a
+			# gate rather than starting from the default circle. Both fixtures above begin at
+			# (0, 0), and a site sized but not positioned contains them by luck — so without this
+			# row the containment check below is a check on arithmetic that cannot fail.
+			{
+				"id": "far", "name": "Far side",
+				"air": {"elevation_m": 120.0, "temperature_c": 20.0},
+				"gates": GateCourse.gates_to_data(
+					_gates_spanning(10.0, 6.0, Vector3(100.0, 0.0, -250.0))),
+			},
 		],
 	}
 
 
 ## Three gates whose bounding box is exactly `span_x` by `span_z`, so the margin arithmetic is
 ## checkable rather than approximately checkable.
-static func _gates_spanning(span_x: float, span_z: float) -> Array[Dictionary]:
+static func _gates_spanning(span_x: float, span_z: float,
+		origin := Vector3.ZERO) -> Array[Dictionary]:
 	return [
-		{"position": Vector3(0.0, 2.0, 0.0), "normal": Vector3(0, 0, 1), "radius": 1.5},
-		{"position": Vector3(span_x, 2.0, 0.0), "normal": Vector3(0, 0, 1), "radius": 1.5},
-		{"position": Vector3(span_x, 2.0, span_z), "normal": Vector3(1, 0, 0), "radius": 1.5},
+		{"position": origin + Vector3(0.0, 2.0, 0.0), "normal": Vector3(0, 0, 1), "radius": 1.5},
+		{"position": origin + Vector3(span_x, 2.0, 0.0), "normal": Vector3(0, 0, 1), "radius": 1.5},
+		{"position": origin + Vector3(span_x, 2.0, span_z), "normal": Vector3(1, 0, 0), "radius": 1.5},
 	]
+
+
+## One course's record out of the v1 fixture, by id. Read back out of the fixture rather than
+## rebuilt, so the expectations below cannot drift from what was written to disk.
+static func _course_record(course_id: String) -> Dictionary:
+	for entry in (_v1_fixture()["courses"] as Array):
+		if String((entry as Dictionary)["id"]) == course_id:
+			return entry
+	return {}
+
+
+## The horizontal bounding box of a set of gates, computed HERE rather than called out of
+## SiteLibrary — a check that used the implementation's own arithmetic to judge the implementation
+## would agree with it however wrong it was.
+static func _box_of(gates: Array[Dictionary]) -> Rect2:
+	var first: Vector3 = gates[0]["position"]
+	var minimum := Vector2(first.x, first.z)
+	var maximum := minimum
+	for gate in gates:
+		var position: Vector3 = gate["position"]
+		minimum.x = minf(minimum.x, position.x)
+		minimum.y = minf(minimum.y, position.z)
+		maximum.x = maxf(maximum.x, position.x)
+		maximum.y = maxf(maximum.y, position.z)
+	return Rect2(minimum, maximum - minimum)
 
 
 static func _the_migration() -> Array:
@@ -272,32 +347,63 @@ static func _the_migration() -> Array:
 	results.append(TestResult.new(
 		"and each course's temperature is parked for the conditions to pick up, not discarded",
 		bando != null and leh != null
-			and absf(float(bando.migrated_temperature_c) - 35.0) < 1.0e-9
-			and absf(float(leh.migrated_temperature_c) - 5.0) < 1.0e-9,
+			and absf(float(bando.parked_temperature_c) - 35.0) < 1.0e-9
+			and absf(float(leh.parked_temperature_c) - 5.0) < 1.0e-9,
 		"bando %s C, leh %s C" % [
-			"none" if bando == null else str(bando.migrated_temperature_c),
-			"none" if leh == null else str(leh.migrated_temperature_c)]))
+			"none" if bando == null else str(bando.parked_temperature_c),
+			"none" if leh == null else str(leh.parked_temperature_c)]))
 
-	# CHECK 6. The extent has to CONTAIN the course, on BOTH axes, with the margin on both. A
-	# margin applied to width only gives a site whose far edge runs through a gate.
+	# CHECK 6. The extent has to CONTAIN the course — and "contain" is asserted in WORLD
+	# COORDINATES, on every gate, rather than as an arithmetic comparison of two sizes.
+	#
+	# The size comparison was the first version and it could not fail on the fixtures it had: every
+	# course here started at (0, 0), and a rectangle with a size but no position is centred on the
+	# origin, so it contained them by luck. The "far" course in the fixture is 100 m east and 250 m
+	# north of the origin and the size arithmetic is identical for it — only asking whether the
+	# gates are actually ON the ground tells the two designs apart.
 	var margin := SiteLibrary.MIGRATION_MARGIN_M
-	var fits_x: bool = bando != null and bando.extent().x >= 10.0 + 2.0 * margin - 1.0e-6
-	var fits_z: bool = bando != null and bando.extent().y >= 6.0 + 2.0 * margin - 1.0e-6
-	results.append(TestResult.new(
-		"a migrated site's extent contains every gate of its course plus the margin, on both axes",
-		fits_x and fits_z,
-		"none" if bando == null else "%.1f x %.1f m around a %.0f x %.0f m course (margin %.0f m)" % [
-			bando.extent().x, bando.extent().y, 10.0, 6.0, margin]))
+	var migrated_pairs := {"bando": bando, "leh": leh, "far": leh}
+	migrated_pairs["far"] = sites.site("site_far") if sites != null else null
+	for label in migrated_pairs:
+		var where: Site = migrated_pairs[label]
+		var gates := GateCourse.gates_from_data(_course_record(label).get("gates"))
+		var outside := 0
+		for gate in gates:
+			if where == null or not where.contains(gate["position"]):
+				outside += 1
+		results.append(TestResult.new(
+			"every gate of \"%s\" is on the ground of the site made for it" % label,
+			where != null and outside == 0 and not gates.is_empty(),
+			"no site" if where == null else "%d of %d gates outside a %.0f x %.0f m field centred on %v" % [
+				outside, gates.size(), where.extent().x, where.extent().y, where.center()]))
 
-	# And the same for the big course, so a check that happened to pass on one shape is not the
-	# whole of the evidence.
-	var big_x: bool = leh != null and leh.extent().x >= 40.0 + 2.0 * margin - 1.0e-6
-	var big_z: bool = leh != null and leh.extent().y >= 80.0 + 2.0 * margin - 1.0e-6
+	# And the margin is on BOTH axes and BOTH sides of each. Containment alone does not say that —
+	# a field exactly the size of the course contains it — so the clearance is measured.
+	var clearance_ok := true
+	var clearance := ""
+	for label in migrated_pairs:
+		var where: Site = migrated_pairs[label]
+		var gates := GateCourse.gates_from_data(_course_record(label).get("gates"))
+		if where == null or gates.is_empty():
+			clearance_ok = false
+			continue
+		var box := _box_of(gates)
+		var half := where.extent() * 0.5
+		var middle := where.center()
+		var gaps := [
+			(middle.x - half.x) * -1.0 + box.position.x,
+			(middle.x + half.x) - box.end.x,
+			(middle.y - half.y) * -1.0 + box.position.y,
+			(middle.y + half.y) - box.end.y,
+		]
+		for gap: float in gaps:
+			if gap < margin - 1.0e-6:
+				clearance_ok = false
+		clearance += "%s %.1f m; " % [label, gaps.min()]
 	results.append(TestResult.new(
-		"and on a course that is longer than it is wide, so the two axes cannot be confused",
-		big_x and big_z,
-		"none" if leh == null else "%.1f x %.1f m around a 40 x 80 m course" % [
-			leh.extent().x, leh.extent().y]))
+		"and there is a full margin of ground clear on all four sides of every migrated course",
+		clearance_ok,
+		"smallest clearance per site: %s (margin is %.0f m)" % [clearance, margin]))
 
 	# CHECK 7. The course has to POINT at the site that was made for it, or the sites are orphans
 	# and the course still has nowhere to be.
@@ -335,8 +441,8 @@ static func _the_migration() -> Array:
 				lost += "%s gate %d moved; " % [id, i + 1]
 	results.append(TestResult.new(
 		"the migration is lossless: every course id, name, gate count and gate position survives",
-		kept and migrated.ids().size() == 2,
-		"%d course(s) out of 2%s" % [migrated.ids().size(), "" if lost == "" else "; " + lost]))
+		kept and migrated.ids().size() == 3,
+		"%d course(s) out of 3%s" % [migrated.ids().size(), "" if lost == "" else "; " + lost]))
 
 	# CHECK 10. ONE-WAY. Running the app a second time re-reads a v2 file, and a migration that
 	# ignored the schema would lift an `air` block that is no longer there — which reads as
@@ -424,7 +530,7 @@ static func _the_garage_asks_the_site() -> Array:
 	high.site_id = "test_high_field"
 	high.site_name = "Leh"
 	high.elevation_m = 3500.0
-	high.migrated_temperature_c = 30.0
+	high.parked_temperature_c = 30.0
 	var library := SiteLibrary.with_default()
 	library.put(high)
 	library.select(high.site_id)
@@ -449,6 +555,50 @@ static func _the_garage_asks_the_site() -> Array:
 		"garage %.4f kg/m3, site %.4f kg/m3" % [quoted, expected]))
 
 	host.free()
+
+	# -----------------------------------------------------------------------------------------
+	# AND THE SAME QUESTION ASKED OF A v1 FILE, WHICH IS THE ONE THAT ACTUALLY BREAKS.
+	# -----------------------------------------------------------------------------------------
+	#
+	# Everything above wrote the courses file through CourseLibrary.save(), which stamps schema 2 —
+	# so the migration was skipped and every course already carried a correct site id. That is the
+	# state of a builder's disk on the SECOND launch, and it cannot fail for the reason the first
+	# launch can.
+	#
+	# On the first launch the courses file is v1 and the migration REWRITES it. Anything that read
+	# the courses file before the migration ran reads the old document, gets no site id, resolves
+	# the default field, and quotes sea-level air at a builder who typed 2500 m. Measured, on this
+	# repo: RoomHost's two `var` initialisers ran in declaration order and the course library was
+	# built first, so this check failed by exactly 0.23 kg/m3 while every other check here passed.
+	if FileAccess.file_exists(real_sites):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(real_sites))
+	JsonStore.write_document(real_courses, {
+		"schema": 1,
+		"selected": "hill_bando",
+		"courses": [{
+			"id": "hill_bando", "name": "Hill bando",
+			"air": {"elevation_m": 2500.0, "temperature_c": 28.0},
+			"gates": GateCourse.gates_to_data(GateCourse.build_gates()),
+		}],
+	})
+
+	var v1_expected := AirDensity.new(2500.0, 28.0).kgm3()
+	var v1_host := RoomHost.new()
+	var v1_quoted := v1_host.lab.air.kgm3()
+	var v1_course := v1_host.course_library.selected()
+	results.append(TestResult.new(
+		"on a FIRST launch against a v1 file the garage quotes the elevation that was typed",
+		absf(v1_quoted - v1_expected) < 1.0e-12,
+		"garage %.4f kg/m3, the file's own 2500 m is %.4f kg/m3 (sea level is %.4f)" % [
+			v1_quoted, v1_expected, AirDensity.standard_kgm3()]))
+	# And the in-memory course points at the migrated site rather than at the default field — the
+	# half of the same bug that would save `default_site` back over the migration on the first edit
+	# and orphan the site for good.
+	results.append(TestResult.new(
+		"and the course in memory points at the site the migration made, not at the default field",
+		v1_course != null and v1_course.site_id == "site_hill_bando",
+		"points at \"%s\"" % ("no course" if v1_course == null else v1_course.site_id)))
+	v1_host.free()
 
 	# Put the builder's own files back. A test that left somebody's home field at 3500 m would be a
 	# worse bug than any it could catch, and it would poison every suite that runs after it.

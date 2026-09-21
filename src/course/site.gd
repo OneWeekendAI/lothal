@@ -23,9 +23,16 @@ extends RefCounted
 ## afternoon — so it belongs to the conditions, which are switchable while the place and the route
 ## are held still.
 ##
-## `migrated_temperature_c` below is the one exception, and it is a TEMPORARY one with an owner
-## named: it is where a v1 course's typed temperature is parked so the migration does not have to
-## throw it away before the conditions exist to receive it. F2 consumes it and clears it.
+## `parked_temperature_c` below is the one exception, and it is a TEMPORARY one with an owner
+## named: it is where a temperature waits until F2's conditions exist to receive it.
+##
+## IT HAS TWO WRITERS, AND F2 MUST NOT ASSUME OTHERWISE. It was called `migrated_temperature_c`
+## and documented as "what the v1 migration parked", and that name was a trap: the field editor
+## writes it too, because the elevation and the temperature are one panel and the panel could not
+## lose half of itself for a slice. So a value in here may be a v1 course's, or it may be one the
+## builder typed this morning, and nothing distinguishes them — which is fine, because F2 does the
+## same thing with both: MOVE it into the conditions, then clear it. What F2 must not do is clear
+## it on the strength of "only the migration writes this", because that is false.
 ##
 ## ---------------------------------------------------------------------------
 ## THE TERRAIN IS A BLOCK FROM DAY ONE, THOUGH TODAY IT ONLY HOLDS TWO NUMBERS
@@ -37,6 +44,13 @@ extends RefCounted
 ## a migration to write for a file this slice has only just created. So the block is written now,
 ## `shape` says `flat`, and F3 fills in the rest behind `extent()` and `height_at()` without
 ## touching anybody's file.
+##
+## THE BLOCK CARRIES A CENTRE AS WELL AS A SIZE, and the first version did not. A width and a
+## length alone describe a rectangle with no position, which reads as "centred on the origin"
+## whether or not anybody decided that — so a course laid out 100 m east of the origin migrated to
+## a site containing none of its own gates. No error; the gates simply are not in the field. The
+## centre is why `contains()` exists beside `extent()`, and F4 needs the same origin the moment
+## `height_at(x, z)` becomes the ground authority, so this is a debt paid now rather than deferred.
 ##
 ## It is a plain Dictionary rather than a `Terrain` class because `Terrain` does not exist yet, and
 ## inventing an empty one to hold two numbers would be the class arriving before its behaviour.
@@ -62,26 +76,42 @@ var site_name := DEFAULT_NAME
 ## Metres above sea level at the site's origin. Once terrain has relief (F3), the elevation at a
 ## gate is this plus `terrain.height_at(x, z)`.
 var elevation_m := 0.0
-## The ground: `{"shape": "flat", "width_m": …, "length_m": …}` today, more behind the same key
-## in F3. Read through `extent()`, never reached into by a caller outside this file.
+## The ground: `{"shape": "flat", "width_m": …, "length_m": …, "center_x_m": …, "center_z_m": …}`
+## today, more behind the same key in F3. Read through `extent()`, `center()` and `contains()`,
+## never reached into by a caller outside this file.
+##
+## EMPTY MEANS THE RECORD DID NOT HAVE ONE, which is different from a block saying "flat, 120 by
+## 120". An empty block reads as the defaults and is not written back out — see `to_data()`.
 var terrain: Dictionary = flat_terrain(DEFAULT_WIDTH_M, DEFAULT_LENGTH_M)
 ## What is standing in the field. F6 fills this; until then it is empty and round-trips untouched,
 ## which is what stops a builder on a later version losing theirs by opening this one.
 var obstacles: Array = []
+## Whether the record this site came from had an `obstacles` key at all. An empty list that WAS in
+## the file is a statement — this field has nothing standing in it — and one that was never there
+## is a question nobody asked; the two have to round-trip differently or the first save of a
+## hand-edited file grows a key its author never wrote.
+var _had_obstacles := true
 
-## A v1 course's typed temperature, parked here by the migration for F2 to consume and clear.
-## `null` means there is nothing parked — which is different from 15 °C, and the difference is the
-## whole reason this is a Variant: writing 15.0 into a record whose author never typed one would be
-## manufacturing an authored fact.
-var migrated_temperature_c: Variant = null
+## A temperature waiting for F2's conditions — parked by the v1 migration OR typed in the field
+## editor; see the header, and do not assume the first. `null` means there is nothing parked, which
+## is different from 15 °C, and the difference is the whole reason this is a Variant: writing 15.0
+## into a record whose author never typed one would be manufacturing an authored fact.
+var parked_temperature_c: Variant = null
 
 ## Everything the file held that this version does not recognise, kept so that opening an older
 ## build does not silently destroy a newer one's settings.
 var _unknown: Dictionary = {}
 
 
-static func flat_terrain(width_m: float, length_m: float) -> Dictionary:
-	return {"shape": FLAT_SHAPE, "width_m": width_m, "length_m": length_m}
+static func flat_terrain(width_m: float, length_m: float,
+		center_x_m := 0.0, center_z_m := 0.0) -> Dictionary:
+	return {
+		"shape": FLAT_SHAPE,
+		"width_m": width_m,
+		"length_m": length_m,
+		"center_x_m": center_x_m,
+		"center_z_m": center_z_m,
+	}
 
 
 ## Width and length in metres. THE SEAM: F3 gives this a body that asks the terrain's shape, and
@@ -92,16 +122,38 @@ func extent() -> Vector2:
 		float(terrain.get("length_m", DEFAULT_LENGTH_M)))
 
 
+## Where the middle of the ground is, in world x and z. Zero for every site anybody authored by
+## hand, and not zero for one the migration sized around a course that was laid out away from the
+## origin. The second seam F3 and F4 need: a height at (x, z) is meaningless without it.
+func center() -> Vector2:
+	return Vector2(
+		float(terrain.get("center_x_m", 0.0)),
+		float(terrain.get("center_z_m", 0.0)))
+
+
+## Whether a point in the world is on this site's ground. Horizontal only — how high a gate is hung
+## is the course's business, and a site is a patch of ground.
+##
+## Inclusive on the edge, deliberately: a gate exactly on the boundary of a field sized to contain
+## it is contained, and a strict comparison would make the migration's own arithmetic fail its own
+## test by a floating-point hair.
+func contains(position: Vector3) -> bool:
+	var half := extent() * 0.5
+	var middle := center()
+	return absf(position.x - middle.x) <= half.x + 1.0e-6 \
+		and absf(position.z - middle.y) <= half.y + 1.0e-6
+
+
 ## The air at this site, composed rather than stored (design §3.1). Two typed facts in, one number
 ## out, and one place that knows the formula.
 ##
-## The temperature half is the parked migration value until F2 lands, and standard when there is
+## The temperature half is whatever is parked until F2 lands, and standard when there is
 ## nothing parked — which is the correct reading of a site nobody has told about its weather,
 ## exactly as an absent `air` block always read as 1.225.
 func air() -> AirDensity:
 	var temperature := AirDensity.STANDARD_TEMPERATURE_C
-	if migrated_temperature_c is float or migrated_temperature_c is int:
-		temperature = float(migrated_temperature_c)
+	if parked_temperature_c is float or parked_temperature_c is int:
+		temperature = float(parked_temperature_c)
 	return AirDensity.new(elevation_m, temperature)
 
 
@@ -110,7 +162,7 @@ func air() -> AirDensity:
 # ---------------------------------------------------------------------------
 
 const KNOWN_KEYS := ["id", "name", "elevation_m", "terrain", "obstacles",
-	"migrated_temperature_c"]
+	"parked_temperature_c"]
 
 
 ## A site from a record. Anything unreadable falls back to the default for that field rather than
@@ -128,16 +180,19 @@ static func from_data(data: Variant) -> Site:
 	if elevation is float or elevation is int:
 		out.elevation_m = float(elevation)
 
+	# ABSENT RATHER THAN DEFAULTED. A record with no terrain block keeps an EMPTY one, so that
+	# `to_data()` can put the file back exactly as it found it; `extent()` and `center()` read the
+	# defaults out of the emptiness, which is the same answer without the invented key.
 	var block: Variant = record.get("terrain")
-	if block is Dictionary:
-		out.terrain = (block as Dictionary).duplicate(true)
+	out.terrain = (block as Dictionary).duplicate(true) if block is Dictionary else {}
+	out._had_obstacles = record.has("obstacles")
 	var standing: Variant = record.get("obstacles")
 	if standing is Array:
 		out.obstacles = (standing as Array).duplicate(true)
 
-	var temperature: Variant = record.get("migrated_temperature_c")
+	var temperature: Variant = record.get("parked_temperature_c")
 	if temperature is float or temperature is int:
-		out.migrated_temperature_c = float(temperature)
+		out.parked_temperature_c = float(temperature)
 
 	out._unknown = JsonStore.unknown_fields(record, KNOWN_KEYS)
 	return out
@@ -146,23 +201,33 @@ static func from_data(data: Variant) -> Site:
 ## The site as plain JSON values. The unknown half goes out first so the known keys land on top of
 ## it rather than being shadowed by a stale copy.
 ##
-## `migrated_temperature_c` is written only when there is something parked, on the "only what was
-## authored is stored" rule: writing 15.0 into a site whose author never typed a temperature would
-## manufacture an authored fact, and F2 would then consume it as one.
+## THREE KEYS ARE MANDATORY AND THREE ARE NOT, and the split is a decision rather than an accident.
 ##
-## `obstacles` is written unconditionally, empty or not, and the difference is not an
-## inconsistency. An empty obstacle list is a STATEMENT — this field has nothing standing in it —
-## whereas an absent temperature is a question nobody has answered yet. The file format is new in
-## this slice, so there is no older document for the empty array to appear in uninvited.
+## `id`, `name` and `elevation_m` are always written. A site is a place; where it is is the one
+## thing it must state, and 0 m is a statement and not a silence — it is precisely what every
+## course saved before any of this existed was flown at.
+##
+## `terrain`, `obstacles` and `parked_temperature_c` are written only when there is something to
+## write, on the "only what was authored is stored" rule. An empty obstacle list that CAME from the
+## file is something to write — it says this field has nothing standing in it — and one that was
+## never in the file is not. This matters because the alternative is that opening Lothal once adds
+## two keys to every hand-edited record on a builder's disk: the quiet-rewrite failure the
+## byte-identity test exists to prevent, arriving through the writer rather than through a number.
 func to_data() -> Dictionary:
 	var record := _unknown.duplicate(true)
 	record["id"] = site_id
 	record["name"] = site_name
 	record["elevation_m"] = elevation_m
-	record["terrain"] = terrain.duplicate(true)
-	record["obstacles"] = obstacles.duplicate(true)
-	if migrated_temperature_c is float or migrated_temperature_c is int:
-		record["migrated_temperature_c"] = float(migrated_temperature_c)
+	if terrain.is_empty():
+		record.erase("terrain")
 	else:
-		record.erase("migrated_temperature_c")
+		record["terrain"] = terrain.duplicate(true)
+	if obstacles.is_empty() and not _had_obstacles:
+		record.erase("obstacles")
+	else:
+		record["obstacles"] = obstacles.duplicate(true)
+	if parked_temperature_c is float or parked_temperature_c is int:
+		record["parked_temperature_c"] = float(parked_temperature_c)
+	else:
+		record.erase("parked_temperature_c")
 	return record

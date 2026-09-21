@@ -416,13 +416,24 @@ static func _the_garage_follows_the_field() -> Array:
 
 	# And the build that walks through the door into Sim is the one quoted in the garage, or the
 	# field would fly an aircraft the readout never described.
+	#
+	# THE RIGHT-HAND SIDE IS READ OFF DISK, not asked of `rooms.air_of_selected_course()`. Asking
+	# that function is asking the very call RoomHost used to SET `lab.air`, so the two sides agree
+	# by construction: it would still catch a stale copy and could no longer catch a wrong
+	# derivation inside the function — a check that had quietly stopped being able to fail for half
+	# of what it is for. Going to the file and composing the air independently gives it back a
+	# second opinion.
+	var on_disk := SiteLibrary.load_from(SiteLibrary.SAVE_PATH)
+	var flown_site := on_disk.site(
+		CourseLibrary.load_from(CourseLibrary.SAVE_PATH).selected().site_id)
+	var independent := (AirDensity.new(flown_site.elevation_m,
+		float(flown_site.parked_temperature_c)).kgm3() if flown_site != null else -1.0)
 	results.append(TestResult.new(
 		"and the build handed to Sim carries the same air",
-		absf(shell.lab.current_build().air.kgm3()
-			- shell.rooms.air_of_selected_course().kgm3()) < 1.0e-12,
-		"garage %.4f kg/m3, selected course's site %.4f kg/m3" % [
-			shell.lab.current_build().air.kgm3(),
-			shell.rooms.air_of_selected_course().kgm3()]))
+		flown_site != null
+			and absf(shell.lab.current_build().air.kgm3() - independent) < 1.0e-12,
+		"garage %.4f kg/m3, the site on disk %.4f kg/m3" % [
+			shell.lab.current_build().air.kgm3(), independent]))
 
 	shell.free()
 

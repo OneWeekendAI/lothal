@@ -245,7 +245,7 @@ static func _oracle_cannot_see_the_field() -> Array:
 	var high := Site.new()
 	high.site_id = "test_oracle_high"
 	high.elevation_m = 3500.0
-	high.migrated_temperature_c = 30.0
+	high.parked_temperature_c = 30.0
 	var sites := SiteLibrary.with_default()
 	sites.put(high)
 	sites.select(high.site_id)
@@ -353,6 +353,33 @@ static func _persistence() -> Array:
 		"no key is added or dropped by a round trip (the air block is not invented)",
 		_keys_of(before) == _keys_of(after),
 		"keys in %s, keys out %s" % [_keys_of(before), _keys_of(after)]))
+
+	# AND THE SAME FILE WITHOUT ITS `site_id`, which is the version of this check that can still
+	# fail. The fixture above carries one, so "no key added" is satisfied by a writer that writes
+	# site_id — it was already there. Dropping it asks the real question, and the answer is a
+	# DELIBERATE one rather than the rule's default: a v2 record always names its site, so this
+	# record gains exactly that one key and nothing else. `site_id` is not an invention in the sense
+	# the rule forbids — it is the migration finishing, and its value is the default field, which is
+	# precisely where a course that never said where it was has always been flown.
+	var siteless := legacy.duplicate(true)
+	(siteless["courses"] as Array)[0].erase("site_id")
+	JsonStore.write_document(LIBRARY_PATH, siteless)
+	var siteless_before := FileAccess.get_file_as_string(LIBRARY_PATH)
+	CourseLibrary.load_from(LIBRARY_PATH).save(LIBRARY_PATH)
+	var siteless_after := FileAccess.get_file_as_string(LIBRARY_PATH)
+	var gained := PackedStringArray()
+	for key in _keys_of(siteless_after):
+		if not _keys_of(siteless_before).has(key):
+			gained.append(key)
+	results.append(TestResult.new(
+		"a v2 course with no site_id gains exactly that key and no other, and no air block",
+		Array(gained) == ["site_id"] and not siteless_after.contains("\"air\""),
+		"gained %s%s" % [
+			"nothing" if gained.is_empty() else str(gained),
+			", and an air block" if siteless_after.contains("\"air\"") else ""]))
+	# Restore the fixture the checks below read.
+	JsonStore.write_document(LIBRARY_PATH, legacy)
+	CourseLibrary.load_from(LIBRARY_PATH).save(LIBRARY_PATH)
 	results.append(TestResult.new(
 		"and it is still the same track, so a best lap set on it survives",
 		CourseLibrary.load_from(LIBRARY_PATH).selected().fingerprint()

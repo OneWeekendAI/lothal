@@ -641,8 +641,15 @@ func set_field_elevation_m(elevation_m: float) -> void:
 	_changed()
 
 
+## How warm it is where this course is.
+##
+## WRITTEN INTO THE PARK SLOT, which makes this room its SECOND writer alongside the v1 migration —
+## see site.gd's header, which now says so. The alternative was a second field, and a second field
+## would mean F2 has two places to look for one number. What F2 must take from this: a value in
+## there did not necessarily come from a migration, so consuming it means moving it, not discarding
+## it as stale.
 func set_field_temperature_c(temperature_c: float) -> void:
-	site().migrated_temperature_c = AirDensity.new(0.0, temperature_c).temperature_c
+	site().parked_temperature_c = AirDensity.new(0.0, temperature_c).temperature_c
 	_changed()
 
 

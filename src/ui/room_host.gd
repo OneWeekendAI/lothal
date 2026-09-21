@@ -72,16 +72,15 @@ var studio: StudioScreen = null
 ## The courses that have been laid out, and which one is flown. Held here for the same reason
 ## `pack_charge` is: two rooms touch it — the editor writes it and the field reads it — and one
 ## instance within a session is what stops the door from handing over a stale copy.
-var course_library := CourseLibrary.load_from()
+##
+## LOADED IN `_init`, NOT HERE, and that is not a style choice — see the block comment there. The
+## order these two are built in is load-bearing, and a `:=` initialiser hides that order inside the
+## order two `var` lines happen to sit in.
+var course_library: CourseLibrary
 ## The PLACES those courses are laid out in — the ground, the obstacles and the elevation. Held
 ## beside the courses and for the same reason: two rooms touch it, and one instance within a
 ## session is what stops the door from handing over a stale copy.
-##
-## Constructed through `migrate_courses` rather than `load_from`, which is what converts a v1
-## `courses.json` on first launch. It runs BEFORE `course_library` is read below rather than
-## alongside it — a course loaded from a file the migration has not rewritten yet would carry no
-## site id, and the garage would quote sea-level air at a builder who typed 3500 m.
-var site_library := SiteLibrary.migrate_courses()
+var site_library: SiteLibrary
 ## How much charge is in each pack right now. Loaded once on startup and held here rather than in
 ## any one room, because it is the one piece of state every room touches: two benches and the
 ## field all drain it, and Lab is where it gets charged back up. It is saved whenever a room that
@@ -118,6 +117,23 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	anchor_right = 1.0
 	anchor_bottom = 1.0
 	mouse_filter = Control.MOUSE_FILTER_PASS
+
+	# ---------------------------------------------------------------------------
+	# THE MIGRATION RUNS FIRST. THIS ORDER IS THE FEATURE.
+	# ---------------------------------------------------------------------------
+	#
+	# `SiteLibrary.migrate_courses()` REWRITES `courses.json` — it is what puts a `site_id` into
+	# every record of a v1 file. So a CourseLibrary loaded before it runs is loaded from the old
+	# document: every course comes back with no site id, reads as the default field, and the garage
+	# quotes sea-level air at a builder who typed 3500 m. It does not even stop there — the first
+	# edit in the field editor would save that `default_site` back over the migrated pointer and
+	# orphan the site the migration had just made, losing the elevation for good.
+	#
+	# Both used to be `var x := …` initialisers, which run in DECLARATION order, and the comment on
+	# them claimed this order while the declarations had the opposite one. Two lines that must
+	# happen in a particular order are written here, in that order, where the order is visible.
+	site_library = SiteLibrary.migrate_courses()
+	course_library = CourseLibrary.load_from()
 
 	pack_charge = p_pack_charge if p_pack_charge != null else PackCharge.load_from()
 

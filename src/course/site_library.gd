@@ -287,22 +287,32 @@ static func _site_for(course_id: String, course_name: String, air: AirDensity,
 	made.site_id = "site_%s" % course_id
 	made.site_name = course_name
 	made.elevation_m = air.elevation_m
-	made.migrated_temperature_c = air.temperature_c
+	made.parked_temperature_c = air.temperature_c
 
-	var span := _gate_span(gates)
+	# THE BOX, NOT THE SIZE OF THE BOX. A width and a length describe a rectangle with no position,
+	# and a site with no position is one centred on the origin whether or not anybody decided that.
+	# A course laid out 100 m east — which is what you get the moment somebody drags a gate rather
+	# than starting from the default circle — then migrated to a 50 m field containing none of its
+	# own gates. So the centre of the gates' own box goes on the block beside the size.
+	var box := _gate_box(gates)
 	# The margin on BOTH axes and on BOTH sides of each, which is why it is doubled. Applied to one
 	# axis only, the far edge of the site runs through a gate.
 	made.terrain = Site.flat_terrain(
-		span.x + 2.0 * MIGRATION_MARGIN_M, span.y + 2.0 * MIGRATION_MARGIN_M)
+		box.size.x + 2.0 * MIGRATION_MARGIN_M, box.size.y + 2.0 * MIGRATION_MARGIN_M,
+		box.position.x + box.size.x * 0.5, box.position.y + box.size.y * 0.5)
 	return made
 
 
-## The ground footprint of a set of gates: the width and length of their bounding box, in the two
-## horizontal axes. Height is not in it — a site is a patch of ground, and how high the gates are
-## hung above it is the course's business.
-static func _gate_span(gates: Array[Dictionary]) -> Vector2:
+## The ground footprint of a set of gates: the bounding box of their positions in the two
+## horizontal axes, as a Rect2 of (min x, min z) and (width, length). Height is not in it — a site
+## is a patch of ground, and how high the gates are hung above it is the course's business.
+##
+## A Rect2 rather than the size alone, because the caller needs where the box IS. That was the
+## defect: returning only `maximum - minimum` threw away the position, and nothing downstream could
+## tell a course at the origin from the same course 100 m away.
+static func _gate_box(gates: Array[Dictionary]) -> Rect2:
 	if gates.is_empty():
-		return Vector2.ZERO
+		return Rect2()
 	var first: Vector3 = gates[0]["position"]
 	var minimum := Vector2(first.x, first.z)
 	var maximum := minimum
@@ -312,4 +322,4 @@ static func _gate_span(gates: Array[Dictionary]) -> Vector2:
 		minimum.y = minf(minimum.y, position.z)
 		maximum.x = maxf(maximum.x, position.x)
 		maximum.y = maxf(maximum.y, position.z)
-	return maximum - minimum
+	return Rect2(minimum, maximum - minimum)
