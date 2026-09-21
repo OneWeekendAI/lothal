@@ -104,6 +104,11 @@ const VIEWPORT_SIZE := Vector2i(1280, 720)
 signal course_changed
 
 var library: CourseLibrary
+## The places those courses are laid out in. The elevation the air panel below writes lives HERE
+## now rather than on the course — see site.gd's header for why — and this room is still its only
+## writer, which is what §1's "Lab authors the world" asks for.
+var sites: SiteLibrary
+var sites_path: String
 ## The build the course is being laid out for. Read-only here — this room does not touch the
 ## aircraft — and used for exactly one thing: comparing a ring's aperture against the span of the
 ## machine that has to fly through it.
@@ -147,10 +152,14 @@ var _updating := false
 
 
 func _init(p_library: CourseLibrary, p_build: Build,
-		p_save_path: String = CourseLibrary.SAVE_PATH) -> void:
+		p_save_path: String = CourseLibrary.SAVE_PATH, p_sites: SiteLibrary = null) -> void:
 	library = p_library
 	build = p_build
 	save_path = p_save_path
+	# The sites file that pairs with this courses file, so a caller handing over a scratch library
+	# cannot overwrite the builder's own fields. SiteLibrary owns that pairing; this room only asks.
+	sites_path = SiteLibrary.path_beside(p_save_path)
+	sites = p_sites if p_sites != null else SiteLibrary.load_from(sites_path)
 
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	anchor_right = 1.0
@@ -608,8 +617,14 @@ func warnings() -> Array[BuildWarning]:
 # The library
 # ---------------------------------------------------------------------------
 
+## A new course, AND A NEW PLACE TO PUT IT. One site per course, which is the same rule the v1
+## migration follows and for the same reason: a course dropped into the last one's site would
+## inherit an elevation nobody typed for it, which is the silent wrongness this whole slice moves
+## the elevation to close. Two routes at one field is a thing a builder asks for explicitly, and
+## F4 is where they ask.
 func new_course(p_name: String) -> void:
 	var created := library.create(p_name)
+	created.site_id = sites.create(p_name).site_id
 	library.select(created.course_id)
 	selected_gate = 0
 	_changed()
@@ -622,15 +637,28 @@ func new_course(p_name: String) -> void:
 ## existing object would slip past it and let a hand-driven caller put 10^9 m into the barometric
 ## formula, which is NaN and then "nan g" on the stats panel.
 func set_field_elevation_m(elevation_m: float) -> void:
-	var air := course().air
-	course().air = AirDensity.new(elevation_m, air.temperature_c)
+	site().elevation_m = AirDensity.new(elevation_m, 0.0).elevation_m
 	_changed()
 
 
 func set_field_temperature_c(temperature_c: float) -> void:
-	var air := course().air
-	course().air = AirDensity.new(air.elevation_m, temperature_c)
+	site().migrated_temperature_c = AirDensity.new(0.0, temperature_c).temperature_c
 	_changed()
+
+
+## The place the open course is laid out in. A course pointing at a site that is not there falls
+## back to the selected one rather than to nothing, on load_from()'s rule: a damaged file lands
+## somewhere flyable and the room opens.
+func site() -> Site:
+	var where := sites.site(course().site_id)
+	return where if where != null else sites.selected()
+
+
+## The air the open course is flown in, composed from the site's elevation and the temperature
+## (design §3.1). This is the number the panel quotes and the number the physics runs on — one
+## derivation, not a second copy of it.
+func air() -> AirDensity:
+	return site().air()
 
 
 ## Renames without changing the id, so nothing that pointed at the course — a saved selection, a
@@ -679,6 +707,7 @@ func _on_course_row_selected(index: int) -> void:
 func _changed() -> void:
 	library.put(course())
 	library.save(save_path)
+	sites.save(sites_path)
 	render()
 	course_changed.emit()
 
@@ -716,25 +745,25 @@ func _render_course_list() -> void:
 func _render_air() -> void:
 	if _elevation_field == null:
 		return
-	var air := course().air
+	var here := air()
 
 	_updating = true
-	_elevation_field.value = air.elevation_m
-	_temperature_field.value = air.temperature_c
+	_elevation_field.value = here.elevation_m
+	_temperature_field.value = here.temperature_c
 	_updating = false
 
 	# Standard air gets a sentence rather than "0.0% below sea level", which reads like a
 	# measurement of nothing. A course at sea level should say what it is, once, and stop.
-	if air.is_standard():
-		_air_readout.text = "%.3f kg/m³ — standard sea-level air." % air.kgm3()
+	if here.is_standard():
+		_air_readout.text = "%.3f kg/m³ — standard sea-level air." % here.kgm3()
 		return
 
 	# Both densities, and the comparison in the units a pilot already thinks in. The percentage is
 	# the number that means something; the kg/m³ is there because it is what the physics uses and a
 	# builder should be able to see the quantity the app is actually reasoning about.
-	var fraction := air.fraction_below_standard()
+	var fraction := here.fraction_below_standard()
 	_air_readout.text = "%.3f kg/m³ — %.1f%% %s sea-level air (%.3f)." % [
-		air.kgm3(), absf(fraction) * 100.0,
+		here.kgm3(), absf(fraction) * 100.0,
 		"below" if fraction > 0.0 else "above", AirDensity.standard_kgm3()]
 
 

@@ -56,13 +56,17 @@ var gates: Array[Dictionary] = []
 var course_id := DEFAULT_ID
 var course_name := DEFAULT_NAME
 
-## The air this course is flown in (air_density.gd). A property of the WORLD, not of the aircraft
-## and not of a flight — labs-and-sim.md §1 puts it in Lab beside the gates, and Sim receives it
-## inside the finished field exactly as it receives them.
+## The SITE this course is laid out in — the place you fly, which owns the ground, the obstacles
+## and the elevation (site.gd).
 ##
-## Standard until a builder says otherwise, which is the correct reading of every course saved
-## before this existed rather than a fallback: 1.225 is precisely what those courses were flown in.
-var air := AirDensity.standard()
+## This replaced `var air`, and the replacement is the point rather than a tidy-up. Air was a
+## property of the WORLD living on the ROUTE, so laying out a second route at the same spot meant
+## typing the elevation twice, and the two copies were free to disagree the first time one was
+## edited. Now the place holds it once and every route in it reads the same number.
+##
+## Defaults to the default field, which is the correct reading of a course that has never been
+## told where it is rather than a fallback.
+var site_id := Site.DEFAULT_ID
 
 var next_gate_index := 0
 ## Where to put the drone back after a crash: the gate it most recently flew through,
@@ -250,7 +254,11 @@ const FINGERPRINT_PRECISION_RHO := 0.001
 ##
 ## Order matters, and it should: the same rings taken in a different sequence is a different
 ## course to fly, and the times are not comparable.
-func fingerprint() -> String:
+## The air is passed IN rather than read off this object, because a course no longer carries one —
+## the site does. `null` means standard, and that default is load-bearing rather than a
+## convenience: every existing caller passes nothing, and the paragraph below says what happens to
+## a hash that starts appending a term unconditionally.
+func fingerprint(p_air: AirDensity = null) -> String:
 	var parts := PackedStringArray()
 	for gate in gates:
 		var position: Vector3 = gate["position"]
@@ -277,8 +285,8 @@ func fingerprint() -> String:
 	# same rule the file follows, where what was never authored is not represented. It also has to
 	# be true — appending a standard-air term unconditionally would change every existing course's
 	# hash and orphan every best lap ever set.
-	if not air.is_standard():
-		parts.append("rho=%d" % roundi(air.kgm3() / FINGERPRINT_PRECISION_RHO))
+	if p_air != null and not p_air.is_standard():
+		parts.append("rho=%d" % roundi(p_air.kgm3() / FINGERPRINT_PRECISION_RHO))
 	# Hashed rather than stored whole, so the best-lap file stays a short readable table instead of
 	# growing a copy of every course anyone has ever flown. Truncated to 16 hex characters: the file
 	# holds a handful of courses, and a collision there needs 2^32 of them.

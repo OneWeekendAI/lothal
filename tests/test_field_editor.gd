@@ -8,6 +8,9 @@ extends RefCounted
 ## turns, so §5's consequence does not apply and nothing may invent one.
 
 const LIBRARY_PATH := "user://test_field_editor_courses.json"
+## The sites file that pairs with it. SiteLibrary owns the pairing rule; this is the same answer,
+## spelled here so the teardown can delete it.
+const SITES_PATH := "user://test_field_editor_courses_sites.json"
 
 
 static func run() -> Array:
@@ -28,6 +31,7 @@ static func _forget(path: String) -> void:
 
 static func _editor() -> FieldEditorScreen:
 	_forget(LIBRARY_PATH)
+	_forget(SITES_PATH)
 	return FieldEditorScreen.new(
 		CourseLibrary.load_from(LIBRARY_PATH), ReferenceBuild.build(), LIBRARY_PATH)
 
@@ -275,17 +279,22 @@ static func _it_writes_what_sim_flies() -> Array:
 
 ## Air is a property of the world, so it is authored here beside the gates (labs-and-sim.md §1).
 ## What is worth asserting is the same set of things the gates get: that it is written straight
-## through to disk, that it belongs to a COURSE rather than to the editor, and that the readout
+## through to disk, that it belongs to the WORLD rather than to the editor, and that the readout
 ## the builder judges by is the derivation the physics runs on rather than a second copy of it.
+##
+## SINCE F1 THE ELEVATION LIVES ON THE SITE, not on the course, and the checks below moved with it
+## rather than being relaxed. "A second course has its own field" is the same property it always
+## was — it just reads the site the course points at instead of a block on the course — and it is
+## still the check that would catch air being kept in one app-wide setting on the screen.
 static func _the_field_itself() -> Array:
 	var results: Array = []
 	var editor := _editor()
 
 	results.append(TestResult.new(
 		"a fresh course opens at standard sea-level air",
-		editor.course().air.is_standard(),
-		"%.4f kg/m3 at %.0f m, %.0f C" % [editor.course().air.kgm3(),
-			editor.course().air.elevation_m, editor.course().air.temperature_c]))
+		editor.air().is_standard(),
+		"%.4f kg/m3 at %.0f m, %.0f C" % [editor.air().kgm3(),
+			editor.air().elevation_m, editor.air().temperature_c]))
 
 	editor.set_field_elevation_m(920.0)
 	editor.set_field_temperature_c(35.0)
@@ -293,9 +302,9 @@ static func _the_field_itself() -> Array:
 	var expected := AirDensity.new(920.0, 35.0).kgm3()
 	results.append(TestResult.new(
 		"typing an elevation and a temperature derives the density the physics uses",
-		absf(editor.course().air.kgm3() - expected) < 1.0e-12,
+		absf(editor.air().kgm3() - expected) < 1.0e-12,
 		"%.4f kg/m3, %.1f%% below standard" % [
-			editor.course().air.kgm3(), editor.course().air.fraction_below_standard() * 100.0]))
+			editor.air().kgm3(), editor.air().fraction_below_standard() * 100.0]))
 
 	# The readout is what the builder judges by, and it has to be the SAME number — a panel that
 	# formatted its own estimate would be a second source of truth for the one quantity this whole
@@ -308,20 +317,21 @@ static func _the_field_itself() -> Array:
 
 	# Written through immediately, like every other edit here — there is no exit to save on.
 	var from_disk := CourseLibrary.load_from(LIBRARY_PATH)
+	var site_on_disk := SiteLibrary.load_from(SITES_PATH).site(from_disk.selected().site_id)
 	results.append(TestResult.new(
 		"the field is on disk immediately",
-		absf(from_disk.selected().air.kgm3() - expected) < 1.0e-12,
-		"%.4f m, %.1f C on disk" % [from_disk.selected().air.elevation_m,
-			from_disk.selected().air.temperature_c]))
+		site_on_disk != null and absf(site_on_disk.air().kgm3() - expected) < 1.0e-12,
+		"nowhere on disk" if site_on_disk == null else "%.4f m, %.1f C on disk" % [
+			site_on_disk.air().elevation_m, site_on_disk.air().temperature_c]))
 
-	# THE FIELD BELONGS TO THE COURSE, NOT TO THE EDITOR. This is the check that would catch air
+	# THE FIELD BELONGS TO THE WORLD, NOT TO THE EDITOR. This is the check that would catch air
 	# being stored on the screen or in a single app-wide setting: a second course must have its own
-	# air, and switching back must bring the first one's field back with it.
+	# field, and switching back must bring the first one's back with it.
 	editor.new_course("Sea level bando")
 	results.append(TestResult.new(
 		"a new course has its own field and does not inherit the last one's",
-		editor.course().air.is_standard(),
-		"%.4f kg/m3" % editor.course().air.kgm3()))
+		editor.air().is_standard(),
+		"%.4f kg/m3" % editor.air().kgm3()))
 	results.append(TestResult.new(
 		"and the readout followed the course rather than staying on the old numbers",
 		editor._air_readout.text.contains("standard sea-level air"),
@@ -339,15 +349,15 @@ static func _the_field_itself() -> Array:
 	editor.choose_course("default_circuit")
 	results.append(TestResult.new(
 		"switching back brings the first course's field back with it",
-		absf(editor.course().air.kgm3() - expected) < 1.0e-12,
-		"%.0f m, %.0f C" % [editor.course().air.elevation_m, editor.course().air.temperature_c]))
+		absf(editor.air().kgm3() - expected) < 1.0e-12,
+		"%.0f m, %.0f C" % [editor.air().elevation_m, editor.air().temperature_c]))
 
 	editor.choose_course("sea_level_bando")
 	results.append(TestResult.new(
 		"and the second course kept its own, so the two fields are not one shared setting",
-		absf(editor.course().air.kgm3() - denver) < 1.0e-12
+		absf(editor.air().kgm3() - denver) < 1.0e-12
 			and absf(denver - expected) > 0.01,
-		"course A %.4f kg/m3, course B %.4f kg/m3" % [expected, editor.course().air.kgm3()]))
+		"course A %.4f kg/m3, course B %.4f kg/m3" % [expected, editor.air().kgm3()]))
 	editor.choose_course("default_circuit")
 
 	# The domain guard, driven the way a hand-written caller would drive it rather than through a
@@ -355,8 +365,8 @@ static func _the_field_itself() -> Array:
 	editor.set_field_elevation_m(1.0e9)
 	results.append(TestResult.new(
 		"an absurd elevation is clamped rather than turning the whole readout into NaN",
-		not is_nan(editor.course().air.kgm3()) and editor.course().air.kgm3() > 0.0,
-		"%.4f kg/m3 at %.0f m" % [editor.course().air.kgm3(), editor.course().air.elevation_m]))
+		not is_nan(editor.air().kgm3()) and editor.air().kgm3() > 0.0,
+		"%.4f kg/m3 at %.0f m" % [editor.air().kgm3(), editor.air().elevation_m]))
 
 	editor.free()
 
@@ -378,8 +388,11 @@ static func _the_garage_follows_the_field() -> Array:
 	# 3500 m would be a worse bug than any it could catch, and it would also poison every later
 	# suite that reads the default circuit.
 	var real_path := CourseLibrary.SAVE_PATH
+	var real_sites := SiteLibrary.SAVE_PATH
 	var had_file := FileAccess.file_exists(real_path)
+	var had_sites := FileAccess.file_exists(real_sites)
 	var saved_contents := FileAccess.get_file_as_string(real_path) if had_file else ""
+	var saved_sites := FileAccess.get_file_as_string(real_sites) if had_sites else ""
 
 	var shell := AppShell.new()
 
@@ -406,10 +419,10 @@ static func _the_garage_follows_the_field() -> Array:
 	results.append(TestResult.new(
 		"and the build handed to Sim carries the same air",
 		absf(shell.lab.current_build().air.kgm3()
-			- shell.course_library.selected().air.kgm3()) < 1.0e-12,
-		"garage %.4f kg/m3, selected course %.4f kg/m3" % [
+			- shell.rooms.air_of_selected_course().kgm3()) < 1.0e-12,
+		"garage %.4f kg/m3, selected course's site %.4f kg/m3" % [
 			shell.lab.current_build().air.kgm3(),
-			shell.course_library.selected().air.kgm3()]))
+			shell.rooms.air_of_selected_course().kgm3()]))
 
 	shell.free()
 
@@ -419,6 +432,15 @@ static func _the_garage_follows_the_field() -> Array:
 		restore.close()
 	else:
 		DirAccess.remove_absolute(real_path)
+	# The elevation moved to sites.json in F1, so this section now edits TWO of the builder's files
+	# and has to put both back. A restore that forgot the second would leave somebody's home field
+	# at 3500 m — the bug the paragraph above calls worse than anything this could catch.
+	if had_sites:
+		var restore_sites := FileAccess.open(real_sites, FileAccess.WRITE)
+		restore_sites.store_string(saved_sites)
+		restore_sites.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(real_sites))
 
 	results.append(TestResult.new(
 		"and the builder's own courses are put back the way they were found",
@@ -427,6 +449,13 @@ static func _the_garage_follows_the_field() -> Array:
 		"%s on the way in, %s on the way out" % [
 			"a file" if had_file else "no file",
 			"a file" if FileAccess.file_exists(real_path) else "no file"]))
+	results.append(TestResult.new(
+		"and so are their sites",
+		FileAccess.file_exists(real_sites) == had_sites
+			and (not had_sites or FileAccess.get_file_as_string(real_sites) == saved_sites),
+		"%s on the way in, %s on the way out" % [
+			"a file" if had_sites else "no file",
+			"a file" if FileAccess.file_exists(real_sites) else "no file"]))
 	return results
 
 

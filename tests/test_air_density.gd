@@ -231,16 +231,32 @@ static func _oracle_cannot_see_the_field() -> Array:
 	#
 	# So it poisons the real path, and restores whatever was there afterwards. A test that guards
 	# against reading user state has to CREATE the user state, or it is guarding nothing.
+	# THE FIELD MOVED TO sites.json IN F1 — a course no longer carries air, the PLACE does — so both
+	# real files are poisoned and both are put back. Poisoning only the courses file would leave
+	# this section measuring a file nothing under test reads, which is the exact failure the
+	# paragraph above records.
 	var real_path := CourseLibrary.SAVE_PATH
+	var real_sites := SiteLibrary.SAVE_PATH
 	var had_file := FileAccess.file_exists(real_path)
+	var had_sites := FileAccess.file_exists(real_sites)
 	var saved_contents := FileAccess.get_file_as_string(real_path) if had_file else ""
+	var saved_sites := FileAccess.get_file_as_string(real_sites) if had_sites else ""
+
+	var high := Site.new()
+	high.site_id = "test_oracle_high"
+	high.elevation_m = 3500.0
+	high.migrated_temperature_c = 30.0
+	var sites := SiteLibrary.with_default()
+	sites.put(high)
+	sites.select(high.site_id)
+	sites.save(real_sites)
 
 	var library := CourseLibrary.with_default()
-	library.selected().air = AirDensity.new(3500.0, 30.0)
+	library.selected().site_id = high.site_id
 	library.save(real_path)
-	var reloaded := CourseLibrary.load_from(real_path)
+	var reloaded := SiteLibrary.load_from(real_sites)
 
-	var selected_rho := reloaded.selected().air.kgm3()
+	var selected_rho := reloaded.selected().air().kgm3()
 	var oracle := ReferenceBuild.build()
 	results.append(TestResult.new(
 		"a 3500 m field really is selected and saved, so this check has something to fail on",
@@ -265,6 +281,12 @@ static func _oracle_cannot_see_the_field() -> Array:
 		restore.close()
 	else:
 		DirAccess.remove_absolute(real_path)
+	if had_sites:
+		var restore_sites := FileAccess.open(real_sites, FileAccess.WRITE)
+		restore_sites.store_string(saved_sites)
+		restore_sites.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(real_sites))
 	return results
 
 
@@ -275,15 +297,16 @@ static func _oracle_cannot_see_the_field() -> Array:
 static func _persistence() -> Array:
 	var results: Array = []
 
-	# A course file written before air existed: no `air` key anywhere in it. This is the shape on
-	# every existing user's disk, and reading it as anything but standard air would change numbers
-	# they have already seen.
+	# A course file with nothing to say about where it is. Since F1 that means a v2 record with no
+	# `site_id`, which reads as the default field — at sea level, which is what this course was
+	# always flown in. Reading it as anything else would change numbers a builder has already seen.
 	var legacy := {
-		"schema": 1,
+		"schema": 2,
 		"selected": "default_circuit",
 		"courses": [{
 			"id": "default_circuit", "name": "Circuit",
 			"gates": GateCourse.gates_to_data(GateCourse.build_gates()),
+			"site_id": "default_site",
 		}],
 	}
 	# Written through JsonStore, the same writer the app uses. Hand-rolling the fixture with
@@ -294,12 +317,12 @@ static func _persistence() -> Array:
 	var before := FileAccess.get_file_as_string(LIBRARY_PATH)
 
 	var loaded := CourseLibrary.load_from(LIBRARY_PATH)
+	var where := SiteLibrary.with_default().site(loaded.selected().site_id)
 	results.append(TestResult.new(
-		"a course saved before air existed loads as standard sea-level air",
-		absf(loaded.selected().air.kgm3() - AirDensity.standard_kgm3()) < 1.0e-12,
-		"%.6f kg/m3, elevation %.1f m, temperature %.1f C" % [
-			loaded.selected().air.kgm3(), loaded.selected().air.elevation_m,
-			loaded.selected().air.temperature_c]))
+		"a course that says nothing about where it is is flown in standard sea-level air",
+		where != null and absf(where.air().kgm3() - AirDensity.standard_kgm3()) < 1.0e-12,
+		"nowhere" if where == null else "%.6f kg/m3, elevation %.1f m, temperature %.1f C" % [
+			where.air().kgm3(), where.air().elevation_m, where.air().temperature_c]))
 
 	# And saving it back must not INVENT the block. A course nobody has told about its field has to
 	# round-trip untouched, or this slice rewrites every course file on the planet on first launch
@@ -336,17 +359,45 @@ static func _persistence() -> Array:
 			== PRE_AIR_DEFAULT_FINGERPRINT,
 		"%s" % CourseLibrary.load_from(LIBRARY_PATH).selected().fingerprint()))
 
-	# An authored field, on the other hand, must survive exactly.
-	loaded.selected().air = AirDensity.new(920.0, 35.0)
-	loaded.save(LIBRARY_PATH)
-	var authored := CourseLibrary.load_from(LIBRARY_PATH)
+	# AN AUTHORED FIELD MUST SURVIVE EXACTLY — and since F1 that means surviving the v1 -> v2
+	# migration as well as a save and a load, because a builder who typed 920 m and 35 C typed it
+	# into a v1 file. Both numbers land on the site the migration makes for the course: the
+	# elevation because that is a fact about the place, the temperature parked for the conditions
+	# (design §3.1) rather than discarded on its way past.
+	var v1_path := "user://test_air_v1_courses.json"
+	var v1_sites := SiteLibrary.path_beside(v1_path)
+	for scratch in [v1_path, v1_sites]:
+		if FileAccess.file_exists(scratch):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(scratch))
+	JsonStore.write_document(v1_path, {
+		"schema": 1,
+		"selected": "default_circuit",
+		"courses": [{
+			"id": "default_circuit", "name": "Circuit",
+			"air": {"elevation_m": 920.0, "temperature_c": 35.0},
+			"gates": GateCourse.gates_to_data(GateCourse.build_gates()),
+		}],
+	})
+	var migrated_sites := SiteLibrary.migrate_courses(v1_path, v1_sites)
+	var authored := CourseLibrary.load_from(v1_path)
+	var authored_site := migrated_sites.site(authored.selected().site_id)
 	results.append(TestResult.new(
-		"an authored field survives a save and load",
-		absf(authored.selected().air.elevation_m - 920.0) < 1.0e-9
-			and absf(authored.selected().air.temperature_c - 35.0) < 1.0e-9,
-		"%.1f m, %.1f C, %.4f kg/m3" % [
-			authored.selected().air.elevation_m, authored.selected().air.temperature_c,
-			authored.selected().air.kgm3()]))
+		"an authored field survives the migration, and a save and load after it",
+		authored_site != null
+			and absf(authored_site.air().elevation_m - 920.0) < 1.0e-9
+			and absf(authored_site.air().temperature_c - 35.0) < 1.0e-9,
+		"nowhere" if authored_site == null else "%.1f m, %.1f C, %.4f kg/m3" % [
+			authored_site.air().elevation_m, authored_site.air().temperature_c,
+			authored_site.air().kgm3()]))
+	# And the course it was lifted off is still the same track, so the best lap set on it at 920 m
+	# is still reachable after the file changed schema underneath it.
+	results.append(TestResult.new(
+		"and the migrated course is still the same track, so its best lap is not orphaned",
+		authored.selected().fingerprint() == PRE_AIR_DEFAULT_FINGERPRINT,
+		"%s (was %s)" % [authored.selected().fingerprint(), PRE_AIR_DEFAULT_FINGERPRINT]))
+	for scratch in [v1_path, v1_sites]:
+		if FileAccess.file_exists(scratch):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(scratch))
 
 	# A damaged block is standard air rather than a crash or a NaN, on the same rule the rest of
 	# this file follows: a bad document lands somewhere flyable and the app opens.
@@ -386,9 +437,15 @@ static func _keys_of(document: String) -> PackedStringArray:
 # 6. The invariant Lab's readout rests on
 # ---------------------------------------------------------------------------
 
-## Lab reads the SELECTED course's air, and the design's answer to "what happens when no field is
-## selected" is that there is no such state. That answer is worth exactly as much as this test:
-## every path into CourseLibrary must leave a selection that resolves.
+## Lab reads the air of the SELECTED course's SITE, and the design's answer to "what happens when
+## no field is selected" is that there is no such state. That answer is worth exactly as much as
+## this test: every path into CourseLibrary must leave a selection that resolves, and the site it
+## names must answer with air.
+##
+## Since F1 that is TWO libraries deep, which is one more place for the invariant to break: a
+## course may resolve and still point at a site that is not there. So the site half is checked on
+## a library that has never heard of the ids these courses carry, which is the shape a builder
+## gets when they delete a field.
 static func _library_always_has_a_selection() -> Array:
 	var results: Array = []
 
@@ -416,14 +473,22 @@ static func _library_always_has_a_selection() -> Array:
 	refused.select("no_such_course")
 	checks["a library after a refused select()"] = refused
 
+	# A site library that knows only the default field — so every course below whose site_id is
+	# anything else has to fall back rather than hand back nothing.
+	var sites := SiteLibrary.with_default()
 	for label in checks:
 		var library: CourseLibrary = checks[label]
 		var course := library.selected()
+		var where: Site = null
+		if course != null:
+			where = sites.site(course.site_id)
+			if where == null:
+				where = sites.selected()
 		results.append(TestResult.new(
-			"%s still resolves to a course with air" % label,
-			course != null and course.air != null and course.air.kgm3() > 0.0,
+			"%s still resolves to a course, and to a place with air" % label,
+			course != null and where != null and where.air().kgm3() > 0.0,
 			"selected \"%s\", air %s" % [library.selected_id,
-				"missing" if course == null else "%.4f kg/m3" % course.air.kgm3()]))
+				"nowhere" if where == null else "%.4f kg/m3" % where.air().kgm3()]))
 
 	DirAccess.remove_absolute(LIBRARY_PATH)
 	return results
@@ -448,20 +513,22 @@ static func _fingerprint() -> Array:
 
 	# But a lap flown in 36% thinner air is not comparable to a sea-level lap on the same rings, and
 	# reporting one as the other is the stale record this whole mechanism exists to prevent.
+	# The air is PASSED IN since F1 — a course no longer carries one, the site does — and an absent
+	# argument means standard, which is what keeps the golden value above true.
+	var thin := AirDensity.new(3500.0, 20.0)
 	var high_course := GateCourse.new()
-	high_course.air = AirDensity.new(3500.0, 20.0)
 	results.append(TestResult.new(
 		"the same rings at 3500 m are a different track, so records do not cross over",
-		high_course.fingerprint() != standard_course.fingerprint(),
+		high_course.fingerprint(thin) != standard_course.fingerprint(),
 		"3500 m: %s vs standard: %s" % [
-			high_course.fingerprint(), standard_course.fingerprint()]))
+			high_course.fingerprint(thin), standard_course.fingerprint()]))
 
 	# And a thermometer read a tenth of a degree differently must NOT retire a record — the same
 	# reason gate positions round to a millimetre.
+	var jitter := AirDensity.new(3500.0, 20.001)
 	var jittered := GateCourse.new()
-	jittered.air = AirDensity.new(3500.0, 20.001)
 	results.append(TestResult.new(
 		"a hundredth of a degree does not retire a record",
-		jittered.fingerprint() == high_course.fingerprint(),
-		"%s vs %s" % [jittered.fingerprint(), high_course.fingerprint()]))
+		jittered.fingerprint(jitter) == high_course.fingerprint(thin),
+		"%s vs %s" % [jittered.fingerprint(jitter), high_course.fingerprint(thin)]))
 	return results

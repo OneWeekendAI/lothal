@@ -73,6 +73,15 @@ var studio: StudioScreen = null
 ## `pack_charge` is: two rooms touch it — the editor writes it and the field reads it — and one
 ## instance within a session is what stops the door from handing over a stale copy.
 var course_library := CourseLibrary.load_from()
+## The PLACES those courses are laid out in — the ground, the obstacles and the elevation. Held
+## beside the courses and for the same reason: two rooms touch it, and one instance within a
+## session is what stops the door from handing over a stale copy.
+##
+## Constructed through `migrate_courses` rather than `load_from`, which is what converts a v1
+## `courses.json` on first launch. It runs BEFORE `course_library` is read below rather than
+## alongside it — a course loaded from a file the migration has not rewritten yet would carry no
+## site id, and the garage would quote sea-level air at a builder who typed 3500 m.
+var site_library := SiteLibrary.migrate_courses()
 ## How much charge is in each pack right now. Loaded once on startup and held here rather than in
 ## any one room, because it is the one piece of state every room touches: two benches and the
 ## field all drain it, and Lab is where it gets charged back up. It is saved whenever a room that
@@ -126,8 +135,26 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 		p_catalog if p_catalog != null else catalog_for_lab(), p_tweaks, pack_charge)
 	# The garage quotes its numbers in the air of the course that is selected to be flown. Set here
 	# rather than read by Lab, so there is one owner of the library and one reader of it.
-	lab.air = course_library.selected().air
+	lab.air = air_of_selected_course()
 	_host.add_child(lab)
+
+
+## The air the garage quotes its numbers in: the air of the PLACE the selected course is laid out
+## in (design §3.1). Not the course's — a course has no air to give any more, and it never should
+## have had one — and emphatically not a hard-coded standard, which reads identically on a fresh
+## install and is wrong for everybody who has typed an elevation.
+##
+## A course pointing at a site that is not there falls back to the selected site rather than to
+## standard air, on the same rule: the builder is somewhere, and the nearest true answer to where
+## is where they are.
+func air_of_selected_course() -> AirDensity:
+	var course := course_library.selected()
+	var where: Site = null
+	if course != null:
+		where = site_library.site(course.site_id)
+	if where == null:
+		where = site_library.selected()
+	return where.air() if where != null else AirDensity.standard()
 
 
 func catalog_for_lab() -> PartsCatalog:
@@ -239,13 +266,16 @@ func show_frame_bench() -> void:
 ## literally rather than by analogy with the benches.
 func show_field_editor() -> void:
 	_close_rooms()
-	field_editor = FieldEditorScreen.new(course_library, lab.current_build())
+	# The SHARED site library, not one loaded fresh here, for course_library's reason: the editor
+	# writes the elevation and the garage reads it, and two copies would be two opinions.
+	field_editor = FieldEditorScreen.new(
+		course_library, lab.current_build(), CourseLibrary.SAVE_PATH, site_library)
 	# Editing the field changes what the aircraft next door CAN DO, so Lab's readout has to follow
 	# it. Without this the builder types 3500 m, walks back to the garage and reads a
 	# thrust-to-weight for a place they are not — which is the exact stale reading this feature
 	# exists to remove, reintroduced one room over.
 	field_editor.course_changed.connect(func() -> void:
-		lab.set_air(course_library.selected().air))
+		lab.set_air(air_of_selected_course()))
 	_enter_room(field_editor)
 
 
