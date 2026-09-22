@@ -9,7 +9,7 @@ extends SceneTree
 
 const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "build panel", "details footers",
-	"gate course", "site", "terrain", "ground authority", "real files", "conditions", "course library", "course warnings", "field editor", "hud", "keyboard throttle", "observables", "rotor synth",
+	"gate course", "site", "terrain", "terrain mesh", "ground authority", "real files", "conditions", "course library", "course warnings", "field editor", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
 	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
@@ -76,6 +76,8 @@ func _run_suite(suite_name: String) -> Array:
 	match suite_name:
 		# F3 (plans/2026-09-21-field-room-plan.md). The shape vocabulary and height_at — pure, analytic, nothing drawn.
 		"terrain": return TestTerrain.run()
+		# F5 — the mesh and collider, drawn and rebuilt from one description (Terrain.height_at)
+		"terrain mesh": return TestTerrainMesh.run()
 		# F4 — terrain is the ground authority
 		"ground authority": return TestGroundAuthority.run()
 		# F4 review round 2 — the hold that puts a builder's files back after an abort

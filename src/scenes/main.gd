@@ -33,6 +33,7 @@ const LOG_DIR := FlightLogLibrary.LOG_DIR
 @onready var drone: Node3D = $Drone
 @onready var camera: Camera3D = $Camera3D
 @onready var ground_mesh: MeshInstance3D = $Ground/GroundMesh
+@onready var ground_collision: CollisionShape3D = $Ground/CollisionShape3D
 
 # Behind (+Z, per the coordinate contract's -Z-is-forward) and above the ~15cm frame.
 # Applied in the drone's own heading frame, not world space (see _update_camera).
@@ -42,8 +43,6 @@ const CAMERA_FOLLOW_RATE := 6.0
 ## Aim slightly above the airframe so the drone sits low in frame and the gate ahead gets
 ## the screen space, rather than the drone sitting dead centre hiding what it is flying at.
 const CAMERA_LOOK_AHEAD_UP := 0.6
-
-const GROUND_SIZE_M := 400.0
 
 # Where the drone sits before the course exists (and the seed for _previous_position).
 # The real start line comes from GateCourse.start_position() — spawning airborne matters
@@ -161,6 +160,7 @@ func adopt_selected_course() -> void:
 	course = course_library.selected()
 	terrain = _course_terrain()
 	lap_timer = LapTimer.new(course.fingerprint())
+	_rebuild_ground()
 
 
 ## The ground under the open course. A course pointing at a site that is not there falls back to
@@ -173,6 +173,22 @@ func _course_terrain() -> Terrain:
 	return where.terrain if where != null else null
 
 
+## The ground's mesh, collider and grid tiling — all from `terrain` (F5). Called at `_ready` and
+## on every `adopt_selected_course()`, the one entry point that re-reads the course: a mesh built
+## once at startup would keep showing the field the app opened on after a builder picks another
+## one in Lab.
+##
+## `GROUND_SIZE_M` used to be an independent 400 m constant; it is not one any more (Ruling 34) —
+## it was only ever the grid material's tiling size (`GroundGrid.build_material`'s `uv1_scale`),
+## so it now follows the terrain's own extent, the way `field_editor_screen.gd` already ties its
+## ground tiling to the layout it is drawing.
+func _rebuild_ground() -> void:
+	ground_mesh.mesh = TerrainMesh.build_mesh(terrain)
+	ground_collision.shape = TerrainMesh.build_collider(terrain)
+	var extent := terrain.extent() if terrain != null else Vector2(Terrain.DEFAULT_WIDTH_M, Terrain.DEFAULT_LENGTH_M)
+	var ground_size := maxf(absf(extent.x), absf(extent.y))
+	ground_mesh.material_override = GroundGrid.build_material(ground_size)
+
 ## Whether the aircraft has hit the ground. STILL AN ALTITUDE COMPARISON and deliberately not a
 ## physics query: the recorded decision above was that a shape cast costs more than it tells us,
 ## and `Terrain.height_at` is arithmetic, so giving the ground a shape does not overturn it. Static
@@ -184,7 +200,7 @@ static func _check_crash(at: Vector3, p_terrain: Terrain) -> bool:
 	return at.y < ground + CRASH_ALTITUDE_M
 
 func _ready() -> void:
-	ground_mesh.material_override = GroundGrid.build_material(GROUND_SIZE_M)
+	_rebuild_ground()
 
 	course_renderer = CourseRenderer.new(course)
 	add_child(course_renderer)

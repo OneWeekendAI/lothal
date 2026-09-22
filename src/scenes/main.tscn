@@ -1,12 +1,6 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://src/scenes/main.gd" id="1"]
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
-size = Vector2(400, 400)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
-size = Vector3(400, 0.1, 400)
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.12, 0.21, 0.42, 1)
@@ -57,11 +51,11 @@ transform = Transform3D(0.8137977, -0.4600171, 0.3536018, 0, 0.6087614, 0.793353
 light_energy = 1.1
 shadow_enabled = true
 
+; The ground has no mesh and no shape authored here (F5). Both come from TerrainMesh, built from
+; the selected site's Terrain at _ready and on every adopt_selected_course() — a shipped plane and
+; box here would be a second, un-syncable copy of the site's shape.
 [node name="Ground" type="StaticBody3D" parent="."]
 
 [node name="GroundMesh" type="MeshInstance3D" parent="Ground"]
-mesh = SubResource("PlaneMesh_ground")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
-shape = SubResource("BoxShape3D_ground")
