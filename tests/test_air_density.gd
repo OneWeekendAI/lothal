@@ -40,6 +40,13 @@ const PRE_AIR_DEFAULT_FINGERPRINT := "f106fd00d916b853"
 
 static func run() -> Array:
 	var results: Array = []
+	# THE HOLD ON THE BUILDER'S OWN FILES. Taken here and released below, because a section that
+	# aborts mid-way never reaches its own restore — measured, and it is what left a 3500 m
+	# elevation and an invented weather row on this developer's disk. `run()` is the only frame
+	# GDScript guarantees will resume after an abort inside a section, so the hold lives here and
+	# `run()` does nothing else. See tests/real_files.gd.
+	var held := RealFiles.hold([
+		SiteLibrary.SAVE_PATH, CourseLibrary.SAVE_PATH, ConditionsLibrary.SAVE_PATH])
 	var sections := {
 		"published table": _published_isa_table(),
 		"monotonicity": _monotonicity(),
@@ -49,6 +56,10 @@ static func run() -> Array:
 		"library invariant": _library_always_has_a_selection(),
 		"fingerprint": _fingerprint(),
 	}
+	held.restore()
+	results.append(TestResult.new(
+		"the builder's own files are back the way they were found, whatever the sections did",
+		held.intact(), held.report()))
 	# A runtime error partway through a section aborts only that section and its append never runs,
 	# so the suite would pass with its best checks silently deleted. Measured, on this repo, on
 	# 2026-08-12. Asserting each section produced something is what makes the count trustworthy.

@@ -18,6 +18,13 @@ const CONDITIONS_PATH := "user://test_field_editor_courses_conditions.json"
 
 static func run() -> Array:
 	var results: Array = []
+	# THE HOLD ON THE BUILDER'S OWN FILES. Taken here and released below, because a section that
+	# aborts mid-way never reaches its own restore — measured, and it is what left a 3500 m
+	# elevation and an invented weather row on this developer's disk. `run()` is the only frame
+	# GDScript guarantees will resume after an abort inside a section, so the hold lives here and
+	# `run()` does nothing else. See tests/real_files.gd.
+	var held := RealFiles.hold([
+		SiteLibrary.SAVE_PATH, CourseLibrary.SAVE_PATH, ConditionsLibrary.SAVE_PATH])
 	var sections := {
 		"editing gates": _editing_gates(),
 		"the renderer": _the_renderer_follows(),
@@ -26,6 +33,10 @@ static func run() -> Array:
 		"it costs nothing": _it_costs_nothing(),
 		"the field itself": _the_field_itself(),
 	}
+	held.restore()
+	results.append(TestResult.new(
+		"the builder's own files are back the way they were found, whatever the sections did",
+		held.intact(), held.report()))
 	# ADDED IN F2, AFTER THIS FILE PROVED THE NEED FOR IT. A runtime error partway through a
 	# section aborts only that section and its append never runs, so the suite passes with its best
 	# checks silently deleted. Measured here: `Site.air()` went away, "the field itself" aborted at
