@@ -100,9 +100,11 @@ var terrain: Terrain = flat_terrain(DEFAULT_WIDTH_M, DEFAULT_LENGTH_M)
 ## Under F1 the predicate was on the VALUE (`terrain.is_empty()`), which could not go stale. So
 ## `to_data()` asks both: the file had a block, OR the terrain is no longer the default one.
 var _had_terrain := true
-## What is standing in the field. F6 fills this; until then it is empty and round-trips untouched,
-## which is what stops a builder on a later version losing theirs by opening this one.
-var obstacles: Array = []
+## What is standing in the field: box / pole / wall `Obstacle`s, placed on this site's own
+## terrain. An obstacle whose `kind` this version does not recognise is dropped rather than kept
+## as an unreadable record — see `Obstacle.from_data`'s header for why that is the honest answer
+## rather than a silent loss.
+var obstacles: Array[Obstacle] = []
 ## Whether the record this site came from had an `obstacles` key at all. An empty list that WAS in
 ## the file is a statement — this field has nothing standing in it — and one that was never there
 ## is a question nobody asked; the two have to round-trip differently or the first save of a
@@ -195,7 +197,12 @@ static func from_data(data: Variant) -> Site:
 	out._had_obstacles = record.has("obstacles")
 	var standing: Variant = record.get("obstacles")
 	if standing is Array:
-		out.obstacles = (standing as Array).duplicate(true)
+		var parsed: Array[Obstacle] = []
+		for entry in (standing as Array):
+			var one := Obstacle.from_data(entry, out.terrain)
+			if one != null:
+				parsed.append(one)
+		out.obstacles = parsed
 
 	var temperature: Variant = record.get("parked_temperature_c")
 	if temperature is float or temperature is int:
@@ -232,7 +239,10 @@ func to_data() -> Dictionary:
 	if obstacles.is_empty() and not _had_obstacles:
 		record.erase("obstacles")
 	else:
-		record["obstacles"] = obstacles.duplicate(true)
+		var written: Array = []
+		for one in obstacles:
+			written.append(one.to_data())
+		record["obstacles"] = written
 	if parked_temperature_c is float or parked_temperature_c is int:
 		record["parked_temperature_c"] = float(parked_temperature_c)
 	else:

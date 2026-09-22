@@ -71,9 +71,11 @@ static func vertices(p_terrain: Terrain) -> PackedVector3Array:
 
 
 ## The drawn ground: the floor grid, plus an enclosure's walls, pillars and roof when the shape
-## calls for them.
-static func build_mesh(p_terrain: Terrain) -> ArrayMesh:
-	var triangles := _all_triangles(p_terrain)
+## calls for them, plus whatever `p_obstacles` (F6) stands on it. Defaulted to empty so every
+## caller from before F6 — and F5's own suite, which pins its calls by exact text — keeps reading
+## `TerrainMesh.build_mesh(terrain)` unchanged.
+static func build_mesh(p_terrain: Terrain, p_obstacles: Array[Obstacle] = []) -> ArrayMesh:
+	var triangles := _all_triangles(p_terrain, p_obstacles)
 	var tool := SurfaceTool.new()
 	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for point in triangles:
@@ -82,11 +84,11 @@ static func build_mesh(p_terrain: Terrain) -> ArrayMesh:
 	return tool.commit()
 
 
-## The collider for the same ground: the SAME triangle list `build_mesh` drew, so what the
-## aircraft can hit and what the pilot sees are one list of points, not two.
-static func build_collider(p_terrain: Terrain) -> ConcavePolygonShape3D:
+## The collider for the same ground: the SAME triangle list `build_mesh` drew, obstacles included,
+## so what the aircraft can hit and what the pilot sees are one list of points, not two.
+static func build_collider(p_terrain: Terrain, p_obstacles: Array[Obstacle] = []) -> ConcavePolygonShape3D:
 	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(_all_triangles(p_terrain))
+	shape.set_faces(_all_triangles(p_terrain, p_obstacles))
 	return shape
 
 
@@ -259,8 +261,12 @@ static func _terrain_num(p_terrain: Terrain, key: String) -> float:
 	return float(fallback) if fallback is float or fallback is int else 0.0
 
 
-## The complete drawn/collidable triangle list: floor, then walls/pillars/roof for an enclosure.
-static func _all_triangles(p_terrain: Terrain) -> PackedVector3Array:
+## The complete drawn/collidable triangle list: floor, then walls/pillars/roof for an enclosure,
+## then every obstacle standing on it (F6) — one list, so what is drawn and what is collidable
+## never have to be kept in sync by hand.
+static func _all_triangles(p_terrain: Terrain, p_obstacles: Array[Obstacle] = []) -> PackedVector3Array:
 	var out := _floor_triangles(p_terrain)
 	out.append_array(_wall_and_pillar_triangles(p_terrain))
+	for obstacle in p_obstacles:
+		out.append_array(obstacle.triangles())
 	return out
