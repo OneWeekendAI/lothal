@@ -844,12 +844,9 @@ func _refresh_frame_document(frame: Dictionary) -> void:
 ## the failure this project has already been bitten by.
 func _on_selection_changed() -> void:
 	var build := current_build()
-	# The day's wind, read HERE — every call, not cached at construction (F8 check 9): a builder
-	# who switches conditions via set_conditions() sees the SAME Build this handler already rebuilds
-	# for every other reason, carrying the wind and the conditions name the stats panel names its
-	# rows after, rather than a value frozen from whichever conditions were selected when Lab opened.
-	build.field_wind_mps = wind_mps
-	build.field_conditions_name = conditions_name
+	# The day's wind is stamped inside current_build() rather than here — see its own comment, and
+	# F8 fix round 2. It used to be set on this local, which meant every OTHER caller of
+	# current_build() got an aircraft that did not know the weather.
 	# The assembly reaches the BUILD before it reaches the drawing, because it is no longer only a
 	# drawing: where the pack is strapped and how far it is slid decide where its mass sits, and
 	# every panel below reads mass properties off this object. Resolved once, here, and handed to
@@ -1074,8 +1071,24 @@ func set_motor_map_visible(shown: bool) -> void:
 		airframe.motor_map.visible = shown
 
 
+## The day's wind and the name of the conditions it was read from ride on every Build this room
+## hands out, for the reason `_build_from_rails` already passes `air`: they are the weather these
+## rails are being asked about, and a Build that carries the air but not the wind quotes a calm
+## flight time under a row labelled with a windy conditions name.
+##
+## STAMPED HERE, NOT IN `_on_selection_changed` (F8 fix round 2 — a production defect, found by a
+## test assertion that could not fail because of it). It was set on that handler's own local, so
+## the panels it rendered were right and EVERY OTHER caller of this function was wrong: the config
+## sheet export, the FC panel's re-render after a tune, `build_with_open_harness()`, the Printed
+## room, and the aircraft `room_host.gd` hands the course room — each of them received an aircraft
+## whose `field_wind_mps` was 0.0 while Lab's own panel beside it quoted the selected conditions.
+##
+## Read on every call rather than cached, which is still check 9's rule: `set_conditions` writes
+## `wind_mps` and re-renders, and the next Build out of here carries the new value.
 func current_build() -> Build:
 	var build := _build_from_rails()
+	build.field_wind_mps = wind_mps
+	build.field_conditions_name = conditions_name
 	# Only when there is something to say: `set_printing` recomputes, and an empty block fits nothing.
 	if not printing.is_empty():
 		build.set_printing(printing)

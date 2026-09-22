@@ -433,11 +433,23 @@ static func _gustiness_moves_nothing() -> Array:
 	results.append(TestResult.new(
 		"flight current is identical across gustiness 0.0 and 6.0 at the same steady wind",
 		current_a == current_b, "%s vs %s" % [current_a, current_b]))
-	# NOT top speed, which was this section's third assertion until this fix round and could not
-	# fail: `top_speed_kmh()` takes neither wind nor gustiness, so it is green under every possible
+	# NOT top speed, which was this section's third assertion until fix round 1 and could not fail:
+	# `top_speed_kmh()` takes neither wind nor gustiness, so it is green under every possible
 	# mutation of the wind term (review finding 9 — a line green by construction is not evidence).
-	# Re-pointed at the field_wind row's own text, which IS a function of the steady wind and would
-	# move the instant gustiness were smuggled into `field_wind_mps` anywhere along this path.
+	# Re-pointed at the field_wind row's own text, which IS a function of the steady wind.
+	#
+	# THE FIRST RE-POINTING COULD NOT FAIL EITHER, AND SAYING SO MATTERS (F8 fix round 2). It read
+	# `_wind_row_message(lab.current_build())` at a time when `current_build()` did not copy
+	# `field_wind_mps` onto the Build it returned — that was set on a local inside
+	# `_on_selection_changed`, which this test never touches — so the inspected Build was calm on
+	# BOTH sides and both messages read "(no field_wind row)". Trivially equal under any mutation.
+	# The fix was in PRODUCTION, not here: `current_build()` now carries the wind (see
+	# `lab_screen.gd`), which is what the guard below asserts before the comparison is trusted.
+	results.append(TestResult.new(
+		"the field_wind row EXISTS on both sides — without this, the comparison below is two "
+			+ "identical \"(no field_wind row)\" strings and cannot fail",
+		wind_row_a.contains("km/h") and wind_row_b.contains("km/h"),
+		"a: %s | b: %s" % [wind_row_a, wind_row_b]))
 	results.append(TestResult.new(
 		"the field_wind row reads identically across gustiness 0.0 and 6.0 at the same steady wind",
 		wind_row_a == wind_row_b, "%s vs %s" % [wind_row_a, wind_row_b]))
@@ -484,9 +496,16 @@ static func _conditional_rows_name_conditions() -> Array:
 	# Named on every panel that shares PartDetails' footer, not only the frame rail — the same
 	# argument part_details.gd's own header makes for why the five (now six) rows are identical
 	# across panels.
+	# NOT stamped by hand here any more (F8 fix round 2). `current_build()` now carries the room's
+	# wind and conditions name itself, so this reads the same aircraft any other caller of it gets —
+	# and the two assertions below therefore also prove that it does.
 	var build := lab.current_build()
-	build.field_wind_mps = 8.0
-	build.field_conditions_name = "Gusty afternoon"
+	results.append(TestResult.new(
+		"current_build() hands out a Build that CARRIES the room's wind and conditions name — "
+			+ "every caller of it, not only the handler that renders these panels",
+		build.field_wind_mps == 8.0 and build.field_conditions_name == "Gusty afternoon",
+		"field_wind_mps=%.4f, field_conditions_name=%s" % [
+			build.field_wind_mps, build.field_conditions_name]))
 	var motor_panel := MotorDetails.new(catalog)
 	motor_panel.render(build.motor, build)
 	results.append(TestResult.new(
