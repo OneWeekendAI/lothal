@@ -22,6 +22,20 @@ func _init() -> void:
 	var script: Script = load(_path_of(suite_name))
 	var results: Array = script.run()
 
+	# RULING 30. An empty `results` array means `run()` itself aborted before appending anything —
+	# for example a `SCRIPT ERROR` in the setup calls between `RealFiles.hold()` and the sections
+	# dict (see tests/real_files.gd's "WHAT ACTUALLY RUNS BETWEEN hold() AND THE SECTIONS" section),
+	# which is explicitly NOT covered by RealFiles' guarantee. Before this guard, that produced
+	# `0/0 failed` — a FALSE GREEN, and a worse failure mode than the hang Ruling 27 fixed: a hang
+	# is at least loud. `tests/run_tests.gd` already treats a suite returning nothing as a FAIL for
+	# exactly this reason; this matches it.
+	if results.is_empty():
+		print("[FAIL] suite \"%s\" produced no results (run() aborted before returning, or the class failed to register)" % suite_name)
+		print("")
+		print("1/1 failed in %s" % suite_name)
+		quit(1)
+		return
+
 	# RULING 27. A `null` element means a section aborted mid-way and its `results.append(...)`
 	# received the aborted function's return-type default rather than a TestResult — see
 	# tests/real_files.gd for why that is expected, survivable behaviour and not a crash. Before

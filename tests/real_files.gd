@@ -32,7 +32,32 @@ extends RefCounted
 ## caller — `run()`, which builds its sections dictionary — and the section that aborted comes back
 ## as an empty array, which the existing `section "x" produced results` guard already turns red. The
 ## hold is therefore taken in `run()`, before the sections are built, and released in `run()`,
-## after. That is the whole mechanism.
+## after.
+##
+## ---------------------------------------------------------------------------
+## WHAT ACTUALLY RUNS BETWEEN `hold()` AND THE SECTIONS, STATED PRECISELY
+## ---------------------------------------------------------------------------
+##
+## Every one of the eleven callers of `RealFiles.hold()` in this directory, as of this writing,
+## does a small amount of setup in `run()` between the hold and the sections dict — most commonly
+## `PartsCatalog.load_default()` or `Build.OPTIONAL_COMPONENTS`, e.g. `tests/test_assembly_tweaks.gd`
+## and `tests/test_component_registration.gd`. THIS IS NOT COVERED BY THE GUARANTEE ABOVE, and an
+## earlier version of this file claimed `run()` "does nothing else but call sections and append
+## results" — that was never true of any converted suite and should not be read as a rule the
+## callers follow. What is actually true:
+##
+## - A `SCRIPT ERROR` inside a SECTION (a function called and appended from inside the sections
+##   dict, or into `results` after it) is covered: `run()` resumes, `held.restore()` still runs,
+##   the aborted section still appears as an empty array or (via `results.append(_test_x())`
+##   suites) a `null` element the section-count guard and `run_one_suite.gd`'s null-guard both
+##   catch.
+## - A `SCRIPT ERROR` in the SETUP CALLS between `hold()` and the sections dict is NOT covered —
+##   it is exactly case 2 below, just with a name attached to what currently occupies that gap.
+##   It has not been a live hazard in practice because that setup is a pure catalog/constant load
+##   with no property access on anything that could plausibly be null or missing. But that is a
+##   property of what the setup HAPPENS to do today, not a structural guarantee — if a future
+##   suite's setup grows a real property access there, this file's protection silently stops
+##   applying to it, with nothing here to flag that it happened.
 ##
 ## ---------------------------------------------------------------------------
 ## WHAT IS STILL NOT GUARANTEED, STATED PLAINLY
@@ -40,9 +65,11 @@ extends RefCounted
 ##
 ## 1. A process death — a segfault in the engine, an OOM kill, `--quit` or ^C between the hold and
 ##    the release. No in-process mechanism can survive that, and none is claimed.
-## 2. An abort inside `run()` ITSELF, between the hold and the release, rather than inside a
-##    section. This is why `run()` must keep doing nothing but call sections and append results:
-##    the moment real work moves up into `run()`, the guarantee moves down to nothing.
+## 2. An abort between the hold and the release that is NOT inside a section — whether that is
+##    setup work in `run()` (see above; every converted suite currently has some) or, in principle,
+##    an abort inside `held.restore()`'s own caller after the sections are built but before
+##    `restore()` is reached. The safest `run()` keeps this gap as small and as free of real
+##    property access as possible; it does not eliminate the gap.
 ## 3. An abort inside `hold()` or `restore()`. They are deliberately file operations and arithmetic
 ##    with no property access on anything that could be null.
 ## 4. A file written by a DIFFERENT suite that never held it. The hold restores what it holds.
