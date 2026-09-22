@@ -94,7 +94,17 @@ last gate you cleared and voids the lap in progress.
 - Motors are current-limited, so an oversized prop runs out of amps before it runs out of volts
 
 Run the test suite headless — every check must pass, including the hover-throttle oracle
-the whole model is calibrated against:
+the whole model is calibrated against. Use `tools/run_tests_safe.sh` (macOS/Linux) or
+`tools/run_tests_safe.ps1` (Windows) — it points `user://` at a throwaway directory for the
+duration of the run, so a suite (or a run killed mid-way) can never touch your real Lothal
+application data:
+
+```bash
+tools/run_tests_safe.sh
+```
+
+The raw invocation still works if you need it — for example to compare against a known-good run,
+or on a platform the wrapper hasn't been verified on:
 
 ```bash
 godot --headless --script res://tests/run_tests.gd

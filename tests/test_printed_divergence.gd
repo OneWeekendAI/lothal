@@ -20,6 +20,12 @@ const RT_DIR := "user://_test_divergence"
 
 static func run() -> Array:
 	var results: Array = []
+	# THE HOLD ON THE BUILDER'S OWN FILES. Taken here and released below, because a section that
+	# aborts mid-way never reaches its own restore — measured, and it is what left a 3500 m
+	# elevation and an invented weather row on this developer's disk. `run()` is the only frame
+	# GDScript guarantees will resume after an abort inside a section, so the hold lives here and
+	# `run()` does nothing else but call sections and append results. See tests/real_files.gd.
+	var held := RealFiles.hold([AppSettings.SAVE_PATH])
 	results.append(_an_unchanged_drone_says_nothing())
 	results.append(_a_clearance_change_is_named())
 	results.append(_a_tilt_change_is_named_from_and_to())
@@ -32,6 +38,10 @@ static func run() -> Array:
 	results.append(_a_new_divergence_after_keep_shows_again())
 	results.append(_reprint_adds_one_record_for_that_part_only())
 	results.append(_keep_survives_reopen_and_the_panel_routes())
+	held.restore()
+	results.append(TestResult.new(
+		"the builder's own files are back the way they were found, whatever the sections did",
+		held.intact(), held.report()))
 	return results
 
 

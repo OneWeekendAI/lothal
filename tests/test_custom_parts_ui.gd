@@ -25,6 +25,12 @@ const CATALOG_PROP_ID := "prop_5x43x3"
 
 static func run() -> Array:
 	var results: Array = []
+	# THE HOLD ON THE BUILDER'S OWN FILES. Taken here and released below, because a section that
+	# aborts mid-way never reaches its own restore — measured, and it is what left a 3500 m
+	# elevation and an invented weather row on this developer's disk. `run()` is the only frame
+	# GDScript guarantees will resume after an abort inside a section, so the hold lives here and
+	# `run()` does nothing else but call sections and append results. See tests/real_files.gd.
+	var held := RealFiles.hold([CustomParts.SAVE_PATH])
 	results.append(_test_every_authoring_rail_offers_a_way_in())
 	results.append(_test_every_authoring_rail_has_a_change_signal())
 	results.append(_test_delete_is_disabled_on_a_catalog_part_and_enabled_on_your_own())
@@ -67,6 +73,10 @@ static func run() -> Array:
 		{"self_powered": false, "loudness_db": 85.0},
 		func(r: Dictionary) -> bool: return r["specs"]["self_powered"] is bool \
 			and r["specs"]["self_powered"] == false))
+	held.restore()
+	results.append(TestResult.new(
+		"the builder's own files are back the way they were found, whatever the sections did",
+		held.intact(), held.report()))
 	return results
 
 

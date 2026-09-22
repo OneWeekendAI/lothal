@@ -17,6 +17,12 @@ const EPS := 1e-4
 
 static func run() -> Array:
 	var results: Array = []
+	# THE HOLD ON THE BUILDER'S OWN FILES. A net beneath the hand-rolled stash/restore below, taken
+	# here and released just before `return results` because a section that aborts mid-way never
+	# reaches its own restore — measured, and it is what left a 3500 m elevation and an invented
+	# weather row on this developer's disk. `run()` is the only frame GDScript guarantees will
+	# resume after an abort inside a section. See tests/real_files.gd.
+	var held := RealFiles.hold([AssemblyTweaks.SAVE_PATH])
 	var previous: Variant = _stash_saved_tweaks()
 
 	var shell := GlassShell.new()
@@ -72,6 +78,10 @@ static func run() -> Array:
 	_restore_saved_tweaks(previous)
 
 	results.append(_the_panel_shows_the_warning_the_tilt_causes())
+	held.restore()
+	results.append(TestResult.new(
+		"the builder's own files are back the way they were found, whatever the sections did",
+		held.intact(), held.report()))
 	return results
 
 

@@ -36,6 +36,12 @@ const IDENTITY_EPS := 1e-9
 
 static func run() -> Array:
 	var results: Array = []
+	# THE HOLD ON THE BUILDER'S OWN FILES. Taken here and released below, because a section that
+	# aborts mid-way never reaches its own restore — measured, and it is what left a 3500 m
+	# elevation and an invented weather row on this developer's disk. `run()` is the only frame
+	# GDScript guarantees will resume after an abort inside a section, so the hold lives here and
+	# `run()` does nothing else but call sections and append results. See tests/real_files.gd.
+	var held := RealFiles.hold([CustomParts.SAVE_PATH])
 	results.append(_test_an_authored_planform_reaches_the_physics())
 	results.append(_test_the_authored_chord_is_the_authored_chord())
 	results.append(_test_a_catalog_prop_is_untouched())
@@ -50,6 +56,10 @@ static func run() -> Array:
 	results.append(_test_the_new_blade_form_refuses_and_stays_up())
 	results.append(_test_the_room_says_which_shape_the_aircraft_flies())
 	results.append(_test_a_blade_published_next_door_is_flyable_on_the_next_trip_out())
+	held.restore()
+	results.append(TestResult.new(
+		"the builder's own files are back the way they were found, whatever the sections did",
+		held.intact(), held.report()))
 	return results
 
 

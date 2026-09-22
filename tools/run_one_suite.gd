@@ -22,8 +22,22 @@ func _init() -> void:
 	var script: Script = load(_path_of(suite_name))
 	var results: Array = script.run()
 
+	# RULING 27. A `null` element means a section aborted mid-way and its `results.append(...)`
+	# received the aborted function's return-type default rather than a TestResult — see
+	# tests/real_files.gd for why that is expected, survivable behaviour and not a crash. Before
+	# this guard existed, `result.passed` on that `null` threw its OWN SCRIPT ERROR here, which
+	# aborted `_init()` before it reached `quit()` below — the whole process then sat idle forever,
+	# reporting nothing, indistinguishable from a stuck test without reading the engine's own log.
+	# Reported LOUD and FAILED rather than skipped: a null element is itself the defect a mutation
+	# run exists to catch, and silently passing over it would trade a hang for a false green, which
+	# is worse than either.
 	var failed := 0
-	for result in results:
+	for i in results.size():
+		var result = results[i]
+		if result == null:
+			failed += 1
+			print("[FAIL] suite \"%s\" produced a null result at index %d (a section aborted and never appended a TestResult — see tests/real_files.gd)" % [suite_name, i])
+			continue
 		if not result.passed:
 			failed += 1
 		print("[%s] %s (%s)" % ["PASS" if result.passed else "FAIL", result.name, result.detail])

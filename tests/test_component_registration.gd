@@ -32,6 +32,12 @@ const NODE_PREFIX := "Component_"
 
 static func run() -> Array:
 	var results: Array = []
+	# THE HOLD ON THE BUILDER'S OWN FILES. Taken here and released below, because a section that
+	# aborts mid-way never reaches its own restore — measured, and it is what left a 3500 m
+	# elevation and an invented weather row on this developer's disk. `run()` is the only frame
+	# GDScript guarantees will resume after an abort inside a section, so the hold lives here and
+	# `run()` does nothing else but call sections and append results. See tests/real_files.gd.
+	var held := RealFiles.hold([CustomParts.SAVE_PATH])
 	var catalog := PartsCatalog.load_default()
 	var components: Array = Build.OPTIONAL_COMPONENTS
 
@@ -50,6 +56,11 @@ static func run() -> Array:
 	results.append_array(_every_component_persists(components))
 	results.append_array(_every_component_is_claimed_by_exactly_one_rail(catalog, components))
 	results.append_array(_every_component_can_be_authored_and_comes_back(components))
+
+	held.restore()
+	results.append(TestResult.new(
+		"the builder's own files are back the way they were found, whatever the sections did",
+		held.intact(), held.report()))
 
 	return results
 
