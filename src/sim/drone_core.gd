@@ -23,6 +23,12 @@ var rigid_body := RigidBodyState.new()
 ## without one gets the stock sensor, so every call site written before flight controllers
 ## were selectable still means what it meant.
 var gyro: Gyro
+## The air's own motion, or null on a still day. HANDED IN, not constructed here, for the same
+## reason `gyro` is: null means "nobody has told this core about the field it is flying at",
+## which is every core built before F7 and every test that has never heard of `Wind` — those keep
+## flying the calm air they always did, and check 1 is the proof that keeping this null costs them
+## nothing. `Sim authors nothing`: this class never writes to it, only reads `velocity_mps()`.
+var wind: Wind = null
 var arm_m: float
 ## 0.5 * rho * Cd * A, supplied per build — a 7" airframe presents far more area than a 3".
 var drag_coefficient: float
@@ -91,7 +97,20 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# component of velocity that unloads the prop is simply .y, and nothing has to decide what a
 	# lean angle's sign convention is. Taken BEFORE integration, so it is the velocity this tick's
 	# forces are being built at, which is the same convention every other term here uses.
-	powertrain.step_in_flight(cmds, dt, rigid_body.orientation.inverse() * rigid_body.velocity_mps)
+	#
+	# AIRSPEED, not ground speed: what unloads a prop and pushes against a frame is the air moving
+	# past it, and wind is exactly the difference between the two. Subtracted in the WORLD frame,
+	# THEN rotated into body — subtracting after rotation would rotate the wind by the aircraft's
+	# own attitude instead of leaving it as the ground-referenced vector it is (check 4/5's guard).
+	# Wind reaches here and the drag term below, and nowhere else: everything downstream of the
+	# powertrain — thrust, lean, current, the edgewise-flow term — still reads a velocity and never
+	# knows where it came from.
+	# Advanced once per substep, here — the ONE place the gust process steps forward, so a
+	# consumer reading wind.velocity_mps() between substeps (the HUD) sees this tick's value
+	# without itself advancing anything.
+	var wind_mps := wind.update(dt) if wind != null else Vector3.ZERO
+	var relative_velocity_mps := rigid_body.velocity_mps - wind_mps
+	powertrain.step_in_flight(cmds, dt, rigid_body.orientation.inverse() * relative_velocity_mps)
 
 	var total_force := Vector3(0, -GRAVITY_MPS2 * mass_properties.total_mass_kg, 0)
 	var total_torque := Vector3.ZERO
@@ -128,9 +147,12 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# which is where the inertia tensor and the gyroscopic term live.
 	total_force += rigid_body.orientation * Vector3(0, total_thrust_body_n, 0)
 
-	var speed := rigid_body.velocity_mps.length()
+	# Drag is against the AIR, the same relative_velocity_mps the powertrain read above — flying
+	# downwind at wind speed costs no drag, into it costs more, exactly like the airspeed the
+	# powertrain sees (check 6's guard: wind reaching one and not the other is the stated mutation).
+	var speed := relative_velocity_mps.length()
 	if speed > 0.0:
-		total_force += -rigid_body.velocity_mps.normalized() * drag_coefficient * speed * speed
+		total_force += -relative_velocity_mps.normalized() * drag_coefficient * speed * speed
 
 	# Specific force — total force minus gravity — is captured BEFORE integration, while
 	# the force that produced this tick's acceleration is still in hand. Recovering it

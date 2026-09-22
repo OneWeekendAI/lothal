@@ -99,6 +99,14 @@ const HEADING_STEP_DEG := 1.0
 const ELEVATION_STEP_M := 1.0
 const TEMPERATURE_STEP_C := 1.0
 
+## `Wind.gust_tau_s`'s own field range. Its shipped value (`Wind.DEFAULT_GUST_TAU_S`) is a labelled
+## GUESS (wind.gd's header), not a looked-up fact like elevation or temperature — so this field
+## exists as this plan's rule for a guess demands (an editable field beside it), not because a
+## builder can state a true settling time the way they can state an altitude.
+const MIN_GUST_TAU_S := 0.5
+const MAX_GUST_TAU_S := 10.0
+const GUST_TAU_STEP_S := 0.1
+
 const VIEWPORT_SIZE := Vector2i(1280, 720)
 
 signal course_changed
@@ -135,6 +143,15 @@ var _name_field: LineEdit
 var _delete_button: Button
 var _elevation_field: SpinBox
 var _temperature_field: SpinBox
+## Not wired to any library — F7 has nowhere to persist a per-course or per-conditions settling
+## time yet (Ruling 50/51: `field_system.gd` is where this is meant to land at F11). Held here so
+## it is reachable and its shipped value visibly labelled a guess, which is what check 12 demands.
+var _gust_tau_field: SpinBox
+## The label check 12 scans for the word "guess" — kept reachable so a test can read the live
+## control's text rather than grep the source file, which a comment elsewhere using the same word
+## would falsely satisfy.
+var _gust_tau_label: Label
+var gust_tau_s := Wind.DEFAULT_GUST_TAU_S
 var _air_readout: Label
 var _gate_label: Label
 var _position_label: Label
@@ -295,6 +312,25 @@ func _build_air_section(column: VBoxContainer) -> void:
 	_air_readout.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_air_readout.custom_minimum_size = Vector2(260, 0)
 	column.add_child(_air_readout)
+
+	column.add_child(HSeparator.new())
+
+	_gust_tau_label = Label.new()
+	# The literal string check 12 asserts against: labelled a guess, not measured.
+	_gust_tau_label.text = "How long a gust takes to settle. This is a guess, not a measured figure."
+	_gust_tau_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_gust_tau_label.custom_minimum_size = Vector2(260, 0)
+	_gust_tau_label.theme_type_variation = &"MutedLabel"
+	column.add_child(_gust_tau_label)
+
+	_gust_tau_field = _add_field(column, "Gust settle time", "s",
+		MIN_GUST_TAU_S, MAX_GUST_TAU_S, GUST_TAU_STEP_S,
+		func(v: float) -> void: set_field_gust_tau_s(v))
+	# Set under the same guard _render_air() uses: this is the panel writing its OWN shipped
+	# default, not a builder having typed one, and value_changed must not read it as the latter.
+	_updating = true
+	_gust_tau_field.value = gust_tau_s
+	_updating = false
 
 
 ## A labelled numeric entry. The sibling of _add_slider, and separate from it because a SpinBox is
@@ -645,6 +681,13 @@ func new_course(p_name: String) -> void:
 ## so building a fresh one is what applies the domain guard; assigning to elevation_m on the
 ## existing object would slip past it and let a hand-driven caller put 10^9 m into the barometric
 ## formula, which is NaN and then "nan g" on the stats panel.
+## The one editable field this slice owns that has nowhere to persist yet (Ruling 50/51): moves the
+## in-memory guess a builder is trying, so a headless caller (a test, or a future room reading this
+## screen) can drive the SAME path the SpinBox drives rather than poking the bare variable.
+func set_field_gust_tau_s(gust_tau_s_value: float) -> void:
+	gust_tau_s = gust_tau_s_value
+
+
 func set_field_elevation_m(elevation_m: float) -> void:
 	site().elevation_m = AirDensity.new(elevation_m, 0.0).elevation_m
 	_changed()

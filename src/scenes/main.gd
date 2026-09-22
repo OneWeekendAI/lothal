@@ -57,6 +57,11 @@ const CRASH_ALTITUDE_M := GateCourse.GROUND_CLEARANCE_M
 
 var core: DroneCore
 var build: Build
+## The air's own motion at the selected weather (design §4.3). Built once in `_ready`, HANDED to
+## every `core` this scene builds after — one stream survives a part swap, and only a respawn
+## (`_reset_to`) re-seeds it, the same rule `core.gyro` lives under. Read-only here and in
+## `DroneCore`: `Sim authors nothing`, and `ConditionsLibrary.load_from()` is a read.
+var wind: Wind
 var build_panel: BuildPanel
 ## The visible aircraft, generated from `build` rather than authored in main.tscn — see the
 ## comment on the Drone node there, and AirframeModel's header.
@@ -222,6 +227,12 @@ static func _check_crash(at: Vector3, p_terrain: Terrain) -> bool:
 	return at.y < ground + CRASH_ALTITUDE_M
 
 func _ready() -> void:
+	# Loaded fresh here rather than handed through RoomHost (out of this slice's file list, and
+	# this scene runs standalone too — F5 from the editor, capture_frame.gd — where there is no
+	# RoomHost to hand anything over). A read: `ConditionsLibrary.load_from()` never writes, and
+	# by the time a builder can reach Sim through the door, RoomHost's own load has already
+	# migrated and saved `conditions.json`, so this sees exactly the same file either way.
+	wind = Wind.new(ConditionsLibrary.load_from().selected())
 	_rebuild_ground()
 
 	course_renderer = CourseRenderer.new(course)
@@ -284,6 +295,11 @@ func _on_build_changed(new_build: Build) -> void:
 		_stop_recording()
 	build = new_build
 	core = build.build_drone_core()
+	# The field this build is about to fly in, not a fresh calm core — a `DroneCore` is built with
+	# no opinion about the air (`wind = null`, drone_core.gd), and this is the one path every part
+	# change lands on, so there is no ordering in which the aircraft on screen flies one weather and
+	# the loop stepping it assumes another.
+	core.wind = wind
 	# The pack comes out of the bag as it actually is. Seeded here rather than inside Build,
 	# which must stay pure: the reference build's 11.7:1 and 29% are quoted at the nominal
 	# voltage datum and cannot become a function of how much flying anyone has done.
@@ -402,6 +418,9 @@ func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 	# noise stream across a teleport, which is the same class of artefact as the audio swoop
 	# the line above prevents.
 	core.gyro.reset()
+	# And a respawn replays the same gust rather than continuing the old stream, for the identical
+	# reason: "the same flight twice" must mean the same flight, gust for gust.
+	wind.reset()
 	rc.throttle = _hover_throttle
 	_previous_position = position
 
