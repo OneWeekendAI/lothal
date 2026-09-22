@@ -105,6 +105,12 @@ var site_library: SiteLibrary = SiteLibrary.load_from()
 ## THE GROUND (F4). Null is flat at zero — a course whose site is missing is flown on the field
 ## every course was flown on before terrain existed, rather than on nothing.
 var terrain: Terrain = _course_terrain()
+## WHAT IS STANDING ON IT (F6). Read off the same site `terrain` came from, so the two can never
+## name two different places — an obstacle and a hill that quietly disagreed about which site they
+## were describing is exactly the stale-reading failure this whole room exists to close. Empty for
+## a site that is not there, the same "nothing means nothing standing" reading `terrain`'s `null`
+## already carries.
+var obstacles: Array[Obstacle] = _course_obstacles()
 ## Keyed on the course being flown, so a time set on one track is never reported as the record on
 ## another. See lap_timer.gd's header — this is the one line that stops a best lap becoming a lie.
 var lap_timer := LapTimer.new(course.fingerprint())
@@ -159,32 +165,48 @@ var _hover_throttle := 0.0
 func adopt_selected_course() -> void:
 	course = course_library.selected()
 	terrain = _course_terrain()
+	obstacles = _course_obstacles()
 	lap_timer = LapTimer.new(course.fingerprint())
 	_rebuild_ground()
 
 
-## The ground under the open course. A course pointing at a site that is not there falls back to
-## the selected one, on FieldEditorScreen.site()'s rule: a damaged file lands somewhere flyable and
-## the room still opens.
-func _course_terrain() -> Terrain:
+## The site under the open course. A course pointing at a site that is not there falls back to the
+## selected one, on FieldEditorScreen.site()'s rule: a damaged file lands somewhere flyable and the
+## room still opens. `terrain` and `obstacles` both read off THIS, never off two separate lookups,
+## so they cannot name two different sites on the same frame.
+func _course_site() -> Site:
 	var where := site_library.site(course.site_id)
 	if where == null:
 		where = site_library.selected()
+	return where
+
+
+## The ground under the open course. Null is flat at zero — see the field's own header.
+func _course_terrain() -> Terrain:
+	var where := _course_site()
 	return where.terrain if where != null else null
 
 
-## The ground's mesh, collider and grid tiling — all from `terrain` (F5). Called at `_ready` and
-## on every `adopt_selected_course()`, the one entry point that re-reads the course: a mesh built
-## once at startup would keep showing the field the app opened on after a builder picks another
-## one in Lab.
+## What is standing on that same ground. Empty for a site that is not there, matching
+## `_course_terrain()`'s null.
+func _course_obstacles() -> Array[Obstacle]:
+	var where := _course_site()
+	return where.obstacles if where != null else []
+
+
+## The ground's mesh, collider and grid tiling — all from `terrain` (F5), plus whatever
+## `obstacles` (F6) stands on it, drawn and collidable through the SAME triangle list `TerrainMesh`
+## builds either from. Called at `_ready` and on every `adopt_selected_course()`, the one entry
+## point that re-reads the course: a mesh built once at startup would keep showing the field the
+## app opened on after a builder picks another one in Lab.
 ##
 ## `GROUND_SIZE_M` used to be an independent 400 m constant; it is not one any more (Ruling 34) —
 ## it was only ever the grid material's tiling size (`GroundGrid.build_material`'s `uv1_scale`),
 ## so it now follows the terrain's own extent, the way `field_editor_screen.gd` already ties its
 ## ground tiling to the layout it is drawing.
 func _rebuild_ground() -> void:
-	ground_mesh.mesh = TerrainMesh.build_mesh(terrain)
-	ground_collision.shape = TerrainMesh.build_collider(terrain)
+	ground_mesh.mesh = TerrainMesh.build_mesh(terrain, obstacles)
+	ground_collision.shape = TerrainMesh.build_collider(terrain, obstacles)
 	var extent := terrain.extent() if terrain != null else Vector2(Terrain.DEFAULT_WIDTH_M, Terrain.DEFAULT_LENGTH_M)
 	var ground_size := maxf(absf(extent.x), absf(extent.y))
 	ground_mesh.material_override = GroundGrid.build_material(ground_size)

@@ -16,6 +16,7 @@ extends RefCounted
 
 const TOL := 1.0e-6
 const MAIN_PATH := "res://src/scenes/main.gd"
+const MAIN_SCRIPT := preload("res://src/scenes/main.gd")
 
 
 static func run() -> Array:
@@ -29,6 +30,8 @@ static func run() -> Array:
 		"enclosure walls and pillars": _enclosure_walls_and_pillars(),
 		"vertex count follows width, not rise": _vertex_count_follows_width_not_rise(),
 		"one entry point": _one_entry_point(),
+		# F6 fix round 1: obstacles are collidable IN SIM, not just at the TerrainMesh API.
+		"obstacles reach the sim scene's collider": _obstacles_reach_the_sim_scene(),
 	}
 	# A runtime error partway through a section aborts only that section and its append never
 	# runs, so the suite would pass with its best checks silently deleted. Asserting each section
@@ -318,12 +321,81 @@ static func _one_entry_point() -> Array:
 		"adopt_selected_course() calls _rebuild_ground() at its own indent level (unconditionally)",
 		_calls_unconditionally(adopt_body, "_rebuild_ground()"),
 		"found: %s" % (adopt_body.find("_rebuild_ground()") >= 0)))
+	# F6: build_mesh/build_collider gained an `obstacles` argument so obstacles reach the SAME
+	# triangle list the floor does — re-pointed to the new call text rather than loosened to a
+	# bare "TerrainMesh.build_mesh" substring, which would stop noticing a rebuild that got
+	# wrapped in an `if` (the whole job of this check).
 	results.append(TestResult.new(
 		"_rebuild_ground() itself builds the mesh and the collider unconditionally, " +
-			"not behind a \"shape unchanged\" guard",
-		_calls_unconditionally(rebuild_body, "TerrainMesh.build_mesh(terrain)")
-			and _calls_unconditionally(rebuild_body, "TerrainMesh.build_collider(terrain)"),
+			"not behind a \"shape unchanged\" guard, obstacles included",
+		_calls_unconditionally(rebuild_body, "TerrainMesh.build_mesh(terrain, obstacles)")
+			and _calls_unconditionally(rebuild_body, "TerrainMesh.build_collider(terrain, obstacles)"),
 		"body: %s" % rebuild_body.strip_edges()))
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 9. Obstacles reach the SIM SCENE's collider, not just TerrainMesh's own API (F6 fix round 1)
+# ---------------------------------------------------------------------------
+
+## `Main.new()` rather than `main.tscn` instantiated: booting the real scene needs a processed
+## frame to settle (see §8's header), which this synchronous runner does not have, and the
+## @onready ground nodes would still be null at the point `adopt_selected_course()` runs even if
+## it were instantiated, since entering the tree — not construction — is what fires `_ready()`
+## (capture_frame.gd's own comment: "adding the scene from a SceneTree script does not run _ready
+## synchronously"). So the ground nodes are supplied directly, the same way `RoomHost` supplies
+## its own `course_library`/`site_library` before calling `adopt_selected_course()` — this is the
+## one entry point the real app uses too, not a shortcut around it.
+static func _obstacles_reach_the_sim_scene() -> Array:
+	var results: Array = []
+
+	var terrain := Terrain.flat(30.0, 30.0)
+	var box := Obstacle.place(Obstacle.BOX, 0.0, 0.0, {"w": 2.0, "h": 3.0, "d": 2.0, "yaw_deg": 0.0}, terrain)
+
+	var site := Site.new()
+	site.site_id = "f6_fix_site"
+	site.terrain = terrain
+	site.obstacles = [box]
+	var sites := SiteLibrary.new()
+	sites.put(site)
+
+	var course := GateCourse.new([
+		GateCourse.make_gate(Vector3(0.0, 4.0, 10.0), 0.0, 1.5),
+		GateCourse.make_gate(Vector3(0.0, 4.0, -10.0), 0.0, 1.5),
+	], "f6_fix_course", "F6 fix course")
+	course.site_id = site.site_id
+	var courses := CourseLibrary.new()
+	courses.put(course)
+
+	var scene: Node3D = MAIN_SCRIPT.new()
+	scene.site_library = sites
+	scene.course_library = courses
+	scene.ground_mesh = MeshInstance3D.new()
+	scene.ground_collision = CollisionShape3D.new()
+	scene.adopt_selected_course()
+
+	var collider: Shape3D = scene.ground_collision.shape
+	var collider_points: PackedVector3Array = (collider as ConcavePolygonShape3D).get_faces() \
+		if collider is ConcavePolygonShape3D else PackedVector3Array()
+	var floor_only_points: int = TerrainMesh.build_mesh(terrain).surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
+
+	results.append(TestResult.new(
+		"adopt_selected_course() leaves a real collider on the ground, with more points than " +
+			"the floor alone — the box reached it, not just the mesh",
+		collider_points.size() > floor_only_points,
+		"floor alone: %d points, scene's ground_collision: %d points" % [
+			floor_only_points, collider_points.size()]))
+
+	var max_y := -INF
+	for p in collider_points:
+		max_y = maxf(max_y, p.y)
+	results.append(TestResult.new(
+		"the sim scene's own collider reaches the box's top (3.0 m)",
+		absf(max_y - 3.0) < TOL, "max collider y %.6f m" % max_y))
+
+	scene.ground_mesh.free()
+	scene.ground_collision.free()
+	scene.free()
 	return results
 
 
