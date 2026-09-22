@@ -38,13 +38,13 @@ extends RefCounted
 ## WHAT ACTUALLY RUNS BETWEEN `hold()` AND THE SECTIONS, STATED PRECISELY
 ## ---------------------------------------------------------------------------
 ##
-## Every one of the eleven callers of `RealFiles.hold()` in this directory, as of this writing,
-## does a small amount of setup in `run()` between the hold and the sections dict — most commonly
+## Several of the eleven callers of `RealFiles.hold()` in this directory, as of this writing, do a
+## small amount of setup in `run()` between the hold and the sections dict — most commonly
 ## `PartsCatalog.load_default()` or `Build.OPTIONAL_COMPONENTS`, e.g. `tests/test_assembly_tweaks.gd`
-## and `tests/test_component_registration.gd`. THIS IS NOT COVERED BY THE GUARANTEE ABOVE, and an
-## earlier version of this file claimed `run()` "does nothing else but call sections and append
-## results" — that was never true of any converted suite and should not be read as a rule the
-## callers follow. What is actually true:
+## and `tests/test_component_registration.gd`; four callers have no setup at all in that gap. THIS
+## GAP IS NOT COVERED BY THE GUARANTEE ABOVE, and an earlier version of this file claimed `run()`
+## "does nothing else but call sections and append results" — that was never true of every
+## converted suite and should not be read as a rule the callers follow. What is actually true:
 ##
 ## - A `SCRIPT ERROR` inside a SECTION (a function called and appended from inside the sections
 ##   dict, or into `results` after it) is covered: `run()` resumes, `held.restore()` still runs,
@@ -53,11 +53,16 @@ extends RefCounted
 ##   catch.
 ## - A `SCRIPT ERROR` in the SETUP CALLS between `hold()` and the sections dict is NOT covered —
 ##   it is exactly case 2 below, just with a name attached to what currently occupies that gap.
-##   It has not been a live hazard in practice because that setup is a pure catalog/constant load
-##   with no property access on anything that could plausibly be null or missing. But that is a
-##   property of what the setup HAPPENS to do today, not a structural guarantee — if a future
-##   suite's setup grows a real property access there, this file's protection silently stops
-##   applying to it, with nothing here to flag that it happened.
+##   For most callers this has not been a live hazard, because their setup is a catalog/constant
+##   load with no property access on anything that could plausibly be null or missing. That is a
+##   property of what those callers' setup HAPPENS to do today, not a structural guarantee — if a
+##   future suite's setup grows a real property access there, this file's protection silently
+##   stops applying to it, with nothing here to flag that it happened. **`tests/test_video_panel.gd`
+##   is already the exception, not a hypothetical one**: its setup gap builds a `GlassShell` and
+##   walks `shell.lab.camera_panel`, `shell.lab.assembly_panel` and `shell.lab.panels`, where
+##   `GlassShell.lab` (`src/ui/glass_shell.gd:297-298`) is a getter over `rooms.lab`
+##   (`var lab: LabScreen`, `src/ui/room_host.gd:32`) with no non-null guarantee at that point in
+##   construction. That suite is relying on the gap being narrow in practice, not on it being safe.
 ##
 ## ---------------------------------------------------------------------------
 ## WHAT IS STILL NOT GUARANTEED, STATED PLAINLY
