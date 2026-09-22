@@ -99,7 +99,9 @@ var course_library: CourseLibrary = CourseLibrary.load_from()
 var course: GateCourse = course_library.selected()
 ## The places the courses are laid out in, read the same way and for the same reason as
 ## `course_library` above: one file, Lab is the only writer, and Sim reads it and never writes it.
-## AppShell replaces this with its own instance before _ready so both rooms read one library.
+## RoomHost replaces this with its own instance before `adopt_selected_course()` so both rooms read
+## one library (room_host.gd's `show_sim`). This load is what a direct run of `main.tscn` gets, and
+## it is why the field initialiser stays: there is no door in that case to hand anything over.
 var site_library: SiteLibrary = SiteLibrary.load_from()
 ## THE GROUND (F4). Null is flat at zero — a course whose site is missing is flown on the field
 ## every course was flown on before terrain existed, rather than on nothing.

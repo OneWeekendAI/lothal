@@ -680,6 +680,19 @@ func site() -> Site:
 	return where if where != null else sites.selected()
 
 
+## The ground under the open course, or null for flat at zero (F4).
+##
+## `site()` CAN ANSWER NULL. `SiteLibrary.selected()` reads an id out of a dictionary, and a
+## library with nothing in it — `SiteLibrary.new()`, which any caller may hand to `p_sites` —
+## has no id to read. `.terrain` on that null is a runtime error inside `_render_panel()`, so the
+## room stops drawing rather than opening somewhere flyable, which is the opposite of the rule
+## `site()` above states. Same guard and same reading as `scenes/main.gd._course_terrain()`; the
+## two agree deliberately, because they are one rule about what an absent place means.
+func site_terrain() -> Terrain:
+	var where := site()
+	return where.terrain if where != null else null
+
+
 ## The air the open course is flown in: the site's elevation and the selected conditions'
 ## temperature, put together by the one place that knows how (design §3.1). This is the number the
 ## panel quotes and the number the physics runs on — one derivation, not a second copy of it.
@@ -830,7 +843,7 @@ func _render_panel() -> void:
 	_warning_list.show_warnings(warnings())
 
 	if _start_marker != null:
-		_start_marker.position = course().start_position(site().terrain)
+		_start_marker.position = course().start_position(site_terrain())
 		var forward := course().start_forward()
 		var flat := Vector3(forward.x, 0.0, forward.z)
 		if flat.length() > 0.001:

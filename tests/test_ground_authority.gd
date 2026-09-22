@@ -76,6 +76,7 @@ static func run() -> Array:
 		"spawn sits on the terrain": _spawn_sits_on_the_terrain(),
 		"the default is flat": _the_default_is_flat(),
 		"the crash test is arithmetic": _the_crash_test_is_arithmetic(),
+		"a library with no sites": _a_library_with_no_sites(),
 	}
 	# A runtime error partway through a section aborts only that section and its append never
 	# runs, so the suite would pass with its best checks silently deleted. Asserting each section
@@ -525,4 +526,104 @@ static func _the_crash_test_is_arithmetic() -> Array:
 		"decoy: %s" % decoy.strip_edges()
 	))
 
+	return results
+
+
+# ---------------------------------------------------------------------------
+# §7 — Review round 1: the room still draws when there is nowhere to fly
+# ---------------------------------------------------------------------------
+
+## Where the empty-library fixture is written. Its own path, so nothing here can tread on the
+## builder's sites or on another suite's.
+const EMPTY_SITES_PATH := "user://test_f4_empty_sites.json"
+const EMPTY_COURSES_PATH := "user://test_f4_empty_courses.json"
+
+## Where the start marker is parked before the room is asked to re-render. Nowhere a course could
+## put it, so "it arrived" cannot be true by accident.
+const NOWHERE := Vector3(-999.0, -999.0, -999.0)
+
+
+## The Field editor's render path reads `site().terrain`, and `site()` can answer null — which is a
+## runtime error inside `_render_panel()`, so the room stops drawing rather than opening somewhere
+## flyable. `scenes/main.gd` guards exactly this; this is the check that makes the other caller
+## agree.
+##
+## IT ALSO RECORDS WHICH ROUTE IS ACTUALLY OPEN, because the route named in review is not. A
+## `sites.json` carrying `"sites": []` parses and then falls through to `with_default()` — the file
+## path is closed, and asserting it here is what stops a later slice removing that fallback in the
+## belief nothing depends on it. The open route is a library built IN CODE: `SiteLibrary.new()` has
+## no ids, `selected()` reads one out of an empty dictionary, and `p_sites` takes whatever it is
+## handed.
+static func _a_library_with_no_sites() -> Array:
+	var results: Array = []
+
+	var file := FileAccess.open(EMPTY_SITES_PATH, FileAccess.WRITE)
+	if file != null:
+		file.store_string(JSON.stringify({"schema": 1, "selected": "", "sites": []}))
+		file.close()
+	var from_file := SiteLibrary.load_from(EMPTY_SITES_PATH)
+	results.append(TestResult.new(
+		"[F4] a sites.json carrying an empty list still loads a field — that route is closed",
+		from_file.selected() != null and from_file.ids().size() == 1,
+		"loaded %d site(s); selected %s" % [from_file.ids().size(),
+			"nothing" if from_file.selected() == null else from_file.selected().site_id]
+	))
+
+	var empty := SiteLibrary.new()
+	results.append(TestResult.new(
+		"[F4] and the route that IS open is a library built in code — selected() is null there",
+		empty.selected() == null and empty.ids().is_empty(),
+		"%d site(s); selected %s" % [empty.ids().size(),
+			"nothing" if empty.selected() == null else empty.selected().site_id]
+	))
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(EMPTY_COURSES_PATH))
+	var editor := FieldEditorScreen.new(
+		CourseLibrary.load_from(EMPTY_COURSES_PATH), ReferenceBuild.build(),
+		EMPTY_COURSES_PATH, empty, ConditionsLibrary.with_default())
+	results.append(TestResult.new(
+		"[F4] the Field editor really is in the dangerous state — its site() answers null",
+		editor.site() == null,
+		"site() -> %s" % ["null" if editor.site() == null else editor.site().site_id]
+	))
+
+	results.append(TestResult.new(
+		"[F4] and the ground it reads there is null — flat at zero, not a dereference",
+		editor.site_terrain() == null,
+		"site_terrain() -> %s" % [
+			"null" if editor.site_terrain() == null else String(editor.site_terrain().shape)]
+	))
+
+	# THE RENDER PATH FOR REAL, and it has to be, for a reason that took a green mutation to find.
+	# A bad dereference aborts THE FUNCTION IT IS IN and hands the caller the return type's default
+	# — measured. So `site().terrain` inside a helper aborts the helper, returns null, and is
+	# indistinguishable from the guard; the same dereference written INLINE in `_render_panel()`
+	# aborts `_render_panel()`, and every line after it silently does not happen. That is the actual
+	# defect, and the only way to see it is to look at something the panel does after this line.
+	# So: put the marker somewhere impossible, re-render, and assert it ARRIVED.
+	var placed := false
+	if editor._start_marker != null:
+		editor._start_marker.position = NOWHERE
+		editor.select_gate(0)
+		placed = _same(editor._start_marker.position, PRE_F4_START)
+	results.append(TestResult.new(
+		"[F4] _render_panel() runs to the end and the start marker arrives, with no site at all",
+		editor._start_marker != null and placed,
+		"marker %s -> %v (pinned %v)" % [
+			"absent" if editor._start_marker == null else "moved to %v" % NOWHERE,
+			Vector3.ZERO if editor._start_marker == null else editor._start_marker.position,
+			PRE_F4_START]
+	))
+
+	# The other caller on the same panel, which `_terrain_of` already made safe. Asserted rather
+	# than assumed, because "already safe" is a claim about a null reaching a different function.
+	results.append(TestResult.new(
+		"[F4] and the warnings list survives the same state — evaluate() takes a null site",
+		editor.warnings() != null,
+		"%d warning(s) with no site to speak of" % editor.warnings().size()
+	))
+
+	editor.free()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(EMPTY_SITES_PATH))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(EMPTY_COURSES_PATH))
 	return results
