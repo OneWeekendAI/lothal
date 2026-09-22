@@ -254,8 +254,8 @@ func _cylinder_triangles(radius: float, height: float) -> PackedVector3Array:
 		out.append(p2); out.append(p3); out.append(p1)
 		# Top cap fan, wound so its normal points up; base cap wound so its normal points down
 		# (into the ground it is embedded in — never seen, but consistent rather than absent).
-		out.append(top_centre); out.append(p2); out.append(p3)
-		out.append(base_centre); out.append(p1); out.append(p0)
+		out.append(top_centre); out.append(p3); out.append(p2)
+		out.append(base_centre); out.append(p0); out.append(p1)
 	return out
 
 

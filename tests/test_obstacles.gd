@@ -18,6 +18,9 @@ static func run() -> Array:
 		"obstacles are collidable, not drawn-only": _collidable(),
 		"round-tripping": _round_tripping(),
 		"intersects_sphere and intersects_segment are exact, not a proximity bubble": _distance_geometry(),
+		# F6 fix round 2: nothing checked obstacle geometry's winding before this — F5's own
+		# winding check only ever exercises TerrainMesh.build_mesh(terrain) with no obstacles.
+		"winding": _winding(),
 	}
 	for label in sections:
 		var section: Array = sections[label]
@@ -195,3 +198,104 @@ static func _distance_geometry() -> Array:
 		"a segment that detours around the box (both ends clear) does not intersect it",
 		not box.intersects_segment(Vector3(-5.0, 1.0, 5.0), Vector3(5.0, 1.0, 5.0)), ""))
 	return results
+
+
+# ---------------------------------------------------------------------------
+# Winding: every drawn face points outward, not merely "not degenerate"
+# ---------------------------------------------------------------------------
+##
+## Godot's front faces are clockwise, and this repo has already paid for getting that backwards
+## once (see terrain_mesh.gd's own header, and F5's `_winding` check on the floor grid). F5's check
+## never exercises an obstacle — it only ever calls `TerrainMesh.build_mesh(terrain)` with an empty
+## obstacle list — so nothing verified `_box_triangles`/`_cylinder_triangles` until this section.
+##
+## THE HONEST FORMULATION IS A DOT PRODUCT AGAINST THE SOLID'S OWN CENTRE, not `normal.y > 0` —
+## that is the ground-plane rule from F5, and it is wrong here: a vertical wall's side faces point
+## sideways, and a pole's cap normals point straight up/down while its side normals point outward
+## in every horizontal direction. A triangle's normal must point AWAY from the solid it belongs to,
+## whatever direction that happens to be — `(b-a).cross(c-a)` dotted with `centroid - solid_centre`,
+## which is positive exactly when the face is wound outward.
+##
+## The cylinder's caps and sides are checked SEPARATELY because they are different code
+## (`_cylinder_triangles`'s side-quad loop vs its two triangle-fans), and a copied winding
+## convention flips most often exactly at a seam like that.
+
+static func _winding() -> Array:
+	var results: Array = []
+	var terrain := Terrain.flat(30.0, 30.0)
+
+	# --- box: every face's normal must point away from the box's own centre --------------------
+	var box := Obstacle.place(Obstacle.BOX, 2.0, -1.0,
+		{"w": 2.0, "h": 3.0, "d": 1.5, "yaw_deg": 25.0}, terrain)
+	var box_centre := box.position + Vector3(0.0, 1.5, 0.0)  # h / 2
+	var box_stat := _worst_outward_dot(box.triangles(), box_centre)
+	results.append(TestResult.new(
+		"every box triangle's normal points outward, away from the box's own centre",
+		box_stat.checked > 0 and box_stat.worst > 0.0,
+		"worst outward dot %.6f over %d triangles" % [box_stat.worst, box_stat.checked]))
+
+	# --- wall: same code (_box_triangles) as box, different dims/yaw — proves the shared path ---
+	var wall := Obstacle.place(Obstacle.WALL, -3.0, 4.0,
+		{"length": 5.0, "height": 2.0, "thickness": 0.4, "yaw_deg": 60.0}, terrain)
+	var wall_centre := wall.position + Vector3(0.0, 1.0, 0.0)  # height / 2
+	var wall_stat := _worst_outward_dot(wall.triangles(), wall_centre)
+	results.append(TestResult.new(
+		"every wall triangle's normal points outward, away from the wall's own centre",
+		wall_stat.checked > 0 and wall_stat.worst > 0.0,
+		"worst outward dot %.6f over %d triangles" % [wall_stat.worst, wall_stat.checked]))
+
+	# --- pole: sides and caps are different code, checked separately ---------------------------
+	var pole := Obstacle.place(Obstacle.POLE, 1.0, 1.0, {"radius": 0.4, "height": 2.5}, terrain)
+	var pole_centre := pole.position + Vector3(0.0, 1.25, 0.0)  # height / 2
+	# _cylinder_triangles() appends, per side segment, 4 triangles in a fixed order: two side
+	# triangles (6 points), then the top-cap fan triangle and the base-cap fan triangle (6 points)
+	# — see the function itself. Sliced here rather than re-derived, so caps and sides are two
+	# genuinely separate populations rather than one guessed apart after the fact.
+	var pole_triangles := pole._cylinder_triangles(0.4, 2.5)
+	var side_triangles := PackedVector3Array()
+	var cap_triangles := PackedVector3Array()
+	var i := 0
+	while i + 12 <= pole_triangles.size():
+		for j in 6:
+			side_triangles.append(pole_triangles[i + j])
+		for j in range(6, 12):
+			cap_triangles.append(pole_triangles[i + j])
+		i += 12
+
+	var side_stat := _worst_outward_dot(side_triangles, pole_centre)
+	results.append(TestResult.new(
+		"every pole SIDE triangle's normal points outward, away from the pole's own centre",
+		side_stat.checked > 0 and side_stat.worst > 0.0,
+		"worst outward dot %.6f over %d triangles" % [side_stat.worst, side_stat.checked]))
+
+	var cap_stat := _worst_outward_dot(cap_triangles, pole_centre)
+	results.append(TestResult.new(
+		"every pole CAP triangle's normal points outward, away from the pole's own centre " +
+			"(top cap up, base cap down)",
+		cap_stat.checked > 0 and cap_stat.worst > 0.0,
+		"worst outward dot %.6f over %d triangles" % [cap_stat.worst, cap_stat.checked]))
+
+	return results
+
+
+## The worst (smallest) normalised dot product between a triangle's own normal and the direction
+## from the solid's own centre to that triangle's centroid, over every triangle in `triangles`.
+## Positive means outward; the worst value over a whole shape is what a marginal or backwards face
+## would show up as, rather than hiding behind a plain pass/fail boolean (the same reporting shape
+## F5's `_winding` check uses for its worst `normal.y`).
+static func _worst_outward_dot(triangles: PackedVector3Array, solid_centre: Vector3) -> Dictionary:
+	var worst := INF
+	var checked := 0
+	var i := 0
+	while i + 2 < triangles.size():
+		var a: Vector3 = triangles[i]
+		var b: Vector3 = triangles[i + 1]
+		var c: Vector3 = triangles[i + 2]
+		var normal := (b - a).cross(c - a)
+		var centroid := (a + b + c) / 3.0
+		var outward := centroid - solid_centre
+		if normal.length() > 1.0e-9 and outward.length() > 1.0e-9:
+			worst = minf(worst, normal.normalized().dot(outward.normalized()))
+			checked += 1
+		i += 3
+	return {"worst": worst, "checked": checked}
