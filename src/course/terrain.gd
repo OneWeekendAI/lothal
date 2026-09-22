@@ -134,8 +134,12 @@ func center() -> Vector2:
 ## the same hair of tolerance `Site.contains()` uses — a gate exactly on the boundary of a field
 ## sized to contain it is contained.
 func contains(x: float, z: float) -> bool:
-	return absf(x - center_x_m) <= half_extent().x + 1.0e-6 \
-		and absf(z - center_z_m) <= half_extent().y + 1.0e-6
+	# Asked ONCE. It was called twice here, which was free arithmetic at F3 and is not free now
+	# that F4 asks the ground a question per gate and per frame — and, worse, it was two chances
+	# for one rule to be edited into two.
+	var half := half_extent()
+	return absf(x - center_x_m) <= half.x + 1.0e-6 \
+		and absf(z - center_z_m) <= half.y + 1.0e-6
 
 
 ## Half the width and half the length, and the ONE place either is halved. `contains()` used

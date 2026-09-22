@@ -619,7 +619,7 @@ func set_gate_radius_m(radius_m: float) -> void:
 
 
 func warnings() -> Array[BuildWarning]:
-	return CourseWarnings.evaluate(course(), build)
+	return CourseWarnings.evaluate(course(), build, site())
 
 
 # ---------------------------------------------------------------------------
@@ -830,7 +830,7 @@ func _render_panel() -> void:
 	_warning_list.show_warnings(warnings())
 
 	if _start_marker != null:
-		_start_marker.position = course().start_position()
+		_start_marker.position = course().start_position(site().terrain)
 		var forward := course().start_forward()
 		var flat := Vector3(forward.x, 0.0, forward.z)
 		if flat.length() > 0.001:

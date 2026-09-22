@@ -362,6 +362,11 @@ func show_sim() -> void:
 		# Handed over rather than re-loaded so a course laid out next door is the course you fly
 		# without a trip through the file; Sim reads it and never writes it (labs-and-sim.md §4).
 		sim.course_library = course_library
+		# And the places those courses are in, for the same reason: the ground the aircraft can
+		# crash into is the terrain the editor next door authored, not a second copy read off
+		# disk before the save. Handed over BEFORE adopt_selected_course(), which resolves the
+		# open course's site through it.
+		sim.site_library = site_library
 		sim.adopt_selected_course()
 		# Sim is a direct child rather than living in `_host`, so nothing insets it below the
 		# shell's chrome the way Lab is inset. Its panel is told how much room that chrome takes

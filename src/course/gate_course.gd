@@ -141,9 +141,48 @@ const START_SETBACK_M := 7.0
 ## default circuit (13.8 m between gates) the cap does not bind and the start line is unmoved.
 const START_SETBACK_FRACTION := 0.6
 
-func start_position() -> Vector3:
+## How far above the ground the aircraft is placed when it is put somewhere — the start line, and
+## the respawn after a crash. THE SAME NUMBER `scenes/main.gd` names `CRASH_ALTITUDE_M`, and it
+## reads it from here rather than keeping its own: spawning at an altitude the crash test rejects
+## would put a pilot in a respawn loop, and two copies of the number is exactly how that arrives.
+const GROUND_CLEARANCE_M := 0.02
+
+## `p_terrain` is the ground this course is laid out on (F4). **Null means flat at zero**, which is
+## what every course flown before terrain existed was laid out on — so the default is the right
+## reading of an unspecified site rather than a convenience, and the start line on a flat field is
+## bit-identical to the one that shipped.
+##
+## The terrain is asked AT THE START LINE, not at gate 1. On a slope those are metres apart in
+## height, and the gate's answer would spawn the aircraft underground at one end of the field and
+## in the air at the other.
+func start_position(p_terrain: Terrain = null) -> Vector3:
 	var gate := gates[0]
-	return gate["position"] - gate["normal"] * start_setback_m()
+	var at: Vector3 = gate["position"] - gate["normal"] * start_setback_m()
+	return _above_ground(at, p_terrain)
+
+
+## The hair above the clearance that a placed point is actually lifted to. NOT a fudge factor, and
+## it is here because a `Vector3` holds 32-bit floats while every line of arithmetic around it runs
+## in 64: a y computed as exactly `ground + GROUND_CLEARANCE_M` and stored in one comes back LOW by
+## up to its own magnitude times 2^-24, and `main.gd`'s crash test — which recomputes the same sum
+## in doubles — then reads the spawn as a crash and respawns it again, for ever. Measured on the
+## default circuit over a 20 m slope: the stored respawn came back 1.4e-7 m below the threshold it
+## had just been placed on.
+##
+## Relative rather than a fixed epsilon so it is still a margin 200 m up, and ~16 times the 2^-24
+## storage error rather than 1, because the terrain read in front of it rounds too. A millimetre
+## it is not: at 10 m altitude this is ten microns.
+const PLACEMENT_MARGIN := 1.0e-6
+
+## Lifts a point to clear the ground, and never lowers one. A gate authored high above a hill is
+## flown at the height it was authored; only a point the terrain has swallowed moves.
+static func _above_ground(at: Vector3, p_terrain: Terrain) -> Vector3:
+	if p_terrain == null:
+		return at
+	var lowest := p_terrain.height_at(at.x, at.z) + GROUND_CLEARANCE_M
+	if at.y >= lowest:
+		return at
+	return Vector3(at.x, lowest + maxf(absf(lowest), 1.0) * PLACEMENT_MARGIN, at.z)
 
 ## The setback actually used, which is the shorter of the nominal 7 m and most of the way back to
 ## the preceding gate. A one-gate course has nothing behind it and keeps the full 7 m.
@@ -213,16 +252,19 @@ func just_completed_lap() -> bool:
 ## course. Respawning at the original spawn point after every clip would make the back half
 ## of the circuit effectively unreachable for a new pilot (week1.md day 6's gate is that a
 ## stranger completes a lap).
-func respawn_position() -> Vector3:
+## `p_terrain` as `start_position()`: null is flat at zero. BOTH branches ask it — the fallback
+## below is the start line, and a fallback that skipped the ground would put a pilot who has not
+## cleared a gate yet into the hill, which is the one pilot least able to recover from it.
+func respawn_position(p_terrain: Terrain = null) -> Vector3:
 	if last_gate_passed < 0:
 		# Nothing cleared yet, so the last gate cleared is the start line. Derived rather than the
 		# old fixed Vector3(0, GATE_LOW_M, 0), which was the centre of the default circle and is
 		# an arbitrary point in a field for any other course — on a course laid out 200 m away it
 		# put a crashed pilot in an empty field with no gate in sight.
-		return start_position()
+		return start_position(p_terrain)
 	var gate := gates[last_gate_passed]
 	# Just past the ring, so the drone does not immediately re-trigger the gate it left.
-	return gate["position"] + gate["normal"] * 1.0
+	return _above_ground(gate["position"] + gate["normal"] * 1.0, p_terrain)
 
 func reset() -> void:
 	next_gate_index = 0

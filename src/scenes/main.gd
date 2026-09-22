@@ -49,8 +49,12 @@ const GROUND_SIZE_M := 400.0
 # The real start line comes from GateCourse.start_position() — spawning airborne matters
 # either way, since the ground plane's surface is y = 0.
 const SPAWN_POSITION := Vector3(0, 2.0, 0)
-## Frame half-height (~5 mm) plus a little clearance: below this the drone has hit the ground.
-const CRASH_ALTITUDE_M := 0.02
+## Frame half-height (~5 mm) plus a little clearance: this far above the ground and the drone has
+## hit it. Read from GateCourse rather than typed here, because the course places the start line
+## and the respawn at exactly this clearance and a second copy of the number is how a spawn ends up
+## below the altitude this test rejects — a respawn loop, with no evidence but a drone that will
+## not stay put.
+const CRASH_ALTITUDE_M := GateCourse.GROUND_CLEARANCE_M
 
 var core: DroneCore
 var build: Build
@@ -93,6 +97,13 @@ var hud: Hud
 ## instance before _ready so that both rooms are looking at one library within a session.
 var course_library: CourseLibrary = CourseLibrary.load_from()
 var course: GateCourse = course_library.selected()
+## The places the courses are laid out in, read the same way and for the same reason as
+## `course_library` above: one file, Lab is the only writer, and Sim reads it and never writes it.
+## AppShell replaces this with its own instance before _ready so both rooms read one library.
+var site_library: SiteLibrary = SiteLibrary.load_from()
+## THE GROUND (F4). Null is flat at zero — a course whose site is missing is flown on the field
+## every course was flown on before terrain existed, rather than on nothing.
+var terrain: Terrain = _course_terrain()
 ## Keyed on the course being flown, so a time set on one track is never reported as the record on
 ## another. See lap_timer.gd's header — this is the one line that stops a best lap becoming a lie.
 var lap_timer := LapTimer.new(course.fingerprint())
@@ -146,7 +157,29 @@ var _hover_throttle := 0.0
 ## lap_timer.gd's header exists to describe.
 func adopt_selected_course() -> void:
 	course = course_library.selected()
+	terrain = _course_terrain()
 	lap_timer = LapTimer.new(course.fingerprint())
+
+
+## The ground under the open course. A course pointing at a site that is not there falls back to
+## the selected one, on FieldEditorScreen.site()'s rule: a damaged file lands somewhere flyable and
+## the room still opens.
+func _course_terrain() -> Terrain:
+	var where := site_library.site(course.site_id)
+	if where == null:
+		where = site_library.selected()
+	return where.terrain if where != null else null
+
+
+## Whether the aircraft has hit the ground. STILL AN ALTITUDE COMPARISON and deliberately not a
+## physics query: the recorded decision above was that a shape cast costs more than it tells us,
+## and `Terrain.height_at` is arithmetic, so giving the ground a shape does not overturn it. Static
+## and pure so the decision can be tested by calling it as well as by reading it.
+##
+## `p_terrain` null is flat at zero, the ground this scene tested against before F4.
+static func _check_crash(at: Vector3, p_terrain: Terrain) -> bool:
+	var ground := p_terrain.height_at(at.x, at.z) if p_terrain != null else 0.0
+	return at.y < ground + CRASH_ALTITUDE_M
 
 func _ready() -> void:
 	ground_mesh.material_override = GroundGrid.build_material(GROUND_SIZE_M)
@@ -277,13 +310,14 @@ func _restart_course() -> void:
 		# The pilot stands at the start line and stays there. That is the whole point of the
 		# default listener: the drone leaves, comes back, and passes — which is where
 		# distance, air absorption and doppler actually do something.
-		drone_audio.set_listener(drone_audio.listener_mode, course.start_position())
-	_reset_to(course.start_position(), course.start_forward())
+		drone_audio.set_listener(drone_audio.listener_mode, course.start_position(terrain))
+	_reset_to(course.start_position(terrain), course.start_forward())
 
 ## Day 3's gate (week1.md): "Ground is one static box; hitting it resets to spawn." Day 6
 ## moves that to the last gate cleared, so a clip on gate 6 does not send a new pilot back
 ## to the start line. Ground contact is a plain altitude test rather than a Jolt query —
-## the ground is a single flat plane this week, so a shape cast would cost more than it tells us.
+## the ground is a shape now (F4) but it is still arithmetic, so a shape cast would still cost
+## more than it tells us. See _check_crash.
 func _respawn_after_crash() -> void:
 	# A crash is a landing, and a landing is when the pack state is written down. Recorded rather
 	# than reset: hitting the ground does not refill a battery.
@@ -295,7 +329,10 @@ func _respawn_after_crash() -> void:
 	# most interesting seconds in the file are the ones just before it.
 	if _recorder != null:
 		_recorder.discontinuities += 1
-	_reset_to(course.respawn_position(), course.next_gate()["position"] - course.respawn_position())
+	# Asked once. The two calls this replaced were one arithmetic answer either way; now that the
+	# answer reads the terrain, they were also one shape of the ground being sampled twice.
+	var at := course.respawn_position(terrain)
+	_reset_to(at, course.next_gate()["position"] - at)
 
 ## Places the drone level, stationary, and pointed at `forward` (yaw only — respawning
 ## already banked would just hand the pilot a second crash).
@@ -391,7 +428,7 @@ func _physics_process(delta: float) -> void:
 	# pass that ends in a clip just past the ring is silently thrown away.
 	_score_gates(delta)
 
-	if core.rigid_body.position_m.y < CRASH_ALTITUDE_M:
+	if _check_crash(core.rigid_body.position_m, terrain):
 		_respawn_after_crash()
 
 	drone.position = core.rigid_body.position_m
@@ -426,7 +463,7 @@ func _toggle_listener() -> void:
 	var next := DroneAudio.Listener.CHASE_CAMERA
 	if drone_audio.listener_mode == DroneAudio.Listener.CHASE_CAMERA:
 		next = DroneAudio.Listener.PILOT_GROUND
-	drone_audio.set_listener(next, course.start_position())
+	drone_audio.set_listener(next, course.start_position(terrain))
 	hud.show_banner("EARS: %s" % ("PILOT" if next == DroneAudio.Listener.PILOT_GROUND else "CHASE"))
 
 ## Swaps the FPV feed between the corner inset and the whole screen. Says so in the banner either

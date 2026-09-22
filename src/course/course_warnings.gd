@@ -23,8 +23,8 @@ extends RefCounted
 ## route is this long, the sharpest corner is this many degrees — and the pilot judges. Both tests
 ## of a proposed threshold (labs-and-sim.md §2.3) are applied here as they are to a build: can you
 ## say where the number comes from, and is it independent of the others? The two impossibles below
-## pass both — the ground plane is at y = 0 and the aircraft's span is arithmetic off the parts —
-## and every judgement about tightness fails the first.
+## pass both — the ground is where the site's own terrain says it is (F4) and the aircraft's span
+## is arithmetic off the parts — and every judgement about tightness fails the first.
 
 const GATE_BELOW_GROUND := &"course_gate_below_ground"
 const RING_SMALLER_THAN_AIRCRAFT := &"course_ring_smaller_than_aircraft"
@@ -39,12 +39,17 @@ const TIGHTEST_TURN := &"course_tightest_turn"
 const RING_SAMPLES := 48
 
 
-static func evaluate(course: GateCourse, build: Build) -> Array[BuildWarning]:
+## `p_site` is the place this course is laid out in (F4). **Null means flat at zero**, which is
+## exactly what every caller got before terrain existed — the default is what keeps the existing
+## call sites honest rather than silently re-judged, and it is the one thing the F4 suite pins as
+## bit-identical.
+static func evaluate(course: GateCourse, build: Build,
+		p_site: Site = null) -> Array[BuildWarning]:
 	var out: Array[BuildWarning] = []
 	if course == null or course.gates.is_empty():
 		return out
 
-	out.append_array(_impossible(course, build))
+	out.append_array(_impossible(course, build, _terrain_of(p_site)))
 	out.append_array(_limiting(course))
 	out.append_array(_characteristic(course))
 	return BuildWarning.by_severity(out)
@@ -54,20 +59,34 @@ static func evaluate(course: GateCourse, build: Build) -> Array[BuildWarning]:
 # Impossible — there is a boundary to point at
 # ---------------------------------------------------------------------------
 
-static func _impossible(course: GateCourse, build: Build) -> Array[BuildWarning]:
+## The terrain a site carries, or null for a site that is not there. One place, so that "no site
+## means flat" is a single statement rather than a branch in every consumer.
+static func _terrain_of(p_site: Site) -> Terrain:
+	return p_site.terrain if p_site != null else null
+
+
+static func _impossible(course: GateCourse, build: Build,
+		terrain: Terrain) -> Array[BuildWarning]:
 	var out: Array[BuildWarning] = []
 
-	# The ground plane is at y = 0 and it is not a preference. A ring whose lower edge is beneath
-	# it has part of its hoop buried, and the aperture the pilot is aiming at is not the aperture
-	# that is there.
+	# THE GROUND IS THE TERRAIN, NOT y = 0. A ring whose lower edge is beneath the ground under it
+	# has part of its hoop buried, and the aperture the pilot is aiming at is not the aperture that
+	# is there. The height is read AT THE GATE'S OWN x/z — a slope is a different ground at each
+	# end of it, and asking once at the site origin would call a buried gate clear at one end and a
+	# clear gate buried at the other. A null terrain reads 0 everywhere, which is what this check
+	# has always said.
 	for i in course.gates.size():
 		var gate: Dictionary = course.gates[i]
-		var lower_edge := float(gate["position"].y) - float(gate["radius"])
+		var at: Vector3 = gate["position"]
+		var ground := terrain.height_at(at.x, at.z) if terrain != null else 0.0
+		# Relative to the ground under this gate, so the depth quoted is the depth a shovel would
+		# have to dig — not the distance to a datum that may be nowhere near the surface.
+		var lower_edge := float(at.y) - float(gate["radius"]) - ground
 		if lower_edge > 0.0:
 			continue
 		out.append(BuildWarning.impossible(GATE_BELOW_GROUND,
 			"Gate %d reaches %.2f m below the ground. Raise it above %.2f m." % [
-				i + 1, -lower_edge, float(gate["radius"])],
+				i + 1, -lower_edge, ground + float(gate["radius"])],
 			{"gate": i + 1, "lower_edge_m": lower_edge, "radius_m": float(gate["radius"])}))
 
 	# Two known dimensions compared, which is what makes this a measurement rather than a policy
