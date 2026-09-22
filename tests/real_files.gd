@@ -38,13 +38,18 @@ extends RefCounted
 ## WHAT ACTUALLY RUNS BETWEEN `hold()` AND THE SECTIONS, STATED PRECISELY
 ## ---------------------------------------------------------------------------
 ##
-## Several of the eleven callers of `RealFiles.hold()` in this directory, as of this writing, do a
-## small amount of setup in `run()` between the hold and the sections dict — most commonly
-## `PartsCatalog.load_default()` or `Build.OPTIONAL_COMPONENTS`, e.g. `tests/test_assembly_tweaks.gd`
-## and `tests/test_component_registration.gd`; four callers have no setup at all in that gap. THIS
-## GAP IS NOT COVERED BY THE GUARANTEE ABOVE, and an earlier version of this file claimed `run()`
-## "does nothing else but call sections and append results" — that was never true of every
-## converted suite and should not be read as a rule the callers follow. What is actually true:
+## Three of the eleven callers of `RealFiles.hold()` in this directory, as of this writing, do any
+## setup in `run()` between the hold and the sections dict — the other eight (`test_site`,
+## `test_air_density`, `test_field_editor`, `test_conditions`, `test_authored_blade`,
+## `test_custom_parts_ui`, `test_custom_propellers`, `test_printed_divergence`) go straight from the
+## hold into their first section, with nothing in the gap at all. Of the three that do: two hold a
+## catalog/constant load — `tests/test_assembly_tweaks.gd` (`PartsCatalog.load_default()`) and
+## `tests/test_component_registration.gd` (`PartsCatalog.load_default()` and
+## `Build.OPTIONAL_COMPONENTS`) — and one, `tests/test_video_panel.gd`, holds a real nullable
+## property chain (named below). THIS GAP IS NOT COVERED BY THE GUARANTEE ABOVE, and an earlier
+## version of this file claimed `run()` "does nothing else but call sections and append results" —
+## that was never true of every converted suite and should not be read as a rule the callers
+## follow. What is actually true:
 ##
 ## - A `SCRIPT ERROR` inside a SECTION (a function called and appended from inside the sections
 ##   dict, or into `results` after it) is covered: `run()` resumes, `held.restore()` still runs,
@@ -53,9 +58,9 @@ extends RefCounted
 ##   catch.
 ## - A `SCRIPT ERROR` in the SETUP CALLS between `hold()` and the sections dict is NOT covered —
 ##   it is exactly case 2 below, just with a name attached to what currently occupies that gap.
-##   For most callers this has not been a live hazard, because their setup is a catalog/constant
-##   load with no property access on anything that could plausibly be null or missing. That is a
-##   property of what those callers' setup HAPPENS to do today, not a structural guarantee — if a
+##   For the two callers with a catalog/constant load, this has not been a live hazard, because
+##   that setup makes no property access on anything that could plausibly be null or missing. That
+##   is a property of what those callers' setup HAPPENS to do today, not a structural guarantee — if a
 ##   future suite's setup grows a real property access there, this file's protection silently
 ##   stops applying to it, with nothing here to flag that it happened. **`tests/test_video_panel.gd`
 ##   is already the exception, not a hypothetical one**: its setup gap builds a `GlassShell` and
