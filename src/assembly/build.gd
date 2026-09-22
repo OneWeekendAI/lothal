@@ -524,12 +524,22 @@ var air := AirDensity.standard()
 ## The steady wind speed, m/s, that the selected conditions read at the moment this Build was last
 ## rendered (F8, design §4.3). NOT threaded through `from_ids` or `refit_from` — unlike `air`, no
 ## oracle or reference figure is ever quoted at a non-zero wind, so there is no "at construction"
-## datum for a default to protect. Set by whoever renders this Build's stats (`lab_screen.gd`),
-## read only by `_field_wind()` below, which is silent at zero. Never touches flight_time_min() or
-## average_flight_current_a() — those take wind as an explicit argument, not this field, so the
-## same Build answers both "what it does today" (the panel's now-labelled numbers) and "what it
-## does calm" (this field left at its default) without needing two Builds.
+## datum for a default to protect. Set by whoever renders this Build's stats (`lab_screen.gd`) and
+## by whoever flies it (`main.gd`, so the HUD's countdown is quoted in the same weather).
+##
+## THE ONE SOURCE OF TRUTH FOR "THE WIND THESE NUMBERS ARE IN" (F8 fix round 1, review finding 6).
+## It used to be one of two: this field, and a `wind_mps := 0.0` argument on each of the three
+## functions below, so a caller that simply forgot the argument quoted a CALM number under a row
+## labelled with a windy conditions name, and nothing could detect the forgetting. The argument is
+## still there — a caller may still ask a hypothetical, "what would this build do in 12 m/s" —
+## but its default is now `WIND_FROM_FIELD`, meaning "this Build's own wind", so forgetting it
+## lands on the truth instead of on calm.
 var field_wind_mps := 0.0
+
+## Passed as a `wind_mps` argument (and its default) to mean "use this Build's own `field_wind_mps`"
+## rather than a caller-supplied hypothetical. Negative because a headwind term added to a leg's
+## airspeed is non-negative by construction, so no real wind can collide with the sentinel.
+const WIND_FROM_FIELD := -1.0
 
 ## The name of the selected conditions, held beside `field_wind_mps` for the same reason and set
 ## the same way. Read by the stats panel (`part_details.gd`) so a conditional row can name its own
@@ -1902,10 +1912,16 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 ##
 ## `wind_mps` is a HEADWIND term added to every segment's own airspeed (F8, design §4.3): the
 ## mission profile already states each leg as a speed over the ground, so a headwind is simply more
-## airspeed at the same leg — the honest conservative reading, and no new physics. Defaults to
-## 0.0 so every caller written before F8 gets exactly the calm figure it always did; check 1 pins
-## that against the pre-F8 literal.
-func average_flight_current_a(open_circuit_v: float = AT_NOMINAL, wind_mps: float = 0.0) -> float:
+## airspeed at the same leg — the honest conservative reading, and no new physics.
+##
+## Defaults to `WIND_FROM_FIELD`, i.e. this Build's own `field_wind_mps` — which is 0.0 on a Build
+## nobody has handed a conditions set, so every caller written before F8 still gets exactly the
+## calm figure it always did (check 1 pins that against the pre-F8 literal), while a caller that
+## forgets the argument on a Build that IS in weather gets that weather rather than silently
+## quoting calm. See `field_wind_mps`.
+func average_flight_current_a(open_circuit_v: float = AT_NOMINAL,
+		wind_mps: float = WIND_FROM_FIELD) -> float:
+	var leg_wind := field_wind_mps if wind_mps < 0.0 else wind_mps
 	# One peak solve for all five segments. It is 400 thrust evaluations and it does not depend on
 	# airspeed, so paying for it per segment would quintuple the cost of every stats-panel refresh
 	# for an identical answer.
@@ -1913,7 +1929,7 @@ func average_flight_current_a(open_circuit_v: float = AT_NOMINAL, wind_mps: floa
 	var total := 0.0
 	for segment in FREESTYLE_FLIGHT_PROFILE:
 		total += float(segment["fraction"]) * flight_current_at_a(
-			float(segment["airspeed_mps"]) + wind_mps, float(segment["load_factor"]), ceiling,
+			float(segment["airspeed_mps"]) + leg_wind, float(segment["load_factor"]), ceiling,
 			open_circuit_v)
 	return total
 
@@ -1921,9 +1937,10 @@ func average_flight_current_a(open_circuit_v: float = AT_NOMINAL, wind_mps: floa
 ## Zero for a build that cannot hover — there is no flight to put a time on.
 ##
 ## `wind_mps` reaches `average_flight_current_a` unchanged (F8) — a headwind on every leg of the
-## mission profile, at the nominal voltage the stats panel always quotes at. Defaults to 0.0 for
-## bit-identical calm-day behaviour (check 1).
-func flight_time_min(wind_mps: float = 0.0) -> float:
+## mission profile, at the nominal voltage the stats panel always quotes at. Defaults to
+## `WIND_FROM_FIELD` (this Build's own `field_wind_mps`, 0.0 unless somebody set it), which is
+## bit-identical calm-day behaviour for every pre-F8 caller (check 1).
+func flight_time_min(wind_mps: float = WIND_FROM_FIELD) -> float:
 	if not can_hover():
 		return 0.0
 	var average_current_a := average_flight_current_a(AT_NOMINAL, wind_mps)
@@ -1945,6 +1962,12 @@ func flight_time_min(wind_mps: float = 0.0) -> float:
 ## between 7 and 12 m/s for the reference build) that the extra drag has overtaken the lift
 ## saved. Callers of this function must not assume monotonicity; `tests/test_wind_numbers.gd`
 ## pins the measured (non-monotonic) shape rather than asserting the tidier, false one.
+##
+## NO PANEL ROW QUOTES THIS TODAY, and that is not an oversight (F8 fix round 1, review finding 7).
+## Design §4.3 names exactly two conditional Lab numbers — flight time and flight current — and
+## both are mission-profile averages, not a hold-station figure; this function is the profile's
+## own building block and the interface the F8 brief asked for. It is called by
+## `tests/test_wind_numbers.gd` and by whatever room next wants to quote a hover in weather.
 func hover_current_in_wind_a(wind_mps: float, open_circuit_v: float = AT_NOMINAL) -> float:
 	var ceiling: float = peak_thrust(open_circuit_v)["throttle"]
 	return flight_current_at_a(wind_mps, 1.0, ceiling, open_circuit_v)
@@ -1956,6 +1979,14 @@ func hover_current_in_wind_a(wind_mps: float, open_circuit_v: float = AT_NOMINAL
 ## HUD's countdown and the stats panel's estimate are the same claim about the same aircraft, and
 ## a pilot who reads 4.1 minutes in the garage and 4.1 minutes at spawn is not being told two
 ## different things by two different formulas.
+##
+## THAT PROMISE IS WHY THIS IS WIND-AWARE (F8 fix round 1, review finding 5). `average_flight_current_a`
+## below is called with no wind argument, which since F8's fix round means "this Build's own
+## `field_wind_mps`" — the same field the stats panel's now-labelled estimate is quoted in, set on
+## the flying Build by `main.gd` from the same selected conditions Sim's `Wind` is built from. Left
+## as it was, the garage would have said 3.2 min under the selected conditions while the HUD counted
+## down from the calm 4.6, which is exactly the two-formulas-one-aircraft split this docstring
+## promises does not happen.
 ##
 ## What differs is only the capacity remaining, and the voltage it is solved at: a half-empty pack
 ## rests lower, so the hover it has to hold costs a little more current. Zero for a build that
@@ -2452,17 +2483,29 @@ func _field_air() -> Array[BuildWarning]:
 ## THE WORD "GRADE" NEVER APPEARS HERE, ON PURPOSE: no "too windy", no wind_verdict, no threshold —
 ## checks 10 and 11 assert both by id, over the whole list, not only this row.
 ##
-## Silent at zero wind, for `_field_air()`'s reason: "0 km/h wind against a 108 km/h top speed" is a
-## line that reports nothing, and the warning list is not a status bar.
+## Silent BELOW `Conditions.CALM_TOLERANCE_MPS`, not below an exact zero, for `_field_air()`'s
+## reason: "0 km/h wind against a 108 km/h top speed" is a line that reports nothing, and the
+## warning list is not a status bar. `<= 0.0` was not enough (F8 fix round 1, review finding 4) —
+## a set typed as 0.004 m/s is calm in every sense a pilot means, and `conditions.gd` already owns
+## the number that says so, at 0.01 m/s. A second threshold spelled here would be a second source
+## of truth for "a wind is not a wind"; anything under 0.14 m/s rounds to "0 km/h" on this row
+## anyway, so the old comparison printed the exact vacuous line this function exists to prevent.
+##
+## The second sentence is the consequence clause every other characteristic row carries (see
+## `_field_air()`). It states only that the two conditional numbers beside it were quoted in this
+## wind — TRUE, checkable, and carrying no direction, because Ruling 57 measured that wind does not
+## always cost a builder current. A row that said "so expect less" would be a grade with better
+## manners.
 func _field_wind() -> Array[BuildWarning]:
 	var out: Array[BuildWarning] = []
-	if field_wind_mps <= 0.0:
+	if absf(field_wind_mps) < Conditions.CALM_TOLERANCE_MPS:
 		return out
 
 	var wind_kmh := field_wind_mps * 3.6
 	var top_kmh := top_speed_kmh()
 	out.append(BuildWarning.characteristic(&"field_wind",
-		"This day's wind is %.0f km/h against this build's %.0f km/h top speed." % [
+		("This day's wind is %.0f km/h against this build's %.0f km/h top speed. "
+			+ "The flight time and flight current quoted beside this are quoted in it.") % [
 			wind_kmh, top_kmh],
 		{"wind_mps": field_wind_mps, "wind_kmh": wind_kmh, "top_speed_kmh": top_kmh}))
 	return out

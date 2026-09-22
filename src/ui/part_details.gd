@@ -79,11 +79,13 @@ func render(part: Dictionary, build: Build) -> void:
 		# CONDITIONS (F8, design §4.3/§3.3) — a headwind moves both, so both name the conditions
 		# they were quoted at (check 7). AUW above does not: it is the one row the design calls
 		# unconditional, and labelling it would be noise (check 8).
+		# No wind argument: since F8's fix round both functions default to the Build's OWN
+		# `field_wind_mps` (review finding 6), so the number and the label beside it cannot come
+		# apart — a panel that passed the wind explicitly could one day forget to.
 		_stat_values["time"].text = "%.1f min (%s)" % [
-			build.flight_time_min(build.field_wind_mps), build.field_conditions_name]
+			build.flight_time_min(), build.field_conditions_name]
 		_stat_values["current"].text = "%.1f A (%s)" % [
-			build.average_flight_current_a(Build.AT_NOMINAL, build.field_wind_mps),
-			build.field_conditions_name]
+			build.average_flight_current_a(), build.field_conditions_name]
 	else:
 		_stat_values["hover"].text = "won't hover"
 		_stat_values["time"].text = "—"

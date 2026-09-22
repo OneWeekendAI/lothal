@@ -23,6 +23,7 @@ static func run() -> Array:
 	results.append_array(_test_shell_lifecycle())
 	results.append_array(_test_filters(catalog))
 	results.append_array(_test_live_reaction(catalog))
+	results.append_array(_test_the_non_hovering_rows(catalog))
 	results.append_array(_test_powertrain_rails(catalog))
 	results.append_array(_test_the_build_crosses_into_sim(catalog))
 	results.append_array(_test_orbit(catalog))
@@ -501,6 +502,80 @@ static func _test_live_reaction(catalog: PartsCatalog) -> Array:
 ## stats belong to the aircraft rather than to the component you happen to be looking at. A
 ## motor swap that updated the motor panel and left the frame panel quoting the old
 ## thrust-to-weight would look completely fine on screen.
+## A build that cannot lift itself has no flight to put a number on, so the two conditional rows
+## (design §4.3: flight time and flight current, the ones F8 made wind-aware and conditions-labelled)
+## must read an em-dash rather than a figure — and must NOT carry a conditions name, because an
+## em-dash labelled "(Gusty afternoon)" would quote the weather at a number that does not exist.
+##
+## ASSERTED HERE BECAUSE IT WAS ASSERTED NOWHERE (F8 review, finding 11). `part_details.gd`'s
+## non-hovering branch was written by F8 and `tests/test_lab.gd` — named in F8's own brief — was
+## never touched; the "current" row is the one F8 ADDED, so before this it had no test on that
+## branch at all.
+##
+## MUTATION THIS CATCHES: the `else` arm of `render()` extended to quote
+## `build.flight_time_min()`/`average_flight_current_a()` with the conditions label, the way the
+## hovering arm does. Both figures are legitimate floats on a build that cannot hover
+## (`flight_time_min` returns 0.0), so nothing crashes — the rows simply start reading
+## "0.0 min (Standard)", which is a flight time for an aircraft that does not fly.
+static func _test_the_non_hovering_rows(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	var grounded := _overloaded_build(catalog)
+	grounded.field_wind_mps = 8.0
+	grounded.field_conditions_name = "A Very Distinctive Conditions Name"
+
+	var panel := MotorDetails.new(catalog)
+	panel.render(grounded.motor, grounded)
+
+	results.append(TestResult.new(
+		"the fixture really cannot hover — the branch under test is the one being taken",
+		not grounded.can_hover(),
+		"can_hover=%s, AUW %.0f g" % [grounded.can_hover(), grounded.all_up_weight_g()]))
+	results.append(TestResult.new(
+		"a build that won't hover says so on the hover row",
+		panel.stat_text("hover") == "won't hover",
+		"row reads %s" % panel.stat_text("hover")))
+	results.append(TestResult.new(
+		"its flight-time row is an em-dash, not a figure",
+		panel.stat_text("time") == "—",
+		"row reads %s" % panel.stat_text("time")))
+	results.append(TestResult.new(
+		"its flight-current row is an em-dash, not a figure — the row F8 added, on the branch "
+			+ "nothing covered",
+		panel.stat_text("current") == "—",
+		"row reads %s" % panel.stat_text("current")))
+	results.append(TestResult.new(
+		"and neither em-dash carries a conditions name: there is no number for the weather to "
+			+ "qualify",
+		not panel.stat_text("time").contains("A Very Distinctive Conditions Name")
+			and not panel.stat_text("current").contains("A Very Distinctive Conditions Name"),
+		"time %s, current %s" % [panel.stat_text("time"), panel.stat_text("current")]))
+
+	panel.free()
+	return results
+
+
+## The heaviest pack the catalog carries under its weakest motor — a fixture-picking heuristic
+## (the same one `tests/test_thrust_overlay.gd` uses), not a mass model, which is why the section
+## above asserts the aircraft really cannot hover rather than trusting it.
+static func _overloaded_build(catalog: PartsCatalog) -> Build:
+	var heaviest := ""
+	var heaviest_energy := -1.0
+	for pack in catalog.by_category["battery"]:
+		var energy := float(pack["specs"]["cells"]) * float(pack["specs"]["mah"])
+		if energy > heaviest_energy:
+			heaviest_energy = energy
+			heaviest = str(pack["part_id"])
+	var weakest := ""
+	var weakest_thrust := INF
+	for spec in catalog.by_category["motor"]:
+		var lift := float(spec["specs"]["max_thrust_g"])
+		if lift < weakest_thrust:
+			weakest_thrust = lift
+			weakest = str(spec["part_id"])
+	return Build.from_ids(catalog, ReferenceBuild.FRAME_ID, weakest,
+		ReferenceBuild.PROPELLER_ID, heaviest, ReferenceBuild.ESC_ID, ReferenceBuild.FC_ID)
+
+
 static func _test_powertrain_rails(catalog: PartsCatalog) -> Array:
 	var results: Array = []
 	var lab := LabScreen.new(catalog)

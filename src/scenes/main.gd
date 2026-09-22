@@ -62,6 +62,10 @@ var build: Build
 ## (`_reset_to`) re-seeds it, the same rule `core.gyro` lives under. Read-only here and in
 ## `DroneCore`: `Sim authors nothing`, and `ConditionsLibrary.load_from()` is a read.
 var wind: Wind
+## The name of the conditions set `wind` was built from, held because `Wind` keeps only the numbers
+## a builder typed and not the label on them. Stamped onto every Build this scene flies so the
+## HUD's countdown and Lab's estimate are quoted in — and named after — the same weather.
+var conditions_name := Conditions.STANDARD_NAME
 var build_panel: BuildPanel
 ## The visible aircraft, generated from `build` rather than authored in main.tscn — see the
 ## comment on the Drone node there, and AirframeModel's header.
@@ -232,7 +236,9 @@ func _ready() -> void:
 	# RoomHost to hand anything over). A read: `ConditionsLibrary.load_from()` never writes, and
 	# by the time a builder can reach Sim through the door, RoomHost's own load has already
 	# migrated and saved `conditions.json`, so this sees exactly the same file either way.
-	wind = Wind.new(ConditionsLibrary.load_from().selected())
+	var selected_conditions := ConditionsLibrary.load_from().selected()
+	wind = Wind.new(selected_conditions)
+	conditions_name = selected_conditions.conditions_name
 	_rebuild_ground()
 
 	course_renderer = CourseRenderer.new(course)
@@ -300,6 +306,13 @@ func _on_build_changed(new_build: Build) -> void:
 	# change lands on, so there is no ordering in which the aircraft on screen flies one weather and
 	# the loop stepping it assumes another.
 	core.wind = wind
+	# And the same weather onto the Build itself, not only onto the loop stepping it (F8 fix round
+	# 1, review finding 5). `remaining_flight_time_min()` — the HUD's "N min left" — averages over
+	# the mission profile in this Build's own `field_wind_mps`, so leaving it at 0.0 here would
+	# have the garage quote one number under the selected conditions and the HUD count down from
+	# the calm one, which is precisely the split that function's docstring promises cannot happen.
+	build.field_wind_mps = wind.speed_mps
+	build.field_conditions_name = conditions_name
 	# The pack comes out of the bag as it actually is. Seeded here rather than inside Build,
 	# which must stay pure: the reference build's 11.7:1 and 29% are quoted at the nominal
 	# voltage datum and cannot become a function of how much flying anyone has done.
