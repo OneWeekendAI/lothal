@@ -521,6 +521,21 @@ var _part_ids: Dictionary = {}
 ## and omitting it lands on standard air, which is where the oracle must be.
 var air := AirDensity.standard()
 
+## The steady wind speed, m/s, that the selected conditions read at the moment this Build was last
+## rendered (F8, design §4.3). NOT threaded through `from_ids` or `refit_from` — unlike `air`, no
+## oracle or reference figure is ever quoted at a non-zero wind, so there is no "at construction"
+## datum for a default to protect. Set by whoever renders this Build's stats (`lab_screen.gd`),
+## read only by `_field_wind()` below, which is silent at zero. Never touches flight_time_min() or
+## average_flight_current_a() — those take wind as an explicit argument, not this field, so the
+## same Build answers both "what it does today" (the panel's now-labelled numbers) and "what it
+## does calm" (this field left at its default) without needing two Builds.
+var field_wind_mps := 0.0
+
+## The name of the selected conditions, held beside `field_wind_mps` for the same reason and set
+## the same way. Read by the stats panel (`part_details.gd`) so a conditional row can name its own
+## conditions (check 7) without the panel reaching into a library this Build was never handed.
+var field_conditions_name := Conditions.STANDARD_NAME
+
 var arm_m: float
 var mass_properties: MassProperties
 ## Lazily built by forward_ratios(). Never read directly. Cleared in _recompute so a Build that
@@ -1884,7 +1899,13 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 
 ## The current a pack actually sees over a flight: the model's answer at each row of
 ## FREESTYLE_FLIGHT_PROFILE, weighted by how much of the time is spent there.
-func average_flight_current_a(open_circuit_v: float = AT_NOMINAL) -> float:
+##
+## `wind_mps` is a HEADWIND term added to every segment's own airspeed (F8, design §4.3): the
+## mission profile already states each leg as a speed over the ground, so a headwind is simply more
+## airspeed at the same leg — the honest conservative reading, and no new physics. Defaults to
+## 0.0 so every caller written before F8 gets exactly the calm figure it always did; check 1 pins
+## that against the pre-F8 literal.
+func average_flight_current_a(open_circuit_v: float = AT_NOMINAL, wind_mps: float = 0.0) -> float:
 	# One peak solve for all five segments. It is 400 thrust evaluations and it does not depend on
 	# airspeed, so paying for it per segment would quintuple the cost of every stats-panel refresh
 	# for an identical answer.
@@ -1892,19 +1913,41 @@ func average_flight_current_a(open_circuit_v: float = AT_NOMINAL) -> float:
 	var total := 0.0
 	for segment in FREESTYLE_FLIGHT_PROFILE:
 		total += float(segment["fraction"]) * flight_current_at_a(
-			float(segment["airspeed_mps"]), float(segment["load_factor"]), ceiling, open_circuit_v)
+			float(segment["airspeed_mps"]) + wind_mps, float(segment["load_factor"]), ceiling,
+			open_circuit_v)
 	return total
 
 
 ## Zero for a build that cannot hover — there is no flight to put a time on.
-func flight_time_min() -> float:
+##
+## `wind_mps` reaches `average_flight_current_a` unchanged (F8) — a headwind on every leg of the
+## mission profile, at the nominal voltage the stats panel always quotes at. Defaults to 0.0 for
+## bit-identical calm-day behaviour (check 1).
+func flight_time_min(wind_mps: float = 0.0) -> float:
 	if not can_hover():
 		return 0.0
-	var average_current_a := average_flight_current_a()
+	var average_current_a := average_flight_current_a(AT_NOMINAL, wind_mps)
 	if average_current_a <= 0.0:
 		return 0.0
 	var usable_mah: float = float(battery["specs"]["mah"]) * USABLE_CAPACITY_FRACTION
 	return (usable_mah / (average_current_a * 1000.0)) * 60.0
+
+
+## A hover held against a headwind — the same claim `flight_current_at_a` already answers for any
+## trimmed flight, at `load_factor = 1.0` (level) and the build's own peak-thrust ceiling. NOT a
+## second solve: a hover in a 25 km/h headwind IS a trimmed flight at 6.9 m/s, so this calls the
+## one function that already knows how to trim a lean against an airspeed (F8, design §4.3/§5.3).
+##
+## RULING 57 — MEASURED, NOT ASSUMED: at this build's trimmed hold-station, current at low-to-
+## moderate headwinds (measured 3 and 7 m/s) sits BELOW the calm figure — translational lift cuts
+## the thrust a hover needs faster than the lean adds drag, until well past the power curve's
+## minimum. It rises above the calm figure only once the headwind is large enough (measured
+## between 7 and 12 m/s for the reference build) that the extra drag has overtaken the lift
+## saved. Callers of this function must not assume monotonicity; `tests/test_wind_numbers.gd`
+## pins the measured (non-monotonic) shape rather than asserting the tidier, false one.
+func hover_current_in_wind_a(wind_mps: float, open_circuit_v: float = AT_NOMINAL) -> float:
+	var ceiling: float = peak_thrust(open_circuit_v)["throttle"]
+	return flight_current_at_a(wind_mps, 1.0, ceiling, open_circuit_v)
 
 ## How much flying is LEFT in a pack in the state it is actually in, in minutes.
 ##
@@ -2059,6 +2102,7 @@ func warnings() -> Array[BuildWarning]:
 	# quoted in, and a reader who meets "cannot hover" before they have been told they are at
 	# 3500 m has been handed the conclusion before the premise.
 	out.append_array(_field_air())
+	out.append_array(_field_wind())
 	out.append_array(_flight_quality())
 	out.append_array(_prop_unloading())
 	out.append_array(_vibration_character())
@@ -2395,6 +2439,32 @@ func _field_air() -> Array[BuildWarning]:
 			absf(fraction) * 100.0, "lower" if fraction > 0.0 else "higher"],
 		{"elevation_m": air.elevation_m, "temperature_c": air.temperature_c,
 			"air_density_kgm3": air.kgm3(), "fraction_below_standard": fraction}))
+	return out
+
+
+## What the day's wind is, against what this build can do — with units, and no judgement (F8,
+## design §7's fourth row).
+##
+## CHARACTERISTIC, and deliberately, for `_field_air()`'s own reason restated for wind: there is no
+## boundary in a headwind. A build that cannot hold station in it already says so elsewhere in this
+## list (`current_limit`) — this row's whole job is to put the wind speed next to the number a
+## pilot would compare it against, in one sentence, so they judge it themselves.
+## THE WORD "GRADE" NEVER APPEARS HERE, ON PURPOSE: no "too windy", no wind_verdict, no threshold —
+## checks 10 and 11 assert both by id, over the whole list, not only this row.
+##
+## Silent at zero wind, for `_field_air()`'s reason: "0 km/h wind against a 108 km/h top speed" is a
+## line that reports nothing, and the warning list is not a status bar.
+func _field_wind() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	if field_wind_mps <= 0.0:
+		return out
+
+	var wind_kmh := field_wind_mps * 3.6
+	var top_kmh := top_speed_kmh()
+	out.append(BuildWarning.characteristic(&"field_wind",
+		"This day's wind is %.0f km/h against this build's %.0f km/h top speed." % [
+			wind_kmh, top_kmh],
+		{"wind_mps": field_wind_mps, "wind_kmh": wind_kmh, "top_speed_kmh": top_kmh}))
 	return out
 
 

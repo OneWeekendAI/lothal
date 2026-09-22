@@ -172,6 +172,10 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	# The garage quotes its numbers in the air of the course that is selected to be flown. Set here
 	# rather than read by Lab, so there is one owner of the library and one reader of it.
 	lab.air = air_of_selected_course()
+	# The weather those numbers are quoted under, set the same way and for the same reason as
+	# `air` above — the selected conditions, not a bare default, from the first frame Lab draws.
+	lab.wind_mps = conditions_library.selected().wind_speed_mps
+	lab.conditions_name = conditions_library.selected().conditions_name
 	_host.add_child(lab)
 
 
@@ -321,7 +325,11 @@ func show_field_editor() -> void:
 	# thrust-to-weight for a place they are not — which is the exact stale reading this feature
 	# exists to remove, reintroduced one room over.
 	field_editor.course_changed.connect(func() -> void:
-		lab.set_air(air_of_selected_course()))
+		lab.set_air(air_of_selected_course())
+		# The field editor is also where conditions are switched (F7/F8): a builder who picks a
+		# gustier or windier set and walks back to the garage must see the SAME set's numbers, not
+		# whatever was selected when Lab opened — check 9's live-update rule, one door over.
+		lab.set_conditions(conditions_library.selected()))
 	_enter_room(field_editor)
 
 

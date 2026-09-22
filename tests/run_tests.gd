@@ -13,7 +13,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
 	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
-	"yaw authority", "gyro", "wind", "motor mixer", "control path", "stick release", "warnings", "build warnings",
+	"yaw authority", "gyro", "wind", "wind numbers", "motor mixer", "control path", "stick release", "warnings", "build warnings",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio", "spectrum",
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
@@ -249,6 +249,8 @@ func _run_suite(suite_name: String) -> Array:
 		"gyro": return TestGyro.run()
 		# F7: wind in Sim.
 		"wind": return TestWind.run()
+		# F8: wind in Lab — the headline numbers under the selected conditions.
+		"wind numbers": return TestWindNumbers.run()
 		"vibration": return TestVibration.run()
 		"forward flight": return TestForwardFlight.run()
 		"air density": return TestAirDensity.run()

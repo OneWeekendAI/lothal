@@ -90,6 +90,17 @@ const HAND_SPIN_RPM := 150.0
 ## before any library is loaded — quoting the same figures it always has.
 var air := AirDensity.standard()
 
+## The steady wind the garage quotes flight time and current in, m/s (F8, design §4.3). Same
+## convention as `air`: standard/calm by DEFAULT, so a LabScreen built in a test or before any
+## library is loaded quotes the same calm figures it always has, and the shell (`room_host.gd`)
+## sets this from the selected `Conditions` the same way it sets `air` from the selected course.
+var wind_mps := 0.0
+
+## The name of the conditions the garage is quoting under right now — "Standard" until the shell
+## says otherwise. Held so every panel that renders a wind-dependent stat can put the builder's own
+## name on the row (check 7) without reaching back into a library this screen was never handed.
+var conditions_name := Conditions.STANDARD_NAME
+
 var catalog: PartsCatalog
 var picker: FramePicker
 var motor_picker: MotorPicker
@@ -802,6 +813,18 @@ func set_air(p_air: AirDensity) -> void:
 	_on_selection_changed()
 
 
+## The selected conditions changed — same argument as `set_air`, and check 9's whole point: a
+## builder who switches conditions sees new numbers on the panel already open, without leaving Lab
+## and coming back. One method rather than a bare property assignment for the same reason `set_air`
+## is one: setting `wind_mps` without re-deriving leaves the flight-time and current rows describing
+## the previous day's weather.
+func set_conditions(p_conditions: Conditions) -> void:
+	var weather := p_conditions if p_conditions != null else Conditions.standard()
+	wind_mps = weather.wind_speed_mps
+	conditions_name = weather.conditions_name
+	_on_selection_changed()
+
+
 ## Regenerates the Airframe document when, and only when, the selected frame changes.
 ##
 ## The guard is the whole function. Without it every selection change — a different pack, a nudged
@@ -821,6 +844,12 @@ func _refresh_frame_document(frame: Dictionary) -> void:
 ## the failure this project has already been bitten by.
 func _on_selection_changed() -> void:
 	var build := current_build()
+	# The day's wind, read HERE — every call, not cached at construction (F8 check 9): a builder
+	# who switches conditions via set_conditions() sees the SAME Build this handler already rebuilds
+	# for every other reason, carrying the wind and the conditions name the stats panel names its
+	# rows after, rather than a value frozen from whichever conditions were selected when Lab opened.
+	build.field_wind_mps = wind_mps
+	build.field_conditions_name = conditions_name
 	# The assembly reaches the BUILD before it reaches the drawing, because it is no longer only a
 	# drawing: where the pack is strapped and how far it is slid decide where its mass sits, and
 	# every panel below reads mass properties off this object. Resolved once, here, and handed to

@@ -29,6 +29,7 @@ const STAT_ROWS := [
 	{"key": "twr", "label": "Thrust : weight"},
 	{"key": "hover", "label": "Hover throttle"},
 	{"key": "time", "label": "Flight time"},
+	{"key": "current", "label": "Flight current"},
 	{"key": "speed", "label": "Top speed"},
 ]
 
@@ -74,10 +75,19 @@ func render(part: Dictionary, build: Build) -> void:
 	_stat_values["twr"].text = "%.1f : 1" % build.thrust_to_weight()
 	if build.can_hover():
 		_stat_values["hover"].text = "%.1f %%" % (build.hover_throttle() * 100.0)
-		_stat_values["time"].text = "%.1f min" % build.flight_time_min()
+		# Flight time and current are the two numbers this build answers UNDER THE SELECTED
+		# CONDITIONS (F8, design §4.3/§3.3) — a headwind moves both, so both name the conditions
+		# they were quoted at (check 7). AUW above does not: it is the one row the design calls
+		# unconditional, and labelling it would be noise (check 8).
+		_stat_values["time"].text = "%.1f min (%s)" % [
+			build.flight_time_min(build.field_wind_mps), build.field_conditions_name]
+		_stat_values["current"].text = "%.1f A (%s)" % [
+			build.average_flight_current_a(Build.AT_NOMINAL, build.field_wind_mps),
+			build.field_conditions_name]
 	else:
 		_stat_values["hover"].text = "won't hover"
 		_stat_values["time"].text = "—"
+		_stat_values["current"].text = "—"
 	_stat_values["speed"].text = "%.0f km/h" % build.top_speed_kmh()
 
 	# Warn, never block (parts.md). A 3" frame under a 7" prop is a legitimate thing to look at;
