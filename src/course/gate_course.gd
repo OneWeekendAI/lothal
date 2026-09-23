@@ -286,6 +286,12 @@ const FINGERPRINT_PRECISION_NORMAL := 0.0001
 ## Air quantises on the same idea. A thousandth of a kg/m3 is 0.08% of standard air — far finer
 ## than any effect on a lap time, and far coarser than a float's round trip through JSON.
 const FINGERPRINT_PRECISION_RHO := 0.001
+## The steady wind quantises at a centimetre per second — the same figure `Conditions` calls calm,
+## so a speed too small to be weather is also too small to be a different track.
+const FINGERPRINT_PRECISION_WIND_MPS := 0.01
+## And its bearing at a tenth of a degree. Far finer than any wind anybody can report, far coarser
+## than a float read back out of JSON.
+const FINGERPRINT_PRECISION_WIND_DEG := 0.1
 
 ## What a best lap is set ON: the geometry, not the id and not the name.
 ##
@@ -300,7 +306,11 @@ const FINGERPRINT_PRECISION_RHO := 0.001
 ## the site does. `null` means standard, and that default is load-bearing rather than a
 ## convenience: every existing caller passes nothing, and the paragraph below says what happens to
 ## a hash that starts appending a term unconditionally.
-func fingerprint(p_air: AirDensity = null) -> String:
+## `p_site` and `p_conditions` arrived with the field room, and BOTH default to null for the same
+## load-bearing reason `p_air` does: every existing caller passes nothing, and a term appended
+## unconditionally would change every hash there has ever been.
+func fingerprint(p_air: AirDensity = null, p_site: Site = null,
+		p_conditions: Conditions = null) -> String:
 	var parts := PackedStringArray()
 	for gate in gates:
 		var position: Vector3 = gate["position"]
@@ -329,6 +339,39 @@ func fingerprint(p_air: AirDensity = null) -> String:
 	# hash and orphan every best lap ever set.
 	if p_air != null and not p_air.is_standard():
 		parts.append("rho=%d" % roundi(p_air.kgm3() / FINGERPRINT_PRECISION_RHO))
+	# THE GROUND IS PART OF THE TRACK on the same argument the air is. A lap flown over a 6 m rise
+	# and a lap flown over the same rings on a flat field are not comparable times, and reporting
+	# one as a best on the other is the record that quietly means nothing.
+	#
+	# The term carries the shape's DIMENSIONS and not just its name (`Terrain.fingerprint_term()`),
+	# because two slopes differing only in their rise are two different courses to fly.
+	#
+	# ONE CONSEQUENCE, WRITTEN DOWN RATHER THAN DISCOVERED (F3's carry-forward): `Terrain.from_data`
+	# maps a shape name this build cannot read to FLAT, so `is_flat_at_zero()` is true for it and no
+	# term is appended at all. That means TWO DIFFERENT TERRAINS SCULPTED BY A NEWER BUILD HASH
+	# IDENTICALLY HERE. It is the defensible reading — this build's `height_at` genuinely answers 0
+	# everywhere for a shape it cannot evaluate, so as far as it can tell they ARE the same flat
+	# field — and it must not be "fixed" by treating an unknown shape as non-flat, which would hash
+	# a term derived from geometry this build cannot compute. `tests/test_fingerprint_survival.gd`
+	# pins it so a later slice cannot change it by accident.
+	if p_site != null and not p_site.terrain.is_flat_at_zero():
+		parts.append("terrain=%s" % p_site.terrain.fingerprint_term())
+	# THE STEADY WIND IS PART OF THE TRACK, and the bearing as much as the speed: the same 6 m/s
+	# is a headwind down one straight and a tailwind down it, and those are different laps.
+	#
+	# GUSTINESS IS DELIBERATELY NOT HASHED. It is a noise process whose mean is the steady figure
+	# already here, so hashing it would retire a record for a number that changed nothing about the
+	# track. Stated so the omission is a decision rather than an oversight.
+	#
+	# Gated on `has_steady_wind()` and NOT on `not is_calm()`, which is the same decision seen from
+	# the other side. `is_calm()` counts gustiness — correctly, for the question it answers — so
+	# gating on it would open this branch for a set with no steady wind at all, append `wind=0,0`,
+	# and orphan every best lap on the course the moment somebody typed a gust amplitude. See
+	# `conditions.gd`.
+	if p_conditions != null and p_conditions.has_steady_wind():
+		parts.append("wind=%d,%d" % [
+			roundi(p_conditions.wind_speed_mps / FINGERPRINT_PRECISION_WIND_MPS),
+			roundi(p_conditions.wind_from_deg / FINGERPRINT_PRECISION_WIND_DEG)])
 	# Hashed rather than stored whole, so the best-lap file stays a short readable table instead of
 	# growing a copy of every course anyone has ever flown. Truncated to 16 hex characters: the file
 	# holds a handful of courses, and a collision there needs 2^32 of them.

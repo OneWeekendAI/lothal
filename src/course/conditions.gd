@@ -78,6 +78,21 @@ func is_calm() -> bool:
 	return absf(wind_speed_mps) < CALM_TOLERANCE_MPS and absf(gustiness_mps) < CALM_TOLERANCE_MPS
 
 
+## Whether the STEADY wind — and only the steady wind — is saying anything. THE PREDICATE F9'S
+## FINGERPRINT READS, and it exists because `is_calm()` is the wrong question for that one caller.
+##
+## `is_calm()` counts the gust amplitude, correctly: a day with no steady wind and a 4 m/s gust
+## amplitude is not a still day. But only the steady speed and bearing reach the lap fingerprint —
+## gustiness is deliberately not hashed (gate_course.gd's `fingerprint` says why). So gating the
+## wind term on `is_calm()` would let a typed gust value open the gate, append `wind=0,0`, change
+## the hash, and retire every best lap on the course by a side door, for a number that never
+## touched the hash and never moved the steady wind.
+##
+## The tolerance is the same one: below a centimetre per second there is no steady wind to hash.
+func has_steady_wind() -> bool:
+	return absf(wind_speed_mps) >= CALM_TOLERANCE_MPS
+
+
 # ---------------------------------------------------------------------------
 # Serialisation
 # ---------------------------------------------------------------------------
