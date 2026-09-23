@@ -1808,15 +1808,27 @@ static func _the_panels_column_stays_out_of_the_bottom_keepout(
 ## floor_y` on that rect is therefore a pass-at-exactly-equal by design and no margin can be put on
 ## it without moving the room off the floor it was laid out against. The number with real slack in
 ## it is the one underneath: the row's combined MINIMUM against the height the room has to give it.
-## That is the sum that was 579 px in 468, and it is the sum a font or a DPI change moves.
+## That is the sum that was 579 px in 468 before the two columns scrolled.
+##
+## **WHAT THIS MARGIN GUARDS NOW IS NOT WHAT RULING 69 WAS ABOUT, and saying otherwise would be
+## claiming a mechanism this code no longer has.** Once each column sits in a `ScrollContainer`,
+## the row's combined minimum is no longer a sum of row heights — it is `RAIL_VISIBLE_FLOOR` and
+## `PANELS_VISIBLE_FLOOR`, 240 px each, and it reads 256 px at both window sizes whatever the rows
+## inside do. Font or DPI drift in the rail's actual rows now moves the SCROLL RANGE instead: the
+## room scrolls a little sooner and overlaps nothing. So Ruling 69's hazard — a row height drifting
+## until the room is drawn over the dock — is closed STRUCTURALLY by the scrollers, not by this
+## number, and that is a better outcome than the ruling asked for rather than a substitute for it.
+##
+## What the margin still does is guard the floors themselves: it is what fails if somebody raises
+## `RAIL_VISIBLE_FLOOR` or `PANELS_VISIBLE_FLOOR` to a value the smallest window cannot give,
+## reporting it as "the room does not fit" 24 px before the rect checks report it as an overlap.
+## Demonstrated, not assumed: raising `RAIL_VISIBLE_FLOOR` to 560 reddens this check alone at
+## 1280x720, at slack 12 against a wanted 24, with both rect checks still green.
 ##
 ## **The margin is 24 px, and it is chosen by eye.** It is one rail row and a bit — the room's
-## rows measure 17 px (a title), 20 (the guess label) and 28 (a field row) — so it is the smallest
-## slack that survives a whole row's worth of drift rather than a pixel's. Ruling 69 is why it is
-## not zero: two agents measured different pixel counts for the same mutation on the same machine,
-## so a check that passes at exactly the floor is a check that reddens, or overlaps the dock on a
-## machine that never runs it, on a font change nobody made deliberately. Nothing derives it; if
-## the rows are ever re-measured this moves with them.
+## rows measure 17 px (a title), 20 (the guess label) and 28 (a field row) — so a floor raised to
+## within one row of the window is reported rather than shipped. Nothing derives it; if the rows
+## are ever re-measured this moves with them.
 const FIELD_KEEPOUT_MARGIN := 24.0
 
 
@@ -1846,14 +1858,33 @@ static func _the_field_room_has_room_for_what_must_stay_visible(
 ##
 ## `_the_rails_own_controls_are_drawn_inside_it` asks whether every control is drawn inside the
 ## rail, and at 1024x600 the honest answer is no — the rail's controls come to 472 px and the room
-## has 468, so the last row is below the fold and the `ScrollContainer` clips it. **That is a
-## legitimate state and it is exactly one bug away from an illegitimate one**: a scroller whose
-## vertical mode is off, or whose child cannot grow, clips those rows away with no way to reach
-## them, and every rect-based check in this file still passes because nothing is drawn over the
-## dock. So this one SCROLLS, and asserts both ends.
+## has 468, so the last row is below the fold and the `ScrollContainer` clips it. This check is the
+## one that says the clipped rows are still REACHABLE rather than merely gone.
 ##
-## Both ends and not just the bottom: scrolling to the end and finding the last row proves the
-## range exists, and scrolling back and finding the first row proves the range is a range rather
+## ## What this check is NOT for, established by two reviewers' mutations rather than by argument
+##
+## Its first draft claimed to catch "a scroller whose vertical mode is off". **It does not, and the
+## claim was tested and found false.** Setting `vertical_scroll_mode` to `SCROLL_MODE_DISABLED`
+## makes the scroller adopt its child's 488 px minimum, so the room grows past the keepout and the
+## three geometry checks beside this one go red while this one stays green. That hazard belongs to
+## them. The same draft also said nothing about whether the builder can reach the rows by hand: it
+## drives the scroll by ASSIGNING `scroll_vertical`, so a rail nobody can touch reads identically.
+##
+## ## THE VACUITY PATH, WHICH IS WHY THE FIRST TWO ASSERTIONS EXIST
+##
+## As first written this check never asserted that anything WAS below the fold. On the day the
+## rail's contents shrink enough to fit 1024x600 outright — one row removed, one font smaller —
+## `scroll_vertical` becomes a no-op, both `encloses` calls succeed trivially, and the check passes
+## while testing nothing at all. That is this project's core defect class, arriving by the back
+## door, and it is the thing the geometry checks cannot notice on this check's behalf.
+##
+## So the premise is asserted before the conclusion: **something is below the fold, and there is a
+## range to scroll.** Those two are also what make this check killable on its own — shrinking the
+## rail's content until it fits reddens THIS check and leaves all three geometry checks green,
+## because the rail's minimum is the 240 px floor either way.
+##
+## Then both ends, and not just the bottom: scrolling to the end and finding the last row proves
+## the range can be spent, and scrolling back and finding the first row proves it is a range rather
 ## than a column shoved permanently upward.
 static func _every_rail_control_is_reachable_at_the_smallest_window(
 		shell: GlassShell, tree: SceneTree) -> TestResult:
@@ -1870,12 +1901,24 @@ static func _every_rail_control_is_reachable_at_the_smallest_window(
 	var first: Control = column.get_child(0) as Control
 	var last: Control = column.get_child(column.get_child_count() - 1) as Control
 
+	# THE PREMISE, BEFORE THE CONCLUSION. Read with the scroll still at rest, which is the state
+	# the room opens in: the last control is NOT inside the box, and the bar has somewhere to go.
+	# Without these two this check passes vacuously the day the rail fits — see the header.
+	var box_at_rest := scroller.get_global_rect()
+	var below_the_fold := not box_at_rest.encloses(last.get_global_rect())
+	var bar := scroller.get_v_scroll_bar()
+	var range_to_scroll: float = 0.0 if bar == null else bar.max_value - bar.page
+
 	scroller.scroll_vertical = int(column.size.y) + 1000
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 	var box := scroller.get_global_rect()
 	var last_rect := last.get_global_rect()
 	var last_reached := box.encloses(last_rect) and last_rect.size.y > 0.0
+	# AND THE SCROLL ACTUALLY MOVED. `scroll_vertical` clamps to the range, so a scroller with no
+	# range accepts the assignment above and reports 0 — the same reading a column that refused to
+	# scroll would give.
+	var scrolled_to: int = scroller.scroll_vertical
 
 	scroller.scroll_vertical = 0
 	for i in SETTLE_FRAMES:
@@ -1886,7 +1929,10 @@ static func _every_rail_control_is_reachable_at_the_smallest_window(
 
 	return TestResult.new(
 		"the Field room's rail scrolls, and every control in it can be reached",
-		last_reached and first_reached,
-		"scrolled to the end: %s (%s at %.0f..%.0f in %.0f..%.0f) · back to the top: %s (%s)" % [
+		below_the_fold and range_to_scroll > 0.0 and scrolled_to > 0
+			and last_reached and first_reached,
+		("below the fold at rest: %s · range to scroll: %.0f px (ended at %d) · "
+			+ "scrolled to the end: %s (%s at %.0f..%.0f in %.0f..%.0f) · back to the top: %s (%s)")
+			% [below_the_fold, range_to_scroll, scrolled_to,
 			last_reached, last.name, last_rect.position.y, last_rect.end.y,
 			box.position.y, box.end.y, first_reached, first.name])
