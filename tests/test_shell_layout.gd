@@ -149,7 +149,35 @@ static func run(tree: SceneTree) -> Array:
 	for which in ["Height", "Heading", "Radius"]:
 		results.append(_a_course_panel_slider_is_drawn_inside_it(shell, which))
 	results.append(_the_rails_own_controls_are_drawn_inside_it(shell))
-	results.append(_the_rail_itself_stays_out_of_the_bottom_keepout(shell))
+	results.append(_the_rail_itself_stays_out_of_the_bottom_keepout(shell, WINDOW))
+	results.append(_the_panels_column_stays_out_of_the_bottom_keepout(shell, WINDOW))
+	results.append(_the_field_room_has_room_for_what_must_stay_visible(shell, WINDOW))
+
+	# -----------------------------------------------------------------------
+	# F11 FIX 1 — THE SAME ROOM AT THE SMALLEST WINDOW `project.godot` ALLOWS.
+	#
+	# **Every Field check above this point is taken at 1280x720, and the room did not fit at
+	# 1024x600.** Measured before the repair: the room's row stood 579 px tall in the 468 px the
+	# smallest window leaves it, so the rail ran to y=635 against a keepout floor of 524 — 111 px
+	# inside the strip the dock stands in and 35 px below the bottom of the window itself. Nothing
+	# saw it: `MIN_WINDOW` appears three times in this file and all three are the finder's.
+	#
+	# One check per thing rather than a loop, per this file's own rule, and taken at BOTH sizes
+	# rather than only at the small one — the two columns' minimums are sums of constants, and a
+	# repair that fits 600 by making 720 worse is a repair this file should not accept quietly.
+	# -----------------------------------------------------------------------
+	frame.size = MIN_WINDOW
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+
+	results.append(_the_rail_itself_stays_out_of_the_bottom_keepout(shell, MIN_WINDOW))
+	results.append(_the_panels_column_stays_out_of_the_bottom_keepout(shell, MIN_WINDOW))
+	results.append(_the_field_room_has_room_for_what_must_stay_visible(shell, MIN_WINDOW))
+	results.append(await _every_rail_control_is_reachable_at_the_smallest_window(shell, tree))
+
+	frame.size = WINDOW
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
 
 	# -----------------------------------------------------------------------
 	# QC4 — the inspector gates on selection, and the finder is wired to the build.
@@ -1681,7 +1709,7 @@ static func _a_course_panel_slider_is_drawn_inside_it(
 ## later is covered without anybody remembering to name it here.
 static func _the_rails_own_controls_are_drawn_inside_it(shell: GlassShell) -> TestResult:
 	var room := shell.field_room()
-	var rail: Control = room.site_list.get_parent().get_parent() as Control
+	var rail: Control = room.rail_panel()
 	if rail == null:
 		return TestResult.new(
 			"the Field room has a rail to measure", false, "no rail found above the Sites list")
@@ -1722,17 +1750,143 @@ static func _the_rails_own_controls_are_drawn_inside_it(shell: GlassShell) -> Te
 ## Against the WINDOW's keepout rather than against the room, for `_the_field_rooms_column_stays_
 ## out_of_the_bottom_keepout`'s reason: the room's own rect is the thing that turned out not to
 ## bound its contents, so a check measured against it would have passed the defect it is for.
-static func _the_rail_itself_stays_out_of_the_bottom_keepout(shell: GlassShell) -> TestResult:
+## TAKEN AT WHATEVER WINDOW THE CALLER IS AT, and the window is a parameter rather than `WINDOW`
+## because the size this defect lived at is the one no Field check was ever taken at. See the
+## `frame.size = MIN_WINDOW` block in `run()`.
+static func _the_rail_itself_stays_out_of_the_bottom_keepout(
+		shell: GlassShell, window: Vector2i) -> TestResult:
 	var room := shell.field_room()
-	var rail: Control = room.site_list.get_parent().get_parent() as Control
+	var rail: Control = room.rail_panel()
 	if rail == null:
 		return TestResult.new(
 			"the Field room has a rail to measure against the keepout", false, "no rail found")
-	var floor_y: float = WINDOW.y - GlassShell.BOTTOM_KEEPOUT
+	var floor_y: float = window.y - GlassShell.BOTTOM_KEEPOUT
 	var rect := rail.get_global_rect()
 	# A ZERO-HEIGHT RAIL IS ABOVE EVERY FLOOR, so its size is asserted too.
 	return TestResult.new(
-		"the Field room's rail stays above the strip the dock stands in, contents and all",
+		"the Field room's rail stays above the strip the dock stands in at %dx%d, contents and all"
+			% [window.x, window.y],
 		rect.end.y <= floor_y and rect.size.y > 200.0 and rect.size.x > 100.0,
 		"the rail is %.0f..%.0f y (%.0f x %.0f px) against a floor of %.0f" % [
 			rect.position.y, rect.end.y, rect.size.x, rect.size.y, floor_y])
+
+
+## THE OTHER COLUMN, AND IT IS A SEPARATE CHECK BECAUSE IT IS A SEPARATE SUM. The three panels
+## come to 579 px of content where the rail's controls come to 472, so the panel column is the
+## taller of the two and the one that decided how far the row overflowed — but the overflow was
+## drawn on the RAIL's side of the window, which is how a defect in this column has twice been
+## read as a defect in that one (see `_build_panels`'s own separation comment).
+##
+## Measured against the column's SCROLLER rather than against the three panels' rects, and the
+## difference matters at the small window: a `ScrollContainer` clips what it cannot show, so a
+## panel whose rect runs past the floor is not drawn past the floor once the column scrolls. The
+## scroller's rect is what is painted; `_the_field_rooms_column_stays_out_of_the_bottom_keepout`
+## above keeps the stricter "every panel, whole, no scrolling" rule at the shipping window.
+static func _the_panels_column_stays_out_of_the_bottom_keepout(
+		shell: GlassShell, window: Vector2i) -> TestResult:
+	var room := shell.field_room()
+	var scroller: Control = room.panels_scroll()
+	if scroller == null:
+		return TestResult.new(
+			"the Field room has a panel column to measure against the keepout", false,
+			"no panel scroller found")
+	var floor_y: float = window.y - GlassShell.BOTTOM_KEEPOUT
+	var rect := scroller.get_global_rect()
+	return TestResult.new(
+		"the Field room's panel column stays above the dock's strip at %dx%d" % [window.x, window.y],
+		rect.end.y <= floor_y and rect.size.y > 200.0 and rect.size.x > 100.0,
+		"the column is %.0f..%.0f y (%.0f x %.0f px) against a floor of %.0f" % [
+			rect.position.y, rect.end.y, rect.size.x, rect.size.y, floor_y])
+
+
+## HOW MUCH SLACK THE ROOM HAS, WHICH IS THE QUANTITY THAT OVERFLOWED — and it is asserted with a
+## MARGIN rather than with `<=`.
+##
+## **Why the margin is not on the rects above.** The rail's drawn rect ends exactly on the keepout
+## floor at both window sizes, and it does so BY CONSTRUCTION: `glass_shell._build_field` sets
+## `_field.offset_bottom = -BOTTOM_KEEPOUT`, so a room that fits at all fits flush. `rect.end.y <=
+## floor_y` on that rect is therefore a pass-at-exactly-equal by design and no margin can be put on
+## it without moving the room off the floor it was laid out against. The number with real slack in
+## it is the one underneath: the row's combined MINIMUM against the height the room has to give it.
+## That is the sum that was 579 px in 468, and it is the sum a font or a DPI change moves.
+##
+## **The margin is 24 px, and it is chosen by eye.** It is one rail row and a bit — the room's
+## rows measure 17 px (a title), 20 (the guess label) and 28 (a field row) — so it is the smallest
+## slack that survives a whole row's worth of drift rather than a pixel's. Ruling 69 is why it is
+## not zero: two agents measured different pixel counts for the same mutation on the same machine,
+## so a check that passes at exactly the floor is a check that reddens, or overlaps the dock on a
+## machine that never runs it, on a font change nobody made deliberately. Nothing derives it; if
+## the rows are ever re-measured this moves with them.
+const FIELD_KEEPOUT_MARGIN := 24.0
+
+
+static func _the_field_room_has_room_for_what_must_stay_visible(
+		shell: GlassShell, window: Vector2i) -> TestResult:
+	var room := shell.field_room()
+	var rail: Control = room.rail_panel()
+	if rail == null or rail.get_parent() == null:
+		return TestResult.new(
+			"the Field room has a row to measure", false, "no rail, so no row above it")
+	var row: Control = rail.get_parent() as Control
+	var floor_y: float = window.y - GlassShell.BOTTOM_KEEPOUT
+	var needed: float = row.get_combined_minimum_size().y
+	var available: float = floor_y - row.get_global_rect().position.y
+	# GUARDED ON THE ROW ASKING FOR SOMETHING. A row with a zero minimum fits every window, and it
+	# is also what an empty room looks like — the two visible floors are what it must not be below.
+	var floors: float = minf(FieldSystem.RAIL_VISIBLE_FLOOR, FieldSystem.PANELS_VISIBLE_FLOOR)
+	return TestResult.new(
+		"the Field room's row fits the %dx%d window with a row of slack to spare"
+			% [window.x, window.y],
+		needed >= floors and needed + FIELD_KEEPOUT_MARGIN <= available,
+		"the row needs %.0f px and has %.0f (slack %.0f, wanted %.0f; floors %.0f)" % [
+			needed, available, available - needed, FIELD_KEEPOUT_MARGIN, floors])
+
+
+## AND THE CONTROLS THE SMALL WINDOW CANNOT SHOW AT ONCE ARE STILL REACHABLE.
+##
+## `_the_rails_own_controls_are_drawn_inside_it` asks whether every control is drawn inside the
+## rail, and at 1024x600 the honest answer is no — the rail's controls come to 472 px and the room
+## has 468, so the last row is below the fold and the `ScrollContainer` clips it. **That is a
+## legitimate state and it is exactly one bug away from an illegitimate one**: a scroller whose
+## vertical mode is off, or whose child cannot grow, clips those rows away with no way to reach
+## them, and every rect-based check in this file still passes because nothing is drawn over the
+## dock. So this one SCROLLS, and asserts both ends.
+##
+## Both ends and not just the bottom: scrolling to the end and finding the last row proves the
+## range exists, and scrolling back and finding the first row proves the range is a range rather
+## than a column shoved permanently upward.
+static func _every_rail_control_is_reachable_at_the_smallest_window(
+		shell: GlassShell, tree: SceneTree) -> TestResult:
+	var room := shell.field_room()
+	var scroller: ScrollContainer = room.rail_scroll()
+	var column: Control = room.site_list.get_parent() as Control
+	if scroller == null or column == null or column.get_child_count() < 14:
+		return TestResult.new(
+			"the Field room's rail scrolls, and every control in it can be reached", false,
+			"scroller %s · column %s · %d controls" % [
+				scroller != null, column != null,
+				0 if column == null else column.get_child_count()])
+
+	var first: Control = column.get_child(0) as Control
+	var last: Control = column.get_child(column.get_child_count() - 1) as Control
+
+	scroller.scroll_vertical = int(column.size.y) + 1000
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	var box := scroller.get_global_rect()
+	var last_rect := last.get_global_rect()
+	var last_reached := box.encloses(last_rect) and last_rect.size.y > 0.0
+
+	scroller.scroll_vertical = 0
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	box = scroller.get_global_rect()
+	var first_rect := first.get_global_rect()
+	var first_reached := box.encloses(first_rect) and first_rect.size.y > 0.0
+
+	return TestResult.new(
+		"the Field room's rail scrolls, and every control in it can be reached",
+		last_reached and first_reached,
+		"scrolled to the end: %s (%s at %.0f..%.0f in %.0f..%.0f) · back to the top: %s (%s)" % [
+			last_reached, last.name, last_rect.position.y, last_rect.end.y,
+			box.position.y, box.end.y, first_reached, first.name])

@@ -1208,6 +1208,35 @@ static func _it_costs_nothing() -> Array:
 		"the room is %s and visible %s" % [
 			"the same instance" if shell.field_room() == room else "A DIFFERENT ONE", room.visible]))
 
+	# AND THE HALF OF THE OLD ASSERTION THE RE-POINT ABOVE LEFT UNMIRRORED. "Gone when you leave
+	# it" carried, implicitly, that nothing of the field was still being DRAWN while you worked in
+	# Lab — a freed screen renders nothing. A system that survives leaving can, so the property has
+	# to be asserted rather than inherited, and it is asserted here in the direction the
+	# implementation actually takes: the field's `SubViewport` is `UPDATE_WHEN_VISIBLE`, and once
+	# the room is hidden nothing in it is visible in the tree, so the 3D world stops being redrawn.
+	#
+	# BOTH CONJUNCTS ARE THE RULE AND NEITHER IS IT ALONE. `UPDATE_ALWAYS` on a hidden viewport
+	# renders a field nobody is looking at every frame, behind whatever room is up — and the
+	# visibility half alone would pass against exactly that, because visibility is not what
+	# `UPDATE_ALWAYS` consults.
+	#
+	# THE VISIBILITY IS READ OFF THE CONTAINER, NOT OFF THE `SubViewport`. A `SubViewport` is not a
+	# `CanvasItem` and has no `is_visible_in_tree()` — a first draft of this line called it anyway,
+	# and the handler aborted before it could append anything, which the per-section "produced
+	# results" guard reported as `0 checks` rather than as a pass. The container is also the
+	# correct object to ask: `UPDATE_WHEN_VISIBLE` is about whether the `SubViewportContainer`
+	# drawing this viewport is on screen.
+	var world := room.world()
+	var shown: bool = room.viewport_container != null and room.viewport_container.is_visible_in_tree()
+	results.append(TestResult.new(
+		"and the field it is not showing is not still being drawn behind the room that is",
+		world != null
+			and world.render_target_update_mode == SubViewport.UPDATE_WHEN_VISIBLE
+			and not shown,
+		"update mode %s (WHEN_VISIBLE is %d), the view it draws into is on screen: %s" % [
+			-1 if world == null else world.render_target_update_mode,
+			SubViewport.UPDATE_WHEN_VISIBLE, shown]))
+
 	shell.free()
 	return results
 
@@ -1452,6 +1481,19 @@ static func _scan_for(dir_path: String, needle: String, hits: Array[String]) -> 
 ## against `height_at` at a vertex — so a preview drawn from a `PlaneMesh`, from a second grid, or
 ## from a stale copy of the description all fail, and only "the same builder over the same terrain"
 ## passes.
+##
+## **WHAT THE LAST TWO ASSERTIONS DEFEND IS PROVENANCE, NOT AGREEMENT BETWEEN TWO COMPUTATIONS.**
+## An earlier version of this comment claimed the `height_at` probe supplied independence from
+## `TerrainMesh`. IT DOES NOT, and the claim was wrong rather than imprecise: `TerrainMesh
+## .vertices()` calls `Terrain.height_at(x, z)` for every vertex it emits (`terrain_mesh.gd:68`,
+## documented in its own header), so the mesh's y values ARE `height_at`'s answers and no
+## disagreement between those two functions is detectable here. What is detectable, and what this
+## section is for, is the mesh having been built from a DIFFERENT terrain description than the one
+## this site carries — a stale copy kept across an edit, a second grid, a preview of a field of the
+## same size and a different shape. Proven rather than argued: building the preview from
+## `Terrain.flat(width, length)` instead of the site's own terrain reddens both, 12 m of vertical
+## error and 1612 of 1621 probes off the surface. The arithmetic INSIDE `TerrainMesh` is somebody
+## else's job and `TestTerrainMesh` has it, against the published shape formulae.
 static func _the_preview_is_the_terrain() -> Array:
 	var results: Array = []
 	var room := _sloped_room()
@@ -1477,9 +1519,11 @@ static func _the_preview_is_the_terrain() -> Array:
 		"%d drawn points against %d from TerrainMesh, worst %.6f m apart" % [
 			drawn.size(), wanted.size(), worst]))
 
-	# AND THE SURFACE AGREES WITH `height_at`, which is the half that makes the first mean
-	# something: two functions could both be "the terrain" and disagree, and the ring that floats
-	# over a hill nobody drew is exactly what §0's one-description rule forbids.
+	# AND THE SURFACE IS THE ONE `height_at` ANSWERS OVER — which is a claim about WHICH terrain
+	# was drawn, not about two functions agreeing (see the header: they cannot disagree, because
+	# the mesh's y values come from `height_at`). The ring that floats over a hill nobody drew is
+	# what §0's one-description rule forbids, and a preview built from any other description of
+	# the field is what this line catches.
 	var off := 0
 	var probes := 0
 	var sampled := 0

@@ -158,6 +158,32 @@ const PANEL_CONTENT_WIDTH := 268.0
 ## this room exists to show and which `test_shell_layout` holds a floor under.
 const RAIL_WIDTH := 252.0
 
+## HOW MUCH OF EACH COLUMN IS VISIBLE WITHOUT SCROLLING, AND IT IS THE FLOOR THIS ROOM REFUSES TO
+## GO BELOW rather than the height it wants to be.
+##
+## **This room used to have no such floor, and that is the defect these two constants close.** Both
+## of its columns are `VBoxContainer`s of fixed-height controls, so each one's combined minimum is a
+## SUM — 488 px for the rail, 579 px for the panels, both measured — and an `HBoxContainer` expands
+## to its children's combined minimum WHATEVER its offsets say (the fact `test_shell_layout`'s
+## header names three times). `project.godot` lets a builder make the window 1024x600, which leaves
+## this room 468 px: measured at that size, the row stood 579 px tall, 111 px of it inside the strip
+## the dock stands in and 35 px below the bottom of the window itself.
+##
+## Putting each column in a `ScrollContainer` is what unbinds the sum from the window — a scroller's
+## own minimum height is nothing, so the row can be as short as the room is. These constants put
+## back the only part of the sum that should NOT be negotiable.
+##
+## **240 IS CHOSEN BY EYE**, against the measurements above and against one thing each column has to
+## be able to show without a scroll: for the rail, its two lists with their titles, the course name
+## field and the button row under them (17 + 44 + 17 + 44 + 28 + 36 = 186 px of controls plus their
+## separations) — choosing a site and a course is the one thing you came to the rail for. For the
+## panels, the Site panel whole (144 px measured) and the top of the Course panel under it. Neither
+## number is derived from anything about the field, the aircraft or the weather, so §0.1's "a guess
+## ships with an editable field beside it" does not apply: they are drawing dimensions, like a
+## margin. If the rail's controls are ever re-laid-out, these move with them.
+const RAIL_VISIBLE_FLOOR := 240.0
+const PANELS_VISIBLE_FLOOR := 240.0
+
 ## The node names the world uses, spelled once so the room and its tests agree without either
 ## reading the other's spelling out of the implementation.
 const SILHOUETTE_NAME := "DroneSilhouette"
@@ -208,6 +234,14 @@ var viewport_container: SubViewportContainer
 var renderer: CourseRenderer
 
 var _viewport: SubViewport
+
+## The rail and the two scrollers that keep this room inside the smallest window the app allows.
+## Held so `rail()`, `rail_scroll()` and `panels_scroll()` can hand them to a check by name — a
+## check that walks `site_list.get_parent().get_parent()` to find the rail silently starts
+## measuring something else the day a container is inserted, which is exactly what just happened.
+var _rail: PanelContainer
+var _rail_scroll: ScrollContainer
+var _panels_scroll: ScrollContainer
 var _orbit: Node3D
 var _camera: Camera3D
 var _terrain: MeshInstance3D
@@ -290,21 +324,68 @@ func _init(p_sites: SiteLibrary, p_courses: CourseLibrary, p_conditions: Conditi
 # The rail — two levels
 # ---------------------------------------------------------------------------
 
+## ONE COLUMN'S SCROLLER. Vertical only, and with a stated floor under what stays visible.
+##
+## Horizontal scrolling is DISABLED rather than automatic, and that is the half that makes the
+## width behave: with it disabled the scroller hands its child exactly the width it has, so the
+## rail's fields and the panels' rows keep being laid out against the column width they were
+## measured at instead of sliding sideways behind a bar nobody would find.
+##
+## `custom_minimum_size.y` is the floor, not a height: a `ScrollContainer` asks for nothing
+## vertically, which is what lets the room fit a short window, and with nothing to stop it the same
+## property lets the room be squeezed to a sliver of a column in a window a little shorter still.
+## The floor is the point past which this room would rather overflow the window than pretend.
+func _scroller(node_name: String, visible_floor: float) -> ScrollContainer:
+	var scroller := ScrollContainer.new()
+	scroller.name = node_name
+	scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroller.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	scroller.custom_minimum_size = Vector2(0, visible_floor)
+	# `SIZE_FILL` AND NOT `SIZE_EXPAND_FILL`, and the difference is the viewport's. Expanding, the
+	# panel column took every spare pixel of the row and the site view fell from 866 px to 479 in
+	# a 1280 px window — caught by `test_shell_layout`'s own floor under how much of the window the
+	# site keeps, which is the thing this room exists to show.
+	scroller.size_flags_horizontal = Control.SIZE_FILL
+	scroller.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	return scroller
+
+
+## The rail itself, and the two scrollers, by name. See `_rail`.
+func rail_panel() -> PanelContainer:
+	return _rail
+
+
+func rail_scroll() -> ScrollContainer:
+	return _rail_scroll
+
+
+func panels_scroll() -> ScrollContainer:
+	return _panels_scroll
+
+
 func _build_rail() -> Control:
 	var rail := PanelContainer.new()
 	rail.name = "Rail"
 	rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	rail.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
+	_rail_scroll = _scroller("RailScroll", RAIL_VISIBLE_FLOOR)
+	rail.add_child(_rail_scroll)
+
 	var column := VBoxContainer.new()
 	column.name = "RailColumn"
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	column.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	# TIGHTER THAN THE THEME'S DEFAULT, and it is a budget. This column holds fourteen controls in
 	# 588 px of room; at the theme's own separation it needs 591 and an `HBoxContainer` expands to
 	# its combined minimum whatever its offsets say, so those three pixels are drawn over the dock
 	# rather than dropped. One pixel off each gap buys thirteen back.
+	#
+	# The scroller above is what keeps that budget from being a cliff (see `_scroller`): the tight
+	# separation still means fewer builders ever have to scroll, which is worth three pixels.
 	column.add_theme_constant_override("separation", LothalTheme.SPACE_1)
-	rail.add_child(column)
+	_rail_scroll.add_child(column)
+	_rail = rail
 
 	site_list = _titled_list(column, RAIL_TITLES[0])
 	site_list.item_selected.connect(choose_site)
@@ -596,7 +677,15 @@ func _build_panels() -> Control:
 
 	for each in [site_panel, course_panel, conditions_panel]:
 		_panels[str(each.name)] = each
-	return column
+
+	# AND THE COLUMN SCROLLS, for `RAIL_VISIBLE_FLOOR`'s reason and measured on this very column:
+	# the three content-sized panels sum to 579 px, which is 9 px inside the 588 the shipping
+	# window leaves and 111 px outside the 468 the smallest one does. The `Slack` control above is
+	# what keeps them at the top of the column when there is room to spare; this is what happens
+	# when there is not.
+	_panels_scroll = _scroller("PanelsScroll", PANELS_VISIBLE_FLOOR)
+	_panels_scroll.add_child(column)
+	return _panels_scroll
 
 
 ## One panel by its §5.2 name. The seam a test reads through, so a check asks for "Conditions"
