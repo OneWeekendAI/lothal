@@ -139,6 +139,12 @@ static func run(tree: SceneTree) -> Array:
 	results.append(_the_field_rooms_panels_fit_the_window(shell))
 	results.append(_the_field_rooms_panels_do_not_overlap(shell))
 	results.append(_the_field_room_leaves_the_site_something_to_be_seen_in(shell))
+	# ONE CHECK PER PANEL, not a loop over the three: a looping check fails once and names the
+	# loop rather than the panel whose rows went off the bottom.
+	for title in FieldSystem.PANEL_TITLES:
+		results.append(_every_row_a_panel_declares_is_drawn_inside_it(shell, str(title)))
+	results.append(_the_course_panels_warnings_are_drawn_inside_it(shell))
+	results.append(_the_field_rooms_column_stays_out_of_the_bottom_keepout(shell))
 
 	# -----------------------------------------------------------------------
 	# QC4 — the inspector gates on selection, and the finder is wired to the build.
@@ -1424,6 +1430,14 @@ static func _the_inspector_wraps_rather_than_running_off_the_edge(
 ##
 ## MUTATION CONFIRMED RED: raise one panel's `custom_minimum_size.x` past the budget (2000 on the
 ## Conditions panel) — all three panels are reported ending at x=2216 of a 1280 window.
+##
+## **THAT MUTATION IS POSITION-SENSITIVE, AND WRITING IT IN THE WRONG PLACE LOOKS EXACTLY LIKE THIS
+## CHECK BEING UNABLE TO FAIL.** `SpecPanel._init` assigns `custom_minimum_size` itself, so the
+## same line written BEFORE the `super([...])` call in a panel's `_init` is silently overwritten,
+## the layout is unchanged, and the suite comes back 0/48 — a green run that reads as "the check
+## did not notice", and is actually "the mutation never happened". It has to go AFTER `super()`.
+## The general rule, worth more than this one case: when a mutation produces zero failures, prove
+## the mutation took effect before concluding anything about the check.
 static func _the_field_rooms_panels_fit_the_window(shell: GlassShell) -> TestResult:
 	var room := shell.field_room()
 	var window := Vector2(WINDOW)
@@ -1492,3 +1506,110 @@ static func _the_field_room_leaves_the_site_something_to_be_seen_in(
 		"and the site itself keeps most of the window — the panels did not eat the viewport",
 		view != null and width >= 500.0,
 		"the site view is %.0f px wide in a %d px window" % [width, WINDOW.x])
+
+
+## F10 FIX 1 — EVERY ROW A PANEL DECLARES IS DRAWN INSIDE THAT PANEL'S RECT.
+##
+## **This is the check that geometry could not see, and the defect it exists for shipped.** The
+## three checks above measure where the PANELS are: inside the window, not overlapping, not having
+## eaten the viewport. All three passed at 1280x720 while the Course panel's warning list was
+## sliced in half and the Conditions panel's Temperature row was not on screen at all — because a
+## panel that fits perfectly can still clip its own contents, and both of those rows are ones
+## design §5.2 mandates.
+##
+## Two halves, and the second is what makes the first mean anything:
+##
+## 1. **Declared equals drawn.** `SpecPanel.spec_rows` is what the panel says it shows and
+##    `_row_labels` is what it built; a panel that quietly stopped building a row would otherwise
+##    satisfy every geometric assertion by having one fewer thing to place.
+## 2. **Every one of those labels is inside the panel.** Measured against the panel's own global
+##    rect, because that is the thing whose edge the text disappears at.
+##
+## The rect a clipped label reports is its UNCLIPPED position — a `ScrollContainer` paints inside
+## its own bounds but the child still lives where the layout put it — so a row scrolled out of
+## sight reports a rect below the panel and this goes red. That is measured behaviour on this repo,
+## not an assumption: it is what the mutation below produces.
+##
+## MUTATION CONFIRMED RED: drop the `fit_to_content()` / `SIZE_FILL` pair in
+## `FieldSystem._build_panels` and put `SIZE_EXPAND_FILL` back — the arrangement that shipped in
+## `37adf4f`. See the report for the [FAIL] lines.
+static func _every_row_a_panel_declares_is_drawn_inside_it(
+		shell: GlassShell, title: String) -> TestResult:
+	var panel: SpecPanel = shell.field_room().panel(title)
+	# GUARDED ON THE PANEL EXISTING AND DECLARING SOMETHING, before any rect is compared. A null
+	# panel and an empty row list both make "nothing is outside" true, which is the shape of check
+	# this project keeps re-inventing.
+	if panel == null or panel.spec_rows.is_empty():
+		return TestResult.new(
+			"the Field room's %s panel declares rows to be checked" % title,
+			false,
+			"panel %s · %d rows declared" % [
+				panel != null, 0 if panel == null else panel.spec_rows.size()])
+
+	var panel_rect := panel.get_global_rect()
+	var declared: int = panel.spec_rows.size()
+	var built: int = panel._row_labels.size()
+	var outside: Array = []
+	for pair in panel._row_labels:
+		for label in pair:
+			var rect: Rect2 = (label as Label).get_global_rect()
+			if not panel_rect.encloses(rect):
+				outside.append("%s (%.0f..%.0f of %.0f..%.0f)" % [
+					(label as Label).text.substr(0, 20), rect.position.y, rect.end.y,
+					panel_rect.position.y, panel_rect.end.y])
+	return TestResult.new(
+		"every row the Field room's %s panel declares is drawn inside it" % title,
+		built == declared and outside.is_empty(),
+		"%d declared, %d built, %d outside: %s" % [
+			declared, built, outside.size(), outside])
+
+
+## And the Course panel's WARNINGS, which §5.2 mandates and which are not a spec row.
+##
+## Separate from the row check because they are a separate promise and they failed separately: the
+## rows above the warning list all fitted in the shipped arrangement and the list underneath them
+## was the thing cut in half.
+static func _the_course_panels_warnings_are_drawn_inside_it(shell: GlassShell) -> TestResult:
+	var panel := shell.field_room().panel("Course") as FieldSystem.CoursePanel
+	if panel == null or panel.warnings == null:
+		return TestResult.new(
+			"the Field room's Course panel carries the course's warnings",
+			false, "panel %s · warnings %s" % [panel != null, panel != null and panel.warnings != null])
+	var panel_rect := panel.get_global_rect()
+	var list_rect := panel.warnings.get_global_rect()
+	# A ZERO-HEIGHT LIST IS ENCLOSED BY EVERYTHING, so its own size is asserted too — otherwise a
+	# warning list that had stopped rendering would pass this by being nowhere.
+	return TestResult.new(
+		"and the warning list §5.2 mandates is drawn inside the Course panel, not sliced by its edge",
+		panel_rect.encloses(list_rect) and list_rect.size.y > 0.0,
+		"warnings %.0f..%.0f of panel %.0f..%.0f, %.0f px tall" % [
+			list_rect.position.y, list_rect.end.y, panel_rect.position.y, panel_rect.end.y,
+			list_rect.size.y])
+
+
+## And the column of panels stays out of the strip the dock stands in.
+##
+## The window check above is not this check. `BOTTOM_KEEPOUT` is 76 px and the window is 720, so a
+## column that runs to y=715 is inside the window and standing in the dock's strip — at 1280 the
+## dock is centred and narrow enough that nothing visibly collides, and at `project.godot`'s 1024 px
+## minimum the dock is clamped to the full width and it does.
+static func _the_field_rooms_column_stays_out_of_the_bottom_keepout(
+		shell: GlassShell) -> TestResult:
+	var floor_y: float = WINDOW.y - GlassShell.BOTTOM_KEEPOUT
+	var lowest := 0.0
+	var offender := ""
+	var measured := 0
+	for title in FieldSystem.PANEL_TITLES:
+		var panel: SpecPanel = shell.field_room().panel(str(title))
+		if panel == null:
+			continue
+		measured += 1
+		var bottom := panel.get_global_rect().end.y
+		if bottom > lowest:
+			lowest = bottom
+			offender = str(title)
+	return TestResult.new(
+		"and the Field room's panels stay above the strip the dock stands in",
+		measured == FieldSystem.PANEL_TITLES.size() and lowest <= floor_y,
+		"%d panels, lowest edge y=%.0f (%s) against a floor of %.0f" % [
+			measured, lowest, offender if offender != "" else "—", floor_y])

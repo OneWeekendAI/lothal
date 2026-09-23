@@ -472,18 +472,34 @@ static func _test_the_status_strip_says_how_many_systems_there_are() -> TestResu
 
 ## The exemption above, checked — so it cannot excuse a system that was supposed to route.
 ##
-## Two ways `SYSTEMS_WITH_THEIR_OWN_TABS` could be wrong and both are asserted: it could name a
-## system that does not exist (a typo, or one deleted later), and it could name one whose rails and
-## panels ARE Lab's tabs, which would silence the routing checks for a system that genuinely needs
-## them. The second is the one that matters — it is how a real mis-routing would go quiet.
+## Three ways `SYSTEMS_WITH_THEIR_OWN_TABS` could be wrong, and all three are asserted: it could
+## name a system that does not exist (a typo, or one deleted later); it could name one whose rails
+## and panels ARE Lab's tabs, which would silence the routing checks for a system that genuinely
+## needs them; and — the third, added in fix round 1 — it could name a system that does not
+## actually take the window over, which is the property the exemption is FOR.
+##
+## **THE HOLE THIS STILL HAS, NAMED RATHER THAN LEFT TO BE FOUND.** The second assertion reads
+## "LabScreen does not build these names" as evidence of intent, and it cannot tell that apart from
+## a MISSPELLING: a Field entry that said `"Sitez"` would also name nothing Lab builds, would be
+## exempted here, and would route nowhere in the app. Nothing this file can see distinguishes the
+## two, because both look identical from LabScreen's side.
+##
+## It is closed one file over rather than here, and deliberately: `tests/test_field_room.gd`
+## asserts Field's entry against the literal `["Sites", "Courses"]` / `["Site", "Course",
+## "Conditions"]` AND asserts that the room builds live controls with those names. A misspelling
+## fails there, by name, in the suite that owns the system. The rule for the next system added to
+## this list is therefore: **its own suite must pin its rail and panel names against a literal**,
+## or the misspelling has nowhere left to fail. The third assertion below is what makes the
+## exemption itself mean something in the meantime — a system that does not own the window has no
+## business being exempt whatever its names are.
 static func _test_the_exemption_is_real() -> TestResult:
 	var shell := GlassShell.new()
 	var rail_titles := _titles_of(shell.lab.rails())
 	var panel_titles := _titles_of(shell.lab.panels)
-	shell.free()
 
 	var missing: Array = []
 	var wrongly_exempt: Array = []
+	var does_not_own_the_window: Array = []
 	for name in SYSTEMS_WITH_THEIR_OWN_TABS:
 		var system := _system(str(name))
 		if system.is_empty():
@@ -495,9 +511,20 @@ static func _test_the_exemption_is_real() -> TestResult:
 		for title in system.get("panels", []):
 			if panel_titles.has(str(title)):
 				wrongly_exempt.append("panel %s" % title)
+		# THE PROPERTY THE EXEMPTION IS FOR, asked of the live shell: a system that owns the window
+		# takes BOTH of Lab's columns down. A system exempted from the routing checks while the
+		# shell still floats Lab's rail or inspector over it is a system whose tabs are being
+		# routed after all, with nothing left watching.
+		shell.select_system_by_name(str(name))
+		if shell._rail_glass.visible or shell._inspector.visible:
+			does_not_own_the_window.append("%s (rail %s, inspector %s)" % [
+				name, shell._rail_glass.visible, shell._inspector.visible])
+	shell.free()
+
 	return TestResult.new(
-		"every system exempted from the routing checks is real, and really has tabs of its own",
+		"every system exempted from the routing checks is real, has tabs of its own, and owns the window",
 		missing.is_empty() and wrongly_exempt.is_empty()
+			and does_not_own_the_window.is_empty()
 			and not SYSTEMS_WITH_THEIR_OWN_TABS.is_empty(),
-		"no such system: %s · names LabScreen does build after all: %s" % [
-			missing, wrongly_exempt])
+		"no such system: %s · names LabScreen does build after all: %s · does not own the window: %s" % [
+			missing, wrongly_exempt, does_not_own_the_window])

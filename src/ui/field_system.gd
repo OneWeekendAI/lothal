@@ -89,6 +89,15 @@ const PLATE_THICKNESS_M := 0.02
 ## whose own minimum holds the column open. The Course panel here has a `WarningList` and rendered
 ## correctly in the same shot; the two without a footer did not. So the floor is stated rather than
 ## inherited from whatever a panel happens to put underneath its rows.
+##
+## **268 IS CHOSEN BY EYE, and it is chosen against one thing:** the 316 px the panels are wide,
+## less the `PanelContainer`'s own stylebox and the `SPACE_2` inset `SpecPanel._padded` adds on each
+## side — read off the 1280x720 screenshot that found the defect, not computed. It is a DRAWING
+## DIMENSION, in the sense a margin is one: nothing about the aircraft, the field or the weather
+## depends on it, so §0.1's "a guess ships with an editable field beside it" does not bite. What it
+## has to be is big enough that the widest value on these three panels ("120 × 120 m",
+## "1.2250 kg/m³") does not wrap, and small enough to fit the panel. If the panels are ever
+## resized, this moves with them.
 const PANEL_CONTENT_WIDTH := 268.0
 
 ## The node names the world uses, spelled once so the room and its tests agree without either
@@ -269,31 +278,48 @@ func _build_panels() -> Control:
 	column.name = "Panels"
 	column.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	# THE THREE SHARE THE COLUMN'S HEIGHT EQUALLY, and each one's rows are cut to fit that share.
+	# EACH PANEL IS AS TALL AS ITS OWN ROWS, and the slack goes to a spacer underneath.
 	#
-	# A panel sized to its own content was tried first and is WRONG here, which the screenshot
-	# settled: `SpecPanel` puts its rows inside a vertically-expanding `ScrollContainer`, whose
-	# minimum height is nearly nothing, so three `SIZE_FILL` panels collapsed into three 24 px
-	# bars with no text in them at all. They stretch, and what gives instead is the number of rows
-	# each panel asks for — see the row lists below, which were cut until nothing clipped. That is
-	# the right direction anyway: three panels at 190 px is 15 rows of the 604 px this column has,
-	# and a row that has to be scrolled to is a row nobody reads in a theme whose scrollbars paint
-	# nothing (`SpecPanel._add_row` says so).
+	# TWO ARRANGEMENTS WERE TRIED FIRST AND BOTH ARE ON RECORD, because the second one looked
+	# right and shipped a defect:
+	#
+	# 1. `SIZE_FILL` alone collapsed all three panels into 24 px bars with no text in them. A
+	#    `SpecPanel`'s rows sit inside a vertically-expanding `ScrollContainer` whose minimum
+	#    height is nearly nothing, so "as tall as your content" evaluated to "as tall as nothing".
+	# 2. `SIZE_EXPAND_FILL` split the column into three equal 190 px shares whatever each panel
+	#    had to say, and the rows past that share scrolled out of sight. It photographed as three
+	#    tidy panels, which is why it survived a round: what was missing was the Course panel's
+	#    warning list (sliced in half) and the Conditions panel's Temperature row (absent) — two
+	#    things design §5.2 mandates. In this theme the scrollbars report zero width and paint
+	#    nothing, so there was no affordance saying those rows existed.
+	#
+	# `fit_to_content()` is what makes (1) work: it turns the vertical scroll off, so the scroll
+	# claims its child's full height and the panel's minimum becomes its content's. Called here
+	# rather than inside each panel's `_init`, so the decision is visible in the one place that
+	# decides how this column is divided.
 	var site_panel := SitePanel.new()
 	site_panel.name = PANEL_TITLES[0]
-	site_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(site_panel)
 
 	var course_panel := CoursePanel.new()
 	course_panel.name = PANEL_TITLES[1]
-	course_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_warnings = course_panel.warnings
 	column.add_child(course_panel)
 
 	var conditions_panel := ConditionsPanel.new()
 	conditions_panel.name = PANEL_TITLES[2]
-	conditions_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(conditions_panel)
+
+	for each in [site_panel, course_panel, conditions_panel]:
+		(each as SpecPanel).fit_to_content()
+		(each as Control).size_flags_vertical = Control.SIZE_FILL
+
+	# The slack, so three content-sized panels sit at the top of the column instead of being
+	# stretched to fill it. It is the ONLY thing in this column that expands.
+	var slack := Control.new()
+	slack.name = "Slack"
+	slack.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(slack)
 
 	for each in [site_panel, course_panel, conditions_panel]:
 		_panels[str(each.name)] = each
@@ -518,15 +544,25 @@ func _refresh_panels() -> void:
 # The panels themselves
 # ---------------------------------------------------------------------------
 
-## §5.2's Site panel: name, shape, typed dimensions, elevation datum, obstacles.
+## §5.2's Site panel: name, shape, its typed dimensions, elevation datum, obstacle list — all five,
+## in three rows and a title.
+##
+## **THE SUBJECT'S NAME IS IN THE TITLE, not in a row**, which is what every other `SpecPanel` in
+## this app already does: `PartDetails` titles itself with the part's name and `AirframePanel` with
+## the document's. These three were the odd ones out, spending a row to repeat their own heading.
+## The role is kept beside the name ("SITE · FIELD") because, unlike Lab's, these panels have no
+## tab above them to say which is which.
+##
+## **The shape and the dimensions share a row** for the same reason: they are one sentence about the
+## ground ("flat · 120 × 120 m"), and §5.2 mandates that both are SHOWN, not that each has a row of
+## its own. Four rows came out of the three panels between them, which is what made every row the
+## design names fit above the dock's keepout — see `_build_panels`.
 class SitePanel extends SpecPanel:
 	var site: Site = null
 
 	func _init() -> void:
 		super([
-			{"key": "name", "label": "Site"},
-			{"key": "shape", "label": "Ground"},
-			{"key": "size", "label": "Extent"},
+			{"key": "ground", "label": "Ground"},
 			{"key": "elevation", "label": "Elevation"},
 			{"key": "obstacles", "label": "Obstacles"},
 		])
@@ -537,15 +573,14 @@ class SitePanel extends SpecPanel:
 
 	func show_site(p_site: Site) -> void:
 		site = p_site
-		render_rows("Site")
+		render_rows("Site · %s" % p_site.site_name)
 
 	func row_text(key: String) -> String:
 		if site == null:
 			return "—"
 		match key:
-			"name": return site.site_name
-			"shape": return String(site.terrain.shape)
-			"size": return "%.0f × %.0f m" % [site.extent().x, site.extent().y]
+			"ground": return "%s · %.0f × %.0f m" % [
+				site.terrain.shape, site.extent().x, site.extent().y]
 			"elevation": return "%.0f m" % site.elevation_m
 			"obstacles": return "%d" % site.obstacles.size()
 		return "—"
@@ -560,7 +595,6 @@ class CoursePanel extends SpecPanel:
 
 	func _init() -> void:
 		super([
-			{"key": "name", "label": "Course"},
 			{"key": "gate", "label": "Selected gate"},
 			{"key": "height", "label": "Height"},
 			{"key": "heading", "label": "Heading"},
@@ -574,7 +608,7 @@ class CoursePanel extends SpecPanel:
 
 	func show_course(p_course: GateCourse, _site: Site) -> void:
 		course = p_course
-		render_rows("Course")
+		render_rows("Course · %s" % p_course.course_name)
 
 	func row_text(key: String) -> String:
 		if course == null or course.gates.is_empty():
@@ -582,7 +616,6 @@ class CoursePanel extends SpecPanel:
 		var index: int = clampi(gate_index, 0, course.gates.size() - 1)
 		var gate: Dictionary = course.gates[index]
 		match key:
-			"name": return course.course_name
 			"gate": return "%d of %d" % [index + 1, course.gates.size()]
 			"height": return "%.1f m" % float(gate["position"].y)
 			# NORTH IS -Z AND EAST IS +X, the compass `Terrain._banked_height()` is pinned to.
@@ -607,14 +640,15 @@ class ConditionsPanel extends SpecPanel:
 
 	func _init() -> void:
 		super([
-			{"key": "set", "label": "Conditions"},
-			# THE DERIVED PAIR SITS DIRECTLY UNDER THE NAME OF THE SET, above the four typed
-			# fields, and the order is the screenshot's doing: at the bottom of a 190 px panel the
-			# percentage was the row that got cut, and it is the row §5.2 names.
+			# THE DERIVED PAIR SITS FIRST, above the typed fields it is derived from, and the order
+			# is the screenshot's doing: at the bottom of a 190 px panel the percentage was the row
+			# that got cut, and it is the row §5.2 names.
 			{"key": "density", "label": "Air density"},
 			{"key": "below", "label": "Below standard"},
+			# THE WIND'S SPEED AND ITS DIRECTION SHARE A ROW — "4.0 m/s from 270°" is one fact
+			# about the day, and §5.2 mandates that all four typed fields are SHOWN, not that each
+			# has a row to itself. See `SitePanel` for the other rows this argument saved.
 			{"key": "wind", "label": "Wind"},
-			{"key": "from", "label": "Wind from"},
 			{"key": "gust", "label": "Gustiness"},
 			{"key": "temperature", "label": "Temperature"},
 		])
@@ -626,15 +660,14 @@ class ConditionsPanel extends SpecPanel:
 	func show_conditions(p_conditions: Conditions, p_air: AirDensity) -> void:
 		conditions = p_conditions
 		air = p_air
-		render_rows("Conditions")
+		render_rows("Conditions · %s" % p_conditions.conditions_name)
 
 	func row_text(key: String) -> String:
 		if conditions == null or air == null:
 			return "—"
 		match key:
-			"set": return conditions.conditions_name
-			"wind": return "%.1f m/s" % conditions.wind_speed_mps
-			"from": return "%.0f°" % conditions.wind_from_deg
+			"wind": return "%.1f m/s from %.0f°" % [
+				conditions.wind_speed_mps, conditions.wind_from_deg]
 			"gust": return "%.1f m/s" % conditions.gustiness_mps
 			"temperature": return "%.0f °C" % conditions.temperature_c
 			"density": return "%.4f kg/m³" % air.kgm3()

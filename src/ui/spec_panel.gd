@@ -36,6 +36,9 @@ var _row_labels: Array = []
 ## The column of rows, kept so the panel can be asked how wide its CONTENT wants to be. See
 ## `content_width`.
 var _content: VBoxContainer
+## The scroll around those rows, kept ONLY so `fit_to_content()` can turn it off. Nothing else
+## touches it, and a panel that never calls that method behaves exactly as it always did.
+var _scroll: ScrollContainer
 
 
 func _init(p_spec_rows: Array) -> void:
@@ -57,6 +60,7 @@ func _init(p_spec_rows: Array) -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(scroll)
+	_scroll = scroll
 
 	var root := VBoxContainer.new()
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -124,6 +128,40 @@ func rendered_text() -> String:
 		var key: String = row["key"]
 		lines.append("%s: %s" % [row["label"], _detail_values[key].text])
 	return "\n".join(lines)
+
+
+## MAKES THIS PANEL AS TALL AS ITS OWN ROWS, instead of as tall as whatever it is given.
+##
+## Opt-in, and every panel that does not call it is unchanged — the default is right for Lab, where
+## one panel fills a tall column and scrolling is the honest answer to an inspector with more rows
+## than height.
+##
+## It is wrong for a column of THREE panels, which is what the Field room has, and the screenshot
+## is what settled it. A `ScrollContainer` whose vertical scrolling is enabled reports almost no
+## minimum height, so three panels sharing a 588 px column each get an equal 190 px share whatever
+## they have to say — and the rows past that share are scrolled out of sight. That is not a
+## survivable state in THIS theme: its scrollbars report zero width and paint nothing (see
+## `_add_row`), so a row you could in principle drag into view is a row that simply looks cut off.
+## Photographed at 1280x720: the Course panel's warning list was sliced in half and the Conditions
+## panel's Temperature row was not on screen at all — two rows design §5.2 names explicitly.
+##
+## Turning the vertical scroll OFF is what makes the minimum real: a `ScrollContainer` that cannot
+## scroll an axis claims its child's full size on that axis, so the panel's own minimum becomes its
+## content's and a `SIZE_FILL` panel in a `VBoxContainer` is sized to its rows.
+##
+## **The horizontal escape hatch is deliberately left alone.** That one exists for a different
+## failure — a single over-long value running off the window — and it is still the right answer to
+## it. This method is about height.
+##
+## The consequence to know about: a panel that is taller than the space it is given no longer
+## scrolls, it DRAWS PAST ITS OWN EDGE. That is a louder failure than a silent clip and it is meant
+## to be — `tests/test_shell_layout.gd` asserts that every row a panel declares is drawn inside
+## that panel's rect, which is the check that can see it.
+func fit_to_content() -> void:
+	if _scroll == null:
+		return
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.size_flags_vertical = Control.SIZE_FILL
 
 
 ## How wide this panel would like to be, in pixels, for its current contents to fit without
