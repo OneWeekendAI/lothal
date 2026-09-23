@@ -22,11 +22,38 @@ extends SceneTree
 ## gates are checked below to re-hash, through the pre-F1 code, to the same two fingerprints the
 ## best-lap file is keyed on — so a hand-typo in the gate table cannot slip through.
 ##
-## USAGE (HOME relocated exactly as tools/run_tests_safe.sh does it, so nothing can reach the
-## developer's real user:// data):
-##     scratch=$HOME/.lothal-fixture-home.$$; mkdir -p "$scratch"
-##     HOME="$scratch" godot --headless --script res://tools/f9_make_fixture.gd
+## ---------------------------------------------------------------------------
+## HOW TO RE-RUN IT — the whole thing, out-of-band steps included
+## ---------------------------------------------------------------------------
+##
+## Two things this script cannot do for itself, so they are written out rather than assumed. It
+## cannot shell out to git, so the pre-F1 source is extracted first and handed over in
+## `F9_PREFIELD_GATE_COURSE`; and it must not run under the developer's real HOME, because Godot
+## derives `user://` from it and this script writes a best-lap file. HOME is relocated exactly the
+## way `tools/run_tests_safe.sh` relocates it, and the scratch copy is thrown away afterwards.
+##
+## From the repo root (`lothal/`), verbatim:
+##
+##     cd /path/to/lothal
+##     prefield=$(mktemp -d)/gate_course_prefield.gd
+##     git show 3a64a7b:src/course/gate_course.gd > "$prefield"
+##
+##     scratch="$HOME/.lothal-fixture-home.$$"
+##     mkdir -p "$scratch"
+##     HOME="$scratch" F9_PREFIELD_GATE_COURSE="$prefield" \
+##         godot --headless --script res://tools/f9_make_fixture.gd
 ##     rm -rf "$scratch"
+##
+## It rewrites `tests/fixtures/best_laps_pre_field.json` and
+## `tests/fixtures/courses_pre_field_v1.json` in place and prints the two fingerprints it produced.
+## THE FIRST OF THEM MUST BE `f106fd00d916b853` — that is `TestAirDensity`'s
+## `PRE_AIR_DEFAULT_FINGERPRINT`, pinned before any of the field room existed, and it reproducing
+## here is the cross-check that the compiled source really is the old code. `git diff` over the two
+## fixtures should come back empty; if it does not, something about the extraction changed and the
+## fixtures are no longer the thing they claim to be.
+##
+## NEVER run this without the HOME relocation. `LapTimer`'s default save path is
+## `user://best_laps.json`, which is the developer's real best-lap file.
 
 const PREFIELD_SOURCE_COMMIT := "3a64a7b"
 const BEST_LAPS_OUT := "res://tests/fixtures/best_laps_pre_field.json"

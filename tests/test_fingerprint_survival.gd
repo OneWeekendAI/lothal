@@ -31,10 +31,18 @@ extends RefCounted
 ##
 ## "The record is still found" passes trivially if the hash ignores everything. So §1 also asserts
 ## that a lap set on the flat, calm default circuit is NOT returned once the wind is switched on —
-## a lap flown downwind is not a best on a still day. Under the mutation that appends both terms
-## unconditionally the first check goes red and the second stays green; under a mutation that
-## removes the terms entirely the first stays green and the second goes red. Neither alone is
-## evidence.
+## a lap flown downwind is not a best on a still day.
+##
+## The two are a PAIR, and each has its own killing mutation, which is what makes them one:
+##
+## - Append BOTH terms unconditionally and the first goes red (the record is filed under a key
+##   nothing looks up any more) while the second stays green.
+## - Replace the WIND append with `pass` and the first stays green (the record is found, because
+##   the key never moved) while the second goes red (the windy day now hashes to the still one).
+##
+## Note which mutation is which: dropping the TERRAIN term does not touch the second check at all,
+## because the second check switches on the wind. Neither of the two is evidence on its own, and
+## neither mutation is evidence for the other one.
 
 ## The default circuit, flat and calm: the hash the pre-F1 code produced for it, and the same value
 ## `TestAirDensity.PRE_AIR_DEFAULT_FINGERPRINT` has pinned since before terrain or wind existed.
