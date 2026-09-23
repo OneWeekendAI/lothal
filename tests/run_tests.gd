@@ -9,7 +9,7 @@ extends SceneTree
 
 const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "build panel", "details footers",
-	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "course library", "course warnings", "field editor", "hud", "keyboard throttle", "observables", "rotor synth",
+	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "field room", "course library", "course warnings", "field editor", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
 	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
@@ -207,6 +207,8 @@ func _run_suite(suite_name: String) -> Array:
 		"site": return TestSite.run()
 		# F2 (plans/2026-09-21-field-room-plan.md). Conditions, and air composed from site + conditions.
 		"conditions": return TestConditions.run()
+		# F10 (plans/2026-09-21-field-room-plan.md). The Field room in the glass shell.
+		"field room": return TestFieldRoom.run()
 		"course library": return TestCourseLibrary.run()
 		"course warnings": return TestCourseWarnings.run()
 		"field editor": return TestFieldEditor.run()

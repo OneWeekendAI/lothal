@@ -120,6 +120,27 @@ static func run(tree: SceneTree) -> Array:
 	results.append(_the_status_readout_cannot_widen_the_dock(shell, settled))
 
 	# -----------------------------------------------------------------------
+	# F10 — THE FIELD ROOM'S THREE PANELS FIT THE SHIPPING WINDOW.
+	#
+	# Here rather than in `tests/test_field_room.gd` for this file's stated reason: a `Container`
+	# reports a combined minimum size of (0, 0) until a frame has been processed, so the same check
+	# written in a frameless suite compares zeroes and passes forever.
+	#
+	# What it would catch is not hypothetical. The room's three panels sit in a column inside an
+	# `HBoxContainer`, and a Container expands to its combined minimum WHATEVER its offsets say —
+	# the fact this file's header names about the Power room's column and `dock.gd`'s header names
+	# about the status readout. So one panel asking for more width than the window has left pushes
+	# all three off the right-hand edge rather than squashing or scrolling them.
+	# -----------------------------------------------------------------------
+	shell.select_system_by_name("Field")
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+
+	results.append(_the_field_rooms_panels_fit_the_window(shell))
+	results.append(_the_field_rooms_panels_do_not_overlap(shell))
+	results.append(_the_field_room_leaves_the_site_something_to_be_seen_in(shell))
+
+	# -----------------------------------------------------------------------
 	# QC4 — the inspector gates on selection, and the finder is wired to the build.
 	#
 	# Here rather than in a suite of its own for the reason this file's header gives: every rule
@@ -1393,3 +1414,81 @@ static func _the_inspector_wraps_rather_than_running_off_the_edge(
 		stretched > 0 and worst <= 0.0,
 		"%d row(s) stretched, worst overhang %.0f px (%s), panel ends at x=%.0f of %d" % [
 			stretched, worst, offender.substr(0, 28), panel_right, WINDOW.x])
+
+
+## F10 — every one of the Field room's three panels is drawn inside the window.
+##
+## Measured against the WINDOW and not against the room, deliberately. A panel pushed past the
+## room's own right edge is still off the screen if the room ends at the screen edge, and this room
+## does: it runs to `CLUSTER_MARGIN` because it brings its own inspector.
+##
+## MUTATION CONFIRMED RED: raise one panel's `custom_minimum_size.x` past the budget (2000 on the
+## Conditions panel) — all three panels are reported ending at x=2216 of a 1280 window.
+static func _the_field_rooms_panels_fit_the_window(shell: GlassShell) -> TestResult:
+	var room := shell.field_room()
+	var window := Vector2(WINDOW)
+	var worst := 0.0
+	var offender := ""
+	var measured := 0
+	for title in FieldSystem.PANEL_TITLES:
+		var panel: SpecPanel = room.panel(str(title))
+		if panel == null:
+			continue
+		measured += 1
+		var rect := panel.get_global_rect()
+		var over: float = maxf(rect.end.x - window.x, -rect.position.x)
+		over = maxf(over, rect.end.y - window.y)
+		if over > worst:
+			worst = over
+			offender = str(title)
+	# GUARDED ON HAVING MEASURED ALL THREE. With no panels found, `worst` is 0.0 and the check
+	# passes while nothing at all was looked at — the shape of "two missing rows compare equal".
+	return TestResult.new(
+		"the Field room's three panels are all drawn inside the 1280x720 window",
+		measured == FieldSystem.PANEL_TITLES.size() and worst <= 0.0,
+		"%d of %d panels measured, worst overhang %.0f px (%s)" % [
+			measured, FieldSystem.PANEL_TITLES.size(), worst, offender if offender != "" else "—"])
+
+
+## And none of the three is drawn on top of another.
+##
+## Separate from the fit check because they fail for different reasons and a builder needs to know
+## which: a column that overflows the window is a width budget, and two panels sharing pixels is a
+## container that stopped laying them out.
+static func _the_field_rooms_panels_do_not_overlap(shell: GlassShell) -> TestResult:
+	var room := shell.field_room()
+	var rects: Array[Rect2] = []
+	for title in FieldSystem.PANEL_TITLES:
+		var panel: SpecPanel = room.panel(str(title))
+		if panel != null:
+			rects.append(panel.get_global_rect())
+	var clashes := 0
+	for i in rects.size():
+		for j in range(i + 1, rects.size()):
+			if rects[i].intersects(rects[j]):
+				clashes += 1
+	# Every rect must also be a real rect: three zero-sized panels stacked at the origin intersect
+	# nothing, which is the version of this check that cannot fail.
+	var slivers := 0
+	for rect in rects:
+		if rect.size.x < 100.0 or rect.size.y < 40.0:
+			slivers += 1
+	return TestResult.new(
+		"and no two of them share a pixel, and none is a sliver",
+		rects.size() == FieldSystem.PANEL_TITLES.size() and clashes == 0 and slivers == 0,
+		"%d panels, %d overlapping pairs, %d slivers, rects %s" % [
+			rects.size(), clashes, slivers, rects])
+
+
+## And the site — the thing the room exists to show — still has a viewport to be drawn in.
+##
+## The honest other half of a width budget: three panels that fit perfectly while leaving the
+## viewport four pixels wide have satisfied every clearance and deleted the room.
+static func _the_field_room_leaves_the_site_something_to_be_seen_in(
+		shell: GlassShell) -> TestResult:
+	var view := shell.field_room().viewport_container
+	var width := 0.0 if view == null else view.get_global_rect().size.x
+	return TestResult.new(
+		"and the site itself keeps most of the window — the panels did not eat the viewport",
+		view != null and width >= 500.0,
+		"the site view is %.0f px wide in a %d px window" % [width, WINDOW.x])

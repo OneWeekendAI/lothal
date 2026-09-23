@@ -71,8 +71,24 @@ const PANEL_TITLES := ["Frame", "Structure", "Arms", "Fasteners", "Layout",
 	"Motors", "Ports", "Failsafe", "Rates", "Sheet", "Print"]
 
 
+## THE SYSTEMS WHOSE RAILS AND PANELS ARE NOT LABSCREEN'S TABS (F10).
+##
+## Every check in this file below is about `_show_only_tabs` routing a system's names into Lab's
+## two TabContainers. Field's names route nowhere there on purpose: it is a room that brings its
+## own rail and its own three panels, and the shell hides Lab's columns for it exactly as it does
+## for Airframe. Run through the routing checks unexempted, it reports "mis-routed" for a system
+## that is not routed at all.
+##
+## **AN EXPLICIT LIST, in `INSPECTOR_DOORS`' shape and for its reason:** an exemption a system
+## could grant itself is one it can grant by accident, and then a genuine mis-routing goes quiet.
+## The claim is checked one assertion down — every system named here must have names that Lab
+## really does NOT build, so this cannot excuse a typo in a system that was meant to route.
+const SYSTEMS_WITH_THEIR_OWN_TABS := ["Field"]
+
+
 static func run() -> Array:
 	var results: Array = []
+	results.append(_test_the_exemption_is_real())
 	results.append_array(_test_every_transition("rails", RAIL_TITLES, "rails"))
 	results.append_array(_test_every_transition("panels", PANEL_TITLES, "panels"))
 	results.append(_test_unknown_titles_change_nothing())
@@ -279,6 +295,8 @@ static func _test_every_transition(label: String, titles: Array, key: String) ->
 
 	for order in _orders():
 		for system in order:
+			if SYSTEMS_WITH_THEIR_OWN_TABS.has(str(system["name"])):
+				continue
 			var wanted: Array = system[key]
 			if wanted.is_empty():
 				# An unmodelled system shows a stub instead and the container is left alone, so
@@ -373,6 +391,8 @@ static func _test_every_rail_routes_to_its_own_panel() -> Array:
 	var rail_titles := _titles_of(lab.rails())
 
 	for system in GlassShell.SYSTEMS:
+		if SYSTEMS_WITH_THEIR_OWN_TABS.has(str(system["name"])):
+			continue
 		var owned: Array = system.get("rails", [])
 		if owned.is_empty():
 			continue
@@ -396,6 +416,8 @@ static func _test_every_rail_routes_to_its_own_panel() -> Array:
 	var unclaimed: Array = []
 	var claimed: Array = []
 	for system in GlassShell.SYSTEMS:
+		if SYSTEMS_WITH_THEIR_OWN_TABS.has(str(system["name"])):
+			continue
 		claimed.append_array(system.get("rails", []))
 	for title in rail_titles:
 		if not claimed.has(title):
@@ -446,3 +468,36 @@ static func _test_the_status_strip_says_how_many_systems_there_are() -> TestResu
 		absent.is_empty() and not source.is_empty(),
 		"%d systems, %d decided; missing from the file: %s" % [
 			GlassShell.SYSTEMS.size(), decided, absent])
+
+
+## The exemption above, checked — so it cannot excuse a system that was supposed to route.
+##
+## Two ways `SYSTEMS_WITH_THEIR_OWN_TABS` could be wrong and both are asserted: it could name a
+## system that does not exist (a typo, or one deleted later), and it could name one whose rails and
+## panels ARE Lab's tabs, which would silence the routing checks for a system that genuinely needs
+## them. The second is the one that matters — it is how a real mis-routing would go quiet.
+static func _test_the_exemption_is_real() -> TestResult:
+	var shell := GlassShell.new()
+	var rail_titles := _titles_of(shell.lab.rails())
+	var panel_titles := _titles_of(shell.lab.panels)
+	shell.free()
+
+	var missing: Array = []
+	var wrongly_exempt: Array = []
+	for name in SYSTEMS_WITH_THEIR_OWN_TABS:
+		var system := _system(str(name))
+		if system.is_empty():
+			missing.append(name)
+			continue
+		for title in system.get("rails", []):
+			if rail_titles.has(str(title)):
+				wrongly_exempt.append("rail %s" % title)
+		for title in system.get("panels", []):
+			if panel_titles.has(str(title)):
+				wrongly_exempt.append("panel %s" % title)
+	return TestResult.new(
+		"every system exempted from the routing checks is real, and really has tabs of its own",
+		missing.is_empty() and wrongly_exempt.is_empty()
+			and not SYSTEMS_WITH_THEIR_OWN_TABS.is_empty(),
+		"no such system: %s · names LabScreen does build after all: %s" % [
+			missing, wrongly_exempt])

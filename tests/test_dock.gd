@@ -53,8 +53,12 @@ const TOOLS_OFFERED := ["Overlays", "Choose overlays", "Explode", "X-ray", "Meas
 ## What the BOTTOM-RIGHT CLUSTER offered: the two modes, and the rooms behind the Rooms menu named
 ## one by one rather than as "Rooms". A check satisfied by an empty menu button would be the same
 ## omission one level down.
-const MODES_OFFERED := ["Lab", "Sim",
-	"room:frame_bench", "room:field_editor", "room:studio"]
+## `room:field_editor` WAS ON THIS LIST AND HAS BEEN RE-POINTED, not deleted (F10). The field is a
+## destination on the dock now — a system icon, not a menu row — so the action is still offered and
+## is still named here; it is named as "Field", in SYSTEMS_OFFERED, which is where it now lives.
+## `_the_field_moved_from_the_menu_to_the_dock` below is what asserts the move in both directions,
+## in the shape `test_room_host.gd` uses for the three benches that made the same journey.
+const MODES_OFFERED := ["Lab", "Sim", "room:frame_bench", "room:studio"]
 
 ## A stand-in for `GlassShell.SYSTEMS`, carrying only what the dock reads: a name, and whether
 ## there is a model behind it. Written out rather than imported from `GlassShell`, because building
@@ -70,7 +74,10 @@ const FIXTURE := [
 	{"name": "Printed", "rails": [], "panels": ["Printed"]},
 	{"name": "Config", "rails": [], "panels": []},
 	{"name": "Ground kit", "rails": [], "panels": []},
-	{"name": "Field", "rails": [], "panels": []},
+	# Field is modelled now (F10): `FieldSystem` is its rail and its three panels. The fixture
+	# carries that, because whether a system is modelled is what decides its overflow entry reads
+	# "soon" — and Field has no overflow entry to read anything any more.
+	{"name": "Field", "rails": ["Sites"], "panels": ["Site"]},
 ]
 
 
@@ -86,7 +93,8 @@ static func run() -> Array:
 	for action in MODES_OFFERED:
 		results.append(_offers(offered, action, "the bottom-right Lab/Sim/Rooms cluster"))
 
-	results.append(_six_systems_have_icons(dock))
+	results.append(_seven_systems_have_icons(dock))
+	results.append(_the_field_moved_from_the_menu_to_the_dock())
 	results.append(_the_overflow_menu_selects_the_system_it_names(dock))
 	results.append(_a_fallback_label_is_a_named_failure(dock))
 	results.append(_measure_is_a_named_failure_too(dock))
@@ -106,10 +114,14 @@ static func _offers(offered: PackedStringArray, action: String, source: String) 
 		"the dock offers %s" % [Array(offered)])
 
 
-## Six icons, and they are the six the plan names. Asserted as a COUNT AND A SET, because either
-## alone passes a defect: six buttons drawn for the wrong six systems satisfies the count, and a
-## set check that only asks "are these six present" is satisfied by ten.
-static func _six_systems_have_icons(dock: Dock) -> TestResult:
+## Seven icons, and they are the seven `ICONED_SYSTEMS` names. Asserted as a COUNT AND A SET,
+## because either alone passes a defect: seven buttons drawn for the wrong seven systems satisfies
+## the count, and a set check that only asks "are these seven present" is satisfied by ten.
+##
+## SIX BECAME SEVEN IN F10 and the number is re-pointed rather than loosened — it stays an equality
+## against `ICONED_SYSTEMS.size()`, so an eighth icon appearing without an edit to that list still
+## fails.
+static func _seven_systems_have_icons(dock: Dock) -> TestResult:
 	var named: Array[String] = []
 	for button in dock.system_buttons:
 		named.append(str(button.name))
@@ -117,9 +129,9 @@ static func _six_systems_have_icons(dock: Dock) -> TestResult:
 	var want := Dock.ICONED_SYSTEMS.duplicate()
 	want.sort()
 	return TestResult.new(
-		"six systems carry an icon, and they are the six the plan names",
-		named.size() == 6 and named == want,
-		"the icons are %s" % [named])
+		"seven systems carry an icon, and they are the seven ICONED_SYSTEMS names",
+		named.size() == 7 and named == want and want.size() == 7,
+		"the icons are %s, ICONED_SYSTEMS is %s" % [named, want])
 
 
 ## The overflow menu's popup ids are positions in the POPUP, and the systems it opens are positions
@@ -144,13 +156,15 @@ static func _the_overflow_menu_selects_the_system_it_names(dock: Dock) -> TestRe
 		# this line read `get_item_id`.
 		popup.id_pressed.emit(popup.get_item_id(index))
 		names.append("" if chosen.is_empty() else str(FIXTURE[chosen[0]]["name"]))
-	# The four without an icon, in the order they appear in SYSTEMS. Drone is first and is the one
+	# The three without an icon, in the order they appear in SYSTEMS. Drone is first and is the one
 	# the "ids are positions" bug cannot get right: it is index 0 of the popup and index 0 of
-	# SYSTEMS, so it passes under the bug and Config, Ground kit and Field do not.
+	# SYSTEMS, so it passes under the bug and Config and Ground kit do not. Field left this list in
+	# F10 — it has an icon — and the list is re-pointed rather than shortened by one without saying
+	# so: `_the_field_moved_from_the_menu_to_the_dock` asserts the move.
 	return TestResult.new(
 		"each overflow entry opens the system it names",
-		names == ["Drone", "Config", "Ground kit", "Field"],
-		"the four entries opened %s" % [names])
+		names == ["Drone", "Config", "Ground kit"],
+		"the three entries opened %s" % [names])
 
 
 ## The honest half of "an icon that needs a tooltip has failed": where a glyph could not carry its
@@ -177,10 +191,17 @@ static func _a_fallback_label_is_a_named_failure(dock: Dock) -> TestResult:
 	var want: Array = Dock.ICON_FALLBACK_LABELS.keys()
 	want.sort()
 	labelled.sort()
+	# THE COUNT IS DERIVED FROM THE TWO LISTS THE ICONS ARE BUILT FROM, not from a typed 10. It was
+	# `10 - want.size()`, which meant "ten systems minus the labelled ones" and was only ever right
+	# while the systems row and the tools row happened to total ten drawn glyphs. F10 added a
+	# seventh system icon and the number moved; derived, it moves with the lists, and it still
+	# fails the moment an extra word is added, which is what the check is for.
+	var drawn_total: int = Dock.ICONED_SYSTEMS.size() + Dock.TOOLS.size()
 	return TestResult.new(
 		"only the icons named as failures carry a word",
-		labelled == want and wordless.size() == 10 - want.size(),
-		"labelled: %s, declared failures: %s, drawn: %s" % [labelled, want, wordless])
+		labelled == want and wordless.size() == drawn_total - want.size(),
+		"labelled: %s, declared failures: %s, drawn: %s of %d" % [
+			labelled, want, wordless, drawn_total])
 
 
 ## MEASURE CARRIES THE WORD, asserted by name and not only through the pair check above.
@@ -238,3 +259,20 @@ static func _fixture_dock() -> Dock:
 	# checked is that the dock gives it a home and a name, not what it draws.
 	dock.adopt_ring(Control.new())
 	return dock
+
+
+## F10 — THE FIELD IS ON THE DOCK AND IS NO LONGER IN THE ROOMS MENU, both halves by name.
+##
+## The shape is `test_room_host.gd`'s for the three benches that moved to inspectors: a set check
+## alone would be satisfied by putting the entry back in the menu and taking the icon away, because
+## the two halves would swap and the totals would agree. So the move is asserted in both
+## directions, and the direction it moved IN is asserted against the live list rather than the
+## constant — `MODES_OFFERED` above lost the row, and this is what says where it went.
+static func _the_field_moved_from_the_menu_to_the_dock() -> TestResult:
+	var in_menu := RoomMenu.room_ids().has("field_editor")
+	var on_dock := Dock.ICONED_SYSTEMS.has("Field")
+	return TestResult.new(
+		"the field left the Rooms menu for an icon on the dock, and is in exactly one of the two",
+		on_dock and not in_menu,
+		"on the dock %s · in the Rooms menu %s (menu offers %s)" % [
+			on_dock, in_menu, RoomMenu.room_ids()])

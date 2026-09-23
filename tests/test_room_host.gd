@@ -300,6 +300,20 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 ## than quietly excusing nothing.
 const INSPECTOR_DOORS := ["battery_bench", "bench", "esc_bench"]
 
+## And the rooms reached from the DOCK rather than from the menu or from an inspector — F10.
+##
+## A second explicit list rather than a second entry in the one above, because the two are
+## different claims and a reviewer should see which is being made: an inspector door is a button
+## inside a system's panel, and a dock door is a system of its own with an icon. The claim this
+## list makes is checked one assertion down, exactly as the inspector list's is — and the icon it
+## claims is checked too, against `Dock.ICONED_SYSTEMS`, so "Field is exempt" cannot be asserted by
+## a slice that never gave it a door.
+##
+## `field_editor` is here and not in the menu because F10 made Field a system. `RoomHost` still HAS
+## `show_field_editor()` — F11 retires the old screen, not this slice — so without this list the
+## set equality below goes red for a room that has a better door than it had before.
+const DOCK_DOORS := ["field_editor"]
+
 
 ## The rooms that are neither Lab nor Sim, reached the way a builder reaches them.
 ##
@@ -327,14 +341,15 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 	var reachable: Array = []
 	reachable.append_array(RoomMenu.room_ids())
 	reachable.append_array(INSPECTOR_DOORS)
+	reachable.append_array(DOCK_DOORS)
 	reachable.sort()
 
 	results.append(TestResult.new(
-		"every room RoomHost can open has a door — in the Rooms menu or on an inspector — and "
-			+ "nothing has a door to a room it cannot open",
+		"every room RoomHost can open has a door — in the Rooms menu, on an inspector or on the "
+			+ "dock — and nothing has a door to a room it cannot open",
 		doors == reachable and not doors.is_empty(),
-		"RoomHost opens %s · reachable %s (menu %s + inspector %s)" % [
-			doors, reachable, RoomMenu.room_ids(), INSPECTOR_DOORS]))
+		"RoomHost opens %s · reachable %s (menu %s + inspector %s + dock %s)" % [
+			doors, reachable, RoomMenu.room_ids(), INSPECTOR_DOORS, DOCK_DOORS]))
 
 	# The exemption list is itself checked, so it cannot excuse a room that does not exist.
 	var stale: Array = []
@@ -345,6 +360,24 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 		"and every inspector-reached room named here is a room RoomHost actually has",
 		stale.is_empty(),
 		"not doors: %s" % [stale] if not stale.is_empty() else "all of %s" % [INSPECTOR_DOORS]))
+
+	# THE DOCK LIST IS CHECKED THE SAME WAY, and then its CLAIM is checked as well: naming a room
+	# here excuses it from the menu, so the icon it is excused in favour of has to exist. Without
+	# the second half, adding "field_editor" to this list would silence the coverage check for a
+	# room with no door at all.
+	var stale_dock: Array = []
+	for room_id in DOCK_DOORS:
+		if not doors.has(room_id):
+			stale_dock.append(room_id)
+	results.append(TestResult.new(
+		"and every dock-reached room named here is a room RoomHost actually has",
+		stale_dock.is_empty(),
+		"not doors: %s" % [stale_dock] if not stale_dock.is_empty()
+			else "all of %s" % [DOCK_DOORS]))
+	results.append(TestResult.new(
+		"and the dock really carries an icon for the field, which is what excuses it from the menu",
+		Dock.ICONED_SYSTEMS.has("Field") and not RoomMenu.room_ids().has("field_editor"),
+		"dock icons %s · menu offers %s" % [Dock.ICONED_SYSTEMS, RoomMenu.room_ids()]))
 
 	# THE MENU NO LONGER LISTS THRUST, asserted by name rather than left to the set equality
 	# above — which a re-addition would satisfy by moving `bench` back into the menu and out of

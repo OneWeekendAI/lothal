@@ -47,12 +47,19 @@ extends PanelContainer
 ##    in words instead — see `ICON_FALLBACK_LABELS`, which exists so that failure is a named list
 ##    rather than a tooltip nobody reads.
 
-## The six systems that get an icon, in the plan's order. The other four — Drone, Config, Ground
-## kit, Field — are NOT dropped: they are behind `more_menu`. Six icons is what §3 of the plan
-## specifies, and ten systems is what the dropdown it replaces offered, so the difference has to go
-## somewhere visible or this slice quietly deletes four destinations. An overflow menu is the honest
-## holding position; §8.1 of the plan is the open question that decides whether it stays.
-const ICONED_SYSTEMS := ["Airframe", "Propulsion", "Power", "Control", "Video", "Printed"]
+## The systems that get an icon, in the plan's order. The others — Drone, Config, Ground kit — are
+## NOT dropped: they are behind `more_menu`. Six icons is what §3 of the plan specified, and ten
+## systems is what the dropdown it replaces offered, so the difference has to go somewhere visible
+## or that slice quietly deletes four destinations. An overflow menu is the honest holding
+## position; §8.1 of the plan is the open question that decides whether it stays.
+##
+## **FIELD IS THE SEVENTH (F10), AND IT CAME OFF THE ROOMS MENU RATHER THAN OUT OF THE OVERFLOW.**
+## It was in both — an overflow entry reading "Field   soon" and a Rooms-menu entry opening the old
+## field editor — which is the two-doors-to-one-place shape `room_menu.gd`'s own header calls a
+## holding position. It now has a model behind it (`FieldSystem`), so it has an icon, and the
+## Rooms-menu entry is gone: `tests/test_room_host.gd` asserts every room RoomHost can open still
+## has exactly one door, and this list is now one of the places it looks.
+const ICONED_SYSTEMS := ["Airframe", "Propulsion", "Power", "Control", "Video", "Printed", "Field"]
 
 ## The four tools of §3, in the order the old cluster offered them. `Overlays` is the only one with
 ## a feature behind it; the other three are slots and stay disabled, which is the state the old
@@ -185,8 +192,8 @@ func _build_systems() -> void:
 		systems_group.add_child(button)
 		system_buttons.append(button)
 
-	# THE FOUR WITHOUT AN ICON. A menu rather than four more icons, because the plan says six and
-	# because three of these four have no model behind them — an icon promising Config would be a
+	# THE ONES WITHOUT AN ICON. A menu rather than more icons, because the plan says six and
+	# because all three of these have no model behind them — an icon promising Config would be a
 	# picture of a feature that does not exist, which is a stronger promise than a greyed menu row.
 	more_menu = MenuButton.new()
 	more_menu.name = "More systems"
@@ -479,6 +486,7 @@ class DockIcon extends Button:
 			"Power": _draw_power(box, ink)
 			"Control": _draw_control(box, ink)
 			"Video": _draw_video(box, ink)
+			"Field": _draw_field(box, ink)
 			"Overlays": _draw_overlays(box, ink)
 			"Explode": _draw_explode(box, ink)
 			"X-ray": _draw_xray(box, ink)
@@ -495,6 +503,29 @@ class DockIcon extends Button:
 			draw_arc(tip, box.size.x * 0.15, 0.0, TAU, 12, ink, Dock.STROKE, true)
 		draw_rect(Rect2(c - Vector2.ONE * box.size.x * 0.13, Vector2.ONE * box.size.x * 0.26),
 			ink, false, Dock.STROKE)
+
+	## A RACE GATE: a ring on two legs, standing on the ground line.
+	##
+	## Drawn rather than fallen back to a word because it passes this file's own rule — the icons
+	## that survived are pictures of a PHYSICAL OBJECT the builder handles, and a gate is one. The
+	## ones that failed were pictures of OPERATIONS (print, explode, x-ray, measure). It was cropped
+	## out of the 1280x720 window and looked at before it was kept; the F10 report says what it
+	## read as.
+	##
+	## The ground line is what stops it reading as a magnifier or a padlock: a circle alone at 18 px
+	## is a circle, and a circle standing on a baseline is something you fly through.
+	func _draw_field(box: Rect2, ink: Color) -> void:
+		var c := box.get_center()
+		var radius := box.size.x * 0.30
+		var ring_centre := c - Vector2(0.0, box.size.y * 0.12)
+		draw_arc(ring_centre, radius, 0.0, TAU, 24, ink, Dock.STROKE, true)
+		var ground_y := box.position.y + box.size.y * 0.94
+		for side in [-1.0, 1.0]:
+			var foot := Vector2(ring_centre.x + radius * 0.62 * side, ground_y)
+			draw_line(Vector2(ring_centre.x + radius * 0.62 * side, ring_centre.y + radius * 0.78),
+				foot, ink, Dock.STROKE, true)
+		draw_line(Vector2(box.position.x, ground_y), Vector2(box.end.x, ground_y), ink,
+			Dock.STROKE, true)
 
 	## A two-blade propeller: a hub and two swept blades. Drawn as filled lenses rather than as
 	## outlines, because an 18 px outline of a blade is two lines a pixel apart.

@@ -1,7 +1,7 @@
 class_name RoomMenu
 extends MenuButton
-## The way into every room that is not Lab or Sim and is not reached from an inspector — the frame
-## bench, the field editor and Studio.
+## The way into every room that is not Lab or Sim and is not reached from an inspector or from the
+## dock — the frame bench and Studio.
 ##
 ## ---------------------------------------------------------------------------
 ## WHY THIS IS A MENU AND NOT SIX MORE DROPDOWN ENTRIES
@@ -40,6 +40,16 @@ extends MenuButton
 ## is a question about where that room puts one, not about this menu. A room without a door is
 ## worse than a room in a menu.
 ##
+## ## AND FIELD HAS LEFT IT TOO (F10) — FOR THE DOCK, NOT FOR AN INSPECTOR
+##
+## This is the first entry to leave for a DESTINATION rather than for a panel, and it is the move
+## this header has been asking for since it was written: "a room without a door is worse than a
+## room in a menu", and the door a room like this one wants is its own icon. Field is a system now
+## (`FieldSystem`, `GlassShell.SYSTEMS`), it is in `Dock.ICONED_SYSTEMS`, and selecting it swaps
+## the viewport to the site. `RoomHost.show_field_editor()` still exists — the old screen is
+## retired in F11, not here — so `tests/test_room_host.gd`'s coverage check gained a third place to
+## look rather than losing an assertion.
+##
 ## **A room leaving this list does not stop being covered.** `tests/test_room_host.gd` derives the
 ## room list from `RoomHost`'s own `show_*` methods and asserts every one of them has a door; P10f
 ## amended that check to "in the menu OR in the inspector-reached list", which is an explicit list
@@ -57,13 +67,12 @@ signal room_chosen(room_id: String)
 ## out where you are going to fly, and then you look at what the flight left behind.
 ##
 ## `separator_before` marks where a group ends. The bench is one kind of thing — a machine running
-## under load — and the field editor and Studio are not, and the line is the only thing saying so
+## under load — and Studio is not, and the line is the only thing saying so
 ## in a list this short. One bench is left, so the group above the line has one member; that reads
 ## as a list mid-migration, which is exactly what it is.
 const ENTRIES := [
 	{"id": "frame_bench", "label": "Frame bench", "separator_before": false},
-	{"id": "field_editor", "label": "Field — lay out the course", "separator_before": true},
-	{"id": "studio", "label": "Studio — flights already flown", "separator_before": false},
+	{"id": "studio", "label": "Studio — flights already flown", "separator_before": true},
 ]
 
 var _id_by_index := {}
@@ -72,10 +81,10 @@ var _id_by_index := {}
 func _init() -> void:
 	text = "Rooms"
 	custom_minimum_size = Vector2(96, 30)
-	tooltip_text = ("The frame bench, the field editor and Studio — unchanged, and reached from "
-		+ "here until each one lands where it belongs (a bench under the system it tests). Three "
-		+ "have moved: the thrust stand opens from the Motor inspector, the ESC bench from the ESC "
-		+ "panel, the pack bench from the Pack panel.")
+	tooltip_text = ("The frame bench and Studio — unchanged, and reached from here until each one "
+		+ "lands where it belongs (a bench under the system it tests). Four have moved: the thrust "
+		+ "stand opens from the Motor inspector, the ESC bench from the ESC panel, the pack bench "
+		+ "from the Pack panel, and the field is a system on the dock.")
 
 	var popup := get_popup()
 	for entry in ENTRIES:

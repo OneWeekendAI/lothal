@@ -237,20 +237,24 @@ const SYSTEMS := [
 		},
 	},
 	{
-		# Field HAS a model — FieldEditorScreen and CourseLibrary are real and shipped. It is listed
-		# unmodelled here because it is a ROOM in the old shell and this shell does not open rooms.
-		# Porting it is shell work of the same kind as Lab's port, not a missing feature.
+		# FIELD IS A REAL SYSTEM NOW (F10), and the stub is GONE rather than kept alongside — a stub
+		# beside a working room is a panel saying "nothing here yet" over a room that is here.
+		#
+		# It is the one system whose subject is not the aircraft, so it is the one system that
+		# swaps the viewport: `_select_system` shows `FieldSystem`'s own site view and hides Lab's.
+		# Airframe is the precedent for a system owning the whole window; §5.1's precedent for the
+		# subject changing at all is `_on_room_changed` — "EVERY room retracts the chrome".
+		#
+		# The two lists below are REFERENCES, not copies. `FieldSystem` builds a rail and three
+		# panels with exactly these names, and P10f's finding was two lists that had to be the same
+		# list and were never checked to be.
+		#
+		# `decided_by` stays empty on purpose: a field is not a part fitted to the drone, so the
+		# completeness ring must not start waiting on one. Same treatment as Airframe and Printed.
 		"name": "Field",
-		"rails": [],
-		"panels": [],
+		"rails": FieldSystem.RAIL_TITLES,
+		"panels": FieldSystem.PANEL_TITLES,
 		"decided_by": [],
-		"stub": {
-			"why": "This one is not missing — FieldEditorScreen and CourseLibrary are shipped and "
-				+ "work. It is unreachable from HERE because it is a separate room in the old "
-				+ "shell, and porting rooms into this frame is the next piece of shell work.",
-			"items": ["Gate layout", "Air density and altitude", "Course selection"],
-			"source": "labs-and-sim.md §5 — already built, not yet ported",
-		},
 	},
 ]
 
@@ -372,6 +376,15 @@ var _room_menu: RoomMenu
 var _focused_index := 0
 ## The plan editor, shown only while Airframe is the focused system.
 var _workbench: FrameWorkbench
+## The Field room — shown only while Field is the focused system, and the one room whose viewport
+## shows the SITE rather than the drone (F10, design §5.1). Built beside the plan editor and on the
+## same terms: a full-window Control that brings its own rail and its own panels, so the shell's
+## two floating columns come down for it exactly as they do for Airframe.
+var _field: FieldSystem
+## §5.3's conditions selector, in the top strip. It is HERE rather than inside the Field room
+## because a set you have to walk into a room to change is not a set you switch — and every panel
+## that quotes a conditional number is quoting this one.
+var _conditions_picker: OptionButton
 ## The blade designer — Propulsion's room, opened on request rather than with the system. See
 ## `_build_blade_room` for why the two rooms differ in that.
 var _blade_room: PropulsionWorkbench
@@ -448,6 +461,7 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	# z-order, which is the one thing the Tauri hybrid could not do.
 	_build_rail_glass()
 	_build_workbench()
+	_build_field()
 	_build_blade_room()
 	_build_power_room()
 	_build_thrust_overlay()
@@ -655,6 +669,25 @@ func _build_top_cluster() -> void:
 	_room_door_glass = door_glass
 	bar.add_child(door_glass)
 
+	# §5.3'S CONDITIONS SELECTOR, AND IT IS IN THE GARAGE'S OWN STRIP.
+	#
+	# "The conditions selector is not buried in the Field room, because a set you must walk into a
+	# room to change is not a set you switch." It sits beside the project's identity, visible from
+	# every system, and switching it re-derives the garage's five stats and every warning that
+	# quotes the air or the wind — which is the whole cost §3.3 says to pay explicitly, because the
+	# failure it prevents is the quiet one: a flight time that silently means "in calm air" on a
+	# build whose owner has just described a windy field.
+	var conditions_glass := _glass_panel()
+	_conditions_picker = OptionButton.new()
+	_conditions_picker.name = "Conditions"
+	_conditions_picker.custom_minimum_size = Vector2(0, 28)
+	_conditions_picker.tooltip_text = ("The weather every quoted number is quoted under — wind, "
+		+ "gustiness and temperature. Switchable from anywhere, not only from the field.")
+	_conditions_picker.item_selected.connect(_on_conditions_chosen)
+	conditions_glass.add_child(_conditions_picker)
+	bar.add_child(conditions_glass)
+	_fill_conditions_picker()
+
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(spacer)
@@ -850,6 +883,93 @@ func _build_workbench() -> void:
 ## click does rather than by reaching into a private field. Null until `_build_workbench` has run.
 func workbench() -> FrameWorkbench:
 	return _workbench
+
+
+## The Field room (F10). Built hidden and shown with its system, the way the plan editor is, rather
+## than opened on request the way the blade and harness designers are — because there is nothing to
+## pick here: choosing Field IS asking to look at the field.
+##
+## THE THREE LIBRARIES ARE THE SHELL'S, not copies. `RoomHost` holds one of each for the session
+## precisely so the garage and the field cannot come to disagree about where the builder is, and a
+## room that loaded its own would be a second opinion that saves over the first.
+func _build_field() -> void:
+	_field = FieldSystem.new(
+		rooms.site_library, rooms.course_library, rooms.conditions_library)
+	_field.name = "Field"
+	_field.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_field.anchor_right = 1.0
+	_field.anchor_bottom = 1.0
+	# Clear of the floating chrome on three sides. The right edge runs to the margin rather than
+	# stopping short of `INSPECTOR_WIDTH`, because this room brings its own three panels — the
+	# shell's inspector comes down for it, the way it does for Airframe.
+	_field.offset_left = CLUSTER_MARGIN
+	_field.offset_right = -CLUSTER_MARGIN
+	_field.offset_top = TOP_BAR_HEIGHT + CLUSTER_MARGIN
+	_field.offset_bottom = -BOTTOM_KEEPOUT
+	_field.visible = false
+	_field.selection_changed.connect(_on_field_selection_changed)
+	add_child(_field)
+
+
+## The Field room, for the capture tooling and for a test — `workbench()`'s posture and its reason.
+func field_room() -> FieldSystem:
+	return _field
+
+
+## The conditions selector, for the same reason. §5.3 is a claim about where this control IS, so a
+## check has to be able to find it without reaching into a private member.
+func conditions_picker() -> OptionButton:
+	return _conditions_picker
+
+
+## The named sets, with the selected one in front. Filled off `ConditionsLibrary` rather than off a
+## list of names here, so a set a builder authors in the field appears in the garage's strip with
+## no edit.
+func _fill_conditions_picker() -> void:
+	if _conditions_picker == null or rooms == null:
+		return
+	var library := rooms.conditions_library
+	_conditions_picker.clear()
+	var ids := library.ids()
+	for i in ids.size():
+		var id := str(ids[i])
+		_conditions_picker.add_item(library.conditions(id).conditions_name, i)
+		if id == library.selected().conditions_id:
+			_conditions_picker.select(i)
+
+
+## A different set chosen. The garage is put in step through `LabScreen`'s two setters rather than
+## by assigning its fields, because setting the wind without re-deriving leaves the flight-time and
+## current rows describing the previous day's weather — `set_conditions`' own words.
+##
+## THE AIR IS SET SECOND AND IT IS NOT REDUNDANT: `Conditions` carries the temperature and the SITE
+## carries the elevation, and `AirDensity.compose` is the one function that knows the density comes
+## from exactly those two typed facts (F2). `set_conditions` alone would move the wind and leave
+## the density quoting the previous temperature.
+func _on_conditions_chosen(index: int) -> void:
+	if rooms == null:
+		return
+	var ids := rooms.conditions_library.ids()
+	if index < 0 or index >= ids.size():
+		return
+	rooms.conditions_library.select(str(ids[index]))
+	if lab != null:
+		lab.set_conditions(rooms.conditions_library.selected())
+		lab.set_air(rooms.air_of_selected_course())
+	if _field != null and _field.visible:
+		_field.refresh()
+	_refresh_status()
+
+
+## A different site or course picked in the Field room, so the GARAGE'S AIR MOVES WITH IT.
+##
+## This is the §3.1 rule the whole plan is built on, wired: the air the garage quotes is the air of
+## the place the selected course is laid out in. Asked of `RoomHost`, which owns that answer, rather
+## than composed here — two spellings of "where are we" is how the two come to disagree.
+func _on_field_selection_changed() -> void:
+	if lab != null:
+		lab.set_air(rooms.air_of_selected_course())
+	_refresh_status()
 
 
 ## The Propulsion room — the blade designer, propulsion.md §7.1, slice P10d. Same accessor and same
@@ -1095,8 +1215,11 @@ func _sync_thrust_overlay() -> void:
 ## a drone the builder cannot see. Any future system that owns the viewport answers true here and
 ## needs no second edit.
 func _focused_system_covers_viewport() -> bool:
+	if _focused_index < 0 or _focused_index >= SYSTEMS.size():
+		return false
 	var system: Dictionary = SYSTEMS[_focused_index]
-	return _is_modelled(system) and str(system["name"]) == "Airframe"
+	var covering := str(system["name"]) == "Airframe" or str(system["name"]) == "Field"
+	return _is_modelled(system) and covering
 
 
 func _refill_thrust_overlay() -> void:
@@ -2021,6 +2144,11 @@ func _on_room_changed() -> void:
 		# are now flying, opaque, on top of the one room that owns the whole window.
 		if _workbench != null:
 			_workbench.visible = false
+		# AND THE FIELD ROOM, for the canvas's reason exactly: it is a child of this shell drawn
+		# over `rooms`, so walking to Sim with Field selected flew the course under a picture of
+		# the course.
+		if _field != null:
+			_field.visible = false
 		# AND SO DO THE OVERLAY ROOMS, which this path did not do. Same argument as the canvas above,
 		# and the same omission W0.7 named: the blade designer and the harness designer are children
 		# of the shell, drawn over `rooms`, so walking to the field with one open flew the course
@@ -2075,17 +2203,35 @@ func _select_system(index: int) -> void:
 	# what the chosen system asks for, and the two columns inside them are separate: the panel is
 	# the frame, and a stub is what the frame holds for a system with no model.
 	var has_rails := _has_rails(system)
+	# THE PLAN EDITOR IS THE AIRFRAME ROOM. Shown for that system and hidden for every other one,
+	# because a canvas floating over the Propulsion room would be editing a frame nobody was looking
+	# at while covering the model they were.
+	var in_airframe := modelled and str(system["name"]) == "Airframe"
+	# AND FIELD IS THE SECOND SYSTEM THAT OWNS THE WHOLE WINDOW (F10). Everything below that used
+	# to ask `in_airframe` asks `owns_window` instead, because every one of those lines was about a
+	# room covering the viewport rather than about the Airframe room in particular — and the day a
+	# third one arrives, this is one term rather than eight.
+	var in_field := modelled and str(system["name"]) == "Field"
+	var owns_window := in_airframe or in_field
 	# QC5: THE COLUMN IS UP ONLY FOR A SHELF THE FINDER CANNOT OPEN. That is the whole retirement,
 	# in one expression, and it is derived from the tree rather than from a list of exceptions —
 	# see `_column_rail_titles`. An unmodelled system no longer shows it either: its stub is one
 	# panel now, in the inspector.
 	var column_titles := _column_rail_titles(index)
-	_rail_glass.visible = modelled and not column_titles.is_empty()
+	# `not owns_window` is load-bearing and is not belt-and-braces. Field's two rail titles name no
+	# `PartPicker` in Lab — they are its own two lists — so `_column_rail_titles` reports both as
+	# "needs a column", and without this term the shell would float an empty Frame rail over a room
+	# that has its own. Airframe has no titles at all, so the term changes nothing for it.
+	_rail_glass.visible = modelled and not owns_window and not column_titles.is_empty()
 	_inspector.visible = true
-	# THE PLAN EDITOR IS THE AIRFRAME ROOM. Shown for that system and hidden for every other one,
-	# because a canvas floating over the Propulsion room would be editing a frame nobody was looking
-	# at while covering the model they were.
-	var in_airframe := modelled and str(system["name"]) == "Airframe"
+	if _field != null:
+		_field.visible = in_field
+		if in_field:
+			# THE AIRCRAFT IS FETCHED ON THE WAY IN, `set_power_room_open`'s posture: the silhouette
+			# is drawn at the span of the build as it stands NOW, and a build held from construction
+			# would draw the frame that was fitted when the shell started.
+			_field.build = lab.current_build()
+			_field.refresh()
 	# THE 3D WORLD IS SWITCHED OFF, not merely covered.
 	#
 	# The workbench is a floating Control over a full-bleed SubViewportContainer, and every pixel of
@@ -2096,13 +2242,13 @@ func _select_system(index: int) -> void:
 	# `UPDATE_WHEN_VISIBLE` means hiding it stops the work as well as the picture.
 	var viewport_container := lab.viewport().get_parent()
 	if viewport_container is Control:
-		(viewport_container as Control).visible = not in_airframe
+		(viewport_container as Control).visible = not owns_window
 	# THE INSPECTOR COLUMN IS HANDED TO THE ROOM as well, and this is the second half of the same
 	# argument as the viewport. Airframe's numbers now live in the drawer under its own canvas and
 	# its controls live in its own right-hand column, so the shell's inspector would be a third
 	# column showing the same four tabs — beside a room that already has them, in the space the
 	# room's controls need. Every other system keeps it.
-	_inspector.visible = not in_airframe
+	_inspector.visible = not owns_window
 	if _workbench != null:
 		_workbench.visible = in_airframe
 		if in_airframe:
@@ -2113,7 +2259,7 @@ func _select_system(index: int) -> void:
 	# The viewport tools — overlays, explode, x-ray, measure — all act on the 3D model, which the
 	# plan editor is covering. Hidden here rather than left to click through onto something the
 	# builder cannot see.
-	_tools_glass.visible = not in_airframe
+	_tools_glass.visible = not owns_window
 	# AND THE CHARTS GO WITH THE TOOLS. This line is the defect: the cluster was hidden here and the
 	# overlays it toggles were not, so choosing Airframe left five Propulsion charts floating over
 	# the frame editor with their own dismiss button off-screen. The other two paths that retract
@@ -2129,10 +2275,16 @@ func _select_system(index: int) -> void:
 	lab.panels.visible = modelled
 	_inspector_stub.visible = not modelled
 
-	if modelled:
+	if modelled and not in_field:
 		if has_rails and not column_titles.is_empty():
 			_show_only_tabs(lab.rails(), column_titles)
 		_show_only_tabs(lab.panels, system["panels"])
+	elif in_field:
+		# FIELD'S PANELS ARE ITS OWN, and routing its three names into Lab's TabContainer would hide
+		# every tab in it and show none — `_show_only_tabs` leaves an unmatched set alone, so this
+		# would be silent rather than wrong-looking. The room brings Site, Course and Conditions
+		# with it; Lab's inspector is down.
+		pass
 	else:
 		_inspector_stub.show_system(system)
 
@@ -2168,6 +2320,8 @@ func _deselect() -> void:
 	_inspector.visible = false
 	if _workbench != null:
 		_workbench.visible = false
+	if _field != null:
+		_field.visible = false
 	# The canvas comes BACK — the plan editor was covering it and the viewport was switched off
 	# with it, and a resting state showing a blank rectangle where the drone should be would be
 	# worse than any panel.
@@ -2563,6 +2717,11 @@ func _show_empty_state() -> void:
 	_inspector.visible = false
 	if _workbench != null:
 		_workbench.visible = false
+	# AND THE FIELD ROOM. It is a full-window Control like the plan canvas, so left up it would
+	# float a course over "No drone open" — and the silhouette it draws is the span of a drone that
+	# has just been deleted.
+	if _field != null:
+		_field.visible = false
 	_retract_rooms()
 	_tools_glass.visible = false
 	_dropdown_glass.visible = false
