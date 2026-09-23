@@ -77,7 +77,6 @@ static func _test_every_room_opens_and_is_freed() -> Array:
 		"battery_bench": host.show_battery_bench,
 		"esc_bench": host.show_esc_bench,
 		"frame_bench": host.show_frame_bench,
-		"field_editor": host.show_field_editor,
 		"studio": host.show_studio,
 		"sim": host.show_sim,
 	}
@@ -309,10 +308,17 @@ const INSPECTOR_DOORS := ["battery_bench", "bench", "esc_bench"]
 ## claims is checked too, against `Dock.ICONED_SYSTEMS`, so "Field is exempt" cannot be asserted by
 ## a slice that never gave it a door.
 ##
-## `field_editor` is here and not in the menu because F10 made Field a system. `RoomHost` still HAS
-## `show_field_editor()` — F11 retires the old screen, not this slice — so without this list the
-## set equality below goes red for a room that has a better door than it had before.
-const DOCK_DOORS := ["field_editor"]
+## `field_editor` WAS THE ONE ENTRY AND F11 EMPTIED THE LIST, which is the honest state rather
+## than a deletion. F10 made Field a system with an icon; F11 moved the AUTHORING into that system
+## and retired `RoomHost.show_field_editor()` altogether, so there is no longer a room here for a
+## dock icon to excuse — `FieldSystem` is not a room `RoomHost` opens at all.
+##
+## THE LIST IS KEPT, EMPTY, AND ITS EMPTINESS IS ASSERTED rather than left to be true by accident.
+## An empty exemption list satisfies the two loops below vacuously, which is exactly the shape of
+## check this project keeps re-inventing; so `_the_dock_list_is_empty_and_field_is_still_on_it`
+## says what replaced it, and the icon assertion further down — which never depended on this list —
+## still stands on its own.
+const DOCK_DOORS := []
 
 
 ## The rooms that are neither Lab nor Sim, reached the way a builder reaches them.
@@ -374,6 +380,14 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 		stale_dock.is_empty(),
 		"not doors: %s" % [stale_dock] if not stale_dock.is_empty()
 			else "all of %s" % [DOCK_DOORS]))
+
+	# AND THE EXEMPTION IS EMPTY BECAUSE THE ROOM IS GONE, not because someone cleared the list.
+	# The loop above is vacuous on an empty list, so this is what carries the claim: `RoomHost`
+	# must no longer have a field door at all, and the field must still be a system on the dock.
+	results.append(TestResult.new(
+		"no room is exempted by the dock any more — the field editor is retired, not excused",
+		DOCK_DOORS.is_empty() and not doors.has("field_editor"),
+		"dock exemptions %s · RoomHost opens %s" % [DOCK_DOORS, doors]))
 	results.append(TestResult.new(
 		"and the dock really carries an icon for the field, which is what excuses it from the menu",
 		Dock.ICONED_SYSTEMS.has("Field") and not RoomMenu.room_ids().has("field_editor"),

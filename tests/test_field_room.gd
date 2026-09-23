@@ -59,7 +59,7 @@ static func run() -> Array:
 	# survive.
 	var held := RealFiles.hold([
 		SiteLibrary.SAVE_PATH, CourseLibrary.SAVE_PATH, ConditionsLibrary.SAVE_PATH,
-		AppSettings.SAVE_PATH])
+		AppSettings.SAVE_PATH, PackCharge.SAVE_PATH])
 	var sections := {
 		"the dock": _the_dock(),
 		"the shell entry": _the_shell_entry(),
@@ -70,6 +70,20 @@ static func run() -> Array:
 		"the conditions selector": _the_conditions_selector(),
 		"the rooms menu": _the_rooms_menu(),
 		"the drone silhouette": _the_drone_silhouette(),
+		# F11 — the authoring, and the port of everything the old screen pinned.
+		"editing gates": _editing_gates(),
+		"the renderer follows": _the_renderer_follows(),
+		"courses": _courses(),
+		"what sim flies": _it_writes_what_sim_flies(),
+		"a drag lands on the terrain": _a_drag_lands_on_the_terrain(),
+		"the three sliders": _the_three_sliders(),
+		"outside the site extent": _outside_the_site_extent(),
+		"warnings refresh": _warnings_refresh_after_every_edit(),
+		"it costs nothing": _it_costs_nothing(),
+		"the field itself": _the_field_itself(),
+		"the old editor is gone": _the_old_editor_is_gone(),
+		"the preview is the terrain": _the_preview_is_the_terrain(),
+		"the editable fields": _the_editable_fields(),
 	}
 	held.restore()
 	results.append(TestResult.new(
@@ -587,3 +601,983 @@ static func _system_names() -> Array:
 	for system in GlassShell.SYSTEMS:
 		names.append(str(system["name"]))
 	return names
+
+
+# ===========================================================================
+# F11 — COURSE EDITING INSIDE THE ROOM
+# ===========================================================================
+#
+# EVERY SECTION BELOW EXCEPT THE LAST FIVE IS A PORT. `tests/test_field_editor.gd` pinned the old
+# screen's behaviour and the old screen is gone; a port's failure mode is not a broken check, it is
+# a behaviour that quietly stopped being guaranteed and took its assertion with it. So the ported
+# sections keep the ORIGINAL WORDING of every assertion they carry, and the F11 report accounts for
+# each one — carried, deliberately dropped, or not applicable.
+#
+# What genuinely could not come across, and why, stated here rather than only in the report:
+#
+# - `_air_readout`. The old screen had a prose Label composing its own sentence about the density.
+#   This room has a Conditions PANEL with an "Air density" row, which is the same promise ("the
+#   readout quotes the derived density, not a second copy of it") read off a different control. The
+#   three checks that read that Label are re-pointed at the panel row, and they still compare
+#   against `AirDensity` rather than against the panel.
+# - `_start_marker`. The old screen drew a post-and-arrow at the start line; this room draws the
+#   AIRCRAFT'S OWN FOOTPRINT there instead (§11 Q1, F10), at `start_position` — the same derived
+#   fact, the same place. `tests/test_ground_authority.gd`'s F4 section, which used the marker as
+#   its probe that the render ran to the end, is re-pointed at the silhouette for that reason.
+
+## The scratch files this room writes when it is driven directly, named so the teardown can delete
+## them. `SiteLibrary` and `ConditionsLibrary` own the pairing rule; these are the same answer.
+const ROOM_LIBRARY_PATH := "user://test_field_room_courses.json"
+const ROOM_SITES_PATH := "user://test_field_room_courses_sites.json"
+const ROOM_CONDITIONS_PATH := "user://test_field_room_courses_conditions.json"
+
+## A ground with real relief, so "lands on the terrain" and "keeps its clearance" are different
+## numbers from "keeps its y". A flat site at zero makes the two readings identical, which is the
+## version of check 1 that cannot fail.
+const SLOPE_RISE_M := 12.0
+const SLOPE_SITE_M := 200.0
+
+
+static func _forget(path: String) -> void:
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## A room over its OWN files, the shape `TestFieldEditor._editor()` had. Driven directly rather
+## than through the shell, because most of what is asserted below is about the room and a shell in
+## the way is one more thing that could be producing the answer.
+static func _room() -> FieldSystem:
+	_forget(ROOM_LIBRARY_PATH)
+	_forget(ROOM_SITES_PATH)
+	_forget(ROOM_CONDITIONS_PATH)
+	return FieldSystem.new(
+		SiteLibrary.load_from(ROOM_SITES_PATH),
+		CourseLibrary.load_from(ROOM_LIBRARY_PATH),
+		ConditionsLibrary.load_from(ROOM_CONDITIONS_PATH),
+		ReferenceBuild.build(),
+		ROOM_LIBRARY_PATH)
+
+
+## The same room, standing on a SLOPE. `Terrain.shaped` builds the description; `height_at` and
+## `TerrainMesh` both read it, which is the whole of F5's one-description rule.
+static func _sloped_room() -> FieldSystem:
+	var room := _room()
+	room.site().terrain = Terrain.shaped(Terrain.SLOPE, SLOPE_SITE_M, SLOPE_SITE_M,
+		{"rise_m": SLOPE_RISE_M, "direction_deg": 0.0})
+	room.refresh()
+	return room
+
+
+# ---------------------------------------------------------------------------
+# 11. Placing, moving, re-ordering, adding and removing (ported)
+# ---------------------------------------------------------------------------
+
+static func _editing_gates() -> Array:
+	var results: Array = []
+	var room := _room()
+
+	var before := room.course().gates.size()
+	room.select_gate(2)
+	room.add_gate()
+	results.append(TestResult.new(
+		"a gate can be added, and it lands between the two it was added between",
+		room.course().gates.size() == before + 1 and room.selected_gate == 3,
+		"%d gates, editing gate %d" % [room.course().gates.size(), room.selected_gate + 1]))
+
+	var added: Dictionary = room.course().gates[3]
+	var neighbours := float(room.course().gates[2]["position"].distance_to(
+		room.course().gates[4]["position"]))
+	results.append(TestResult.new(
+		"a new gate appears on the route rather than at the origin",
+		added["position"].distance_to(room.course().gates[2]["position"]) < neighbours
+			and added["position"].y > 0.0,
+		"new gate at %s, %.1f m from the one before it" % [
+			added["position"], added["position"].distance_to(room.course().gates[2]["position"])]))
+
+	room.course().reset()
+	var passes := 0
+	for i in room.course().gates.size():
+		var gate: Dictionary = room.course().gates[i]
+		if room.course().advance(gate["position"] - gate["normal"] * 0.5,
+				gate["position"] + gate["normal"] * 0.5):
+			passes += 1
+	results.append(TestResult.new(
+		"a nine-gate course is flown and lapped as nine gates",
+		passes == 9 and room.course().just_completed_lap(),
+		"%d of %d gates scored" % [passes, room.course().gates.size()]))
+
+	room.select_gate(0)
+	room.set_gate_ground_position(Vector3(40.0, 0.0, -12.0))
+	room.set_gate_height_m(6.5)
+	room.set_gate_heading_deg(90.0)
+	room.set_gate_radius_m(0.9)
+	var moved: Dictionary = room.course().gates[0]
+	results.append(TestResult.new(
+		"a gate is placed by ground position, height, heading and ring size",
+		moved["position"].distance_to(Vector3(40.0, 6.5, -12.0)) < 1.0e-6
+			and absf(float(moved["radius"]) - 0.9) < 1.0e-6
+			and moved["normal"].distance_to(Vector3(1.0, 0.0, 0.0)) < 1.0e-6,
+		"gate 1 at %s facing %s, %.2f m ring" % [
+			moved["position"], moved["normal"], float(moved["radius"])]))
+
+	var second_before: Vector3 = room.course().gates[1]["position"]
+	room.select_gate(1)
+	var reordered := room.reorder_gate(1)
+	results.append(TestResult.new(
+		"a gate can be moved later in the running order, and the selection follows it",
+		reordered and room.selected_gate == 2
+			and room.course().gates[2]["position"].distance_to(second_before) < 1.0e-9,
+		"the gate that was 2nd is now %d" % [room.selected_gate + 1]))
+
+	var fresh := FieldSystem.new(
+		SiteLibrary.load_from(ROOM_SITES_PATH), CourseLibrary.load_from(ROOM_LIBRARY_PATH),
+		ConditionsLibrary.load_from(ROOM_CONDITIONS_PATH), ReferenceBuild.build(),
+		ROOM_LIBRARY_PATH)
+	results.append(TestResult.new(
+		"the first gate cannot be moved earlier than first",
+		not fresh.reorder_gate(-1),
+		"reordering gate 1 backwards refused"))
+	fresh.free()
+
+	var removals := 0
+	while room.remove_gate():
+		removals += 1
+	results.append(TestResult.new(
+		"gates can be removed, but never the last one — a course with no gates is not a course",
+		room.course().gates.size() == 1 and removals == 8,
+		"%d removed, %d gate left" % [removals, room.course().gates.size()]))
+
+	room.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 12. One description of the world (ported)
+# ---------------------------------------------------------------------------
+
+static func _the_renderer_follows() -> Array:
+	var results: Array = []
+	var room := _room()
+
+	var renderer := room.renderer
+	results.append(TestResult.new(
+		"the room draws the course through CourseRenderer, not through gates of its own",
+		renderer != null and renderer.course == room.course()
+			and renderer.get_child_count() == room.course().gates.size(),
+		"%d rings drawn for %d gates" % [
+			0 if renderer == null else renderer.get_child_count(),
+			room.course().gates.size()]))
+
+	room.select_gate(3)
+	room.add_gate()
+	results.append(TestResult.new(
+		"adding a gate adds a ring — the picture cannot fall behind the model",
+		renderer.get_child_count() == room.course().gates.size(),
+		"%d rings for %d gates" % [renderer.get_child_count(), room.course().gates.size()]))
+
+	results.append(TestResult.new(
+		"the gate being edited is the lit one",
+		renderer.highlight_index == room.selected_gate,
+		"editing gate %d, lit gate %d" % [room.selected_gate + 1, renderer.highlight_index + 1]))
+
+	room.select_gate(0)
+	room.set_gate_height_m(0.5)
+	var says := room.warnings()
+	var complained := false
+	for entry in says:
+		if entry.id == CourseWarnings.GATE_BELOW_GROUND:
+			complained = true
+	results.append(TestResult.new(
+		"burying a ring in the ground is reported the moment it happens",
+		complained,
+		"a 1.5 m ring centred 0.5 m up says: %s" % ", ".join(BuildWarning.messages(says))))
+
+	room.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 13. More than one course (ported)
+# ---------------------------------------------------------------------------
+
+static func _courses() -> Array:
+	var results: Array = []
+	var room := _room()
+
+	room.new_course("Whoop box")
+	results.append(TestResult.new(
+		"a new course is created and becomes the one being edited",
+		room.course().course_name == "Whoop box"
+			and room.courses.selected_id == room.course().course_id,
+		"editing \"%s\"" % room.course().course_name))
+
+	room.rename_course("Back garden")
+	results.append(TestResult.new(
+		"renaming keeps the id, so nothing that pointed at the course is orphaned",
+		room.course().course_name == "Back garden"
+			and room.course().course_id == "whoop_box",
+		"\"%s\" is still id \"%s\"" % [room.course().course_name, room.course().course_id]))
+
+	results.append(TestResult.new(
+		"the default circuit is still there to go back to",
+		room.open_course(GateCourse.DEFAULT_ID)
+			and room.course().course_id == GateCourse.DEFAULT_ID,
+		"switched to \"%s\"" % room.course().course_id))
+
+	room.open_course("whoop_box")
+	room.delete_course()
+	results.append(TestResult.new(
+		"deleting a course leaves you editing one that still exists",
+		not room.courses.has("whoop_box") and room.course() != null,
+		"now editing \"%s\"" % room.course().course_id))
+
+	room.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 14. Lab writes; Sim reads (ported) — and check 3, the drag written through
+# ---------------------------------------------------------------------------
+
+static func _it_writes_what_sim_flies() -> Array:
+	var results: Array = []
+	var room := _room()
+
+	room.new_course("Sprint")
+	room.select_gate(0)
+	room.set_gate_ground_position(Vector3(-60.0, 0.0, 25.0))
+	room.set_gate_height_m(5.0)
+
+	var from_disk := CourseLibrary.load_from(ROOM_LIBRARY_PATH)
+	var reloaded := from_disk.course("sprint")
+	results.append(TestResult.new(
+		"every edit is on disk immediately — there is no exit to save on",
+		reloaded != null
+			and reloaded.gates[0]["position"].distance_to(Vector3(-60.0, 5.0, 25.0)) < 1.0e-6,
+		"gate 1 on disk at %s" % [
+			"nowhere" if reloaded == null else str(reloaded.gates[0]["position"])]))
+
+	results.append(TestResult.new(
+		"the course Sim would open is the one that was just edited",
+		from_disk.selected_id == "sprint"
+			and from_disk.selected().fingerprint() == room.course().fingerprint(),
+		"Sim would open \"%s\"" % from_disk.selected_id))
+
+	var before_edit := room.course().fingerprint()
+	room.set_gate_height_m(9.0)
+	results.append(TestResult.new(
+		"moving a gate in the room retires the record set on the old layout",
+		room.course().fingerprint() != before_edit,
+		"fingerprint went from %s to %s" % [before_edit, room.course().fingerprint()]))
+
+	# CHECK 3 — A DRAG, not a slider, written through and surviving a reopen.
+	#
+	# DRIVEN THROUGH THE VIEWPORT'S OWN INPUT HANDLER rather than by calling the setter, because
+	# the mutation this check names ("the drag updates the view only") lives between the handler
+	# and the library. A check that called `set_gate_ground_position` would still pass with the
+	# handler wired to nothing at all.
+	#
+	# The pixel is not guessed: the gate's own centre is projected to the screen, moved, and the
+	# point that lands there is read back — so the arithmetic below is the room's own picking maths
+	# used forwards, and the assertion is about what the LIBRARY holds afterwards.
+	room.select_gate(0)
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = room._unproject(room.camera_world_transform(),
+		room.course().gates[0]["position"])
+	room._on_viewport_input(press)
+	var grabbed := room._dragging_gate
+	var motion := InputEventMouseMotion.new()
+	motion.position = press.position + Vector2(60.0, -25.0)
+	room._on_viewport_input(motion)
+	var dropped: Vector3 = room.course().gates[0]["position"]
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = motion.position
+	room._on_viewport_input(release)
+
+	results.append(TestResult.new(
+		"a ring under the pointer is grabbed by a press on the viewport, not by calling a setter",
+		grabbed,
+		"press at %v over gate 1 at %v -> dragging %s" % [
+			press.position, room.course().gates[0]["position"], grabbed]))
+	results.append(TestResult.new(
+		"and dragging it actually moved it on the ground",
+		dropped.distance_to(Vector3(-60.0, dropped.y, 25.0)) > 1.0,
+		"gate 1 went from (-60, 25) to (%.2f, %.2f)" % [dropped.x, dropped.z]))
+
+	# THE SECOND OPINION IS THE FILE. Re-read from disk into a library that has never met this
+	# room, so "it wrote through" cannot be satisfied by the room's own in-memory copy.
+	var after_drag := CourseLibrary.load_from(ROOM_LIBRARY_PATH).course("sprint")
+	results.append(TestResult.new(
+		"and the drag is on disk and survives a reopen — the view is not the only thing that moved",
+		after_drag != null
+			and after_drag.gates[0]["position"].distance_to(dropped) < 1.0e-5,
+		"on disk at %s, in the room at %s" % [
+			"nowhere" if after_drag == null else str(after_drag.gates[0]["position"]), dropped]))
+
+	room.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 15. CHECK 1 — a dragged gate lands ON THE TERRAIN
+# ---------------------------------------------------------------------------
+
+## The one check a flat site could not make. On a slope, `height_at` at the drop point is a
+## different number from `height_at` where the gate came from, so "kept its y" and "kept its
+## clearance" are two answers rather than one — and a drop at y = 0 is a third.
+static func _a_drag_lands_on_the_terrain() -> Array:
+	var results: Array = []
+	var room := _sloped_room()
+
+	# GUARDED ON THE GROUND ACTUALLY HAVING RELIEF before anything is compared. On a flat site
+	# every assertion below is true of every implementation, including the mutation's.
+	var from_ground := room.ground_height_at(-70.0, 0.0)
+	var to_ground := room.ground_height_at(70.0, 0.0)
+	results.append(TestResult.new(
+		"the site under this check really is sloped — the two ends are different heights",
+		absf(to_ground - from_ground) > 1.0,
+		"ground is %.3f m at x=-70 and %.3f m at x=+70" % [from_ground, to_ground]))
+	if absf(to_ground - from_ground) <= 1.0:
+		room.free()
+		return results
+
+	room.select_gate(0)
+	room.set_gate_ground_position(Vector3(-70.0, 0.0, 0.0))
+	room.set_gate_height_m(4.0)
+	var lifted: Vector3 = room.course().gates[0]["position"]
+
+	room.set_gate_ground_position(Vector3(70.0, 0.0, 0.0))
+	var landed: Vector3 = room.course().gates[0]["position"]
+
+	# THE GOLDEN COMES FROM `Terrain`, not from the room. `height_at` is the model the room reads;
+	# taking the expected y off `room.ground_height_at` would be the room agreeing with itself.
+	var wanted := room.site().terrain.height_at(70.0, 0.0) + 4.0
+	results.append(TestResult.new(
+		"a gate dragged across the field lands ON the ground: height_at at the drop plus its height",
+		absf(landed.y - wanted) < 1.0e-4,
+		"dropped at y=%.4f, Terrain says %.4f + 4.0 m = %.4f" % [
+			landed.y, room.site().terrain.height_at(70.0, 0.0), wanted]))
+	results.append(TestResult.new(
+		"and that is a different y from the one it had — a drop at y=0, or a kept y, would not be",
+		absf(landed.y - lifted.y) > 1.0 and landed.y > 1.0,
+		"y went from %.4f to %.4f across a slope %.3f m tall" % [
+			lifted.y, landed.y, absf(to_ground - from_ground)]))
+	results.append(TestResult.new(
+		"and the clearance it was authored at is what survived the move",
+		absf(room.gate_height_above_ground_m(0) - 4.0) < 1.0e-4,
+		"%.4f m above the ground under it" % room.gate_height_above_ground_m(0)))
+
+	room.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 16. CHECK 2 — three sliders, three properties
+# ---------------------------------------------------------------------------
+
+## Each control moves its own property AND NOTHING ELSE. Driven through the live `HSlider`'s
+## `value_changed` signal, not through the setter, because the mutation this check names ("the
+## height slider also writes radius") could live in either — and a check that called the setter
+## would pass against a slider wired to the wrong one.
+static func _the_three_sliders() -> Array:
+	var results: Array = []
+	var room := _room()
+	var panel := room.panel("Course") as FieldSystem.CoursePanel
+
+	results.append(TestResult.new(
+		"the Course panel carries the three controls a drag cannot express",
+		panel != null and panel.height_slider != null and panel.heading_slider != null
+			and panel.radius_slider != null,
+		"panel %s · height %s · heading %s · radius %s" % [
+			panel != null, panel != null and panel.height_slider != null,
+			panel != null and panel.heading_slider != null,
+			panel != null and panel.radius_slider != null]))
+	if panel == null or panel.height_slider == null:
+		room.free()
+		return results
+
+	room.select_gate(1)
+	# One case per control rather than a loop, so a failure names the slider that went wrong.
+	for spec in [["Height", 7.25], ["Heading", 42.0], ["Radius", 1.35]]:
+		var which := str(spec[0])
+		var to := float(spec[1])
+		var before := _gate_facts(room, 1)
+		var slider: HSlider = panel.height_slider
+		if which == "Heading":
+			slider = panel.heading_slider
+		elif which == "Radius":
+			slider = panel.radius_slider
+		slider.value_changed.emit(to)
+		var after := _gate_facts(room, 1)
+
+		var moved: Array[String] = []
+		for key in after:
+			if absf(float(after[key]) - float(before[key])) > 1.0e-4:
+				moved.append(str(key))
+		results.append(TestResult.new(
+			"the %s slider moves the gate's %s and nothing else" % [
+				which.to_lower(), which.to_lower()],
+			moved == [which.to_lower()] and absf(float(after[which.to_lower()]) - to) < 0.05,
+			"%s -> %.3f; what moved: %s (was %s, now %s)" % [
+				which, to, moved, before, after]))
+
+	room.free()
+	return results
+
+
+## The three facts the three sliders are about, as one dictionary, so "what moved" is a comparison
+## of three numbers rather than three separate assertions that could each be about the wrong one.
+static func _gate_facts(room: FieldSystem, index: int) -> Dictionary:
+	var gate: Dictionary = room.course().gates[index]
+	return {
+		"height": room.gate_height_above_ground_m(index),
+		"heading": rad_to_deg(GateCourse.gate_heading_rad(gate)),
+		"radius": float(gate["radius"]),
+	}
+
+
+# ---------------------------------------------------------------------------
+# 17. CHECK 4 — off the edge of the field is a WARNING, not a clamp
+# ---------------------------------------------------------------------------
+
+static func _outside_the_site_extent() -> Array:
+	var results: Array = []
+	var room := _room()
+	var half := room.site().terrain.half_extent()
+
+	# Guarded on the field having a stated size at all: a zero-extent site puts everything outside
+	# it and the warning would arrive for the wrong reason.
+	results.append(TestResult.new(
+		"the field under this check has a stated extent to be outside of",
+		half.x > 1.0 and half.y > 1.0,
+		"half extent %v" % half))
+	if half.x <= 1.0:
+		room.free()
+		return results
+
+	var before_ids: Array[StringName] = []
+	for entry in room.warnings():
+		before_ids.append(entry.id)
+	results.append(TestResult.new(
+		"and the course starts INSIDE it — nothing is complaining before the drag",
+		not before_ids.has(CourseWarnings.OUTSIDE_SITE_EXTENT),
+		"before the drag: %s" % [before_ids]))
+
+	var beyond := Vector3(half.x * 3.0, 0.0, 0.0)
+	room.select_gate(0)
+	room.set_gate_ground_position(beyond)
+	var at: Vector3 = room.course().gates[0]["position"]
+
+	results.append(TestResult.new(
+		"a gate dragged past the edge of the field STAYS where it was put — it is not clamped back",
+		absf(at.x - beyond.x) < 1.0e-4,
+		"asked for x=%.1f, the gate is at x=%.1f (the field's half width is %.1f)" % [
+			beyond.x, at.x, half.x]))
+
+	var ids: Array[StringName] = []
+	for entry in room.warnings():
+		ids.append(entry.id)
+	results.append(TestResult.new(
+		"and the course says so, by id, in the vocabulary that exists — OUTSIDE_SITE_EXTENT",
+		ids.has(CourseWarnings.OUTSIDE_SITE_EXTENT),
+		"after the drag: %s" % [ids]))
+
+	# AND THE PANEL SHOWS IT, because a warning nobody is told about is a warning that did not
+	# happen — the refresh is what carries it from `CourseWarnings` to the builder's eye.
+	var panel := room.panel("Course") as FieldSystem.CoursePanel
+	var shown := false
+	for entry in panel.warnings.shown:
+		if entry.id == CourseWarnings.OUTSIDE_SITE_EXTENT:
+			shown = true
+	results.append(TestResult.new(
+		"and it is on the Course panel's own warning list, not only in the function's return",
+		shown,
+		"the panel is showing %d warning(s)" % panel.warnings.shown.size()))
+
+	room.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 18. CHECK 6 — the warnings are re-read after EVERY edit
+# ---------------------------------------------------------------------------
+
+## The terrain-aware one, deliberately: a below-ground check against y = 0 would pass on a flat
+## site under both the right implementation and "computed once at open". A gate 3 m up on ground
+## that is 9 m high is buried, and only a re-read against the TERRAIN says so.
+static func _warnings_refresh_after_every_edit() -> Array:
+	var results: Array = []
+	var room := _sloped_room()
+	var panel := room.panel("Course") as FieldSystem.CoursePanel
+
+	# EVERY GATE RE-SEATED ON THE HILL FIRST. The default circuit was laid out over flat ground, so
+	# dropping it on a 12 m slope buries most of it — and a section that starts with seven
+	# below-ground warnings cannot tell an eighth arriving from a list computed once. The course
+	# starts clear, and exactly one edit is made.
+	for i in room.course().gates.size():
+		room.select_gate(i)
+		var at: Vector3 = room.course().gates[i]["position"]
+		room.set_gate_ground_position(Vector3(at.x, 0.0, at.z))
+		room.set_gate_height_m(6.0)
+
+	room.select_gate(0)
+	room.set_gate_ground_position(Vector3(-70.0, 0.0, 0.0))
+	room.set_gate_height_m(6.0)
+	var clear := _panel_warning_ids(panel)
+	results.append(TestResult.new(
+		"a ring hung 6 m above the low end of the slope is not reported as buried",
+		not clear.has(CourseWarnings.GATE_BELOW_GROUND),
+		"the panel says %s" % [clear]))
+
+	# THE EDIT: lower it into the hillside. The gate does not move in x or z, so nothing but the
+	# height changed and nothing but a re-read can notice.
+	room.set_gate_height_m(MIN_CLEARANCE_M)
+	var buried := _panel_warning_ids(panel)
+	results.append(TestResult.new(
+		"and lowering it into the hillside is reported on the panel WITHOUT reopening the room",
+		buried.has(CourseWarnings.GATE_BELOW_GROUND),
+		"the panel says %s" % [buried]))
+
+	# AND IT GOES AWAY AGAIN. A list that only ever grows is also a list computed once — this is
+	# the half that a "warnings appended, never cleared" implementation fails.
+	room.set_gate_height_m(6.0)
+	var clear_again := _panel_warning_ids(panel)
+	results.append(TestResult.new(
+		"and raising it again takes the warning off the panel — the list is re-read, not appended to",
+		not clear_again.has(CourseWarnings.GATE_BELOW_GROUND),
+		"the panel says %s" % [clear_again]))
+
+	room.free()
+	return results
+
+
+## Low enough that a 1.5 m ring's bottom edge is under the ground it hangs over, and high enough to
+## be a legal value of the height control. Not read from the implementation: `GATE_INNER_RADIUS_M`
+## is 1.5 m, so anything below that buries the hoop.
+const MIN_CLEARANCE_M := 0.4
+
+
+static func _panel_warning_ids(panel: FieldSystem.CoursePanel) -> Array[StringName]:
+	var out: Array[StringName] = []
+	if panel == null or panel.warnings == null:
+		return out
+	for entry in panel.warnings.shown:
+		out.append(entry.id)
+	return out
+
+
+# ---------------------------------------------------------------------------
+# 19. CHECK 5 — laying out gates costs NO pack charge (ported, §2.4)
+# ---------------------------------------------------------------------------
+
+static func _it_costs_nothing() -> Array:
+	var results: Array = []
+
+	# Through the SHELL, which is the thing that would have to save a changed pack on the way out.
+	# A room driven on its own could not charge the pack even if it wanted to.
+	var shell := GlassShell.new()
+	var pack_id: String = shell.lab.selection()["battery"]
+	var before := shell.rooms.pack_charge.used_mah(pack_id)
+
+	shell.select_system_by_name("Field")
+	var room := shell.field_room()
+	room.select_gate(1)
+	room.set_gate_height_m(7.0)
+	room.add_gate()
+	room.set_gate_radius_m(1.2)
+	shell.select_system_by_name("Power")
+
+	results.append(TestResult.new(
+		"laying out gates costs no charge — no motor turned",
+		absf(shell.rooms.pack_charge.used_mah(pack_id) - before) < 1.0e-9
+			and not shell.rooms.pack_charge.has_unsaved_changes(),
+		"pack drew %.4f mAh before, %.4f after" % [
+			before, shell.rooms.pack_charge.used_mah(pack_id)]))
+
+	# The old screen's second check here was "the field editor is a room, and it is gone when you
+	# leave it". RE-POINTED RATHER THAN DELETED: the field is a SYSTEM now, so what has to be true
+	# is the opposite — it is built once and persists, and what goes away is its visibility. A
+	# check asserting the room was freed would be asserting F10's design had been undone.
+	results.append(TestResult.new(
+		"the field is a system rather than a room: it survives leaving, and goes off screen instead",
+		shell.field_room() == room and not room.visible,
+		"the room is %s and visible %s" % [
+			"the same instance" if shell.field_room() == room else "A DIFFERENT ONE", room.visible]))
+
+	shell.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 20. Where the course IS — elevation, temperature, the air they imply (ported)
+# ---------------------------------------------------------------------------
+
+static func _the_field_itself() -> Array:
+	var results: Array = []
+	var room := _room()
+
+	results.append(TestResult.new(
+		"a fresh course opens at standard sea-level air",
+		room.air().is_standard(),
+		"%.4f kg/m3 at %.0f m, %.0f C" % [room.air().kgm3(),
+			room.air().elevation_m, room.air().temperature_c]))
+
+	room.set_field_elevation_m(920.0)
+	room.set_field_temperature_c(35.0)
+
+	var expected := AirDensity.new(920.0, 35.0).kgm3()
+	results.append(TestResult.new(
+		"typing an elevation and a temperature derives the density the physics uses",
+		absf(room.air().kgm3() - expected) < 1.0e-12,
+		"%.4f kg/m3, %.1f%% below standard" % [
+			room.air().kgm3(), room.air().fraction_below_standard() * 100.0]))
+
+	# RE-POINTED FROM `_air_readout` TO THE CONDITIONS PANEL'S OWN ROW. Same promise, different
+	# control — and the wanted value still comes from `AirDensity`, never from the panel.
+	var rows := _rows_of(room.panel("Conditions"))
+	results.append(TestResult.new(
+		"the readout quotes the derived density, not a second copy of it",
+		rows.has("Air density") and str(rows["Air density"]).contains("%.4f" % expected),
+		"the density row reads \"%s\"" % [rows.get("Air density", "(no such row)")]))
+
+	var from_disk := CourseLibrary.load_from(ROOM_LIBRARY_PATH)
+	var site_on_disk := SiteLibrary.load_from(ROOM_SITES_PATH).site(from_disk.selected().site_id)
+	var weather_on_disk := ConditionsLibrary.load_from(ROOM_CONDITIONS_PATH).selected()
+	var disk_air := AirDensity.compose(site_on_disk, weather_on_disk)
+	results.append(TestResult.new(
+		"the field is on disk immediately",
+		site_on_disk != null and weather_on_disk != null
+			and absf(disk_air.kgm3() - expected) < 1.0e-12,
+		"nowhere on disk" if site_on_disk == null else "%.4f m, %.1f C on disk" % [
+			disk_air.elevation_m, disk_air.temperature_c]))
+	results.append(TestResult.new(
+		"and the temperature is on the conditions rather than parked on the site",
+		site_on_disk != null and site_on_disk.parked_temperature_c == null
+			and weather_on_disk != null and absf(weather_on_disk.temperature_c - 35.0) < 1.0e-9,
+		"site slot %s, weather \"%s\" at %.1f C" % [
+			"nowhere" if site_on_disk == null else str(site_on_disk.parked_temperature_c),
+			"none" if weather_on_disk == null else weather_on_disk.conditions_name,
+			-999.0 if weather_on_disk == null else weather_on_disk.temperature_c]))
+
+	# AN EDIT THAT IS NOT ABOUT THE WEATHER DOES NOT WRITE THE WEATHER FILE. Bytes AND stamp,
+	# re-indented first so a round-trip that produced identical bytes is still visible as a write.
+	var weather_document := JsonStore.read_document(ROOM_CONDITIONS_PATH)
+	var weather_handle := FileAccess.open(ROOM_CONDITIONS_PATH, FileAccess.WRITE)
+	weather_handle.store_string(JSON.stringify(weather_document, "\t"))
+	weather_handle.close()
+	var weather_bytes := FileAccess.get_file_as_string(ROOM_CONDITIONS_PATH)
+	var weather_stamp := FileAccess.get_modified_time(ROOM_CONDITIONS_PATH)
+	room.select_gate(1)
+	room.set_gate_height_m(2.5)
+	room.rename_course("Bando, renamed")
+	room.set_field_elevation_m(920.0)
+	results.append(TestResult.new(
+		"moving a gate, renaming a course and nudging the elevation do not write conditions.json",
+		FileAccess.get_file_as_string(ROOM_CONDITIONS_PATH) == weather_bytes
+			and FileAccess.get_modified_time(ROOM_CONDITIONS_PATH) == weather_stamp,
+		"%s, stamp %s" % [
+			"untouched" if FileAccess.get_file_as_string(ROOM_CONDITIONS_PATH) == weather_bytes
+				else "REWRITTEN",
+			"unmoved" if FileAccess.get_modified_time(ROOM_CONDITIONS_PATH) == weather_stamp
+				else "MOVED"]))
+
+	room.new_course("Sea level bando")
+	var sea_level_hot := AirDensity.new(0.0, 35.0).kgm3()
+	results.append(TestResult.new(
+		"a new course has its own elevation and does not inherit the last one's",
+		absf(room.air().elevation_m) < 1.0e-9
+			and absf(room.air().kgm3() - sea_level_hot) < 1.0e-12,
+		"%.4f kg/m3 at %.0f m, %.0f C" % [room.air().kgm3(),
+			room.air().elevation_m, room.air().temperature_c]))
+	results.append(TestResult.new(
+		"and the temperature stayed, because the weather is not a property of the route",
+		absf(room.air().temperature_c - 35.0) < 1.0e-9
+			and absf(sea_level_hot - AirDensity.standard_kgm3()) > 0.05,
+		"%.1f C, %.4f kg/m3 against %.4f at 15 C" % [
+			room.air().temperature_c, sea_level_hot, AirDensity.standard_kgm3()]))
+	var moved_rows := _rows_of(room.panel("Conditions"))
+	results.append(TestResult.new(
+		"and the readout followed the course rather than staying on the old numbers",
+		moved_rows.has("Air density")
+			and str(moved_rows["Air density"]).contains("%.4f" % sea_level_hot),
+		"the density row reads \"%s\"" % [moved_rows.get("Air density", "(no such row)")]))
+
+	# THE SECOND COURSE IS GIVEN A DIFFERENT FIELD BEFORE SWITCHING BACK. Without this the section
+	# passes against an implementation holding ONE app-wide air, because a freshly created course
+	# reads as standard under both designs.
+	room.set_field_elevation_m(1610.0)
+	room.set_field_temperature_c(30.0)
+	var denver := AirDensity.new(1610.0, 30.0).kgm3()
+	var first_again := AirDensity.new(920.0, 30.0).kgm3()
+
+	room.open_course(GateCourse.DEFAULT_ID)
+	results.append(TestResult.new(
+		"switching back brings the first course's field back with it",
+		absf(room.air().kgm3() - first_again) < 1.0e-12,
+		"%.0f m, %.0f C" % [room.air().elevation_m, room.air().temperature_c]))
+
+	room.open_course("sea_level_bando")
+	results.append(TestResult.new(
+		"and the second course kept its own, so the two fields are not one shared setting",
+		absf(room.air().kgm3() - denver) < 1.0e-12
+			and absf(denver - first_again) > 0.01,
+		"course A %.4f kg/m3, course B %.4f kg/m3" % [first_again, room.air().kgm3()]))
+
+	room.set_field_elevation_m(1.0e9)
+	results.append(TestResult.new(
+		"an absurd elevation is clamped rather than turning the whole readout into NaN",
+		not is_nan(room.air().kgm3()) and room.air().kgm3() > 0.0,
+		"%.4f kg/m3 at %.0f m" % [room.air().kgm3(), room.air().elevation_m]))
+
+	room.free()
+
+	results.append_array(_the_garage_follows_the_field())
+	return results
+
+
+## The half a builder actually notices: change the field, look back at the garage, and the derived
+## stats are for the place they are going to fly.
+##
+## THROUGH THE SHELL, because the wiring IS the feature. The old screen's version went through
+## `AppShell`; this one goes through `GlassShell`, which is what `project.godot` actually boots.
+static func _the_garage_follows_the_field() -> Array:
+	var results: Array = []
+	var shell := GlassShell.new()
+
+	var before := shell.lab.current_build().thrust_to_weight()
+	shell.select_system_by_name("Field")
+	shell.field_room().set_field_elevation_m(3500.0)
+	shell.field_room().set_field_temperature_c(30.0)
+	var after := shell.lab.current_build().thrust_to_weight()
+
+	var expected := Build.from_ids(shell.lab.catalog,
+		shell.lab.selection()["frame"], shell.lab.selection()["motor"],
+		shell.lab.selection()["propeller"], shell.lab.selection()["battery"],
+		shell.lab.selection()["esc"], shell.lab.selection()["flight_controller"],
+		{}, AirDensity.new(3500.0, 30.0)).thrust_to_weight()
+
+	results.append(TestResult.new(
+		"editing the field moves the garage's thrust-to-weight to the field's own figure",
+		absf(after - expected) < 0.01 and absf(after - before) > 0.5,
+		"%.2f:1 at sea level, %.2f:1 at 3500 m (expected %.2f:1)" % [before, after, expected]))
+
+	# THE RIGHT-HAND SIDE IS READ OFF DISK, not asked of `rooms.air_of_selected_course()` — asking
+	# that function is asking the very call that SET `lab.air`, so the two sides would agree by
+	# construction. Going to the file and composing the air independently is the second opinion.
+	var on_disk := SiteLibrary.load_from(SiteLibrary.SAVE_PATH)
+	var flown_site := on_disk.site(
+		CourseLibrary.load_from(CourseLibrary.SAVE_PATH).selected().site_id)
+	var weather_on_disk := ConditionsLibrary.load_from(ConditionsLibrary.SAVE_PATH).selected()
+	var independent := (AirDensity.compose(flown_site, weather_on_disk).kgm3()
+		if flown_site != null else -1.0)
+	results.append(TestResult.new(
+		"and the build handed to Sim carries the same air",
+		flown_site != null
+			and absf(shell.lab.current_build().air.kgm3() - independent) < 1.0e-12,
+		"garage %.4f kg/m3, the site on disk %.4f kg/m3" % [
+			shell.lab.current_build().air.kgm3(), independent]))
+
+	shell.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 21. CHECK 7 — the old screen is gone from `src/`
+# ---------------------------------------------------------------------------
+
+## A SOURCE SCAN, because that is the only thing that can see a reference nothing calls. The old
+## screen was reachable from `RoomHost.show_field_editor()` while the menu arm that called it was
+## already dead — a door on the dock opening the room it replaced, which no runtime check finds
+## because nothing runs it.
+static func _the_old_editor_is_gone() -> Array:
+	var results: Array = []
+	var hits: Array[String] = []
+	var scanned := _scan_for("res://src", "FieldEditorScreen", hits)
+
+	# GUARDED ON HAVING READ SOMETHING. A scan that walked no files finds no references, which is
+	# the version of this check that passes against a deleted `src/` directory.
+	results.append(TestResult.new(
+		"the source scan actually read the app's source — it is not reporting an empty directory",
+		scanned > 50,
+		"%d .gd files scanned under res://src" % scanned))
+	results.append(TestResult.new(
+		"nothing under src/ names FieldEditorScreen any more — the old room is retired",
+		hits.is_empty(),
+		"still referenced in: %s" % [hits] if not hits.is_empty() else "no references"))
+
+	# AND THE FILE ITSELF IS GONE, which "nothing references it" is also true of when the file is
+	# sitting there unreferenced — a dead room a later slice would find and wire back up.
+	results.append(TestResult.new(
+		"and the file is gone rather than orphaned",
+		not FileAccess.file_exists("res://src/lab/field_editor_screen.gd"),
+		"res://src/lab/field_editor_screen.gd %s" % [
+			"still exists" if FileAccess.file_exists("res://src/lab/field_editor_screen.gd")
+				else "deleted"]))
+	return results
+
+
+static func _scan_for(dir_path: String, needle: String, hits: Array[String]) -> int:
+	var scanned := 0
+	var dir := DirAccess.open(dir_path)
+	if dir == null:
+		return 0
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		var full := dir_path.path_join(entry)
+		if dir.current_is_dir():
+			scanned += _scan_for(full, needle, hits)
+		elif entry.ends_with(".gd"):
+			scanned += 1
+			if FileAccess.get_file_as_string(full).contains(needle):
+				hits.append(full)
+		entry = dir.get_next()
+	dir.list_dir_end()
+	return scanned
+
+
+# ---------------------------------------------------------------------------
+# 22. The preview is drawn THROUGH `TerrainMesh` — one description, not two
+# ---------------------------------------------------------------------------
+
+## THE MOMENT A BUILDER CAN TYPE A DIMENSION, THIS ROOM IS WHERE A DIVERGENCE WOULD SHOW — while
+## they are sculpting the very thing it would lie about. F5's rule is that the mesh and `height_at`
+## come from ONE description; this is the check that the authoring screen honours it.
+##
+## Asserted against `TerrainMesh.vertices()` recomputed from the SITE'S OWN terrain, and then
+## against `height_at` at a vertex — so a preview drawn from a `PlaneMesh`, from a second grid, or
+## from a stale copy of the description all fail, and only "the same builder over the same terrain"
+## passes.
+static func _the_preview_is_the_terrain() -> Array:
+	var results: Array = []
+	var room := _sloped_room()
+
+	var mesh := room._terrain.mesh as ArrayMesh
+	results.append(TestResult.new(
+		"the ground in the room's world is a real mesh with surfaces on it",
+		mesh != null and mesh.get_surface_count() > 0,
+		"mesh %s, %d surface(s)" % [mesh != null, 0 if mesh == null else mesh.get_surface_count()]))
+	if mesh == null or mesh.get_surface_count() == 0:
+		room.free()
+		return results
+
+	var drawn: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var rebuilt := TerrainMesh.build_mesh(room.site().terrain, room.site().obstacles)
+	var wanted: PackedVector3Array = rebuilt.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var worst := 0.0
+	for i in mini(drawn.size(), wanted.size()):
+		worst = maxf(worst, drawn[i].distance_to(wanted[i]))
+	results.append(TestResult.new(
+		"and every point of it is TerrainMesh's own, built from THIS site's terrain description",
+		drawn.size() == wanted.size() and drawn.size() > 0 and worst < 1.0e-5,
+		"%d drawn points against %d from TerrainMesh, worst %.6f m apart" % [
+			drawn.size(), wanted.size(), worst]))
+
+	# AND THE SURFACE AGREES WITH `height_at`, which is the half that makes the first mean
+	# something: two functions could both be "the terrain" and disagree, and the ring that floats
+	# over a hill nobody drew is exactly what §0's one-description rule forbids.
+	var off := 0
+	var probes := 0
+	var sampled := 0
+	for point in drawn:
+		probes += 1
+		if probes % 37 != 0:
+			continue
+		sampled += 1
+		if absf(point.y - room.site().terrain.height_at(point.x, point.z)) > 1.0e-4:
+			off += 1
+	results.append(TestResult.new(
+		"and the ground it draws is the ground height_at answers over — one description, not two",
+		off == 0 and probes > 100,
+		"%d of %d sampled points off the surface height_at describes" % [off, sampled]))
+
+	# AND IT FOLLOWS AN EDIT. A preview built once at open would pass every line above and still
+	# show the old field the moment a dimension is typed.
+	var before_points: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var before := before_points.size()
+	room.set_site_width_m(60.0)
+	var after_mesh := room._terrain.mesh as ArrayMesh
+	var after_points: PackedVector3Array = after_mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var after := after_points.size()
+	results.append(TestResult.new(
+		"and typing a new width redraws it — the preview is not built once at open",
+		after != before
+			and absf(room.site().extent().x - 60.0) < 1.0e-6,
+		"%d points at %.0f m wide, %d points at %.0f m" % [
+			before, SLOPE_SITE_M, after, room.site().extent().x]))
+
+	room.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 23. The guesses that now have fields beside them (§0.1)
+# ---------------------------------------------------------------------------
+
+## THREE SHIPPED GUESSES, THREE CONTROLS. `Wind.DEFAULT_GUST_TAU_S` was labelled a guess in F7 and
+## `Site.DEFAULT_WIDTH_M` / `DEFAULT_LENGTH_M` were chosen numbers F5 deferred; the constraint says
+## a guess ships with an editable field BESIDE IT, and this room is the first authoring surface the
+## field has ever had.
+static func _the_editable_fields() -> Array:
+	var results: Array = []
+	var room := _room()
+
+	results.append(TestResult.new(
+		"gust_tau_s is reachable as an editable field, at the shipped default",
+		room.gust_tau_field != null
+			and is_equal_approx(room.gust_tau_s, Wind.DEFAULT_GUST_TAU_S)
+			and is_equal_approx(room.gust_tau_field.value, Wind.DEFAULT_GUST_TAU_S),
+		"room.gust_tau_s = %.4f, field.value = %.4f, Wind.DEFAULT_GUST_TAU_S = %.4f" % [
+			room.gust_tau_s,
+			-1.0 if room.gust_tau_field == null else room.gust_tau_field.value,
+			Wind.DEFAULT_GUST_TAU_S]))
+
+	room.set_field_gust_tau_s(4.2)
+	results.append(TestResult.new(
+		"editing the field changes gust_tau_s",
+		is_equal_approx(room.gust_tau_s, 4.2),
+		"room.gust_tau_s = %.4f after set_field_gust_tau_s(4.2)" % room.gust_tau_s))
+
+	# The LIVE control's text, not a grep: a source-wide search for "guess" would also match this
+	# file's own comments, which is a check that cannot fail against the stated mutation.
+	var label_text: String = "" if room.gust_tau_label == null else room.gust_tau_label.text
+	results.append(TestResult.new(
+		"the shipped gust settle time is labelled a GUESS, not measured, in the UI text",
+		label_text.to_lower().contains("guess"),
+		"gust label reads: \"%s\"" % label_text))
+
+	# THE SITE'S DIMENSIONS, which had no control at all until now. Driven through the live
+	# SpinBox's own signal, so a field built and wired to nothing fails here.
+	results.append(TestResult.new(
+		"the field's width and length are editable, and open at the shipped 120 m guess",
+		room.width_field != null and room.length_field != null
+			and is_equal_approx(room.width_field.value, Site.DEFAULT_WIDTH_M)
+			and is_equal_approx(room.length_field.value, Site.DEFAULT_LENGTH_M),
+		"width %.1f, length %.1f against Site's %.1f x %.1f" % [
+			-1.0 if room.width_field == null else room.width_field.value,
+			-1.0 if room.length_field == null else room.length_field.value,
+			Site.DEFAULT_WIDTH_M, Site.DEFAULT_LENGTH_M]))
+
+	room.width_field.value_changed.emit(80.0)
+	room.length_field.value_changed.emit(45.0)
+	results.append(TestResult.new(
+		"and typing them resizes the site the room is looking at",
+		absf(room.site().extent().x - 80.0) < 1.0e-6
+			and absf(room.site().extent().y - 45.0) < 1.0e-6,
+		"the field is %.1f x %.1f m" % [room.site().extent().x, room.site().extent().y]))
+
+	# ON DISK, like every other edit here — there is no exit to save on.
+	var on_disk := SiteLibrary.load_from(ROOM_SITES_PATH).site(room.site().site_id)
+	results.append(TestResult.new(
+		"and the new size is on disk immediately",
+		on_disk != null and absf(on_disk.extent().x - 80.0) < 1.0e-6
+			and absf(on_disk.extent().y - 45.0) < 1.0e-6,
+		"nowhere on disk" if on_disk == null else "%.1f x %.1f m on disk" % [
+			on_disk.extent().x, on_disk.extent().y]))
+
+	room.free()
+	return results

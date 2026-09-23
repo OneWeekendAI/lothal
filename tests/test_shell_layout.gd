@@ -145,6 +145,11 @@ static func run(tree: SceneTree) -> Array:
 		results.append(_every_row_a_panel_declares_is_drawn_inside_it(shell, str(title)))
 	results.append(_the_course_panels_warnings_are_drawn_inside_it(shell))
 	results.append(_the_field_rooms_column_stays_out_of_the_bottom_keepout(shell))
+	# F11 — the three sliders, and the rail's typed fields. One check each, per the rule above.
+	for which in ["Height", "Heading", "Radius"]:
+		results.append(_a_course_panel_slider_is_drawn_inside_it(shell, which))
+	results.append(_the_rails_own_controls_are_drawn_inside_it(shell))
+	results.append(_the_rail_itself_stays_out_of_the_bottom_keepout(shell))
 
 	# -----------------------------------------------------------------------
 	# QC4 — the inspector gates on selection, and the finder is wired to the build.
@@ -1613,3 +1618,121 @@ static func _the_field_rooms_column_stays_out_of_the_bottom_keepout(
 		measured == FieldSystem.PANEL_TITLES.size() and lowest <= floor_y,
 		"%d panels, lowest edge y=%.0f (%s) against a floor of %.0f" % [
 			measured, lowest, offender if offender != "" else "—", floor_y])
+
+
+## F11 — THE THREE SLIDERS, AND THE NUMBERS BESIDE THEM, ARE DRAWN INSIDE THE COURSE PANEL.
+##
+## The row check above reads `SpecPanel.spec_rows`, which is the panel's declared GRID. The
+## sliders are footer content, so not one of the five Field checks above looks at them — and F10's
+## finding was precisely that: a panel can fit the window, not overlap anything, keep the viewport
+## its width, and still clip the thing §5.2 mandates. The warning list got a check of its own for
+## that reason and the sliders get three.
+##
+## THE VALUE LABEL IS ASSERTED AS WELL AS THE SLIDER, and the label is the half that goes first:
+## the slider is a wide expanding control that a narrow column squashes, while the number beside it
+## is the one that falls off the right-hand edge or wraps to a second line and pushes the warnings
+## down. `encloses` on an empty rect is true of everything, so the control's own size is asserted.
+static func _a_course_panel_slider_is_drawn_inside_it(
+		shell: GlassShell, which: String) -> TestResult:
+	var panel := shell.field_room().panel("Course") as FieldSystem.CoursePanel
+	var slider: HSlider = null
+	var value: Label = null
+	if panel != null:
+		match which:
+			"Height":
+				slider = panel.height_slider
+				value = panel.height_value
+			"Heading":
+				slider = panel.heading_slider
+				value = panel.heading_value
+			"Radius":
+				slider = panel.radius_slider
+				value = panel.radius_value
+	# GUARDED ON BOTH CONTROLS EXISTING before any rect is compared — a missing slider and a
+	# clipped one would otherwise both report "nothing outside the panel".
+	if slider == null or value == null:
+		return TestResult.new(
+			"the Field room's Course panel carries a %s slider and its readout" % which.to_lower(),
+			false, "slider %s · value label %s" % [slider != null, value != null])
+
+	var panel_rect := panel.get_global_rect()
+	var slider_rect := slider.get_global_rect()
+	var value_rect := value.get_global_rect()
+	var reads := value.text.strip_edges()
+	return TestResult.new(
+		"the Field room's %s slider and the number beside it are drawn inside the Course panel"
+			% which.to_lower(),
+		panel_rect.encloses(slider_rect) and panel_rect.encloses(value_rect)
+			and slider_rect.size.x > 40.0 and value_rect.size.y > 0.0 and reads != "",
+		"slider %.0f..%.0f x, value \"%s\" at %.0f..%.0f x / %.0f..%.0f y, panel %.0f..%.0f x / %.0f..%.0f y" % [
+			slider_rect.position.x, slider_rect.end.x, reads,
+			value_rect.position.x, value_rect.end.x, value_rect.position.y, value_rect.end.y,
+			panel_rect.position.x, panel_rect.end.x, panel_rect.position.y, panel_rect.end.y])
+
+
+## F11 — AND THE RAIL'S OWN CONTROLS ARE DRAWN INSIDE THE RAIL.
+##
+## The rail took the five typed fields, the course name, and the four gate buttons this slice added
+## — several of them because the Course panel had no room. That trade is only honest if the rail
+## does have the room, and nothing measured it before: every Field check in this file is about the
+## panel column on the other side of the window.
+##
+## Walked off the LIVE tree rather than from a list of members, so a control added to the rail
+## later is covered without anybody remembering to name it here.
+static func _the_rails_own_controls_are_drawn_inside_it(shell: GlassShell) -> TestResult:
+	var room := shell.field_room()
+	var rail: Control = room.site_list.get_parent().get_parent() as Control
+	if rail == null:
+		return TestResult.new(
+			"the Field room has a rail to measure", false, "no rail found above the Sites list")
+
+	var rail_rect := rail.get_global_rect()
+	var column := room.site_list.get_parent() as Control
+	var outside: Array = []
+	var measured := 0
+	for child in column.get_children():
+		var control := child as Control
+		if control == null or not control.visible:
+			continue
+		measured += 1
+		var rect := control.get_global_rect()
+		if not rail_rect.encloses(rect):
+			outside.append("%s (%.0f..%.0f of %.0f..%.0f)" % [
+				control.name, rect.position.y, rect.end.y,
+				rail_rect.position.y, rail_rect.end.y])
+	# GUARDED ON HAVING MEASURED THE CONTROLS THIS SLICE PUT THERE. Two lists, two titles, a name
+	# field, a button row, a GATE title and row, a THE FIELD title and five field rows, and a guess
+	# label — an empty column would satisfy "nothing is outside it" with nothing in it.
+	return TestResult.new(
+		"every control in the Field room's rail is drawn inside the rail, not past its bottom edge",
+		measured >= 14 and outside.is_empty(),
+		"%d controls measured, %d outside: %s" % [measured, outside.size(), outside])
+
+
+## F11 — AND THE RAIL ITSELF STAYS OUT OF THE DOCK'S STRIP.
+##
+## **THIS CHECK EXISTS BECAUSE THE SCREENSHOT FOUND WHAT THE CHECK ABOVE COULD NOT.** Every control
+## in the rail was drawn inside the rail, and the rail had grown 46 px past the bottom of the room
+## to hold them — an `HBoxContainer` expands to its combined minimum WHATEVER its offsets say, the
+## fact this file's header names twice already, so `_field.offset_bottom = -BOTTOM_KEEPOUT` did not
+## bound it. Measured at 1280x720: the "Gust settle" field sat at y=655..677 against a floor of
+## 644, and at `project.godot`'s 1024 px minimum the dock is clamped to the full width and would
+## have been drawn over it.
+##
+## Against the WINDOW's keepout rather than against the room, for `_the_field_rooms_column_stays_
+## out_of_the_bottom_keepout`'s reason: the room's own rect is the thing that turned out not to
+## bound its contents, so a check measured against it would have passed the defect it is for.
+static func _the_rail_itself_stays_out_of_the_bottom_keepout(shell: GlassShell) -> TestResult:
+	var room := shell.field_room()
+	var rail: Control = room.site_list.get_parent().get_parent() as Control
+	if rail == null:
+		return TestResult.new(
+			"the Field room has a rail to measure against the keepout", false, "no rail found")
+	var floor_y: float = WINDOW.y - GlassShell.BOTTOM_KEEPOUT
+	var rect := rail.get_global_rect()
+	# A ZERO-HEIGHT RAIL IS ABOVE EVERY FLOOR, so its size is asserted too.
+	return TestResult.new(
+		"the Field room's rail stays above the strip the dock stands in, contents and all",
+		rect.end.y <= floor_y and rect.size.y > 200.0 and rect.size.x > 100.0,
+		"the rail is %.0f..%.0f y (%.0f x %.0f px) against a floor of %.0f" % [
+			rect.position.y, rect.end.y, rect.size.x, rect.size.y, floor_y])

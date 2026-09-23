@@ -43,8 +43,6 @@ var esc_bench: EscBenchScreen:
 	get: return rooms.esc_bench
 var frame_bench: FrameBenchScreen:
 	get: return rooms.frame_bench
-var field_editor: FieldEditorScreen:
-	get: return rooms.field_editor
 var studio: StudioScreen:
 	get: return rooms.studio
 var course_library: CourseLibrary:
@@ -57,7 +55,6 @@ var _bench_button: Button
 var _pack_bench_button: Button
 var _esc_bench_button: Button
 var _frame_bench_button: Button
-var _field_button: Button
 var _sim_button: Button
 var _studio_button: Button
 
@@ -94,7 +91,6 @@ func _init() -> void:
 	_pack_bench_button = _add_tab(bar, "Pack", show_battery_bench)
 	_esc_bench_button = _add_tab(bar, "ESC", show_esc_bench)
 	_frame_bench_button = _add_tab(bar, "Frame", show_frame_bench)
-	_field_button = _add_tab(bar, "Field", show_field_editor)
 	_sim_button = _add_tab(bar, "Sim", show_sim)
 	# Last, and after Sim deliberately: the tab order is the order the work happens in. You build
 	# in the garage, you fly in the field, and then you look at what the flight left behind.
@@ -217,10 +213,6 @@ func show_frame_bench() -> void:
 	rooms.show_frame_bench()
 
 
-func show_field_editor() -> void:
-	rooms.show_field_editor()
-
-
 func show_studio() -> void:
 	rooms.show_studio()
 
@@ -235,6 +227,5 @@ func _refresh_tabs() -> void:
 	_pack_bench_button.button_pressed = rooms.battery_bench != null
 	_esc_bench_button.button_pressed = rooms.esc_bench != null
 	_frame_bench_button.button_pressed = rooms.frame_bench != null
-	_field_button.button_pressed = rooms.field_editor != null
 	_sim_button.button_pressed = rooms.sim != null
 	_studio_button.button_pressed = rooms.studio != null

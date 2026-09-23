@@ -3,7 +3,7 @@ extends Control
 ## The rooms, and the rules for entering and leaving them (labs-and-sim.md §1).
 ##
 ## This holds everything that used to live in `AppShell` except the tab bar itself: Lab, the four
-## benches, the field editor, Studio, Sim, and the two stores every room touches. A shell decides
+## benches, Studio, Sim, and the two stores every room touches. A shell decides
 ## how the builder ASKS for a room — eight tabs, or a dropdown and a Lab/Sim toggle — and this
 ## decides what actually happens when they do.
 ##
@@ -57,12 +57,14 @@ var esc_bench: EscBenchScreen = null
 ## at four different throttles out of a real pack, and a step response left running behind Lab would
 ## be flattening a battery to answer a question nobody was still asking.
 var frame_bench: FrameBenchScreen = null
-## The field editor — where the course is laid out — or null when it is not the room you are in.
-## Freed on the way out like the others, but for a different reason: it holds no powertrain and
-## costs no charge (laying out gates turns no motors, labs-and-sim.md §5). What it does hold is a
-## SubViewport rendering a 3D world, and Lab's stated virtue is that it is quiet and cheap while
-## you work.
-var field_editor: FieldEditorScreen = null
+## THERE IS NO FIELD EDITOR HERE ANY MORE (F11), and its absence is the slice.
+##
+## Laying out a course was a ROOM — a door off the Rooms menu, a screen of its own, a second
+## viewport, its own copy of "which course is open". F10 made the field a SYSTEM on the dock, and
+## F11 moved the authoring into it: `FieldSystem` is built once by `GlassShell` and shown with its
+## icon, so there is nothing here to open and nothing to free. What used to be this room's one
+## unusual property — that it costs no charge, because nothing in it turns — is unchanged and is
+## now a property of a system rather than of a door.
 ## Studio — the flights already flown — or null when it is not the room you are in. Freed on the
 ## way out like the others, and for the field editor's reason rather than the benches': it turns
 ## no motors and costs no charge. What it holds is a list of headers read off disk, which goes
@@ -306,33 +308,6 @@ func show_frame_bench() -> void:
 	_enter_room(frame_bench)
 
 
-## Into the field editor, with the build currently on Lab's rails. The build is here for exactly one
-## reason — a ring smaller than the aircraft that has to fly through it is impossible, and that is a
-## comparison of two known dimensions — and this room changes nothing about it.
-##
-## Notably it does NOT call _unplug_for(). A charger running while you lay out gates is fine: this
-## room draws no current, so there is nothing for it to overwrite. That is labs-and-sim.md §5 read
-## literally rather than by analogy with the benches.
-func show_field_editor() -> void:
-	_close_rooms()
-	# The SHARED site library, not one loaded fresh here, for course_library's reason: the editor
-	# writes the elevation and the garage reads it, and two copies would be two opinions.
-	field_editor = FieldEditorScreen.new(
-		course_library, lab.current_build(), CourseLibrary.SAVE_PATH, site_library,
-		conditions_library)
-	# Editing the field changes what the aircraft next door CAN DO, so Lab's readout has to follow
-	# it. Without this the builder types 3500 m, walks back to the garage and reads a
-	# thrust-to-weight for a place they are not — which is the exact stale reading this feature
-	# exists to remove, reintroduced one room over.
-	field_editor.course_changed.connect(func() -> void:
-		lab.set_air(air_of_selected_course())
-		# The field editor is also where conditions are switched (F7/F8): a builder who picks a
-		# gustier or windier set and walks back to the garage must see the SAME set's numbers, not
-		# whatever was selected when Lab opened — check 9's live-update rule, one door over.
-		lab.set_conditions(conditions_library.selected()))
-	_enter_room(field_editor)
-
-
 ## Into Studio, to look at flights already flown (LTHL-54).
 ##
 ## The library is constructed HERE and fresh on every entry, rather than held as a field alongside
@@ -441,13 +416,6 @@ func _close_rooms() -> void:
 		_host.remove_child(frame_bench)
 		frame_bench.free()
 		frame_bench = null
-	# No persist_pack_charge() here, and its absence is the assertion: the field editor cannot have
-	# drained anything, because nothing in it turns. A write-back "for symmetry" would be inventing
-	# a consequence, which is precisely what §5 does not permit.
-	if field_editor != null:
-		_host.remove_child(field_editor)
-		field_editor.free()
-		field_editor = null
 	# No persist_pack_charge() here either, and for the same reason: Studio reads files. Nothing
 	# in it turns, draws current or holds a Powertrain, so a write-back would be inventing a
 	# consequence out of having opened a room.

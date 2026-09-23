@@ -239,7 +239,16 @@ func _refresh_stats() -> void:
 
 	if build.can_hover():
 		_stat_values["hover"].text = "%.1f %%" % (build.hover_throttle() * 100.0)
-		_stat_values["time"].text = "%.1f min" % build.flight_time_min()
+		# THE CONDITIONS THE FIGURE WAS COMPUTED UNDER, named beside it (F8, design §4.3/§3.3).
+		# `flight_time_min()` picks up the flown Build's own wind, so since F8 the NUMBER here has
+		# been right and only the LABEL was missing — which is exactly the defect F8 exists to
+		# remove ("a figure quoted without the conditions it was computed under"), in one file
+		# outside F8's own scope. `part_details.gd` is the sibling that already says it this way.
+		#
+		# No wind argument, for that file's reason: the function defaults to the Build's own
+		# `field_wind_mps`, so the number and the label beside it cannot come apart.
+		_stat_values["time"].text = "%.1f min (%s)" % [
+			build.flight_time_min(), build.field_conditions_name]
 	else:
 		_stat_values["hover"].text = "won't hover"
 		_stat_values["time"].text = "—"

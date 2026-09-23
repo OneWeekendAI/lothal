@@ -578,52 +578,58 @@ static func _a_library_with_no_sites() -> Array:
 	))
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(EMPTY_COURSES_PATH))
-	var editor := FieldEditorScreen.new(
-		CourseLibrary.load_from(EMPTY_COURSES_PATH), ReferenceBuild.build(),
-		EMPTY_COURSES_PATH, empty, ConditionsLibrary.with_default())
+	# RE-POINTED IN F11 FROM `FieldEditorScreen` TO `FieldSystem`, not weakened. The old field
+	# editor is retired and the authoring lives in the Field room; the dangerous state and every
+	# claim about it are the same, asked of the room that now has to survive it.
+	var room := FieldSystem.new(
+		empty, CourseLibrary.load_from(EMPTY_COURSES_PATH), ConditionsLibrary.with_default(),
+		ReferenceBuild.build(), EMPTY_COURSES_PATH)
 	results.append(TestResult.new(
-		"[F4] the Field editor really is in the dangerous state — its site() answers null",
-		editor.site() == null,
-		"site() -> %s" % ["null" if editor.site() == null else editor.site().site_id]
+		"[F4] the Field room really is in the dangerous state — its site() answers null",
+		room.site() == null,
+		"site() -> %s" % ["null" if room.site() == null else room.site().site_id]
 	))
 
 	results.append(TestResult.new(
 		"[F4] and the ground it reads there is null — flat at zero, not a dereference",
-		editor.site_terrain() == null,
+		room.site_terrain() == null,
 		"site_terrain() -> %s" % [
-			"null" if editor.site_terrain() == null else String(editor.site_terrain().shape)]
+			"null" if room.site_terrain() == null else String(room.site_terrain().shape)]
 	))
 
 	# THE RENDER PATH FOR REAL, and it has to be, for a reason that took a green mutation to find.
 	# A bad dereference aborts THE FUNCTION IT IS IN and hands the caller the return type's default
 	# — measured. So `site().terrain` inside a helper aborts the helper, returns null, and is
-	# indistinguishable from the guard; the same dereference written INLINE in `_render_panel()`
-	# aborts `_render_panel()`, and every line after it silently does not happen. That is the actual
-	# defect, and the only way to see it is to look at something the panel does after this line.
-	# So: put the marker somewhere impossible, re-render, and assert it ARRIVED.
+	# indistinguishable from the guard; the same dereference written INLINE in the refresh aborts
+	# THE REFRESH, and every line after it silently does not happen. That is the actual defect, and
+	# the only way to see it is to look at something the refresh does AFTER that line.
+	#
+	# THE PROBE MOVED WITH THE ROOM. The old screen's start marker is gone; what stands at
+	# `start_position()` here is the aircraft's own footprint (F10, §11 Q1) — the same derived
+	# fact in the same place, placed by the same refresh, after the terrain is read.
 	var placed := false
-	if editor._start_marker != null:
-		editor._start_marker.position = NOWHERE
-		editor.select_gate(0)
-		placed = _same(editor._start_marker.position, PRE_F4_START)
+	if room.silhouette() != null:
+		room.silhouette().position = NOWHERE
+		room.select_gate(0)
+		placed = _same(room.silhouette().position, PRE_F4_START)
 	results.append(TestResult.new(
-		"[F4] _render_panel() runs to the end and the start marker arrives, with no site at all",
-		editor._start_marker != null and placed,
-		"marker %s -> %v (pinned %v)" % [
-			"absent" if editor._start_marker == null else "moved to %v" % NOWHERE,
-			Vector3.ZERO if editor._start_marker == null else editor._start_marker.position,
+		"[F4] the refresh runs to the end and the start footprint arrives, with no site at all",
+		room.silhouette() != null and placed,
+		"footprint %s -> %v (pinned %v)" % [
+			"absent" if room.silhouette() == null else "moved to %v" % NOWHERE,
+			Vector3.ZERO if room.silhouette() == null else room.silhouette().position,
 			PRE_F4_START]
 	))
 
-	# The other caller on the same panel, which `_terrain_of` already made safe. Asserted rather
+	# The other caller on the same path, which `_terrain_of` already made safe. Asserted rather
 	# than assumed, because "already safe" is a claim about a null reaching a different function.
 	results.append(TestResult.new(
 		"[F4] and the warnings list survives the same state — evaluate() takes a null site",
-		editor.warnings() != null,
-		"%d warning(s) with no site to speak of" % editor.warnings().size()
+		room.warnings() != null,
+		"%d warning(s) with no site to speak of" % room.warnings().size()
 	))
 
-	editor.free()
+	room.free()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(EMPTY_SITES_PATH))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(EMPTY_COURSES_PATH))
 	return results

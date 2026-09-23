@@ -34,6 +34,24 @@ static func run() -> Array:
 		"emitted %d build(s), %.0f g" % [emitted.size(), panel.build.all_up_weight_g() if panel.build else -1.0]
 	))
 
+	# F11 — THE FLIGHT TIME NAMES THE CONDITIONS IT WAS COMPUTED UNDER (F8, design §4.3/§3.3).
+	#
+	# `part_details.gd` has said this since F8 and this panel did not: `flight_time_min()` picks up
+	# the flown Build's own wind, so the NUMBER here was right and the LABEL was missing — "a
+	# figure quoted without the conditions it was computed under", in the one file outside F8's
+	# scope. The name is DISTINCTIVE and is set on the panel's own Build, so a row that quoted a
+	# constant, or the standard name, or nothing, all read differently from a row that quoted the
+	# conditions the figure actually came from.
+	panel.build.field_conditions_name = "A Very Distinctive Conditions Name"
+	panel._refresh_stats()
+	var time_row: String = panel._stat_values["time"].text
+	results.append(TestResult.new(
+		"the flight time this panel quotes names the conditions it was computed under",
+		panel.build.can_hover()
+			and time_row.contains("A Very Distinctive Conditions Name")
+			and time_row.contains("%.1f min" % panel.build.flight_time_min()),
+		"the Flight time row reads \"%s\" (hovers %s)" % [time_row, panel.build.can_hover()]))
+
 	results.append(TestResult.new(
 		"every dropdown is populated from the catalog",
 		panel._selectors["frame"].item_count == catalog.list_category("frame").size()

@@ -554,36 +554,39 @@ static func _snapshot_user_dir(path: String = "user://") -> Dictionary:
 ## guess in the UI text (Ruling 50). MUTATION THIS CATCHES: the label calls it measured.
 static func _gust_tau_field() -> Array:
 	var results: Array = []
-	var editor := FieldEditorScreen.new(
-		CourseLibrary.with_default(), ReferenceBuild.build(), "user://test_wind_courses.json")
+	# RE-POINTED IN F11: the field editor is retired and the gust field moved into the Field room
+	# with the rest of the authoring. Same control, same claim, same wording.
+	var room := FieldSystem.new(
+		SiteLibrary.with_default(), CourseLibrary.with_default(),
+		ConditionsLibrary.with_default(), ReferenceBuild.build(),
+		"user://test_wind_courses.json")
 
 	results.append(TestResult.new(
 		"gust_tau_s is reachable as an editable field, at the shipped default",
-		is_equal_approx(editor.gust_tau_s, Wind.DEFAULT_GUST_TAU_S)
-			and is_equal_approx(editor._gust_tau_field.value, Wind.DEFAULT_GUST_TAU_S),
-		"editor.gust_tau_s = %.4f, field.value = %.4f, Wind.DEFAULT_GUST_TAU_S = %.4f" % [
-			editor.gust_tau_s, editor._gust_tau_field.value, Wind.DEFAULT_GUST_TAU_S]))
+		is_equal_approx(room.gust_tau_s, Wind.DEFAULT_GUST_TAU_S)
+			and is_equal_approx(room.gust_tau_field.value, Wind.DEFAULT_GUST_TAU_S),
+		"room.gust_tau_s = %.4f, field.value = %.4f, Wind.DEFAULT_GUST_TAU_S = %.4f" % [
+			room.gust_tau_s, room.gust_tau_field.value, Wind.DEFAULT_GUST_TAU_S]))
 
 	# The field actually takes an edit — driven through set_field_gust_tau_s(), the same method the
-	# SpinBox's on_change callback calls (test_field_editor.gd's own pattern for the sibling
-	# elevation/temperature fields: a Range's value_changed signal does not reliably fire on a
-	# control that was never added to a SceneTree, so this repo's tests drive the method, not the
-	# live signal).
-	editor.set_field_gust_tau_s(4.2)
+	# SpinBox's on_change callback calls (a Range's value_changed signal does not reliably fire on
+	# a control that was never added to a SceneTree, so this repo's tests drive the method).
+	room.set_field_gust_tau_s(4.2)
 	results.append(TestResult.new(
 		"editing the field changes gust_tau_s",
-		is_equal_approx(editor.gust_tau_s, 4.2),
-		"editor.gust_tau_s = %.4f after set_field_gust_tau_s(4.2)" % editor.gust_tau_s))
+		is_equal_approx(room.gust_tau_s, 4.2),
+		"room.gust_tau_s = %.4f after set_field_gust_tau_s(4.2)" % room.gust_tau_s))
 
 	# The label text itself, read off the LIVE control rather than grepped from the source file — a
 	# source-wide grep for "guess" would also match this very file's own doc comments (this class's
 	# header uses the word too), which is a check that cannot fail against the stated mutation. The
 	# live Label's text is exactly what a builder reads, and nothing else.
-	var label_text: String = editor._gust_tau_label.text
+	var label_text: String = room.gust_tau_label.text
 	results.append(TestResult.new(
 		"the shipped gust settle time is labelled a GUESS, not measured, in the UI text",
 		label_text.to_lower().contains("guess"),
 		"gust label reads: \"%s\"" % label_text))
+	room.free()
 	return results
 
 

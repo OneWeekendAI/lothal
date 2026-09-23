@@ -180,7 +180,7 @@ func adopt_selected_course() -> void:
 
 
 ## The site under the open course. A course pointing at a site that is not there falls back to the
-## selected one, on FieldEditorScreen.site()'s rule: a damaged file lands somewhere flyable and the
+## selected one, on the Field room's `site()` rule: a damaged file lands somewhere flyable and the
 ## room still opens. `terrain` and `obstacles` both read off THIS, never off two separate lookups,
 ## so they cannot name two different sites on the same frame.
 func _course_site() -> Site:
@@ -211,7 +211,7 @@ func _course_obstacles() -> Array[Obstacle]:
 ##
 ## `GROUND_SIZE_M` used to be an independent 400 m constant; it is not one any more (Ruling 34) —
 ## it was only ever the grid material's tiling size (`GroundGrid.build_material`'s `uv1_scale`),
-## so it now follows the terrain's own extent, the way `field_editor_screen.gd` already ties its
+## so it now follows the terrain's own extent, the way the field room already ties its
 ## ground tiling to the layout it is drawing.
 func _rebuild_ground() -> void:
 	ground_mesh.mesh = TerrainMesh.build_mesh(terrain, obstacles)

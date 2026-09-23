@@ -893,8 +893,12 @@ func workbench() -> FrameWorkbench:
 ## precisely so the garage and the field cannot come to disagree about where the builder is, and a
 ## room that loaded its own would be a second opinion that saves over the first.
 func _build_field() -> void:
+	# THE BUILD IS HANDED OVER for exactly one reason — a ring smaller than the aircraft that has
+	# to fly through it is impossible, and that is a comparison of two known dimensions. It is also
+	# what the footprint on the ground is drawn at. This room changes nothing about it.
 	_field = FieldSystem.new(
-		rooms.site_library, rooms.course_library, rooms.conditions_library)
+		rooms.site_library, rooms.course_library, rooms.conditions_library,
+		rooms.lab.current_build())
 	_field.name = "Field"
 	_field.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_field.anchor_right = 1.0
@@ -908,6 +912,11 @@ func _build_field() -> void:
 	_field.offset_bottom = -BOTTOM_KEEPOUT
 	_field.visible = false
 	_field.selection_changed.connect(_on_field_selection_changed)
+	# AND EVERY EDIT MOVES THE GARAGE (F11). Editing the field changes what the aircraft next door
+	# CAN DO: without this the builder types 3500 m, walks back to the garage and reads a
+	# thrust-to-weight for a place they are not. The old field editor carried this wiring on
+	# `RoomHost`; the authoring moved, so the wiring moved with it rather than being left behind.
+	_field.course_changed.connect(_on_field_course_changed)
 	add_child(_field)
 
 
@@ -966,6 +975,16 @@ func _on_conditions_chosen(index: int) -> void:
 ## This is the §3.1 rule the whole plan is built on, wired: the air the garage quotes is the air of
 ## the place the selected course is laid out in. Asked of `RoomHost`, which owns that answer, rather
 ## than composed here — two spellings of "where are we" is how the two come to disagree.
+## An edit in the Field room. The air AND the weather, because this room switches both: a builder
+## who picks a hotter day and walks back must see that day's numbers, not the ones Lab opened with.
+func _on_field_course_changed() -> void:
+	if lab != null:
+		lab.set_air(rooms.air_of_selected_course())
+		lab.set_conditions(rooms.conditions_library.selected())
+	_fill_conditions_picker()
+	_refresh_status()
+
+
 func _on_field_selection_changed() -> void:
 	if lab != null:
 		lab.set_air(rooms.air_of_selected_course())
@@ -2065,7 +2084,6 @@ func _open_room(room_id: String) -> void:
 		"battery_bench": rooms.show_battery_bench()
 		"esc_bench": rooms.show_esc_bench()
 		"frame_bench": rooms.show_frame_bench()
-		"field_editor": rooms.show_field_editor()
 		"studio": rooms.show_studio()
 		_: push_error("no such room: %s" % room_id)
 
