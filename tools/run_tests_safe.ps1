@@ -25,6 +25,15 @@
 # same class of failure shows up on Windows, the fix is almost certainly the same one: move the
 # scratch directory to be a subdirectory of $env:USERPROFILE instead of $env:TEMP.
 
+
+# RULING 71 - THE WATCHDOG GAP, NOT CLOSED HERE. tools/run_tests_safe.sh now bounds its run with a
+# wall-clock watchdog and, on expiry, terminates ONLY the child pid it started and exits non-zero,
+# because a suite whose run() errors inside _init() leaves the SceneTree alive and the process
+# idling for ever (one was found at 12h19m elapsed on 36s of CPU). This PowerShell path has NO such
+# bound and still hangs in that case. It is not implemented here because this script has NEVER been
+# run against a real Windows Godot install - adding an unverified watchdog to an unverified script
+# would just be a second guess stacked on the first. Stated as a known gap, not claimed as fixed.
+
 param(
 	[string]$Suite = ""
 )

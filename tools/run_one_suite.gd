@@ -20,7 +20,86 @@ func _init() -> void:
 		return
 
 	var script: Script = load(_path_of(suite_name))
-	var results: Array = script.run()
+
+	# RULING 71. REFUSE A SUITE THIS RUNNER CANNOT CALL, INSTEAD OF HANGING ON IT.
+	#
+	# `TestShellLayout.run(tree: SceneTree)` (tests/test_shell_layout.gd) takes an argument — it
+	# builds a shell in a SubViewport and awaits `process_frame`, because a container has no size
+	# until one has been processed. The call below passes none. That arity mismatch throws
+	# `Invalid call to function 'run' in base 'GDScript'. Expected 1 argument(s).` from INSIDE
+	# `_init()`, which aborts `_init()` on the spot — ABOVE the Ruling 30 and Ruling 27 guards
+	# further down this file, so neither of them can catch it — the SceneTree never reaches
+	# `quit()`, and the process then idles for ever. Three orphaned Godot processes on the Field
+	# room plan came from that, one found at 12h19m elapsed on 36s of CPU, and
+	# `tools/run_tests_safe.sh --suite TestShellLayout` hung 100% of the time because it is the
+	# obvious spelling for a suite that has its own runner.
+	#
+	# DETECTED GENERALLY, NOT BY NAME: `Script.get_script_method_list()` carries each method's
+	# `args` and `default_args`, so the number of arguments `run()` REQUIRES is readable at
+	# runtime and no suite is special-cased here. Verified on this repo 2026-09-24:
+	# `TestShellLayout`'s entry reads `args` = one `SceneTree` named `tree`, `default_args` = [].
+	#
+	# COROUTINE-NESS IS NOT DETECTABLE HERE. Measured three times (F12; F12 review; F12 fix round 1,
+	# all 2026-09-24): a zero-argument coroutine's method-list entry is BYTE-IDENTICAL to a plain
+	# function's — `flags=33 args=[] default_args=[]`, the same 33 (NORMAL|STATIC) that
+	# `TestShellLayout.run` carries — so no amount of reading the method list separates them.
+	# It is caught AFTER the call instead; see `_call_run()` and the guard below it.
+	var required_args := _required_arg_count(script, "run")
+	if required_args < 0:
+		print("[REFUSED] suite \"%s\" has no static run() this runner can call" % suite_name)
+		quit(2)
+		return
+	if required_args > 0:
+		print("[REFUSED] suite \"%s\" declares run() with %d required argument(s); this runner calls run() with none." % [suite_name, required_args])
+		print("Calling it anyway throws a SCRIPT ERROR inside _init(), which aborts before quit() and hangs the process for ever (Ruling 71).")
+		if suite_name == "TestShellLayout":
+			print("Run it with its own runner instead:")
+			print("    HOME=<scratch> godot --headless --script res://tools/run_layout_suite.gd")
+			print("  or: tools/run_tests_safe.sh --layout")
+		else:
+			print("A suite that needs arguments needs its own runner — see tools/run_layout_suite.gd for the pattern.")
+		quit(2)
+		return
+
+	# THE CALL GOES THROUGH A HELPER, AND THAT IS THE WHOLE FIX. Ruling 71, round 2.
+	#
+	# This used to read `var results: Array = script.run()`, inline, right here. MEASURED 2026-09-24
+	# against a throwaway zero-argument coroutine suite (`tools/_probe_coro_suite.gd`, deleted after
+	# the trip), calling it by exactly this path:
+	#
+	#     SCRIPT ERROR: Trying to call an async function without "await".
+	#         [0] _call_it   [1] _init
+	#
+	# **The CALL aborts. It does not return anything to inspect.** The probe recorded
+	# `typeof=0` (nil), `is_Array=false`, and a sentinel set immediately after the call still
+	# `false` — so execution never got past `script.run()` itself. That matters because the F12
+	# review predicted the opposite: that the call would RETURN a `GDScriptFunctionState`
+	# (`typeof=24`) and that a typed `: Array` assignment would then throw
+	# `Trying to assign value of type 'Object'…`. On Godot 4.7.1, by this path, it does not get that
+	# far — 4.7 refuses the call outright. **The `: Array` annotation was never the thing that made
+	# it fatal**, so merely relaxing the annotation to `Variant` would NOT have closed this hole.
+	#
+	# What DOES close it is where the call happens. A `SCRIPT ERROR` aborts the function it is IN
+	# and the caller resumes with that function's return-type default — the property `tests/
+	# real_files.gd` is built on, and the same one that makes the arity error above fatal when it is
+	# raised directly inside `_init()`. So the call is made inside `_call_run()`: the abort kills the
+	# HELPER, `_init()` survives it, gets `null` back, and can refuse LOUDLY instead of idling for
+	# ever. The probe confirmed `_init` reached its own end after the abort.
+	#
+	# This is general, not coroutine-specific: any run() that dies at the call — a coroutine, a
+	# parse-time-invisible bad call, anything nobody has thought of — lands in the same refusal.
+	var returned: Variant = _call_run(script)
+
+	if not returned is Array:
+		print("[REFUSED] suite \"%s\" did not return an Array from run() (got %s)." % [suite_name, type_string(typeof(returned))])
+		print("Either run() is a coroutine — Godot 4.7 refuses to call an async function without `await`, and this runner")
+		print("cannot await on a suite's behalf, because WHAT to await is per-suite — or it aborted at the call itself.")
+		print("A suite that needs frames needs its own runner: see tools/run_layout_suite.gd, which awaits process_frame.")
+		print("If you expected this suite to work here, run it directly to see the SCRIPT ERROR above this line.")
+		quit(2)
+		return
+
+	var results: Array = returned
 
 	# RULING 30. An empty `results` array means `run()` itself aborted before appending anything —
 	# for example a `SCRIPT ERROR` in the setup calls between `RealFiles.hold()` and the sections
@@ -70,3 +149,24 @@ func _path_of(suite_name: String) -> String:
 		if str(entry.get("class", "")) == suite_name:
 			return str(entry.get("path", ""))
 	return ""
+
+
+## Number of arguments `method_name` REQUIRES on `script` — total args minus those with defaults.
+## Returns -1 when the script declares no such method at all. Used by the Ruling 71 guard above.
+func _required_arg_count(script: Script, method_name: String) -> int:
+	for m in script.get_script_method_list():
+		if str(m.get("name", "")) == method_name:
+			var args: Array = m.get("args", [])
+			var defaults: Array = m.get("default_args", [])
+			return maxi(0, args.size() - defaults.size())
+	return -1
+
+
+## Calls `run()` ON PURPOSE FROM A HELPER rather than inline in `_init()`. Ruling 71.
+## A GDScript `SCRIPT ERROR` aborts the function it is raised in and lets the CALLER resume with
+## this function's return-type default (`null` for Variant) — so an abort at the call site kills
+## only this helper, and `_init()` lives to refuse loudly. Inline, the same abort would take
+## `_init()` with it, never reach `quit()`, and leave the process idling for ever, which is the
+## entire failure mode Ruling 71 exists to kill. Do not inline this call back into `_init()`.
+func _call_run(script: Script) -> Variant:
+	return script.run()

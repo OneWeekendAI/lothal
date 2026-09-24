@@ -70,6 +70,13 @@ func _init() -> void:
 	else:
 		print("%d/%d TESTS FAILED" % [fail_count, total])
 
+	# RULING 71. The last line the runner prints, on every path, pass or fail. A log that ends
+	# WITHOUT it was cut off mid-run — the process hung, or was terminated by the watchdog in
+	# `tools/run_tests_safe.sh`; a log that ends WITH it ran to completion and was merely truncated
+	# afterwards (Godot's exit-time RID-leak warnings routinely bury the total, which is why the
+	# count is grepped and not tailed). Without this marker those two cases look identical, and
+	# telling them apart was costing a re-run every time.
+	print("[runner] run_tests.gd reached the end of _init(); exiting %d" % (1 if fail_count > 0 else 0))
 	quit(1 if fail_count > 0 else 0)
 
 func _run_suite(suite_name: String) -> Array:

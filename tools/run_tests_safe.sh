@@ -51,6 +51,14 @@
 ## USAGE
 ##   tools/run_tests_safe.sh                              # full suite (tests/run_tests.gd)
 ##   tools/run_tests_safe.sh --suite TestSomeSuite         # one suite (tools/run_one_suite.gd)
+##   tools/run_tests_safe.sh --layout                      # the shell-layout suite (tools/run_layout_suite.gd)
+##
+## RULING 71 — `--suite TestShellLayout` USED TO HANG FOR EVER, and it is the spelling everybody
+## reaches for. That suite's `run()` takes a `SceneTree` and awaits frames; the generic runner
+## calls `run()` with no arguments, which throws inside `_init()` above its own guards and leaves
+## the process idling. It is now ROUTED to `tools/run_layout_suite.gd` below, loudly, and
+## `tools/run_one_suite.gd` refuses the call on its own account as well, so the raw invocation is
+## covered too. A safe wrapper that hangs on a spelling people keep using is not safe.
 ##
 ## The raw invocations (`godot --headless --script res://tests/run_tests.gd`, `... run_one_suite.gd
 ## -- <SuiteClass>`) keep working unchanged — this script is a safer default, not a lockout.
@@ -78,15 +86,94 @@ trap cleanup EXIT
 
 cd "$REPO_ROOT"
 
-if [[ "${1:-}" == "--suite" ]]; then
+# ---------------------------------------------------------------------------------------------
+# THE WATCHDOG (Ruling 71). A run that hangs must FAIL, not sit there.
+#
+# WHY IT IS HAND-ROLLED AND NOT `timeout`: MEASURED ON THIS MACHINE, 2026-09-24 — `command -v`
+# finds NEITHER `timeout` NOR `gtimeout` (no GNU coreutils on the PATH), and `$BASH_VERSION` is
+# GNU bash 3.2.57, macOS's system bash, which has NO `wait -n`. So this is written in portable
+# bash 3.2: start Godot in the background, poll for its exit in a bounded loop, and on expiry
+# terminate it. Do NOT "simplify" this back to `timeout` without re-checking that it is installed.
+#
+# IT MAY ONLY EVER KILL `$!` — THE ONE CHILD PID THIS SCRIPT ITSELF STARTED. Never a pattern
+# match, never `pkill godot`. The reason is on the record: a pattern kill once destroyed the
+# builder's real Lothal application data by taking out a Godot process that was not a test run at
+# all. A PID we started is ours; anything else belongs to someone else, and is reported, not killed.
+#
+# THE BOUND. MEASURED 2026-09-24 on this machine: a full green run of `tests/run_tests.gd` through
+# this script took 302 s wall (ALL 3166 TESTS PASSED). The bound below is 1200 s — roughly 4x that
+# measurement. The headroom is deliberately generous because a loaded machine, a cold shader/import
+# cache, or a few hundred more tests must NOT trip this; the watchdog exists to catch the 12-hour
+# idle-forever failure mode, not to police a slow afternoon. A single-suite run is far shorter, but
+# gets the same bound: there is no measurement justifying a tighter one, and a guessed tight bound
+# would turn a slow suite into a spurious failure.
+#
+# Overridable from the environment ONLY so that the watchdog can be TRIPPED on purpose: a guard
+# nobody has fired is a claim, not evidence. `WATCHDOG_SECONDS=20 tools/run_tests_safe.sh ...` is
+# how this was proven to fire (see the F12 report). It is not a knob for routine use.
+WATCHDOG_SECONDS="${WATCHDOG_SECONDS:-1200}"
+
+run_bounded() {
+	local limit="$1"
+	shift
+	"$@" &
+	local child=$!          # OUR child, and the ONLY pid this function is permitted to signal.
+	local waited=0
+	while kill -0 "$child" 2>/dev/null; do
+		if [[ "$waited" -ge "$limit" ]]; then
+			echo "" >&2
+			echo "[WATCHDOG] TIMED OUT: no exit after ${limit}s (Ruling 71)." >&2
+			echo "[WATCHDOG] Terminating pid $child - the child this script started, and nothing else." >&2
+			kill -TERM "$child" 2>/dev/null || true
+			sleep 5
+			if kill -0 "$child" 2>/dev/null; then
+				kill -KILL "$child" 2>/dev/null || true
+			fi
+			wait "$child" 2>/dev/null || true
+			echo "[WATCHDOG] If the log ends without a \"reached the end of _init()\" line, the run HUNG rather than being truncated." >&2
+			return 124
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	local status=0
+	wait "$child" || status=$?
+	return "$status"
+}
+
+mode="full"
+target=""
+if [[ "${1:-}" == "--layout" ]]; then
+	mode="layout"
+elif [[ "${1:-}" == "--suite" ]]; then
 	if [[ -z "${2:-}" ]]; then
 		echo "usage: tools/run_tests_safe.sh --suite <SuiteClass>" >&2
 		exit 2
 	fi
-	suite_class="$2"
-	echo "Relocated HOME: $scratch_home (real ~/Library/Application Support/Godot untouched)"
-	HOME="$scratch_home" godot --headless --script res://tools/run_one_suite.gd -- "$suite_class"
-else
-	echo "Relocated HOME: $scratch_home (real ~/Library/Application Support/Godot untouched)"
-	HOME="$scratch_home" godot --headless --script res://tests/run_tests.gd
+	target="$2"
+	if [[ "$target" == "TestShellLayout" ]]; then
+		# RULING 71. Routed, not run: see the note at the top of this file. Said out loud so the
+		# next person learns the right spelling rather than silently getting a different runner.
+		echo "[ROUTED] TestShellLayout takes a SceneTree and awaits frames, so tools/run_one_suite.gd" >&2
+		echo "[ROUTED] cannot call it - that invocation hangs for ever (Ruling 71)." >&2
+		echo "[ROUTED] Running tools/run_layout_suite.gd instead. Use --layout directly next time." >&2
+		mode="layout"
+	else
+		mode="suite"
+	fi
 fi
+
+echo "Relocated HOME: $scratch_home (real ~/Library/Application Support/Godot untouched)"
+status=0
+case "$mode" in
+	layout)
+		run_bounded "$WATCHDOG_SECONDS" env HOME="$scratch_home" godot --headless --script res://tools/run_layout_suite.gd || status=$?
+		;;
+	suite)
+		run_bounded "$WATCHDOG_SECONDS" env HOME="$scratch_home" godot --headless --script res://tools/run_one_suite.gd -- "$target" || status=$?
+		;;
+	*)
+		run_bounded "$WATCHDOG_SECONDS" env HOME="$scratch_home" godot --headless --script res://tests/run_tests.gd || status=$?
+		;;
+esac
+exit "$status"
