@@ -641,8 +641,9 @@ static func _a_library_with_no_sites() -> Array:
 	# `course_list`, ran the fill and asserted the row was gone — which it is whether the call
 	# aborted or not, because `course_list.clear()` runs before the call. Its mutation scored 0.
 	#
-	# So this one is a SOURCE SCAN, with its blind spot stated: it reads text, so it cannot see
-	# whether the guard is correct, only that it is there. That is strictly more than nothing and
+	# So this one is a SOURCE SCAN of that function's own body, with its blind spot stated: it
+	# reads text, so it cannot see whether the guard is correct — only that it is there and that
+	# it comes before every dereference in that function. That is strictly more than nothing and
 	# it is honestly all this defect admits of. The SCRIPT ERROR the unguarded version prints is
 	# the other half of the evidence, and `tests/test_real_files.gd`'s header is where this repo
 	# records which of those are expected.
@@ -651,13 +652,42 @@ static func _a_library_with_no_sites() -> Array:
 	if room_file != null:
 		room_source = room_file.get_as_text()
 		room_file.close()
+	# SCANNED IN THE FUNCTION'S OWN BODY, not in the file. The first version of this matched the
+	# guard text ANYWHERE in an 1800-line file that already holds a second
+	# `var selected_site := sites.selected()` at `:1210`, and it was falsified: leave the guard
+	# byte-for-byte intact, insert a SECOND unguarded `sites.selected().site_id` above it, and the
+	# function aborts on a null site exactly as it did before the fix while the suite stays green
+	# — 3186 results, 0 FAIL, with two live `site_id on Nil` errors in the log. So the slice below
+	# cuts from this function's `func` line to the next one, drops its comment lines (the guard's
+	# own comment says ".site_id" in prose), and asserts the guard comes BEFORE any dereference
+	# in what is left.
+	var guard_body := ""
+	var body_start := room_source.find("func courses_of_selected_site()")
+	if body_start >= 0:
+		var body_end := room_source.find("\nfunc ", body_start + 1)
+		if body_end < 0:
+			body_end = room_source.length()
+		for body_line in room_source.substr(body_start, body_end - body_start).split("\n"):
+			if body_line.strip_edges().begins_with("#"):
+				continue
+			guard_body += body_line + "\n"
+	var guard_at := guard_body.find(
+		"var selected_site := sites.selected()\n\tif selected_site == null:\n\t\treturn out")
+	var first_deref := guard_body.find(".site_id")
 	results.append(TestResult.new(
 		"[F4] courses_of_selected_site() GUARDS the null selection rather than dereferencing it " +
-			"(source scan — an aborted call and a guarded one return the same [] to the same " +
-			"caller, so there is nothing behavioural to assert)",
-		room_source.find("var selected_site := sites.selected()\n\tif selected_site == null:\n\t\treturn out") >= 0,
-		"the guard text was %s in field_system.gd" % (
-			"found" if room_source.find("if selected_site == null:") >= 0 else "NOT found"))) 
+			"(source scan of THAT FUNCTION'S BODY — an aborted call and a guarded one return " +
+			"the same [] to the same caller, so there is nothing behavioural to assert)",
+		body_start >= 0 and guard_at >= 0 and first_deref >= 0 and guard_at < first_deref,
+		("the function was %s, the guard text was %s, and the first .site_id in its body is at " +
+			"%d against the guard at %d") % [
+			"found" if body_start >= 0 else "NOT found",
+			"found" if guard_at >= 0 else "NOT found", first_deref, guard_at]))
+	# THE BLIND SPOT THAT IS LEFT, stated: this still reads text. It sees that the guard precedes
+	# every dereference in this function, not that the guard is CORRECT — a guard testing the
+	# wrong thing, or a dereference moved into a helper this function calls, both pass here. What
+	# it no longer misses is an unguarded deref added to this function, or the guard drifting into
+	# some other function of the same file.
 
 	# The Site panel's own guard, which DOES have a signature: `render_rows` runs after the
 	# dereference, so whether the title was rewritten says whether the function got past it.

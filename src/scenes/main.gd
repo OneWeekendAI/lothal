@@ -288,9 +288,13 @@ static func _check_crash(at: Vector3, p_terrain: Terrain) -> bool:
 ## the Field room's "Gust settle" field says. That is what this scene used to do, and it is why
 ## that field had no consumer at all: it moved a number nothing downstream ever read.
 ##
-## Static and pure for `_check_crash`'s reason — the shipped wiring can be CALLED by a check
-## rather than read out of the source, which is the difference between covering the production
-## path and covering an API that happens to resemble it.
+## Static and pure for `_check_crash`'s reason: it can be CALLED by a check rather than read out
+## of the source. BUT THAT IS AN API, NOT THE WIRING, and this header used to claim otherwise —
+## a check that calls `Main.make_wind()` says nothing about whether `_ready` below calls it, and
+## measured, reverting the line that does to `Wind.new(selected_conditions)` left the whole suite
+## green. The wiring is covered separately, by a check that BOOTS `main.tscn` and reads
+## `scene.wind` (`tests/test_field_room.gd`'s `_the_booted_scene_flies_the_typed_settle_time`).
+## Neither stands alone: this one is the oracle, that one is the subject.
 static func make_wind(p_conditions: Conditions) -> Wind:
 	return Wind.new(p_conditions, p_conditions.gust_tau_s)
 

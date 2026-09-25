@@ -50,6 +50,16 @@ const ROOMS_STILL_IN_THE_MENU := ["frame_bench", "studio"]
 
 ## Two sites an order of magnitude apart. A park you could throw a whoop across and a field you
 ## could lose a 10" in — if one camera distance frames both, the number is not the site's.
+## The Sim scene the app boots through `RoomHost.show_sim` — the scene FILE, not the script, so
+## `main.gd`'s `@onready` node paths resolve. Spelled out of `RoomHost.SIM_SCENE` deliberately:
+## this suite asserts what the shipped scene does, and a constant shared with the thing under
+## test would follow it if it moved.
+const SIM_SCENE_PATH := "res://src/scenes/main.tscn"
+
+## A settling time no default anywhere in the repo uses, so a scene flying the default is
+## distinguishable from a scene flying the record.
+const BOOT_GUST_TAU_S := 4.2
+
 const SMALL_SITE_M := 30.0
 const LARGE_SITE_M := 400.0
 
@@ -1619,6 +1629,18 @@ static func _the_editable_fields() -> Array:
 		"Main.make_wind(reloaded).gust_tau_s = %.4f, Wind.DEFAULT_GUST_TAU_S = %.4f" % [
 			-1.0 if flown == null else flown.gust_tau_s, Wind.DEFAULT_GUST_TAU_S]))
 
+	# AND THE SCENE THE APP ACTUALLY BOOTS, which is a different claim and the one that was
+	# missing. The check above calls `Main.make_wind()` — an API that resembles the production
+	# path. It says nothing about whether `_ready` calls it, so `wind = Wind.new(selected)` could
+	# come back at `main.gd`'s one production line, dropping the settling time exactly as it
+	# shipped, and every check above would stay green. Measured: it did, 3186 results, 0 FAIL.
+	#
+	# So this boots `main.tscn` itself — the scene file, so the `@onready` node paths resolve —
+	# hands it a conditions library the way `RoomHost.show_sim` does, runs the scene's own
+	# `_ready()`, and reads `scene.wind`. The subject is the wiring; `make_wind` above is the
+	# oracle. A regression at that one line reddens HERE and not in any source scan.
+	results.append_array(_the_booted_scene_flies_the_typed_settle_time())
+
 	# The LIVE control's text, not a grep: a source-wide search for "guess" would also match this
 	# file's own comments, which is a check that cannot fail against the stated mutation.
 	var label_text: String = "" if room.gust_tau_label == null else room.gust_tau_label.text
@@ -1657,4 +1679,58 @@ static func _the_editable_fields() -> Array:
 			on_disk.extent().x, on_disk.extent().y]))
 
 	room.free()
+	return results
+
+
+## THE BOOTED SIM SCENE'S OWN WIND. `main.tscn` rather than `main.gd`, because `_ready` assigns
+## the `@onready` node paths (`$Drone`, `$Ground/GroundMesh`) and a bare script instance has no
+## children for them to resolve against. The conditions library is handed over before `_ready`
+## runs, which is the order `RoomHost.show_sim` uses.
+static func _the_booted_scene_flies_the_typed_settle_time() -> Array:
+	var results: Array = []
+
+	var weather := Conditions.new()
+	weather.conditions_id = "f2_boot_weather"
+	weather.conditions_name = "Gusty"
+	weather.gust_tau_s = BOOT_GUST_TAU_S
+	var conditions := ConditionsLibrary.new()
+	conditions.put(weather)
+	conditions.select(weather.conditions_id)
+
+	# THE NON-VACUITY GUARD, FIRST. If the fixture's settling time were the shipped default, the
+	# assertion below would hold under every mutation, including the one it exists to catch.
+	results.append(TestResult.new(
+		"the fixture's settling time is not Wind's shipped default, so a scene flying the " +
+			"default is distinguishable from one flying the record",
+		not is_equal_approx(weather.gust_tau_s, Wind.DEFAULT_GUST_TAU_S),
+		"fixture gust_tau_s = %.4f, Wind.DEFAULT_GUST_TAU_S = %.4f" % [
+			weather.gust_tau_s, Wind.DEFAULT_GUST_TAU_S]))
+
+	var packed: PackedScene = load(SIM_SCENE_PATH)
+	if packed == null:
+		results.append(TestResult.new(
+			"the Sim scene can be loaded for the boot", false,
+			"load(%s) returned null" % SIM_SCENE_PATH))
+		return results
+	var scene: Node3D = packed.instantiate()
+	scene.conditions_library = conditions
+	scene._ready()
+
+	var flown: Wind = scene.wind
+	var flown_tau: float = -1.0 if flown == null else flown.gust_tau_s
+	results.append(TestResult.new(
+		"the BOOTED Sim scene flies the selected record's settling time — _ready builds its " +
+			"wind through make_wind(), not a bare Wind.new() that drops the gust tau",
+		flown != null and is_equal_approx(flown_tau, BOOT_GUST_TAU_S),
+		"booted scene's wind.gust_tau_s = %.4f, the record says %.4f" % [
+			flown_tau, BOOT_GUST_TAU_S]))
+	# The same thing in the defect's own words, so a regression names itself: what shipped was
+	# the default, silently, for any record at all.
+	results.append(TestResult.new(
+		"and it is NOT Wind's shipped default, which is what the disconnected dial produced",
+		flown != null and not is_equal_approx(flown_tau, Wind.DEFAULT_GUST_TAU_S),
+		"booted scene's wind.gust_tau_s = %.4f, Wind.DEFAULT_GUST_TAU_S = %.4f" % [
+			flown_tau, Wind.DEFAULT_GUST_TAU_S]))
+
+	scene.free()
 	return results
