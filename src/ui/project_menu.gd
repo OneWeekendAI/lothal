@@ -36,6 +36,14 @@ signal recent_chosen(path: String)
 ## entry cannot be added to the app and forgotten here, or removed from here and left dangling in
 ## a handler.
 const ENTRIES := [
+	# The way back to the Projects screen — every saved drone in one table.
+	{
+		"id": "projects",
+		"label": "All projects",
+		"key": KEY_NONE,
+		"waiting_on": "",
+	},
+	{"separator": true},
 	{
 		"id": "new",
 		"label": "New drone",

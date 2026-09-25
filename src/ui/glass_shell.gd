@@ -333,6 +333,9 @@ var open_folder_after_export := true
 ## newest print record no longer matches what the build generates. Empty for a drone that matches.
 var printed_divergence: Array = []
 var chip: ProjectChip
+## The Projects screen — every saved drone, New and Open. Shown at launch, after Delete, and from
+## the drone menu's "All projects". It IS the empty state: with no drone open, this is the screen.
+var projects_screen: ProjectsScreen
 var settings: AppSettings
 var _autosave: Timer
 var _open_dialog: FileDialog
@@ -527,13 +530,16 @@ func _ready() -> void:
 	# A recent entry that will not open is skipped rather than fatal, and a shell that resumes
 	# nothing falls through to the fresh drone `_init` already made. `open_project` leaves the
 	# container untouched when a file is bad, which is what `container.path` is being asked here.
+	# THE APP OPENS ON THE PROJECTS SCREEN. Only when this shell is the running scene: a shell a
+	# test constructs is not, and keeps the resume-or-adopt behaviour every suite is written against.
+	var boot_to_projects := get_tree() != null and get_tree().current_scene == self
 	var resumed := false
-	for path in settings.existing_recent_projects():
+	for path in ([] if boot_to_projects else settings.existing_recent_projects()):
 		open_project(path)
 		if container.path == path:
 			resumed = true
 			break
-	if not resumed:
+	if not resumed and not boot_to_projects:
 		adopt(container.project)
 
 	# The shell has no signal from Lab to listen to — LabScreen emits none — so it listens to the
@@ -562,6 +568,9 @@ func _ready() -> void:
 	# Worth knowing that headless could not see it: with no frames rendered, `_ready` had already run
 	# by the time anything looked. It took a window and a settle loop to reproduce.
 	_select_system(_focused_index)
+	# After the system is applied, so nothing it shows lands on top of the Projects screen.
+	if boot_to_projects:
+		_clear_project()
 	# Deferred because a Control's combined minimum size is not known until it has been laid out
 	# once, and these two have just been reparented.
 	_fit_columns.call_deferred()
@@ -1952,48 +1961,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 ## is deliberately spare: the state after delete is "there is no drone", and a screen full of
 ## chrome describing nothing would be the app pretending otherwise.
 func _build_empty_state() -> void:
-	_empty_state = Control.new()
-	_empty_state.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_empty_state.visible = false
-	add_child(_empty_state)
-
-	var centre := CenterContainer.new()
-	centre.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_empty_state.add_child(centre)
-
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", LothalTheme.SPACE_3)
-	centre.add_child(box)
-
-	var title := Label.new()
-	title.text = "No drone open"
-	title.theme_type_variation = "TitleLabel"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(title)
-
-	var hint := Label.new()
-	hint.text = ("You deleted the drone you were on. New starts a fresh build; Open finds one you "
-		+ "saved. Your recent drones are in the menu at the top left.")
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.theme_type_variation = "MutedLabel"
-	hint.custom_minimum_size = Vector2(420, 0)
-	box.add_child(hint)
-
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", LothalTheme.SPACE_2)
-	box.add_child(row)
-
-	var new_button := Button.new()
-	new_button.text = "New drone"
-	new_button.pressed.connect(func() -> void: adopt(ProjectLibrary.starting_project()))
-	row.add_child(new_button)
-
-	var open_button := Button.new()
-	open_button.text = "Open…"
-	open_button.pressed.connect(func() -> void: _open_dialog.popup_centered_ratio(0.6))
-	row.add_child(open_button)
+	projects_screen = ProjectsScreen.new(rooms.catalog_for_lab())
+	projects_screen.visible = false
+	projects_screen.new_requested.connect(func() -> void: adopt(ProjectLibrary.starting_project()))
+	projects_screen.open_requested.connect(func() -> void: _open_dialog.popup_centered_ratio(0.6))
+	projects_screen.project_chosen.connect(open_project)
+	add_child(projects_screen)
+	_empty_state = projects_screen
 
 
 ## THE DOCK. One centred cluster at the bottom, carrying what `_build_bottom_left_cluster` and
@@ -2631,6 +2605,10 @@ func _on_project_action(action_id: String) -> void:
 				settings.forget_project(gone)
 				settings.save()
 			_clear_project()
+		"projects":
+			# Saves first, then closes: the drone is on disk and the table shows it as just edited.
+			_on_autosave_tick()
+			_clear_project()
 		"rename":
 			pass
 		_:
@@ -2729,7 +2707,9 @@ func _clear_project() -> void:
 ## dropdown, the rail, the inspector, the plan canvas, the tools, the Lab/Sim toggle. Only the chip
 ## stays: its New, Open, Reveal and RECENT are the way out.
 func _show_empty_state() -> void:
+	projects_screen.refresh()
 	_empty_state.visible = true
+	_top_bar.visible = false
 	_dropdown_glass.visible = false
 	_rail_glass.visible = false
 	_inspector.visible = false
@@ -2760,6 +2740,7 @@ func _show_empty_state() -> void:
 ## than guessing at what to show.
 func _show_project() -> void:
 	_empty_state.visible = false
+	_top_bar.visible = true
 	_dropdown_glass.visible = true
 	if _dock != null:
 		_dock.visible = true

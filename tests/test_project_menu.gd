@@ -43,13 +43,13 @@ static func _test_the_table_is_the_feature_list() -> Array:
 
 	results.append(TestResult.new(
 		"every entry in the menu has a distinct id",
-		ids.size() == unique.size() and ids.size() == 8,
+		ids.size() == unique.size() and ids.size() == 9,
 		"%d entries: %s" % [ids.size(), ids]
 	))
 
 	# The mockup's own list. Named here so that dropping one silently is a failing test rather than
 	# a screenshot nobody compares against.
-	var expected := ["new", "open", "duplicate", "rename", "export_build_sheet",
+	var expected := ["projects", "new", "open", "duplicate", "rename", "export_build_sheet",
 		"export_printed", "reveal", "delete"]
 	results.append(TestResult.new(
 		"and the menu still offers everything the design put in it",
@@ -90,11 +90,11 @@ static func _test_waiting_entries_are_unreachable() -> Array:
 	# first day rather than appearing when the feature does.
 	results.append(TestResult.new(
 		"the shortcuts the design promises are shown, even while greyed",
-		menu.get_item_accelerator(0) == (KEY_MASK_META | KEY_N)
-			and menu.get_item_accelerator(1) == (KEY_MASK_META | KEY_O)
-			and menu.get_item_accelerator(2) == (KEY_MASK_META | KEY_D),
-		"new=%d open=%d duplicate=%d" % [menu.get_item_accelerator(0),
-			menu.get_item_accelerator(1), menu.get_item_accelerator(2)]
+		menu.get_item_accelerator(2) == (KEY_MASK_META | KEY_N)
+			and menu.get_item_accelerator(3) == (KEY_MASK_META | KEY_O)
+			and menu.get_item_accelerator(4) == (KEY_MASK_META | KEY_D),
+		"new=%d open=%d duplicate=%d" % [menu.get_item_accelerator(2),
+			menu.get_item_accelerator(3), menu.get_item_accelerator(4)]
 	))
 	menu.free()
 	return results

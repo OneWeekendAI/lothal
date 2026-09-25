@@ -97,6 +97,7 @@ static func run() -> Array:
 		"the old editor is gone": _the_old_editor_is_gone(),
 		"the preview is the terrain": _the_preview_is_the_terrain(),
 		"the editable fields": _the_editable_fields(),
+		"the wind fields": _the_wind_fields(),
 	}
 	held.restore()
 	results.append(TestResult.new(
@@ -1733,4 +1734,112 @@ static func _the_booted_scene_flies_the_typed_settle_time() -> Array:
 			flown_tau, Wind.DEFAULT_GUST_TAU_S]))
 
 	scene.free()
+	return results
+
+
+# ---------------------------------------------------------------------------
+# 24. The wind's three fields
+# ---------------------------------------------------------------------------
+
+## SPEED, BEARING AND GUSTINESS HAD NO CONTROL until now — they were on `Conditions`, saved, and
+## flown since F7, and every preset anyone made was calm because nothing could make one otherwise.
+## Followed the whole way, for `_the_editable_fields`' reason: onto the record, onto the disk, and
+## into the Wind the shipped scene's own builder makes. Driven through each live SpinBox's own
+## signal, so a field built and wired to nothing fails here.
+static func _the_wind_fields() -> Array:
+	var results: Array = []
+	var room := _room()
+
+	results.append(TestResult.new(
+		"the three wind fields exist and open calm on a fresh install",
+		room.wind_speed_field != null and room.wind_from_field != null
+			and room.gustiness_field != null
+			and is_zero_approx(room.wind_speed_field.value)
+			and is_zero_approx(room.gustiness_field.value),
+		"fields: speed %s, from %s, gust %s" % [
+			room.wind_speed_field != null, room.wind_from_field != null,
+			room.gustiness_field != null]))
+	if room.wind_speed_field == null or room.wind_from_field == null \
+			or room.gustiness_field == null:
+		room.free()
+		return results
+
+	# EACH EDIT IS READ BACK OFF DISK BEFORE THE NEXT ONE. Checked once at the end, a setter that
+	# forgot to save passes anyway: the next field's save writes the whole record, carrying the
+	# unsaved number along with it. Measured — that mutation went green until this was split.
+	var typed_on := room.conditions.selected().conditions_id
+	room.wind_speed_field.value_changed.emit(6.5)
+	var speed_on_disk := ConditionsLibrary.load_from(ROOM_CONDITIONS_PATH).selected().wind_speed_mps
+	room.wind_from_field.value_changed.emit(270.0)
+	var from_on_disk := ConditionsLibrary.load_from(ROOM_CONDITIONS_PATH).selected().wind_from_deg
+	room.gustiness_field.value_changed.emit(2.0)
+	var gust_on_disk := ConditionsLibrary.load_from(ROOM_CONDITIONS_PATH).selected().gustiness_mps
+	results.append(TestResult.new(
+		"each wind edit is on disk immediately, on its own — not carried by the next field's save",
+		is_equal_approx(speed_on_disk, 6.5) and is_equal_approx(from_on_disk, 270.0)
+			and is_equal_approx(gust_on_disk, 2.0),
+		"read back after each edit: %.2f m/s, %.1f°, gusts %.2f" % [
+			speed_on_disk, from_on_disk, gust_on_disk]))
+	var now := room.conditions.selected()
+	results.append(TestResult.new(
+		"typing them puts speed, bearing and gustiness on the SELECTED conditions record",
+		is_equal_approx(now.wind_speed_mps, 6.5) and is_equal_approx(now.wind_from_deg, 270.0)
+			and is_equal_approx(now.gustiness_mps, 2.0) and now.conditions_id == typed_on,
+		"record %s: %.2f m/s from %.1f°, gusts %.2f m/s" % [
+			now.conditions_id, now.wind_speed_mps, now.wind_from_deg, now.gustiness_mps]))
+
+	var reloaded := ConditionsLibrary.load_from(ROOM_CONDITIONS_PATH).selected()
+	results.append(TestResult.new(
+		"and they are persisted: conditions.json read back carries all three",
+		reloaded != null and is_equal_approx(reloaded.wind_speed_mps, 6.5)
+			and is_equal_approx(reloaded.wind_from_deg, 270.0)
+			and is_equal_approx(reloaded.gustiness_mps, 2.0),
+		"nothing reloaded" if reloaded == null else "%.2f m/s from %.1f°, gusts %.2f" % [
+			reloaded.wind_speed_mps, reloaded.wind_from_deg, reloaded.gustiness_mps]))
+
+	var flown: Wind = MAIN_SCRIPT.make_wind(reloaded) if reloaded != null else null
+	results.append(TestResult.new(
+		"and the shipped scene's own wind builder flies them",
+		flown != null and is_equal_approx(flown.speed_mps, 6.5)
+			and is_equal_approx(flown.from_deg, 270.0)
+			and is_equal_approx(flown.gustiness_mps, 2.0),
+		"no wind" if flown == null else "Wind: %.2f m/s from %.1f°, gusts %.2f" % [
+			flown.speed_mps, flown.from_deg, flown.gustiness_mps]))
+
+	# ONE BEARING, ONE SPELLING. 360 is north, and -90 is west; stored any other way they would be
+	# two lap fingerprints for one day's wind.
+	room.wind_from_field.value_changed.emit(360.0)
+	var wrapped_north := room.conditions.selected().wind_from_deg
+	room.set_field_wind_from_deg(-90.0)
+	var wrapped_west := room.conditions.selected().wind_from_deg
+	results.append(TestResult.new(
+		"the bearing is wrapped into [0, 360): 360 is stored as 0 and -90 as 270",
+		is_zero_approx(wrapped_north) and is_equal_approx(wrapped_west, 270.0)
+			and is_equal_approx(room.wind_from_field.value, 270.0),
+		"360 -> %.1f, -90 -> %.1f, field shows %.1f" % [
+			wrapped_north, wrapped_west, room.wind_from_field.value]))
+
+	room.set_field_wind_speed_mps(-4.0)
+	room.set_field_gustiness_mps(-1.0)
+	results.append(TestResult.new(
+		"a negative speed or gustiness from a headless caller is clamped to zero, not stored",
+		is_zero_approx(room.conditions.selected().wind_speed_mps)
+			and is_zero_approx(room.conditions.selected().gustiness_mps),
+		"speed %.2f, gust %.2f" % [room.conditions.selected().wind_speed_mps,
+			room.conditions.selected().gustiness_mps]))
+
+	# THE CONTROLS FOLLOW THE SELECTED SET. Switching preset must show that preset's wind, not keep
+	# the last one typed — otherwise the next keystroke writes the old set's wind onto the new one.
+	room.set_field_wind_speed_mps(6.5)
+	room.set_field_temperature_c(33.0)
+	var calm_speed := room.wind_speed_field.value
+	room.conditions.select(typed_on)
+	room.refresh()
+	results.append(TestResult.new(
+		"switching preset re-reads the wind fields: a calm 33 °C set shows 0, and back shows 6.5",
+		is_zero_approx(calm_speed) and is_equal_approx(room.wind_speed_field.value, 6.5),
+		"on the 33 °C set the field read %.2f, back on %s it reads %.2f" % [
+			calm_speed, typed_on, room.wind_speed_field.value]))
+
+	room.free()
 	return results

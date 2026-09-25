@@ -110,6 +110,17 @@ const TEMPERATURE_STEP_C := 1.0
 ## uses, because it is the same grabber.
 const SCROLLBAR_WIDTH := 8.0
 
+## THE WIND'S OWN THREE FIELDS (§4.3): steady speed, the bearing it comes FROM, and the gust
+## amplitude. Every one was on `Conditions`, saved, and flown by Sim since F7 — and none had a
+## control, so every preset anyone made was calm. The ranges are the controls' extent, not a rule
+## about what is flyable: 30 m/s is past anything a 5" machine can hold station in, and saying so
+## is Lab's job (reported, never judged), not this field's.
+const MAX_WIND_SPEED_MPS := 30.0
+const WIND_SPEED_STEP_MPS := 0.5
+const WIND_FROM_STEP_DEG := 5.0
+const MAX_GUSTINESS_MPS := 15.0
+const GUSTINESS_STEP_MPS := 0.5
+
 const MIN_GUST_TAU_S := 0.5
 const MAX_GUST_TAU_S := 10.0
 const GUST_TAU_STEP_S := 0.1
@@ -239,6 +250,9 @@ var temperature_field: SpinBox
 var width_field: SpinBox
 var length_field: SpinBox
 var gust_tau_field: SpinBox
+var wind_speed_field: SpinBox
+var wind_from_field: SpinBox
+var gustiness_field: SpinBox
 ## The label a check reads the word "guess" off. The LIVE control's text, not the source file — a
 ## grep for "guess" would also match this file's own comments, which is a check that cannot fail.
 var gust_tau_label: Label
@@ -526,6 +540,19 @@ func _build_field_section(column: VBoxContainer) -> void:
 	length_field = _add_field(column, "Length", "m",
 		MIN_SITE_DIM_M, MAX_SITE_DIM_M, SITE_DIM_STEP_M,
 		func(v: float) -> void: set_site_length_m(v))
+
+	# The weather's moving half, beside the gust settle time it shares a process with.
+	wind_speed_field = _add_field(column, "Wind", "m/s",
+		0.0, MAX_WIND_SPEED_MPS, WIND_SPEED_STEP_MPS,
+		func(v: float) -> void: set_field_wind_speed_mps(v))
+	# 360 rather than 359 as the top, so the arrows can reach north from either side; the setter
+	# wraps it back to 0 and the control re-reads the wrapped value.
+	wind_from_field = _add_field(column, "Wind from", "°",
+		0.0, 360.0, WIND_FROM_STEP_DEG,
+		func(v: float) -> void: set_field_wind_from_deg(v))
+	gustiness_field = _add_field(column, "Gustiness", "m/s",
+		0.0, MAX_GUSTINESS_MPS, GUSTINESS_STEP_MPS,
+		func(v: float) -> void: set_field_gustiness_mps(v))
 
 	gust_tau_label = Label.new()
 	gust_tau_label.name = "GustGuess"
@@ -1095,6 +1122,41 @@ func set_field_gust_tau_s(p_gust_tau_s: float) -> void:
 	_changed(true)
 
 
+## The steady wind, onto the SELECTED conditions and then to disk — `set_field_gust_tau_s`'s shape
+## and its reason. It edits the set in place rather than switching sets the way temperature does:
+## temperature is how presets are FOUND (`at_temperature`), wind is a property OF the one you are on.
+##
+## Clamped here, not trusted, for the headless callers. A negative speed would be a wind blowing
+## from the opposite bearing under the wrong label.
+func set_field_wind_speed_mps(speed_mps: float) -> void:
+	var now := conditions.selected()
+	if now == null:
+		return
+	now.wind_speed_mps = clampf(speed_mps, 0.0, MAX_WIND_SPEED_MPS)
+	_changed(true)
+
+
+## The bearing the wind comes FROM, 0 = north, clockwise (conditions.gd). Wrapped into [0, 360), so
+## a typed 360 or -90 is the bearing it names rather than a second spelling of it — two spellings
+## of one bearing would be two lap fingerprints for one day's wind.
+func set_field_wind_from_deg(from_deg: float) -> void:
+	var now := conditions.selected()
+	if now == null:
+		return
+	now.wind_from_deg = fposmod(from_deg, 360.0)
+	_changed(true)
+
+
+## The gust amplitude — the figure §4.3 says matters more than the steady wind. Not hashed into the
+## lap fingerprint (gate_course.gd), so typing one never retires a best lap.
+func set_field_gustiness_mps(gustiness_mps: float) -> void:
+	var now := conditions.selected()
+	if now == null:
+		return
+	now.gustiness_mps = clampf(gustiness_mps, 0.0, MAX_GUSTINESS_MPS)
+	_changed(true)
+
+
 ## HOW WIDE THE FIELD IS, and the preview redraws from the same description `height_at` answers
 ## over. `Terrain.shaped` rebuilds the block rather than assigning a member, so the shape's own
 ## dims come with it and nothing here has to know which keys a bowl has.
@@ -1180,6 +1242,12 @@ func _render_controls() -> void:
 	# the SpinBox would keep displaying the previous set's number.
 	if gust_tau_field != null:
 		gust_tau_field.value = clampf(gust_tau_s, MIN_GUST_TAU_S, MAX_GUST_TAU_S)
+	# The same re-read, for the same reason: switching temperature can switch which set these show.
+	var weather := conditions.selected()
+	if wind_speed_field != null and weather != null:
+		wind_speed_field.value = weather.wind_speed_mps
+		wind_from_field.value = weather.wind_from_deg
+		gustiness_field.value = weather.gustiness_mps
 	_updating = false
 
 
