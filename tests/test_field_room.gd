@@ -37,6 +37,9 @@ extends RefCounted
 ## The two sides of every check in §5 and §6 have to come from different places or the check is a
 ## tautology: the room's side is walked off the live node tree, and this side is the specification.
 ## A shared constant would have passed a rename of both halves.
+## The shipped Sim scene as a script, so its wiring can be CALLED. `main.gd` carries no
+## `class_name` (it is a scene script), which is why this is a preload rather than a bare name.
+const MAIN_SCRIPT := preload("res://src/scenes/main.gd")
 const RAIL_NAMES := ["Sites", "Courses"]
 const PANEL_NAMES := ["Site", "Course", "Conditions"]
 
@@ -1580,11 +1583,41 @@ static func _the_editable_fields() -> Array:
 			-1.0 if room.gust_tau_field == null else room.gust_tau_field.value,
 			Wind.DEFAULT_GUST_TAU_S]))
 
+	# THIS USED TO ASSERT THAT A SETTER SETS, AND NOTHING ELSE — which read as coverage of a
+	# feature that did not exist. `gust_tau_s` was a plain member on this room: not on
+	# `Conditions`, never persisted, and `main.gd` built `Wind.new(conditions)` with no settling
+	# time at all, so the number a builder typed was read by NOTHING, ever. The three checks below
+	# follow it the whole way instead: onto the record, onto the disk, and into the gust process
+	# the shipped scene flies with.
 	room.set_field_gust_tau_s(4.2)
 	results.append(TestResult.new(
-		"editing the field changes gust_tau_s",
-		is_equal_approx(room.gust_tau_s, 4.2),
-		"room.gust_tau_s = %.4f after set_field_gust_tau_s(4.2)" % room.gust_tau_s))
+		"editing the field puts the settling time on the SELECTED conditions record",
+		is_equal_approx(room.gust_tau_s, 4.2)
+			and is_equal_approx(room.conditions.selected().gust_tau_s, 4.2),
+		"room.gust_tau_s = %.4f, conditions.selected().gust_tau_s = %.4f" % [
+			room.gust_tau_s, room.conditions.selected().gust_tau_s]))
+
+	# AND IT SURVIVES THE FILE. Re-read off disk through the library's own loader, not off the
+	# object still in memory — the seam a dial with no wire falls through is exactly the one
+	# between the room and the next process to open the file.
+	var reloaded := ConditionsLibrary.load_from(ROOM_CONDITIONS_PATH).selected()
+	results.append(TestResult.new(
+		"and it is persisted: conditions.json read back carries the typed settling time",
+		reloaded != null and is_equal_approx(reloaded.gust_tau_s, 4.2),
+		"reloaded selected().gust_tau_s = %.4f" % (
+			-1.0 if reloaded == null else reloaded.gust_tau_s)))
+
+	# AND IT REACHES THE GUST PROCESS, through the function `main.gd` itself calls. Not a source
+	# scan and not `Wind.new(conditions, 4.2)` typed here — either of those proves an API and
+	# leaves the wiring untested, which is how this field shipped disconnected in the first place.
+	var flown: Wind = MAIN_SCRIPT.make_wind(reloaded) if reloaded != null else null
+	results.append(TestResult.new(
+		"and the shipped scene's own wind builder flies at it — Main.make_wind() passes the " +
+			"record's settling time, not Wind's default",
+		flown != null and is_equal_approx(flown.gust_tau_s, 4.2)
+			and not is_equal_approx(flown.gust_tau_s, Wind.DEFAULT_GUST_TAU_S),
+		"Main.make_wind(reloaded).gust_tau_s = %.4f, Wind.DEFAULT_GUST_TAU_S = %.4f" % [
+			-1.0 if flown == null else flown.gust_tau_s, Wind.DEFAULT_GUST_TAU_S]))
 
 	# The LIVE control's text, not a grep: a source-wide search for "guess" would also match this
 	# file's own comments, which is a check that cannot fail against the stated mutation.

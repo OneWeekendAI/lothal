@@ -70,6 +70,14 @@ const SCRATCH_SITES := "user://test_f9_sites.json"
 
 const SAME_S := 1.0e-6
 
+## The shipped Sim scene, loaded as a SCRIPT and instantiated directly rather than through
+## `main.tscn`. `tests/test_terrain_mesh.gd` §9 explains the shape and why it is the real entry
+## point rather than a shortcut around one: booting the scene needs a processed frame this
+## synchronous runner does not have, and `@onready` members would be null anyway because entering
+## the tree — not construction — is what fires `_ready()`.
+const MAIN_SCRIPT := preload("res://src/scenes/main.gd")
+const MAIN_PATH := "res://src/scenes/main.gd"
+
 ## A wind nobody could call calm, pointing somewhere nobody could call north.
 const TEST_WIND_MPS := 6.0
 const TEST_WIND_FROM_DEG := 135.0
@@ -90,6 +98,11 @@ static func run() -> Array:
 		"gustiness does not": _gustiness_does_not(),
 		"the rho term still lands": _the_rho_term_still_lands(),
 		"two predicates gate the appends": _two_predicates_gate_the_appends(),
+		# THE FINDING THIS SECTION EXISTS FOR. Every other section in this suite calls
+		# `fingerprint(air, site, conditions)` ITSELF, so it proves the API and reads the
+		# production call site not at all — which is how a shipped lap key made of gate geometry
+		# and nothing else survived twelve reviews.
+		"the production lap key carries the world": _the_production_lap_key_carries_the_world(),
 	}
 	_clean_scratch()
 	# A runtime error partway through a section aborts only that section and its append never runs,
@@ -608,3 +621,134 @@ static func _clean_scratch() -> void:
 	for path in [SCRATCH_BEST_LAPS, SCRATCH_COURSES, SCRATCH_SITES]:
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+# ---------------------------------------------------------------------------
+# 10. THE SHIPPED APP'S OWN LAP KEY — not the API's
+# ---------------------------------------------------------------------------
+
+## `src/scenes/main.gd` is the only production caller of `fingerprint()`, at two lines: the
+## `lap_timer` initialiser and `adopt_selected_course()`. Both used to call it BARE. All three of
+## `p_air`/`p_site`/`p_conditions` default to `null`, so every guarded append was skipped and the
+## key a best lap was actually filed under in the shipped product was the gate geometry and
+## nothing else — a lap at 3500 m in a gale over a 6 m rise filed under the same key as a calm
+## sea-level lap on flat ground, which is word for word the record this file exists to prevent.
+##
+## THE MUTATION THIS IS BUILT TO KILL is `LapTimer.new(course.fingerprint() + "_MUT2")` at
+## `main.gd`'s adopt line — the production key corrupted arbitrarily. Against the suite as it
+## stood, that produced 3166 results and ZERO failures.
+##
+## So this section boots the real scene object, hands it libraries the way `RoomHost` does, calls
+## the one entry point the app calls, and reads the key off the timer the app flies with. It
+## computes its expectation from the API, which is legitimate HERE and nowhere else in this file:
+## the thing under test is the wiring between two pieces of code, so one of them is the oracle for
+## the other. The non-vacuity guard below is what stops that being circular — if the world did not
+## move the hash, the comparison would pass no matter what `main.gd` did.
+static func _the_production_lap_key_carries_the_world() -> Array:
+	var out: Array = []
+
+	# A world with something to say on all three terms at once: thin air, a real slope, and a
+	# steady wind off a bearing nobody could round to north.
+	var site := Site.new()
+	site.site_id = "f9_prod_site"
+	site.site_name = "Leh"
+	site.elevation_m = 3500.0
+	site.terrain = Terrain.shaped(Terrain.SLOPE, 120.0, 120.0,
+		{"rise_m": 6.0, "direction_deg": 30.0}, 0.0, 0.0)
+	var sites := SiteLibrary.new()
+	sites.put(site)
+
+	var weather := Conditions.new()
+	weather.conditions_id = "f9_prod_weather"
+	weather.conditions_name = "Gale"
+	weather.wind_speed_mps = TEST_WIND_MPS
+	weather.wind_from_deg = TEST_WIND_FROM_DEG
+	weather.temperature_c = 31.0
+	var conditions := ConditionsLibrary.new()
+	conditions.put(weather)
+	conditions.select(weather.conditions_id)
+
+	var course := GateCourse.new([
+		GateCourse.make_gate(Vector3(0.0, 4.0, 12.0), 0.0, 1.5),
+		GateCourse.make_gate(Vector3(0.0, 4.0, -12.0), 180.0, 1.5),
+	], "f9_prod_course", "F9 production course")
+	course.site_id = site.site_id
+	var courses := CourseLibrary.new()
+	courses.put(course)
+	courses.select(course.course_id)
+
+	var bare := course.fingerprint()
+	var with_world := course.fingerprint(AirDensity.compose(site, weather), site, weather)
+
+	# THE NON-VACUITY GUARD, and it comes first. If this world did not move the hash, every
+	# assertion below would compare one string against the same string and pass under any
+	# mutation at all — the exact shape of check this wave keeps finding.
+	out.append(TestResult.new(
+		"the fixture world really does move the hash, so the comparisons below have something " +
+			"to compare (thin air, a 6 m slope and a steady wind)",
+		with_world != bare,
+		"bare = %s, with the world = %s" % [bare, with_world]))
+
+	var scene: Node3D = MAIN_SCRIPT.new()
+	scene.site_library = sites
+	scene.course_library = courses
+	scene.conditions_library = conditions
+	scene.adopt_selected_course()
+	var produced: String = scene.lap_timer.course_key
+
+	out.append(TestResult.new(
+		"the SHIPPED scene's lap timer is keyed on the world, not on the gates alone — " +
+			"adopt_selected_course() produces the air/terrain/wind hash",
+		produced == with_world,
+		"scene's lap_timer.course_key = %s, expected %s (the bare gate-only key is %s)" % [
+			produced, with_world, bare]))
+	# Said separately and in the other direction, because it is the defect in its own words: a
+	# regression that re-bares either call site reddens this one by name.
+	out.append(TestResult.new(
+		"and it is NOT the gate-geometry-only key that shipped",
+		produced != bare,
+		"scene's lap_timer.course_key = %s, gate-only key = %s" % [produced, bare]))
+
+	scene.free()
+
+	# THE OTHER CALL SITE. `lap_timer`'s initialiser runs at construction, before any library can
+	# be handed over, so it cannot be driven by the check above — it is the key a STANDALONE boot
+	# of main.tscn flies with (from the editor, and capture_frame.gd). Both sites go through one
+	# helper precisely so they cannot drift apart, and this asserts that they still do: a bare
+	# `fingerprint()` reappearing at either one reddens here.
+	var file := FileAccess.open(MAIN_PATH, FileAccess.READ)
+	if file == null:
+		out.append(TestResult.new(
+			"main.gd can be read for the lap-key wiring scan", false,
+			"could not open %s" % MAIN_PATH))
+		return out
+	var source := file.get_as_text()
+	file.close()
+
+	var timer_calls := 0
+	var keyed_calls := 0
+	for line in source.split("\n"):
+		var text: String = line.strip_edges()
+		if text.begins_with("#") or text.begins_with("##"):
+			continue
+		if text.find("LapTimer.new(") < 0:
+			continue
+		timer_calls += 1
+		if text.find("LapTimer.new(_lap_key())") >= 0:
+			keyed_calls += 1
+
+	out.append(TestResult.new(
+		"both of main.gd's LapTimer.new() sites build their key through _lap_key(), the one " +
+			"place the world is passed — neither calls fingerprint() bare",
+		timer_calls == 2 and keyed_calls == 2,
+		"%d LapTimer.new() call sites in main.gd, %d of them keyed through _lap_key()" % [
+			timer_calls, keyed_calls]))
+	# A SOURCE SCAN'S BLIND SPOT, STATED: it reads text, so it cannot see whether `_lap_key()`
+	# still passes anything. That is what the booted check above is for, and neither stands alone.
+	out.append(TestResult.new(
+		"_lap_key() passes all three optional arguments, not a subset",
+		source.find("course.fingerprint(AirDensity.compose(where, weather), where, weather)") >= 0,
+		"the call text was %s" % (
+			"found" if source.find("course.fingerprint(AirDensity.compose(where, weather), where, weather)") >= 0
+			else "NOT found")))
+	return out

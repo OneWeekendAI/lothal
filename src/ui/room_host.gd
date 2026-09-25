@@ -350,6 +350,14 @@ func show_sim() -> void:
 		# disk before the save. Handed over BEFORE adopt_selected_course(), which resolves the
 		# open course's site through it.
 		sim.site_library = site_library
+		# AND THE WEATHER, across the same door and for the same reason. Sim used to do
+		# `ConditionsLibrary.load_from()` in its own `_ready` — a second copy read off disk before
+		# the save, which is the thing the comment four lines up forbids in as many words. It was
+		# safe only because every weather edit saves synchronously; that is a property of the
+		# Field room today, not a guarantee, and it is exactly the seam an unpersisted piece of
+		# weather state falls through. Handed over BEFORE `adopt_selected_course()`, which reads
+		# the selected conditions into the lap key.
+		sim.conditions_library = conditions_library
 		sim.adopt_selected_course()
 		# Sim is a direct child rather than living in `_host`, so nothing insets it below the
 		# shell's chrome the way Lab is inset. Its panel is told how much room that chrome takes

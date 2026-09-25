@@ -32,6 +32,9 @@ static func run() -> Array:
 		"one entry point": _one_entry_point(),
 		# F6 fix round 1: obstacles are collidable IN SIM, not just at the TerrainMesh API.
 		"obstacles reach the sim scene's collider": _obstacles_reach_the_sim_scene(),
+		# Final review: the shipped entry into Sim rebuilds the ground BEFORE the scene is in the
+		# tree, so the guard is what stands between the happy path and a SCRIPT ERROR.
+		"the pre-tree rebuild is all or nothing": _the_pre_tree_rebuild_is_all_or_nothing(),
 	}
 	# A runtime error partway through a section aborts only that section and its append never
 	# runs, so the suite would pass with its best checks silently deleted. Asserting each section
@@ -321,6 +324,16 @@ static func _one_entry_point() -> Array:
 		"adopt_selected_course() calls _rebuild_ground() at its own indent level (unconditionally)",
 		_calls_unconditionally(adopt_body, "_rebuild_ground()"),
 		"found: %s" % (adopt_body.find("_rebuild_ground()") >= 0)))
+	# WHAT THIS SCAN USED TO CERTIFY WAS A CALL THAT ALWAYS ABORTED. `RoomHost.show_sim` calls
+	# `adopt_selected_course()` BEFORE `add_child(sim)`, and `@onready` resolves on tree entry, so
+	# on the shipped path into Sim the ground nodes are null here and `_rebuild_ground()` raised
+	# `'mesh' on Nil` on every single entry into the room. The scan was green throughout: it reads
+	# the call, not what the call does. §10 below is the half that looks.
+	results.append(TestResult.new(
+		"_rebuild_ground() opens by refusing the nodes it has not got, inline — not assuming a " +
+			"tree it may not be in yet",
+		_calls_unconditionally(rebuild_body, "if ground_mesh == null or ground_collision == null:"),
+		"body opens: %s" % rebuild_body.strip_edges().substr(0, 120)))
 	# F6: build_mesh/build_collider gained an `obstacles` argument so obstacles reach the SAME
 	# triangle list the floor does — re-pointed to the new call text rather than loosened to a
 	# bare "TerrainMesh.build_mesh" substring, which would stop noticing a rebuild that got
@@ -454,3 +467,98 @@ static func _calls_unconditionally(body: String, needle: String) -> bool:
 			if leading_tabs == 1:
 				return true
 	return false
+
+
+# ---------------------------------------------------------------------------
+# 10. The pre-tree rebuild is ALL OR NOTHING (final review, finding 5)
+# ---------------------------------------------------------------------------
+
+## `RoomHost.show_sim()` calls `sim.adopt_selected_course()` before `add_child(sim)`. `@onready`
+## members resolve when the node enters the tree, so `ground_mesh` and `ground_collision` are both
+## still null at that point — on the SHIPPED path, every time. `_rebuild_ground()` assigned
+## straight through them and raised `Invalid assignment of property 'mesh' ... on a base object of
+## type 'Nil'` on every entry into Sim. Benign in effect, because `_ready` rebuilds a few lines
+## later; not benign as texture, because a real abort hides in exactly that noise, and §8's source
+## scan certified the call the whole time.
+##
+## THE ORDERING IS NOT WHAT WAS FIXED, and that is deliberate: `add_child` first would run
+## `_ready` — and build `CourseRenderer` — against the course the scene loaded off disk at
+## construction rather than the one the door just handed over, which is a worse defect than a
+## stderr line. The guard is the fix.
+##
+## HOW AN ABORT IS SEEN AT ALL, given that GDScript aborts are local and invisible to the caller:
+## supply ONE of the two nodes. With the guard, nothing is built. Without it, the mesh is assigned
+## and THEN the collider dereference aborts — so `ground_mesh.mesh` being null is the whole
+## difference between the guarded and the unguarded function, observed from outside.
+static func _the_pre_tree_rebuild_is_all_or_nothing() -> Array:
+	var results: Array = []
+
+	var terrain := Terrain.flat(40.0, 40.0)
+	var site := Site.new()
+	site.site_id = "pre_tree_site"
+	site.terrain = terrain
+	var sites := SiteLibrary.new()
+	sites.put(site)
+
+	var course := GateCourse.new([
+		GateCourse.make_gate(Vector3(0.0, 4.0, 8.0), 0.0, 1.5),
+		GateCourse.make_gate(Vector3(0.0, 4.0, -8.0), 180.0, 1.5),
+	], "pre_tree_course", "Pre-tree course")
+	course.site_id = site.site_id
+	var courses := CourseLibrary.new()
+	courses.put(course)
+
+	# THE SHIPPED ORDERING: libraries handed over, adopt called, nothing added to any tree — so
+	# both @onready members are null, exactly as they are in `RoomHost.show_sim`.
+	var bare: Node3D = MAIN_SCRIPT.new()
+	bare.site_library = sites
+	bare.course_library = courses
+	results.append(TestResult.new(
+		"the fixture reproduces the shipped entry into Sim — both ground nodes null before " +
+			"adopt_selected_course()",
+		bare.ground_mesh == null and bare.ground_collision == null,
+		"ground_mesh %s, ground_collision %s" % [bare.ground_mesh, bare.ground_collision]))
+	bare.adopt_selected_course()
+	# The adopt path's real work still happened; the rebuild is the only part that stood down.
+	results.append(TestResult.new(
+		"adopt_selected_course() still does its job with no nodes — the course, the ground and " +
+			"the lap key are all re-read",
+		bare.course != null and bare.course.course_id == "pre_tree_course"
+			and bare.terrain != null and bare.lap_timer != null,
+		"course %s, terrain %s, lap key %s" % [
+			"null" if bare.course == null else bare.course.course_id,
+			"null" if bare.terrain == null else String(bare.terrain.shape),
+			"null" if bare.lap_timer == null else bare.lap_timer.course_key]))
+	bare.free()
+
+	# HALF THE NODES: the observable difference between the guard and the abort.
+	var half: Node3D = MAIN_SCRIPT.new()
+	half.site_library = sites
+	half.course_library = courses
+	half.ground_mesh = MeshInstance3D.new()
+	half.adopt_selected_course()
+	results.append(TestResult.new(
+		"a rebuild that cannot finish does not half-finish: with only the mesh node supplied, " +
+			"no mesh is built (unguarded, it is assigned and THEN the collider aborts)",
+		half.ground_mesh.mesh == null,
+		"ground_mesh.mesh = %s" % half.ground_mesh.mesh))
+	half.ground_mesh.free()
+	half.free()
+
+	# THE NON-VACUITY PARTNER. With both nodes there the rebuild really does build — otherwise
+	# "no mesh was built" above would pass against a `_rebuild_ground()` that had been deleted.
+	var whole: Node3D = MAIN_SCRIPT.new()
+	whole.site_library = sites
+	whole.course_library = courses
+	whole.ground_mesh = MeshInstance3D.new()
+	whole.ground_collision = CollisionShape3D.new()
+	whole.adopt_selected_course()
+	results.append(TestResult.new(
+		"and with both nodes supplied it builds both — the guard refuses the incomplete case, " +
+			"not the rebuild",
+		whole.ground_mesh.mesh != null and whole.ground_collision.shape != null,
+		"mesh %s, collider %s" % [whole.ground_mesh.mesh, whole.ground_collision.shape]))
+	whole.ground_mesh.free()
+	whole.ground_collision.free()
+	whole.free()
+	return results

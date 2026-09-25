@@ -106,6 +106,10 @@ const TEMPERATURE_STEP_C := 1.0
 ## `Wind.gust_tau_s`'s own field range. Its shipped value (`Wind.DEFAULT_GUST_TAU_S`) is a labelled
 ## GUESS (`wind.gd`'s header), so §0.1's "a guess ships with an editable field beside it" is what
 ## puts this control here — not a belief that a builder can state a true settling time.
+## Ruling 78's local workaround, in pixels — see `_scroller()`. Same figure `part_finder.gd`
+## uses, because it is the same grabber.
+const SCROLLBAR_WIDTH := 8.0
+
 const MIN_GUST_TAU_S := 0.5
 const MAX_GUST_TAU_S := 10.0
 const GUST_TAU_STEP_S := 0.1
@@ -217,7 +221,15 @@ var selected_gate := 0
 ## The gust process's one free constant, held here so the labelled guess has an editable field
 ## beside it. Nothing persists it yet — there is still no per-course or per-conditions slot for a
 ## settling time — so this moves the in-memory guess a builder is trying, and says so on screen.
-var gust_tau_s := Wind.DEFAULT_GUST_TAU_S
+## READ THROUGH TO THE SELECTED CONDITIONS, never mirrored on this object. It used to be a plain
+## member, and that member was the whole bug: the SpinBox set it, `_changed` never persisted it,
+## and `main.gd` never read it — so "Gust settle" was a dial with no wire and the check covering it
+## asserted that a setter sets. A getter over the record cannot go stale and cannot be set without
+## going through `set_field_gust_tau_s`, which is the one path that saves.
+var gust_tau_s: float:
+	get:
+		var now := conditions.selected()
+		return now.gust_tau_s if now != null else Conditions.DEFAULT_GUST_TAU_S
 
 var site_list: ItemList
 var course_list: ItemList
@@ -347,6 +359,29 @@ func _scroller(node_name: String, visible_floor: float) -> ScrollContainer:
 	# site keeps, which is the thing this room exists to show.
 	scroller.size_flags_horizontal = Control.SIZE_FILL
 	scroller.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# A SCROLLBAR YOU CAN SEE (Ruling 78), and this is `part_finder.gd:276-287`'s workaround with
+	# `part_finder.gd`'s named cause: `LothalTheme` styles a `VScrollBar` as a translucent grabber
+	# over a `StyleBoxEmpty` track, and NEITHER stylebox carries a content margin. A `ScrollBar`'s
+	# minimum size IS its styleboxes' minimum size, so every scrollbar in this app reports a width
+	# of zero — live, wheel-scrollable, painting nothing.
+	#
+	# It matters more here than on a shelf of parts. A list that stops at row 13 still reads as a
+	# list; a PANEL COLUMN that ends mid-row reads as "that is all there is", and what it hides is
+	# the three panels §5.2 mandates. F11 is what put two whole columns inside scrollers, so F11 is
+	# where the symptom got worse.
+	#
+	# FIXED LOCALLY, NOT IN THE THEME, deliberately and with the cost written down: a content
+	# margin on the grabber changes the minimum width of every `ScrollContainer` in the app, which
+	# needs re-measuring against this room's own floors and `test_shell_layout.gd`'s 1024x600
+	# assertions. That measurement is not made here. Two columns are.
+	scroller.get_v_scroll_bar().custom_minimum_size.x = SCROLLBAR_WIDTH
+	# AND A GUTTER SO THE BAR IS NOT STANDING ON THE WORDS. Widening the bar gives it pixels; it
+	# does not move the rows out from under it. A `ScrollContainer` lays its child out inside its
+	# own `panel` stylebox's margins, and the theme's is empty, so this is a stylebox rather than a
+	# property — the property does not exist.
+	var gutter := StyleBoxEmpty.new()
+	gutter.content_margin_right = SCROLLBAR_WIDTH
+	scroller.add_theme_stylebox_override("panel", gutter)
 	return scroller
 
 
@@ -609,7 +644,27 @@ func choose_course(index: int) -> void:
 ## describe that place.
 func courses_of_selected_site() -> Array[String]:
 	var out: Array[String] = []
-	var here := sites.selected().site_id
+	# RULING 19, RESTORED. A library with no selected site answers `null`, and `.site_id` written
+	# inline here aborts this function. Nowhere to fly means no courses here, which is the same
+	# reading `_refresh_world()` gives a null site two hundred lines down.
+	#
+	# WHAT THIS GUARD DOES *NOT* FIX, measured rather than reasoned, because the final review said
+	# otherwise and a mutation disproved it: the abort does NOT latch `_filling`. A GDScript
+	# runtime error aborts only the function it is raised in and hands the CALLER this function's
+	# return-type default — `[]` for `Array[String]` — so `_fill_lists_body()` carries straight on
+	# and `_fill_lists()` clears the latch as usual. The rail keeps working. Removing this guard
+	# and running the full suite produces the SCRIPT ERROR and no behavioural difference at all,
+	# which is exactly why the only honest check for it is the source scan in
+	# `test_ground_authority.gd` and not a behavioural one: an aborted call and a guarded call
+	# return the same value to the same caller, and nothing downstream can tell them apart.
+	#
+	# The latch hazard is real, but it belongs to aborts raised INSIDE `_fill_lists_body()` itself
+	# (`site_list.clear()` on a null list, say). That is what the two-function split below fixes,
+	# and it has its own check.
+	var selected_site := sites.selected()
+	if selected_site == null:
+		return out
+	var here := selected_site.site_id
 	for id in courses.ids():
 		if courses.course(id).site_id == here:
 			out.append(id)
@@ -1025,10 +1080,19 @@ func set_field_temperature_c(temperature_c: float) -> void:
 	_changed(true)
 
 
-## The gust process's settling time. Nothing persists it yet; this moves the in-memory guess so a
-## headless caller drives the SAME path the SpinBox drives rather than poking the bare variable.
+## The gust process's settling time, onto the SELECTED conditions and then to disk — the same
+## shape `set_field_temperature_c` above has, and for the same reason: it is weather, so it is
+## saved under `_changed(true)` and nothing else rewrites `conditions.json`.
+##
+## Clamped to the field's own range here rather than trusted, because a headless caller drives
+## this function directly and `Wind.update()` divides by `gust_tau_s + dt` — a zero or negative
+## settling time is a filter coefficient greater than one, which is a gust process that diverges.
 func set_field_gust_tau_s(p_gust_tau_s: float) -> void:
-	gust_tau_s = p_gust_tau_s
+	var now := conditions.selected()
+	if now == null:
+		return
+	now.gust_tau_s = clampf(p_gust_tau_s, MIN_GUST_TAU_S, MAX_GUST_TAU_S)
+	_changed(true)
 
 
 ## HOW WIDE THE FIELD IS, and the preview redraws from the same description `height_at` answers
@@ -1111,27 +1175,58 @@ func _render_controls() -> void:
 	if here != null:
 		width_field.value = clampf(here.extent().x, MIN_SITE_DIM_M, MAX_SITE_DIM_M)
 		length_field.value = clampf(here.extent().y, MIN_SITE_DIM_M, MAX_SITE_DIM_M)
+	# The settling time is a field of the SELECTED conditions now, so switching temperature
+	# switches which record this control is showing — it has to be re-read here like the rest, or
+	# the SpinBox would keep displaying the previous set's number.
+	if gust_tau_field != null:
+		gust_tau_field.value = clampf(gust_tau_s, MIN_GUST_TAU_S, MAX_GUST_TAU_S)
 	_updating = false
 
 
+## THE LATCH IS CLEARED BY THE CALLER, NOT BY THE BODY, and that split is the whole point of this
+## two-function shape. A GDScript runtime error aborts only the function it is raised in and lets
+## the CALLER resume — the same fact `tools/run_one_suite.gd`'s `_call_run` is built on. With the
+## `_filling = false` inside the body, an abort raised IN THE BODY left the latch stuck `true` for
+## the life of the room, and `choose_site`/`choose_course` early-return on it, so the rail stopped
+## responding to clicks. Nothing raised that a check could see, and nothing logged but a
+## SCRIPT ERROR in a green run.
+##
+## BE PRECISE ABOUT WHICH ABORT, because the final review was not and it matters: an abort inside
+## a function the body CALLS — `courses_of_selected_site()`, the null-site case — never latched
+## anything, since the callee absorbs its own abort and the body resumes. Measured, by mutation.
+## The ones that latch are the ones raised in the body's own frame. This split covers those, and
+## it covers the ones nobody has thought of yet, which is the point of doing it structurally
+## rather than guarding each dereference. Do not move `_filling = false` back into
+## `_fill_lists_body()`.
 func _fill_lists() -> void:
 	_filling = true
+	_fill_lists_body()
+	_filling = false
+
+
+func _fill_lists_body() -> void:
 	site_list.clear()
+	# Ruling 19 again, on both halves: `selected()` answers null for a library that has none, and
+	# the id is only ever compared, never needed. An empty string matches nothing, so a library
+	# with no selection fills the list and highlights no row — which is the truth.
+	var selected_site := sites.selected()
+	var selected_site_id := selected_site.site_id if selected_site != null else ""
 	var site_ids := sites.ids()
 	for i in site_ids.size():
 		var id := str(site_ids[i])
 		site_list.add_item(sites.site(id).site_name)
-		if id == sites.selected().site_id:
+		if id == selected_site_id:
 			site_list.select(i)
 
 	course_list.clear()
+	var selected_course := courses.selected()
+	var selected_course_id := selected_course.course_id if selected_course != null else ""
 	var here := courses_of_selected_site()
 	for i in here.size():
 		var id := str(here[i])
 		course_list.add_item(courses.course(id).course_name)
-		if id == courses.selected().course_id:
+		if id == selected_course_id:
 			course_list.select(i)
-	_filling = false
 
 
 func _refresh_world() -> void:
@@ -1357,7 +1452,9 @@ class SitePanel extends SpecPanel:
 
 	func show_site(p_site: Site) -> void:
 		site = p_site
-		render_rows("Site · %s" % p_site.site_name)
+		# RULING 19, RESTORED — and `row_text` two lines below has guarded the same object all
+		# along, so this line was dereferencing a null the very next function handles.
+		render_rows("Site · %s" % (p_site.site_name if p_site != null else "—"))
 
 	func row_text(key: String) -> String:
 		if site == null:

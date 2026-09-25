@@ -12,11 +12,19 @@ extends RefCounted
 ## unseeded global RNG would make every test in this repo that touches the flight loop
 ## irreproducible, which is a worse defect than having no noise at all.
 
-## The ONE free constant in this slice, and it is labelled a guess with an editable field.
-## A gust does not arrive instantaneously and does not last a minute; 2.5 s is the order of a
-## gust front at hand-flown scale. It is NOT measured. Nothing else here is free: the gust
-## amplitude is the builder's gustiness figure.
-const DEFAULT_GUST_TAU_S := 2.5
+## AN ALIAS, NOT A NUMBER. The settling time is a field of the weather the builder authors, so it
+## lives on `Conditions` beside `gustiness_mps` and is re-exported here under the name every
+## caller already spells. Sim authors nothing, and that includes the constants it flies at.
+##
+## It is still a labelled guess with an editable field (`Conditions.DEFAULT_GUST_TAU_S` says why
+## and what it is). Nothing else here is free: the gust amplitude is the builder's own figure.
+##
+## `p_gust_tau_s` below stays a DEFAULTED ARGUMENT because the test suite drives this process at
+## chosen time constants — but a production caller must pass `p_conditions.gust_tau_s`, and the
+## one that matters does, through `Main.make_wind()`. A bare `Wind.new(conditions)` flies at the
+## default whatever the builder typed, which is the defect that made the Field room's "Gust
+## settle" field a dial with no wire.
+const DEFAULT_GUST_TAU_S := Conditions.DEFAULT_GUST_TAU_S
 const DEFAULT_SEED := 0x10FA2   # distinct from Gyro's, so the two streams never correlate
 
 ## The constant part of the wind, m/s, world frame. Built once from `Conditions` in `_init` —

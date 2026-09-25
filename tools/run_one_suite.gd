@@ -168,5 +168,13 @@ func _required_arg_count(script: Script, method_name: String) -> int:
 ## only this helper, and `_init()` lives to refuse loudly. Inline, the same abort would take
 ## `_init()` with it, never reach `quit()`, and leave the process idling for ever, which is the
 ## entire failure mode Ruling 71 exists to kill. Do not inline this call back into `_init()`.
+##
+## THE ONE CASE THIS DOES NOT COVER, named so the `is Array` refusal upstream is not read as
+## belt-and-braces and deleted: a suite whose `run()` AWAITS returns a `GDScriptFunctionState`
+## from this call, not its results — perfectly successfully, with no abort anywhere. The helper
+## cannot tell that apart from a healthy return, and `await`ing it here would defeat the whole
+## point of the helper. So the non-`Array` refusal in `_init()` is what catches it, and it is
+## load-bearing rather than defensive. `tests/run_tests.gd` handles the awaiting suite the other
+## way — helper returns the state, caller awaits it — because it is the one runner that has to.
 func _call_run(script: Script) -> Variant:
 	return script.run()

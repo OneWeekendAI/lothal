@@ -21,15 +21,25 @@ extends RefCounted
 ## does this build do when it is hot?"), not a property of the ground.
 ##
 ## ---------------------------------------------------------------------------
-## FOUR AUTHORED FIELDS, AND A FIFTH IS A DESIGN CHANGE
+## FIVE AUTHORED FIELDS, AND A SIXTH IS A DESIGN CHANGE
 ## ---------------------------------------------------------------------------
 ##
-## `wind_speed_mps`, `wind_from_deg`, `gustiness_mps`, `temperature_c`. Humidity is not here for
-## `air_density.gd`'s measured reason; a turbulence length scale, a gust period and an air-pressure
-## offset are all things somebody could want and none of them are things a builder can ANSWER, and
-## a field nobody can fill honestly is a guess wearing a spinbox. `tests/test_conditions.gd`
-## enumerates `to_data()`'s keys against a literal list so that a fifth arrives through the design
-## rather than through a commit.
+## `wind_speed_mps`, `wind_from_deg`, `gustiness_mps`, `temperature_c`, `gust_tau_s`. Humidity is
+## not here for `air_density.gd`'s measured reason; a turbulence length scale and an air-pressure
+## offset are things somebody could want and are not things a builder can ANSWER, and a field
+## nobody can fill honestly is a guess wearing a spinbox. `tests/test_conditions.gd` enumerates
+## `to_data()`'s keys against a literal list so that a sixth arrives through the design rather
+## than through a commit.
+##
+## `gust_tau_s` IS THE ONE THAT ARRIVED THAT WAY, and the paragraph above used to name "a gust
+## period" as a field a builder cannot answer. That reading stands and is not being walked back:
+## it is a GUESS, it says so on the control beside it ("A guess, not measured."), and §0.1's rule
+## is that a guess ships with an editable field rather than buried as a constant. What it may not
+## do is ship as a DIAL WITH NO WIRE. The Field room had one — the SpinBox moved a number on the
+## room object that nothing downstream ever read, because `Wind._init` takes the settling time as
+## a defaulted argument and `main.gd` passed none — which reads as coverage of a feature that does
+## not exist, and is worse than not shipping the field. So the number lives here, where a builder
+## typed it, and the process reads it: `gustiness_mps`'s rule, applied to its own time constant.
 ##
 ## `gustiness_mps` IS NOT A FREE CONSTANT. It is the amplitude of the gust process Sim runs, and
 ## Sim authors nothing: the number lives here, where a builder typed it, and the process reads it.
@@ -38,6 +48,13 @@ extends RefCounted
 ## meteorological convention and the one every wind app a builder has ever looked at uses. The
 ## opposite convention (the direction it blows towards) is equally defensible and silently gives a
 ## build a tailwind where it should have a headwind, so it is named in the field and said here.
+
+## The shipped gust settling time, seconds. THE NUMBER LIVES HERE, not on `Wind`, because it is a
+## field of the weather a builder authors and `Wind` is the process that reads the weather —
+## `Wind.DEFAULT_GUST_TAU_S` is kept as an alias of this so the dependency runs one way only.
+## A guess: a gust does not arrive instantaneously and does not last a minute, and 2.5 s is the
+## order of a gust front at hand-flown scale. It is NOT measured, and the control says so.
+const DEFAULT_GUST_TAU_S := 2.5
 
 const STANDARD_ID := "standard"
 const STANDARD_NAME := "Standard"
@@ -60,6 +77,14 @@ var wind_from_deg := 0.0
 var gustiness_mps := 0.0
 ## How warm it is, °C. The temperature half of every density this app quotes.
 var temperature_c := AirDensity.STANDARD_TEMPERATURE_C
+## How long the gust process takes to settle, seconds — the time constant of the one-pole filter
+## `Wind.update()` runs. Authored here and read by Sim, exactly as `gustiness_mps` is; see the
+## header for why a labelled guess belongs on the record rather than in a default argument.
+##
+## NOT HASHED INTO THE LAP FINGERPRINT, and deliberately: `gate_course.gd`'s `fingerprint()` says
+## why gustiness is left out — it is a noise process whose mean is the steady figure already in
+## the key — and a time constant of that same process is left out on the identical argument.
+var gust_tau_s := DEFAULT_GUST_TAU_S
 
 ## Everything the file held that this version does not recognise, kept so that opening an older
 ## build does not silently destroy a newer one's settings.
@@ -98,12 +123,13 @@ func has_steady_wind() -> bool:
 # ---------------------------------------------------------------------------
 
 const KNOWN_KEYS := ["id", "name", "wind_speed_mps", "wind_from_deg", "gustiness_mps",
-	"temperature_c"]
+	"temperature_c", "gust_tau_s"]
 
-## The four the builder authors, as distinct from the two that identify the set. The literal the
+## The five the builder authors, as distinct from the two that identify the set. The literal the
 ## suite checks `to_data()` against, kept here rather than in the test so that the design statement
 ## and the code are the same sentence.
-const AUTHORED_KEYS := ["wind_speed_mps", "wind_from_deg", "gustiness_mps", "temperature_c"]
+const AUTHORED_KEYS := ["wind_speed_mps", "wind_from_deg", "gustiness_mps", "temperature_c",
+	"gust_tau_s"]
 
 
 ## A set from a record. An unreadable field falls back to its standard value rather than dropping
@@ -128,6 +154,9 @@ static func from_data(data: Variant) -> Conditions:
 	out.wind_from_deg = _number(record.get("wind_from_deg"), 0.0)
 	out.gustiness_mps = _number(record.get("gustiness_mps"), 0.0)
 	out.temperature_c = _number(record.get("temperature_c"), AirDensity.STANDARD_TEMPERATURE_C)
+	# A FILE WRITTEN BEFORE THIS FIELD EXISTED HAS NO `gust_tau_s`, and falls back to the shipped
+	# guess — which is exactly what that file was flown at, so the migration is a no-op in effect.
+	out.gust_tau_s = _number(record.get("gust_tau_s"), DEFAULT_GUST_TAU_S)
 
 	out._unknown = JsonStore.unknown_fields(record, KNOWN_KEYS)
 	return out
@@ -139,8 +168,8 @@ static func from_data(data: Variant) -> Conditions:
 ## EVERY KEY IS ALWAYS WRITTEN, where a site omits three of its six. The two files differ because
 ## the records do: a site's terrain block and obstacle list are things a builder may never have
 ## touched, and inventing them puts structure into a file nobody authored. A set of conditions has
-## four numbers and nothing else; a set with no wind speed in it is not a set that said nothing
-## about wind, it is a damaged record. So the four go out every time and the round-trip promise is
+## five numbers and nothing else; a set with no wind speed in it is not a set that said nothing
+## about wind, it is a damaged record. So the five go out every time and the round-trip promise is
 ## about the bytes of what was there, not about which keys were.
 func to_data() -> Dictionary:
 	var record := _unknown.duplicate(true)
@@ -150,6 +179,7 @@ func to_data() -> Dictionary:
 	record["wind_from_deg"] = wind_from_deg
 	record["gustiness_mps"] = gustiness_mps
 	record["temperature_c"] = temperature_c
+	record["gust_tau_s"] = gust_tau_s
 	return record
 
 

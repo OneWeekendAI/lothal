@@ -52,7 +52,28 @@ func _init() -> void:
 	# that exception exists and what belongs in it. Run under --headless like the rest: these are
 	# 2D control rects, which the dummy driver produces correctly — unlike a SubViewport's 3D
 	# contents, which is why the capture tools are not headless.
-	var layout_results: Array = await TestShellLayout.run(self)
+	#
+	# RULING 71 — CALLED FROM A HELPER, AND `await`ED OUT HERE. This used to be
+	# `await TestShellLayout.run(self)` inline, in `_init()` itself, above `quit()`, on the one
+	# suite in the repo with a non-zero arity and an unusual contract — precisely the shape that
+	# produced every orphaned process this plan paid for. An abort inline takes `_init()` with it,
+	# never reaches `quit()`, and idles for ever: 1200 s under `tools/run_tests_safe.sh`'s
+	# watchdog, and UNBOUNDED under the raw `godot --headless --script res://tests/run_tests.gd`
+	# that the wrapper's own header promises keeps working.
+	#
+	# The `is Array` guard is not belt-and-braces. `_call_layout_run()` is typed `Variant`, and a
+	# GDScript abort hands the caller that function's return-type default — `null` — which is not
+	# an `Array`. Normalising to `[]` here is what turns a silent hang into the loud `[FAIL]` two
+	# lines down. `tools/run_one_suite.gd:93-99` keeps the same refusal for the same reason.
+	#
+	# WHAT THIS DOES NOT COVER, said plainly: `run()` awaits frames, so an abort raised AFTER its
+	# first suspend leaves a function state that is never resumed, and this `await` never returns.
+	# The helper cannot contain that one — nothing in GDScript can — and the watchdog in
+	# `tools/run_tests_safe.sh` is the backstop for it. What the helper DOES contain is the abort
+	# raised synchronously at or before the call, which is the Ruling-71 shape: a wrong arity, an
+	# unregistered class, an error in the suite's own prologue.
+	var layout_returned: Variant = await _call_layout_run()
+	var layout_results: Array = layout_returned if layout_returned is Array else []
 	if layout_results.is_empty():
 		fail_count += 1
 		total += 1
@@ -79,6 +100,29 @@ func _init() -> void:
 	print("[runner] run_tests.gd reached the end of _init(); exiting %d" % (1 if fail_count > 0 else 0))
 	quit(1 if fail_count > 0 else 0)
 
+## Calls the laid-out suite's `run()` FROM A HELPER. Ruling 71, and see the call site above for
+## what the inline version cost and what it does not buy.
+##
+## This is a coroutine and it has to be: `TestShellLayout.run()` is one, and GDScript makes
+## calling a coroutine without `await` a PARSE error, so there is no "hand the state back
+## un-awaited" shape available. The containment is still real — an abort raised synchronously
+## inside `run()` kills THIS function, which returns `null` to a caller that is still alive to
+## refuse it, where inline the same abort killed `_init()` itself and the process idled for ever.
+##
+## Do not inline this call back into `_init()`.
+func _call_layout_run() -> Variant:
+	return await TestShellLayout.run(self)
+
+
+## EVERY SUITE IS DISPATCHED FROM HERE, AND THAT IS STRUCTURAL — NOT TIDINESS. Ruling 71.
+##
+## A GDScript runtime error aborts the function it is raised in and lets the CALLER resume with
+## that function's return-type default. All ~160 `run()` calls below are therefore contained: an
+## abort in any of them kills THIS function, `_init()` resumes with an empty `Array`, and
+## `:34-39` reports a loud `[FAIL]` naming the suite. Inline the `match` into `_init()` — an
+## obvious tidy-up, and it looks like one — and the same abort takes `_init()` with it, `quit()`
+## is never reached, and the full suite hangs for ever. Nothing else in this file states that
+## dependency, which is why it is stated here. Do not inline this dispatch.
 func _run_suite(suite_name: String) -> Array:
 	match suite_name:
 		# F9 — terrain and wind in the lap fingerprint, and the pre-field best laps proved to survive it

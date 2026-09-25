@@ -629,6 +629,96 @@ static func _a_library_with_no_sites() -> Array:
 		"%d warning(s) with no site to speak of" % room.warnings().size()
 	))
 
+	# RULING 19'S TWO GUARDS. Installed in F4; the F11 port into `FieldSystem` re-pointed the tests
+	# and left the guards behind. They need two DIFFERENT kinds of check, and the reason is worth
+	# writing down because the first attempt at this got it wrong and a mutation caught it.
+	#
+	# `courses_of_selected_site()` HAS NO BEHAVIOURAL SIGNATURE AT ALL, and no check can give it
+	# one. A GDScript abort returns the function's return-type default to the caller — `[]` for
+	# `Array[String]` — which is exactly what the guarded version returns. Caller resumes either
+	# way, same value, same everything after it. A behavioural check here is guaranteed to be a
+	# check that cannot fail, and the first version of this WAS one: it planted a row in
+	# `course_list`, ran the fill and asserted the row was gone — which it is whether the call
+	# aborted or not, because `course_list.clear()` runs before the call. Its mutation scored 0.
+	#
+	# So this one is a SOURCE SCAN, with its blind spot stated: it reads text, so it cannot see
+	# whether the guard is correct, only that it is there. That is strictly more than nothing and
+	# it is honestly all this defect admits of. The SCRIPT ERROR the unguarded version prints is
+	# the other half of the evidence, and `tests/test_real_files.gd`'s header is where this repo
+	# records which of those are expected.
+	var room_source := ""
+	var room_file := FileAccess.open("res://src/ui/field_system.gd", FileAccess.READ)
+	if room_file != null:
+		room_source = room_file.get_as_text()
+		room_file.close()
+	results.append(TestResult.new(
+		"[F4] courses_of_selected_site() GUARDS the null selection rather than dereferencing it " +
+			"(source scan — an aborted call and a guarded one return the same [] to the same " +
+			"caller, so there is nothing behavioural to assert)",
+		room_source.find("var selected_site := sites.selected()\n\tif selected_site == null:\n\t\treturn out") >= 0,
+		"the guard text was %s in field_system.gd" % (
+			"found" if room_source.find("if selected_site == null:") >= 0 else "NOT found"))) 
+
+	# The Site panel's own guard, which DOES have a signature: `render_rows` runs after the
+	# dereference, so whether the title was rewritten says whether the function got past it.
+	# `row_text` two lines below `show_site` has guarded this same null all along, so the line
+	# above it was dereferencing something the very next function handles.
+	var site_panel: SpecPanel = room.panel("Site")
+	if site_panel == null:
+		results.append(TestResult.new(
+			"[F4] the Site panel exists to be asked about a null site", false, "panel(\"Site\") -> null"))
+	else:
+		site_panel._title.text = "STALE"
+		site_panel.show_site(null)
+		results.append(TestResult.new(
+			"[F4] and show_site(null) GUARDS rather than aborting — render_rows ran, so the " +
+				"title was rewritten instead of left stale",
+			site_panel._title.text != "STALE" and site_panel._title.text.contains("SITE"),
+			"the Site panel's title reads \"%s\"" % site_panel._title.text))
+
+	# THE RAIL IS STILL ALIVE, and this is the claim the check above CANNOT make. `_fill_lists()`
+	# sets `_filling` and `courses_of_selected_site()` runs between the two halves of it. When
+	# that function dereferenced a null `selected()`, the abort killed the fill BEFORE the latch
+	# was cleared — so `_filling` stayed `true` for the life of the room and `choose_site` /
+	# `choose_course` early-returned on every click for ever. The rail stopped responding, and
+	# "the refresh runs to the end" above went green anyway, because a GDScript abort is local and
+	# `refresh()` resumed. The assertion was true and the property it implied was false.
+	results.append(TestResult.new(
+		"[F4] the fill latch is not stuck after a refresh in the dangerous state — the rail can " +
+			"still be clicked",
+		not room._filling,
+		"_filling = %s after refresh() with no site at all" % room._filling))
+
+	# AND IT IS NOT STUCK AFTER A FILL THAT GENUINELY ABORTS, which is the half with teeth.
+	# Guarding the two null dereferences removes the aborts we know about; this asserts the
+	# CONSEQUENCE is gone for the ones we do not. `_fill_lists()` sets the latch, calls
+	# `_fill_lists_body()` and clears it, and the abort is local to the body — so the latch
+	# clears. Move `_filling = false` back inside the body and this goes red.
+	#
+	# THE ABORT IS REAL AND NOT SIMULATED. `_fill_lists_body()`'s very first statement is
+	# `site_list.clear()`, so taking the list away is a genuine null dereference inside the body —
+	# the same kind of abort the null site used to cause, raised somewhere a guard cannot be
+	# written for every case. It is driven on a throwaway room, never on one under test elsewhere.
+	# `SCRIPT ERROR: ... 'clear()' ... on a base object of type 'null instance'` in a green run of
+	# this suite is THIS check, and its absence means the check stopped testing anything.
+	var doomed := FieldSystem.new(
+		SiteLibrary.with_default(), CourseLibrary.load_from(EMPTY_COURSES_PATH),
+		ConditionsLibrary.with_default(), ReferenceBuild.build(), EMPTY_COURSES_PATH)
+	var had_list: bool = doomed.site_list != null
+	doomed.site_list = null
+	doomed._filling = false
+	doomed._fill_lists()
+	results.append(TestResult.new(
+		"[F4] the aborting-fill fixture is a room that really did have a list to lose",
+		had_list,
+		"site_list before the fixture took it away: %s" % ["built" if had_list else "null"]))
+	results.append(TestResult.new(
+		"[F4] and the latch is clear after a fill that ABORTED: an aborted fill cannot leave " +
+			"the rail dead",
+		not doomed._filling,
+		"_filling = %s after an aborted _fill_lists()" % doomed._filling))
+	doomed.free()
+
 	room.free()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(EMPTY_SITES_PATH))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(EMPTY_COURSES_PATH))

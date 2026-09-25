@@ -586,6 +586,7 @@ static func _the_file() -> Array:
 			"wind_from_deg": 225.0,
 			"gustiness_mps": 3.25,
 			"temperature_c": 27.5,
+			"gust_tau_s": 3.5,
 		}],
 	}
 	JsonStore.write_document(CONDITIONS_PATH, fixture)
@@ -651,21 +652,26 @@ static func _the_file() -> Array:
 
 
 # ---------------------------------------------------------------------------
-# 7. Four authored fields, and a fifth is a design change
+# 7. Five authored fields, and a sixth is a design change
 # ---------------------------------------------------------------------------
 
 ## CHECK 8. Enumerated against a literal list rather than counted, because a count passes when one
 ## field is swapped for another — and the thing being defended is not "how many", it is "which".
+##
+## `gust_tau_s` IS THE FIFTH, and it arrived through a design change rather than a commit — see
+## `conditions.gd`'s header. It was a plain member on the Field room with no consumer anywhere:
+## the SpinBox set it, nothing persisted it, and `main.gd` built `Wind.new(conditions)` with no
+## settling time, so a builder could type any number and it changed nothing, ever.
 static func _four_authored_fields() -> Array:
 	var results: Array = []
 	var record := Conditions.standard().to_data()
 	var keys: Array = record.keys()
 	keys.sort()
 
-	var expected := ["gustiness_mps", "id", "name", "temperature_c", "wind_from_deg",
-		"wind_speed_mps"]
+	var expected := ["gust_tau_s", "gustiness_mps", "id", "name", "temperature_c",
+		"wind_from_deg", "wind_speed_mps"]
 	results.append(TestResult.new(
-		"a set writes exactly six keys: the two that identify it and the four it authors",
+		"a set writes exactly seven keys: the two that identify it and the five it authors",
 		keys == expected,
 		"wrote %s" % str(keys)))
 
@@ -674,19 +680,21 @@ static func _four_authored_fields() -> Array:
 		if key != "id" and key != "name":
 			authored.append(key)
 	results.append(TestResult.new(
-		"and the four authored ones are wind speed, wind bearing, gustiness and temperature",
-		authored == ["gustiness_mps", "temperature_c", "wind_from_deg", "wind_speed_mps"],
+		"and the five authored ones are wind speed, wind bearing, gustiness, temperature and " +
+			"the gust settling time",
+		authored == ["gust_tau_s", "gustiness_mps", "temperature_c", "wind_from_deg",
+			"wind_speed_mps"],
 		"authored %s" % str(authored)))
 
-	# AND `AUTHORED_KEYS` SAYS THE SAME FOUR. It was asserted by its SIZE alone, which is the
-	# cannot-fail class: swap a field inside it for another and a count of four still passes.
+	# AND `AUTHORED_KEYS` SAYS THE SAME FIVE. It was asserted by its SIZE alone, which is the
+	# cannot-fail class: swap a field inside it for another and a count still passes.
 	# Nothing in src/ reads this constant, so the literal is the only thing that can hold it to
 	# what the class claims about itself — and it is the SAME literal the check above uses, sorted,
 	# rather than a second spelling free to drift from it.
 	var named: Array = Conditions.AUTHORED_KEYS.duplicate()
 	named.sort()
 	results.append(TestResult.new(
-		"and AUTHORED_KEYS names those same four, by content rather than by count",
+		"and AUTHORED_KEYS names those same five, by content rather than by count",
 		named == authored,
 		"AUTHORED_KEYS = %s against the keys actually written %s" % [named, authored]))
 	return results

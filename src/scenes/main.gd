@@ -111,6 +111,16 @@ var course: GateCourse = course_library.selected()
 ## one library (room_host.gd's `show_sim`). This load is what a direct run of `main.tscn` gets, and
 ## it is why the field initialiser stays: there is no door in that case to hand anything over.
 var site_library: SiteLibrary = SiteLibrary.load_from()
+## THE WEATHER, handed across the door like the other two libraries (`RoomHost.show_sim`) so that
+## Lab and Sim look at ONE set within a session. This `load_from()` is the standalone-boot
+## fallback — main.tscn run on its own from the editor, and capture_frame.gd — where there is no
+## door to hand anything over; it is not the door path's copy.
+##
+## It used to be read fresh in `_ready` instead, which is the thing `room_host.gd`'s own comment
+## forbids in as many words: "not a second copy read off disk before the save". That was safe only
+## because every weather edit saves synchronously, and it is the seam a piece of unpersisted
+## weather state falls straight through.
+var conditions_library: ConditionsLibrary = ConditionsLibrary.load_from()
 ## THE GROUND (F4). Null is flat at zero — a course whose site is missing is flown on the field
 ## every course was flown on before terrain existed, rather than on nothing.
 var terrain: Terrain = _course_terrain()
@@ -122,7 +132,7 @@ var terrain: Terrain = _course_terrain()
 var obstacles: Array[Obstacle] = _course_obstacles()
 ## Keyed on the course being flown, so a time set on one track is never reported as the record on
 ## another. See lap_timer.gd's header — this is the one line that stops a best lap becoming a lie.
-var lap_timer := LapTimer.new(course.fingerprint())
+var lap_timer := LapTimer.new(_lap_key())
 var course_renderer: CourseRenderer
 var drone_audio: DroneAudio
 ## The feed from the fitted camera — inset by default, whole screen on C. See FpvView: the swap
@@ -175,8 +185,34 @@ func adopt_selected_course() -> void:
 	course = course_library.selected()
 	terrain = _course_terrain()
 	obstacles = _course_obstacles()
-	lap_timer = LapTimer.new(course.fingerprint())
+	lap_timer = LapTimer.new(_lap_key())
 	_rebuild_ground()
+
+
+## THE KEY A BEST LAP IS FILED UNDER, and the ONE place this scene builds it. Both callers —
+## the initialiser above and `adopt_selected_course()` — go through here, because two spellings of
+## a hash is how one of them quietly stops passing the world.
+##
+## PASSING THE WORLD IS THE WHOLE POINT, and it is the line that was missing. `fingerprint()`
+## defaults all three of `p_air`/`p_site`/`p_conditions` to `null` (see `gate_course.gd:312`), and
+## a bare `course.fingerprint()` therefore keys a lap on the GATE GEOMETRY AND NOTHING ELSE — so a
+## lap flown at 3500 m in a 20 m/s gale over a 6 m rise is filed under the same key as a calm
+## sea-level lap on flat ground. That is, word for word, the record `gate_course.gd`'s own header
+## exists to prevent, and it shipped: `air` was a property on `GateCourse` before the field room,
+## the bare call read it, and turning it into a defaulted argument silently absorbed this call
+## site.
+##
+## The air is COMPOSED from the same two typed facts the Field room composes it from
+## (`AirDensity.compose`, and `FieldSystem.air()` one door over), not read off a third place.
+##
+## Appending terms does NOT orphan an existing best lap: every term is gated on being
+## non-standard (`p_air.is_standard()`, `terrain.is_flat_at_zero()`, `has_steady_wind()`), so on
+## default data the hash is byte-identical to the bare call's. That is pinned by
+## `tests/test_fingerprint_survival.gd`, and measured: applying this fix moved no check.
+func _lap_key() -> String:
+	var where := _course_site()
+	var weather := conditions_library.selected()
+	return course.fingerprint(AirDensity.compose(where, weather), where, weather)
 
 
 ## The site under the open course. A course pointing at a site that is not there falls back to the
@@ -205,15 +241,30 @@ func _course_obstacles() -> Array[Obstacle]:
 
 ## The ground's mesh, collider and grid tiling — all from `terrain` (F5), plus whatever
 ## `obstacles` (F6) stands on it, drawn and collidable through the SAME triangle list `TerrainMesh`
-## builds either from. Called at `_ready` and on every `adopt_selected_course()`, the one entry
-## point that re-reads the course: a mesh built once at startup would keep showing the field the
-## app opened on after a builder picks another one in Lab.
+## builds either from.
+##
+## CALLED FROM TWO PLACES, AND ONLY ONE OF THEM HAS THE NODES. `_ready` always has them. But
+## `RoomHost.show_sim` calls `adopt_selected_course()` BEFORE `add_child(sim)`, and `@onready`
+## members resolve on tree entry — so on the shipped path into Sim, `ground_mesh` and
+## `ground_collision` are still null when the adopt path reaches here. That used to raise
+## `Invalid assignment of property 'mesh' ... on a base object of type 'Nil'` on EVERY entry into
+## Sim: harmless, because `_ready` rebuilds a few lines later and every field the adopt path sets
+## was already set before the call, but it is production stderr noise on the happy path, and real
+## aborts hide in exactly that texture.
+##
+## So the nodes are GUARDED rather than assumed, inline and not behind a helper (this repo's own
+## abort rule: a guard in a helper still aborts the helper). Returning early is correct and not a
+## skipped rebuild: the only way to get here without the nodes is before `_ready`, and `_ready`
+## rebuilds unconditionally. The staleness the two call sites exist to prevent is unaffected —
+## `RoomHost` frees `sim` on exit, so a re-entry runs `_ready` again anyway.
 ##
 ## `GROUND_SIZE_M` used to be an independent 400 m constant; it is not one any more (Ruling 34) —
 ## it was only ever the grid material's tiling size (`GroundGrid.build_material`'s `uv1_scale`),
 ## so it now follows the terrain's own extent, the way the field room already ties its
 ## ground tiling to the layout it is drawing.
 func _rebuild_ground() -> void:
+	if ground_mesh == null or ground_collision == null:
+		return
 	ground_mesh.mesh = TerrainMesh.build_mesh(terrain, obstacles)
 	ground_collision.shape = TerrainMesh.build_collider(terrain, obstacles)
 	var extent := terrain.extent() if terrain != null else Vector2(Terrain.DEFAULT_WIDTH_M, Terrain.DEFAULT_LENGTH_M)
@@ -230,14 +281,25 @@ static func _check_crash(at: Vector3, p_terrain: Terrain) -> bool:
 	var ground := p_terrain.height_at(at.x, at.z) if p_terrain != null else 0.0
 	return at.y < ground + CRASH_ALTITUDE_M
 
+
+## THE AIR'S OWN MOTION, built from the builder's selected conditions — the settling time
+## included. `Wind._init` takes `p_gust_tau_s` as a defaulted argument rather than reading it off
+## the set, so a bare `Wind.new(conditions)` silently flies at the shipped default no matter what
+## the Field room's "Gust settle" field says. That is what this scene used to do, and it is why
+## that field had no consumer at all: it moved a number nothing downstream ever read.
+##
+## Static and pure for `_check_crash`'s reason — the shipped wiring can be CALLED by a check
+## rather than read out of the source, which is the difference between covering the production
+## path and covering an API that happens to resemble it.
+static func make_wind(p_conditions: Conditions) -> Wind:
+	return Wind.new(p_conditions, p_conditions.gust_tau_s)
+
 func _ready() -> void:
-	# Loaded fresh here rather than handed through RoomHost (out of this slice's file list, and
-	# this scene runs standalone too — F5 from the editor, capture_frame.gd — where there is no
-	# RoomHost to hand anything over). A read: `ConditionsLibrary.load_from()` never writes, and
-	# by the time a builder can reach Sim through the door, RoomHost's own load has already
-	# migrated and saved `conditions.json`, so this sees exactly the same file either way.
-	var selected_conditions := ConditionsLibrary.load_from().selected()
-	wind = Wind.new(selected_conditions)
+	# Read off the HANDED-OVER library (see `conditions_library` above), not re-loaded here. The
+	# standalone-boot fallback is that member's own initialiser, so this line is the same object
+	# either way and there is never a second copy.
+	var selected_conditions := conditions_library.selected()
+	wind = make_wind(selected_conditions)
 	conditions_name = selected_conditions.conditions_name
 	_rebuild_ground()
 

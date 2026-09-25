@@ -174,6 +174,8 @@ static func run(tree: SceneTree) -> Array:
 	results.append(_the_panels_column_stays_out_of_the_bottom_keepout(shell, MIN_WINDOW))
 	results.append(_the_field_room_has_room_for_what_must_stay_visible(shell, MIN_WINDOW))
 	results.append(await _every_rail_control_is_reachable_at_the_smallest_window(shell, tree))
+	# Ruling 78, locally: the two Field-room scrollers have a grabber with pixels in it.
+	results.append(_the_field_rooms_scrollbars_have_a_width(shell))
 
 	frame.size = WINDOW
 	for i in SETTLE_FRAMES:
@@ -1566,6 +1568,12 @@ static func _the_field_room_leaves_the_site_something_to_be_seen_in(
 ## MUTATION CONFIRMED RED: drop the `fit_to_content()` / `SIZE_FILL` pair in
 ## `FieldSystem._build_panels` and put `SIZE_EXPAND_FILL` back — the arrangement that shipped in
 ## `37adf4f`. See the report for the [FAIL] lines.
+##
+## ITS ONE BLIND SPOT, STATED SO IT IS NOT REDISCOVERED: this compares `Rect2`s, so it catches a
+## row that ended up OUTSIDE the panel and not a row that is inside it and unreadable. A label
+## allocated the panel's full width whose text is truncated to an ellipsis still reports a rect
+## the panel `encloses`, and still passes. That is the same class of defect this check was written
+## for, one level down — vertical overflow is covered, horizontal truncation is not.
 static func _every_row_a_panel_declares_is_drawn_inside_it(
 		shell: GlassShell, title: String) -> TestResult:
 	var panel: SpecPanel = shell.field_room().panel(title)
@@ -1936,3 +1944,38 @@ static func _every_rail_control_is_reachable_at_the_smallest_window(
 			% [below_the_fold, range_to_scroll, scrolled_to,
 			last_reached, last.name, last_rect.position.y, last_rect.end.y,
 			box.position.y, box.end.y, first_reached, first.name])
+
+
+## RULING 78, THE LOCAL HALF. `LothalTheme` styles a `VScrollBar` as a translucent grabber over a
+## `StyleBoxEmpty` track, and neither stylebox carries a content margin. A `ScrollBar`'s minimum
+## size IS its styleboxes' minimum size, so every scrollbar in this application reports a width of
+## ZERO — live, wheel-scrollable, tracking correctly, painting nothing. F11 put two whole columns
+## inside `ScrollContainer`s, and a panel column that silently ends mid-row reads as "that is all
+## there is" rather than as "scroll" — on exactly the content §5.2 mandates.
+##
+## `FieldSystem._scroller()` applies `part_finder.gd`'s local workaround. This asserts it on the
+## LIVE shell rather than by reading the source, because the number that matters is the one the
+## bar reports after the theme has been applied to it — a `custom_minimum_size` set on a bar that
+## was never built would pass a source scan and still paint nothing.
+##
+## THE THEME-LEVEL FIX STAYS PARKED, with its cost written down: a content margin on the grabber
+## changes the minimum width of every `ScrollContainer` in the app, which needs re-measuring
+## against the 1024x600 floors this file asserts. That is why this check names the Field room's
+## two and not "every scrollbar".
+static func _the_field_rooms_scrollbars_have_a_width(shell: GlassShell) -> TestResult:
+	var room := shell.field_room()
+	var rail: ScrollContainer = null if room == null else room.rail_scroll()
+	var panels: ScrollContainer = null if room == null else room.panels_scroll()
+	if rail == null or panels == null:
+		return TestResult.new(
+			"the Field room's two scrollbars are wide enough to see", false,
+			"rail scroller %s · panel scroller %s" % [rail != null, panels != null])
+	var rail_bar := rail.get_v_scroll_bar()
+	var panel_bar := panels.get_v_scroll_bar()
+	var rail_w: float = 0.0 if rail_bar == null else rail_bar.size.x
+	var panel_w: float = 0.0 if panel_bar == null else panel_bar.size.x
+	return TestResult.new(
+		"the Field room's two scrollbars are wide enough to see (Ruling 78, locally)",
+		rail_w >= FieldSystem.SCROLLBAR_WIDTH and panel_w >= FieldSystem.SCROLLBAR_WIDTH,
+		"rail bar %.1f px, panel bar %.1f px, against the %.1f px this room asks for" % [
+			rail_w, panel_w, FieldSystem.SCROLLBAR_WIDTH])

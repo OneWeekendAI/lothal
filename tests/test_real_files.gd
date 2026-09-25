@@ -3,13 +3,20 @@ extends RefCounted
 ## The hold that puts the builder's files back when a section does not finish.
 ##
 ## ---------------------------------------------------------------------------
-## THIS SUITE PRINTS TWO `SCRIPT ERROR` LINES ON A GREEN RUN, AND THEY ARE THE TEST
+## THIS SUITE PRINTS THREE `SCRIPT ERROR` LINES ON A GREEN RUN, AND THEY ARE THE TEST
 ## ---------------------------------------------------------------------------
 ##
 ## A hard `SCRIPT ERROR` cannot be caught in GDScript, so the only way to prove a mechanism
-## survives one is to raise one. Two null dereferences below are deliberate, and a run of this
-## suite that prints NO error line is a run in which the thing being tested did not happen — which
-## is why "the section really did abort" is asserted separately from "the file came back".
+## survives one is to raise one. Two null dereferences below are deliberate and they are RAISED
+## THREE TIMES: `_a_section_that_poisons_then_aborts` is called from two different checks (:91 and
+## :113) and `_a_section_that_creates_then_aborts` from one. This said "two" until the final
+## review counted them, and the count is what a future reader uses to decide whether the
+## `SCRIPT ERROR` noise in a passing log is expected — so it has to be the number of LINES, not
+## the number of `null`s.
+##
+## A run of this suite that prints NO error line is a run in which the thing being tested did not
+## happen — which is why "the section really did abort" is asserted separately from "the file came
+## back".
 ##
 ## ---------------------------------------------------------------------------
 ## WHY THIS DOES NOT HOLD A REAL `user://` PATH
