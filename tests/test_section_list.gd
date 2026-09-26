@@ -229,7 +229,7 @@ static func _airframe_page_numbers(build: Build) -> Array:
 		layout == [["Closest to a prop", "pack · 9 mm"], ["Pack, each side", "12 mm clear"]],
 		str(layout)))
 	out.append(TestResult.new("page numbers: a row with no page numbers gets none, not placeholders",
-		SectionRows.page_numbers(&"motors", build, context).is_empty(), ""))
+		SectionRows.page_numbers(&"battery", build, context).is_empty(), ""))
 	return out
 
 
@@ -256,8 +256,8 @@ static func _airframe_has_no_drone_row() -> TestResult:
 
 static func _motors_row(rows: Array) -> TestResult:
 	var row := _row(rows, &"motors")
-	return TestResult.new("section rows: Motors reads '2207 · 1960 KV' and a thrust each",
-		row.get("choice") == "2207 · 1960 KV" and str(row.get("number")).ends_with(" g thrust each")
+	return TestResult.new("section rows: Motors reads '2207 · 1960 KV' and this pack's thrust each",
+		row.get("choice") == "2207 · 1960 KV" and str(row.get("number")).ends_with(" g max each on this pack")
 			and int(str(row.get("number")).split(" ")[0]) > 100, _show(row))
 
 

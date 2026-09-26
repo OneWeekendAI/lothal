@@ -343,16 +343,22 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			var model := VibrationModel.for_build(build)
 			return "~%d Hz 1st mode" % roundi(model.resonance_hz) if model.resonance_hz > 0.0 else ""
 		&"motors":
-			var thrust_n := float(build.peak_thrust()["thrust_n"])
-			return "%d g thrust each" % roundi(thrust_n / 4.0 / Build.GRAVITY_MPS2 * 1000.0)
+			# What THIS PACK drives each motor to (sag and the weakest link's ceiling included) —
+			# not the catalogue's test-stand "max thrust", which the sheet beside it quotes. Said
+			# in the row so the two numbers do not read as a contradiction.
+			return "%d g max each on this pack" % roundi(PropulsionFigures.peak_each_g(build))
 		&"propellers":
 			if not build.can_hover():
 				return ""
 			return "hover %d%%" % roundi(build.hover_throttle() * 100.0)
 		&"guards":
-			if build.guard.is_empty():
+			# Computed (four PropGuard rings; the tensor with and without them), not the catalogue's
+			# browsing mass. Empty with none fitted: "none" on line 2 already says it.
+			var grams := PropulsionFigures.guard_added_g(build)
+			if grams <= 0.0:
 				return ""
-			return "+%d g" % roundi(float(build.guard.get("mass_g", 0.0)) * 4.0)
+			return "+%d g · roll inertia +%d%%" % [roundi(grams),
+				roundi(PropulsionFigures.guard_roll_inertia_fraction(build) * 100.0)]
 		&"battery":
 			var minutes := build.flight_time_min()
 			if minutes <= 0.0:
@@ -412,6 +418,22 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 			return [["Closest to a prop", "%s · %d mm" % [str(closest["part"]),
 					roundi(float(closest["mm"]))] if not closest.is_empty() else "—"],
 				["Pack, each side", side]]
+		&"motors":
+			var ceiling := PropulsionFigures.throttle_ceiling(build)
+			return [["Max each, this pack", "%d g" % roundi(PropulsionFigures.peak_each_g(build))],
+				["Throttle ceiling", "%d%% · %s" % [roundi(float(ceiling["fraction"]) * 100.0),
+					str(ceiling["limiter"])]]]
+		&"propellers":
+			if not build.can_hover():
+				return [["Hover throttle", "won't hover"], ["Hover rpm", "—"]]
+			return [["Hover throttle", "%d%%" % roundi(build.hover_throttle() * 100.0)],
+				["Hover rpm", "%d rpm" % roundi(PropulsionFigures.hover_rpm(build))]]
+		&"guards":
+			var grams := PropulsionFigures.guard_added_g(build)
+			if grams <= 0.0:
+				return [["Added mass", "none fitted"], ["Roll inertia", "—"]]
+			return [["Added mass", "+%d g" % roundi(grams)],
+				["Roll inertia", "+%d%%" % roundi(PropulsionFigures.guard_roll_inertia_fraction(build) * 100.0)]]
 	return []
 
 
