@@ -43,12 +43,18 @@ static func _every_source_id_has_a_row() -> Array:
 	var files: Array[String] = []
 	_scan("res://src", files)
 	var literal := RegEx.create_from_string(
-		"BuildWarning\\.(impossible|limiting|characteristic)\\(&\"([a-z_0-9]+)\"")
+		"BuildWarning\\.(impossible|limiting|characteristic)\\(\\s*&\"([a-z_0-9]+)\"")
+	# The long form FrameWarnings uses — `BuildWarning.new(Severity.X,\n &"id", …)` — which the
+	# literal pattern above cannot see; before it was scanned, eight frame ids had no row at all.
+	var long_form := RegEx.create_from_string(
+		"BuildWarning\\.new\\(\\s*BuildWarning\\.Severity\\.[A-Z]+,\\s*&\"([a-z_0-9]+)\"")
 	var constant := RegEx.create_from_string("const [A-Z_]+ := &\"([a-z_0-9]+)\"")
 	for path in files:
 		var text := FileAccess.get_file_as_string(path)
 		for m in literal.search_all(text):
 			ids[m.get_string(2)] = path
+		for m in long_form.search_all(text):
+			ids[m.get_string(1)] = path
 		# Constants are only warning ids in the files that build warnings from them.
 		if text.contains("BuildWarning.") and (path.ends_with("course_warnings.gd")
 				or path.ends_with("prop_extrapolation.gd")):

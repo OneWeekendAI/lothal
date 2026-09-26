@@ -49,6 +49,16 @@ const TABLE := {
 	# Airframe
 	&"custom_frame": [FRAME, "custom frame — unchecked"],
 	&"implausible_frame_mass": [FRAME, "frame mass outside catalog range"],
+	# FrameWarnings — what the drawn geometry alone says (airframe.md §7). The whole-frame ones sit on
+	# Frame, whose page is the designer that fixes them; the two about one arm sit on Arms.
+	&"frame_has_no_plates": [FRAME, "frame has no plates"],
+	&"frame_has_no_arms": [FRAME, "frame has no arms"],
+	&"frame_has_no_motors": [FRAME, "frame has no motors"],
+	&"layout_not_controllable": [FRAME, "motor layout cannot be controlled"],
+	&"frame_cg_off_axis": [FRAME, "{cg_off_axis}"],
+	&"frame_is_directional": [FRAME, "{directional}"],
+	&"arm_has_no_centreline": [ARMS, "an arm has no centreline"],
+	&"arm_centreline_leaves_plate": [ARMS, "an arm centreline leaves its plate"],
 	&"implausible_arm": [ARMS, "arm section outside catalog range"],
 	&"frame_resonance": [ARMS, "{resonance}"],
 	&"hover_on_resonance": [ARMS, "{hover_resonance}"],
@@ -191,6 +201,10 @@ static func _format(template: String, v: Dictionary) -> String:
 			return "hovers at %d%% — little headroom" % _pct(v.get("hover_throttle", 0.0))
 		"{prop_unloading}":
 			return "%d%% thrust left at top speed" % _pct(v.get("thrust_fraction_at_top_speed", 0.0))
+		"{cg_off_axis}":
+			return "CG %.1f mm off the axis" % float(v.get("offset_mm", 0.0))
+		"{directional}":
+			return "roll and pitch differ %.2f : 1" % float(v.get("ratio", 1.0))
 		"{resonance}":
 			return "~%d Hz mode inside throttle range" % roundi(float(v.get("resonance_hz", 0.0)))
 		"{hover_resonance}":
