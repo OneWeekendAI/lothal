@@ -17,7 +17,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio", "spectrum",
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
-	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "airframe page", "propulsion page", "power page", "control page", "video page", "printed page",
+	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "airframe page", "propulsion page", "power page", "control page", "video page", "config page", "printed page",
 	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "dock", "camera view", "part finder",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config motor map", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
@@ -148,6 +148,8 @@ func _run_suite(suite_name: String) -> Array:
 		"control page": return TestControlPage.run()
 		# Lab dock, Video section: the shared figures behind rows, page numbers and drawings.
 		"video page": return TestVideoPage.run()
+		# Lab dock, Config section: the shared figures behind rows, page numbers and drawings.
+		"config page": return TestConfigPage.run()
 		# Lab dock, Printed section: one row per printed part; the figures behind rows, numbers, drawings.
 		"printed page": return TestPrintedPage.run()
 		"camera view": return TestCameraView.run()

@@ -39,16 +39,12 @@ static func warnings_for(build: Build) -> Array[BuildWarning]:
 ## and a map summing to anything but zero has no throttle setting at which the aircraft holds
 ## heading.
 static func _unflyable_spin_map(build: Build, out: Array[BuildWarning]) -> void:
-	var spin := MotorLayout.spin_map(build.config)
-
-	var net := 0.0
-	for name in MotorLayout.MOTOR_NAMES:
-		net += float(spin[name])
-
+	# ConfigFigures.spin_check: the same computation the Motor direction row's ✓ reads.
+	var check := ConfigFigures.spin_check(build)
+	var spin: Dictionary = check["spin"]
+	var net := float(check["net"])
 	var broken_pairs: Array[String] = []
-	for pair in DIAGONALS:
-		if float(spin[pair[0]]) != float(spin[pair[1]]):
-			broken_pairs.append("%s/%s" % [pair[0], pair[1]])
+	broken_pairs.assign(check["broken"])
 
 	if net == 0.0 and broken_pairs.is_empty():
 		return

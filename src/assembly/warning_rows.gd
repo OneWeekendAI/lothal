@@ -40,6 +40,7 @@ const MOTOR_DIRECTION := &"motor_direction"
 const PORTS := &"ports"
 const FAILSAFE := &"failsafe"
 const RATES := &"rates"
+const SHEET := &"sheet"
 const COURSE := &"course"
 const CONDITIONS := &"conditions"
 
@@ -132,6 +133,9 @@ const TABLE := {
 	&"motor_spin_unflyable": [MOTOR_DIRECTION, "motor directions cannot fly"],
 	&"bidir_dshot_unsupported": [MOTOR_DIRECTION, "ESC lacks bidirectional DShot"],
 	&"failsafe_gps_rescue_no_gps": [FAILSAFE, "GPS rescue with no GPS"],
+	# Raised by ConfigFigures for the Config rows only (not in Build.warnings()).
+	&"ports_over_budget": [PORTS, "{ports_over}"],
+	&"config_sheet_defaults": [SHEET, "{sheet_defaults}"],
 	# Field
 	&"field_air": [CONDITIONS, "{field_air}"],
 	&"field_wind": [CONDITIONS, "{field_wind}"],
@@ -235,6 +239,12 @@ static func _format(template: String, v: Dictionary) -> String:
 		"{connector_mismatch}":
 			return "plug %s, pack %s" % [str(v.get("lead_family", "?")),
 				str(v.get("pack_family", "?"))]
+		"{ports_over}":
+			# `figure` is ControlFigures.ports_figure: "~4–5" for the class guess, "6" when typed.
+			return "%d want a UART, board has %s" % [int(v.get("demand", 0)), str(v.get("figure", "?"))]
+		"{sheet_defaults}":
+			var n := int(v.get("missing", 0))
+			return "%d %s not set by you" % [n, "setting" if n == 1 else "settings"]
 		"{camera_obstruction}":
 			# The nearest fitted part and its angle — the same figure the Camera page's number reads
 			# (`VideoFigures`); `~` because the lens sits where MountLayout seats the camera.

@@ -353,7 +353,7 @@ static func _printed_rows_are_one_per_part(build: Build, rows: Array) -> TestRes
 static func _motor_direction_row(rows: Array) -> TestResult:
 	var row := _row(rows, &"motor_direction")
 	return TestResult.new("section rows: Motor direction reads the configured spin and ✓",
-		row.get("choice") == "props out" and row.get("line3") == "✓", _show(row))
+		row.get("choice") == "props out" and row.get("line3") == "✓ yaw torques cancel", _show(row))
 
 
 static func _config_has_its_five_rows(rows: Array) -> TestResult:

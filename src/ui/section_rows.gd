@@ -139,6 +139,20 @@ static func rows(section: String, build: Build, warnings: Array = [],
 				all.append_array(PrintedFigures.warnings(build))
 			out.append_array(_printed_rows(row, build, all, context))
 			continue
+		if section == "Config" and build != null:
+			# The two warnings only Config raises (ports over the board's figure; settings the sheet
+			# quotes that are not yours) join the caller's, as PrintedFigures' do for Printed.
+			var own := ConfigFigures.warnings(build)
+			var config_all := []
+			for w in warnings:
+				# ControlPlausibility's characteristic serial row says the same sentence; when the
+				# demand is over the board it is the over-budget warning, said once.
+				if not (w is BuildWarning and (w as BuildWarning).id == &"serial_peripherals"
+						and ConfigFigures.ports_over(build)):
+					config_all.append(w)
+			config_all.append_array(own)
+			out.append(_resolve(row, build, config_all, context))
+			continue
 		out.append(_resolve(row, build, warnings, context))
 	return out
 
@@ -282,8 +296,15 @@ static func choice_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			return _component_name(build, "vtx")
 		&"motor_direction":
 			# The same default `ConfigMotorsPanel` reads; a Dictionary is a per-motor custom map.
-			var spin: Variant = build.config.get("motor_spin", "props_out")
-			return "custom" if spin is Dictionary else str(spin).replace("_", " ")
+			return ConfigFigures.spin_choice(build)
+		&"ports":
+			return ConfigFigures.ports_choice(build)
+		&"failsafe":
+			return ConfigFigures.failsafe_choice(build)
+		&"rates":
+			return ConfigFigures.rates_choice(build)
+		&"sheet":
+			return ConfigFigures.sheet_choice(build)
 		&"site", &"course", &"conditions":
 			return str(context.get(String(id), ""))
 	return ""
@@ -440,8 +461,17 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			var grams := VideoFigures.vtx_antenna_mass_g(build)
 			return "%.1f g with antenna" % grams if build.components.has("antenna") and grams > 0.0 \
 				else ("%.1f g · no antenna" % grams if grams > 0.0 else "")
-		&"motor_direction", &"ports", &"failsafe", &"rates":
-			return "✓"
+		# Config: ✓ + the check that passed, or empty when the row's own warning takes the line.
+		&"motor_direction":
+			return ConfigFigures.spin_text(build)
+		&"ports":
+			return ConfigFigures.ports_text(build)
+		&"failsafe":
+			return ConfigFigures.failsafe_text(build)
+		&"rates":
+			return ConfigFigures.rates_text(build)
+		&"sheet":
+			return ConfigFigures.sheet_text(build)
 		&"site":
 			return "%d m" % roundi(build.air.elevation_m) if build.air != null else ""
 		&"conditions":
@@ -555,6 +585,32 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 			return [["VTX + antenna", "%.1f g" % VideoFigures.vtx_antenna_mass_g(build)],
 				["Antenna behind CoM", "no antenna" if is_nan(aft) else ("~%d mm" % roundi(aft)
 					if aft >= 0.0 else "~%d mm ahead" % roundi(-aft))]]
+		&"motor_direction":
+			var check := ConfigFigures.spin_check(build)
+			var net := roundi(float(check["net"]))
+			var agreeing := ConfigPlausibility.DIAGONALS.size() - (check["broken"] as Array).size()
+			return [["Net yaw torque, equal throttles", "0 · cancels" if net == 0
+					else "%+d motors' worth" % net],
+				["Diagonal pairs agreeing", "%d of %d" % [agreeing, ConfigPlausibility.DIAGONALS.size()]]]
+		&"ports":
+			var figure := ControlFigures.ports_figure(build)
+			var whose: String = {PortBudget.TYPED: ConfigFigures.YOURS,
+				PortBudget.CLASS_TYPICAL: ConfigFigures.GUESS}.get(
+				String(PortBudget.for_build(build)["provenance"]), "")
+			return [["Parts wanting a UART", "%d" % ControlFigures.serial_demand(build)],
+				["Board's UARTs", "%s · %s" % [figure, whose] if figure != "" else "unpublished"]]
+		&"failsafe":
+			var protocol := ConfigFigures.esc_protocol(build)
+			return [["Stage 2", ConfigFigures.failsafe_choice(build).trim_prefix("stage 2 ")],
+				["Bidirectional DShot", "%s · ESC %s" % ["on" if FailsafeSettings.bidir_dshot(
+					build.config) else "off", protocol if protocol != "" else "protocol unpublished"]]]
+		&"rates":
+			return [["Full stick, this aircraft", "%d°/s" % roundi(ConfigFigures.set_rate_deg_s(build))],
+				["Full stick, the sim", "%d°/s" % roundi(ConfigFigures.sim_rate_deg_s())]]
+		&"sheet":
+			return [["Settings yours", "%d of %d" % [ConfigFigures.sheet_yours(build),
+					ConfigFigures.sheet_settings(build).size()]],
+				["Flags on the sheet", "%d" % ConfigFigures.sheet_flag_count(build)]]
 		&"receiver":
 			return [["Link mass", "%.1f g" % ControlFigures.link_mass_g(build)],
 				["UARTs it takes", "%d" % ControlFigures.link_uarts(build)]]
