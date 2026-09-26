@@ -58,6 +58,7 @@ static func run() -> Array:
 	results.append(_test_a_drawn_arm_needs_no_caveat())
 	results.append(_test_moulded_frame_says_why_not(catalog))
 	results.append(_test_fasteners_are_derived_not_zero(catalog))
+	results.append(_test_a_flagged_joint_reads_as_a_short_line())
 	results.append(_test_layout_is_controllable(catalog))
 	results.append(_test_no_row_needs_a_motor_or_a_thrust(catalog))
 	results.append(_test_every_row_renders_for_every_frame(catalog))
@@ -433,3 +434,17 @@ static func _leading_number(text: String) -> float:
 		elif seen:
 			break
 	return float(digits) if seen else 0.0
+
+
+## The Fasteners "Assembly checks" row is a spec line, not a paragraph: the count and the worst
+## check's SHORT form. The sentence is the page's "Why?". Breaks if the row goes back to `message`.
+static func _test_a_flagged_joint_reads_as_a_short_line() -> TestResult:
+	var document := FrameLayouts.build("quad_x")
+	var panel := FastenersDetails.new()
+	panel.render(document)
+	var text := panel.row_text("checks")
+	var joint := FrameHardware.joint_warnings(document)
+	panel.free()
+	return TestResult.new("fasteners: a flagged joint reads 'N of 3 flagged — <short>', no paragraph",
+		not joint.is_empty() and text == "%d of 3 flagged — %s" % [joint.size(), joint[0].short],
+		"'%s'" % text)

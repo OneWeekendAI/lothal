@@ -67,15 +67,8 @@ func row_text(key: String) -> String:
 			if screws.is_empty():
 				return "— (no bolted joint modelled)"
 			# Grouped by thread size, because "20 × M3" is the line on a build sheet and "20 screws"
-			# is not. A frame with both M2 motor screws and M3 plate screws prints both.
-			var by_thread: Dictionary = {}
-			for item in screws:
-				var thread := float(item.get("thread_d_mm", 0.0))
-				by_thread[thread] = int(by_thread.get(thread, 0)) + 1
-			var parts: Array[String] = []
-			for thread in by_thread:
-				parts.append("%d × M%.0f" % [int(by_thread[thread]), float(thread)])
-			return ", ".join(parts)
+			# is not — FrameHardware's, shared with the Screws & standoffs page's summary.
+			return FrameHardware.screw_summary(_document)
 
 		"hardware_mass":
 			var total := _total_hardware_mass_g()
@@ -144,7 +137,8 @@ func row_text(key: String) -> String:
 			if warnings.is_empty():
 				return "3 of 3 pass  (engagement, bottoming out, edge distance)"
 			var worst: BuildWarning = BuildWarning.by_severity(warnings)[0]
-			return "%d of 3 flagged — %s" % [warnings.size(), worst.message]
+			# The SHORT form: a spec row is one line. The sentence is the page's "Why?".
+			return "%d of 3 flagged — %s" % [warnings.size(), worst.short]
 
 	return super(key)
 

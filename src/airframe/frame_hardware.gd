@@ -76,6 +76,18 @@ static func choice(document: AirframeDocument) -> String:
 	return " · ".join(parts)
 
 
+## "24 × M3": screws grouped by thread size, the line on a build sheet. "" for none.
+static func screw_summary(document: AirframeDocument) -> String:
+	var by_thread: Dictionary = {}
+	for item in items_of_kind(document, "screw"):
+		var thread := float(item.get("thread_d_mm", 0.0))
+		by_thread[thread] = int(by_thread.get(thread, 0)) + 1
+	var parts: Array[String] = []
+	for thread in by_thread:
+		parts.append("%d × M%.0f" % [int(by_thread[thread]), float(thread)])
+	return ", ".join(parts)
+
+
 ## The §5.3 checks for the frame's motor joint, measured off the frame: thread engagement, bottoming
 ## out, and the hole-to-edge margin (measured from the real hole to the real outline). Most severe
 ## first; empty for a frame with no screws or no measurable arm.

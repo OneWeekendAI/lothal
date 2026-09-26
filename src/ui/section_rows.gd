@@ -40,9 +40,13 @@ const SOON := "soon"
 const DEFINITIONS := {
 	"Airframe": [
 		{"id": &"frame", "name": "Frame", "page": {"room": "frame"}, "pick": "Frame"},
-		{"id": &"arms", "name": "Arms", "page": {"panels": ["Arms", "Structure"]}},
-		{"id": &"hardware", "name": "Screws & standoffs", "page": {"panels": ["Fasteners"]}},
-		{"id": &"layout", "name": "Layout & fit", "page": {"panels": ["Fit", "Layout", "Frame"]}},
+		# `diagram`: the page draws its item in plan beside the sheet (`FramePlanDiagram`'s modes).
+		# Structure and the catalogue Frame sheet are the Frame page's, in the designer's drawer.
+		{"id": &"arms", "name": "Arms", "page": {"panels": ["Arms"], "diagram": "arms"}},
+		{"id": &"hardware", "name": "Screws & standoffs",
+			"page": {"panels": ["Fasteners"], "diagram": "hardware"}},
+		{"id": &"layout", "name": "Layout & fit",
+			"page": {"panels": ["Fit", "Layout"], "diagram": "layout"}},
 		# §6 of the airframe design models a pad as a spring and nothing of that is built.
 		{"id": &"straps", "name": "Straps & pads", "soon": true},
 	],
@@ -140,6 +144,7 @@ static func _resolve(row: Dictionary, build: Build, warnings: Array, context: Di
 	row["number"] = ""
 	row["line3"] = ""
 	row["why"] = []
+	row["warnings"] = []
 	if bool(row.get("soon", false)):
 		row["status"] = SOON
 		return row
@@ -147,9 +152,13 @@ static func _resolve(row: Dictionary, build: Build, warnings: Array, context: Di
 	row["choice"] = choice_of(id, build, context) if build != null else ""
 	row["number"] = number_of(id, build, context) if build != null else ""
 	var worst := _worst_owned(id, warnings)
+	var owned: Array[BuildWarning] = []
 	for w in warnings:
 		if w is BuildWarning and (w as BuildWarning).item == id:
+			owned.append(w as BuildWarning)
 			(row["why"] as Array).append((w as BuildWarning).long())
+	# The page's list: short + "Why?" each, most severe first (stable within a severity).
+	row["warnings"] = Array(BuildWarning.by_severity(owned))
 	row["status"] = OK
 	row["line3"] = str(row["number"])
 	if worst != null and worst.severity != BuildWarning.Severity.CHARACTERISTIC:
@@ -371,6 +380,39 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 		&"conditions":
 			return "%.2f kg/m³" % build.air.kgm3() if build.air != null else ""
 	return ""
+
+
+# ---------------------------------------------------------------------------
+# A page's two summary numbers — the mockup's "Frame mass / Arm 1st mode" pair under the drawing
+# ---------------------------------------------------------------------------
+
+## `[[label, value], [label, value]]` for the rows whose page shows a summary pair, else `[]`. Same
+## sources as the row's line 3 and the sheet beside it, never a third derivation. `context` as
+## `rows()`, plus `pack_side_mm` (AirframeModel.battery_overhang_m().lateral, mm; negative clears).
+static func page_numbers(id: StringName, build: Build, context: Dictionary = {}) -> Array:
+	var document := context.get("frame_document") as AirframeDocument
+	match id:
+		&"arms":
+			var mode := VibrationModel.for_build(build).resonance_hz
+			var stock := FrameHardware.arm_thickness_mm(document)
+			return [["Arm 1st mode", "~%d Hz" % roundi(mode) if mode > 0.0 else "—"],
+				["Arm stock", "%.1f mm" % stock if stock > 0.0 else "—"]]
+		&"hardware":
+			var grams := FrameHardware.mass_g(document, AirframePanel.materials()) \
+				if document != null else 0.0
+			var screws := FrameHardware.screw_summary(document)
+			return [["Hardware", "~%d g" % roundi(grams) if grams > 0.0 else "—"],
+				["Screws", screws if screws != "" else "—"]]
+		&"layout":
+			var closest: Dictionary = context.get("prop_clearance", {})
+			var side := "—"
+			if context.has("pack_side_mm"):
+				var mm := float(context["pack_side_mm"])
+				side = "%d mm over" % roundi(mm) if mm > 0.0 else "%d mm clear" % roundi(-mm)
+			return [["Closest to a prop", "%s · %d mm" % [str(closest["part"]),
+					roundi(float(closest["mm"]))] if not closest.is_empty() else "—"],
+				["Pack, each side", side]]
+	return []
 
 
 static func _trim(value: float) -> String:

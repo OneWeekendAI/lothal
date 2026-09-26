@@ -26,6 +26,11 @@ static func run() -> Array:
 	results.append(_arms_row(rows["Airframe"]))
 	results.append(_hardware_row_leaves_its_number_empty(rows["Airframe"]))
 	results.append_array(_airframe_geometry_rows(build, warnings, context))
+	results.append(_arms_page_is_the_arms_alone())
+	results.append(_hardware_page_draws_the_joint())
+	results.append(_layout_page_is_fit_and_motor_layout())
+	results.append(_a_row_carries_its_own_warnings_most_severe_first(build))
+	results.append_array(_airframe_page_numbers(build))
 	results.append(_layout_row(build, rows["Airframe"]))
 	results.append(_straps_row_is_soon(rows["Airframe"]))
 	results.append(_airframe_has_no_drone_row())
@@ -96,7 +101,7 @@ static func _arms_row(rows: Array) -> TestResult:
 static func _hardware_row_leaves_its_number_empty(rows: Array) -> TestResult:
 	var row := _row(rows, &"hardware")
 	return TestResult.new("section rows: Screws & standoffs without a frame document invents no number",
-		row.get("number") == "" and row.get("page") == {"panels": ["Fasteners"]}, _show(row))
+		row.get("number") == "" and row.get("choice") == "", _show(row))
 
 
 ## The rows that read the drawn geometry — the frame document and the assembled airframe — which
@@ -162,6 +167,69 @@ static func _airframe_geometry_rows(build: Build, warnings: Array, context: Dict
 
 	fasteners.free()
 	airframe.free()
+	return out
+
+
+static func _definition(section: String, id: StringName) -> Dictionary:
+	for d in SectionRows.DEFINITIONS[section]:
+		if d["id"] == id:
+			return d
+	return {}
+
+
+## A page shows ONLY its own item: Structure (the whole frame's mass and inertia) is the Frame
+## page's, in the designer, not the Arms page's.
+static func _arms_page_is_the_arms_alone() -> TestResult:
+	var page: Dictionary = _definition("Airframe", &"arms")["page"]
+	return TestResult.new("section rows: the Arms page is the Arms sheet beside an arms drawing",
+		page == {"panels": ["Arms"], "diagram": "arms"}, str(page))
+
+
+static func _hardware_page_draws_the_joint() -> TestResult:
+	var page: Dictionary = _definition("Airframe", &"hardware")["page"]
+	return TestResult.new("section rows: the Screws & standoffs page is Fasteners beside a drawing",
+		page == {"panels": ["Fasteners"], "diagram": "hardware"}, str(page))
+
+
+## The catalogue Frame sheet is not parked here any more: it is the Frame page's (the designer).
+static func _layout_page_is_fit_and_motor_layout() -> TestResult:
+	var page: Dictionary = _definition("Airframe", &"layout")["page"]
+	return TestResult.new("section rows: the Layout & fit page is Fit and Layout beside a drawing, no Frame sheet",
+		page == {"panels": ["Fit", "Layout"], "diagram": "layout"}, str(page))
+
+
+## The page's "Why?" list: every warning the row owns and none it does not, most severe first.
+static func _a_row_carries_its_own_warnings_most_severe_first(build: Build) -> TestResult:
+	var edge := HardwareMass.hole_to_edge_warning(1.9, 3.0)
+	var strip := HardwareMass.thread_engagement_warning(3.0, 3.0, 5.0)
+	var foreign := BuildWarning.limiting(&"pack_sag", "sags", {"usable_fraction": 0.6})
+	var row := _row(SectionRows.rows("Airframe", build, [edge, foreign, strip]), &"hardware")
+	var owned: Array = row.get("warnings", [])
+	return TestResult.new("section rows: a row carries only its own warnings, most severe first",
+		owned.size() == 2 and owned[0] == strip and owned[1] == edge,
+		"%d owned: %s" % [owned.size(), str(owned.map(func(w): return w.id))])
+
+
+static func _airframe_page_numbers(build: Build) -> Array:
+	var out: Array = []
+	var document := AirframeDocument.from_catalog_frame(build.frame)
+	var context := {"frame_document": document, "prop_clearance": {"part": "pack", "mm": 9.0},
+		"pack_side_mm": -12.4}
+	var arms := SectionRows.page_numbers(&"arms", build, context)
+	var mode := VibrationModel.for_build(build).resonance_hz
+	out.append(TestResult.new("page numbers: Arms shows the guessed first mode and the arm stock",
+		arms == [["Arm 1st mode", "~%d Hz" % roundi(mode)],
+			["Arm stock", "%.1f mm" % FrameHardware.arm_thickness_mm(document)]], str(arms)))
+	var hardware := SectionRows.page_numbers(&"hardware", build, context)
+	out.append(TestResult.new("page numbers: Screws & standoffs shows ~mass and the screw count",
+		hardware == [["Hardware", "~%d g" % roundi(FrameHardware.mass_g(document,
+			AirframePanel.materials()))], ["Screws", "24 × M3"]], str(hardware)))
+	var layout := SectionRows.page_numbers(&"layout", build, context)
+	out.append(TestResult.new("page numbers: Layout & fit shows the closest part and the pack's side margin",
+		layout == [["Closest to a prop", "pack · 9 mm"], ["Pack, each side", "12 mm clear"]],
+		str(layout)))
+	out.append(TestResult.new("page numbers: a row with no page numbers gets none, not placeholders",
+		SectionRows.page_numbers(&"motors", build, context).is_empty(), ""))
 	return out
 
 
@@ -366,7 +434,9 @@ static func _every_row_has_a_page_or_is_soon() -> TestResult:
 				continue
 			for title in (d["page"] as Dictionary).get("panels", []):
 				covered[title] = true
-	for title in ["Frame", "Fit", "Structure", "Arms", "Fasteners", "Layout", "Motor", "Prop", "Pack",
+	# Frame (the catalogue sheet) and Structure are the Frame page's, inside the designer's own
+	# Details drawer — asserted on the drawer by TestAirframeTabs, not here.
+	for title in ["Fit", "Arms", "Fasteners", "Layout", "Motor", "Prop", "Pack",
 			"ESC", "Harness", "FC", "Link", "Tune", "Camera", "Electronics", "Print", "Motors", "Ports",
 			"Failsafe", "Rates", "Sheet"]:
 		if not covered.has(title):
