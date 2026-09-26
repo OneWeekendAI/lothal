@@ -461,6 +461,8 @@ const FREESTYLE_FLIGHT_PROFILE: Array[Dictionary] = [
 const USABLE_CAPACITY_FRACTION := 0.80
 
 var frame: Dictionary
+## The designer's edit to the fitted frame (FittedFrame.edit_of) — `{}` flies the catalogue frame.
+var _frame_edit: Dictionary = {}
 var motor: Dictionary
 var propeller: Dictionary
 var battery: Dictionary
@@ -683,7 +685,11 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 ## construction.
 func refit_from(p_catalog: PartsCatalog) -> void:
 	catalog = p_catalog
-	frame = p_catalog.get_part(String(_part_ids.get("frame", "")))
+	# The designer's edit to the fitted frame, if any (FittedFrame): its mass and arm replace the
+	# catalogue's on a COPY, so every reader below — the mass model, MountLayout, the drawing, the
+	# warnings — follows the one frame through the paths it already has. `{}` is the frame as
+	# published, bit for bit.
+	frame = FittedFrame.apply(p_catalog.get_part(String(_part_ids.get("frame", ""))), _frame_edit)
 	motor = p_catalog.get_part(String(_part_ids.get("motor", "")))
 	propeller = p_catalog.get_part(String(_part_ids.get("propeller", "")))
 	battery = p_catalog.get_part(String(_part_ids.get("battery", "")))
@@ -747,8 +753,24 @@ func at_air(p_air: AirDensity) -> Build:
 	# resolved values — the twin re-derives its defaults from its own parts, which is the whole
 	# point of a sparse table.
 	twin.harness = Harness.from_overrides(harness.overrides())
+	# And the designer's edit to the frame: a twin at another field is the same drawn frame.
+	twin.set_frame_edit(_frame_edit)
 	twin.set_assembly(assembly)
 	return twin
+
+
+## Flies the designer's edit to the fitted frame (`FittedFrame.edit_of`), or the frame as published
+## for `{}`. Re-resolved from the catalogue and recomputed, the guard's reason: every derived figure
+## that read the old arm or mass is in `_recompute`, so one refit clears them all. An edit made for
+## a different frame is ignored by `FittedFrame.apply` — swapping the frame ends the edit.
+func set_frame_edit(edit: Dictionary) -> void:
+	_frame_edit = edit.duplicate()
+	if catalog != null:
+		refit_from(catalog)
+
+
+func frame_edit() -> Dictionary:
+	return _frame_edit.duplicate()
 
 
 ## Adopts an assembly configuration and recomputes. The mass properties are the only thing that

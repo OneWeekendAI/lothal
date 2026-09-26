@@ -75,6 +75,9 @@ var airframe: AirframeModel
 ## (labs-and-sim.md §4). Left empty it falls back to the reference build, so main.tscn still
 ## runs on its own — capture_frame.gd and F5-from-the-editor both load it directly.
 var initial_selection: Dictionary = {}
+## The designer's edit to the fitted frame, set by RoomHost beside `initial_selection` — the frame
+## drawn in the garage is the frame flown in the field. `{}` flies the catalogue frame.
+var initial_frame_edit: Dictionary = {}
 ## How much of the top of the screen is already covered when this scene is reached through
 ## AppShell, which draws its tab bar on a CanvasLayer above the flight scene. Set the same way
 ## and for the same reason as `initial_selection`: zero when main.tscn runs on its own.
@@ -348,6 +351,7 @@ func _ready() -> void:
 	# labs-and-sim.md's rule is that Lab authors and Sim does not, and nothing in this scene
 	# creates or edits a custom part — it resolves the ids it was handed.
 	build_panel = BuildPanel.new(PartsCatalog.load_with_custom(), _opening_selection())
+	build_panel.frame_edit = initial_frame_edit
 	build_panel.theme = theme
 	# This scene owns both, so this is where the two are told about each other rather than
 	# either one reaching across for the other's geometry.

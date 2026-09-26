@@ -335,6 +335,21 @@ func start_from(frame: Dictionary) -> void:
 		"Started from %s — a copy, so the vendor's mass no longer applies." % preset.name)
 
 
+## Opens on THE FITTED FRAME'S OWN DOCUMENT — the object Lab holds, not a copy — so an edit here
+## is an edit to the frame the Airframe rows read and the aircraft flies (FittedFrame). This is the
+## Lab dock's route in; `start_from` above remains for the room on its own (and its tests).
+##
+## Why not a copy, when `start_from` insists on one: `start_from` guards the CATALOGUE against a
+## builder's edits living in the app's own data. Lab's document is already generated per session
+## from the catalogue entry, so editing it in place touches nothing shipped, and it is the only way
+## the rows and the designer can be describing one frame rather than two.
+func open_fitted(frame: Dictionary, document: AirframeDocument) -> void:
+	if document == null:
+		return
+	_source_frame = frame
+	_open(document, "The fitted %s. Your edits fly." % document.name)
+
+
 func _on_new() -> void:
 	_open(FrameEdits.new_frame("Untitled frame"),
 		"New frame. Pick a layout on the left, or add a plate.")

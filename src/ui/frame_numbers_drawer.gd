@@ -45,6 +45,7 @@ var _tabs: TabContainer
 ## while they are not.
 var _stale := true
 var _document: AirframeDocument
+var _flies: Label
 
 
 func _init() -> void:
@@ -55,7 +56,10 @@ func _init() -> void:
 	add_child(_summary)
 
 	for spec in [
-		{"key": "mass", "label": "Mass"},
+		# DRAWN mass, with what FLIES on the line under the row (`_flies`): the document is plates
+		# times density (108 g for the 5"), the aircraft flies the vendor's weighed figure (110 g)
+		# moved by your edits — two numbers that may honestly differ, so both are named on screen.
+		{"key": "mass", "label": "Drawn mass"},
 		{"key": "cg", "label": "CG offset"},
 		{"key": "roll", "label": "Roll inertia"},
 		{"key": "yaw", "label": "Yaw inertia"},
@@ -74,6 +78,14 @@ func _init() -> void:
 	_toggle.toggled.connect(_on_toggled)
 	_toggle.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	_summary.add_child(_toggle)
+
+	# A line of its own rather than a sixth column: a column widened the room past what stands
+	# beside the section list at 1440 (1125 px against 1057), and the list folded away.
+	_flies = Label.new()
+	_flies.theme_type_variation = &"SmallLabel"
+	_flies.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
+	_values["flies"] = _flies
+	add_child(_flies)
 
 	_tabs = TabContainer.new()
 	_tabs.visible = false
@@ -130,6 +142,12 @@ func show_document(document: AirframeDocument) -> void:
 		_render_tabs()
 
 
+## What the aircraft flies for this frame (`FittedFrame.flown_text`): the weighed mass, or the
+## estimate with the designer's edit on it. A frame DICTIONARY, never a Build — the Build-free rule.
+func show_flown(frame: Dictionary) -> void:
+	_set_stat("flies", "Flies as %s" % FittedFrame.flown_text(frame))
+
+
 ## The fitted frame's published rows, for the Catalogue tab. `{}` dashes them.
 func show_catalogue(frame: Dictionary) -> void:
 	for key in _catalogue_values:
@@ -182,6 +200,6 @@ func _set_stat(key: String, text: String) -> void:
 ## same claim as a drawer that renders the right numbers, and only this can be asserted headless.
 func summary_text() -> String:
 	var out := PackedStringArray()
-	for key in ["mass", "cg", "roll", "yaw", "warnings"]:
+	for key in ["mass", "flies", "cg", "roll", "yaw", "warnings"]:
 		out.append((_values[key] as Label).text)
 	return " · ".join(out)

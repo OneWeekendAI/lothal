@@ -53,6 +53,8 @@ const TABLE := {
 	# FrameWarnings — what the drawn geometry alone says (airframe.md §7). The whole-frame ones sit on
 	# Frame, whose page is the designer that fixes them; the two about one arm sit on Arms.
 	&"frame_has_no_plates": [FRAME, "frame has no plates"],
+	# FittedFrame: the designer holds a frame the sim cannot fly, so the aircraft is not flying it.
+	&"drawn_frame_not_flown": [FRAME, "drawn frame not flown: not a quad"],
 	&"frame_has_no_arms": [FRAME, "frame has no arms"],
 	&"frame_has_no_motors": [FRAME, "frame has no motors"],
 	&"layout_not_controllable": [FRAME, "motor layout cannot be controlled"],

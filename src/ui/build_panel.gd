@@ -52,6 +52,10 @@ const STAT_ROWS := [
 
 var catalog: PartsCatalog
 var build: Build
+## The designer's edit to the fitted frame, handed across the Lab→Sim door with the selection
+## (`LabScreen.frame_edit`). Applied on every rebuild; `FittedFrame.apply` ignores it once the
+## pilot fits a different frame here, so it can never land on a frame it was not drawn from.
+var frame_edit: Dictionary = {}
 
 ## How much of the top of the screen is already spoken for by something drawn over Sim.
 ## Zero when main.tscn is run on its own; the tab bar's height when Sim is reached through
@@ -228,6 +232,8 @@ func _rebuild() -> void:
 		selected_id("propeller"), selected_id("battery"), selected_id("esc"),
 		selected_id("flight_controller"), component_ids()
 	)
+	if not frame_edit.is_empty():
+		build.set_frame_edit(frame_edit)
 	_refresh_stats()
 	build_changed.emit(build)
 

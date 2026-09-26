@@ -418,8 +418,9 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 				return ""
 			return "%s %d mm from a prop" % [str(closest["part"]), roundi(float(closest["mm"]))]
 		&"frame":
-			return "%d g" % roundi(float(build.frame.get("mass_g", 0.0))) \
-				if not build.frame.is_empty() else ""
+			# The mass that flies: the vendor's weighed figure, or with the designer's edit on it an
+			# estimate that carries its `~` (FittedFrame) — the Frame page's "Flies as" line.
+			return FittedFrame.row_mass_text(build.frame)
 		&"arms":
 			# A guessed scale (VibrationModel's one constant), so it carries its `~` (§3).
 			var model := VibrationModel.for_build(build)

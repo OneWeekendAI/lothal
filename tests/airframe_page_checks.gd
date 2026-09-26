@@ -18,6 +18,10 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 	out.append(_the_frame_is_lit(shell))
 	out.append(_the_pack_is_dimmed(shell))
 	out.append(_a_propeller_is_dimmed(shell))
+	# ONE FRAME (FittedFrame): the designer, the rows and the aircraft are the fitted frame.
+	out.append(_the_designer_opens_on_the_fitted_frame(shell))
+	out.append(_the_default_build_has_no_false_hole_amber(shell))
+	out.append_array(await _a_designer_edit_flies(shell, tree))
 	out.append(_hardware_row_reads_the_live_document(shell))
 	out.append(_hardware_row_carries_the_joint_verdict(shell))
 	out.append(_layout_row_reads_the_assembled_airframe(shell))
@@ -25,6 +29,7 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 	shell.open_row(&"frame")
 	await _settle(tree)
 	out.append(_the_frame_page_carries_the_fitted_catalogue_sheet(shell))
+	out.append(_the_frame_page_says_what_flies_beside_what_is_drawn(shell))
 	shell.back_to_drone()
 
 	# THE THREE DRAWN PAGES — each asserted on its own lines, not in a loop.
@@ -116,6 +121,90 @@ static func _an_edit_in_the_designer_reaches_the_row(shell: GlassShell, tree: Sc
 	shell.workbench().document_changed.emit(before)
 	await _settle(tree)
 	return out
+
+
+## The designer holds Lab's own document for the frame that is fitted — not a generated layout.
+static func _the_designer_opens_on_the_fitted_frame(shell: GlassShell) -> TestResult:
+	var document := shell.workbench().editor.document
+	var fitted := str(shell.lab.current_build().frame.get("part_id", ""))
+	return TestResult.new("airframe dock: the designer opens on the fitted frame's own document",
+		document != null and document == shell.lab.frame_document and document.id == fitted,
+		"designer '%s' (%s), fitted %s" % [document.name if document != null else "none",
+			document.id if document != null else "", fitted])
+
+
+## The default build shows no hole-to-edge amber — and the Quad X the designer used to open on DOES
+## trip it, so this is not green because the check never runs.
+static func _the_default_build_has_no_false_hole_amber(shell: GlassShell) -> TestResult:
+	var row := _row(shell, &"hardware")
+	var quad_x_trips := not FrameHardware.joint_warnings(FrameLayouts.build("quad_x")).is_empty()
+	return TestResult.new("airframe dock: the default build's Screws & standoffs row is green (Quad X would be amber)",
+		quad_x_trips and row.get("status") == SectionRows.OK, _show(row) + " quad_x trips=%s" % quad_x_trips)
+
+
+## THE EDIT FLIES, through the production path: an arm-stock edit in the designer (the controls'
+## route, `_on_document_edited`) reaches Lab's build, the top bar, the Frame row and the drawn drone.
+static func _a_designer_edit_flies(shell: GlassShell, tree: SceneTree) -> Array:
+	var out: Array = []
+	var workbench := shell.workbench()
+	var document := workbench.editor.document
+	var before_auw := shell.lab.current_build().all_up_weight_g()
+	var before_bar := shell.build_stats_text()
+	var before_drawn := AirframeProperties.compute(document, AirframePanel.materials()).total_mass_g()
+	var arms: Array = []
+	for i in document.plates.size():
+		if str((document.plates[i] as Dictionary).get("role", "")) == AirframeDocument.ROLE_ARM:
+			arms.append(i)
+			FrameEdits.set_thickness(document, i, 4.0)
+	workbench._on_document_edited(document)
+	await _settle(tree)
+	var drawn_delta := AirframeProperties.compute(document, AirframePanel.materials()).total_mass_g() \
+		- before_drawn
+	var build := shell.lab.current_build()
+	var row := _row(shell, &"frame")
+	out.append(TestResult.new("airframe dock: 4 mm arms drawn in the designer fly lighter by the carbon removed",
+		arms.size() == 4 and drawn_delta < -1.0
+			and absf(build.all_up_weight_g() - (before_auw + drawn_delta)) < 0.01,
+		"AUW %.2f -> %.2f, drawn delta %.2f" % [before_auw, build.all_up_weight_g(), drawn_delta]))
+	out.append(TestResult.new("airframe dock: the top bar follows the drawn edit",
+		shell.build_stats_text() != before_bar
+			and shell.build_stats_text() == GlassShell.build_stats_for(shell.lab.build_with_open_harness()),
+		"'%s' -> '%s'" % [before_bar, shell.build_stats_text()]))
+	out.append(TestResult.new("airframe dock: the Frame row quotes the flown estimate with its ~",
+		row.get("number") == "~%d g" % roundi(110.0 + drawn_delta), _show(row)))
+	for i in arms:
+		FrameEdits.set_thickness(document, i, 5.0)
+	workbench._on_document_edited(document)
+	await _settle(tree)
+	out.append(TestResult.new("airframe dock: drawing the arms back to 5 mm flies the weighed frame again",
+		shell.lab.current_build().all_up_weight_g() == before_auw
+			and _row(shell, &"frame").get("number") == "110 g",
+		"AUW %.3f vs %.3f" % [shell.lab.current_build().all_up_weight_g(), before_auw]))
+	# The drawn drone: motors moved out to 120 mm in the designer, and Lab's 3D airframe is rebuilt
+	# on a 120 mm arm — the geometry the physics uses, not only its numbers.
+	for motor in document.motors:
+		var p := AirframeDocument.point_of((motor as Dictionary)["position_mm"])
+		(motor as Dictionary)["position_mm"] = [p.x * 120.0 / 110.0, p.y * 120.0 / 110.0]
+	workbench._on_document_edited(document)
+	await _settle(tree)
+	var drawn_arm := shell.lab.airframe.arm_m
+	for motor in document.motors:
+		var p := AirframeDocument.point_of((motor as Dictionary)["position_mm"])
+		(motor as Dictionary)["position_mm"] = [p.x * 110.0 / 120.0, p.y * 110.0 / 120.0]
+	workbench._on_document_edited(document)
+	await _settle(tree)
+	out.append(TestResult.new("airframe dock: motors moved to 120 mm rebuild Lab's drone on a 120 mm arm, and back",
+		absf(drawn_arm - 0.12) < 1e-5 and absf(shell.lab.airframe.arm_m - 0.11) < 1e-5,
+		"drawn arm %.5f, after %.5f" % [drawn_arm, shell.lab.airframe.arm_m]))
+	return out
+
+
+## Drawn mass and flown mass are two numbers, and the page names both (the ruling's "agree, or the
+## difference explained on screen").
+static func _the_frame_page_says_what_flies_beside_what_is_drawn(shell: GlassShell) -> TestResult:
+	var summary := shell.workbench().numbers.summary_text()
+	return TestResult.new("airframe dock: the Frame page shows drawn 108 g beside 'Flies as 110 g, as weighed'",
+		summary.begins_with("108 g · Flies as 110 g, as weighed"), summary)
 
 
 static func _the_frame_page_carries_the_fitted_catalogue_sheet(shell: GlassShell) -> TestResult:
