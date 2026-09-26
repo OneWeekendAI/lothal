@@ -314,6 +314,9 @@ var _list_folded_for_page := false
 var _item_page: PanelContainer
 var _item_view: ItemPageView
 var _item_diagram: FramePlanDiagram
+## The Propulsion pages' drawing (thrust curve, blade, guard ring), swapped in as the item view's
+## body for a row whose `diagram` is one of PropulsionDiagram's modes.
+var _prop_diagram: PropulsionDiagram
 ## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
 var _list_refresh_queued := false
 ## The builder unfolded the strip while such a room was up; respected until the page closes.
@@ -531,6 +534,10 @@ func _ready() -> void:
 			lab.layout_details]:
 		(panel as AirframePanel).set_footer_visible(false)
 	lab.assembly_panel.set_warnings_visible(false)
+	# And the Propulsion sheets drop the whole build's warning list (the pack's current limit, the
+	# course's air): the Motors, Propellers and Prop guards pages list their own row's warnings.
+	lab.motor_details.set_warnings_visible(false)
+	lab.propeller_details.set_warnings_visible(false)
 
 	_autosave = Timer.new()
 	_autosave.wait_time = AUTOSAVE_SECONDS
@@ -583,6 +590,10 @@ func _ready() -> void:
 	# the two would go stale on exactly the three components C3 moved.
 	for rail in lab.component_rails():
 		rail.components_changed.connect(_refresh_status)
+	# And the guard, whose control is the Prop panel's selector rather than a rail: without this the
+	# Prop guards row, its page and the top bar's AUW stayed on the unguarded aircraft until some
+	# other change refreshed them. LabScreen connected first, so the build is rebuilt by now.
+	lab.propeller_details.guard_changed.connect(func(_guard_id: String) -> void: _refresh_status())
 
 	# Re-applies whatever is currently chosen, which is NOT always index 0 — and that distinction is
 	# the whole reason this line is not `_select_system(0)`.
@@ -1730,6 +1741,7 @@ func _build_inspector() -> void:
 	_item_page.add_child(_item_view)
 	_item_diagram = FramePlanDiagram.new()
 	_item_view.set_body(_item_diagram)
+	_prop_diagram = PropulsionDiagram.new()
 
 
 ## "← Back to drone" and the breadcrumb (§2), across the top of the stage while a page is open.
@@ -1881,6 +1893,8 @@ func _show_page(row: Dictionary) -> void:
 		_inspector.visible = true
 		if page.has("diagram"):
 			_item_page.visible = true
+		# Which half of the Prop panel this page is: the blade, or the guard (SectionRows `sheet`).
+		lab.propeller_details.set_dock_sheet(str(page.get("sheet", "")))
 	_section_list.set_open_row(row["id"])
 	if _item_page.visible:
 		# Fills the drawing and the numbers from the same pass that builds the rows.
@@ -1936,6 +1950,8 @@ func _hide_pages() -> void:
 		_inspector.visible = false
 	if _item_page != null:
 		_item_page.visible = false
+	if lab != null and lab.propeller_details != null:
+		lab.propeller_details.set_dock_sheet("")
 	if _rail_glass != null:
 		_rail_glass.visible = false
 	if lab != null:
@@ -2026,6 +2042,14 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 		if mode == FramePlanDiagram.MODE_LAYOUT:
 			extras = {"discs": lab.airframe.prop_discs_mm(), "parts": lab.airframe.plan_parts_mm()}
 	_item_view.show_item(row, SectionRows.page_numbers(id, build, numbers_context))
+	if mode in [PropulsionDiagram.MODE_THRUST, PropulsionDiagram.MODE_PROP,
+			PropulsionDiagram.MODE_GUARD]:
+		if _item_view.body != _prop_diagram:
+			_item_view.set_body(_prop_diagram)
+		_prop_diagram.show_build(build, mode)
+		return
+	if _item_view.body != _item_diagram:
+		_item_view.set_body(_item_diagram)
 	# Layout is the fitted aircraft's geometry; arms and hardware are the frame document's.
 	_item_diagram.show_plan(lab.frame_document, mode, extras)
 
@@ -2040,6 +2064,10 @@ func item_page_view() -> ItemPageView:
 
 func item_diagram() -> FramePlanDiagram:
 	return _item_diagram
+
+
+func propulsion_diagram() -> PropulsionDiagram:
+	return _prop_diagram
 
 
 ## Asks for one `_refresh_list` at the end of this frame. Coalesced: a vertex drag publishes an

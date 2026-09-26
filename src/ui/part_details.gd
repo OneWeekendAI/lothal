@@ -47,6 +47,7 @@ var _build_note: Label
 ## section"). Hidden rather than deleted: `stat_text` still answers, and the old shell and Sim's
 ## build panel still show them.
 var _stats_block: Array[Control] = []
+var _warnings_shown := true
 
 
 ## Shows or hides the whole-build stat rows and the "Stats for …" note. The warnings stay: they are
@@ -54,6 +55,19 @@ var _stats_block: Array[Control] = []
 func set_build_stats_visible(shown: bool) -> void:
 	for control in _stats_block:
 		control.visible = shown
+
+
+## Shows or hides the whole-build warning list. Off on a Lab dock page (§3: "a warning appears
+## once, on the row of the part that causes it"), where the page's own Why? list shows the row's
+## warnings; the pack's current limit is not the Motor page's. Held across renders.
+func set_warnings_visible(shown: bool) -> void:
+	_warnings_shown = shown
+	if not shown and _warnings != null:
+		_warnings.visible = false
+
+
+func warnings_visible() -> bool:
+	return _warnings != null and _warnings.visible
 
 
 func build_stats_visible() -> bool:
@@ -114,6 +128,8 @@ func render(part: Dictionary, build: Build) -> void:
 	# Warn, never block (parts.md). A 3" frame under a 7" prop is a legitimate thing to look at;
 	# the consequence is the lesson, and the choice stays selectable.
 	_warnings.show_warnings(build.warnings())
+	if not _warnings_shown:
+		_warnings.visible = false
 
 	_build_note.text = "Stats for %s / %s / %s / %s / %s / %s." % [
 		build.frame.get("name", "?"), build.motor.get("name", "?"),

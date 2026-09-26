@@ -51,9 +51,14 @@ const DEFINITIONS := {
 		{"id": &"straps", "name": "Straps & pads", "soon": true},
 	],
 	"Propulsion": [
-		{"id": &"motors", "name": "Motors", "page": {"panels": ["Motor"]}, "pick": "Motor"},
-		{"id": &"propellers", "name": "Propellers", "page": {"panels": ["Prop"]}, "pick": "Prop"},
-		{"id": &"guards", "name": "Prop guards", "page": {"panels": ["Prop"]}},
+		# `diagram`: PropulsionDiagram's modes. `sheet`: which half of the Prop panel the page shows
+		# (PropellerDetails.set_dock_sheet) — the blade's rows, or the guard's selector alone.
+		{"id": &"motors", "name": "Motors", "page": {"panels": ["Motor"], "diagram": "thrust"},
+			"pick": "Motor"},
+		{"id": &"propellers", "name": "Propellers",
+			"page": {"panels": ["Prop"], "diagram": "prop", "sheet": "prop"}, "pick": "Prop"},
+		{"id": &"guards", "name": "Prop guards",
+			"page": {"panels": ["Prop"], "diagram": "guard", "sheet": "guard"}},
 		{"id": &"soft_mounts", "name": "Soft mounts", "soon": true},
 	],
 	"Power": [

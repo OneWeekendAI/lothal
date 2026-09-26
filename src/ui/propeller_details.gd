@@ -68,6 +68,12 @@ var _guard_selector: OptionButton
 ## part out of the catalog by a selector index is off by one for the whole of the list.
 var _guard_ids: Array = [""]
 var _guard_export: Button
+## The guard section's parts, for `set_dock_sheet`.
+var _guard_rule: HSeparator
+var _guard_heading: Label
+var _guard_note: Label
+var _guard_block: Array = []
+var _dock_sheet := ""
 
 const SPEC_ROWS := [
 	{"key": "diameter_class", "label": "Diameter class"},
@@ -298,18 +304,23 @@ func _build_footer(root: VBoxContainer) -> void:
 
 ## The guard row — see `guard_changed` for why it is on this panel and what it unblocks.
 func _build_guard_row(root: VBoxContainer) -> void:
-	root.add_child(HSeparator.new())
+	_guard_rule = HSeparator.new()
+	root.add_child(_guard_rule)
 
 	var title := Label.new()
 	title.text = "Prop guard"
 	title.theme_type_variation = &"TitleLabel"
 	root.add_child(title)
+	_guard_heading = title
 
 	_guard_selector = OptionButton.new()
 	_guard_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# Clipped for the reason ElectronicsPicker's selectors are: "5\" cinewhoop shroud (ABS, 1.5 mm
 	# gap)" would otherwise set this column's width from its longest string.
 	_guard_selector.clip_text = true
+	# And not sized to its longest entry either, which an OptionButton is by default and which
+	# clip_text does not undo: the 422 px it asked for overran the Prop guards page's sheet.
+	_guard_selector.fit_to_longest_item = false
 	_guard_selector.custom_minimum_size = Vector2(280, 0)
 	_guard_selector.add_item(NOT_FITTED)
 	_guard_ids = [""]
@@ -340,6 +351,8 @@ func _build_guard_row(root: VBoxContainer) -> void:
 		+ "suppression as well — which on this model saves current rather than adding thrust. "
 		+ "Either one bites into roll inertia harder than the motor it rides on.")
 	root.add_child(note)
+	_guard_note = note
+	_guard_block = [_guard_selector, _guard_export]
 
 
 func _on_guard_selected(index: int) -> void:
@@ -384,6 +397,45 @@ func _tip_radius_m() -> float:
 func render(part: Dictionary, build: Build) -> void:
 	super(part, build)
 	_blade_note.text = blade_note_text(document_for(part), materials())
+	_apply_dock_sheet()
+
+
+# ---------------------------------------------------------------------------
+# Half a panel on a Lab dock page (lab dock design §3: a page shows only its own item)
+# ---------------------------------------------------------------------------
+
+## "prop" (the Propellers page: the blade's rows and the designer door), "guard" (the Prop guards
+## page: the guard selector and its export), or "" for the whole panel, as the old shell and Sim's
+## build panel show it. The prose notes are off on both dock sheets: the rows carry their
+## "(assumed)" markers, and the page's drawing and numbers say what the guard note said.
+func set_dock_sheet(sheet: String) -> void:
+	_dock_sheet = sheet
+	_apply_dock_sheet()
+
+
+func _apply_dock_sheet() -> void:
+	if _blade_note == null:
+		return
+	var prop := _dock_sheet != "guard"
+	var guard := _dock_sheet != "prop"
+	_specs_grid.visible = prop
+	_design_button.visible = prop
+	_blade_note.visible = _dock_sheet == ""
+	for control in _guard_block:
+		(control as Control).visible = guard
+	# The section's own heading and rule are the panel's title on the guard page.
+	_guard_heading.visible = _dock_sheet == ""
+	_guard_rule.visible = _dock_sheet == ""
+	_guard_note.visible = _dock_sheet == ""
+	if _dock_sheet == "guard":
+		_title.text = "PROP GUARD"
+
+
+## Which blocks are showing, for tests: `{rows, design, blade_note, guard, guard_note}`.
+func sheet_parts() -> Dictionary:
+	return {"rows": _specs_grid.visible, "design": _design_button.visible,
+		"blade_note": _blade_note.visible, "guard": _guard_selector.visible,
+		"guard_note": _guard_note.visible}
 
 
 func _read(prop: Dictionary, key: String) -> String:

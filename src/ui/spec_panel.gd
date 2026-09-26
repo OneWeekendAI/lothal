@@ -39,6 +39,9 @@ var _content: VBoxContainer
 ## The scroll around those rows, kept ONLY so `fit_to_content()` can turn it off. Nothing else
 ## touches it, and a panel that never calls that method behaves exactly as it always did.
 var _scroll: ScrollContainer
+## The spec rows' grid, so a Lab dock page that shows only part of a panel can hide it
+## (PropellerDetails.set_dock_sheet).
+var _specs_grid: GridContainer
 
 
 func _init(p_spec_rows: Array) -> void:
@@ -80,6 +83,7 @@ func _init(p_spec_rows: Array) -> void:
 	var specs := GridContainer.new()
 	specs.columns = 2
 	root.add_child(specs)
+	_specs_grid = specs
 
 	for row in spec_rows:
 		_detail_values[row["key"]] = _add_row(specs, row["label"])
@@ -100,6 +104,11 @@ func render_rows(title_text: String) -> void:
 	for row in spec_rows:
 		var key: String = row["key"]
 		_detail_values[key].text = row_text(key)
+
+
+## The panel's title as shown.
+func shown_title() -> String:
+	return _title.text
 
 
 ## One row's text, resolved against whatever this panel's subject currently is.
