@@ -43,6 +43,11 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 			shell.lab.airframe.camera_clearances())
 			and str(_row(shell, &"camera").get("line3")).begins_with("frame edge ~"),
 		str(_row(shell, &"camera").get("line3"))))
+	# Nothing fitted is further into the picture than the frame, so the nearest-object line is an
+	# informational note and the row stays green.
+	out.append(TestResult.new("video dock: with nothing intruding, the Camera row is green",
+		_row(shell, &"camera").get("status") == SectionRows.OK,
+		str(_row(shell, &"camera").get("status"))))
 
 	shell.open_row(&"vtx")
 	await _settle(tree)
@@ -69,9 +74,13 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 	out.append(TestResult.new("video dock: a fitted guard's obstruction warning is the Camera row's and its page's",
 		owned.size() == 1 and (owned[0] as BuildWarning).id == &"camera_obstruction"
 			and shell.item_page_view().warning_count() == 1
-			and str(row.get("line3")).begins_with("guard "),
+			and str(row.get("line3")).begins_with("⚠ guard "),
 		"%d owned, %d shown, '%s'" % [owned.size(), shell.item_page_view().warning_count(),
 			row.get("line3")]))
+	# RELEVANT, SO AMBER: the obstruction check found the guard further into the lens's view than
+	# the airframe itself (its own threshold, no lens angle invented).
+	out.append(TestResult.new("video dock: a guard intruding into the camera's view turns the Camera row amber",
+		row.get("status") == SectionRows.WARN, str(row.get("status"))))
 	out.append(TestResult.new("video dock: with a camera warning live, the Camera sheet still lists none of its own",
 		not shell.lab.camera_panel.warnings_visible(), ""))
 	out.append(TestResult.new("video dock: with the guard fitted the Camera drawing draws the frame's cone too",
