@@ -88,6 +88,13 @@ func _init() -> void:
 	root.add_child(hint)
 	_prose.append(hint)
 
+	# Its dock-page stand-in: what the box means, in one line (the paragraph above is off there).
+	_short_hint = Label.new()
+	_short_hint.text = SHORT_HINT
+	_short_hint.theme_type_variation = &"MutedLabel"
+	_short_hint.visible = false
+	root.add_child(_short_hint)
+
 	_warnings = WarningList.new(280)
 	root.add_child(_warnings)
 
@@ -149,9 +156,18 @@ func _on_count_changed(value: float) -> void:
 var _prose: Array[Control] = []
 
 
+const SHORT_HINT := "Your board's UART count · 0 uses the class guess"
+var _short_hint: Label
+
+
 func set_prose_visible(on: bool) -> void:
 	for node in _prose:
 		node.visible = on
+	_short_hint.visible = not on
+
+
+func short_hint_visible() -> bool:
+	return _short_hint.visible
 
 
 ## The build's warning list, off on a Lab dock page: the page lists the row's own, short + Why?.

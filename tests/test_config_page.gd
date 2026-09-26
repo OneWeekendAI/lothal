@@ -65,6 +65,7 @@ static func run() -> Array:
 	out.append(_sheet_drawing_reads_the_sheet_settings(build))
 	out.append(_motors_panel_warnings_stay_hidden_after_render())
 	out.append(_failsafe_panel_prose_hides_the_teaching_half(build))
+	out.append(_ports_panel_says_what_its_box_means_on_the_dock())
 	return out
 
 
@@ -442,3 +443,12 @@ static func _failsafe_panel_prose_hides_the_teaching_half(build: Build) -> TestR
 	var ok := not panel._arming.visible and not panel._provenance.visible and panel.stage2_chooser().visible
 	panel.free()
 	return TestResult.new("config panels: off the dock's prose, the arming notes go and the chooser stays", ok, "")
+
+
+static func _ports_panel_says_what_its_box_means_on_the_dock() -> TestResult:
+	var panel := ConfigPortsPanel.new()
+	var off_dock := panel.short_hint_visible()
+	panel.set_prose_visible(false)
+	var ok := not off_dock and panel.short_hint_visible()
+	panel.free()
+	return TestResult.new("config panels: with the paragraph off, the Ports box keeps a one-line meaning", ok, "")
