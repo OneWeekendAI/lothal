@@ -1955,6 +1955,8 @@ func _show_page(row: Dictionary) -> void:
 				_field.visible = true
 				# The span of the build as it stands NOW — `set_power_room_open`'s posture.
 				_field.build = lab.current_build()
+				# One row's page: its settings and its panel beside the site, its numbers above.
+				_field.set_dock_page(str(page.get("sheet", "")))
 				_field.refresh()
 			"blade":
 				_blade_room.visible = true
@@ -1982,7 +1984,7 @@ func _show_page(row: Dictionary) -> void:
 		# And which cut of the Electronics sheet: the VTX page's two parts, or all of it.
 		lab.electronics_details.set_dock_sheet("vtx" if str(page.get("sheet", "")) == "vtx" else "")
 	_section_list.set_open_row(row["id"])
-	if _item_page.visible:
+	if _item_page.visible or _field_page_up():
 		# Fills the drawing and the numbers from the same pass that builds the rows.
 		_refresh_list()
 	_sync_thrust_overlay()
@@ -2009,7 +2011,9 @@ func _fold_list_for_room() -> void:
 		if child is Container:
 			wanted = maxf(wanted, (child as Control).get_combined_minimum_size().x)
 	if key == "field":
-		wanted += FIELD_SITE_FLOOR
+		# Its column(s) beside FIELD_SITE_FLOOR of site — one stacked column on a dock page, which
+		# is what lets the Field pages stand beside the list at 1280.
+		wanted = _field.width_for_site(FIELD_SITE_FLOOR)
 	wanted += LothalTheme.SPACE_2 * 2.0 + CLUSTER_MARGIN * 2.0
 	if wanted > size.x - SectionList.WIDTH:
 		_section_list.set_collapsed(true)
@@ -2171,6 +2175,22 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 	_item_diagram.show_plan(lab.frame_document, mode, extras)
 
 
+## True while a Field row's page is up (the Field room, on the stage).
+func _field_page_up() -> bool:
+	return _field != null and _field.visible and not _page.is_empty() \
+		and str((_page["page"] as Dictionary).get("room", "")) == "field"
+
+
+## The Field page's head — the open row's two numbers and its own warnings — off the row just
+## built, as `_fill_item_page` does for a drawn page.
+func _fill_field_page(build: Build, context: Dictionary) -> void:
+	var id: StringName = _page.get("id", &"")
+	for candidate in _section_list.rows():
+		if candidate["id"] == id:
+			_field.show_dock_row(candidate, SectionRows.page_numbers(id, build, context))
+			return
+
+
 func item_page() -> Control:
 	return _item_page
 
@@ -2285,6 +2305,8 @@ func _refresh_list() -> void:
 		_workbench.numbers.show_catalogue(build.frame)
 	if _item_page != null and _item_page.visible:
 		_fill_item_page(build, context)
+	if _field_page_up():
+		_fill_field_page(build, context)
 	_section_list.set_open_row(_page.get("id", &"") if not _page.is_empty() else &"")
 
 

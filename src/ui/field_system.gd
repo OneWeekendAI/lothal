@@ -286,6 +286,15 @@ var _elevation_rad := deg_to_rad(CAMERA_ELEVATION_DEG)
 var _orbiting := false
 var _dragging_gate := false
 
+## The Lab dock page this room is showing — "site", "course" or "conditions" (SectionRows' `sheet`)
+## — or "" for the whole room. See `set_dock_page`.
+var dock_page := ""
+## The head over the site view on a dock page: that row's two numbers and its own warnings.
+var page_view: ItemPageView
+## The rail's controls by the dock page they belong to (`_collect_rail_groups`); "all" is what only
+## the whole room shows.
+var _rail_groups: Dictionary = {}
+
 ## Emitted after every edit, so the shell can put the garage's air and weather in step. The old
 ## screen's signal, carried across under its own name.
 signal course_changed
@@ -329,7 +338,13 @@ func _init(p_sites: SiteLibrary, p_courses: CourseLibrary, p_conditions: Conditi
 	# THE DRAG LIVES HERE (§2.4). A ring is placed by moving it on the ground at the scale it will
 	# be flown at; dragging anywhere else turns the view.
 	viewport_container.gui_input.connect(_on_viewport_input)
-	row.add_child(viewport_container)
+	# THE SITE VIEW IS THE BODY OF A LAB DOCK PAGE: the page's two numbers and its row's own
+	# warnings (short + Why?) stand above it, as they stand above every other section's drawing.
+	# The head is hidden until a dock page is set (`set_dock_page`).
+	page_view = ItemPageView.new()
+	page_view.name = "Page"
+	page_view.set_body(viewport_container)
+	row.add_child(page_view)
 
 	_viewport = SubViewport.new()
 	_viewport.size = Vector2i(1280, 720)
@@ -342,6 +357,8 @@ func _init(p_sites: SiteLibrary, p_courses: CourseLibrary, p_conditions: Conditi
 	_build_world()
 
 	row.add_child(_build_panels())
+	_collect_rail_groups()
+	set_dock_page("")
 
 	refresh()
 
@@ -1360,6 +1377,8 @@ func _refresh_panels() -> void:
 	# RE-EVALUATED ON EVERY EDIT, not computed once at open. `_changed()` comes through `refresh()`
 	# and lands here, so a gate dragged into the hillside says so before the hand comes off it.
 	_warnings.show_warnings(warnings())
+	# On a dock page the head lists them, short + Why?; `show_warnings` shows the list again.
+	_warnings.visible = _warnings.visible and dock_page == ""
 	(panel(PANEL_TITLES[2]) as ConditionsPanel).show_conditions(conditions.selected(), air())
 
 
@@ -1485,6 +1504,105 @@ func _project_ray(camera_transform: Transform3D, point: Vector2) -> Vector3:
 		-ndc.y * half_width * (maxf(viewport_size.y, 1.0) / viewport_size.x),
 		-1.0)
 	return camera_transform.basis * local
+
+
+# ---------------------------------------------------------------------------
+# The Lab dock pages (lab dock design §2-§4): one row's page at a time
+# ---------------------------------------------------------------------------
+
+## Which panel is each dock page's own.
+const DOCK_PANELS := {"site": "Site", "course": "Course", "conditions": "Conditions"}
+
+## How tall a rail list stands on a dock page, where the list no longer shares the rail with every
+## other control and would otherwise stretch to the rail's full height over nothing. A drawing
+## dimension (four rows of the theme's ItemList), not a claim about anything.
+const DOCK_LIST_HEIGHT := 96.0
+
+
+## The rail's controls, grouped by the page whose settings they are. Read off the built column —
+## each field's row is its SpinBox's parent, each list's title the child before it.
+func _collect_rail_groups() -> void:
+	var column := site_list.get_parent()
+	var title_of := func(list: Control) -> Control:
+		return column.get_child(list.get_index() - 1) as Control
+	var gate_buttons := column.get_node("GateButtons") as Control
+	_rail_groups = {
+		"site": [title_of.call(site_list), site_list, elevation_field.get_parent(),
+			width_field.get_parent(), length_field.get_parent()],
+		"course": [title_of.call(course_list), course_list, name_field,
+			column.get_child(name_field.get_index() + 1), column.get_child(gate_buttons.get_index() - 1),
+			gate_buttons],
+		"conditions": [temperature_field.get_parent(), wind_speed_field.get_parent(),
+			wind_from_field.get_parent(), gustiness_field.get_parent(), gust_tau_label,
+			gust_tau_field.get_parent()],
+		"all": [column.get_child(elevation_field.get_parent().get_index() - 1)],
+	}
+
+
+## The rail controls a dock page shows (its settings), in rail order. "" gives every control.
+func rail_controls_for(page: String) -> Array:
+	if page == "":
+		var every: Array = []
+		for child in site_list.get_parent().get_children():
+			every.append(child)
+		return every
+	return (_rail_groups.get(page, []) as Array).duplicate()
+
+
+## SHOWS ONE ROW'S PAGE: the rail keeps only that row's settings, that row's panel stands under
+## them in the same column, and the head above the site carries the row's numbers and warnings.
+##
+## Stacked rather than side by side, and that is what lets the page stand beside the Lab's list at
+## 1280: a rail, a panel column and a 500 px site do not fit the 976 px the list leaves, while one
+## column and the site do (lab dock design §2 — "the list stays visible"). The other two panels are
+## off the page, not moved: their facts are the other rows' pages.
+##
+## "" puts the whole room back — every control, all three panels in their own column.
+func set_dock_page(page: String) -> void:
+	if page != "" and not DOCK_PANELS.has(page):
+		page = ""
+	dock_page = page
+	var column := site_list.get_parent() as Control
+	var panels_column := _panels_scroll.get_child(0) as Control
+	for title in PANEL_TITLES:
+		var each := panel(str(title))
+		var wanted_parent: Control = column if page != "" and DOCK_PANELS[page] == title \
+			else panels_column
+		if each.get_parent() != wanted_parent:
+			each.get_parent().remove_child(each)
+			wanted_parent.add_child(each)
+			if wanted_parent == panels_column:
+				panels_column.move_child(each, PANEL_TITLES.find(title))
+	_panels_scroll.visible = page == ""
+	var shown := rail_controls_for(page)
+	for child in column.get_children():
+		if child is SpecPanel:
+			continue
+		(child as Control).visible = shown.has(child)
+	for list in [site_list, course_list]:
+		(list as ItemList).size_flags_vertical = Control.SIZE_EXPAND_FILL if page == "" \
+			else Control.SIZE_FILL
+		(list as ItemList).custom_minimum_size.y = 44.0 if page == "" else DOCK_LIST_HEIGHT
+	# The page's warnings are the head's, short + Why?; the Course panel's full list is the room's.
+	(panel(PANEL_TITLES[1]) as CoursePanel).warnings.visible = page == ""
+	page_view.set_head_visible(page != "")
+
+
+## The open row's head: `row` from SectionRows.rows, `numbers` from SectionRows.page_numbers.
+func show_dock_row(row: Dictionary, numbers: Array) -> void:
+	page_view.show_item(row, numbers)
+
+
+## How wide this room must be to show `site_floor` px of site beside its columns — the shell's
+## question when it decides whether the Lab's list can stay open beside the page.
+func width_for_site(site_floor: float) -> float:
+	var row := page_view.get_parent() as Container
+	var separation := float(row.get_theme_constant("separation"))
+	var wanted := _rail.get_combined_minimum_size().x + separation \
+		+ maxf(site_floor, page_view.get_combined_minimum_size().x)
+	if _panels_scroll.visible:
+		wanted += separation + _panels_scroll.get_combined_minimum_size().x
+	return wanted
 
 
 # ---------------------------------------------------------------------------

@@ -51,6 +51,17 @@ func set_body(control: Control) -> void:
 	add_child(control)
 
 
+## Shows or hides the head (numbers and warnings), leaving the body — for a room whose body is
+## also its own screen outside the dock (the Field room's site view).
+func set_head_visible(on: bool) -> void:
+	_head_on = on
+	_numbers.visible = on and _numbers.get_child_count() > 0
+	_warnings.visible = on
+
+
+var _head_on := true
+
+
 ## `row` from SectionRows.rows; `numbers` as SectionRows.page_numbers returns them.
 func show_item(row: Dictionary, numbers: Array) -> void:
 	for child in _numbers.get_children():
@@ -58,7 +69,7 @@ func show_item(row: Dictionary, numbers: Array) -> void:
 		child.queue_free()
 	for pair in numbers:
 		_numbers.add_child(_number_tile(str(pair[0]), str(pair[1])))
-	_numbers.visible = not numbers.is_empty()
+	_numbers.visible = _head_on and not numbers.is_empty()
 
 	for entry in _entries:
 		(entry["box"] as Control).queue_free()

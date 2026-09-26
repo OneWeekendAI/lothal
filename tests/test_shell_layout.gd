@@ -374,6 +374,7 @@ static func run(tree: SceneTree) -> Array:
 	results.append_array(await VideoPageChecks.run(shell, tree, WINDOW))
 	results.append_array(await PrintedPageChecks.run(shell, tree, WINDOW))
 	results.append_array(await ConfigPageChecks.run(shell, tree, WINDOW))
+	results.append_array(await FieldPageChecks.run(shell, tree, WINDOW))
 
 	# AND ESC OUT OF A PAGE. Asserted last: it leaves the stage on the drone.
 	shell.open_row(&"motors")
@@ -1530,9 +1531,11 @@ static func _the_field_rooms_panels_fit_the_window(shell: GlassShell) -> TestRes
 	var worst := 0.0
 	var offender := ""
 	var measured := 0
+	# On a Lab dock page only the page's own panel is up (FieldSystem.set_dock_page), so the one
+	# drawn is the one measured; the other two are off the page, not somewhere off the window.
 	for title in FieldSystem.PANEL_TITLES:
 		var panel: SpecPanel = room.panel(str(title))
-		if panel == null:
+		if panel == null or not panel.is_visible_in_tree():
 			continue
 		measured += 1
 		var rect := panel.get_global_rect()
@@ -1544,10 +1547,10 @@ static func _the_field_rooms_panels_fit_the_window(shell: GlassShell) -> TestRes
 	# GUARDED ON HAVING MEASURED ALL THREE. With no panels found, `worst` is 0.0 and the check
 	# passes while nothing at all was looked at — the shape of "two missing rows compare equal".
 	return TestResult.new(
-		"the Field room's three panels are all drawn inside the 1280x720 window",
-		measured == FieldSystem.PANEL_TITLES.size() and worst <= 0.0,
-		"%d of %d panels measured, worst overhang %.0f px (%s)" % [
-			measured, FieldSystem.PANEL_TITLES.size(), worst, offender if offender != "" else "—"])
+		"the Field page's own panel is drawn inside the 1280x720 window",
+		measured == 1 and worst <= 0.0,
+		"%d panel(s) up, worst overhang %.0f px (%s)" % [
+			measured, worst, offender if offender != "" else "—"])
 
 
 ## And none of the three is drawn on top of another.
@@ -1556,28 +1559,24 @@ static func _the_field_rooms_panels_fit_the_window(shell: GlassShell) -> TestRes
 ## which: a column that overflows the window is a width budget, and two panels sharing pixels is a
 ## container that stopped laying them out.
 static func _the_field_rooms_panels_do_not_overlap(shell: GlassShell) -> TestResult:
+	# On a dock page the page's panel shares a column with the page's settings (set_dock_page), so
+	# the clash that matters is the panel against those controls and against the site.
 	var room := shell.field_room()
-	var rects: Array[Rect2] = []
-	for title in FieldSystem.PANEL_TITLES:
-		var panel: SpecPanel = room.panel(str(title))
-		if panel != null:
-			rects.append(panel.get_global_rect())
-	var clashes := 0
-	for i in rects.size():
-		for j in range(i + 1, rects.size()):
-			if rects[i].intersects(rects[j]):
-				clashes += 1
-	# Every rect must also be a real rect: three zero-sized panels stacked at the origin intersect
-	# nothing, which is the version of this check that cannot fail.
-	var slivers := 0
-	for rect in rects:
-		if rect.size.x < 100.0 or rect.size.y < 40.0:
-			slivers += 1
+	var panel: SpecPanel = room.panel(str(FieldSystem.DOCK_PANELS.get(room.dock_page, "")))
+	if panel == null:
+		return TestResult.new("and the page's panel shares no pixel with its settings or the site",
+			false, "no dock page up (%s)" % room.dock_page)
+	var rect := panel.get_global_rect()
+	var clashes: Array = []
+	for control in room.rail_controls_for(room.dock_page):
+		if (control as Control).get_global_rect().intersects(rect):
+			clashes.append(str(control.name))
+	if room.viewport_container.get_global_rect().intersects(rect):
+		clashes.append("site view")
 	return TestResult.new(
-		"and no two of them share a pixel, and none is a sliver",
-		rects.size() == FieldSystem.PANEL_TITLES.size() and clashes == 0 and slivers == 0,
-		"%d panels, %d overlapping pairs, %d slivers, rects %s" % [
-			rects.size(), clashes, slivers, rects])
+		"and the page's panel shares no pixel with its settings or the site, and is no sliver",
+		clashes.is_empty() and rect.size.x >= 100.0 and rect.size.y >= 40.0,
+		"panel %s · clashes %s" % [rect, clashes])
 
 
 ## And the site — the thing the room exists to show — still has a viewport to be drawn in.
@@ -1693,7 +1692,7 @@ static func _the_field_rooms_column_stays_out_of_the_bottom_keepout(
 	var measured := 0
 	for title in FieldSystem.PANEL_TITLES:
 		var panel: SpecPanel = shell.field_room().panel(str(title))
-		if panel == null:
+		if panel == null or not panel.is_visible_in_tree():
 			continue
 		measured += 1
 		var bottom := panel.get_global_rect().end.y
@@ -1701,8 +1700,8 @@ static func _the_field_rooms_column_stays_out_of_the_bottom_keepout(
 			lowest = bottom
 			offender = str(title)
 	return TestResult.new(
-		"and the Field room's panels stay above the strip the dock stands in",
-		measured == FieldSystem.PANEL_TITLES.size() and lowest <= floor_y,
+		"and the Field page's panel stays above the strip the dock stands in",
+		measured == 1 and lowest <= floor_y,
 		"%d panels, lowest edge y=%.0f (%s) against a floor of %.0f" % [
 			measured, lowest, offender if offender != "" else "—", floor_y])
 
@@ -1792,7 +1791,8 @@ static func _the_rails_own_controls_are_drawn_inside_it(shell: GlassShell) -> Te
 	# label — an empty column would satisfy "nothing is outside it" with nothing in it.
 	return TestResult.new(
 		"every control in the Field room's rail is drawn inside the rail, not past its bottom edge",
-		measured >= 14 and outside.is_empty(),
+		measured == room.rail_controls_for(room.dock_page).size() + 1 and measured >= 5
+			and outside.is_empty(),
 		"%d controls measured, %d outside: %s" % [measured, outside.size(), outside])
 
 
@@ -1957,8 +1957,17 @@ static func _every_rail_control_is_reachable_at_the_smallest_window(
 				scroller != null, column != null,
 				0 if column == null else column.get_child_count()])
 
-	var first: Control = column.get_child(0) as Control
-	var last: Control = column.get_child(column.get_child_count() - 1) as Control
+	# THE PREMISE CHANGED WITH THE LAB DOCK, AND THIS IS SAID RATHER THAN HIDDEN: a Field page
+	# carries only its own settings and panel (set_dock_page), and at 1024x600 that fits without a
+	# scroll — measured: the Course page ends at y=524 in a box to 552. So "something is below the
+	# fold" is no longer asserted; what stays asserted is the conclusion — the first and the last
+	# control the page SHOWS are both inside the box, at the end of the scroll and at its top.
+	var shown: Array = []
+	for child in column.get_children():
+		if (child as Control).visible:
+			shown.append(child)
+	var first: Control = shown[0] as Control
+	var last: Control = shown[shown.size() - 1] as Control
 
 	# THE PREMISE, BEFORE THE CONCLUSION. Read with the scroll still at rest, which is the state
 	# the room opens in: the last control is NOT inside the box, and the bar has somewhere to go.
@@ -1988,7 +1997,7 @@ static func _every_rail_control_is_reachable_at_the_smallest_window(
 
 	return TestResult.new(
 		"the Field room's rail scrolls, and every control in it can be reached",
-		below_the_fold and range_to_scroll > 0.0 and scrolled_to > 0
+		shown.size() >= 5 and first != last and (not below_the_fold or scrolled_to > 0)
 			and last_reached and first_reached,
 		("below the fold at rest: %s · range to scroll: %.0f px (ended at %d) · "
 			+ "scrolled to the end: %s (%s at %.0f..%.0f in %.0f..%.0f) · back to the top: %s (%s)")
