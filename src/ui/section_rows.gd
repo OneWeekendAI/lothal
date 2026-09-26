@@ -99,11 +99,13 @@ const DEFINITIONS := {
 			"each_printed_part": true},
 	],
 	"Config": [
-		{"id": &"motor_direction", "name": "Motor direction", "page": {"panels": ["Motors"]}},
-		{"id": &"ports", "name": "Ports", "page": {"panels": ["Ports"]}},
-		{"id": &"failsafe", "name": "Failsafe", "page": {"panels": ["Failsafe"]}},
-		{"id": &"rates", "name": "Rates", "page": {"panels": ["Rates"]}},
-		{"id": &"sheet", "name": "Sheet", "page": {"panels": ["Sheet"]}},
+		# `diagram`: ConfigDiagram's modes — the motors in plan, the UART slots, the failsafe's
+		# action, the rate line, the sheet's four settings — beside each item's own panel.
+		{"id": &"motor_direction", "name": "Motor direction", "page": {"panels": ["Motors"], "diagram": "motors"}},
+		{"id": &"ports", "name": "Ports", "page": {"panels": ["Ports"], "diagram": "ports"}},
+		{"id": &"failsafe", "name": "Failsafe", "page": {"panels": ["Failsafe"], "diagram": "failsafe"}},
+		{"id": &"rates", "name": "Rates", "page": {"panels": ["Rates"], "diagram": "rates"}},
+		{"id": &"sheet", "name": "Sheet", "page": {"panels": ["Sheet"], "diagram": "sheet"}},
 	],
 	"Ground kit": [
 		{"id": &"radio", "name": "Radio", "soon": true},

@@ -326,6 +326,8 @@ var _harness_diagram: HarnessSchematic
 var _control_diagram: ControlDiagram
 ## The Video pages' side view (the camera and its clear cone; the VTX and antenna against the CoM).
 var _video_diagram: VideoDiagram
+## The Config pages' drawing (motors in plan, UART slots, failsafe, rate line, sheet settings).
+var _config_diagram: ConfigDiagram
 ## A Printed part's page drawing: its plan and side off the exported triangles, and its key fit.
 var _printed_diagram: PrintedDiagram
 ## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
@@ -573,6 +575,16 @@ func _ready() -> void:
 	lab.camera_panel.set_prose_visible(false)
 	lab.electronics_picker.set_note_visible(false)
 	lab.electronics_details.set_warnings_visible(false)
+	# The Config panels keep their controls and drop their sentences (the teaching halves too) and
+	# their warning lists: the row, the page's numbers and ConfigDiagram say them, short.
+	lab.motors_panel.set_prose_visible(false)
+	lab.motors_panel.set_warnings_visible(false)
+	lab.ports_panel.set_prose_visible(false)
+	lab.ports_panel.set_warnings_visible(false)
+	lab.failsafe_panel.set_prose_visible(false)
+	lab.failsafe_panel.set_warnings_visible(false)
+	lab.rates_panel.set_prose_visible(false)
+	lab.sheet_panel.set_prose_visible(false)
 
 	_autosave = Timer.new()
 	_autosave.wait_time = AUTOSAVE_SECONDS
@@ -1809,6 +1821,7 @@ func _build_inspector() -> void:
 	_harness_diagram.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_control_diagram = ControlDiagram.new()
 	_video_diagram = VideoDiagram.new()
+	_config_diagram = ConfigDiagram.new()
 	_printed_diagram = PrintedDiagram.new()
 
 
@@ -2136,6 +2149,11 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 			_item_view.set_body(_video_diagram)
 		_video_diagram.show_build(build, mode, lab.airframe, context.get("camera_view", {}))
 		return
+	if mode in ConfigDiagram.MODES:
+		if _item_view.body != _config_diagram:
+			_item_view.set_body(_config_diagram)
+		_config_diagram.show_build(build, mode)
+		return
 	if mode == "printed":
 		if _item_view.body != _printed_diagram:
 			_item_view.set_body(_printed_diagram)
@@ -2171,6 +2189,10 @@ func propulsion_diagram() -> PropulsionDiagram:
 
 func control_diagram() -> ControlDiagram:
 	return _control_diagram
+
+
+func config_diagram() -> ConfigDiagram:
+	return _config_diagram
 
 
 func video_diagram() -> VideoDiagram:

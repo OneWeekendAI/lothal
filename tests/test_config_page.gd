@@ -51,6 +51,20 @@ static func run() -> Array:
 	out.append(_failsafe_page_numbers_bidir_on())
 	out.append(_rates_page_numbers(build))
 	out.append(_sheet_page_numbers(build))
+
+	# --- the drawings and the dock's panels
+	out.append(_page_definitions_name_their_drawings())
+	out.append(_plan_corner_is_the_mixers_corner())
+	out.append(_motors_drawing_reads_the_spin_check(build))
+	out.append(_motors_drawing_marks_a_broken_diagonal())
+	out.append(_uart_slots_of_the_reference(build))
+	out.append(_uart_slots_over_a_typed_count())
+	out.append(_uart_slots_unpublished())
+	out.append(_failsafe_drawing_gps_rescue_without_gps())
+	out.append(_rates_drawing_reads_both_rates())
+	out.append(_sheet_drawing_reads_the_sheet_settings(build))
+	out.append(_motors_panel_warnings_stay_hidden_after_render())
+	out.append(_failsafe_panel_prose_hides_the_teaching_half(build))
 	return out
 
 
@@ -313,3 +327,118 @@ static func _sheet_page_numbers(build: Build) -> TestResult:
 	return TestResult.new("page numbers: Sheet shows the settings yours and the flags it lists",
 		got == [["Settings yours", "0 of 4"], ["Flags on the sheet", "%d" % build.warnings().size()]]
 			and build.warnings().size() > 0, "%s" % [got])
+
+
+
+# ---------------------------------------------------------------------------
+# The drawings, and the panels on the dock
+# ---------------------------------------------------------------------------
+
+static func _diagram(build: Build, mode: String) -> ConfigDiagram:
+	var d := ConfigDiagram.new()
+	d.show_build(build, mode)
+	return d
+
+
+static func _page_definitions_name_their_drawings() -> TestResult:
+	var got := {}
+	for definition in SectionRows.DEFINITIONS["Config"]:
+		got[definition["id"]] = definition["page"].get("diagram", "")
+	var want := {&"motor_direction": ConfigDiagram.MODE_MOTORS, &"ports": ConfigDiagram.MODE_PORTS,
+		&"failsafe": ConfigDiagram.MODE_FAILSAFE, &"rates": ConfigDiagram.MODE_RATES,
+		&"sheet": ConfigDiagram.MODE_SHEET}
+	return TestResult.new("config rows: each page names its ConfigDiagram mode", got == want, str(got))
+
+
+static func _plan_corner_is_the_mixers_corner() -> TestResult:
+	# M2 is front-right: right is +x on screen, front is up (-y).
+	var got := [ConfigDiagram.plan_corner("M2"), ConfigDiagram.plan_corner("M3")]
+	return TestResult.new("config drawing: M2 is drawn front-right and M3 rear-left",
+		got == [Vector2(1, -1), Vector2(-1, 1)], str(got))
+
+
+static func _motors_drawing_reads_the_spin_check(build: Build) -> TestResult:
+	var d := _diagram(build, ConfigDiagram.MODE_MOTORS)
+	var ok := d.spin_check == ConfigFigures.spin_check(build) and float(d.spin_check["spin"]["M1"]) == 1.0
+	var shown := str(d.spin_check)
+	d.free()
+	return TestResult.new("config drawing: the motors are drawn with the mixer's map", ok, shown)
+
+
+static func _motors_drawing_marks_a_broken_diagonal() -> TestResult:
+	var d := _diagram(_with({"motor_spin": {"M1": 1, "M2": 1, "M3": -1, "M4": -1}}),
+		ConfigDiagram.MODE_MOTORS)
+	var ok: bool = d.spin_check["broken"] == ["M1/M4", "M2/M3"]
+	var shown := str(d.spin_check)
+	d.free()
+	return TestResult.new("config drawing: a split map's diagonals are both marked broken", ok, shown)
+
+
+static func _uart_slots_of_the_reference(build: Build) -> TestResult:
+	var got := ConfigFigures.uart_slots(build)
+	var want := {"known": true, "slots": [{"part": "RX", "maybe": false}, {"part": "VTX", "maybe": false},
+		{"part": "", "maybe": false}, {"part": "", "maybe": false}, {"part": "", "maybe": true}],
+		"over": [], "parts": ["RX", "VTX"]}
+	return TestResult.new("config figures: ~4–5 UARTs draw five slots, the fifth a maybe, RX and VTX in order",
+		got == want, str(got))
+
+
+static func _uart_slots_over_a_typed_count() -> TestResult:
+	var got := ConfigFigures.uart_slots(_with({PortBudget.CONFIG_KEY: 1}))
+	return TestResult.new("config figures: one typed UART holds RX; VTX is left over",
+		got["slots"] == [{"part": "RX", "maybe": false}] and got["over"] == ["VTX"], str(got))
+
+
+static func _uart_slots_unpublished() -> TestResult:
+	var build := ReferenceBuild.build()
+	build.fc = build.fc.duplicate(true)
+	(build.fc["catalog"] as Dictionary).erase(PortBudget.CATALOG_KEY)
+	var got := ConfigFigures.uart_slots(build)
+	return TestResult.new("config figures: an unpublished count draws no slots and invents none",
+		got["known"] == false and (got["slots"] as Array).is_empty() and got["parts"] == ["RX", "VTX"],
+		str(got))
+
+
+static func _failsafe_drawing_gps_rescue_without_gps() -> TestResult:
+	var d := _diagram(_with({FailsafeSettings.STAGE2_KEY: FailsafeSettings.GPS_RESCUE}),
+		ConfigDiagram.MODE_FAILSAFE)
+	var ok := not d.failsafe_ok and d.failsafe_needs == "a GPS" \
+		and d.stage2_label == FailsafeSettings.label_for(FailsafeSettings.GPS_RESCUE)
+	var shown := "%s / %s / %s" % [d.stage2_label, d.failsafe_ok, d.failsafe_needs]
+	d.free()
+	return TestResult.new("config drawing: GPS rescue with no GPS draws its need unmet", ok, shown)
+
+
+static func _rates_drawing_reads_both_rates() -> TestResult:
+	var d := _diagram(_with({RateSettings.MAX_RATE_KEY: 600.0}), ConfigDiagram.MODE_RATES)
+	var ok := is_equal_approx(d.rate_set, 600.0) and is_equal_approx(d.rate_sim, ConfigFigures.sim_rate_deg_s())
+	var shown := "%s / %s" % [d.rate_set, d.rate_sim]
+	d.free()
+	return TestResult.new("config drawing: the rate line ends at the set rate, the sim's beside it", ok, shown)
+
+
+static func _sheet_drawing_reads_the_sheet_settings(build: Build) -> TestResult:
+	var d := _diagram(build, ConfigDiagram.MODE_SHEET)
+	var ok := d.settings == ConfigFigures.sheet_settings(build) and d.flags == build.warnings().size()
+	var shown := "%s / %d" % [d.settings, d.flags]
+	d.free()
+	return TestResult.new("config drawing: the sheet preview is the sheet's four settings and its flags", ok, shown)
+
+
+static func _motors_panel_warnings_stay_hidden_after_render() -> TestResult:
+	var panel := ConfigMotorsPanel.new()
+	panel.set_warnings_visible(false)
+	panel.render(_with(_all_cw()))
+	var text := panel.warning_text()
+	panel.free()
+	return TestResult.new("config panels: a hidden warning list stays hidden when an unflyable map renders",
+		text == "", text)
+
+
+static func _failsafe_panel_prose_hides_the_teaching_half(build: Build) -> TestResult:
+	var panel := ConfigFailsafePanel.new()
+	panel.set_prose_visible(false)
+	panel.render(build)
+	var ok := not panel._arming.visible and not panel._provenance.visible and panel.stage2_chooser().visible
+	panel.free()
+	return TestResult.new("config panels: off the dock's prose, the arming notes go and the chooser stays", ok, "")

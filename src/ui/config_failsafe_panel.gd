@@ -75,6 +75,7 @@ func _init() -> void:
 	note.custom_minimum_size = Vector2(280, 0)
 	note.theme_type_variation = &"MutedLabel"
 	root.add_child(note)
+	_prose.append(note)
 
 	root.add_child(HSeparator.new())
 
@@ -89,6 +90,7 @@ func _init() -> void:
 	_provenance.custom_minimum_size = Vector2(280, 0)
 	_provenance.theme_type_variation = &"MutedLabel"
 	root.add_child(_provenance)
+	_prose.append(_provenance)
 
 	root.add_child(HSeparator.new())
 
@@ -104,6 +106,7 @@ func _init() -> void:
 	bidir_note.custom_minimum_size = Vector2(280, 0)
 	bidir_note.theme_type_variation = &"MutedLabel"
 	root.add_child(bidir_note)
+	_prose.append(bidir_note)
 
 	_warnings = WarningList.new(280)
 	root.add_child(_warnings)
@@ -113,12 +116,15 @@ func _init() -> void:
 	# `_init`, rather than in `render` — so there is no code path by which a build could reach it
 	# and no way for it to drift into a verdict. The test asserts the two halves apart by rendering
 	# two builds that disagree about every check and requiring identical arming text.
-	root.add_child(HSeparator.new())
+	var arming_rule := HSeparator.new()
+	root.add_child(arming_rule)
+	_prose.append(arming_rule)
 
 	var arming_title := Label.new()
 	arming_title.text = "IF IT WON'T ARM"
 	arming_title.theme_type_variation = &"TitleLabel"
 	root.add_child(arming_title)
+	_prose.append(arming_title)
 
 	_arming = Label.new()
 	_arming.text = ArmingNotes.preamble() + "\n\n" + "\n\n".join(ArmingNotes.lines())
@@ -126,6 +132,7 @@ func _init() -> void:
 	_arming.custom_minimum_size = Vector2(280, 0)
 	_arming.theme_type_variation = &"MutedLabel"
 	root.add_child(_arming)
+	_prose.append(_arming)
 
 
 ## Shows this build's failsafe configuration and what is wrong with it. Every value read through
@@ -150,6 +157,8 @@ func render(build: Build) -> void:
 		if SHOWN_WARNINGS.has(warning.id):
 			entries.append(warning)
 	_warnings.show_warnings(entries)
+	if not _warnings_shown:
+		_warnings.visible = false
 
 
 ## The behaviour showing in the chooser.
@@ -201,3 +210,22 @@ func _on_bidir(on: bool) -> void:
 	if _updating:
 		return
 	bidir_dshot_edited.emit(on)
+
+
+## The explanatory sentences, off on a Lab dock page: the row, the page's numbers and the drawing
+## say them there (lab dock design: no paragraphs on a page).
+var _prose: Array[Control] = []
+
+
+func set_prose_visible(on: bool) -> void:
+	for node in _prose:
+		node.visible = on
+
+
+## The build's warning list, off on a Lab dock page: the page lists the row's own, short + Why?.
+var _warnings_shown := true
+
+
+func set_warnings_visible(on: bool) -> void:
+	_warnings_shown = on
+	_warnings.visible = on and _warnings.visible

@@ -55,6 +55,7 @@ func _init() -> void:
 	_demand.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_demand.custom_minimum_size = Vector2(280, 0)
 	root.add_child(_demand)
+	_prose.append(_demand)
 
 	root.add_child(HSeparator.new())
 
@@ -62,6 +63,7 @@ func _init() -> void:
 	_supply.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_supply.custom_minimum_size = Vector2(280, 0)
 	root.add_child(_supply)
+	_prose.append(_supply)
 
 	var row := HBoxContainer.new()
 	var caption := Label.new()
@@ -84,6 +86,7 @@ func _init() -> void:
 	hint.custom_minimum_size = Vector2(280, 0)
 	hint.theme_type_variation = &"MutedLabel"
 	root.add_child(hint)
+	_prose.append(hint)
 
 	_warnings = WarningList.new(280)
 	root.add_child(_warnings)
@@ -112,6 +115,8 @@ func render(build: Build) -> void:
 	_field.set_value_no_signal(float(PortBudget.typed_count(build.config)))
 
 	_warnings.show_warnings(entries)
+	if not _warnings_shown:
+		_warnings.visible = false
 
 
 func demand_text() -> String:
@@ -137,3 +142,22 @@ func port_field() -> SpinBox:
 
 func _on_count_changed(value: float) -> void:
 	uart_count_edited.emit(int(value))
+
+
+## The explanatory sentences, off on a Lab dock page: the row, the page's numbers and the drawing
+## say them there (lab dock design: no paragraphs on a page).
+var _prose: Array[Control] = []
+
+
+func set_prose_visible(on: bool) -> void:
+	for node in _prose:
+		node.visible = on
+
+
+## The build's warning list, off on a Lab dock page: the page lists the row's own, short + Why?.
+var _warnings_shown := true
+
+
+func set_warnings_visible(on: bool) -> void:
+	_warnings_shown = on
+	_warnings.visible = on and _warnings.visible

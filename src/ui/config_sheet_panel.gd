@@ -49,6 +49,7 @@ func _init() -> void:
 	note.custom_minimum_size = Vector2(280, 0)
 	note.theme_type_variation = &"MutedLabel"
 	root.add_child(note)
+	_prose.append(note)
 
 	_button = Button.new()
 	_button.text = "Export sheet"
@@ -67,6 +68,7 @@ func _init() -> void:
 	_preview.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_preview.custom_minimum_size = Vector2(280, 0)
 	root.add_child(_preview)
+	_prose.append(_preview)
 
 
 ## Shows what would be written, for this build, under this name. Reads; never writes.
@@ -93,3 +95,13 @@ func status_text() -> String:
 ## panel's signal is otherwise untestable outside a window, and it is the thing that breaks.
 func export_button() -> Button:
 	return _button
+
+
+## The explanatory sentences, off on a Lab dock page: the row, the page's numbers and the drawing
+## say them there (lab dock design: no paragraphs on a page).
+var _prose: Array[Control] = []
+
+
+func set_prose_visible(on: bool) -> void:
+	for node in _prose:
+		node.visible = on

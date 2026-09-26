@@ -61,6 +61,7 @@ func _init() -> void:
 	note.custom_minimum_size = Vector2(280, 0)
 	note.theme_type_variation = &"MutedLabel"
 	root.add_child(note)
+	_prose.append(note)
 
 	root.add_child(HSeparator.new())
 
@@ -77,11 +78,13 @@ func _init() -> void:
 	_rate_row.custom_minimum_size = Vector2(280, 0)
 	_rate_row.theme_type_variation = &"MutedLabel"
 	root.add_child(_rate_row)
+	_prose.append(_rate_row)
 
 	_statement = Label.new()
 	_statement.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_statement.custom_minimum_size = Vector2(280, 0)
 	root.add_child(_statement)
+	_prose.append(_statement)
 
 	root.add_child(HSeparator.new())
 
@@ -98,6 +101,7 @@ func _init() -> void:
 	_expo_row.custom_minimum_size = Vector2(280, 0)
 	_expo_row.theme_type_variation = &"MutedLabel"
 	root.add_child(_expo_row)
+	_prose.append(_expo_row)
 
 	root.add_child(HSeparator.new())
 
@@ -105,6 +109,7 @@ func _init() -> void:
 	modes_title.text = "MODES"
 	modes_title.theme_type_variation = &"TitleLabel"
 	root.add_child(modes_title)
+	_prose.append(modes_title)
 
 	_modes = Label.new()
 	_modes.text = RateSettings.modes_sentence()
@@ -112,6 +117,7 @@ func _init() -> void:
 	_modes.custom_minimum_size = Vector2(280, 0)
 	_modes.theme_type_variation = &"MutedLabel"
 	root.add_child(_modes)
+	_prose.append(_modes)
 
 
 ## Shows this build's rates. Every value and every sentence read through `RateSettings`, so the
@@ -175,3 +181,13 @@ func _on_rate(value: float) -> void:
 
 func _on_expo(value: float) -> void:
 	expo_edited.emit(value)
+
+
+## The explanatory sentences, off on a Lab dock page: the row, the page's numbers and the drawing
+## say them there (lab dock design: no paragraphs on a page).
+var _prose: Array[Control] = []
+
+
+func set_prose_visible(on: bool) -> void:
+	for node in _prose:
+		node.visible = on

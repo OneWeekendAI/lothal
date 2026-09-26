@@ -373,6 +373,7 @@ static func run(tree: SceneTree) -> Array:
 	results.append_array(await ControlPageChecks.run(shell, tree, WINDOW))
 	results.append_array(await VideoPageChecks.run(shell, tree, WINDOW))
 	results.append_array(await PrintedPageChecks.run(shell, tree, WINDOW))
+	results.append_array(await ConfigPageChecks.run(shell, tree, WINDOW))
 
 	# AND ESC OUT OF A PAGE. Asserted last: it leaves the stage on the drone.
 	shell.open_row(&"motors")

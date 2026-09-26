@@ -235,3 +235,29 @@ static func warnings(build: Build) -> Array[BuildWarning]:
 				"; ".join(missing)],
 			{"missing": missing.size()}))
 	return out
+
+
+# ---------------------------------------------------------------------------
+# The Ports drawing's slots
+# ---------------------------------------------------------------------------
+
+## The UART map the Ports page draws: `{known, slots: [{part, maybe}], over: [part]}`. One slot per
+## port at the top of the board's figure; a slot past the bottom of a class-guess range is `maybe`.
+## The parts that want a UART fill the slots in ControlPlausibility's order — an ORDER, not a UART
+## number: which UART each lands on is the builder's wiring. `over` is what no slot holds. With no
+## published count, `known` is false, there are no slots, and every part is listed without a verdict.
+static func uart_slots(build: Build) -> Dictionary:
+	var supply := PortBudget.for_build(build)
+	var known := String(supply["provenance"]) != PortBudget.UNPUBLISHED
+	var parts: Array[String] = []
+	for part in ControlFigures.serial_parts(build):
+		parts.append(str(SHORT_NAMES.get(str(part["category"]), part["name"])))
+	var slots: Array = []
+	var over: Array[String] = []
+	if not known:
+		return {"known": false, "slots": slots, "over": over, "parts": parts}
+	for i in int(supply["high"]):
+		slots.append({"part": parts[i] if i < parts.size() else "", "maybe": i >= int(supply["low"])})
+	for i in range(int(supply["high"]), parts.size()):
+		over.append(parts[i])
+	return {"known": true, "slots": slots, "over": over, "parts": parts}

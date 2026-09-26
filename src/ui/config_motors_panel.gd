@@ -68,6 +68,7 @@ func _init() -> void:
 	note.custom_minimum_size = Vector2(280, 0)
 	note.theme_type_variation = &"MutedLabel"
 	root.add_child(note)
+	_prose.append(note)
 
 	root.add_child(HSeparator.new())
 
@@ -91,6 +92,7 @@ func _init() -> void:
 	_refusal.custom_minimum_size = Vector2(280, 0)
 	_refusal.theme_type_variation = &"MutedLabel"
 	root.add_child(_refusal)
+	_prose.append(_refusal)
 
 	_warnings = WarningList.new(280)
 	root.add_child(_warnings)
@@ -123,6 +125,8 @@ func render(build: Build) -> void:
 
 	var entries: Array[BuildWarning] = ConfigPlausibility.warnings_for(build)
 	_warnings.show_warnings(entries)
+	if not _warnings_shown:
+		_warnings.visible = false
 
 
 ## The convention in force — "props_out", "props_in", or "" for a per-motor map that is neither.
@@ -157,3 +161,22 @@ func _on_choice(index: int) -> void:
 	if _updating or index < 0 or index >= SPIN_CHOICES.size():
 		return
 	motor_spin_edited.emit(String(SPIN_CHOICES[index]["value"]))
+
+
+## The explanatory sentences, off on a Lab dock page: the row, the page's numbers and the drawing
+## say them there (lab dock design: no paragraphs on a page).
+var _prose: Array[Control] = []
+
+
+func set_prose_visible(on: bool) -> void:
+	for node in _prose:
+		node.visible = on
+
+
+## The build's warning list, off on a Lab dock page: the page lists the row's own, short + Why?.
+var _warnings_shown := true
+
+
+func set_warnings_visible(on: bool) -> void:
+	_warnings_shown = on
+	_warnings.visible = on and _warnings.visible
