@@ -171,12 +171,13 @@ static func _test_sim_retracts_the_chrome_and_lab_restores_it() -> Array:
 	# left a check that passes whether the column is down because QC5 retired it or up because a
 	# regression brought it back, and "the garage shows its clusters" is exactly the check that
 	# should notice a column reappearing.
-	var all_up: bool = lab_chrome["top"] and lab_chrome["tools"] and lab_chrome["inspector"]
+	var all_up: bool = lab_chrome["top"] and lab_chrome["tools"] and lab_chrome["list"] \
+		and not lab_chrome["inspector"]
 	results.append(TestResult.new(
-		"the garage shows its three clusters",
+		"the garage shows its three clusters — top bar, tools, and the section list (no page open)",
 		all_up,
-		"top=%s tools=%s inspector=%s" % [lab_chrome["top"], lab_chrome["tools"],
-			lab_chrome["inspector"]]))
+		"top=%s tools=%s list=%s inspector=%s" % [lab_chrome["top"], lab_chrome["tools"],
+			lab_chrome["list"], lab_chrome["inspector"]]))
 
 	results.append(TestResult.new(
 		"and the garage does NOT show a parts rail — the finder opens Airframe's shelves",
@@ -184,12 +185,12 @@ static func _test_sim_retracts_the_chrome_and_lab_restores_it() -> Array:
 		"rail=%s" % [lab_chrome["rail"]]))
 
 	var all_gone: bool = not sim_chrome["top"] and not sim_chrome["tools"] \
-		and not sim_chrome["rail"] and not sim_chrome["inspector"]
+		and not sim_chrome["rail"] and not sim_chrome["inspector"] and not sim_chrome["list"]
 	results.append(TestResult.new(
 		"the field retracts every cluster — nothing on screen can author a part",
 		all_gone,
-		"top=%s tools=%s rail=%s inspector=%s" % [sim_chrome["top"], sim_chrome["tools"],
-			sim_chrome["rail"], sim_chrome["inspector"]]))
+		"top=%s tools=%s rail=%s inspector=%s list=%s" % [sim_chrome["top"], sim_chrome["tools"],
+			sim_chrome["rail"], sim_chrome["inspector"], sim_chrome["list"]]))
 
 	results.append(TestResult.new(
 		"and walking back into the garage puts them back",
@@ -388,10 +389,15 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 		"no room is exempted by the dock any more — the field editor is retired, not excused",
 		DOCK_DOORS.is_empty() and not doors.has("field_editor"),
 		"dock exemptions %s · RoomHost opens %s" % [DOCK_DOORS, doors]))
+	# Asked of a live dock built off the shell's own table: the section words are what excuses the
+	# field from the menu now (lab dock design §2), and there is no icon list to read back.
+	var dock := Dock.new(GlassShell.SYSTEMS, StyleBoxEmpty.new())
+	var words := dock.action_names()
+	dock.free()
 	results.append(TestResult.new(
-		"and the dock really carries an icon for the field, which is what excuses it from the menu",
-		Dock.ICONED_SYSTEMS.has("Field") and not RoomMenu.room_ids().has("field_editor"),
-		"dock icons %s · menu offers %s" % [Dock.ICONED_SYSTEMS, RoomMenu.room_ids()]))
+		"and the dock really carries a Field section word, which is what excuses it from the menu",
+		Array(words).has("Field") and not RoomMenu.room_ids().has("field_editor"),
+		"dock offers %s · menu offers %s" % [words, RoomMenu.room_ids()]))
 
 	# THE MENU NO LONGER LISTS THRUST, asserted by name rather than left to the set equality
 	# above — which a re-addition would satisfy by moving `bench` back into the menu and out of
@@ -445,15 +451,18 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 	# and asserted BEFORE the door opens: the check now states the state it started in, and a
 	# shell that stopped showing the inspector fails here instead of sliding through the
 	# conclusion.
-	var inspector_up_before := shell._inspector.visible
+	# Since the lab dock the garage's standing chrome is the section LIST (the inspector is a page,
+	# up only while a row is open), so the list is the precondition and must go with the rest.
+	var inspector_up_before := shell.section_list().visible
 	shell._open_room("frame_bench")
 	var retracted := not shell._top_bar.visible and not shell._rail_glass.visible \
-		and not shell._inspector.visible and not shell._tools_glass.visible
+		and not shell._inspector.visible and not shell._tools_glass.visible \
+		and not shell.section_list().visible
 	shell.rooms.show_lab()
 	results.append(TestResult.new(
 		"a bench retracts the chrome the same way the field does",
 		inspector_up_before and retracted,
-		"inspector up beforehand: %s · chrome retracted on the frame bench: %s" % [
+		"list up beforehand: %s · chrome retracted on the frame bench: %s" % [
 			inspector_up_before, retracted]))
 
 	# AND THE INSPECTOR PATH DOES THE SAME — P10f moved this assertion onto the new door, which is
@@ -464,11 +473,16 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 	# signal did nothing and the chrome was already down".
 	# Same QC4 precondition as above, and needed independently here: this site opens a different
 	# door, so it has to prove for itself that the inspector was up before the signal fired.
+	# The bench's door is on the Motor PAGE now, so that page is opened first — which is also what
+	# makes "the inspector was up" a real precondition again.
+	shell.select_system_by_name("Propulsion")
+	shell.open_row(&"motors")
 	var inspector_up_before_bench := shell._inspector.visible
 	shell.lab.motor_details.thrust_bench_requested.emit()
 	var bench_open := shell.rooms.bench != null
 	var bench_retracted := not shell._top_bar.visible and not shell._rail_glass.visible \
-		and not shell._inspector.visible and not shell._tools_glass.visible
+		and not shell._inspector.visible and not shell._tools_glass.visible \
+		and not shell.section_list().visible
 	shell.rooms.show_lab()
 	results.append(TestResult.new(
 		"the thrust stand opens from the Motor inspector, and retracts the chrome identically",
@@ -500,6 +514,9 @@ static func _chrome_of(shell: GlassShell) -> Dictionary:
 		"tools": shell._tools_glass.visible,
 		"rail": shell._rail_glass.visible,
 		"inspector": shell._inspector.visible,
+		# The lab dock's right-hand list (design §2) — the garage's third cluster since the
+		# inspector became a page that is only up while a row is open.
+		"list": shell.section_list().visible,
 	}
 
 

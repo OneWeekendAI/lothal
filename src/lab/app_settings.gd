@@ -6,7 +6,7 @@ extends RefCounted
 const SAVE_PATH := "user://app_settings.json"
 const SCHEMA_VERSION := 1
 
-const TOP_KEYS := ["schema", "ui_scale", "recent_projects"]
+const TOP_KEYS := ["schema", "ui_scale", "recent_projects", "lab_list_collapsed"]
 
 ## How many recent drones the menu remembers. A list long enough to scroll is a list nobody reads,
 ## and the ones past the eighth are found through Open… anyway.
@@ -20,6 +20,11 @@ var ui_scale: float = 1.0
 ## this is not the same mistake as a builds index: it never claims to be the set of drones that
 ## exist, only the set somebody opened.
 var recent_projects: Array = []
+## Whether the Lab's right-hand list is collapsed, per project id (lab dock design §2: "The state is
+## saved per project"). Here rather than in the .lothal container because it is how this person
+## likes to look at the drone, not a decision about the drone — a shared drone file must not
+## carry it.
+var lab_list_collapsed: Dictionary = {}
 var _unknown: Dictionary = {}
 
 static func load_from(path: String = SAVE_PATH) -> AppSettings:
@@ -36,6 +41,11 @@ static func load_from(path: String = SAVE_PATH) -> AppSettings:
 		for entry in (recent as Array):
 			if entry is String:
 				settings.recent_projects.append(String(entry))
+
+	var collapsed: Variant = doc.get("lab_list_collapsed", {})
+	if collapsed is Dictionary:
+		for key in (collapsed as Dictionary):
+			settings.lab_list_collapsed[str(key)] = bool((collapsed as Dictionary)[key])
 
 	settings._unknown = JsonStore.unknown_fields(doc, TOP_KEYS)
 	return settings
@@ -71,9 +81,21 @@ func existing_recent_projects() -> Array:
 			out.append(String(path))
 	return out
 
+## Whether this project's Lab list was left collapsed. False for a project never seen.
+func list_collapsed(project_id: String) -> bool:
+	return bool(lab_list_collapsed.get(project_id, false))
+
+
+func set_list_collapsed(project_id: String, collapsed: bool) -> void:
+	if project_id == "":
+		return
+	lab_list_collapsed[project_id] = collapsed
+
+
 func save(path: String = SAVE_PATH) -> bool:
 	var doc: Dictionary = _unknown.duplicate()
 	doc["schema"] = SCHEMA_VERSION
 	doc["ui_scale"] = ui_scale
 	doc["recent_projects"] = recent_projects.duplicate()
+	doc["lab_list_collapsed"] = lab_list_collapsed.duplicate()
 	return JsonStore.write_document(path, doc)

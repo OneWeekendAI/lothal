@@ -24,7 +24,7 @@ signal collapse_toggled(collapsed: bool)
 
 const WIDTH := 280.0
 const STRIP_WIDTH := 30.0
-const ROW_HEIGHT := 60.0
+const ROW_HEIGHT := 66.0
 const SOON_HEIGHT := 30.0
 const HEADER_HEIGHT := 36.0
 
@@ -134,6 +134,13 @@ func set_collapsed(value: bool, emit := false) -> void:
 	_full.visible = not value
 	_strip.visible = value
 	custom_minimum_size = Vector2(STRIP_WIDTH if value else WIDTH, 0)
+	# The strip carries no side padding, so its width is the strip's own and not the panel's margins.
+	var box := get_theme_stylebox("panel") as StyleBoxFlat
+	if box != null and has_theme_stylebox_override("panel"):
+		var own := box.duplicate() as StyleBoxFlat
+		own.content_margin_left = 0.0 if value else float(LothalTheme.SPACE_2)
+		own.content_margin_right = 0.0 if value else float(LothalTheme.SPACE_2)
+		add_theme_stylebox_override("panel", own)
 	if emit:
 		collapse_toggled.emit(value)
 
@@ -203,6 +210,8 @@ func _row(row: Dictionary) -> Control:
 	dot.name = "Dot"
 	top.add_child(dot)
 	var chevron := _line("›", "MutedLabel")
+	chevron.clip_text = false
+	chevron.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	top.add_child(chevron)
 
 	var choice_text := str(row["choice"])
@@ -252,6 +261,8 @@ func _soon_row(row: Dictionary) -> Control:
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(name_label)
 	var pill := _line("soon", "SmallLabel")
+	pill.clip_text = false
+	pill.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	pill.add_theme_color_override("font_color", LothalTheme.TEXT_FAINT)
 	top.add_child(pill)
 	panel.set_meta("lines", PackedStringArray([str(row["name"]), "soon", ""]))
@@ -306,7 +317,10 @@ class VerticalLabelButton extends Button:
 
 	func _init() -> void:
 		flat = true
-		custom_minimum_size = Vector2(STRIP_WIDTH - LothalTheme.SPACE_2 * 2, 0)
+		custom_minimum_size = Vector2(STRIP_WIDTH, 0)
+		# No stylebox margins: the strip's width is STRIP_WIDTH and nothing else.
+		for state in ["normal", "hover", "pressed", "focus", "disabled", "hover_pressed"]:
+			add_theme_stylebox_override(state, StyleBoxEmpty.new())
 
 	func _draw() -> void:
 		var font := get_theme_font("font")

@@ -383,11 +383,14 @@ static func _shell_checks() -> Array:
 	shell.set_thrust_overlay_visible(true)
 	var up_in_propulsion := _visible_cards(shell)
 
+	# Since the lab dock, Airframe's section shows the drone like any other; its ROOM is the Frame
+	# row's page, and a page is what the tray must never float over (design §2).
 	shell.select_system_by_name("Airframe")
+	shell.open_row(&"frame")
 	var up_in_airframe := _visible_cards(shell)
 
 	results.append(TestResult.new(
-		"[shell] a tray that is up in Propulsion is gone when the builder walks to Airframe",
+		"[shell] a tray that is up in Propulsion is gone when the builder opens the Airframe room",
 		up_in_propulsion > 0 and up_in_airframe == 0,
 		"%d card(s) up in Propulsion, %d still up over the Airframe room" % [
 			up_in_propulsion, up_in_airframe]))
@@ -415,14 +418,15 @@ static func _shell_checks() -> Array:
 	# band — `_fit_columns` grows both of them past their floors to fit content, and the band the
 	# arithmetic above is checked against assumes the floors. This is the check that would notice
 	# the inspector growing wide enough to eat a column the tray had already placed.
+	# Since the lab dock the right-hand column is the SECTION LIST (design §2), not the inspector.
 	var clear := true
-	var inspector_left := shell.size.x + shell._inspector.offset_left
+	var inspector_left := shell.size.x + shell._section_list.offset_left
 	for id in shell._overlays:
 		var card: Control = shell._overlays[id]
 		if card.visible and card.offset_right > inspector_left + 1.0:
 			clear = false
 	results.append(TestResult.new(
-		"[shell] no visible card reaches under the inspector, measured on the real column",
+		"[shell] no visible card reaches under the section list, measured on the real column",
 		clear,
 		"inspector left edge %.0f, %d card(s) visible" % [
 			inspector_left, _visible_cards(shell)]))
@@ -434,7 +438,7 @@ static func _shell_checks() -> Array:
 	# selection, `not _inspector.visible` is true both for the retraction this line means and for
 	# an inspector that never appeared, so the starting state is captured and asserted rather than
 	# assumed.
-	var inspector_up_before_esc := shell._inspector.visible
+	var inspector_up_before_esc := shell._section_list.visible
 	shell.lab.esc_details.esc_bench_requested.emit()
 	var esc_open := shell.rooms.esc_bench != null
 	# `_rail_glass` is NOT among these terms any more, and its removal is the point. QC5 retired the
@@ -446,13 +450,13 @@ static func _shell_checks() -> Array:
 	# `glass_shell.gd` assigns `_tools_glass = _dock.tools_group`. The dock's PANEL deliberately
 	# stays up on a bench — the mode group is the way back to the garage, and a bench that hid it
 	# would be a room with no door — so asserting `not _dock.visible` here would assert a bug.
-	var esc_retracted := not shell._top_bar.visible \
+	var esc_retracted := not shell._top_bar.visible and not shell._section_list.visible \
 		and not shell._inspector.visible and not shell._tools_glass.visible
 	shell.rooms.show_lab()
 	results.append(TestResult.new(
 		"[shell] the ESC bench opens from the ESC inspector, and retracts the chrome identically",
 		inspector_up_before_esc and esc_open and esc_retracted,
-		"inspector up beforehand=%s opened=%s retracted=%s" % [
+		"list up beforehand=%s opened=%s retracted=%s" % [
 			inspector_up_before_esc, esc_open, esc_retracted]))
 
 	shell.free()

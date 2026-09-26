@@ -83,7 +83,7 @@ static func run(tree: SceneTree) -> Array:
 
 	results.append(_content_stays_inside_the_room(shell))
 	results.append(_nothing_reaches_the_dock(shell))
-	results.append(_the_close_button_is_in_the_top_bar(shell))
+	results.append(_the_way_back_is_on_the_page_bar(shell))
 
 	# PW5's room, on the same window. Opened after the blade room's checks rather than instead of
 	# them, because `set_power_room_open` retracts every other room on its way in — which is itself
@@ -108,8 +108,15 @@ static func run(tree: SceneTree) -> Array:
 
 	var settled: Rect2 = shell._dock.get_global_rect()
 	results.append(_the_dock_fits_the_shipping_window(shell))
-	results.append(_the_dock_clears_the_inspector(shell))
 	results.append(_the_dock_leaves_the_overlay_trays_band_alone(shell))
+	# The inspector is a page now: open one so the clearance is measured against a panel on screen.
+	shell.open_row(&"motors")
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
+	results.append(_the_dock_clears_the_inspector(shell))
+	shell.back_to_drone()
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
 
 	# AND THE LONGEST THING THE DOCK CAN BE ASKED TO SAY. Not a hypothetical: `_on_mount_stl_requested`
 	# writes `"Wrote %s"` with an absolute globalized path into this same label, so the length of a
@@ -133,6 +140,8 @@ static func run(tree: SceneTree) -> Array:
 	# all three off the right-hand edge rather than squashing or scrolling them.
 	# -----------------------------------------------------------------------
 	shell.select_system_by_name("Field")
+	# The Field room is the page of Field's rows now (lab dock design §4).
+	shell.open_row(&"course")
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 
@@ -203,13 +212,21 @@ static func run(tree: SceneTree) -> Array:
 	# — a snapshot taken from the object under test would agree with it whatever it did.
 	var fitted_at_open := str(rail.selected_part().get("part_id", "")) if rail != null else ""
 
+	# THE PAGE, since the lab dock: the inspector is the body of a row's page, up only while one is
+	# open, so it is asserted absent on the drone and present once the Motors row is clicked.
+	results.append(_no_page_is_up_on_the_drone(shell))
+	shell.section_list().row_opened.emit(&"motors")
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
 	results.append(_the_inspector_is_present_with_something_selected(shell))
 	results.append(_the_inspector_is_no_wider_than_qc4_measured(shell))
+	shell.back_to_drone()
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
 
-	# THE CLICK, driven through the dock's own signal. Calling `open_finder` here would prove the
-	# function works and say nothing about whether any icon reaches it — which is the half of this
-	# slice that QC1 and QC2 deliberately left undone.
-	shell._dock.system_chosen.emit(propulsion)
+	# THE CLICK, driven through the Motors row's choice line — where the finder is summoned from
+	# since the lab dock (§2), rather than a dock icon.
+	shell.section_list().pick_requested.emit(&"motors")
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 
@@ -257,7 +274,7 @@ static func run(tree: SceneTree) -> Array:
 	# QC5: THE ROWS BELOW THE FOLD. The motor shelf has 18 entries and about 13 rows of room, and
 	# the finder is re-summoned here rather than reusing the one above because the escape check
 	# closed it. Arrowed 30 times, which clamps at the last row (§4.1, "clamps at both ends").
-	shell._dock.system_chosen.emit(propulsion)
+	shell.section_list().pick_requested.emit(&"motors")
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 	for i in 30:
@@ -283,6 +300,7 @@ static func run(tree: SceneTree) -> Array:
 	# and both were cut off at the window's edge in `bugs/`. Forced to an extreme here so the check
 	# does not depend on which spec happens to be the longest today.
 	shell.select_system_by_name("Propulsion")
+	shell.open_row(&"motors")
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 	var stretched := _stretch_an_inspector_row(shell)
@@ -292,6 +310,7 @@ static func run(tree: SceneTree) -> Array:
 
 	var power := _index_of("Power")
 	shell._dock.system_chosen.emit(power)
+	shell.section_list().pick_requested.emit(&"battery")
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 
@@ -307,7 +326,7 @@ static func run(tree: SceneTree) -> Array:
 	frame.size = MIN_WINDOW
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
-	shell._dock.system_chosen.emit(power)
+	shell.section_list().pick_requested.emit(&"battery")
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 	results.append(_the_finder_fits_the_smallest_window(shell))
@@ -320,7 +339,7 @@ static func run(tree: SceneTree) -> Array:
 		await tree.process_frame
 	var power_rail := shell._rail_for_system(power)
 	var worn_before := str(power_rail.selected_part().get("part_id", "")) if power_rail != null else ""
-	shell._dock.system_chosen.emit(power)
+	shell.section_list().pick_requested.emit(&"battery")
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 	shell.finder().move_highlight(1)
@@ -333,7 +352,7 @@ static func run(tree: SceneTree) -> Array:
 	results.append(_closing_commits_nothing(
 		shell, power_rail, worn_before, previewed_onto, "the × "))
 
-	shell._dock.system_chosen.emit(power)
+	shell.section_list().pick_requested.emit(&"battery")
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 	shell.finder().move_highlight(1)
@@ -346,10 +365,15 @@ static func run(tree: SceneTree) -> Array:
 	results.append(_closing_commits_nothing(
 		shell, power_rail, worn_before, escaped_onto, "Escape"))
 
-	# AND THE STATE THE WHOLE SLICE EXISTS FOR. Asserted last because it is destructive: nothing
-	# after this point has a focused system.
+	# THE LAB DOCK: the list, the pages, Back and Esc, collapse, and every row reaching its page.
+	results.append_array(await LabDockChecks.run(shell, tree, WINDOW))
+
+	# AND ESC OUT OF A PAGE. Asserted last: it leaves the stage on the drone.
+	shell.open_row(&"motors")
+	for i in SETTLE_FRAMES:
+		await tree.process_frame
 	var present_before := shell._inspector.visible
-	shell.clear_selection()
+	shell._unhandled_key_input(_key(KEY_ESCAPE))
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 	results.append(_the_inspector_is_absent_with_nothing_selected(shell, present_before))
@@ -740,7 +764,11 @@ static func _the_dock_leaves_the_overlay_trays_band_alone(shell: GlassShell) -> 
 	# The numbers this project shipped W0.7 against. Named here rather than recomputed from the
 	# constants, because a band derived from the same constants the shell derives it from would
 	# agree with itself no matter what either said.
-	var tall_enough: bool = band.size.y >= 580.0 and band.size.x >= 866.0
+	#
+	# RE-MEASURED AT THE LAB DOCK: 976 x 572 at 1280x720. Wider (the band runs to the section list,
+	# not to a measured inspector) and 8 px shorter (the top bar is flush and full width, and the
+	# band keeps the viewport's tool buttons' corner clear). Recorded, not derived, as before.
+	var tall_enough: bool = band.size.y >= 572.0 and band.size.x >= 976.0
 	return TestResult.new(
 		"the overlay tray's band is untouched by the dock, and still holds what a fresh shell ticks",
 		clears and tall_enough and fits >= OverlayTray.DEFAULT_CHOSEN.size(),
@@ -920,20 +948,21 @@ static func _nothing_reaches_the_dock(shell: GlassShell) -> TestResult:
 ## bar is a button carrying hand-written offsets over a room whose height it does not know, which is
 ## the shape the original bug had. `_room_door` — the way IN to the same room — is in that bar, and
 ## the two belonging together is the arrangement, not a pair of numbers that happen to agree today.
-static func _the_close_button_is_in_the_top_bar(shell: GlassShell) -> TestResult:
-	var bar: Control = shell._top_bar
-	# Fetched out of the glass rather than off a named member: there are two of these buttons now
-	# (PW5 added the harness designer's), they are built by one function, and a member per room is
-	# the shape that lets a third room ship without one.
-	var button: Button = shell._blade_room_close_glass.get_child(0) as Button
+static func _the_way_back_is_on_the_page_bar(shell: GlassShell) -> TestResult:
+	# A ROOM IS A PAGE (lab dock design §2): the way out is "← Back to drone" on the page bar above
+	# it, not a button carrying offsets over a room whose height it does not know. Asserted as a
+	# parent AND as an edge: the bar ends where the room begins.
+	var button: Button = shell._back_button
+	var bar: Control = shell._page_bar
 	var in_the_bar: bool = bar != null and button != null and bar.is_ancestor_of(button)
-	# And it is on screen, or "in the bar" is satisfied by a button nobody can reach.
-	var up: bool = shell._blade_room_close_glass.visible and shell.blade_room().visible
+	var up: bool = bar.is_visible_in_tree() and shell.blade_room().visible
+	var clear: bool = bar.get_global_rect().end.y <= shell.blade_room().get_global_rect().position.y
 	return TestResult.new(
-		"the close button lives in the top bar, and is up while the room is",
-		in_the_bar and up,
-		"in the top bar: %s; room up %s, button up %s" % [
-			in_the_bar, shell.blade_room().visible, shell._blade_room_close_glass.visible])
+		"the way back from the blade room is on the page bar above it, and is up while the room is",
+		in_the_bar and up and clear,
+		"in the page bar: %s; room up %s, bar up %s, bar ends y=%.0f, room starts y=%.0f" % [
+			in_the_bar, shell.blade_room().visible, bar.visible, bar.get_global_rect().end.y,
+			shell.blade_room().get_global_rect().position.y])
 
 
 # ---------------------------------------------------------------------------
@@ -949,10 +978,17 @@ static func _the_close_button_is_in_the_top_bar(shell: GlassShell) -> TestResult
 ##
 ## MUTATION CONFIRMED RED: `_select_system`'s `_inspector.visible = not in_airframe` replaced by
 ## `_inspector.visible = false`.
+static func _no_page_is_up_on_the_drone(shell: GlassShell) -> TestResult:
+	return TestResult.new(
+		"with Propulsion selected and no row open, no page is up — the drone has the stage",
+		not shell._inspector.visible and not shell.page_open(),
+		"page body visible %s, page %s" % [shell._inspector.visible, shell.open_page()])
+
+
 static func _the_inspector_is_present_with_something_selected(shell: GlassShell) -> TestResult:
 	var rect: Rect2 = shell._inspector.get_global_rect()
 	return TestResult.new(
-		"with Propulsion selected the inspector is on screen",
+		"with the Motors row open the page body is on screen",
 		shell._inspector.visible and rect.size.x > 200.0 and rect.size.y > 200.0,
 		"visible %s, %.0fx%.0f px at x=%.0f" % [
 			shell._inspector.visible, rect.size.x, rect.size.y, rect.position.x])
@@ -978,7 +1014,7 @@ static func _the_inspector_is_no_wider_than_qc4_measured(shell: GlassShell) -> T
 		"the Propulsion inspector is no wider than the 378 px QC4 measured at 1280x720",
 		shell._inspector.visible and rect.size.x <= 378.0 and rect.size.x > 0.0,
 		"the inspector is %.0f px wide, over content wanting %.0f px, against a %.0f px floor" % [
-			rect.size.x, shell._inspector_content_width(shell._focused_panel_titles()),
+			rect.size.x, shell._inspector_content_width(shell._page_panel_titles()),
 			GlassShell.INSPECTOR_WIDTH])
 
 
@@ -998,7 +1034,7 @@ static func _the_dock_icon_opens_the_finder_on_its_own_system(shell: GlassShell)
 	var header := str(finder._header.text) if finder != null else "<no finder>"
 	var category := str(finder.category) if finder != null else ""
 	return TestResult.new(
-		"clicking the Propulsion icon opens the finder on Propulsion's first category",
+		"clicking the Motors row's choice line opens the finder on Propulsion's Motor shelf",
 		shell.finder_open() and header == "Propulsion · Motor" and category == "motor",
 		"open %s, header \"%s\", category \"%s\"" % [shell.finder_open(), header, category])
 
@@ -1044,14 +1080,17 @@ static func _the_finder_opens_on_the_part_the_build_is_wearing(
 ## MUTATION CONFIRMED RED: move the `_build_dim()` call in `_init` from above `_build_inspector()`
 ## to below it. The dim's index goes from 11 to 12 and the inspector's from 12 to 11.
 static func _the_canvas_is_dimmed_and_the_inspector_is_not(shell: GlassShell) -> TestResult:
+	# SINCE THE LAB DOCK the finder is summoned from a row of the LIST, over the drone, and the list
+	# is the one thing that must stay readable while a choice is made — it shows the row being
+	# decided. So the dim stops below the list (draw order, the mechanism) and above the canvas.
 	var dim: int = shell._dim.get_index()
-	var inspector: int = shell._inspector.get_index()
+	var list: int = shell.section_list().get_index()
 	var canvas: int = shell.rooms.get_index()
 	return TestResult.new(
-		"the finder dims the canvas, and the dim stops below the inspector",
-		shell.canvas_dimmed() and inspector > dim and canvas < dim and shell._inspector.visible,
-		"dim is child %d (up %s), the inspector child %d (visible %s), the canvas child %d" % [
-			dim, shell.canvas_dimmed(), inspector, shell._inspector.visible, canvas])
+		"the finder dims the canvas, and the dim stops below the section list",
+		shell.canvas_dimmed() and list > dim and canvas < dim and shell.section_list().visible,
+		"dim is child %d (up %s), the list child %d (visible %s), the canvas child %d" % [
+			dim, shell.canvas_dimmed(), list, shell.section_list().visible, canvas])
 
 
 ## THE PREVIEW REACHES THE REAL AIRCRAFT, through `RailFitter` and not through the suite's spy.
@@ -1128,7 +1167,7 @@ static func _the_inspector_is_absent_with_nothing_selected(
 	var canvas: Control = shell.lab.viewport().get_parent() as Control
 	var canvas_up: bool = canvas != null and canvas.visible
 	return TestResult.new(
-		"clearing the selection takes the inspector away, leaves the drone, and it was there before",
+		"Esc takes the page away, leaves the drone, and the page was there before",
 		present_before and not shell._inspector.visible and canvas_up,
 		"present before %s, visible now %s, canvas up %s, focused index %d" % [
 			present_before, shell._inspector.visible, canvas_up, shell._focused_index])
@@ -1332,9 +1371,14 @@ static func _the_finder_fits_the_smallest_window(shell: GlassShell) -> TestResul
 static func _the_squeezed_list_is_still_a_list(shell: GlassShell) -> TestResult:
 	var finder: PartFinder = shell.finder()
 	var height: float = finder.list_height()
+	# SINCE THE LAB DOCK the bottom row is 40 px where the dock's keepout was 76, and at 1024x600 the
+	# finder now fits at its full list height — so "the list shrank" is no longer the case here, and
+	# asserting it would be asserting the old chrome. What must still hold is the other half: the
+	# list is never squeezed below its floor or past its full height, and the facets and authoring
+	# row are all there. `_the_finder_fits_the_smallest_window` keeps the fit's teeth.
 	return TestResult.new(
-		"the squeeze came out of the list, and the header and authoring row survived it",
-		height < PartFinder.LIST_HEIGHT and height >= PartFinder.LIST_HEIGHT_MIN
+		"the list gives way only within its bounds, and the header and authoring row survive",
+		height <= PartFinder.LIST_HEIGHT and height >= PartFinder.LIST_HEIGHT_MIN
 			and finder.action_labels().size() == 2
 			and finder.facet_labels().size() == 4,
 		"the list is %.0f px (full %.0f, floor %.0f), %d facets and %d actions remain" % [

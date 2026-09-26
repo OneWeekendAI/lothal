@@ -1,38 +1,21 @@
 class_name TestDock
 extends RefCounted
-## QC3 — THE DOCK LOST NOTHING.
+## THE DOCK LOST NOTHING — first QC3's consolidation of three clusters into one, now the lab dock
+## design's split of that one back into three places (plans/2026-09-26-lab-dock-design.md §2): the
+## bottom row of section WORDS, Lab | Sim centred in the top bar, and the tools in the viewport's
+## corner. The failure mode of either move is an action that quietly did not come across, so the
+## whole of this file is one idea — every action offered, named, one check each.
 ##
-## The slice retires three floating clusters into one, and the failure mode of a consolidation is
-## not a crash: it is an action that quietly did not come across. A screenshot cannot show that,
-## because a missing button looks exactly like a tidier row. So the whole of this file is one idea
-## — every action the three clusters offered, named, one check each.
+## The two sides come from different places so the check is not a tautology: `Dock.action_names()`
+## is walked off the live tree (a deleted button removes a name), and the lists below are written
+## out by hand. One check per action, not a loop (feedback_loop_tests_hide_coverage).
 ##
-## ## Why the list below is a literal and `Dock.action_names()` is a walk
-##
-## The two sides have to come from different places or the check is a tautology. The dock's side is
-## walked off the live node tree, so deleting a button removes a name; this side is written out by
-## hand from what the three retired clusters actually offered, so it does not follow the dock when
-## the dock loses something. A single shared constant would have passed a deletion of both halves.
-##
-## ## One check per action, not a loop over the list
-##
-## `feedback_loop_tests_hide_coverage`: a looping check fails once and says "1 failure" whether one
-## action or eleven went missing, and the name of the failing line is the loop's name rather than
-## the action's. Eleven lines is eleven failures and eleven names.
-##
-## ## What is NOT here
-##
-## Anything that needs a layout pass — the dock's width, its clearance from the inspector and from
-## the overlay tray's band — lives in `tests/test_shell_layout.gd`, which is the one suite in this
-## project that waits for frames. A `Container` reports a combined minimum size of (0, 0) until a
-## frame has been processed, so a width check written here would have compared 0 against 1256 and
-## passed forever.
+## Anything that needs a layout pass lives in `tests/test_shell_layout.gd`.
 
 
-## What the SYSTEM DROPDOWN offered: ten systems, six of which now have an icon and four of which
-## are behind the overflow menu. All ten are named here because all ten were destinations, and a
-## slice that kept the six with pictures would have deleted four without saying so.
-const SYSTEMS_OFFERED := ["Drone", "Airframe", "Propulsion", "Power", "Control", "Video",
+## The nine sections of §2, every one a word on the bottom row. DRONE IS NOT HERE: it was folded
+## into Airframe, and `_drone_is_folded_into_airframe` asserts it is gone rather than dropped.
+const SYSTEMS_OFFERED := ["Airframe", "Propulsion", "Power", "Control", "Video",
 	"Printed", "Config", "Ground kit", "Field"]
 
 ## What the BOTTOM-LEFT TOOL CLUSTER offered. `Choose overlays` is the ▾ chooser, which is a
@@ -65,18 +48,14 @@ const MODES_OFFERED := ["Lab", "Sim", "room:frame_bench", "room:studio"]
 ## a real shell needs a tree, a rendered frame and a catalog — `test_glass_shell.gd` says so about
 ## itself — and none of that is needed to ask a row of buttons what it offers.
 const FIXTURE := [
-	{"name": "Drone", "rails": ["Frame"], "panels": ["Frame"]},
-	{"name": "Airframe", "rails": [], "panels": ["Arms"]},
+	{"name": "Airframe", "rails": ["Frame"], "panels": ["Arms"]},
 	{"name": "Propulsion", "rails": ["Motor"], "panels": ["Motor"]},
 	{"name": "Power", "rails": ["Pack"], "panels": ["Pack"]},
 	{"name": "Control", "rails": ["FC"], "panels": ["FC"]},
 	{"name": "Video", "rails": ["Camera"], "panels": ["Camera"]},
 	{"name": "Printed", "rails": [], "panels": ["Printed"]},
-	{"name": "Config", "rails": [], "panels": []},
+	{"name": "Config", "rails": [], "panels": ["Motors"]},
 	{"name": "Ground kit", "rails": [], "panels": []},
-	# Field is modelled now (F10): `FieldSystem` is its rail and its three panels. The fixture
-	# carries that, because whether a system is modelled is what decides its overflow entry reads
-	# "soon" — and Field has no overflow entry to read anything any more.
 	{"name": "Field", "rails": ["Sites"], "panels": ["Site"]},
 ]
 
@@ -93,9 +72,12 @@ static func run() -> Array:
 	for action in MODES_OFFERED:
 		results.append(_offers(offered, action, "the bottom-right Lab/Sim/Rooms cluster"))
 
-	results.append(_seven_systems_have_icons(dock))
+	results.append(_the_sections_are_words(dock))
+	results.append(_drone_is_folded_into_airframe(dock))
 	results.append(_the_field_moved_from_the_menu_to_the_dock())
-	results.append(_the_overflow_menu_selects_the_system_it_names(dock))
+	results.append(_a_section_word_selects_the_section_it_names(dock))
+	results.append(_the_mode_segment_rides_the_dock(dock))
+	results.append(_the_tools_ride_the_dock(dock))
 	results.append(_a_fallback_label_is_a_named_failure(dock))
 	results.append(_measure_is_a_named_failure_too(dock))
 	results.append(_the_ring_is_kept_alive(dock))
@@ -114,57 +96,53 @@ static func _offers(offered: PackedStringArray, action: String, source: String) 
 		"the dock offers %s" % [Array(offered)])
 
 
-## Seven icons, and they are the seven `ICONED_SYSTEMS` names. Asserted as a COUNT AND A SET,
-## because either alone passes a defect: seven buttons drawn for the wrong seven systems satisfies
-## the count, and a set check that only asks "are these seven present" is satisfied by ten.
-##
-## SIX BECAME SEVEN IN F10 and the number is re-pointed rather than loosened — it stays an equality
-## against `ICONED_SYSTEMS.size()`, so an eighth icon appearing without an edit to that list still
-## fails.
-static func _seven_systems_have_icons(dock: Dock) -> TestResult:
-	var named: Array[String] = []
+## Nine WORDS, one per section, each reading its own name (§2: "words, not icons").
+static func _the_sections_are_words(dock: Dock) -> TestResult:
+	var shown: Array[String] = []
 	for button in dock.system_buttons:
-		named.append(str(button.name))
-	named.sort()
-	var want := Dock.ICONED_SYSTEMS.duplicate()
-	want.sort()
-	return TestResult.new(
-		"seven systems carry an icon, and they are the seven ICONED_SYSTEMS names",
-		named.size() == 7 and named == want and want.size() == 7,
-		"the icons are %s, ICONED_SYSTEMS is %s" % [named, want])
+		shown.append(button.text)
+	var want: Array[String] = []
+	for name in SYSTEMS_OFFERED:
+		want.append(name)
+	return TestResult.new("the bottom row shows the nine sections as words, in order",
+		shown == want, "the row reads %s" % [shown])
 
 
-## The overflow menu's popup ids are positions in the POPUP, and the systems it opens are positions
-## in `GlassShell.SYSTEMS`. Those two sequences are not the same sequence, and the bug that writes
-## itself is `add_item(name, system_index)` — which works by accident for exactly as long as the
-## unmodelled systems happen to sit at the start of the list.
-##
-## Driven through the popup's own signal rather than by reading `_menu_indices`, so the translation
-## is exercised on the path a click takes.
-static func _the_overflow_menu_selects_the_system_it_names(dock: Dock) -> TestResult:
-	var popup := dock.more_menu.get_popup()
+static func _drone_is_folded_into_airframe(dock: Dock) -> TestResult:
+	var offered := Array(dock.action_names())
+	return TestResult.new("Drone is no longer a section of its own — it is folded into Airframe",
+		not offered.has("Drone") and offered.has("Airframe"), "the dock offers %s" % [offered])
+
+
+## Driven through each button's own `pressed`, so the index a click carries is the one checked.
+static func _a_section_word_selects_the_section_it_names(dock: Dock) -> TestResult:
 	var chosen: Array[int] = []
 	dock.system_chosen.connect(func(index: int) -> void: chosen.append(index))
 	var names: Array[String] = []
-	for index in popup.item_count:
+	for button in dock.system_buttons:
 		chosen.clear()
-		# THE ITEM'S OWN ID, not its position. Emitting `index` was the first draft and it could not
-		# fail: `id_pressed.emit(i)` bypasses the popup, so the handler was always handed 0..3 —
-		# exactly the ids a correct menu issues — whatever ids the items actually carried. Under the
-		# `add_item(name, system_index)` mutation the items carry 0, 7, 8, 9 and the old loop still
-		# fed the handler 0, 1, 2, 3 and got four right answers. Mutation confirmed red only after
-		# this line read `get_item_id`.
-		popup.id_pressed.emit(popup.get_item_id(index))
+		button.pressed.emit()
 		names.append("" if chosen.is_empty() else str(FIXTURE[chosen[0]]["name"]))
-	# The three without an icon, in the order they appear in SYSTEMS. Drone is first and is the one
-	# the "ids are positions" bug cannot get right: it is index 0 of the popup and index 0 of
-	# SYSTEMS, so it passes under the bug and Config and Ground kit do not. Field left this list in
-	# F10 — it has an icon — and the list is re-pointed rather than shortened by one without saying
-	# so: `_the_field_moved_from_the_menu_to_the_dock` asserts the move.
-	return TestResult.new(
-		"each overflow entry opens the system it names",
-		names == ["Drone", "Config", "Ground kit"],
-		"the three entries opened %s" % [names])
+	var want: Array[String] = []
+	for button in dock.system_buttons:
+		want.append(button.name)
+	return TestResult.new("each section word selects the section it names",
+		names == want, "the words selected %s" % [names])
+
+
+## Lab | Sim lives in the top bar but must stay IN THE DOCK'S SUBTREE — that is what keeps it on the
+## CanvasLayer over Sim's HUD. `top_level` is how it is placed apart from the row.
+static func _the_mode_segment_rides_the_dock(dock: Dock) -> TestResult:
+	var inside := dock.is_ancestor_of(dock.lab_button) and dock.is_ancestor_of(dock.sim_button)
+	return TestResult.new("Lab | Sim is placed apart from the row but still rides the dock",
+		inside and dock.mode_panel.top_level and dock.mode_panel.is_ancestor_of(dock.lab_button),
+		"inside=%s top_level=%s" % [inside, dock.mode_panel.top_level])
+
+
+static func _the_tools_ride_the_dock(dock: Dock) -> TestResult:
+	return TestResult.new("the viewport tools sit in their own corner panel, still in the dock",
+		dock.tools_panel.top_level and dock.tools_panel.is_ancestor_of(dock.overlays_button)
+			and dock.is_ancestor_of(dock.tools_panel), "")
 
 
 ## The honest half of "an icon that needs a tooltip has failed": where a glyph could not carry its
@@ -180,7 +158,7 @@ static func _a_fallback_label_is_a_named_failure(dock: Dock) -> TestResult:
 	# BOTH GROUPS, because both draw glyphs and both gave some up — two of the three declared
 	# failures are tools. A check that walked only the systems would have let a tool be labelled
 	# without appearing in the list that is supposed to be the record of every one.
-	for group in [dock.systems_group, dock.tools_group]:
+	for group in [dock.tools_group]:
 		for child in group.get_children():
 			if not (child is Dock.DockIcon):
 				continue
@@ -196,7 +174,7 @@ static func _a_fallback_label_is_a_named_failure(dock: Dock) -> TestResult:
 	# while the systems row and the tools row happened to total ten drawn glyphs. F10 added a
 	# seventh system icon and the number moved; derived, it moves with the lists, and it still
 	# fails the moment an extra word is added, which is what the check is for.
-	var drawn_total: int = Dock.ICONED_SYSTEMS.size() + Dock.TOOLS.size()
+	var drawn_total: int = Dock.TOOLS.size()
 	return TestResult.new(
 		"only the icons named as failures carry a word",
 		labelled == want and wordless.size() == drawn_total - want.size(),
@@ -252,6 +230,13 @@ static func _a_hidden_control_is_not_an_offered_action(dock: Dock) -> TestResult
 		"the dock offers %s" % [offered])
 
 
+static func _fixture_dock_names() -> PackedStringArray:
+	var dock := _fixture_dock()
+	var names := dock.action_names()
+	dock.free()
+	return names
+
+
 static func _fixture_dock() -> Dock:
 	var dock := Dock.new(FIXTURE, StyleBoxFlat.new())
 	# The ring is the shell's to build — it is an inner class of `GlassShell` — so the dock is
@@ -270,7 +255,10 @@ static func _fixture_dock() -> Dock:
 ## constant — `MODES_OFFERED` above lost the row, and this is what says where it went.
 static func _the_field_moved_from_the_menu_to_the_dock() -> TestResult:
 	var in_menu := RoomMenu.room_ids().has("field_editor")
-	var on_dock := Dock.ICONED_SYSTEMS.has("Field")
+	var on_dock := false
+	for system in FIXTURE:
+		on_dock = on_dock or system["name"] == "Field"
+	on_dock = on_dock and Array(_fixture_dock_names()).has("Field")
 	return TestResult.new(
 		"the field left the Rooms menu for an icon on the dock, and is in exactly one of the two",
 		on_dock and not in_menu,

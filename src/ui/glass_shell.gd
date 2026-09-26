@@ -61,9 +61,17 @@ const INSPECTOR_WIDTH := 320.0
 ## 561 px — lands just inside it on a 1333 px window, and a ceiling that cut the widest real panel
 ## by a handful of pixels would be a bound chosen to be tidy rather than to be right.
 const MAX_INSPECTOR_FRACTION := 0.45
-## How far the floating columns stop short of the bottom, so they never collide with the
-## bottom-left tool cluster or the bottom-right toggle.
-const BOTTOM_KEEPOUT := 76.0
+## The strip along the bottom that the section row owns (lab dock design §2). Every room, the page
+## and the list stop at it. Named KEEPOUT still, because every placement in this file and in
+## `tests/test_shell_layout.gd` already measures against this one number.
+const BOTTOM_KEEPOUT := Dock.ROW_HEIGHT
+## The "← Back to drone" bar at the top of the stage while an item's page is open.
+const PAGE_BAR_HEIGHT := 32.0
+## What the stage keeps clear at its bottom-left for the viewport's tool buttons.
+const TOOLS_KEEPOUT := 52.0
+## The site the Field room must keep on screen beside its own rail and panels — the floor
+## `tests/test_shell_layout.gd` holds it to ("the panels did not eat the viewport").
+const FIELD_SITE_FLOOR := 500.0
 
 ## How far the summoned finder keeps from the dock above which it must fit, and from the top of the
 ## window. See `_fit_finder`.
@@ -89,7 +97,8 @@ const GLASS_ALPHA := 0.86
 ## what there is to judge.
 const DIM_TRANSPARENCY := 0.82
 
-## The ten systems of §5, in order, each carrying the rails and panels it owns.
+## The nine systems of §5, in order, each carrying the rails and panels it owns (Drone folded into
+## Airframe by the lab dock design).
 ##
 ## `rails` and `panels` are TAB TITLES, matched against the containers LabScreen built. Titles
 ## rather than indices because indices are a property of the order LabScreen happens to add its
@@ -106,35 +115,19 @@ const DIM_TRANSPARENCY := 0.82
 ## look at it and then answer that, not to answer it in advance.
 const SYSTEMS := [
 	{
-		# THE AIRCRAFT ITSELF, and the only entry that is a choice rather than a consequence.
+		# DRONE IS MERGED INTO AIRFRAME (lab dock design §1.5, §4). "Pick a frame" and "edit it" were
+		# two entries in the dock for one subject; they are one section now, whose list names the
+		# five things Airframe contains — Frame, Arms, Screws & standoffs, Layout & fit, and Straps &
+		# pads (soon). The Frame rail comes with it: the Frame row's choice line opens its finder.
 		#
-		# Splitting this out of Airframe is what let Airframe become what §1 says it is. The old
-		# single entry was doing two unrelated jobs at once: pick which of fifteen catalog frames
-		# you are working on, and inspect what that choice implies. The first is shopping and the
-		# second is engineering, and putting them behind one dropdown item meant the four things §1
-		# actually names — frame, arms, the bolted joint, the soft mounts — had nowhere to live.
-		"name": "Drone",
-		"rails": ["Frame"],
-		"panels": ["Frame", "Fit"],
-		"decided_by": ["frame"],
-	},
-	{
-		# THE FOUR THINGS §1 NAMES, minus the one with no model behind it.
-		#
-		# No rail, and that is not an omission. Every other system here is a list of parts you pick
-		# from; none of these four is. An arm is a plate with a centreline (§2), a bolted joint is
-		# generated from the bolt pattern, and an inertia tensor is an integral — you choose a frame
-		# and these follow. So the rail column is hidden for this system entirely, which is the
-		# first time this shell renders the full-bleed viewport the design asks for with nothing but
-		# an inspector floating over it.
-		#
-		# STRAPS & PADS IS ABSENT. §6 models a pad as a spring and gives it a transmissibility, and
-		# none of that is built — only the pad's material and mass exist. A fifth tab reading four
-		# dashes would be worse than its absence, and the honest place for it is here, in a comment
-		# that says why, until §6 has a model. Slice A6.
+		# `rails` and `panels` are still TAB TITLES in LabScreen, matched by name. Which of them a
+		# row opens is `SectionRows.DEFINITIONS`' business; this list is what the section OWNS, so
+		# the finder, the completeness count and the "every rail routes to its panel" check keep
+		# one answer each.
 		"name": "Airframe",
-		"rails": [],
-		"panels": ["Structure", "Arms", "Fasteners", "Layout"],
+		"rails": ["Frame"],
+		# In LabScreen's tab order, so a routed set reads the way the container lists it.
+		"panels": ["Frame", "Structure", "Arms", "Fasteners", "Layout", "Fit"],
 		"decided_by": ["frame"],
 	},
 	{
@@ -302,7 +295,25 @@ var lab: LabScreen:
 	get: return rooms.lab
 
 var _rail_glass: PanelContainer
+## THE PAGE (lab dock design §2). The inspector stopped floating: it is the body of an item's page,
+## shown in the stage in place of the viewport when a row whose page is a Lab panel is opened.
 var _inspector: PanelContainer
+## The right-hand list of the focused section's rows. See `SectionList` and `SectionRows`.
+var _section_list: SectionList
+## "← Back to drone" and the breadcrumb, across the top of the stage while a page is open.
+var _page_bar: PanelContainer
+var _page_crumb: Label
+var _back_button: Button
+## The open page: `{}` while the stage shows the drone, else `{id, name, section, page}` of the row.
+var _page: Dictionary = {}
+## True while the list is folded to its strip because the open room page needs its width — see
+## `_fold_list_for_room`. Not saved: it is the room's need, not the builder's preference.
+var _list_folded_for_page := false
+## The builder unfolded the strip while such a room was up; respected until the page closes.
+var _fold_declined := false
+## Dry · AUW · T:W · Flight, in the top bar (§2) — the whole build's numbers, said once.
+var _stats_label: Label
+var _projects_button: Button
 ## QC4's overlay, and the two nodes that make it modal.
 ##
 ## `_dim` is added to the tree BEFORE the inspector and `_finder_glass` AFTER the dock, and that
@@ -353,7 +364,7 @@ var _ring: CompletenessRing
 ## chrome retracted"). Held rather than looked up, because the retraction is the mechanism that
 ## enforces "Sim authors nothing" — a shell that searched for its own panels by name could miss one
 ## and leave a part picker floating over a flight.
-var _top_bar: HBoxContainer
+var _top_bar: Control
 ## THE DOCK — QC3. One centred cluster at the bottom that carries what three separate clusters used
 ## to: the system dropdown out of the top bar, the bottom-left tools and the bottom-right Lab/Sim.
 ## See `src/ui/dock.gd` for why it is its own file and where the status readout and the ring went.
@@ -474,6 +485,8 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	# is dimmed by it and everything added below is not.
 	_build_dim()
 	_build_inspector()
+	_build_page_bar()
+	_build_section_list()
 	# Between the inspector and the top cluster, so the chip draws over it but it covers the model
 	# and the floating columns. The empty state must never hide the project chip — New and Open are
 	# the only way out of it.
@@ -498,11 +511,13 @@ func _ready() -> void:
 	# reparent() requires both nodes to be inside the tree.
 	lab.rails().reparent(_rail_glass)
 	lab.panels.reparent(_inspector)
-	# Behind the glass, not in front of it. Lab's own containers style themselves opaque, which is
-	# correct where they are — text over a turning airframe is unreadable — but it means the panel's
-	# own translucency only shows in its margins. Accepted: the glass here is the frame around the
-	# content, and the content is a spec sheet.
 	_inspector.move_child(_inspector_stub, -1)
+	# THE WHOLE-BUILD NUMBERS LEAVE THE PAGES (§2): they are in the top bar, and "never repeated
+	# inside a section". Hidden rather than deleted — see `PartDetails.set_build_stats_visible`.
+	for child in lab.panels.get_children():
+		for details in [child] + child.find_children("*", "", true, false):
+			if details is PartDetails:
+				(details as PartDetails).set_build_stats_visible(false)
 
 	_autosave = Timer.new()
 	_autosave.wait_time = AUTOSAVE_SECONDS
@@ -588,128 +603,166 @@ func _ready() -> void:
 ## Measured rather than hand-tuned, because the number belongs to a font and a string and would
 ## rot the moment either changed. A hand-picked 400 would be correct until somebody added a digit.
 func _fit_columns() -> void:
-	var rail_width := maxf(RAIL_WIDTH, lab.rails().get_combined_minimum_size().x)
-	_rail_glass.offset_right = CLUSTER_MARGIN + rail_width + LothalTheme.SPACE_2 * 2
-
-	var inspector_width := maxf(INSPECTOR_WIDTH, _inspector_content_width(_focused_panel_titles()))
-	# CLAMPED TO THE WINDOW, because a measurement is a request and not an entitlement. The panel is
-	# anchored to the right edge and grows leftwards, so an unclamped request wider than the window
-	# does not produce a wide panel — it produces a panel whose contents run off the right-hand edge,
-	# which is what "1500 of 15" looked like and what the four Airframe tabs did again with their
-	# longer sentences. Past this bound the panel stops growing and its own scroll takes over.
-	var ceiling := maxf(INSPECTOR_WIDTH, size.x * MAX_INSPECTOR_FRACTION) if size.x > 0.0 \
-		else inspector_width
-	inspector_width = minf(inspector_width, ceiling)
-	_inspector.offset_left = -(inspector_width + LothalTheme.SPACE_2 * 2 + CLUSTER_MARGIN)
-
-	# The plan editor stops where the inspector begins, MEASURED the same way and for the same
-	# reason. `INSPECTOR_WIDTH` is a floor and the panel is routinely wider than it, so an editor
-	# sized against the constant put its own toolbar underneath the inspector — where the last
-	# controls could be seen through the glass and not clicked.
-	if _workbench != null:
-		# To the window edge while the inspector is hidden, which in Airframe it always is. Sized
-		# against the panel's measured left edge otherwise, because `INSPECTOR_WIDTH` is a floor and
-		# the panel is routinely wider than it.
-		_workbench.offset_right = -CLUSTER_MARGIN if not _inspector.visible \
-			else _inspector.offset_left - CLUSTER_MARGIN
-
-	# THE OVERLAY TRAY IS SIZED THE SAME WAY, and for the same reason the workbench is: both walls
-	# of its band are columns that have just moved. A tray placed against `INSPECTOR_WIDTH` would
-	# have been the constant-versus-measurement mistake one more time, in the corner that already
-	# made it once.
+	_layout_stage()
 	_layout_overlays()
 	_layout_dock()
+
+
+## The width the right-hand list takes right now: its full width, the thin strip when collapsed,
+## or nothing while it is not on screen (Sim, a room, the Projects screen).
+func _list_width() -> float:
+	if _section_list == null or not _section_list.visible:
+		return 0.0
+	return _section_list.current_width()
+
+
+## The stage (§2): what is left of the window once the top bar, the section row and the list have
+## taken theirs. The viewport fills it; a page replaces the viewport inside it.
+func stage_rect() -> Rect2:
+	var right := size.x - _list_width()
+	var bottom := size.y - BOTTOM_KEEPOUT
+	return Rect2(Vector2(0.0, TOP_BAR_HEIGHT),
+		Vector2(maxf(right, 0.0), maxf(bottom - TOP_BAR_HEIGHT, 0.0)))
+
+
+## Places everything that lives in the stage: the Lab viewport, the list beside it, the page bar,
+## and whichever page is up — a room, or the inspector with its optional rail column.
+##
+## MEASURED, NOT CONSTANT, for the reason the old `_fit_columns` gave: a spec panel wants the width
+## its rows need, and a width written down here would be wrong the day a digit was added.
+func _layout_stage() -> void:
+	_fold_list_for_room()
+	var list_w := _list_width()
+	if lab != null and rooms != null and rooms.showing_lab():
+		lab.offset_left = 0.0
+		lab.offset_top = TOP_BAR_HEIGHT
+		lab.offset_right = -list_w
+		lab.offset_bottom = -BOTTOM_KEEPOUT
+	if _section_list != null:
+		_section_list.offset_left = -list_w
+		_section_list.offset_right = 0.0
+		_section_list.offset_top = TOP_BAR_HEIGHT
+		_section_list.offset_bottom = -BOTTOM_KEEPOUT
+	if _page_bar != null:
+		_page_bar.offset_left = 0.0
+		_page_bar.offset_right = -list_w
+		_page_bar.offset_top = TOP_BAR_HEIGHT
+		_page_bar.offset_bottom = TOP_BAR_HEIGHT + PAGE_BAR_HEIGHT
+	var page_top := TOP_BAR_HEIGHT + PAGE_BAR_HEIGHT
+	for room in [_workbench, _field, _blade_room, _power_room]:
+		if room == null:
+			continue
+		(room as Control).offset_left = CLUSTER_MARGIN
+		(room as Control).offset_right = -(list_w + CLUSTER_MARGIN)
+		(room as Control).offset_top = page_top
+		(room as Control).offset_bottom = -BOTTOM_KEEPOUT
+	var left := CLUSTER_MARGIN
+	if _rail_glass != null:
+		var rail_width := maxf(RAIL_WIDTH, lab.rails().get_combined_minimum_size().x)
+		_rail_glass.offset_left = CLUSTER_MARGIN
+		_rail_glass.offset_right = CLUSTER_MARGIN + rail_width + LothalTheme.SPACE_2 * 2
+		_rail_glass.offset_top = page_top + LothalTheme.SPACE_2
+		_rail_glass.offset_bottom = -(BOTTOM_KEEPOUT + LothalTheme.SPACE_2)
+		if _rail_glass.visible:
+			left = _rail_glass.offset_right + CLUSTER_MARGIN
+	if _inspector != null:
+		var available := maxf(size.x - list_w - CLUSTER_MARGIN - left, INSPECTOR_WIDTH)
+		var wanted := maxf(INSPECTOR_WIDTH, _inspector_content_width(_page_panel_titles()))
+		var width := minf(wanted + LothalTheme.SPACE_2 * 2, available)
+		_inspector.offset_left = left
+		_inspector.offset_right = left + width
+		_inspector.offset_top = page_top + LothalTheme.SPACE_2
+		_inspector.offset_bottom = -(BOTTOM_KEEPOUT + LothalTheme.SPACE_2)
 
 
 # ---------------------------------------------------------------------------
 # The clusters
 # ---------------------------------------------------------------------------
 
-## Top: project chip → system dropdown.
+## THE TOP BAR (lab dock design §2): ‹ Projects · the drone's name, which is its menu, and its saved
+## state · the conditions · [Lab | Sim, centred, on the CanvasLayer] · Dry · AUW · T:W · Flight.
+##
+## Full width and flush with the window's top edge, as the mockup draws it — the stage starts under
+## it rather than behind it. The Lab/Sim segment is NOT in this bar: it rides the dock's CanvasLayer
+## (`Dock.mode_panel`) and is placed over the bar's centre, because this bar hides in Sim and the
+## toggle is the only way back.
 func _build_top_cluster() -> void:
-	var bar := HBoxContainer.new()
-	bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	bar.anchor_right = 1.0
-	bar.offset_left = CLUSTER_MARGIN
-	bar.offset_top = CLUSTER_MARGIN
-	bar.offset_right = -CLUSTER_MARGIN
-	bar.offset_bottom = CLUSTER_MARGIN + TOP_BAR_HEIGHT
-	bar.add_theme_constant_override("separation", LothalTheme.SPACE_2)
-	add_child(bar)
-	_top_bar = bar
+	var backdrop := PanelContainer.new()
+	backdrop.name = "TopBar"
+	var box := StyleBoxFlat.new()
+	box.bg_color = LothalTheme.PANEL_BG
+	box.border_color = LothalTheme.BORDER_STRONG
+	box.border_width_bottom = 1
+	box.content_margin_left = LothalTheme.SPACE_3
+	box.content_margin_right = LothalTheme.SPACE_3
+	backdrop.add_theme_stylebox_override("panel", box)
+	backdrop.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	backdrop.anchor_right = 1.0
+	backdrop.offset_bottom = TOP_BAR_HEIGHT
+	add_child(backdrop)
 
-	# The project chip, and it is no longer inert: it holds a real Project with a real id and a
-	# real name, Rename works, and the drone menu drops out of the name itself (§5 — "the project
-	# name IS the menu", which is why there is no File button anywhere in this shell).
-	#
-	# Seven of its nine entries are greyed and say what they wait on, the same treatment SYSTEMS
-	# already gives an unmodelled system and for the same reason: a builder who cannot see that
-	# Duplicate exists cannot know the app intends to compare two drones.
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+	backdrop.add_child(bar)
+	_top_bar = backdrop
+
+	# ‹ PROJECTS — the mockup's way back to the list of drones. The same action as the drone
+	# menu's "All projects", one click closer.
+	_projects_button = Button.new()
+	_projects_button.name = "Projects"
+	_projects_button.text = "‹ Projects"
+	_projects_button.flat = true
+	_projects_button.custom_minimum_size = Vector2(0, 28)
+	_projects_button.pressed.connect(func() -> void: _on_project_action("projects"))
+	bar.add_child(_projects_button)
+
+	# The project chip: the name IS the menu, and it carries the saved state.
 	chip = ProjectChip.new(container.project)
-	chip.add_theme_stylebox_override("panel", _glass_stylebox())
+	chip.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	chip.action_chosen.connect(_on_project_action)
 	chip.recent_chosen.connect(open_project)
 	bar.add_child(chip)
 
-	# THE SYSTEM DROPDOWN IS NOT HERE ANY MORE — it is the dock's six icons plus its overflow menu
-	# (QC3). The bar keeps the project's identity: the chip, the door into this system's room, and
-	# the way out of it. What left was a 180 px control whose whole job was navigation, and
-	# navigation is what the dock is.
-
-	# THE ROOM DOOR, beside the system it belongs to.
-	#
-	# Propulsion's room — the blade designer — was reachable only from a "Design this blade…" button
-	# inside the Prop TAB of the right-hand inspector. Two clicks deep, invisible while the Motor tab
-	# was selected, and the first builder to use the app could not find it: "I can't see how I am
-	# going to design props just like frames." Airframe announces its room by opening it with the
-	# system; Propulsion could not, because its two rails are still the point and a room would cover
-	# them. So the door moves to the top strip, where it is visible the whole time the system is
-	# chosen and costs the viewport a button.
-	#
-	# The Prop panel's button STAYS. It is the one that carries the blade the panel is rendering,
-	# which is not always the fitted one, and P10d's test asserts exactly that. This door carries the
-	# FITTED blade, off the rail, which is what a door labelled by the system rather than by a row
-	# should open.
+	# The room door is kept (hidden) for `room_door_label`'s callers; rooms open from their rows'
+	# pages now — the Prop panel's "Design this blade…", the Harness panel's own door.
 	var door_glass := _glass_panel()
 	_room_door = Button.new()
 	_room_door.custom_minimum_size = Vector2(0, 28)
 	_room_door.pressed.connect(_on_room_door_pressed)
 	door_glass.add_child(_room_door)
+	door_glass.visible = false
 	_room_door_glass = door_glass
 	bar.add_child(door_glass)
 
-	# §5.3'S CONDITIONS SELECTOR, AND IT IS IN THE GARAGE'S OWN STRIP.
-	#
-	# "The conditions selector is not buried in the Field room, because a set you must walk into a
-	# room to change is not a set you switch." It sits beside the project's identity, visible from
-	# every system, and switching it re-derives the garage's five stats and every warning that
-	# quotes the air or the wind — which is the whole cost §3.3 says to pay explicitly, because the
-	# failure it prevents is the quiet one: a flight time that silently means "in calm air" on a
-	# build whose owner has just described a windy field.
-	var conditions_glass := _glass_panel()
+	# §5.3'S CONDITIONS SELECTOR stays in the garage's own strip: "a set you must walk into a room
+	# to change is not a set you switch".
 	_conditions_picker = OptionButton.new()
 	_conditions_picker.name = "Conditions"
+	_conditions_picker.flat = true
 	_conditions_picker.custom_minimum_size = Vector2(0, 28)
 	_conditions_picker.tooltip_text = ("The weather every quoted number is quoted under — wind, "
 		+ "gustiness and temperature. Switchable from anywhere, not only from the field.")
 	_conditions_picker.item_selected.connect(_on_conditions_chosen)
-	conditions_glass.add_child(_conditions_picker)
-	bar.add_child(conditions_glass)
+	bar.add_child(_conditions_picker)
 	_fill_conditions_picker()
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(spacer)
 
-	# The way out sits at the RIGHT-HAND end of the strip, beside "Contact us", rather than beside
-	# the door it undoes. The bar's left end is the project's — chip, system, room door — and a
-	# button that only exists while a room is open reads as an action on the room, not part of that
-	# identity. Added before `contact` so the ordering is close-then-contact.
 	_build_close_door(bar)
 
-	# The way to reach us, carried over from the old tab row. A browser, not an in-app view, for
-	# the reason ActivationScreen's button gave: anything resembling a sign-in window with no
-	# address bar is shaped like the phishing people are taught to refuse.
+	# THE BUILD NUMBERS (§2): moved here from the Motor panel. Always visible, never repeated
+	# inside a section.
+	_stats_label = Label.new()
+	_stats_label.name = "BuildStats"
+	_stats_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_stats_label.tooltip_text = ("The whole build: dry mass (without the pack), all-up weight, "
+		+ "thrust-to-weight at the bench, and estimated flight time under the chosen conditions.")
+	_stats_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	bar.add_child(_stats_label)
+
 	var contact := Button.new()
 	contact.text = "Contact us"
 	contact.flat = true
@@ -718,6 +771,26 @@ func _build_top_cluster() -> void:
 	contact.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
 	contact.pressed.connect(func() -> void: OS.shell_open(LothalVersion.CONTACT_URL))
 	bar.add_child(contact)
+
+
+## The top bar's numbers, for tests and the capture tool.
+func build_stats_text() -> String:
+	return _stats_label.text if _stats_label != null else ""
+
+
+## "Dry 412 g · AUW 648 g · T:W 9.8 · Flight ~4:10" for `build`. Static so it is checkable without a
+## shell. Dry is the aircraft without its pack; the flight time is an estimate, so it carries `~`.
+static func build_stats_for(build: Build) -> String:
+	if build == null:
+		return ""
+	var auw := build.all_up_weight_g()
+	var dry := auw - float(build.battery.get("mass_g", 0.0))
+	var flight := "—"
+	if build.can_hover():
+		var seconds := roundi(build.flight_time_min() * 60.0)
+		flight = "~%d:%02d" % [floori(seconds / 60.0), seconds % 60]
+	return "Dry %d g  ·  AUW %d g  ·  T:W %.1f  ·  Flight %s" % [
+		roundi(dry), roundi(auw), build.thrust_to_weight(), flight]
 
 
 ## Left: the rail column, floated, plus the stub that replaces it for an unmodelled system.
@@ -1164,12 +1237,13 @@ func _build_thrust_overlay() -> void:
 ## owns that space, but Airframe also forbids the tray outright, so the branch matters for the one
 ## case that is neither: a system whose inspector has been retracted with the tray still up.
 func _overlay_band() -> Rect2:
-	var left := _rail_glass.offset_right + CLUSTER_MARGIN if _rail_glass != null \
-		and _rail_glass.visible else CLUSTER_MARGIN
-	var right := size.x + _inspector.offset_left - CLUSTER_MARGIN if _inspector != null \
-		and _inspector.visible else size.x - CLUSTER_MARGIN
-	var top := CLUSTER_MARGIN + TOP_BAR_HEIGHT + LothalTheme.SPACE_2
-	var bottom := size.y - BOTTOM_KEEPOUT
+	# The stage, less a margin, less the tool buttons' corner along its bottom edge. Measured from
+	# the list's live width, which moves when the list collapses.
+	var stage := stage_rect()
+	var left := stage.position.x + CLUSTER_MARGIN
+	var right := stage.end.x - CLUSTER_MARGIN
+	var top := stage.position.y + CLUSTER_MARGIN
+	var bottom := stage.end.y - TOOLS_KEEPOUT
 	return Rect2(Vector2(left, top), Vector2(maxf(right - left, 0.0), maxf(bottom - top, 0.0)))
 
 
@@ -1243,11 +1317,9 @@ func _sync_thrust_overlay() -> void:
 ## a drone the builder cannot see. Any future system that owns the viewport answers true here and
 ## needs no second edit.
 func _focused_system_covers_viewport() -> bool:
-	if _focused_index < 0 or _focused_index >= SYSTEMS.size():
-		return false
-	var system: Dictionary = SYSTEMS[_focused_index]
-	var covering := str(system["name"]) == "Airframe" or str(system["name"]) == "Field"
-	return _is_modelled(system) and covering
+	# A PAGE replaces the viewport now (§2), whichever section it belongs to. A chart floating over
+	# a page would be describing a drone the builder cannot see.
+	return page_open()
 
 
 func _refill_thrust_overlay() -> void:
@@ -1498,30 +1570,38 @@ func set_power_room_open(open: bool) -> void:
 ## ONE FUNCTION FOR BOTH ROOMS. The alternative — a `set_power_room_open` that repeated these eight
 ## lines — is W0.7's defect written on purpose: eight things to retract, two places to remember
 ## them, and the day a ninth is added it goes into one of the two.
-func _set_room_open(room: Control, close_glass: Control, open: bool) -> void:
+func _set_room_open(room: Control, _close_glass: Control, open: bool) -> void:
 	if room == null:
 		return
-	# EVERY room goes down first, including this one. Opening the harness designer while the blade
-	# designer is up would stack two opaque overlays and hand the builder one close button.
-	_retract_rooms()
-	room.visible = open
-	close_glass.visible = open
-	_rail_glass.visible = not open and _rail_glass.visible
-	_tools_glass.visible = not open and _tools_glass.visible
-	# The overlay retracts with the tools, and comes back if the toggle was left on. The room
-	# covers the viewport it draws over, and a chart floating on top of the blade designer would be
-	# describing the aircraft rather than the blade being drawn. Coming back REFILLED is the point
-	# of routing this through `_sync_thrust_overlay`: the blade you just published is the blade the
-	# curve should be about the moment the room closes.
-	_sync_thrust_overlay()
-	_inspector.visible = not open and _inspector.visible
-	var viewport_container := lab.viewport().get_parent()
-	if viewport_container is Control:
-		(viewport_container as Control).visible = not open
-	# Closing puts back exactly what the focused system asks for, rather than guessing — the same
-	# reason `_show_project` re-runs the selection instead of restoring what it remembers.
 	if not open:
-		_select_system(_focused_index)
+		# Closing the room that is the open page is "← Back to drone"; closing one that is not up
+		# changes nothing else.
+		if page_open() and str((_page["page"] as Dictionary).get("room", "")) == _room_key(room):
+			back_to_drone()
+		else:
+			room.visible = false
+		return
+	# A ROOM IS A PAGE (lab dock design §2), opened in the stage under the page bar, with the list
+	# still beside it. The blade designer belongs to the Propellers row and the harness designer to
+	# the Harness row, so those rows are the ones highlighted while it is up.
+	var key := _room_key(room)
+	_show_page({
+		"id": &"propellers" if key == "blade" else &"harness",
+		"name": "Blade designer" if key == "blade" else "Harness designer",
+		"page": {"room": key},
+	})
+
+
+func _room_key(room: Control) -> String:
+	if room == _blade_room:
+		return "blade"
+	if room == _power_room:
+		return "power"
+	if room == _workbench:
+		return "frame"
+	if room == _field:
+		return "field"
+	return ""
 
 
 func _on_frame_edited(document: AirframeDocument) -> void:
@@ -1572,6 +1652,13 @@ func _inspector_content_width(titles: Array) -> float:
 
 ## The panel titles the focused system routes to. Empty for an unmodelled system, which shows a stub
 ## instead — and a stub is sized by its own text, not by a spec grid.
+## The panel titles the open page shows. Empty while the stage shows the drone or a room.
+func _page_panel_titles() -> Array:
+	if _page.is_empty():
+		return []
+	return (_page["page"] as Dictionary).get("panels", [])
+
+
 func _focused_panel_titles() -> Array:
 	if _focused_index < 0 or _focused_index >= SYSTEMS.size():
 		return []
@@ -1579,20 +1666,319 @@ func _focused_panel_titles() -> Array:
 
 
 func _build_inspector() -> void:
-	_inspector = _glass_panel()
-	_inspector.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
-	_inspector.anchor_left = 1.0
-	_inspector.anchor_right = 1.0
+	_inspector = PanelContainer.new()
+	_inspector.name = "Page"
+	# OPAQUE: this is a page in the stage now, not glass over a turning airframe.
+	var solid := _glass_stylebox()
+	solid.bg_color = Color(LothalTheme.PANEL_BG.r, LothalTheme.PANEL_BG.g, LothalTheme.PANEL_BG.b)
+	solid.shadow_size = 0
+	_inspector.add_theme_stylebox_override("panel", solid)
+	_inspector.anchor_left = 0.0
+	_inspector.anchor_right = 0.0
+	_inspector.anchor_top = 0.0
 	_inspector.anchor_bottom = 1.0
-	_inspector.offset_left = -(INSPECTOR_WIDTH + CLUSTER_MARGIN)
-	_inspector.offset_top = CLUSTER_MARGIN + TOP_BAR_HEIGHT + LothalTheme.SPACE_2
-	_inspector.offset_right = -CLUSTER_MARGIN
-	_inspector.offset_bottom = -BOTTOM_KEEPOUT
+	_inspector.visible = false
 	add_child(_inspector)
 
 	_inspector_stub = SystemStub.new()
 	_inspector_stub.visible = false
 	_inspector.add_child(_inspector_stub)
+
+
+## "← Back to drone" and the breadcrumb (§2), across the top of the stage while a page is open.
+func _build_page_bar() -> void:
+	_page_bar = PanelContainer.new()
+	_page_bar.name = "PageBar"
+	var box := StyleBoxFlat.new()
+	box.bg_color = LothalTheme.SURFACE_BASE
+	box.border_color = LothalTheme.BORDER
+	box.border_width_bottom = 1
+	box.content_margin_left = LothalTheme.SPACE_2
+	box.content_margin_right = LothalTheme.SPACE_3
+	_page_bar.add_theme_stylebox_override("panel", box)
+	_page_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_page_bar.anchor_right = 1.0
+	_page_bar.visible = false
+	add_child(_page_bar)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", LothalTheme.SPACE_3)
+	_page_bar.add_child(row)
+
+	_back_button = Button.new()
+	_back_button.name = "Back"
+	_back_button.text = "← Back to drone"
+	_back_button.flat = true
+	_back_button.tooltip_text = "Back to the drone (Esc)"
+	# COMPACT, because every pixel of this bar comes out of the room below it — and the blade
+	# designer fits a 1280x720 window with almost none to spare.
+	for state in ["normal", "hover", "pressed", "focus", "hover_pressed"]:
+		var slim := StyleBoxFlat.new()
+		slim.bg_color = Color(1, 1, 1, 0.06) if state == "hover" else Color(0, 0, 0, 0)
+		slim.set_corner_radius_all(LothalTheme.RADIUS_SMALL)
+		slim.content_margin_left = LothalTheme.SPACE_2
+		slim.content_margin_right = LothalTheme.SPACE_2
+		slim.content_margin_top = 3
+		slim.content_margin_bottom = 3
+		_back_button.add_theme_stylebox_override(state, slim)
+	_back_button.pressed.connect(back_to_drone)
+	row.add_child(_back_button)
+
+	_page_crumb = Label.new()
+	_page_crumb.name = "Crumb"
+	_page_crumb.theme_type_variation = "MutedLabel"
+	_page_crumb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_page_crumb.clip_text = true
+	_page_crumb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(_page_crumb)
+
+
+## The right-hand list (§2), anchored to the right edge between the top bar and the section row.
+func _build_section_list() -> void:
+	_section_list = SectionList.new()
+	_section_list.add_theme_stylebox_override("panel", _list_stylebox())
+	_section_list.anchor_left = 1.0
+	_section_list.anchor_right = 1.0
+	_section_list.anchor_top = 0.0
+	_section_list.anchor_bottom = 1.0
+	_section_list.row_opened.connect(func(row_id: StringName) -> void: open_row(row_id))
+	_section_list.pick_requested.connect(_on_pick_requested)
+	_section_list.collapse_toggled.connect(_on_list_collapsed)
+	add_child(_section_list)
+
+
+static func _list_stylebox() -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = LothalTheme.PANEL_BG
+	box.border_color = LothalTheme.BORDER_STRONG
+	box.border_width_left = 1
+	box.set_content_margin_all(LothalTheme.SPACE_2)
+	return box
+
+
+## The list, for tests and the capture tool.
+func section_list() -> SectionList:
+	return _section_list
+
+
+# ---------------------------------------------------------------------------
+# Pages — a row opens its item's page in the stage (lab dock design §2, §5.4)
+# ---------------------------------------------------------------------------
+
+func page_open() -> bool:
+	return not _page.is_empty()
+
+
+## The open page's `{id, name, section, page}`, or `{}` while the stage shows the drone.
+func open_page() -> Dictionary:
+	return _page
+
+
+func page_crumb() -> String:
+	return _page_crumb.text if _page_crumb != null else ""
+
+
+## Opens the page of the focused section's row `row_id`. False for a row with no page (a `soon`
+## row) or one this section does not have.
+func open_row(row_id: StringName) -> bool:
+	if _section_list == null:
+		return false
+	for row in _section_list.rows():
+		if row["id"] == row_id and row.has("page") and not bool(row.get("soon", false)):
+			_show_page(row)
+			return true
+	return false
+
+
+## THE ONE PATH THAT PUTS A PAGE UP. Every door — a row click, the Prop panel's "Design this blade…",
+## the Harness panel's door, `set_*_room_open` — ends here, so what a page costs the stage (the
+## viewport, the tools, the charts) is decided once.
+func _show_page(row: Dictionary) -> void:
+	if finder_open():
+		close_finder()
+	_hide_pages()
+	var page: Dictionary = row["page"]
+	_page = {"id": row["id"], "name": str(row["name"]), "section": _focused_name(), "page": page}
+	_set_viewport_visible(false)
+	if _tools_glass != null:
+		_tools_glass.visible = false
+	_page_bar.visible = true
+	_page_crumb.text = "Lab  /  %s  /  %s" % [_focused_name(), str(row["name"])]
+	if page.has("room"):
+		match str(page["room"]):
+			"frame":
+				_workbench.visible = true
+				_on_frame_edited(_workbench.editor.document)
+			"field":
+				_field.visible = true
+				# The span of the build as it stands NOW — `set_power_room_open`'s posture.
+				_field.build = lab.current_build()
+				_field.refresh()
+			"blade":
+				_blade_room.visible = true
+			"power":
+				_power_room.set_build(lab.build_with_open_harness(), lab.tweaks, lab.frame_document)
+				_power_room.visible = true
+	else:
+		var column := str(page.get("column", ""))
+		if column != "":
+			# A rail the finder cannot open (an ElectronicsPicker) stands beside its page.
+			_show_only_tabs(lab.rails(), [column])
+			lab.rails().visible = true
+			_rail_glass.visible = true
+		_inspector_stub.visible = false
+		lab.panels.visible = true
+		_show_only_tabs(lab.panels, page.get("panels", []))
+		_inspector.visible = true
+	_section_list.set_open_row(row["id"])
+	_sync_thrust_overlay()
+	_fit_columns.call_deferred()
+
+
+## A ROOM THAT CANNOT FIT BESIDE THE LIST TAKES ITS SPACE WHILE IT IS OPEN — the one deviation from
+## §2's "the list stays visible", and it is measured rather than decided per room. The harness
+## designer brings three columns that want ~1116 px and the Field room a rail and three panels
+## beside a site that must keep FIELD_SITE_FLOOR; beside a 280 px list neither fits a 1280 window.
+## So the list folds to its strip — which still names the section and brings the list back — for
+## exactly as long as that page is up, and is put back as the builder left it. A builder who
+## unfolds it by hand while the room is up is not overruled.
+func _fold_list_for_room() -> void:
+	if _section_list == null or _page.is_empty() or _fold_declined or _list_folded_for_page:
+		return
+	var key := str((_page["page"] as Dictionary).get("room", ""))
+	var room: Control = {"frame": _workbench, "field": _field, "blade": _blade_room,
+		"power": _power_room}.get(key)
+	if room == null or _section_list.collapsed:
+		return
+	var wanted := 0.0
+	for child in room.get_children():
+		if child is Container:
+			wanted = maxf(wanted, (child as Control).get_combined_minimum_size().x)
+	if key == "field":
+		wanted += FIELD_SITE_FLOOR
+	wanted += LothalTheme.SPACE_2 * 2.0 + CLUSTER_MARGIN * 2.0
+	if wanted > size.x - SectionList.WIDTH:
+		_section_list.set_collapsed(true)
+		_list_folded_for_page = true
+
+
+func _unfold_list_after_page() -> void:
+	if _list_folded_for_page and _section_list != null:
+		_section_list.set_collapsed(settings != null and container != null
+			and settings.list_collapsed(container.project.project_id))
+	_list_folded_for_page = false
+	_fold_declined = false
+
+
+## Takes every page down without deciding what replaces it.
+func _hide_pages() -> void:
+	_unfold_list_after_page()
+	_retract_rooms()
+	if _workbench != null:
+		_workbench.visible = false
+	if _field != null:
+		_field.visible = false
+	if _inspector != null:
+		_inspector.visible = false
+	if _rail_glass != null:
+		_rail_glass.visible = false
+	if lab != null:
+		lab.rails().visible = false
+	if _page_bar != null:
+		_page_bar.visible = false
+
+
+## "← Back to drone", and Esc (§2): the stage shows the viewport again, the list stays as it was.
+func back_to_drone() -> void:
+	_hide_pages()
+	_page = {}
+	var in_lab := rooms == null or rooms.showing_lab()
+	if container != null and in_lab:
+		_set_viewport_visible(true)
+		if _tools_glass != null:
+			_tools_glass.visible = true
+	if _section_list != null:
+		_section_list.set_open_row(&"")
+	_sync_thrust_overlay()
+	_fit_columns.call_deferred()
+
+
+func _set_viewport_visible(shown: bool) -> void:
+	if lab == null:
+		return
+	var viewport_container := lab.viewport().get_parent()
+	if viewport_container is Control:
+		(viewport_container as Control).visible = shown
+
+
+func _focused_name() -> String:
+	if _focused_index < 0 or _focused_index >= SYSTEMS.size():
+		return ""
+	return str(SYSTEMS[_focused_index]["name"])
+
+
+## A row's choice line: open the finder on that row's rail (§2 — "Picking a part opens from the
+## row's part line, not from a dock icon").
+func _on_pick_requested(row_id: StringName) -> void:
+	if _section_list == null or _focused_index < 0:
+		return
+	for row in _section_list.rows():
+		if row["id"] != row_id:
+			continue
+		var titles: Array = SYSTEMS[_focused_index].get("rails", [])
+		var slot := titles.find(str(row.get("pick", "")))
+		if slot >= 0:
+			open_finder(_focused_index, slot)
+		return
+
+
+## Opens the finder from a row's choice line, the way a click does. For tests and the capture tool.
+func pick_from_row(row_id: StringName) -> bool:
+	_on_pick_requested(row_id)
+	return finder_open()
+
+
+func _on_list_collapsed(collapsed: bool) -> void:
+	if _list_folded_for_page and not collapsed:
+		_list_folded_for_page = false
+		_fold_declined = true
+	if container != null and settings != null:
+		settings.set_list_collapsed(container.project.project_id, collapsed)
+		settings.save()
+	_fit_columns()
+
+
+## Collapses or restores the list the way its own buttons do — saved per project.
+func set_list_collapsed(collapsed: bool) -> void:
+	if _section_list != null:
+		_section_list.set_collapsed(collapsed, true)
+
+
+## Rebuilds the focused section's rows from the build as it stands.
+func _refresh_list() -> void:
+	if _section_list == null or lab == null:
+		return
+	var build: Build = null if container == null else lab.build_with_open_harness()
+	if _stats_label != null:
+		_stats_label.text = build_stats_for(build)
+	if _focused_index < 0 or build == null:
+		_section_list.show_section(_focused_name(), [])
+		return
+	var warnings: Array = build.warnings()
+	if lab.airframe != null:
+		warnings.append_array(lab.airframe.mount_warnings())
+		warnings.append_array(lab.airframe.battery_fit_warnings())
+		warnings.append_array(lab.airframe.component_fit_warnings())
+	var context := {
+		"site": rooms.site_of_selected_course().site_name if rooms.site_of_selected_course() != null
+			else "",
+		"course": rooms.course_library.selected().course_name
+			if rooms.course_library.selected() != null else "",
+		"conditions": rooms.conditions_library.selected().conditions_name,
+	}
+	_section_list.show_section(_focused_name(),
+		SectionRows.rows(_focused_name(), build, warnings, context))
+	_section_list.set_open_row(_page.get("id", &"") if not _page.is_empty() else &"")
 
 
 # ---------------------------------------------------------------------------
@@ -1764,8 +2150,10 @@ func _column_rail_titles(index: int) -> Array:
 ## tool, a room closing, or `_ready` restoring what was chosen — and a finder that popped up every
 ## time a room closed would be the app interrupting work nobody asked it to interrupt.
 func _on_system_chosen(index: int) -> void:
+	# A SECTION WORD SELECTS, AND THAT IS ALL (lab dock design §2). The finder is summoned from a
+	# row's choice line now — a section is a list of several things, and opening the finder on the
+	# first of them was a guess about which one the builder meant.
 	_select_system(index)
-	open_finder(index)
 
 
 ## Summons the finder over the focused system's first category, listing, highlighted on the part
@@ -1949,8 +2337,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				return
 		accept_event()
 		return
-	if key_event.keycode == KEY_ESCAPE:
-		clear_selection()
+	# Esc returns from a page to the drone (§2). With the drone already on the stage there is
+	# nothing to back out of: the section stays selected, because the list always shows one.
+	if key_event.keycode == KEY_ESCAPE and page_open():
+		back_to_drone()
 		accept_event()
 
 
@@ -1998,13 +2388,14 @@ func _build_dock() -> void:
 	add_child(layer)
 
 	_dock = Dock.new(SYSTEMS, _glass_stylebox())
+	_dock.tools_panel.name = "ViewportTools"
 	_dock.theme = LothalTheme.get_theme()
 	_dock.system_chosen.connect(_on_system_chosen)
 	layer.add_child(_dock)
 
 	_dropdown_glass = _dock.systems_group
-	_tools_glass = _dock.tools_group
-	_bottom_right_glass = _dock.mode_group
+	_tools_glass = _dock.tools_panel
+	_bottom_right_glass = _dock.mode_panel
 
 	_overlays_button = _dock.overlays_button
 	_overlays_button.toggled.connect(set_thrust_overlay_visible)
@@ -2046,7 +2437,7 @@ func _build_dock() -> void:
 func _layout_dock() -> void:
 	if _dock == null:
 		return
-	_dock.layout_in(size, CLUSTER_MARGIN, BOTTOM_KEEPOUT)
+	_dock.layout_in(size, CLUSTER_MARGIN, BOTTOM_KEEPOUT, TOP_BAR_HEIGHT, stage_rect())
 
 
 ## Opens one of the rooms behind the Rooms menu. A match rather than a dictionary of Callables,
@@ -2119,18 +2510,27 @@ func _on_room_changed() -> void:
 	# six icons that change what is fitted, which is precisely the authoring §5 says Sim must make
 	# impossible BY THE SHAPE OF THE SCREEN rather than by discipline.
 	_dropdown_glass.visible = in_lab
+	_dock.set_row_shown(in_lab)
 	# The overlay goes with the tools that switch it on. It draws a chart about the aircraft in
 	# the garage, and left up over a bench or the field it would be a chart about a drone that is
 	# not the subject of the screen it is floating on.
 	_sync_thrust_overlay()
 	if in_lab:
-		# Re-applies the focused system rather than just showing the two columns, because which of
-		# them is visible is a property of the system chosen — an unmodelled system shows stubs, and
-		# blindly unhiding here would put a Frame rail up under a dropdown reading "Config".
+		# Re-applies the focused system rather than just showing the list, because what is on the
+		# stage is a property of the system chosen.
+		if _section_list != null:
+			_section_list.visible = container != null
 		_select_system(_focused_index)
 	else:
 		_rail_glass.visible = false
 		_inspector.visible = false
+		# THE LIST AND THE PAGE BAR GO OUT TO THE FIELD WITH THE REST (§5): a list of parts over a
+		# flight is authoring where the screen's shape says there is none.
+		if _section_list != null:
+			_section_list.visible = false
+		if _page_bar != null:
+			_page_bar.visible = false
+		_page = {}
 		# The plan canvas goes with them. It is a child of this shell rather than of Lab, so nothing
 		# else hides it — and left up it would float a frame you were drawing over the course you
 		# are now flying, opaque, on top of the one room that owns the whole window.
@@ -2162,134 +2562,42 @@ func _on_room_changed() -> void:
 ## a replacement for three.
 func _select_system(index: int) -> void:
 	_focused_index = index
-	# NOTHING SELECTED — §5's resting state, and the branch that makes "the inspector appears only
-	# when something is selected" a rule with a false side. Everything the focused system would
-	# have asked for is put away and nothing replaces it: no rail, no inspector, no room, no plan
-	# editor, and the model lit in full rather than dimmed around a focus that no longer exists.
-	#
-	# Before the branch below rather than inside it, because `SYSTEMS[index]` on the next line is
-	# what -1 would crash on.
 	if index < 0:
 		_deselect()
 		return
 	var system: Dictionary = SYSTEMS[index]
-
-	# NO OVERLAY ROOM SURVIVES A SYSTEM CHANGE. Leaving the blade designer up while the builder
-	# walked to Power would put a planform editor over a pack they had just asked to look at, and
-	# the harness designer has the mirror of that problem. Retracted directly rather than through
-	# `set_*_room_open`, because those functions end by calling THIS one and the two would recurse.
-	_retract_rooms()
-	var modelled := _is_modelled(system)
-
-	# The door into this system's room, if it has one. Hidden rather than disabled for the eight
-	# that do not — a greyed "Design blade…" beside a Power dropdown would be a promise about packs
-	# that nothing intends to keep, which is a different thing from the greyed dropdown entries,
-	# where the greyness IS the message.
-	if _room_door != null:
-		var label := room_door_label(system)
-		_room_door.text = label
-		_room_door_glass.visible = label != ""
-
-	# The glass panels themselves are shown here rather than only in `_build_*`, because Sim
-	# retracts them — see _on_room_changed. Walking back into the garage has to put back exactly
-	# what the chosen system asks for, and the two columns inside them are separate: the panel is
-	# the frame, and a stub is what the frame holds for a system with no model.
-	var has_rails := _has_rails(system)
-	# THE PLAN EDITOR IS THE AIRFRAME ROOM. Shown for that system and hidden for every other one,
-	# because a canvas floating over the Propulsion room would be editing a frame nobody was looking
-	# at while covering the model they were.
-	var in_airframe := modelled and str(system["name"]) == "Airframe"
-	# AND FIELD IS THE SECOND SYSTEM THAT OWNS THE WHOLE WINDOW (F10). Everything below that used
-	# to ask `in_airframe` asks `owns_window` instead, because every one of those lines was about a
-	# room covering the viewport rather than about the Airframe room in particular — and the day a
-	# third one arrives, this is one term rather than eight.
-	var in_field := modelled and str(system["name"]) == "Field"
-	var owns_window := in_airframe or in_field
-	# QC5: THE COLUMN IS UP ONLY FOR A SHELF THE FINDER CANNOT OPEN. That is the whole retirement,
-	# in one expression, and it is derived from the tree rather than from a list of exceptions —
-	# see `_column_rail_titles`. An unmodelled system no longer shows it either: its stub is one
-	# panel now, in the inspector.
-	var column_titles := _column_rail_titles(index)
-	# `not owns_window` is load-bearing and is not belt-and-braces. Field's two rail titles name no
-	# `PartPicker` in Lab — they are its own two lists — so `_column_rail_titles` reports both as
-	# "needs a column", and without this term the shell would float an empty Frame rail over a room
-	# that has its own. Airframe has no titles at all, so the term changes nothing for it.
-	_rail_glass.visible = modelled and not owns_window and not column_titles.is_empty()
-	_inspector.visible = true
-	if _field != null:
-		_field.visible = in_field
-		if in_field:
-			# THE AIRCRAFT IS FETCHED ON THE WAY IN, `set_power_room_open`'s posture: the silhouette
-			# is drawn at the span of the build as it stands NOW, and a build held from construction
-			# would draw the frame that was fitted when the shell started.
-			_field.build = lab.current_build()
-			_field.refresh()
-	# THE 3D WORLD IS SWITCHED OFF, not merely covered.
-	#
-	# The workbench is a floating Control over a full-bleed SubViewportContainer, and every pixel of
-	# the room the workbench does not paint — its margins, the strip beside the toolbar, the gap
-	# above the canvas — was a window onto Lab's turntable. So a builder drawing a frame had another
-	# drone's propellers turning behind their own toolbar. Hiding the container is the honest fix
-	# rather than painting over it: a viewport nobody can see should not be rendering either, and
-	# `UPDATE_WHEN_VISIBLE` means hiding it stops the work as well as the picture.
-	var viewport_container := lab.viewport().get_parent()
-	if viewport_container is Control:
-		(viewport_container as Control).visible = not owns_window
-	# THE INSPECTOR COLUMN IS HANDED TO THE ROOM as well, and this is the second half of the same
-	# argument as the viewport. Airframe's numbers now live in the drawer under its own canvas and
-	# its controls live in its own right-hand column, so the shell's inspector would be a third
-	# column showing the same four tabs — beside a room that already has them, in the space the
-	# room's controls need. Every other system keeps it.
-	_inspector.visible = not owns_window
-	if _workbench != null:
-		_workbench.visible = in_airframe
-		if in_airframe:
-			# The tabs describe the frame OPEN IN THE EDITOR, not the one fitted to the build. They
-			# are usually the same frame; they stop being the same the moment anything is drawn, and
-			# an inspector describing the other one would be answering a question nobody asked.
-			_on_frame_edited(_workbench.editor.document)
-	# The viewport tools — overlays, explode, x-ray, measure — all act on the 3D model, which the
-	# plan editor is covering. Hidden here rather than left to click through onto something the
-	# builder cannot see.
-	_tools_glass.visible = not owns_window
-	# AND THE CHARTS GO WITH THE TOOLS. This line is the defect: the cluster was hidden here and the
-	# overlays it toggles were not, so choosing Airframe left five Propulsion charts floating over
-	# the frame editor with their own dismiss button off-screen. The other two paths that retract
-	# the chrome — `_on_room_changed` and `set_blade_room_open` — both called the sync; this one
-	# never did. `_sync_thrust_overlay` now reads the state rather than being told it, so the
-	# omission cannot recur silently, but the call still has to be made from the path that changes
-	# the state.
+	# A SECTION CHANGE PUTS THE STAGE BACK ON THE DRONE (§2): a page belongs to a row of the
+	# section it was opened from, and the Frame page left up under a Power list would be a page no
+	# row in the list explains.
+	_hide_pages()
+	_page = {}
+	if _room_door_glass != null:
+		_room_door_glass.visible = false
+	var showing := container != null and (rooms == null or rooms.showing_lab())
+	_set_viewport_visible(showing)
+	if _tools_glass != null:
+		_tools_glass.visible = showing
+	if _section_list != null:
+		_section_list.visible = showing
+		_section_list.set_open_row(&"")
 	_sync_thrust_overlay()
-	# THE MOTOR MAP IS CONFIG'S, and it goes up and down with the system that asks the question
-	# (C3). Left up, four labels would float over a drone whose builder had walked to Power.
-	lab.set_motor_map_visible(modelled and str(system["name"]) == "Config")
-	lab.rails().visible = _rail_glass.visible
-	lab.panels.visible = modelled
-	_inspector_stub.visible = not modelled
-
-	if modelled and not in_field:
-		if has_rails and not column_titles.is_empty():
+	# THE MOTOR MAP IS CONFIG'S, and it goes up and down with the section that asks the question.
+	lab.set_motor_map_visible(_is_modelled(system) and str(system["name"]) == "Config")
+	# An unmodelled section has no Lab panels to scope; its list is all `soon` rows.
+	lab.panels.visible = _is_modelled(system)
+	_inspector_stub.visible = false
+	# THE SECTION STILL SCOPES LAB'S TABS to what it owns, as it did before the list: every page a
+	# row opens is a subset of these, and a hidden tab from another section can never be the one a
+	# page lands on. Field's names are its own room's, not Lab's.
+	if _is_modelled(system) and str(system["name"]) != "Field":
+		var column_titles := _column_rail_titles(index)
+		if not column_titles.is_empty():
 			_show_only_tabs(lab.rails(), column_titles)
 		_show_only_tabs(lab.panels, system["panels"])
-	elif in_field:
-		# FIELD'S PANELS ARE ITS OWN, and routing its three names into Lab's TabContainer would hide
-		# every tab in it and show none — `_show_only_tabs` leaves an unmatched set alone, so this
-		# would be silent rather than wrong-looking. The room brings Site, Course and Conditions
-		# with it; Lab's inspector is down.
-		pass
-	else:
-		_inspector_stub.show_system(system)
-
-	# The dock's icon for this system, lit. Here rather than in `select_system_by_name`, because
-	# every route in ends here and only one of them goes through that function.
 	if _dock != null:
 		_dock.set_focused(index)
-
 	_apply_focus()
 	_refresh_status()
-	# Which tabs have to fit just changed with the system, so the column's width has to be asked
-	# again. Deferred for the same reason it is everywhere else here: a panel that has just been
-	# shown has not been laid out yet, and its combined minimum size is still the previous answer.
 	_fit_columns.call_deferred()
 
 
@@ -2304,6 +2612,10 @@ func _select_system(index: int) -> void:
 ## The thrust overlay goes with the selection. It is a chart about the Propulsion system, and left
 ## floating over an unfocused drone it would be describing a system nobody had chosen.
 func _deselect() -> void:
+	_hide_pages()
+	_page = {}
+	if _section_list != null:
+		_section_list.show_section("", [])
 	_retract_rooms()
 	if _room_door_glass != null:
 		_room_door_glass.visible = false
@@ -2438,8 +2750,6 @@ func _apply_focus() -> void:
 	# Drone is the WHOLE aircraft, so it dims nothing. Dimming everything except the frame while a
 	# builder is choosing between fifteen frames would hide the motors and props that make one frame
 	# look different from another, which is most of what there is to see at that moment.
-	if focused == "Drone":
-		focused = ""
 	_fade_below(lab.airframe, "", focused)
 
 
@@ -2477,9 +2787,9 @@ static func _system_of_name(node_name: StringName) -> String:
 ## Decided, not scored. §9 forbids an aggregate quality score and the ring is deliberately "how much
 ## you have decided", not "how good the drone is" — so this counts slots that hold a choice and says
 ## nothing whatever about whether the choice is good. A system with no model can never be decided,
-## which is why the figure starts at six of ten rather than at zero.
+## which is why the figure starts at five of nine rather than at zero.
 ##
-## **Today it is constant at six of ten, and that is worth saying rather than hiding.** Every rail
+## **Today it is constant at five of nine, and that is worth saying rather than hiding.** Every rail
 ## opens on a selection and none can be cleared, so all six modelled systems are decided from the
 ## first frame and the arc never moves. I expected Video to make it live — a whoop publishes no
 ## camera or VTX bay — but the picker keeps its ids regardless of the frame, so `selection()` never
@@ -2522,6 +2832,7 @@ func status_text() -> String:
 
 func _refresh_status() -> void:
 	_sync_project()
+	_refresh_list()
 	if _status_label == null:
 		return
 	if container == null:
@@ -2713,6 +3024,11 @@ func _show_empty_state() -> void:
 	_dropdown_glass.visible = false
 	_rail_glass.visible = false
 	_inspector.visible = false
+	if _section_list != null:
+		_section_list.visible = false
+	if _page_bar != null:
+		_page_bar.visible = false
+	_page = {}
 	if _workbench != null:
 		_workbench.visible = false
 	# AND THE FIELD ROOM. It is a full-window Control like the plan canvas, so left up it would
@@ -2746,6 +3062,11 @@ func _show_project() -> void:
 		_dock.visible = true
 	if _bottom_right_glass != null:
 		_bottom_right_glass.visible = true
+	if _section_list != null:
+		_section_list.visible = true
+		# The list's collapsed state is this drone's (§2: "saved per project").
+		_section_list.set_collapsed(settings != null and container != null
+			and settings.list_collapsed(container.project.project_id))
 	_select_system(_focused_index)
 
 

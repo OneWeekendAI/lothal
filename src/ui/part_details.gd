@@ -42,15 +42,33 @@ var _rendered_part: Dictionary = {}
 var _stat_values: Dictionary = {}     # stat key -> Label
 var _warnings: WarningList
 var _build_note: Label
+## The whole-build numbers' rows, held so the Lab dock can take them off the page (lab dock design
+## §2: "Dry mass, AUW, T:W and flight time move to the top bar ... never repeated inside a
+## section"). Hidden rather than deleted: `stat_text` still answers, and the old shell and Sim's
+## build panel still show them.
+var _stats_block: Array[Control] = []
+
+
+## Shows or hides the whole-build stat rows and the "Stats for …" note. The warnings stay: they are
+## this page's "Why?".
+func set_build_stats_visible(shown: bool) -> void:
+	for control in _stats_block:
+		control.visible = shown
+
+
+func build_stats_visible() -> bool:
+	return _stats_block.is_empty() or _stats_block[0].visible
 
 
 ## The aircraft's five derived stats, its warnings, and what they were computed from.
 func _build_footer(root: VBoxContainer) -> void:
-	root.add_child(HSeparator.new())
+	var rule := HSeparator.new()
+	root.add_child(rule)
 
 	var stats := GridContainer.new()
 	stats.columns = 2
 	root.add_child(stats)
+	_stats_block = [rule, stats]
 
 	for row in STAT_ROWS:
 		_stat_values[row["key"]] = _add_row(stats, row["label"])
@@ -63,6 +81,7 @@ func _build_footer(root: VBoxContainer) -> void:
 	_build_note.custom_minimum_size = Vector2(280, 0)
 	_build_note.theme_type_variation = &"MutedLabel"
 	root.add_child(_build_note)
+	_stats_block.append(_build_note)
 
 
 ## Renders one part against the whole current build, so the five derived stats move with every

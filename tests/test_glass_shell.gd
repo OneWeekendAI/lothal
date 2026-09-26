@@ -213,7 +213,10 @@ static func _test_no_category_is_decided_by_two_systems() -> TestResult:
 ## would be, and deciding it means deciding whether Airframe is a decision at all**, which is open
 ## question §8.1 (whether ten collapses to six). Recorded here so that the answer is a visible
 ## edit rather than the current state being mistaken for one.
-const SHARED_DECISIONS := ["frame: Drone and Airframe"]
+##
+## SETTLED BY THE LAB DOCK (design §4): Drone is folded into Airframe, so `frame` has one owner and
+## the allowance is gone — `_test_no_category_is_decided_by_two_systems` would now report it stale.
+const SHARED_DECISIONS: Array = []
 
 
 static func _pair_exists(pair: String) -> bool:
@@ -240,34 +243,23 @@ static func _pair_exists(pair: String) -> bool:
 ## run — rather than off `RAIL_WIDTH` and `INSPECTOR_WIDTH`, which are floors and not widths.
 static func _test_the_columns_fit_the_window_the_app_opens_at() -> TestResult:
 	var shell := GlassShell.new()
-	# A Control that has never been laid out has size (0, 0), and every width below would then come
-	# back as a negative number that passes for the wrong reason. 1280x720 is what project.godot
-	# opens at; `_fit_columns` is called by hand because `_ready` defers it and nothing renders here.
+	# A Control that has never been laid out has size (0, 0); 1280x720 is what project.godot opens
+	# at, and `_fit_columns` is called by hand because `_ready` defers it and nothing renders here.
 	shell.size = Vector2(1280.0, 720.0)
 	shell.select_system_by_name("Power")
 	shell._fit_columns()
-	var shell_width := shell.size.x
-
-	# QC5: THE LEFT-HAND COLUMN IS THE WINDOW EDGE NOW, and asserting that is the point of keeping
-	# this check rather than deleting it with the rail. Power's shelves are both reachable through
-	# the finder, so its column is down; `_overlay_band`'s left edge is what the viewport starts at,
-	# and the gap being measured is the whole of the window between the margin and the inspector.
+	# THE LAB DOCK (design §2): no floating column on either side of the drone. The stage runs from
+	# the window's left edge to the section list, and the list is its fixed ~280 px — so the drone
+	# keeps 1000 of 1280 px however wide any spec panel's rows want to be.
 	var rail_up := shell._rail_glass.visible
-	var viewport_left: float = GlassShell.CLUSTER_MARGIN
-	# The inspector is anchored to the right edge, so its offset_left is negative from 1280.
-	var inspector_left := shell.size.x + shell._inspector.offset_left
-	var gap := inspector_left - viewport_left
+	var page_up := shell._inspector.visible
+	var stage := shell.stage_rect()
 	shell.free()
-
-	# 731 px is what it MEASURED after the rail came down, against the 403 px left between the two
-	# columns before it. Power is the narrowest case on the screen, because its Harness panel makes
-	# the inspector 537 px wide — the widest inspector in the app. A floor and not an equality,
-	# because the panel is sized to its own content.
 	return TestResult.new(
-		"with Power focused the rail column is down and the viewport runs from the margin to the inspector",
-		not rail_up and gap >= 725.0,
-		"rail up %s, the viewport runs %.0f to %.0f px — %.0f px of a %.0f px window" % [
-			rail_up, viewport_left, inspector_left, gap, shell_width])
+		"with Power focused no column floats over the drone, and the stage runs to the list",
+		not rail_up and not page_up and stage.position.x == 0.0
+			and stage.size.x >= 1280.0 - SectionList.WIDTH - 0.5,
+		"rail up %s, page up %s, the stage is %s" % [rail_up, page_up, stage])
 
 
 static func _system(system_name: String) -> Dictionary:

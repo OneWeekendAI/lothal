@@ -336,7 +336,8 @@ static func _test_leaving_the_room_retracts_its_chrome() -> TestResult:
 	shell.set_power_room_open(true)
 	if not shell.power_room().visible:
 		failures.append("the room did not open")
-	if not shell._power_room_close_glass.visible:
+	# The way out is the page bar's "← Back to drone" since the lab dock (design §2).
+	if not shell._page_bar.visible:
 		failures.append("the way out did not appear with it")
 
 	# 1. Walking to another system.
@@ -576,6 +577,8 @@ static func _still_up(shell: GlassShell, when: String) -> Array:
 			out.append("%s is still up %s" % [entry["name"], when])
 		if close_glass != null and close_glass.visible:
 			out.append("the way out of %s is still up %s" % [entry["name"], when])
+	if shell._page_bar.visible and not shell.page_open():
+		out.append("the page bar is still up with no page %s" % when)
 	return out
 
 

@@ -133,25 +133,16 @@ static func _the_dock() -> Array:
 		icon_names.has("Field"),
 		"the icons are %s" % [icon_names]))
 
-	# AND THE OVERFLOW MENU HAS LET IT GO. Guarded on the menu existing and holding SOMETHING
-	# first: an empty popup satisfies "Field is not in it" under every mutation, which is this
-	# project's twice-shipped defect (two "(no such row)" strings compare equal).
-	var popup := dock.more_menu.get_popup()
-	var overflow: Array[String] = []
-	for index in popup.item_count:
-		overflow.append(str(popup.get_item_text(index)))
+	# AND IT IS A WORD ON THE ROW, NOT BEHIND A MENU (lab dock design §2: the nine sections are all
+	# words; the ··· overflow is gone). Asserted on the button's own text, so a Field button that
+	# lost its word would fail here.
+	var word := ""
+	for button in dock.system_buttons:
+		if str(button.name) == "Field":
+			word = button.text
 	results.append(TestResult.new(
-		"the overflow menu is still a menu — it has entries for the systems that have no icon",
-		popup.item_count > 0,
-		"the overflow offers %s" % [overflow]))
-	var named_field := false
-	for text in overflow:
-		if text.begins_with("Field"):
-			named_field = true
-	results.append(TestResult.new(
-		"and Field is not one of them — it is on the dock, not behind the ···",
-		not named_field,
-		"the overflow offers %s" % [overflow]))
+		"and it reads \"Field\" on the row — there is no overflow menu to hide it behind",
+		word == "Field", "the Field button reads '%s'" % word))
 	dock.free()
 	return results
 
@@ -211,11 +202,14 @@ static func _the_viewport_swap() -> Array:
 		shell.free()
 		return results
 
+	# Since the lab dock the Field room is the PAGE of Field's rows (design §4): choosing the
+	# section shows its list over the drone, and opening a row puts the site on the stage.
 	shell.select_system_by_name("Field")
+	shell.open_row(&"course")
 	var field_up := room.visible
 	var drone_down := not lab_view.visible
 	results.append(TestResult.new(
-		"choosing Field puts the site on screen and takes the drone off it",
+		"opening a Field row puts the site on screen and takes the drone off it",
 		field_up and drone_down,
 		"the field room is visible %s · Lab's viewport is visible %s" % [
 			field_up, lab_view.visible]))
@@ -235,8 +229,9 @@ static func _the_viewport_swap() -> Array:
 	# The chrome the room needs the space of, asserted while Field is up. The shell's own two
 	# columns would otherwise float over a room that brings its own.
 	shell.select_system_by_name("Field")
+	shell.open_row(&"site")
 	results.append(TestResult.new(
-		"and Field owns the window: the shell's rail column and its inspector are both down",
+		"and Field owns the stage: the shell's rail column and its inspector are both down",
 		not shell._rail_glass.visible and not shell._inspector.visible,
 		"rail %s · inspector %s" % [shell._rail_glass.visible, shell._inspector.visible]))
 	shell.free()
