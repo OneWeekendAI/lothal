@@ -2,7 +2,10 @@ extends SceneTree
 ## Dev tool, not a test: photographs GlassShell — the new UI frame — so the arrangement can be
 ## looked at rather than reasoned about. The companion to capture_lab.gd, which shoots the old one.
 ##
-##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH] [menu|sim|3d|overlay|finder]
+##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH] [menu|sim|3d|overlay|finder|collapsed|page:<row id>]
+##
+## `collapsed` folds the right-hand list to its strip; `page:<row id>` opens that row's page in the
+## stage (e.g. `page:frame`, `page:motors`, `page:battery`) — lab dock design §5.5's drilled-in shot.
 ##
 ## A fifth argument of `menu` drops the project menu open before the shot, which is the only way
 ## to photograph an entry that is greyed — and greyed entries are most of that menu today. `sim`
@@ -29,6 +32,9 @@ func _init() -> void:
 	# QC5: the summoned finder, which is the control the whole slice is about and the one thing on
 	# this screen that cannot be photographed without being opened first.
 	var to_finder: bool = args.size() > 4 and args[4] == "finder"
+	var collapsed: bool = args.size() > 4 and args[4] == "collapsed"
+	var page_row: String = args[4].trim_prefix("page:") if args.size() > 4 \
+		and args[4].begins_with("page:") else ""
 
 	if args.size() > 3 and args[3] != "":
 		var res_parts := args[3].split("x")
@@ -70,11 +76,27 @@ func _init() -> void:
 	# The finder, summoned the way a builder summons it — through the dock's own signal, which is
 	# what a click on a system icon emits. Calling `open_finder` here would photograph a code path
 	# nobody takes.
+	# The finder, summoned the way a builder summons it now — from the first row whose choice line
+	# picks a part (lab dock design §2).
 	if to_finder:
-		for i in GlassShell.SYSTEMS.size():
-			if str(GlassShell.SYSTEMS[i]["name"]) == system:
-				shell._dock.system_chosen.emit(i)
+		for row in shell.section_list().rows():
+			if row.has("pick"):
+				shell.pick_from_row(row["id"])
+				break
 		for i in 6:
+			await process_frame
+
+	# Folded without saving: a screenshot must not change how the developer's own drone opens.
+	if collapsed:
+		shell.section_list().set_collapsed(true)
+		shell._fit_columns()
+		for i in 6:
+			await process_frame
+
+	if page_row != "":
+		if not shell.open_row(StringName(page_row)):
+			print("no such row: %s" % page_row)
+		for i in settle:
 			await process_frame
 
 	# The drone menu, if asked for. It is a Window, so it only lands in this shot because Godot
