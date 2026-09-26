@@ -51,6 +51,13 @@ var message: String
 ## What the message was computed from, so a consumer can present or re-format the figures without
 ## a second derivation that could drift from the sentence beside it.
 var values: Dictionary
+## THE LAB-LIST ROW THAT OWNS THIS WARNING (lab dock design §3): the part that CAUSES it, so a pack
+## current limit sits on Battery and not on Motors, ESC and Battery at once. Filled from
+## `WarningRows`, keyed by `id` — "" only for an id that table does not know, which a test names.
+var item: StringName = &""
+## The row's third line: at most `WarningRows.SHORT_MAX` characters, formatted from `values` — the
+## same numbers `message` was written from, so the two cannot disagree.
+var short: String = ""
 
 
 func _init(p_severity: Severity, p_id: StringName, p_message: String, p_values: Dictionary = {}) -> void:
@@ -58,6 +65,14 @@ func _init(p_severity: Severity, p_id: StringName, p_message: String, p_values: 
 	id = p_id
 	message = p_message
 	values = p_values
+	item = WarningRows.item_of(p_id, p_values)
+	short = WarningRows.short_of(p_id, p_values)
+
+
+## The full sentence, for the item page's "Why?" disclosure. It IS `message`, word for word — the
+## long text every existing check asserts is unchanged by this slice.
+func long() -> String:
+	return message
 
 
 static func impossible(p_id: StringName, p_message: String, p_values: Dictionary = {}) -> BuildWarning:
