@@ -48,6 +48,7 @@ static func run() -> Array:
 	out.append(_thrust_chart_marks_the_rows_peak(build))
 	out.append(_thrust_chart_marks_hover_and_ceiling(build))
 	out.append(_thrust_chart_shows_the_catalogue_test_as_reference(build))
+	out.append(_catalogue_label_is_clear_of_the_gridlines(build))
 	out.append(_prop_drawing_is_the_sheets_blade(build))
 	out.append(_guard_drawing_rings_at_the_guards_radii(guarded))
 	out.append(_guard_drawing_marks_the_tip_gap(guarded))
@@ -250,6 +251,23 @@ static func _thrust_chart_shows_the_catalogue_test_as_reference(build: Build) ->
 	d.free()
 	return TestResult.new("propulsion drawing: the catalogue figure is labelled as its test, not this pack",
 		label == "catalogue 1450 g · 5x4.3x3 at 14.8 V test", label)
+
+
+## The catalogue caption sat on the 1500 g gridline on the reference build (1450 g is 14 px under
+## it at the page's size): the label box must not be crossed by any gridline or its own dashed line.
+static func _catalogue_label_is_clear_of_the_gridlines(build: Build) -> TestResult:
+	var d := _diagram(build, PropulsionDiagram.MODE_THRUST)
+	d.size = Vector2(580, 535)
+	var box := d.catalogue_label_rect()
+	var lines: Array = d.gridline_ys()
+	lines.append(d.catalogue_line_y())
+	var crossed: Array = []
+	for y in lines:
+		if float(y) >= box.position.y - 1.0 and float(y) <= box.end.y + 1.0:
+			crossed.append(roundi(float(y)))
+	d.free()
+	return TestResult.new("propulsion drawing: the catalogue caption is clear of every gridline",
+		box.size.y > 0.0 and crossed.is_empty(), "label %s crossed at %s" % [box, crossed])
 
 
 static func _prop_drawing_is_the_sheets_blade(build: Build) -> TestResult:

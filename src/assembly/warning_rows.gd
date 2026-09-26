@@ -197,7 +197,9 @@ static func _format(template: String, v: Dictionary) -> String:
 		"{fc_mass}":
 			return "%d g over electronics budget" % roundi(float(v.get("excess_g", 0.0)))
 		"{climb}":
-			return "climbs at %.1f g" % float(v.get("climb_g", 0.0))
+			# (T:W - 1): the thrust left over above hover, in the aircraft's own weights. "climbs at
+			# 10.4 g" read as a speed or a mass to a beginner.
+			return "spare thrust = %.1f× its own weight" % float(v.get("climb_g", 0.0))
 		"{headroom}":
 			return "hovers at %d%% — little headroom" % _pct(v.get("hover_throttle", 0.0))
 		"{prop_unloading}":

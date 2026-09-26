@@ -25,6 +25,7 @@ static func run() -> Array:
 	results.append(_esc_current_limit_goes_on_esc())
 	results.append(_motor_current_limit_goes_on_motors())
 	results.append(_the_short_is_computed_from_the_values())
+	results.append(_climb_short_says_what_it_means())
 	results.append(_long_is_the_message())
 	results.append(_severity_is_carried())
 	results.append(_an_unknown_id_has_no_item())
@@ -113,6 +114,15 @@ static func _the_short_is_computed_from_the_values() -> TestResult:
 	var w := BuildWarning.limiting(&"pack_sag", "x", {"usable_fraction": 0.614})
 	return TestResult.new("warning rows: a short quotes the warning's own number",
 		w.short == "sag: 61% of bench thrust", "short='%s'" % w.short)
+
+
+## "climbs at 10.4 g" read as a speed or a mass to a beginner. The figure is (T:W - 1): the thrust
+## left over above hover, as multiples of the aircraft's own weight — said in those words.
+static func _climb_short_says_what_it_means() -> TestResult:
+	var w := BuildWarning.characteristic(&"climb_margin", "x", {"climb_g": 10.43})
+	return TestResult.new("warning rows: the climb short says spare thrust in weights, plainly",
+		w.short == "spare thrust = 10.4× its own weight" and w.short.length() <= WarningRows.SHORT_MAX,
+		"short='%s'" % w.short)
 
 
 static func _long_is_the_message() -> TestResult:

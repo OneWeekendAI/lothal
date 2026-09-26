@@ -111,12 +111,65 @@ func _draw() -> void:
 # Thrust against throttle
 # ---------------------------------------------------------------------------
 
+func _thrust_plot() -> Rect2:
+	return Rect2(Vector2(MARGIN_PX + 14.0, 30.0),
+		size - Vector2(MARGIN_PX + 14.0 + 24.0, 30.0 + MARGIN_PX))
+
+
+func _thrust_top_g() -> float:
+	return maxf(peak.y, float(catalogue.get("grams", 0.0))) * 1.12
+
+
+func _thrust_y(grams: float) -> float:
+	var plot := _thrust_plot()
+	return plot.end.y - grams / _thrust_top_g() * plot.size.y
+
+
+## The grams gridlines' y, px, bottom up — what `_draw_thrust` rules.
+func gridline_ys() -> Array:
+	var out: Array = []
+	var top_g := _thrust_top_g()
+	if top_g <= 0.0:
+		return out
+	var step := _round_step(top_g / 5.0)
+	var g := 0.0
+	while g <= top_g:
+		out.append(_thrust_y(g))
+		g += step
+	return out
+
+
+## The catalogue reference line's y, px.
+func catalogue_line_y() -> float:
+	return _thrust_y(float(catalogue.get("grams", 0.0)))
+
+
+## Where the catalogue caption is drawn, as the box its text occupies. Above its dashed line
+## unless a gridline runs through that box (1450 g sits 14 px under the 1500 g line on the
+## reference build), then below it.
+func catalogue_label_rect() -> Rect2:
+	var text := catalogue_label()
+	if text == "" or _thrust_top_g() <= 0.0:
+		return Rect2()
+	var font := LothalTheme.draw_font()
+	var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+		LothalTheme.FONT_SIZE_SMALL).x
+	var height := font.get_height(LothalTheme.FONT_SIZE_SMALL)
+	var x := _thrust_plot().position.x + 8.0
+	var line := catalogue_line_y()
+	var above := Rect2(Vector2(x, line - 4.0 - height), Vector2(width, height))
+	var below := Rect2(Vector2(x, line + 4.0), Vector2(width, height))
+	for y in gridline_ys():
+		if float(y) >= above.position.y - 1.0 and float(y) <= above.end.y + 1.0:
+			return below
+	return above
+
+
 func _draw_thrust() -> void:
 	if curve.is_empty():
 		return
-	var plot := Rect2(Vector2(MARGIN_PX + 14.0, 30.0),
-		size - Vector2(MARGIN_PX + 14.0 + 24.0, 30.0 + MARGIN_PX))
-	var top_g := maxf(peak.y, float(catalogue.get("grams", 0.0))) * 1.12
+	var plot := _thrust_plot()
+	var top_g := _thrust_top_g()
 	if top_g <= 0.0:
 		return
 	var to_px := func(t: float, grams: float) -> Vector2:
@@ -144,7 +197,9 @@ func _draw_thrust() -> void:
 		var y: float = to_px.call(0.0, cat_g).y
 		draw_dashed_line(Vector2(plot.position.x, y), Vector2(plot.end.x, y),
 			LothalTheme.TEXT_MUTED, 1.0, 6.0)
-		_text(Vector2(plot.position.x + 8.0, y - 6.0), catalogue_label(), LothalTheme.TEXT_MUTED)
+		var box := catalogue_label_rect()
+		_text(Vector2(box.position.x, box.position.y + LothalTheme.draw_font().get_ascent(
+			LothalTheme.FONT_SIZE_SMALL)), catalogue_label(), LothalTheme.TEXT_MUTED)
 
 	# Hover: what each motor must lift.
 	var hy: float = to_px.call(0.0, hover_g).y
