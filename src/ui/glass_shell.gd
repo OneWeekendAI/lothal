@@ -2267,6 +2267,11 @@ func _refresh_list() -> void:
 		"course": rooms.course_library.selected().course_name
 			if rooms.course_library.selected() != null else "",
 		"conditions": rooms.conditions_library.selected().conditions_name,
+		# The objects the Field rows compute from (FieldFigures) — the same libraries the Field room
+		# edits, and the same site `air_of_selected_course` composes the garage's air from.
+		"field_site": rooms.site_of_selected_course(),
+		"field_course": rooms.course_library.selected(),
+		"field_conditions": rooms.conditions_library.selected(),
 		# The tune in force (derived, with the builder's saved axes over it): the Tune row and the
 		# FC page's D-noise number read it, as the Tune panel and the FC sheet do.
 		"tune": lab.tune,

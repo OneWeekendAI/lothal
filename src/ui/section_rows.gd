@@ -19,7 +19,7 @@ extends RefCounted
 ##
 ## Where no computed number is readily available the third line is EMPTY rather than invented
 ## (the brief: "do not invent numbers"). Today: Receiver & link (no receiver publishes an output
-## power or a sensitivity, so a range would be invented) and Course; Tune until
+## power or a sensitivity, so a range would be invented); Tune until
 ## the shell hands it the tune in force (`context.tune`); and Camera until it hands the drawn
 ## airframe's lens clearances (`context.camera_view`). Their
 ## warnings still reach line 3 through `item`, so an empty line 3 means "nothing wrong and no number
@@ -114,9 +114,11 @@ const DEFINITIONS := {
 		{"id": &"tools", "name": "Tools", "soon": true},
 	],
 	"Field": [
-		{"id": &"site", "name": "Site", "page": {"room": "field"}},
-		{"id": &"course", "name": "Course", "page": {"room": "field"}},
-		{"id": &"conditions", "name": "Conditions", "page": {"room": "field"}},
+		# The Field room is every row's page; `sheet` says which of its three the page is about —
+		# the room shows that panel and that row's settings beside the site (FieldSystem.set_dock_page).
+		{"id": &"site", "name": "Site", "page": {"room": "field", "sheet": "site"}},
+		{"id": &"course", "name": "Course", "page": {"room": "field", "sheet": "course"}},
+		{"id": &"conditions", "name": "Conditions", "page": {"room": "field", "sheet": "conditions"}},
 	],
 }
 
@@ -125,7 +127,8 @@ const DEFINITIONS := {
 ##
 ## `warnings` is every warning the caller holds about this build — `Build.warnings()` plus the
 ## airframe model's fit checks — and each row takes only the ones whose `item` is its own id.
-## `context` carries what a Build does not know: `site`, `course` and `conditions` names; the
+## `context` carries what a Build does not know: `site`, `course` and `conditions` names, and the
+## `field_site`, `field_course` and `field_conditions` objects the Field rows compute from; the
 ## `frame_document` (AirframeDocument) Screws & standoffs reads; and `prop_clearance`
 ## (`AirframeModel.closest_to_prop()`), Layout & fit's number.
 static func rows(section: String, build: Build, warnings: Array = [],
@@ -154,6 +157,17 @@ static func rows(section: String, build: Build, warnings: Array = [],
 					config_all.append(w)
 			config_all.append_array(own)
 			out.append(_resolve(row, build, config_all, context))
+			continue
+		if section == "Field" and context.get("field_course") != null:
+			# The course's own warnings (CourseWarnings — what the Field room lists) are the Course
+			# row's; the lap length and the tightest corner are its page's two numbers, so those two
+			# characteristic lines are said there, once, and not again as warnings.
+			var field_all := warnings.duplicate()
+			for w in CourseWarnings.evaluate(context["field_course"] as GateCourse, build,
+					context.get("field_site") as Site):
+				if w.id != CourseWarnings.ROUTE_LENGTH and w.id != CourseWarnings.TIGHTEST_TURN:
+					field_all.append(w)
+			out.append(_resolve(row, build, field_all, context))
 			continue
 		out.append(_resolve(row, build, warnings, context))
 	return out
@@ -474,10 +488,15 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			return ConfigFigures.rates_text(build)
 		&"sheet":
 			return ConfigFigures.sheet_text(build)
+		# Field: the site's elevation and air, the course's gates and lap, the day's temperature and
+		# wind — FieldFigures, off the objects the shell hands in; empty without them, never a guess.
 		&"site":
-			return "%d m" % roundi(build.air.elevation_m) if build.air != null else ""
+			return FieldFigures.site_text(context.get("field_site") as Site,
+				context.get("field_conditions") as Conditions)
+		&"course":
+			return FieldFigures.course_text(context.get("field_course") as GateCourse)
 		&"conditions":
-			return "%.2f kg/m³" % build.air.kgm3() if build.air != null else ""
+			return FieldFigures.conditions_text(context.get("field_conditions") as Conditions)
 	return ""
 
 
@@ -587,6 +606,9 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 			return [["VTX + antenna", "%.1f g" % VideoFigures.vtx_antenna_mass_g(build)],
 				["Antenna behind CoM", "no antenna" if is_nan(aft) else ("~%d mm" % roundi(aft)
 					if aft >= 0.0 else "~%d mm ahead" % roundi(-aft))]]
+		&"site", &"course", &"conditions":
+			return FieldFigures.page_numbers(id, context.get("field_site") as Site,
+				context.get("field_course") as GateCourse, context.get("field_conditions") as Conditions)
 		&"motor_direction":
 			var check := ConfigFigures.spin_check(build)
 			var net := roundi(float(check["net"]))

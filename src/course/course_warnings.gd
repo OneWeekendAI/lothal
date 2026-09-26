@@ -289,10 +289,9 @@ static func _characteristic(course: GateCourse) -> Array[BuildWarning]:
 	var out: Array[BuildWarning] = []
 	var gates := course.gates
 
-	var route_length_m := 0.0
-	for i in gates.size():
-		route_length_m += float(gates[i]["position"].distance_to(
-			gates[(i + 1) % gates.size()]["position"]))
+	# The two figures are FieldFigures', the ones the Course row and its page quote, so the list,
+	# the page and this warning state one computation.
+	var route_length_m := FieldFigures.route_length_m(course)
 	out.append(BuildWarning.characteristic(ROUTE_LENGTH,
 		"A lap is %.0f m over %d gates." % [route_length_m, gates.size()],
 		{"route_length_m": route_length_m, "gate_count": gates.size()}))
@@ -304,27 +303,10 @@ static func _characteristic(course: GateCourse) -> Array[BuildWarning]:
 	# Reported, never judged. There is no angle above which a course is "too tight": a hairpin is a
 	# thing people build tracks around, and the frame bench has already put a number on why one
 	# aircraft takes it and another does not (41x roll inertia across the catalog).
-	if gates.size() >= 3:
-		var tightest_deg := 0.0
-		var tightest_gate := 1
-		for i in gates.size():
-			var previous: Vector3 = gates[(i - 1 + gates.size()) % gates.size()]["position"]
-			var here: Vector3 = gates[i]["position"]
-			var next: Vector3 = gates[(i + 1) % gates.size()]["position"]
-			var incoming := _flat(here - previous)
-			var outgoing := _flat(next - here)
-			if incoming.length() < 0.001 or outgoing.length() < 0.001:
-				continue
-			var turn_deg := rad_to_deg(incoming.angle_to(outgoing))
-			if turn_deg > tightest_deg:
-				tightest_deg = turn_deg
-				tightest_gate = i + 1
+	var turn := FieldFigures.tightest_turn(course)
+	if not turn.is_empty():
 		out.append(BuildWarning.characteristic(TIGHTEST_TURN,
-			"The tightest corner is %.0f deg, at gate %d." % [tightest_deg, tightest_gate],
-			{"turn_deg": tightest_deg, "gate": tightest_gate}))
+			"The tightest corner is %.0f deg, at gate %d." % [float(turn["deg"]), int(turn["gate"])],
+			{"turn_deg": float(turn["deg"]), "gate": int(turn["gate"])}))
 
 	return out
-
-
-static func _flat(v: Vector3) -> Vector3:
-	return Vector3(v.x, 0.0, v.z)

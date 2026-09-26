@@ -373,17 +373,19 @@ static func _ground_kit_is_all_soon(rows: Array) -> TestResult:
 		rows.size() == 4 and soon == 4, "%d rows, %d soon" % [rows.size(), soon])
 
 
-static func _conditions_row(build: Build, rows: Array) -> TestResult:
+static func _conditions_row(_build: Build, rows: Array) -> TestResult:
 	var row := _row(rows, &"conditions")
-	var want := "%.2f kg/m³" % build.air.kgm3()
-	return TestResult.new("section rows: Conditions names the set and quotes the air density",
-		row.get("choice") == "Calm" and row.get("number") == want, _show(row))
+	# Names only in this context: the figures need the Conditions object (TestFieldPage), and with
+	# none the line is empty rather than read off some other air.
+	return TestResult.new("section rows: Conditions names the set, and guesses no number without it",
+		row.get("choice") == "Calm" and row.get("number") == "", _show(row))
 
 
 static func _site_row(rows: Array) -> TestResult:
 	var row := _row(rows, &"site")
-	return TestResult.new("section rows: Site opens the Field room",
-		row.get("choice") == "Open field" and row.get("page") == {"room": "field"}, _show(row))
+	return TestResult.new("section rows: Site opens the Field room on its own sheet",
+		row.get("choice") == "Open field" and row.get("page") == {"room": "field", "sheet": "site"},
+		_show(row))
 
 
 static func _an_impossible_warning_turns_its_row_red() -> TestResult:
