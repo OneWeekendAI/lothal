@@ -33,6 +33,22 @@ static func run() -> Array:
 	out.append(_battery_page_numbers(build))
 	out.append(_esc_page_numbers(build))
 	out.append(_harness_page_numbers(build))
+
+	# --- the drawings
+	out.append(_pack_chart_lines_are_the_packs(build))
+	out.append(_pack_chart_marks_the_rating(build))
+	out.append(_pack_chart_marks_the_worst_draw(build))
+	out.append(_pack_chart_flight_point_carries_flight_time(build))
+	out.append(_esc_chart_bars_are_the_channel(build))
+	out.append(_esc_chart_headroom_is_the_builds(build))
+	out.append(_page_definitions_name_their_drawings())
+
+	# --- the sheets beside the drawings
+	out.append(_battery_sheet_hides_the_whole_builds_warnings(build))
+	out.append(_esc_sheet_hides_the_whole_builds_warnings(build))
+	out.append(_harness_sheet_drops_its_prose_on_the_dock(build))
+	out.append(_harness_sheet_keeps_its_prose_off_the_dock(build))
+	out.append(_charger_drops_its_prose_on_the_dock(build))
 	return out
 
 
@@ -144,8 +160,8 @@ static func _harness_row_fits_the_line(build: Build) -> TestResult:
 
 static func _battery_page_numbers(build: Build) -> TestResult:
 	var got := SectionRows.page_numbers(&"battery", build)
-	var want := [["Full-throttle draw", "%d A of %d A" % [roundi(PowerFigures.worst_draw_a(build)),
-			roundi(PowerFigures.pack_limit_a(build))]],
+	# "of 112 A": the rating as the Pack sheet prints it ("75C (112 A)"), not rounded up to 113.
+	var want := [["Full-throttle draw", "%d A of 112 A" % roundi(PowerFigures.worst_draw_a(build))],
 		["Sag at full throttle", "−%.1f V" % PowerFigures.worst_sag_v(build)]]
 	return TestResult.new("page numbers: Battery shows the worst draw against its rating, and the sag",
 		got == want, "%s want %s" % [got, want])
@@ -162,6 +178,148 @@ static func _harness_page_numbers(build: Build) -> TestResult:
 	var got := SectionRows.page_numbers(&"harness", build)
 	var want := [["Lead drop, full throttle", "~%.2f V at %d A" % [PowerFigures.harness_drop_v(build),
 			roundi(PowerFigures.worst_draw_a(build))]],
-		["Harness mass", "~%d g" % roundi(PowerFigures.harness_mass_g(build))]]
+		["Harness mass", "~%.1f g" % PowerFigures.harness_mass_g(build)]]
 	return TestResult.new("page numbers: Harness shows the lead drop and the harness mass, both ~",
 		got == want, "%s want %s" % [got, want])
+
+
+static func _diagram(build: Build, mode: String) -> PowerDiagram:
+	var d := PowerDiagram.new()
+	d.show_build(build, mode)
+	return d
+
+
+static func _pack_chart_lines_are_the_packs(build: Build) -> TestResult:
+	var d := _diagram(build, PowerDiagram.MODE_PACK)
+	var ok := d.fresh_line == PowerFigures.load_line(build, PowerFigures.fresh_rest_v(build), d.max_a) \
+		and d.nominal_line == PowerFigures.load_line(build, PowerFigures.nominal_v(build), d.max_a) \
+		and is_equal_approx((d.fresh_line[0] as Vector2).y, 16.8) \
+		and is_equal_approx((d.nominal_line[0] as Vector2).y, 14.8)
+	var detail := "%s / %s" % [d.fresh_line, d.nominal_line]
+	d.free()
+	return TestResult.new("power drawing: the chart's two load lines are the fresh pack's and nominal's",
+		ok, detail)
+
+
+static func _pack_chart_marks_the_rating(build: Build) -> TestResult:
+	var d := _diagram(build, PowerDiagram.MODE_PACK)
+	var ok := is_equal_approx(d.limit_a, PowerFigures.pack_limit_a(build)) and d.max_a > d.limit_a
+	var detail := "limit %.1f, axis %.1f" % [d.limit_a, d.max_a]
+	d.free()
+	return TestResult.new("power drawing: the pack's rated current is marked, inside the axis", ok, detail)
+
+
+static func _point(d: PowerDiagram, prefix: String) -> Dictionary:
+	for p in d.points:
+		if str(p["label"]).begins_with(prefix):
+			return p
+	return {}
+
+
+static func _pack_chart_marks_the_worst_draw(build: Build) -> TestResult:
+	var d := _diagram(build, PowerDiagram.MODE_PACK)
+	var p := _point(d, "full throttle, fresh")
+	var ok := not p.is_empty() and is_equal_approx(float(p["amps"]), PowerFigures.worst_draw_a(build)) \
+		and is_equal_approx(float(p["volts"]), 16.8 - PowerFigures.worst_sag_v(build))
+	d.free()
+	return TestResult.new("power drawing: full throttle on a fresh pack sits at the page's draw and sag",
+		ok, str(p))
+
+
+static func _pack_chart_flight_point_carries_flight_time(build: Build) -> TestResult:
+	var d := _diagram(build, PowerDiagram.MODE_PACK)
+	var p := _point(d, "flying")
+	var seconds := roundi(build.flight_time_min() * 60.0)
+	var want := "flying %d A · ~%d:%02d" % [roundi(PowerFigures.flight_draw_a(build)),
+		floori(seconds / 60.0), seconds % 60]
+	var ok := not p.is_empty() and str(p["label"]) == want \
+		and is_equal_approx(float(p["amps"]), PowerFigures.flight_draw_a(build))
+	d.free()
+	return TestResult.new("power drawing: the flight-average point carries the flight time it gives",
+		ok, "%s want %s" % [p, want])
+
+
+static func _esc_chart_bars_are_the_channel(build: Build) -> TestResult:
+	var d := _diagram(build, PowerDiagram.MODE_ESC)
+	var channel := PowerFigures.esc_channel(build)
+	var amps: Array = []
+	for bar in d.bars:
+		amps.append(float(bar["amps"]))
+	var ok := amps == [float(channel["rating"]), float(channel["motor_max"]), float(channel["drawn"])] \
+		and is_equal_approx(d.burst_a, 55.0)
+	d.free()
+	return TestResult.new("power drawing: the ESC bars are the rating, the motors' ask and the draw",
+		ok, str(amps))
+
+
+static func _esc_chart_headroom_is_the_builds(build: Build) -> TestResult:
+	var d := _diagram(build, PowerDiagram.MODE_ESC)
+	var ok := is_equal_approx(d.headroom_a, build.esc_channel_headroom_a())
+	var detail := "%.2f" % d.headroom_a
+	d.free()
+	return TestResult.new("power drawing: the marked headroom is Build's per-channel headroom", ok, detail)
+
+
+static func _definition(id: StringName) -> Dictionary:
+	for d in SectionRows.DEFINITIONS["Power"]:
+		if d["id"] == id:
+			return d["page"]
+	return {}
+
+
+static func _page_definitions_name_their_drawings() -> TestResult:
+	var got := [_definition(&"battery"), _definition(&"esc"), _definition(&"harness")]
+	var want := [{"panels": ["Pack"], "diagram": "pack"}, {"panels": ["ESC"], "diagram": "esc"},
+		{"panels": ["Harness"], "diagram": "harness"}]
+	return TestResult.new("power rows: each page names its drawing", got == want, str(got))
+
+
+## The Pack sheet listed every warning in the build under the pack's rows; the page's own Why? list
+## replaces it.
+static func _battery_sheet_hides_the_whole_builds_warnings(build: Build) -> TestResult:
+	var panel := BatteryDetails.new()
+	panel.set_warnings_visible(false)
+	panel.render(build.battery, build)
+	var shown := panel.warnings_visible()
+	panel.free()
+	return TestResult.new("battery sheet: on a dock page the whole-build warning list stays hidden",
+		not build.warnings().is_empty() and not shown, "shown %s" % shown)
+
+
+static func _esc_sheet_hides_the_whole_builds_warnings(build: Build) -> TestResult:
+	var panel := EscDetails.new()
+	panel.set_warnings_visible(false)
+	panel.render(build.esc, build)
+	var shown := panel.warnings_visible()
+	panel.free()
+	return TestResult.new("ESC sheet: on a dock page the whole-build warning list stays hidden",
+		not build.warnings().is_empty() and not shown, "shown %s" % shown)
+
+
+## The "class-typical defaults" paragraph is the `~` the page's numbers carry; on the dock it goes.
+static func _harness_sheet_drops_its_prose_on_the_dock(build: Build) -> TestResult:
+	var panel := HarnessPanel.new()
+	panel.set_caption_visible(false)
+	panel.render(build)
+	var shown := panel.caption_visible()
+	panel.free()
+	return TestResult.new("harness sheet: on a dock page the prose caption is hidden", not shown, "")
+
+
+static func _harness_sheet_keeps_its_prose_off_the_dock(build: Build) -> TestResult:
+	var panel := HarnessPanel.new()
+	panel.render(build)
+	var shown := panel.caption_visible()
+	panel.free()
+	return TestResult.new("harness sheet: elsewhere the prose caption stays", shown, "")
+
+
+## "Flying and bench runs drain at 1:1. Charging is compressed, because…" is a paragraph; the dock's
+## Battery page shows the charger's state and control, not its argument.
+static func _charger_drops_its_prose_on_the_dock(build: Build) -> TestResult:
+	var panel := PackChargePanel.new(PackCharge.new(), PartsCatalog.load_default())
+	panel.set_note_visible(false)
+	panel.render(build)
+	var shown := panel.note_visible()
+	panel.free()
+	return TestResult.new("charger: on a dock page the compression paragraph is hidden", not shown, "")

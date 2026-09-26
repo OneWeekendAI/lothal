@@ -62,9 +62,12 @@ const DEFINITIONS := {
 		{"id": &"soft_mounts", "name": "Soft mounts", "soon": true},
 	],
 	"Power": [
-		{"id": &"battery", "name": "Battery", "page": {"panels": ["Pack"]}, "pick": "Pack"},
-		{"id": &"esc", "name": "ESC", "page": {"panels": ["ESC"]}, "pick": "ESC"},
-		{"id": &"harness", "name": "Harness", "page": {"panels": ["Harness"]}},
+		# `diagram`: PowerDiagram's modes (the pack's sag chart, one ESC channel), and "harness" —
+		# the designer's own HarnessSchematic, read-only, beside the Harness sheet and its door.
+		{"id": &"battery", "name": "Battery", "page": {"panels": ["Pack"], "diagram": "pack"},
+			"pick": "Pack"},
+		{"id": &"esc", "name": "ESC", "page": {"panels": ["ESC"], "diagram": "esc"}, "pick": "ESC"},
+		{"id": &"harness", "name": "Harness", "page": {"panels": ["Harness"], "diagram": "harness"}},
 	],
 	"Control": [
 		{"id": &"fc", "name": "Flight controller", "page": {"panels": ["FC"]}, "pick": "FC"},
@@ -449,8 +452,10 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 		&"battery":
 			# The worst case (a fresh pack at the throttle ceiling) against the pack's rating, and
 			# what that draw costs in volts — the two things the sag chart is about.
-			return [["Full-throttle draw", "%d A of %d A" % [roundi(PowerFigures.worst_draw_a(build)),
-					roundi(PowerFigures.pack_limit_a(build))]],
+			# The rating as the Pack sheet prints it ("%.0f"): 112.5 A must not read 113 here and
+			# 112 beside it.
+			return [["Full-throttle draw", "%d A of %.0f A" % [roundi(PowerFigures.worst_draw_a(build)),
+					PowerFigures.pack_limit_a(build)]],
 				["Sag at full throttle", "−%.1f V" % PowerFigures.worst_sag_v(build)]]
 		&"esc":
 			var channel := PowerFigures.esc_channel(build)
@@ -466,7 +471,7 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 				return [["Lead drop, full throttle", "—"], ["Harness mass", "—"]]
 			return [["Lead drop, full throttle", "~%.2f V at %d A" % [PowerFigures.harness_drop_v(build),
 					roundi(PowerFigures.worst_draw_a(build))]],
-				["Harness mass", "~%d g" % roundi(PowerFigures.harness_mass_g(build))]]
+				["Harness mass", "~%.1f g" % PowerFigures.harness_mass_g(build)]]
 	return []
 
 

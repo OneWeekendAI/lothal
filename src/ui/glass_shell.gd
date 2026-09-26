@@ -317,6 +317,10 @@ var _item_diagram: FramePlanDiagram
 ## The Propulsion pages' drawing (thrust curve, blade, guard ring), swapped in as the item view's
 ## body for a row whose `diagram` is one of PropulsionDiagram's modes.
 var _prop_diagram: PropulsionDiagram
+## The Power pages' drawings: the pack's sag chart and one ESC channel (PowerDiagram), and the
+## harness designer's own schematic, read-only, for the Harness page.
+var _power_diagram: PowerDiagram
+var _harness_diagram: HarnessSchematic
 ## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
 var _list_refresh_queued := false
 ## The builder unfolded the strip while such a room was up; respected until the page closes.
@@ -538,6 +542,15 @@ func _ready() -> void:
 	# course's air): the Motors, Propellers and Prop guards pages list their own row's warnings.
 	lab.motor_details.set_warnings_visible(false)
 	lab.propeller_details.set_warnings_visible(false)
+	# The Power sheets likewise: the pack's current limit and sag are the Battery page's own list.
+	lab.battery_details.set_warnings_visible(false)
+	lab.esc_details.set_warnings_visible(false)
+	# The pack sheet sits in the Pack tab's own scroll, under the charger; its inner scroll had no
+	# height there and folded the spec rows to nothing. The tab scrolls; the sheet takes its rows.
+	lab.battery_details.fit_to_content()
+	# The "class-typical defaults" paragraph is the `~` on the Harness page's numbers.
+	lab.harness_panel.set_caption_visible(false)
+	lab.charge_panel.set_note_visible(false)
 
 	_autosave = Timer.new()
 	_autosave.wait_time = AUTOSAVE_SECONDS
@@ -1742,6 +1755,10 @@ func _build_inspector() -> void:
 	_item_diagram = FramePlanDiagram.new()
 	_item_view.set_body(_item_diagram)
 	_prop_diagram = PropulsionDiagram.new()
+	_power_diagram = PowerDiagram.new()
+	_harness_diagram = HarnessSchematic.new()
+	# A picture here, not the designer: selecting a segment is the room's, one press away.
+	_harness_diagram.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 ## "← Back to drone" and the breadcrumb (§2), across the top of the stage while a page is open.
@@ -2048,6 +2065,17 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 			_item_view.set_body(_prop_diagram)
 		_prop_diagram.show_build(build, mode)
 		return
+	if mode in [PowerDiagram.MODE_PACK, PowerDiagram.MODE_ESC]:
+		if _item_view.body != _power_diagram:
+			_item_view.set_body(_power_diagram)
+		_power_diagram.show_build(build, mode)
+		return
+	if mode == "harness":
+		if _item_view.body != _harness_diagram:
+			_item_view.set_body(_harness_diagram)
+		# Coloured by the checks, as the designer colours it — the same one call it makes.
+		_harness_diagram.show_harness(build, HarnessChecks.warnings_for(build))
+		return
 	if _item_view.body != _item_diagram:
 		_item_view.set_body(_item_diagram)
 	# Layout is the fitted aircraft's geometry; arms and hardware are the frame document's.
@@ -2068,6 +2096,14 @@ func item_diagram() -> FramePlanDiagram:
 
 func propulsion_diagram() -> PropulsionDiagram:
 	return _prop_diagram
+
+
+func power_diagram() -> PowerDiagram:
+	return _power_diagram
+
+
+func harness_diagram() -> HarnessSchematic:
+	return _harness_diagram
 
 
 ## Asks for one `_refresh_list` at the end of this frame. Coalesced: a vertex drag publishes an

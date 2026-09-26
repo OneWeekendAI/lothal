@@ -84,6 +84,16 @@ func render(build: Build) -> void:
 	_row("Harness mass", "%.1f g" % harness.total_mass_g(build))
 
 
+## Shows or hides the "class-typical defaults" caption. Off on the Lab dock's Harness page, where
+## the `~` on the page's numbers says it without a paragraph (lab dock design §3).
+func set_caption_visible(shown: bool) -> void:
+	_caption.visible = shown
+
+
+func caption_visible() -> bool:
+	return _caption.visible
+
+
 func _row(label_text: String, value_text: String) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", LothalTheme.SPACE_2)

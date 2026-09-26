@@ -333,6 +333,16 @@ func _battery_model() -> BatteryModel:
 	return pack
 
 
+## Shows or hides the compression paragraph. Off on the Lab dock's Battery page (lab dock design
+## §3: no paragraph on a page); the ratio selector beside the button still says what is compressed.
+func set_note_visible(shown: bool) -> void:
+	_note.visible = shown
+
+
+func note_visible() -> bool:
+	return _note.visible
+
+
 ## Readable text of everything on the panel, so tests can assert what the charger says without
 ## reading pixels.
 func readout_text() -> Dictionary:
