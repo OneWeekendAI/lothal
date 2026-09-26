@@ -198,6 +198,8 @@ func _draw_thrust() -> void:
 		draw_dashed_line(Vector2(plot.position.x, y), Vector2(plot.end.x, y),
 			LothalTheme.TEXT_MUTED, 1.0, 6.0)
 		var box := catalogue_label_rect()
+		# A backing plate: the throttle gridlines run vertically through where it sits.
+		draw_rect(box.grow(2.0), Color(LothalTheme.SURFACE_BASE, 0.85))
 		_text(Vector2(box.position.x, box.position.y + LothalTheme.draw_font().get_ascent(
 			LothalTheme.FONT_SIZE_SMALL)), catalogue_label(), LothalTheme.TEXT_MUTED)
 
