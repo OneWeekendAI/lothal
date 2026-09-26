@@ -5,7 +5,8 @@ extends SceneTree
 ##   godot --script res://tests/capture_glass_shell.gd -- <out.png> [settle] [system] [WxH] [menu|sim|3d|overlay|finder|collapsed|page:<row id>]
 ##
 ## `collapsed` folds the right-hand list to its strip; `page:<row id>` opens that row's page in the
-## stage (e.g. `page:frame`, `page:motors`, `page:battery`) — lab dock design §5.5's drilled-in shot.
+## stage (e.g. `page:frame`, `page:motors`, `page:battery`) — lab dock design §5.5's drilled-in shot;
+## `page:guards@<guard id>` fits that guard first.
 ##
 ## A fifth argument of `menu` drops the project menu open before the shot, which is the only way
 ## to photograph an entry that is greyed — and greyed entries are most of that menu today. `sim`
@@ -93,6 +94,16 @@ func _init() -> void:
 		for i in 6:
 			await process_frame
 
+	# `page:guards@<guard id>` fits that guard first, through the Prop panel's own selector handler
+	# (not saved: the scratch HOME the captures run under holds the project).
+	if page_row.contains("@"):
+		var guard_id := page_row.get_slice("@", 1)
+		page_row = page_row.get_slice("@", 0)
+		var details := shell.lab.propeller_details
+		var index := details._guard_ids.find(guard_id)
+		if index >= 0:
+			details._guard_selector.select(index)
+			details._on_guard_selected(index)
 	if page_row != "":
 		if not shell.open_row(StringName(page_row)):
 			print("no such row: %s" % page_row)
