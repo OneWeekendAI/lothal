@@ -2213,6 +2213,9 @@ func _refresh_list() -> void:
 	# on the RateTune in force rather than in Build.warnings().
 	if lab.tune != null:
 		warnings.append_array(lab.tune.warnings())
+	# A printed part that no longer matches its print record: that part's Printed row's, and known
+	# only here, where the drone's records are (PrintedDivergence on open, after Keep and Reprint).
+	warnings.append_array(PrintedDivergence.warnings(printed_divergence))
 	# WHAT THE AIRFRAME PAGES FLAG, THE ROWS SAY: the bolted-joint checks the Screws & standoffs
 	# page runs and the drawn frame's own checks, off the same document those pages render.
 	if lab.frame_document != null and _focused_name() == "Airframe":
@@ -3234,6 +3237,8 @@ func _report_printed_divergence() -> void:
 	printed_divergence = PrintedDivergence.check(container.project, container,
 		lab.build_with_open_harness())
 	lab.print_panel.set_divergence(printed_divergence)
+	# The Printed rows say it too (amber), and stop saying it once kept or reprinted.
+	_refresh_list()
 	if printed_divergence.is_empty() or _status_label == null:
 		return
 	var lines: Array = []

@@ -19,7 +19,7 @@ extends RefCounted
 ##
 ## Where no computed number is readily available the third line is EMPTY rather than invented
 ## (the brief: "do not invent numbers"). Today: Receiver & link (no receiver publishes an output
-## power or a sensitivity, so a range would be invented), Printed parts and Course; Tune until
+## power or a sensitivity, so a range would be invented) and Course; Tune until
 ## the shell hands it the tune in force (`context.tune`); and Camera until it hands the drawn
 ## airframe's lens clearances (`context.camera_view`). Their
 ## warnings still reach line 3 through `item`, so an empty line 3 means "nothing wrong and no number
@@ -132,7 +132,12 @@ static func rows(section: String, build: Build, warnings: Array = [],
 	for definition in DEFINITIONS.get(section, []):
 		var row: Dictionary = (definition as Dictionary).duplicate(true)
 		if bool(row.get("each_printed_part", false)):
-			out.append_array(_printed_rows(row, build))
+			# What the build alone says about its printed parts (one it cannot generate) joins the
+			# caller's warnings; divergence from a print record is the caller's, which holds the file.
+			var all := warnings.duplicate()
+			if build != null:
+				all.append_array(PrintedFigures.warnings(build))
+			out.append_array(_printed_rows(row, build, all, context))
 			continue
 		out.append(_resolve(row, build, warnings, context))
 	return out
@@ -204,22 +209,31 @@ static func _worst_owned(id: StringName, warnings: Array) -> BuildWarning:
 	return worst
 
 
-static func _printed_rows(template: Dictionary, build: Build) -> Array:
+## One row per part `PrintedParts.for_build` lists, id `printed:<part>`, each resolved like any
+## other row: line 2 the material, line 3 the print mass (`PrintedFigures`) or the worst warning the
+## part owns — a divergence from its print record, amber. Its page is the Print sheet cut to the
+## part (`sheet`) beside the part's drawing.
+static func _printed_rows(template: Dictionary, build: Build, warnings: Array,
+		context: Dictionary) -> Array:
 	var out: Array = []
 	if build == null:
 		return out
 	for part in PrintedParts.for_build(build):
 		var row := template.duplicate(true)
 		row.erase("each_printed_part")
-		row["id"] = StringName("printed:%s" % str(part.get("id", "")))
-		row["name"] = str(part.get("label", part.get("id", ""))).split(" — ")[0]
-		row["choice"] = "exportable" if bool(part.get("exportable", true)) else "not printable"
-		row["number"] = ""
-		row["line3"] = ""
-		row["why"] = []
-		row["status"] = OK
-		out.append(row)
+		var part_id := str(part.get("id", ""))
+		row["id"] = StringName("%s:%s" % [WarningRows.PRINTED, part_id])
+		row["name"] = str(part.get("label", part_id)).split(" — ")[0]
+		row["page"] = {"panels": ["Print"], "diagram": "printed", "sheet": part_id}
+		out.append(_resolve(row, build, warnings, context))
 	return out
+
+
+## The part id of a `printed:<part>` row id, or "".
+static func printed_part_of(id: StringName) -> String:
+	var text := String(id)
+	var prefix := "%s:" % WarningRows.PRINTED
+	return text.substr(prefix.length()) if text.begins_with(prefix) else ""
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +241,12 @@ static func _printed_rows(template: Dictionary, build: Build) -> Array:
 # ---------------------------------------------------------------------------
 
 static func choice_of(id: StringName, build: Build, context: Dictionary = {}) -> String:
+	var printed := printed_part_of(id)
+	if printed != "":
+		var material := PrintedFigures.material_text(build, printed)
+		if printed == PrintedParts.PROP_GUARD and PartsCatalog.fabrication_of(build.guard) == "bought":
+			return "%s · bought" % material
+		return material
 	match id:
 		&"frame":
 			return _frame_choice(build.frame)
@@ -341,6 +361,10 @@ static func _component_name(build: Build, category: String) -> String:
 # ---------------------------------------------------------------------------
 
 static func number_of(id: StringName, build: Build, context: Dictionary = {}) -> String:
+	var printed := printed_part_of(id)
+	if printed != "":
+		# What one piece weighs off its own exported triangles, and how many to print.
+		return PrintedFigures.mass_text(PrintedFigures.piece(build, printed))
 	match id:
 		&"hardware":
 			# Geometry times density over the hardware the frame document derives (airframe.md §5)
@@ -434,6 +458,19 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 ## `rows()`, plus `pack_side_mm` (AirframeModel.battery_overhang_m().lateral, mm; negative clears).
 static func page_numbers(id: StringName, build: Build, context: Dictionary = {}) -> Array:
 	var document := context.get("frame_document") as AirframeDocument
+	var printed := printed_part_of(id)
+	if printed != "":
+		var mass := PrintedFigures.mass_text(PrintedFigures.piece(build, printed))
+		var numbers := [["Print mass", mass if mass != "" else "—"]]
+		var fit := PrintedFigures.fit(build, printed)
+		if not fit.is_empty():
+			numbers.append(["%s in its print" % str(fit["what"]), PrintedFigures.fit_text(build, printed)])
+		else:
+			var solid := PrintedParts.solid_for(build, printed)
+			var box := PrintedExport.bbox_mm(solid["triangles"]) if bool(solid["ok"]) else []
+			numbers.append(["Print size", "%.1f × %.1f × %.1f mm" % [float(box[0]), float(box[1]),
+				float(box[2])] if box.size() == 3 else "—"])
+		return numbers
 	match id:
 		&"arms":
 			var mode := VibrationModel.for_build(build).resonance_hz

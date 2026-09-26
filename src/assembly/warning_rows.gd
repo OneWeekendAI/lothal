@@ -123,6 +123,11 @@ const TABLE := {
 	&"camera_tilt_into_top_plate": [CAMERA, "{camera_tilt}"],
 	&"camera_obstruction": [CAMERA, "{camera_obstruction}"],
 	&"vtx_without_antenna": [VTX, "VTX has no antenna"],
+	# Printed — one row per generated part, so the item is "printed:<part>" (`item_of`).
+	&"printed_refused": [PRINTED, "cannot be generated"],
+	&"printed_differs": [PRINTED, "{printed_differs}"],
+	&"printed_missing_file": [PRINTED, "printed file missing from drone"],
+	&"printed_gone": [PRINTED, "printed one no longer generated"],
 	# Config
 	&"motor_spin_unflyable": [MOTOR_DIRECTION, "motor directions cannot fly"],
 	&"bidir_dshot_unsupported": [MOTOR_DIRECTION, "ESC lacks bidirectional DShot"],
@@ -157,6 +162,9 @@ static func item_of(id: StringName, values: Dictionary) -> StringName:
 			_: return MOTORS
 	if not TABLE.has(id):
 		return &""
+	if (TABLE[id] as Array)[0] == PRINTED and values.has("part"):
+		# One row per printed part: the part named in the warning owns it.
+		return StringName("%s:%s" % [PRINTED, str(values["part"])])
 	return (TABLE[id] as Array)[0]
 
 
@@ -232,6 +240,9 @@ static func _format(template: String, v: Dictionary) -> String:
 			# (`VideoFigures`); `~` because the lens sits where MountLayout seats the camera.
 			return "%s ~%d° off lens axis" % [str(v.get("closest_name", "part")),
 				roundi(float(v.get("closest_deg", 0.0)))]
+		"{printed_differs}":
+			# The newest print record's date — what the part now differs from.
+			return "differs from the %s print" % str(v.get("date", "?"))
 		"{camera_tilt}":
 			return "tilt %d° hits the top plate" % roundi(float(v.get("tilt_deg", 0.0)))
 		"{field_air}":
