@@ -76,18 +76,10 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 		not shell.item_page().visible and not shell._inspector.visible
 			and not shell._rail_glass.visible, ""))
 
-	# The stacked rail is the Receiver page's alone: a column page with no drawing (Video's Camera)
-	# still stands its rail at the stage's left, full height.
-	shell.select_system_by_name("Video")
-	await _settle(tree)
-	shell.open_row(&"camera")
-	await _settle(tree)
-	var rail := shell._rail_glass.get_global_rect()
-	out.append(TestResult.new("control dock: after the Receiver page, Camera's rail is back at the stage's left",
-		shell._rail_glass.visible and rail.position.x <= GlassShell.CLUSTER_MARGIN + 1.0
-			and rail.end.x <= shell._inspector.get_global_rect().position.x, str(rail)))
-	shell.back_to_drone()
-	await _settle(tree)
+	# What followed here — Video's Camera page, after the Receiver's, standing its rail at the
+	# stage's left — moved to VideoPageChecks when the Camera page gained a drawing: it now stacks
+	# its own rail over its own sheet exactly as the Receiver page does, and that check opens the
+	# Receiver page first so the Receiver's sizes cannot carry over.
 	if was != "":
 		shell.select_system_by_name(was)
 		await _settle(tree)

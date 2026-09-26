@@ -28,10 +28,17 @@ extends PartDetails
 const SPEC_ROWS := [
 	{"key": "camera", "label": "Camera"},
 	{"key": "vtx", "label": "Video TX"},
+	{"key": "vtx_output", "label": "— output"},
 	{"key": "antenna", "label": "Antenna"},
+	{"key": "antenna_type", "label": "— type"},
 	{"key": "wiring", "label": "Wiring, solder, tape"},
 	{"key": "total", "label": "Electronics total"},
 ]
+
+## The rows the VTX & antenna page keeps (`set_dock_sheet("vtx")`): its own two parts and what the
+## catalogue says of each. The camera is the Camera page's; the wiring and the total are the
+## aircraft's, not this item's.
+const VTX_SHEET_ROWS := ["vtx", "vtx_output", "antenna", "antenna_type"]
 
 ## What an empty bay reads as. Not "0 g", which is a component that weighs nothing, and not the
 ## em dash PartDetails uses for an unfilled field, which is a value nobody entered — neither of
@@ -43,8 +50,33 @@ const NOT_FITTED_TEXT := "not fitted"
 var _build: Build = null
 
 
+## "" for the whole sheet, or "vtx" for the VTX & antenna page's cut of it.
+var _dock_sheet := ""
+
+
 func _init() -> void:
 	super(SPEC_ROWS)
+
+
+## Cuts the sheet to one Lab dock page's rows (lab dock design §3: each page shows only its own
+## item). "" puts every row back.
+func set_dock_sheet(sheet: String) -> void:
+	_dock_sheet = sheet
+	for i in SPEC_ROWS.size():
+		var shown := sheet == "" or (sheet == "vtx" and VTX_SHEET_ROWS.has(SPEC_ROWS[i]["key"]))
+		for label in _row_labels[i]:
+			(label as Control).visible = shown
+	if sheet == "vtx":
+		_title.text = "VTX & ANTENNA"
+
+
+## The keys of the rows showing, in order, for tests.
+func shown_keys() -> Array:
+	var out: Array = []
+	for i in SPEC_ROWS.size():
+		if (_row_labels[i][0] as Control).visible:
+			out.append(SPEC_ROWS[i]["key"])
+	return out
 
 
 ## Renders the payload of one build. The odd shape — no part argument, where every other panel
@@ -57,6 +89,8 @@ func render_components(build: Build) -> void:
 	# so `super(...)` would go looking for a render_components() on the base that is not there.
 	# The stash above happens FIRST, because render() is what drives the _read() below.
 	render({"name": "Electronics"}, build)
+	if _dock_sheet == "vtx":
+		_title.text = "VTX & ANTENNA"
 
 
 func _read(_part: Dictionary, key: String) -> String:
@@ -64,6 +98,11 @@ func _read(_part: Dictionary, key: String) -> String:
 		return "—"
 
 	match key:
+		"vtx_output":
+			# Catalogue metadata (vtxs.json): no radio model reads it.
+			return _catalog_field("vtx", ["power_class", "band"])
+		"antenna_type":
+			return _catalog_field("antenna", ["polarisation", "connector", "gain_class"])
 		"wiring":
 			return "%.1f g" % _build.harness_mass_g()
 		"total":
@@ -78,3 +117,16 @@ func _read(_part: Dictionary, key: String) -> String:
 	# can see that the light one is the nano.
 	return "%s   %.1f g" % [
 		component.get("name", "?"), float(component.get("mass_g", 0.0))]
+
+
+## A fitted part's catalogue fields joined with " · ", or not fitted. Copied from the catalogue as
+## published, never derived.
+func _catalog_field(category: String, keys: Array) -> String:
+	if not _build.components.has(category):
+		return NOT_FITTED_TEXT
+	var catalog: Dictionary = (_build.components[category] as Dictionary).get("catalog", {})
+	var parts: Array[String] = []
+	for key in keys:
+		if str(catalog.get(key, "")) != "":
+			parts.append(str(catalog[key]))
+	return " · ".join(parts) if not parts.is_empty() else "—"

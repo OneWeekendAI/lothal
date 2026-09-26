@@ -324,6 +324,8 @@ var _harness_diagram: HarnessSchematic
 ## The Control pages' drawing (the stack and ports, the link's wiring, the tune), swapped in as the
 ## item view's body for a row whose `diagram` is one of ControlDiagram's modes.
 var _control_diagram: ControlDiagram
+## The Video pages' side view (the camera and its clear cone; the VTX and antenna against the CoM).
+var _video_diagram: VideoDiagram
 ## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
 var _list_refresh_queued := false
 ## The builder unfolded the strip while such a room was up; respected until the page closes.
@@ -562,6 +564,13 @@ func _ready() -> void:
 	lab.tune_panel.set_warnings_visible(false)
 	lab.tune_panel.set_prose_visible(false)
 	lab.link_picker.set_note_visible(false)
+	# The Video sheets: the Camera panel keeps its slider and its camera rows, and drops its own
+	# warning list (the page's is the row's) and its two sentences; the Electronics rail's paragraph
+	# about the old 55 g budget goes on the dock. The drawing says what the sentences said.
+	lab.camera_panel.set_warnings_visible(false)
+	lab.camera_panel.set_prose_visible(false)
+	lab.electronics_picker.set_note_visible(false)
+	lab.electronics_details.set_warnings_visible(false)
 
 	_autosave = Timer.new()
 	_autosave.wait_time = AUTOSAVE_SECONDS
@@ -1797,6 +1806,7 @@ func _build_inspector() -> void:
 	# A picture here, not the designer: selecting a segment is the room's, one press away.
 	_harness_diagram.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_control_diagram = ControlDiagram.new()
+	_video_diagram = VideoDiagram.new()
 
 
 ## "← Back to drone" and the breadcrumb (§2), across the top of the stage while a page is open.
@@ -1950,6 +1960,8 @@ func _show_page(row: Dictionary) -> void:
 			_item_page.visible = true
 		# Which half of the Prop panel this page is: the blade, or the guard (SectionRows `sheet`).
 		lab.propeller_details.set_dock_sheet(str(page.get("sheet", "")))
+		# And which cut of the Electronics sheet: the VTX page's two parts, or all of it.
+		lab.electronics_details.set_dock_sheet("vtx" if str(page.get("sheet", "")) == "vtx" else "")
 	_section_list.set_open_row(row["id"])
 	if _item_page.visible:
 		# Fills the drawing and the numbers from the same pass that builds the rows.
@@ -2113,6 +2125,11 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 			_item_view.set_body(_control_diagram)
 		_control_diagram.show_build(build, mode, context.get("tune") as RateTune)
 		return
+	if mode in [VideoDiagram.MODE_CAMERA, VideoDiagram.MODE_VTX]:
+		if _item_view.body != _video_diagram:
+			_item_view.set_body(_video_diagram)
+		_video_diagram.show_build(build, mode, lab.airframe, context.get("camera_view", {}))
+		return
 	if mode == "harness":
 		if _item_view.body != _harness_diagram:
 			_item_view.set_body(_harness_diagram)
@@ -2143,6 +2160,10 @@ func propulsion_diagram() -> PropulsionDiagram:
 
 func control_diagram() -> ControlDiagram:
 	return _control_diagram
+
+
+func video_diagram() -> VideoDiagram:
+	return _video_diagram
 
 
 func power_diagram() -> PowerDiagram:
@@ -2185,6 +2206,9 @@ func _refresh_list() -> void:
 		var tight := AirframeModel.prop_clearance_warning(lab.airframe.closest_to_prop())
 		if tight != null:
 			warnings.append(tight)
+		# A fitted part further into the lens's view than the frame itself: the Camera row's, and
+		# measured on the drawn airframe, so it is not in Build.warnings().
+		warnings.append_array(lab.airframe.camera_view_warnings())
 	# The tune's own two warnings (D capped by the gyro, a hand tune) are the Tune row's; they live
 	# on the RateTune in force rather than in Build.warnings().
 	if lab.tune != null:
@@ -2206,6 +2230,9 @@ func _refresh_list() -> void:
 		# The tune in force (derived, with the builder's saved axes over it): the Tune row and the
 		# FC page's D-noise number read it, as the Tune panel and the FC sheet do.
 		"tune": lab.tune,
+		# How far off the lens axis the frame and each fitted part come, on the drawn airframe:
+		# the Camera row's number, its page's and its drawing's (VideoFigures).
+		"camera_view": lab.airframe.camera_clearances() if lab.airframe != null else {},
 	}
 	_section_list.show_section(_focused_name(),
 		SectionRows.rows(_focused_name(), build, warnings, context))

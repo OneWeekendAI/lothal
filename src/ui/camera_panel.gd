@@ -34,6 +34,22 @@ var _slider: HSlider
 var _value: Label
 var _warnings: WarningList
 var _updating := false
+## The two explanatory sentences (what tilt changes; the default's provenance). Off on a Lab dock
+## page, where the drawing shows both.
+var _note: Label
+var _hint: Label
+var _warnings_shown := true
+## The fitted camera's own sheet: `SPEC_ROWS` key → value Label. The Camera page's spec sheet —
+## the camera is picked on the Electronics rail, and this panel is the page's only sheet.
+var _spec_values: Dictionary = {}
+
+## The camera's published rows: its name and mass, its box, and the catalogue's browsing fields.
+const SPEC_ROWS := [
+	{"key": "part", "label": "Camera"},
+	{"key": "size", "label": "Box L × W × H"},
+	{"key": "sensor", "label": "Sensor"},
+	{"key": "signal", "label": "Signal"},
+]
 
 
 func _init() -> void:
@@ -55,6 +71,22 @@ func _init() -> void:
 	note.custom_minimum_size = Vector2(280, 0)
 	note.theme_type_variation = &"MutedLabel"
 	root.add_child(note)
+	_note = note
+
+	var specs := GridContainer.new()
+	specs.columns = 2
+	root.add_child(specs)
+	for spec in SPEC_ROWS:
+		var name_label := Label.new()
+		name_label.text = spec["label"]
+		name_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+		specs.add_child(name_label)
+		var value := Label.new()
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		value.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+		specs.add_child(value)
+		_spec_values[spec["key"]] = value
 
 	root.add_child(HSeparator.new())
 
@@ -80,6 +112,7 @@ func _init() -> void:
 	hint.custom_minimum_size = Vector2(280, 0)
 	hint.theme_type_variation = &"MutedLabel"
 	root.add_child(hint)
+	_hint = hint
 
 	_warnings = WarningList.new(280)
 	root.add_child(_warnings)
@@ -103,6 +136,56 @@ func render(build: Build, tweaks: AssemblyTweaks, airframe: AirframeModel = null
 	if airframe != null:
 		entries.append_array(airframe.camera_view_warnings())
 	_warnings.show_warnings(entries)
+	if not _warnings_shown:
+		_warnings.visible = false
+	_render_specs(build)
+
+
+func _render_specs(build: Build) -> void:
+	var camera: Dictionary = build.components.get("camera", {})
+	if camera.is_empty():
+		for key in _spec_values:
+			(_spec_values[key] as Label).text = "—"
+		_spec_values["part"].text = ElectronicsDetails.NOT_FITTED_TEXT
+		return
+	var box := Build.component_size_of(camera) * 1000.0
+	var catalog: Dictionary = camera.get("catalog", {})
+	_spec_values["part"].text = "%s   %.1f g" % [str(camera.get("name", "?")),
+		float(camera.get("mass_g", 0.0))]
+	_spec_values["size"].text = "%s × %s × %s mm" % [_trim(box.z), _trim(box.x), _trim(box.y)]
+	_spec_values["sensor"].text = str(catalog.get("sensor", "—"))
+	_spec_values["signal"].text = str(catalog.get("signal", "—"))
+
+
+## One spec row as rendered, for tests.
+func spec_text(key: String) -> String:
+	return (_spec_values[key] as Label).text if _spec_values.has(key) else "(missing)"
+
+
+## The two sentences, off on a Lab dock page.
+func set_prose_visible(shown: bool) -> void:
+	_note.visible = shown
+	_hint.visible = shown
+
+
+func prose_visible() -> bool:
+	return _note.visible or _hint.visible
+
+
+## The panel's own warning list, off on a Lab dock page (the page lists the Camera row's). Held
+## across renders.
+func set_warnings_visible(shown: bool) -> void:
+	_warnings_shown = shown
+	if not shown:
+		_warnings.visible = false
+
+
+func warnings_visible() -> bool:
+	return _warnings.visible
+
+
+static func _trim(value: float) -> String:
+	return ("%.1f" % value).trim_suffix(".0")
 
 
 ## What the tilt row reads — the counterpart of `AssemblyPanel.tweak_row_text`, compared as strings.
