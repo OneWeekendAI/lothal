@@ -31,6 +31,12 @@ func _init() -> void:
 	super(SPEC_ROWS)
 
 func _read(frame: Dictionary, key: String) -> String:
+	return published(frame, key)
+
+
+## One published row of a frame, formatted — the panel's `_read`, static so the designer's
+## Catalogue tab (FrameNumbersDrawer) renders the same text without a second formatter.
+static func published(frame: Dictionary, key: String) -> String:
 	var specs: Dictionary = frame.get("specs", {})
 
 	match key:
@@ -50,4 +56,5 @@ func _read(frame: Dictionary, key: String) -> String:
 			if PartsCatalog.is_custom(str(frame.get("part_id", ""))):
 				return "Custom (yours, unchecked)"
 			return "Catalog"
-	return super(frame, key)
+	# PartDetails' default: the `catalog` block.
+	return _or_dash(str(frame.get("catalog", {}).get(key, "")))

@@ -59,6 +59,7 @@ static func run() -> Array:
 	results.append(_test_moulded_frame_says_why_not(catalog))
 	results.append(_test_fasteners_are_derived_not_zero(catalog))
 	results.append(_test_a_flagged_joint_reads_as_a_short_line())
+	results.append(_test_the_designer_drawer_carries_the_catalogue_sheet(catalog))
 	results.append(_test_layout_is_controllable(catalog))
 	results.append(_test_no_row_needs_a_motor_or_a_thrust(catalog))
 	results.append(_test_every_row_renders_for_every_frame(catalog))
@@ -448,3 +449,24 @@ static func _test_a_flagged_joint_reads_as_a_short_line() -> TestResult:
 	return TestResult.new("fasteners: a flagged joint reads 'N of 3 flagged — <short>', no paragraph",
 		not joint.is_empty() and text == "%d of 3 flagged — %s" % [joint.size(), joint[0].short],
 		"'%s'" % text)
+
+
+## The catalogue Frame sheet — what the vendor publishes for the FITTED frame — lives on the Frame
+## page, in the designer's Details drawer beside Structure, so the computed figures there have
+## something to disagree with. Breaks if the tab goes, or reads anything but FrameDetails' rows.
+static func _test_the_designer_drawer_carries_the_catalogue_sheet(catalog: PartsCatalog) -> TestResult:
+	var frame := catalog.get_part(REFERENCE_FRAME)
+	var drawer := FrameNumbersDrawer.new()
+	drawer.show_catalogue(frame)
+	var titles: Array = []
+	for child in drawer.find_children("*", "Control", true, false):
+		if child.get_parent() is TabContainer:
+			titles.append(str(child.name))
+	var ok := titles.has("Structure") and titles.has("Catalogue") \
+		and drawer.catalogue_text("mass_g") == FrameDetails.published(frame, "mass_g") \
+		and drawer.catalogue_text("mass_g") == "%.0f g" % float(frame["mass_g"]) \
+		and drawer.catalogue_text("provenance") == "Catalog"
+	var got := "tabs %s, mass '%s'" % [titles, drawer.catalogue_text("mass_g")]
+	drawer.free()
+	return TestResult.new("designer drawer: a Catalogue tab shows the fitted frame's published sheet",
+		ok, got)

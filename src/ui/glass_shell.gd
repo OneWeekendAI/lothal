@@ -1814,6 +1814,8 @@ func _show_page(row: Dictionary) -> void:
 			"frame":
 				_workbench.visible = true
 				_on_frame_edited(_workbench.editor.document)
+				# The fitted frame's published sheet, in the designer's Catalogue tab.
+				_workbench.numbers.show_catalogue(lab.current_build().frame)
 			"field":
 				_field.visible = true
 				# The span of the build as it stands NOW — `set_power_room_open`'s posture.
@@ -2008,6 +2010,8 @@ func _refresh_list() -> void:
 	}
 	_section_list.show_section(_focused_name(),
 		SectionRows.rows(_focused_name(), build, warnings, context))
+	if _workbench != null and _workbench.visible:
+		_workbench.numbers.show_catalogue(build.frame)
 	_section_list.set_open_row(_page.get("id", &"") if not _page.is_empty() else &"")
 
 

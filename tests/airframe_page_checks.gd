@@ -19,6 +19,10 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 	out.append(_hardware_row_carries_the_joint_verdict(shell))
 	out.append(_layout_row_reads_the_assembled_airframe(shell))
 	out.append_array(await _an_edit_in_the_designer_reaches_the_row(shell, tree))
+	shell.open_row(&"frame")
+	await _settle(tree)
+	out.append(_the_frame_page_carries_the_fitted_catalogue_sheet(shell))
+	shell.back_to_drone()
 	shell.back_to_drone()
 	shell.select_system_by_name("Propulsion")
 	await _settle(tree)
@@ -86,3 +90,13 @@ static func _an_edit_in_the_designer_reaches_the_row(shell: GlassShell, tree: Sc
 	shell.workbench().document_changed.emit(before)
 	await _settle(tree)
 	return out
+
+
+static func _the_frame_page_carries_the_fitted_catalogue_sheet(shell: GlassShell) -> TestResult:
+	var frame: Dictionary = shell.lab.current_build().frame
+	var drawer := shell.workbench().numbers
+	return TestResult.new("airframe dock: the Frame page's Catalogue tab shows the fitted frame",
+		drawer.catalogue_text("mass_g") == FrameDetails.published(frame, "mass_g")
+			and drawer.catalogue_text("frame_type") == FrameDetails.published(frame, "frame_type"),
+		"tab '%s' / fitted '%s'" % [drawer.catalogue_text("mass_g"),
+			FrameDetails.published(frame, "mass_g")])

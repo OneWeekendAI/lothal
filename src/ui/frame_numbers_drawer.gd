@@ -28,6 +28,11 @@ var structure := StructureDetails.new()
 var arms := ArmsDetails.new()
 var fasteners := FastenersDetails.new()
 var layout := LayoutDetails.new()
+## The FITTED frame's published sheet (FrameDetails' rows) — what the vendor claims, beside the
+## computed tabs so they have something to disagree with. It moved here from the Layout & fit page,
+## where it was parked with nothing to do with layout.
+var catalogue := GridContainer.new()
+var _catalogue_values: Dictionary = {}
 
 var materials := FrameMaterials.load_default()
 
@@ -79,6 +84,19 @@ func _init() -> void:
 	arms.name = "Arms"
 	fasteners.name = "Fasteners"
 	layout.name = "Layout"
+	catalogue.name = "Catalogue"
+	catalogue.columns = 2
+	catalogue.add_theme_constant_override("h_separation", LothalTheme.SPACE_4)
+	for row in FrameDetails.SPEC_ROWS:
+		var caption := Label.new()
+		caption.text = str(row["label"])
+		caption.theme_type_variation = &"MutedLabel"
+		catalogue.add_child(caption)
+		var value := Label.new()
+		value.text = "—"
+		catalogue.add_child(value)
+		_catalogue_values[str(row["key"])] = value
+	_tabs.add_child(catalogue)
 	add_child(_tabs)
 
 
@@ -110,6 +128,17 @@ func show_document(document: AirframeDocument) -> void:
 	_stale = true
 	if _tabs.visible:
 		_render_tabs()
+
+
+## The fitted frame's published rows, for the Catalogue tab. `{}` dashes them.
+func show_catalogue(frame: Dictionary) -> void:
+	for key in _catalogue_values:
+		(_catalogue_values[key] as Label).text = FrameDetails.published(frame, str(key)) \
+			if not frame.is_empty() else "—"
+
+
+func catalogue_text(key: String) -> String:
+	return (_catalogue_values[key] as Label).text if _catalogue_values.has(key) else "(missing)"
 
 
 func _on_toggled(open: bool) -> void:
