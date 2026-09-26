@@ -18,7 +18,7 @@ extends RefCounted
 ## ## Rows whose number is not wired
 ##
 ## Where no computed number is readily available the third line is EMPTY rather than invented
-## (the brief: "do not invent numbers"). Today: Harness, Flight
+## (the brief: "do not invent numbers"). Today: Flight
 ## controller (no board publishes a port count), Receiver, Tune, Printed parts and Course. Their
 ## warnings still reach line 3 through `item`, so an empty line 3 means "nothing wrong and no number
 ## yet", not "unchecked".
@@ -375,6 +375,13 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			if continuous <= 0.0:
 				return ""
 			return "%d%% headroom" % roundi(build.esc_channel_headroom_a() / continuous * 100.0)
+		&"harness":
+			# The worst lead drop: the trunk at a fresh pack's full-throttle draw (PowerFigures), `~`
+			# because the lead lengths are class defaults and the plug's resistance a guess.
+			if build.harness == null:
+				return ""
+			return "~%.2f V lost in leads at %d A" % [PowerFigures.harness_drop_v(build),
+				roundi(PowerFigures.worst_draw_a(build))]
 		&"camera":
 			var tilt := float(build.assembly_value(AssemblyTweaks.CAMERA_TILT)) \
 				if build.assembly.has(AssemblyTweaks.CAMERA_TILT) else -1.0
@@ -439,6 +446,27 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 				return [["Added mass", "none fitted"], ["Roll inertia", "—"]]
 			return [["Added mass", "+%d g" % roundi(grams)],
 				["Roll inertia", "+%d%%" % roundi(PropulsionFigures.guard_roll_inertia_fraction(build) * 100.0)]]
+		&"battery":
+			# The worst case (a fresh pack at the throttle ceiling) against the pack's rating, and
+			# what that draw costs in volts — the two things the sag chart is about.
+			return [["Full-throttle draw", "%d A of %d A" % [roundi(PowerFigures.worst_draw_a(build)),
+					roundi(PowerFigures.pack_limit_a(build))]],
+				["Sag at full throttle", "−%.1f V" % PowerFigures.worst_sag_v(build)]]
+		&"esc":
+			var channel := PowerFigures.esc_channel(build)
+			var rating := float(channel["rating"])
+			if rating <= 0.0:
+				return [["Headroom per channel", "—"], ["Motors' max per channel", "—"]]
+			return [["Headroom per channel", "%d A · %d%%" % [roundi(float(channel["headroom"])),
+					roundi(float(channel["headroom"]) / rating * 100.0)]],
+				["Motors' max per channel", "%d A of %d A" % [roundi(float(channel["motor_max"])),
+					roundi(rating)]]]
+		&"harness":
+			if build.harness == null:
+				return [["Lead drop, full throttle", "—"], ["Harness mass", "—"]]
+			return [["Lead drop, full throttle", "~%.2f V at %d A" % [PowerFigures.harness_drop_v(build),
+					roundi(PowerFigures.worst_draw_a(build))]],
+				["Harness mass", "~%d g" % roundi(PowerFigures.harness_mass_g(build))]]
 	return []
 
 

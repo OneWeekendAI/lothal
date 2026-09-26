@@ -17,7 +17,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio", "spectrum",
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
-	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "airframe page", "propulsion page",
+	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "airframe page", "propulsion page", "power page",
 	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "dock", "camera view", "part finder",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config motor map", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
@@ -142,6 +142,8 @@ func _run_suite(suite_name: String) -> Array:
 		"airframe page": return TestAirframePage.run()
 		# Lab dock, Propulsion section: the shared figures behind rows, page numbers and charts.
 		"propulsion page": return TestPropulsionPage.run()
+		# Lab dock, Power section: the shared figures behind rows, page numbers and charts.
+		"power page": return TestPowerPage.run()
 		"camera view": return TestCameraView.run()
 		# QC3: the dock lost nothing — every action the three retired clusters offered, by name.
 		"dock": return TestDock.run()

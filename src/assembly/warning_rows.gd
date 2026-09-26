@@ -106,7 +106,7 @@ const TABLE := {
 	&"esc_burst_below_continuous": [ESC, "burst rating below continuous"],
 	&"esc_whole_board_rating": [ESC, "rating may be whole-board"],
 	&"harness_ampacity": [HARNESS, "{ampacity}"],
-	&"harness_voltage_drop": [HARNESS, "leads drop voltage"],
+	&"harness_voltage_drop": [HARNESS, "{lead_drop}"],
 	&"connector_rating": [HARNESS, "{connector_rating}"],
 	&"connector_mismatch": [HARNESS, "{connector_mismatch}"],
 	&"capacitor_rule": [HARNESS, "capacitor advised"],
@@ -185,7 +185,8 @@ static func _format(template: String, v: Dictionary) -> String:
 			var who: String = {"battery": "pack", "esc": "ESC"}.get(str(v.get("limited_by", "")), "motor")
 			return "%s limits you to %d%% throttle" % [who, _pct(v.get("throttle_cap", 1.0))]
 		"{pack_sag}":
-			return "sag: %d%% of bench thrust" % _pct(v.get("usable_fraction", 1.0))
+			# The share of the nominal-volts (bench) thrust the sagging pack can still reach.
+			return "sag cuts max thrust to %d%%" % _pct(v.get("usable_fraction", 1.0))
 		"{prop_clearance}":
 			return "props exceed %.1f\" clearance" % float(v.get("max_prop_inches", 0.0))
 		"{motor_mount}":
@@ -218,6 +219,9 @@ static func _format(template: String, v: Dictionary) -> String:
 		"{ampacity}":
 			return "%s: %d AWG over its rating" % [str(v.get("segment", "lead")),
 				int(v.get("awg", 0))]
+		"{lead_drop}":
+			# `~`: class-typical lead lengths and a guessed contact resistance (HarnessChecks).
+			return "~%.2f V lost in main lead + plug" % float(v.get("harness_drop_v", 0.0))
 		"{connector_rating}":
 			return "plug rated %d A" % roundi(float(v.get("rating_a", 0.0)))
 		"{connector_mismatch}":

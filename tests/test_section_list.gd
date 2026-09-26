@@ -229,7 +229,7 @@ static func _airframe_page_numbers(build: Build) -> Array:
 		layout == [["Closest to a prop", "pack · 9 mm"], ["Pack, each side", "12 mm clear"]],
 		str(layout)))
 	out.append(TestResult.new("page numbers: a row with no page numbers gets none, not placeholders",
-		SectionRows.page_numbers(&"battery", build, context).is_empty(), ""))
+		SectionRows.page_numbers(&"fc", build, context).is_empty(), ""))
 	return out
 
 
@@ -297,8 +297,9 @@ static func _esc_row(rows: Array) -> TestResult:
 
 static func _harness_row(rows: Array) -> TestResult:
 	var row := _row(rows, &"harness")
-	return TestResult.new("section rows: Harness reads the main lead gauge (no number wired yet)",
-		str(row.get("choice")).contains(" AWG") and row.get("number") == "", _show(row))
+	return TestResult.new("section rows: Harness reads the main lead gauge and the worst lead drop",
+		str(row.get("choice")).contains(" AWG") and str(row.get("number")).begins_with("~")
+			and str(row.get("number")).contains(" V lost in leads at "), _show(row))
 
 
 static func _fc_row(rows: Array) -> TestResult:

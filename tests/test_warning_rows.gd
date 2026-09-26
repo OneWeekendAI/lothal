@@ -26,6 +26,7 @@ static func run() -> Array:
 	results.append(_motor_current_limit_goes_on_motors())
 	results.append(_the_short_is_computed_from_the_values())
 	results.append(_climb_short_says_what_it_means())
+	results.append(_lead_drop_short_quotes_the_volts())
 	results.append(_long_is_the_message())
 	results.append(_severity_is_carried())
 	results.append(_an_unknown_id_has_no_item())
@@ -113,7 +114,7 @@ static func _motor_current_limit_goes_on_motors() -> TestResult:
 static func _the_short_is_computed_from_the_values() -> TestResult:
 	var w := BuildWarning.limiting(&"pack_sag", "x", {"usable_fraction": 0.614})
 	return TestResult.new("warning rows: a short quotes the warning's own number",
-		w.short == "sag: 61% of bench thrust", "short='%s'" % w.short)
+		w.short == "sag cuts max thrust to 61%", "short='%s'" % w.short)
 
 
 ## "climbs at 10.4 g" read as a speed or a mass to a beginner. The figure is (T:W - 1): the thrust
@@ -123,6 +124,14 @@ static func _climb_short_says_what_it_means() -> TestResult:
 	return TestResult.new("warning rows: the climb short says spare thrust in weights, plainly",
 		w.short == "spare thrust = 10.4× its own weight" and w.short.length() <= WarningRows.SHORT_MAX,
 		"short='%s'" % w.short)
+
+
+## "leads drop voltage" said nothing a builder could weigh: the short quotes the drop itself, marked
+## ~ (class-typical lead lengths and a guessed contact resistance).
+static func _lead_drop_short_quotes_the_volts() -> TestResult:
+	var w := BuildWarning.characteristic(&"harness_voltage_drop", "x", {"harness_drop_v": 0.2896})
+	return TestResult.new("warning rows: the lead-drop short quotes its volts, marked ~",
+		w.short == "~0.29 V lost in main lead + plug", "short='%s'" % w.short)
 
 
 static func _long_is_the_message() -> TestResult:
