@@ -18,7 +18,7 @@ extends RefCounted
 ## ## Rows whose number is not wired
 ##
 ## Where no computed number is readily available the third line is EMPTY rather than invented
-## (the brief: "do not invent numbers"). Today: Screws & standoffs, Layout & fit, Harness, Flight
+## (the brief: "do not invent numbers"). Today: Harness, Flight
 ## controller (no board publishes a port count), Receiver, Tune, Printed parts and Course. Their
 ## warnings still reach line 3 through `item`, so an empty line 3 means "nothing wrong and no number
 ## yet", not "unchecked".
@@ -99,7 +99,9 @@ const DEFINITIONS := {
 ##
 ## `warnings` is every warning the caller holds about this build — `Build.warnings()` plus the
 ## airframe model's fit checks — and each row takes only the ones whose `item` is its own id.
-## `context` carries what a Build does not know: `site`, `course` and `conditions` names.
+## `context` carries what a Build does not know: `site`, `course` and `conditions` names; the
+## `frame_document` (AirframeDocument) Screws & standoffs reads; and `prop_clearance`
+## (`AirframeModel.closest_to_prop()`), Layout & fit's number.
 static func rows(section: String, build: Build, warnings: Array = [],
 		context: Dictionary = {}) -> Array:
 	var out: Array = []
@@ -202,7 +204,7 @@ static func choice_of(id: StringName, build: Build, context: Dictionary = {}) ->
 		&"arms":
 			return str((build.frame.get("catalog", {}) as Dictionary).get("material", ""))
 		&"hardware":
-			return "derived from the frame"
+			return FrameHardware.choice(context.get("frame_document") as AirframeDocument)
 		&"layout":
 			var stack := str((build.frame.get("specs", {}) as Dictionary).get("stack_mount", ""))
 			return "stack %s" % stack if stack != "" else ""
@@ -308,8 +310,22 @@ static func _component_name(build: Build, category: String) -> String:
 # Line 3 — the one number that decides the row (computed, never copied from a catalogue)
 # ---------------------------------------------------------------------------
 
-static func number_of(id: StringName, build: Build, _context: Dictionary = {}) -> String:
+static func number_of(id: StringName, build: Build, context: Dictionary = {}) -> String:
 	match id:
+		&"hardware":
+			# Geometry times density over the hardware the frame document derives (airframe.md §5)
+			# — the preset's GUESS at the bag, not the bag you own, so it carries its `~`.
+			var document := context.get("frame_document") as AirframeDocument
+			var grams := FrameHardware.mass_g(document, AirframePanel.materials()) \
+				if document != null else 0.0
+			return "~%d g hardware" % roundi(grams) if grams > 0.0 else ""
+		&"layout":
+			# The part closest to a prop disc, measured off the assembled airframe
+			# (`AirframeModel.closest_to_prop`). Inside a disc, the impossible warning says it.
+			var closest: Dictionary = context.get("prop_clearance", {})
+			if closest.is_empty():
+				return ""
+			return "%s %d mm from a prop" % [str(closest["part"]), roundi(float(closest["mm"]))]
 		&"frame":
 			return "%d g" % roundi(float(build.frame.get("mass_g", 0.0))) \
 				if not build.frame.is_empty() else ""

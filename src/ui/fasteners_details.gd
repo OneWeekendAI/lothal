@@ -38,47 +38,14 @@ func _init() -> void:
 	super(SPEC_ROWS)
 
 
-## Every hardware item of one kind, from the generated document.
+## Every hardware item of one kind, from the generated document. The arithmetic is FrameHardware's,
+## shared with the Lab list's Screws & standoffs row so the two cannot disagree.
 func _items_of_kind(kind: String) -> Array:
-	var out: Array = []
-	if _document == null:
-		return out
-	for item in _document.hardware:
-		if str(item.get("kind", "")) == kind:
-			out.append(item)
-	return out
-
-
-## Grams of one hardware item, through HardwareMass and never through a table. The density comes
-## from FrameMaterials by the item's own `material_id`, so an aluminium standoff and a titanium one
-## differ here without anything in this file knowing the difference.
-func _item_mass_g(item: Dictionary) -> float:
-	var density := materials().density(str(item.get("material_id", "")))
-	if density <= 0.0:
-		return 0.0
-	match str(item.get("kind", "")):
-		"standoff_round":
-			return HardwareMass.standoff_round_mass_g(
-				float(item.get("outer_d_mm", 0.0)), float(item.get("bore_d_mm", 0.0)),
-				float(item.get("length_mm", 0.0)), density)
-		"standoff_hex":
-			return HardwareMass.standoff_hex_mass_g(
-				float(item.get("across_flats_mm", 0.0)), float(item.get("bore_d_mm", 0.0)),
-				float(item.get("length_mm", 0.0)), density)
-		"screw":
-			return HardwareMass.screw_mass_g(
-				float(item.get("thread_d_mm", 0.0)), float(item.get("shank_len_mm", 0.0)),
-				float(item.get("head_d_mm", 0.0)), float(item.get("head_h_mm", 0.0)), density)
-	return 0.0
+	return FrameHardware.items_of_kind(_document, kind)
 
 
 func _total_hardware_mass_g() -> float:
-	var total := 0.0
-	if _document == null:
-		return total
-	for item in _document.hardware:
-		total += _item_mass_g(item)
-	return total
+	return FrameHardware.mass_g(_document, materials())
 
 
 func row_text(key: String) -> String:
@@ -182,45 +149,10 @@ func row_text(key: String) -> String:
 	return super(key)
 
 
-## The §5.3 checks for the frame's motor joint, measured off the frame.
-##
-## THE EDGE MARGIN IS NOW MEASURED, NOT DERIVED. It used to be half of
-## `AirframeDocument.MOUNT_EDGE_MARGIN_MM` — the padding the preset generator puts around a motor
-## pad — which is exactly right for a generated preset and says nothing whatsoever about a frame
-## somebody drew, where the margin is wherever they put the hole. `PolygonProps.distance_to_boundary`
-## measures from the real bolt hole to the real outline, which is what `HardwareMass` asked for in
-## the first place.
-func _joint_warnings(screws: Array) -> Array[BuildWarning]:
-	var empty: Array[BuildWarning] = []
-	var arm_t := _arm_thickness_mm()
-	if screws.is_empty() or arm_t <= 0.0:
-		return empty
-	var edge_distance := _motor_hole_edge_distance_mm()
-	if edge_distance <= 0.0:
-		return empty
-	var screw: Dictionary = screws[0]
-	return HardwareMass.joint_warnings(
-		float(screw.get("shank_len_mm", 0.0)),
-		float(screw.get("thread_d_mm", 0.0)),
-		arm_t, arm_t, edge_distance)
-
-
-## The thinnest bolt hole margin on the arm: for every hole in the first arm plate, the distance
-## from the hole's centre to the plate's outline. The worst one is the one that tears out.
-func _motor_hole_edge_distance_mm() -> float:
-	var plates := arm_plates()
-	if plates.is_empty():
-		return 0.0
-	var plate: Dictionary = plates[0]
-	var outline := AirframeDocument.plate_outline(plate)
-	var holes := AirframeDocument.plate_holes(plate)
-	if outline.size() < 3 or holes.is_empty():
-		return 0.0
-	var worst := INF
-	for hole in holes:
-		var centre := PolygonProps.centroid(hole)
-		worst = minf(worst, PolygonProps.distance_to_boundary(outline, centre))
-	return 0.0 if worst == INF else worst
+## The §5.3 checks for the frame's motor joint — `FrameHardware.joint_warnings`, the same list the
+## Lab list's row reads.
+func _joint_warnings(_screws: Array) -> Array[BuildWarning]:
+	return FrameHardware.joint_warnings(_document)
 
 
 ## The stock the structural (non-arm) plates are cut from. The thinnest, because the stack sandwich
@@ -238,10 +170,6 @@ func _structural_plate_thickness_mm() -> float:
 	return 0.0 if thinnest == INF else thinnest
 
 
-## The stock the arms are cut from — the plate a motor screw threads into, which is the joint that
-## carries every newton the motor makes.
+## The stock the arms are cut from — the plate a motor screw threads into.
 func _arm_thickness_mm() -> float:
-	var plates := arm_plates()
-	if plates.is_empty():
-		return 0.0
-	return AirframeDocument.plate_thickness_mm(plates[0])
+	return FrameHardware.arm_thickness_mm(_document)

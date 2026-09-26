@@ -25,6 +25,7 @@ static func run() -> Array:
 	results.append(_frame_row(build, rows["Airframe"]))
 	results.append(_arms_row(rows["Airframe"]))
 	results.append(_hardware_row_leaves_its_number_empty(rows["Airframe"]))
+	results.append_array(_airframe_geometry_rows(build, warnings, context))
 	results.append(_layout_row(build, rows["Airframe"]))
 	results.append(_straps_row_is_soon(rows["Airframe"]))
 	results.append(_airframe_has_no_drone_row())
@@ -94,8 +95,74 @@ static func _arms_row(rows: Array) -> TestResult:
 
 static func _hardware_row_leaves_its_number_empty(rows: Array) -> TestResult:
 	var row := _row(rows, &"hardware")
-	return TestResult.new("section rows: Screws & standoffs has no number wired, and invents none",
+	return TestResult.new("section rows: Screws & standoffs without a frame document invents no number",
 		row.get("number") == "" and row.get("page") == {"panels": ["Fasteners"]}, _show(row))
+
+
+## The rows that read the drawn geometry — the frame document and the assembled airframe — which
+## the shell passes in `context` because a Build does not carry them.
+static func _airframe_geometry_rows(build: Build, warnings: Array, context: Dictionary) -> Array:
+	var out: Array = []
+	var document := AirframeDocument.from_catalog_frame(build.frame)
+	var airframe := AirframeModel.new()
+	airframe.rebuild(build)
+	var closest := airframe.closest_to_prop()
+	var ctx := context.duplicate()
+	ctx["frame_document"] = document
+	ctx["prop_clearance"] = closest
+	var rows := SectionRows.rows("Airframe", build, warnings, ctx)
+	var fasteners := FastenersDetails.new()
+	fasteners.render(document)
+
+	var hardware := _row(rows, &"hardware")
+	out.append(TestResult.new("section rows: Screws & standoffs names the thread and the standoffs",
+		hardware.get("choice") == "M3 · 4 standoffs", _show(hardware)))
+	var page_mass := float(fasteners.row_text("hardware_mass").split(" ")[0])
+	out.append(TestResult.new(
+		"section rows: Screws & standoffs quotes the page's hardware mass, as a ~ estimate",
+		page_mass > 0.0 and hardware.get("number") == "~%d g hardware" % roundi(page_mass),
+		_show(hardware) + " page '%s'" % fasteners.row_text("hardware_mass")))
+
+	# The page and the row read ONE joint check: what the page counts is what the list gets.
+	var joint := FrameHardware.joint_warnings(document)
+	out.append(TestResult.new("section rows: the Fasteners page counts FrameHardware's joint warnings",
+		fasteners.row_text("checks").begins_with("3 of 3 pass") == joint.is_empty(),
+		"page '%s' joint=%d" % [fasteners.row_text("checks").left(40), joint.size()]))
+	# A hole 1.9 mm from the edge of a 3 mm-screw plate — the Quad X preset's own motor pad.
+	var with_joint: Array = warnings.duplicate()
+	with_joint.append(HardwareMass.hole_to_edge_warning(1.9, 3.0))
+	var flagged := _row(SectionRows.rows("Airframe", build, with_joint, ctx), &"hardware")
+	out.append(TestResult.new("section rows: a flagged bolted joint turns Screws & standoffs amber",
+		flagged.get("status") == SectionRows.WARN
+			and flagged.get("line3") == "⚠ hole too close to the edge", _show(flagged)))
+
+	out.append(TestResult.new("section rows: the closest part to a prop on the reference is the pack, 9 mm",
+		closest.get("part") == "pack" and roundi(float(closest.get("mm", -1.0))) == 9, str(closest)))
+	var layout := _row(rows, &"layout")
+	out.append(TestResult.new("section rows: Layout & fit quotes the worst clearance to a prop in mm",
+		layout.get("number") == "pack 9 mm from a prop" and layout.get("status") == SectionRows.OK,
+		_show(layout)))
+
+	var tight := AirframeModel.prop_clearance_warning({"part": "antenna", "mm": 3.2})
+	out.append(TestResult.new("section rows: 3 mm from a prop is a LIMITING warning on Layout & fit",
+		tight != null and tight.severity == BuildWarning.Severity.LIMITING
+			and tight.item == &"layout" and tight.short == "antenna 3 mm from a prop disc",
+		"%s" % (tight.short if tight != null else "null")))
+	out.append(TestResult.new("section rows: 9 mm from a prop is not tight",
+		AirframeModel.prop_clearance_warning({"part": "pack", "mm": 9.0}) == null, ""))
+	out.append(TestResult.new(
+		"section rows: inside the disc is left to the impossible warning, not repeated as tight",
+		AirframeModel.prop_clearance_warning({"part": "pack", "mm": -2.0}) == null, ""))
+	var tight_list: Array = warnings.duplicate()
+	tight_list.append(tight)
+	var tight_row := _row(SectionRows.rows("Airframe", build, tight_list, ctx), &"layout")
+	out.append(TestResult.new("section rows: a tight clearance turns Layout & fit amber and says so",
+		tight_row.get("status") == SectionRows.WARN
+			and tight_row.get("line3") == "⚠ antenna 3 mm from a prop disc", _show(tight_row)))
+
+	fasteners.free()
+	airframe.free()
+	return out
 
 
 static func _layout_row(build: Build, rows: Array) -> TestResult:

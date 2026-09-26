@@ -725,6 +725,48 @@ func battery_fit_warnings() -> Array[BuildWarning]:
 	return out
 
 
+## Below this many millimetres between a part and a propeller disc, the fit is TIGHT. A GUESS, not a
+## published figure: a 5" prop flexes a few mm under load and a strapped pack slips a few mm in a
+## crash, so a gap smaller than that is one hard landing from a strike. Labelled here so it can be
+## replaced by a measured value (existence before precision).
+const TIGHT_PROP_CLEARANCE_MM := 5.0
+
+
+## The part that comes closest to any propeller disc, in plan view: `{part, mm}` — the pack or one
+## of the fitted components, measured by the SAME `footprint_prop_clearance_m` their fit warnings
+## use. Negative mm is inside a disc. `{}` before anything is assembled.
+##
+## This is the Lab list's "Layout & fit" number (lab dock design §4: "worst clearance in mm").
+func closest_to_prop() -> Dictionary:
+	if propeller_meshes.is_empty():
+		return {}
+	var best := {}
+	if battery_mesh != null:
+		best = {"part": "pack", "mm": battery_prop_clearance_m() * 1000.0}
+	for category in Build.OPTIONAL_COMPONENTS:
+		if not component_meshes.has(category):
+			continue
+		var mm := footprint_prop_clearance_m(component_bounds_m(category)) * 1000.0
+		if best.is_empty() or mm < float(best["mm"]):
+			best = {"part": _component_label(category), "mm": mm}
+	return best
+
+
+## The warning a TIGHT but clear gap earns (`closest_to_prop`'s shape), or null. Null inside the
+## disc too: that is `pack_in_prop_disc` / `component_in_prop_disc`, IMPOSSIBLE, already said.
+static func prop_clearance_warning(closest: Dictionary) -> BuildWarning:
+	if closest.is_empty():
+		return null
+	var mm := float(closest.get("mm", INF))
+	if mm < 0.0 or mm >= TIGHT_PROP_CLEARANCE_MM:
+		return null
+	var part := str(closest.get("part", "part"))
+	return BuildWarning.limiting(&"tight_prop_clearance",
+		"The %s clears a propeller disc by %.0f mm. It fits, but a prop flexes a few millimetres under load and a strapped part slips in a crash, so under %.0f mm is one hard landing from a strike (%.0f mm is a guess, not a published figure)." % [
+			part, mm, TIGHT_PROP_CLEARANCE_MM, TIGHT_PROP_CLEARANCE_MM],
+		{"part": part, "clearance_mm": mm, "tight_mm": TIGHT_PROP_CLEARANCE_MM})
+
+
 # ---------------------------------------------------------------------------
 # Do the components fit?
 # ---------------------------------------------------------------------------

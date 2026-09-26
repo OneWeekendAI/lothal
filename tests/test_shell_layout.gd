@@ -367,6 +367,7 @@ static func run(tree: SceneTree) -> Array:
 
 	# THE LAB DOCK: the list, the pages, Back and Esc, collapse, and every row reaching its page.
 	results.append_array(await LabDockChecks.run(shell, tree, WINDOW))
+	results.append_array(await AirframePageChecks.run(shell, tree, WINDOW))
 
 	# AND ESC OUT OF A PAGE. Asserted last: it leaves the stage on the drone.
 	shell.open_row(&"motors")

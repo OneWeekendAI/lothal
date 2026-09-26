@@ -75,6 +75,7 @@ const TABLE := {
 	&"component_larger_than_plate": [LAYOUT, "a part is larger than the plate"],
 	&"components_overlap": [LAYOUT, "two parts overlap"],
 	&"pack_wider_than_plate": [LAYOUT, "pack is wider than the plate"],
+	&"tight_prop_clearance": [LAYOUT, "{tight_clearance}"],
 	# Propulsion
 	&"prop_clearance": [PROPELLERS, "{prop_clearance}"],
 	&"prop_overlap": [PROPELLERS, "props overlap each other"],
@@ -201,6 +202,9 @@ static func _format(template: String, v: Dictionary) -> String:
 			return "hovers at %d%% — little headroom" % _pct(v.get("hover_throttle", 0.0))
 		"{prop_unloading}":
 			return "%d%% thrust left at top speed" % _pct(v.get("thrust_fraction_at_top_speed", 0.0))
+		"{tight_clearance}":
+			return "%s %d mm from a prop disc" % [str(v.get("part", "part")),
+				roundi(float(v.get("clearance_mm", 0.0)))]
 		"{cg_off_axis}":
 			return "CG %.1f mm off the axis" % float(v.get("offset_mm", 0.0))
 		"{directional}":

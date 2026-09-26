@@ -309,6 +309,8 @@ var _page: Dictionary = {}
 ## True while the list is folded to its strip because the open room page needs its width — see
 ## `_fold_list_for_room`. Not saved: it is the room's need, not the builder's preference.
 var _list_folded_for_page := false
+## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
+var _list_refresh_queued := false
 ## The builder unfolded the strip while such a room was up; respected until the page closes.
 var _fold_declined := false
 ## Dry · AUW · T:W · Flight, in the top bar (§2) — the whole build's numbers, said once.
@@ -1606,6 +1608,9 @@ func _room_key(room: Control) -> String:
 
 func _on_frame_edited(document: AirframeDocument) -> void:
 	lab.frame_document = document
+	# The Airframe rows read this document (Screws & standoffs, the frame's own checks), so an edit
+	# in the designer reaches the list — once per frame, however many drag events arrived in it.
+	_queue_list_refresh()
 	# ONLY WHEN SOMEBODY CAN SEE THEM. The room's own drawer renders the same four panels against
 	# the same document, and in Airframe the shell's inspector is hidden — so rendering these too
 	# would be four tab-fulls of rows rebuilt on every mouse motion of a vertex drag, for text that
@@ -1954,6 +1959,20 @@ func set_list_collapsed(collapsed: bool) -> void:
 		_section_list.set_collapsed(collapsed, true)
 
 
+## Asks for one `_refresh_list` at the end of this frame. Coalesced: a vertex drag publishes an
+## edit per mouse motion, and the list only needs the last of them.
+func _queue_list_refresh() -> void:
+	if _list_refresh_queued:
+		return
+	_list_refresh_queued = true
+	_run_queued_list_refresh.call_deferred()
+
+
+func _run_queued_list_refresh() -> void:
+	_list_refresh_queued = false
+	_refresh_list()
+
+
 ## Rebuilds the focused section's rows from the build as it stands.
 func _refresh_list() -> void:
 	if _section_list == null or lab == null:
@@ -1969,7 +1988,18 @@ func _refresh_list() -> void:
 		warnings.append_array(lab.airframe.mount_warnings())
 		warnings.append_array(lab.airframe.battery_fit_warnings())
 		warnings.append_array(lab.airframe.component_fit_warnings())
+		var tight := AirframeModel.prop_clearance_warning(lab.airframe.closest_to_prop())
+		if tight != null:
+			warnings.append(tight)
+	# WHAT THE AIRFRAME PAGES FLAG, THE ROWS SAY: the bolted-joint checks the Screws & standoffs
+	# page runs and the drawn frame's own checks, off the same document those pages render.
+	if lab.frame_document != null and _focused_name() == "Airframe":
+		warnings.append_array(FrameHardware.joint_warnings(lab.frame_document))
+		warnings.append_array(FrameWarnings.of(lab.frame_document,
+			AirframeProperties.compute(lab.frame_document, AirframePanel.materials())))
 	var context := {
+		"frame_document": lab.frame_document,
+		"prop_clearance": lab.airframe.closest_to_prop() if lab.airframe != null else {},
 		"site": rooms.site_of_selected_course().site_name if rooms.site_of_selected_course() != null
 			else "",
 		"course": rooms.course_library.selected().course_name
