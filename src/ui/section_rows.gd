@@ -19,8 +19,9 @@ extends RefCounted
 ##
 ## Where no computed number is readily available the third line is EMPTY rather than invented
 ## (the brief: "do not invent numbers"). Today: Receiver & link (no receiver publishes an output
-## power or a sensitivity, so a range would be invented), Printed parts and Course; and Tune until
-## the shell hands it the tune in force (`context.tune`). Their
+## power or a sensitivity, so a range would be invented), Printed parts and Course; Tune until
+## the shell hands it the tune in force (`context.tune`); and Camera until it hands the drawn
+## airframe's lens clearances (`context.camera_view`). Their
 ## warnings still reach line 3 through `item`, so an empty line 3 means "nothing wrong and no number
 ## yet", not "unchecked".
 
@@ -81,10 +82,16 @@ const DEFINITIONS := {
 		{"id": &"tune", "name": "Tune", "page": {"panels": ["Tune"], "diagram": "tune"}},
 	],
 	"Video": [
+		# `diagram`: VideoDiagram's modes — the camera in side view against the frame and the prop
+		# discs, and where the transmitter and antenna are weighed against the centre of mass. The
+		# Electronics rail (the only place these parts are picked) stands over the page's sheet.
+		# The Camera page's sheet is the Camera panel (the tilt and the camera's rows); the VTX
+		# page's is the Electronics sheet cut to the transmitter and antenna (`sheet`).
 		{"id": &"camera", "name": "Camera",
-			"page": {"panels": ["Camera", "Electronics"], "column": "Electronics"}},
+			"page": {"panels": ["Camera"], "column": "Electronics", "diagram": "camera"}},
 		{"id": &"vtx", "name": "VTX & antenna",
-			"page": {"panels": ["Electronics"], "column": "Electronics"}},
+			"page": {"panels": ["Electronics"], "column": "Electronics", "diagram": "vtx",
+				"sheet": "vtx"}},
 	],
 	# One row per generated part, expanded in `rows()` — the list is a function of the build.
 	"Printed": [
@@ -250,7 +257,7 @@ static func choice_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			var tune := context.get("tune") as RateTune
 			return "hand-tuned" if tune != null and tune.has_overrides() else "derived"
 		&"camera":
-			return _component_name(build, "camera")
+			return VideoFigures.camera_choice(build)
 		&"vtx":
 			return _component_name(build, "vtx")
 		&"motor_direction":
@@ -402,14 +409,13 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			var share := ControlFigures.d_ceiling_share(tune)
 			return "D at ~%d%% of noise ceiling" % roundi(share * 100.0) if share > 0.0 else ""
 		&"camera":
-			var tilt := float(build.assembly_value(AssemblyTweaks.CAMERA_TILT)) \
-				if build.assembly.has(AssemblyTweaks.CAMERA_TILT) else -1.0
-			return "tilt %d°" % roundi(tilt) if tilt >= 0.0 else ""
+			# What comes nearest the lens axis — the frame's edge, or a fitted part nearer still —
+			# from the drawn airframe (`context.camera_view`). No lens angle is claimed.
+			return VideoFigures.nearest_text(context.get("camera_view", {}))
 		&"vtx":
-			var grams := 0.0
-			for category in ["vtx", "antenna"]:
-				grams += float((build.components.get(category, {}) as Dictionary).get("mass_g", 0.0))
-			return "%.1f g" % grams if grams > 0.0 else ""
+			var grams := VideoFigures.vtx_antenna_mass_g(build)
+			return "%.1f g with antenna" % grams if build.components.has("antenna") and grams > 0.0 \
+				else ("%.1f g · no antenna" % grams if grams > 0.0 else "")
 		&"motor_direction", &"ports", &"failsafe", &"rates":
 			return "✓"
 		&"site":
@@ -495,6 +501,23 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 					if figure != "" else "%d · count unpublished" % ControlFigures.serial_demand(build)],
 				["Gyro noise at the motors", "~%.1f%% at D %.3f" % [
 					ControlFigures.d_noise_fraction(build, tune) * 100.0, ControlFigures.installed_kd(tune)]]]
+		&"camera":
+			if not build.components.has("camera"):
+				return [["Nearest the lens axis", "no camera fitted"], ["Standing height", "—"]]
+			var nearest := VideoFigures.nearest_in_view(context.get("camera_view", {}))
+			var stands := VideoFigures.standing_mm(build)
+			var angle := "no outline to measure"
+			if not nearest.is_empty():
+				angle = "%s ~%d°" % [str(nearest["name"]), roundi(float(nearest["deg"]))] \
+					if float(nearest["deg"]) < 90.0 else "nothing ahead"
+			return [["Nearest the lens axis", angle],
+				["Stands at %d° (%.1f mm level)" % [roundi(VideoFigures.tilt_deg(build)),
+					float(stands["level"])], "%.1f mm" % float(stands["tipped"])]]
+		&"vtx":
+			var aft := VideoFigures.antenna_aft_of_com_mm(build)
+			return [["VTX + antenna", "%.1f g" % VideoFigures.vtx_antenna_mass_g(build)],
+				["Antenna behind CoM", "no antenna" if is_nan(aft) else ("~%d mm" % roundi(aft)
+					if aft >= 0.0 else "~%d mm ahead" % roundi(-aft))]]
 		&"receiver":
 			return [["Link mass", "%.1f g" % ControlFigures.link_mass_g(build)],
 				["UARTs it takes", "%d" % ControlFigures.link_uarts(build)]]

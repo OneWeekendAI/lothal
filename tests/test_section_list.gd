@@ -229,7 +229,7 @@ static func _airframe_page_numbers(build: Build) -> Array:
 		layout == [["Closest to a prop", "pack · 9 mm"], ["Pack, each side", "12 mm clear"]],
 		str(layout)))
 	out.append(TestResult.new("page numbers: a row with no page numbers gets none, not placeholders",
-		SectionRows.page_numbers(&"camera", build, context).is_empty(), ""))
+		SectionRows.page_numbers(&"printed", build, context).is_empty(), ""))
 	return out
 
 
@@ -339,8 +339,8 @@ static func _camera_row(rows: Array) -> TestResult:
 static func _vtx_row(rows: Array) -> TestResult:
 	var row := _row(rows, &"vtx")
 	return TestResult.new("section rows: VTX & antenna opens the Electronics page",
-		str(row.get("choice")) != "" and row.get("page") == {"panels": ["Electronics"],
-			"column": "Electronics"}, _show(row))
+		str(row.get("choice")) != "" and (row.get("page") as Dictionary).get("panels") == ["Electronics"]
+			and (row.get("page") as Dictionary).get("column") == "Electronics", _show(row))
 
 
 static func _printed_rows_are_one_per_part(build: Build, rows: Array) -> TestResult:

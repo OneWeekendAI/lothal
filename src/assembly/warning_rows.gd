@@ -121,7 +121,7 @@ const TABLE := {
 	&"d_noise_ceiling": [TUNE, "D limited by gyro noise"],
 	# Video
 	&"camera_tilt_into_top_plate": [CAMERA, "{camera_tilt}"],
-	&"camera_obstruction": [CAMERA, "view is obstructed"],
+	&"camera_obstruction": [CAMERA, "{camera_obstruction}"],
 	&"vtx_without_antenna": [VTX, "VTX has no antenna"],
 	# Config
 	&"motor_spin_unflyable": [MOTOR_DIRECTION, "motor directions cannot fly"],
@@ -227,6 +227,11 @@ static func _format(template: String, v: Dictionary) -> String:
 		"{connector_mismatch}":
 			return "plug %s, pack %s" % [str(v.get("lead_family", "?")),
 				str(v.get("pack_family", "?"))]
+		"{camera_obstruction}":
+			# The nearest fitted part and its angle — the same figure the Camera page's number reads
+			# (`VideoFigures`); `~` because the lens sits where MountLayout seats the camera.
+			return "%s ~%d° off lens axis" % [str(v.get("closest_name", "part")),
+				roundi(float(v.get("closest_deg", 0.0)))]
 		"{camera_tilt}":
 			return "tilt %d° hits the top plate" % roundi(float(v.get("tilt_deg", 0.0)))
 		"{field_air}":

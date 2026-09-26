@@ -575,6 +575,33 @@ func guard_ring_polygons_m() -> Dictionary:
 	return out
 
 
+## How far off the lens axis the airframe and each fitted part come, split the way the obstruction
+## warning reads them: `{frame_deg, fitted: [{name, deg}] nearest first, report}` — `frame_deg` the
+## plates' (the arms are these) nearest approach, INF with no plate outline (a moulded frame);
+## `fitted` every other obstruction (the guard rings). Empty with no camera fitted. The warning below
+## and the Camera page's numbers and drawing (`VideoFigures`) all read this one call.
+func camera_clearances() -> Dictionary:
+	var eye = camera_eye_m()
+	if eye == null:
+		return {}
+	var report := CameraView.off_axis_report(eye, camera_boresight(), camera_obstruction_points_m())
+	# The frame's own silhouette is the baseline. INF when there is no plate geometry at all — a
+	# moulded whoop — which is the right answer rather than a missing one: nothing of the airframe
+	# is in the picture to compare against, so anything fitted has nothing to beat.
+	var frame_deg := INF
+	var fitted: Array = []
+	for part_name in report:
+		var angle: float = report[part_name]
+		if str(part_name).begins_with("Plate"):
+			frame_deg = minf(frame_deg, angle)
+		else:
+			fitted.append({"name": part_name, "deg": angle})
+	# Sorted so the sentence names the most intrusive part rather than whichever one the dictionary
+	# happened to yield first — the order IS the finding.
+	fitted.sort_custom(func(a, b): return a["deg"] < b["deg"])
+	return {"frame_deg": frame_deg, "fitted": fitted, "report": report}
+
+
 ## What the fitted camera is looking past, in words — plans/2026-08-26-propulsion-room-design.md
 ## §5 P10c's check, in the vocabulary every other check here speaks.
 ##
@@ -608,23 +635,10 @@ func camera_view_warnings() -> Array[BuildWarning]:
 	if eye == null:
 		return out
 
-	var report := CameraView.off_axis_report(eye, camera_boresight(), camera_obstruction_points_m())
-
-	# The frame's own silhouette is the baseline. INF when there is no plate geometry at all — a
-	# moulded whoop — which is the right answer rather than a missing one: nothing of the airframe
-	# is in the picture to compare against, so anything fitted has nothing to beat.
-	var frame_deg := INF
-	var fitted: Array = []
-	for part_name in report:
-		var angle: float = report[part_name]
-		if str(part_name).begins_with("Plate"):
-			frame_deg = minf(frame_deg, angle)
-		else:
-			fitted.append({"name": part_name, "deg": angle})
-
-	# Sorted so the sentence names the most intrusive part rather than whichever one the dictionary
-	# happened to yield first — the order IS the finding.
-	fitted.sort_custom(func(a, b): return a["deg"] < b["deg"])
+	var clearances := camera_clearances()
+	var report: Dictionary = clearances["report"]
+	var frame_deg: float = clearances["frame_deg"]
+	var fitted: Array = clearances["fitted"]
 
 	var worse: Array = []
 	for entry in fitted:

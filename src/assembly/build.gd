@@ -1104,12 +1104,10 @@ func mass_parts() -> Array:
 		var component: Dictionary = components[category]
 		var component_mass_kg := float(component.get("mass_g", 0.0)) / 1000.0
 		var component_size := component_size_of(component)
-		var bay := MountLayout.by_id(mounts, String(COMPONENT_MOUNTS[category]))
 		# The mast, and it is the part's own published dimension rather than an offset this file
 		# carries — the same kind of read as component_size_of() on the line above. A part with no
 		# mast rises zero, which is every component in the app but a masted GPS.
-		parts.append(PartMass.new(component_mass_kg,
-			MountLayout.seated_centre_m(bay, component_size, 0.0, rise_m_for(component)),
+		parts.append(PartMass.new(component_mass_kg, component_centre_m(category, mounts),
 			InertiaPrimitives.box(component_mass_kg, component_size),
 			str(component.get("name", category))))
 
@@ -1321,6 +1319,20 @@ func electronics_mass_g() -> float:
 		if components.has(category):
 			total += float(components[category].get("mass_g", 0.0))
 	return total
+
+
+## Where a fitted optional component's box is centred, metres, in the airframe's frame — the
+## position `mass_parts()` weighs it at and `AirframeModel` draws it at (both are this seat:
+## `MountLayout.seated_centre_m` on the category's bay, with the part's mast). ZERO when the
+## component is not fitted. `mounts` may be passed by a caller that already resolved them.
+func component_centre_m(category: String, mounts: Array[MountPoint] = []) -> Vector3:
+	if not components.has(category):
+		return Vector3.ZERO
+	if mounts.is_empty():
+		mounts = mount_points()
+	var component: Dictionary = components[category]
+	var bay := MountLayout.by_id(mounts, String(COMPONENT_MOUNTS[category]))
+	return MountLayout.seated_centre_m(bay, component_size_of(component), 0.0, rise_m_for(component))
 
 
 ## The fitted pack as a box in BODY axes: width across X, height up Y, length along Z — because

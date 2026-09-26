@@ -87,6 +87,7 @@ func plate_polygons_m() -> Array[Dictionary]:
 		out.append({
 			"name": record["name"],
 			"outline_mm": record["outline_mm"],
+			"thickness_mm": float(record.get("thickness_mm", 0.0)),
 			"y_m": node.position.y,
 		})
 	return out
@@ -259,6 +260,7 @@ func _build_plates(
 		plate_polygons.append({
 			"name": node.name,
 			"outline_mm": outline,
+			"thickness_mm": thickness,
 			"node": node,
 		})
 
