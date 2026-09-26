@@ -229,7 +229,7 @@ static func _airframe_page_numbers(build: Build) -> Array:
 		layout == [["Closest to a prop", "pack · 9 mm"], ["Pack, each side", "12 mm clear"]],
 		str(layout)))
 	out.append(TestResult.new("page numbers: a row with no page numbers gets none, not placeholders",
-		SectionRows.page_numbers(&"fc", build, context).is_empty(), ""))
+		SectionRows.page_numbers(&"camera", build, context).is_empty(), ""))
 	return out
 
 
@@ -304,8 +304,11 @@ static func _harness_row(rows: Array) -> TestResult:
 
 static func _fc_row(rows: Array) -> TestResult:
 	var row := _row(rows, &"fc")
-	return TestResult.new("section rows: Flight controller reads processor and pattern, no invented UART count",
-		str(row.get("choice")).contains(" · ") and row.get("number") == "", _show(row))
+	# The port figure is the class range with its `~` (TestControlPage pins the exact text); a count
+	# stated without it would be the invented UART count this row used to refuse.
+	return TestResult.new("section rows: Flight controller reads processor and pattern, and UARTs against a ~range",
+		str(row.get("choice")).contains(" · ") and str(row.get("number")).contains(" of ~")
+			and str(row.get("number")).ends_with(" UARTs used"), _show(row))
 
 
 static func _receiver_row(build: Build, rows: Array) -> TestResult:

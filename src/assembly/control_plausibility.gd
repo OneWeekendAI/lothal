@@ -141,17 +141,9 @@ static func _buzzer_dies_with_the_pack(build: Build, out: Array[BuildWarning]) -
 static func _serial_peripherals(build: Build, out: Array[BuildWarning]) -> void:
 	var fitted: Array[String] = []
 	var reasons := {}
-	for category in SERIAL_PERIPHERALS:
-		if not build.components.has(category):
-			continue
-		var part: Dictionary = build.components[category]
-		fitted.append(str(part.get("name", category)))
-		reasons[category] = _reason_for(category, part)
-
-	var esc_reason := _esc_telemetry_demand(build)
-	if not esc_reason.is_empty():
-		fitted.append(str(build.esc.get("name", "esc")))
-		reasons["esc"] = esc_reason
+	for part in serial_parts(build):
+		fitted.append(str(part["name"]))
+		reasons[part["category"]] = part["reason"]
 
 	var subject := "Nothing fitted needs a serial port"
 	if fitted.size() == 1:
@@ -179,6 +171,25 @@ static func _serial_peripherals(build: Build, out: Array[BuildWarning]) -> void:
 	sentences.append("The buzzer is not counted: it lands on the beeper pad, not a UART.")
 
 	out.append(BuildWarning.characteristic(&"serial_peripherals", " ".join(sentences), values))
+
+
+## Every fitted part that wants a serial port, `{category, name, reason}`, in the order the row
+## names them: the SERIAL_PERIPHERALS that are fitted, then the ESC when its protocol has no return
+## path. ONE LIST, read by this row and by the Lab dock's Control figures (`ControlFigures`), so the
+## count the list quotes and the count this warning states cannot differ.
+static func serial_parts(build: Build) -> Array:
+	var out: Array = []
+	for category in SERIAL_PERIPHERALS:
+		if not build.components.has(category):
+			continue
+		var part: Dictionary = build.components[category]
+		out.append({"category": category, "name": str(part.get("name", category)),
+			"reason": _reason_for(category, part)})
+	var esc_reason := _esc_telemetry_demand(build)
+	if not esc_reason.is_empty():
+		out.append({"category": "esc", "name": str(build.esc.get("name", "esc")),
+			"reason": esc_reason})
+	return out
 
 
 ## WHY EACH COUNTED PART WANTS A PORT, in the words a builder acts on — they go to different wires,

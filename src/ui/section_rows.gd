@@ -18,8 +18,9 @@ extends RefCounted
 ## ## Rows whose number is not wired
 ##
 ## Where no computed number is readily available the third line is EMPTY rather than invented
-## (the brief: "do not invent numbers"). Today: Flight
-## controller (no board publishes a port count), Receiver, Tune, Printed parts and Course. Their
+## (the brief: "do not invent numbers"). Today: Receiver & link (no receiver publishes an output
+## power or a sensitivity, so a range would be invented), Printed parts and Course; and Tune until
+## the shell hands it the tune in force (`context.tune`). Their
 ## warnings still reach line 3 through `item`, so an empty line 3 means "nothing wrong and no number
 ## yet", not "unchecked".
 
@@ -242,7 +243,8 @@ static func choice_of(id: StringName, build: Build, context: Dictionary = {}) ->
 		&"receiver":
 			return _component_name(build, "receiver")
 		&"tune":
-			return "derived"
+			var tune := context.get("tune") as RateTune
+			return "hand-tuned" if tune != null and tune.has_overrides() else "derived"
 		&"camera":
 			return _component_name(build, "camera")
 		&"vtx":
@@ -385,6 +387,16 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 				return ""
 			return "~%.2f V lost in leads at %d A" % [PowerFigures.harness_drop_v(build),
 				roundi(PowerFigures.worst_draw_a(build))]
+		&"fc":
+			# The UARTs the fitted parts want against the board's count — the class range carries
+			# its `~`. Never the difference: ControlPlausibility refuses a spare-port figure.
+			return ControlFigures.ports_used_text(build)
+		&"tune":
+			# The roll D in force against the D this board's gyro noise allows (RateTune's ceiling).
+			# `~`: the noise figure is an upper bound (no D-term lowpass is modelled).
+			var tune := context.get("tune") as RateTune
+			var share := ControlFigures.d_ceiling_share(tune)
+			return "D at ~%d%% of noise ceiling" % roundi(share * 100.0) if share > 0.0 else ""
 		&"camera":
 			var tilt := float(build.assembly_value(AssemblyTweaks.CAMERA_TILT)) \
 				if build.assembly.has(AssemblyTweaks.CAMERA_TILT) else -1.0
@@ -472,6 +484,26 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 			return [["Lead drop, full throttle", "~%.2f V at %d A" % [PowerFigures.harness_drop_v(build),
 					roundi(PowerFigures.worst_draw_a(build))]],
 				["Harness mass", "~%.1f g" % PowerFigures.harness_mass_g(build)]]
+		&"fc":
+			var figure := ControlFigures.ports_figure(build)
+			var tune := context.get("tune") as RateTune
+			return [["Serial ports used", "%d of %s" % [ControlFigures.serial_demand(build), figure]
+					if figure != "" else "%d · count unpublished" % ControlFigures.serial_demand(build)],
+				["Gyro noise at the motors", "~%.1f%% at D %.3f" % [
+					ControlFigures.d_noise_fraction(build, tune) * 100.0, ControlFigures.installed_kd(tune)]]]
+		&"receiver":
+			return [["Link mass", "%.1f g" % ControlFigures.link_mass_g(build)],
+				["UARTs it takes", "%d" % ControlFigures.link_uarts(build)]]
+		&"tune":
+			var tune := context.get("tune") as RateTune
+			if tune == null:
+				return [["Roll D vs noise ceiling", "—"], ["Loop τ roll · pitch · yaw", "—"]]
+			var tau := ControlFigures.time_constants_ms(tune)
+			var ceiling := "%.3f of %.3f" % [tune.kd.x, tune.kd_ceiling] if is_finite(tune.kd_ceiling) \
+				else "%.3f · no ceiling" % tune.kd.x
+			return [["Roll D vs noise ceiling", ceiling],
+				["Loop τ roll · pitch · yaw", "%d · %d · %d ms" % [roundi(tau.x), roundi(tau.y),
+					roundi(tau.z)]]]
 	return []
 
 

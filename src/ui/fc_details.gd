@@ -112,8 +112,9 @@ func _read(fc: Dictionary, key: String) -> String:
 func _d_term_noise() -> String:
 	if _build == null:
 		return "—"
-	var kd: float = _tune.kd.x if _tune != null else RateModeController.ROLL_PITCH_KD
-	var d_rms := RateTune.d_noise_fraction(_build, kd)
+	# ControlFigures: the same call the Lab dock's FC page number makes, fallback included.
+	var kd := ControlFigures.installed_kd(_tune)
+	var d_rms := ControlFigures.d_noise_fraction(_build, _tune)
 	var ceiling := RateTune.kd_ceiling_for(_build)
 	# Naming the ceiling beside the cost is what turns a number into a decision. A board whose
 	# ceiling is below what this airframe's plant asks for is a board that is choosing the tune.

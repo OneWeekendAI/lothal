@@ -85,11 +85,8 @@ func _read(_part: Dictionary, key: String) -> String:
 ## The three bays' own masses, read off the build rather than off the catalog, so a panel row and
 ## the aircraft cannot disagree about what is fitted.
 func _link_total_g() -> float:
-	var total := 0.0
-	for category in BAYS:
-		if _build.components.has(category):
-			total += float(_build.components[category].get("mass_g", 0.0))
-	return total
+	# ControlFigures: the Lab dock's Receiver page quotes the same sum.
+	return ControlFigures.link_mass_g(_build)
 
 
 ## The fitted GPS's mast, in millimetres, as the build resolves it — the builder's typed value when
