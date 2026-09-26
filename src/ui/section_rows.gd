@@ -71,10 +71,14 @@ const DEFINITIONS := {
 		{"id": &"harness", "name": "Harness", "page": {"panels": ["Harness"], "diagram": "harness"}},
 	],
 	"Control": [
-		{"id": &"fc", "name": "Flight controller", "page": {"panels": ["FC"]}, "pick": "FC"},
+		# `diagram`: ControlDiagram's modes — the stack and the board's ports, where the link lands
+		# on the board, the gains and D against the gyro's noise ceiling. The Receiver page's Link
+		# rail stands over its sheet, beside the drawing (`GlassShell._layout_stage`).
+		{"id": &"fc", "name": "Flight controller", "page": {"panels": ["FC"], "diagram": "fc"},
+			"pick": "FC"},
 		{"id": &"receiver", "name": "Receiver & link",
-			"page": {"panels": ["Link"], "column": "Link"}},
-		{"id": &"tune", "name": "Tune", "page": {"panels": ["Tune"]}},
+			"page": {"panels": ["Link"], "column": "Link", "diagram": "link"}},
+		{"id": &"tune", "name": "Tune", "page": {"panels": ["Tune"], "diagram": "tune"}},
 	],
 	"Video": [
 		{"id": &"camera", "name": "Camera",

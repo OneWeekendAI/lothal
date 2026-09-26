@@ -321,6 +321,9 @@ var _prop_diagram: PropulsionDiagram
 ## harness designer's own schematic, read-only, for the Harness page.
 var _power_diagram: PowerDiagram
 var _harness_diagram: HarnessSchematic
+## The Control pages' drawing (the stack and ports, the link's wiring, the tune), swapped in as the
+## item view's body for a row whose `diagram` is one of ControlDiagram's modes.
+var _control_diagram: ControlDiagram
 ## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
 var _list_refresh_queued := false
 ## The builder unfolded the strip while such a room was up; respected until the page closes.
@@ -551,6 +554,14 @@ func _ready() -> void:
 	# The "class-typical defaults" paragraph is the `~` on the Harness page's numbers.
 	lab.harness_panel.set_caption_visible(false)
 	lab.charge_panel.set_note_visible(false)
+	# The Control sheets: the FC and Link sheets drop the whole build's warning list, and the Tune
+	# panel its own (the page's list is the row's: D capped by the gyro, a hand tune); the Tune
+	# panel's two explanatory sentences and the Link rail's paragraph go — the drawing says both.
+	lab.fc_details.set_warnings_visible(false)
+	lab.link_details.set_warnings_visible(false)
+	lab.tune_panel.set_warnings_visible(false)
+	lab.tune_panel.set_prose_visible(false)
+	lab.link_picker.set_note_visible(false)
 
 	_autosave = Timer.new()
 	_autosave.wait_time = AUTOSAVE_SECONDS
@@ -607,6 +618,8 @@ func _ready() -> void:
 	# Prop guards row, its page and the top bar's AUW stayed on the unguarded aircraft until some
 	# other change refreshed them. LabScreen connected first, so the build is rebuilt by now.
 	lab.propeller_details.guard_changed.connect(func(_guard_id: String) -> void: _refresh_status())
+	# A gain edit moves the Tune row, its page and the FC page's D noise; nothing else changes.
+	lab.tune_panel.tune_changed.connect(_queue_list_refresh)
 
 	# Re-applies whatever is currently chosen, which is NOT always index 0 — and that distinction is
 	# the whole reason this line is not `_select_system(0)`.
@@ -720,6 +733,30 @@ func _layout_stage() -> void:
 			_item_page.offset_right = _inspector.offset_left - CLUSTER_MARGIN
 			_item_page.offset_top = _inspector.offset_top
 			_item_page.offset_bottom = _inspector.offset_bottom
+			if _rail_glass != null and _rail_glass.visible:
+				_stack_rail_over_sheet(right, width)
+
+
+## A DRAWN PAGE WITH A COLUMN RAIL (the Receiver page's Link rail): the rail stands OVER the sheet,
+## both against the list, and the drawing takes the stage from the left edge. Side by side, rail +
+## sheet + drawing + list want more than a 1280 window; stacked, the rail (three bays and the
+## authoring row) and the sheet (six rows) are each a third of the height.
+func _stack_rail_over_sheet(right: float, sheet_width: float) -> void:
+	var rail_width := maxf(RAIL_WIDTH, lab.rails().get_combined_minimum_size().x) \
+		+ LothalTheme.SPACE_2 * 2
+	var column := maxf(sheet_width, rail_width)
+	var top := TOP_BAR_HEIGHT + PAGE_BAR_HEIGHT + LothalTheme.SPACE_2
+	var rail_height := _rail_glass.get_combined_minimum_size().y
+	_rail_glass.offset_left = right - column
+	_rail_glass.offset_right = right
+	_rail_glass.offset_top = top
+	_rail_glass.offset_bottom = top + rail_height - size.y   # anchored to the bottom edge
+	_inspector.offset_left = right - column
+	_inspector.offset_right = right
+	_inspector.offset_top = top + rail_height + CLUSTER_MARGIN
+	_item_page.offset_left = CLUSTER_MARGIN
+	_item_page.offset_right = _inspector.offset_left - CLUSTER_MARGIN
+	_item_page.offset_top = top
 
 
 # ---------------------------------------------------------------------------
@@ -1759,6 +1796,7 @@ func _build_inspector() -> void:
 	_harness_diagram = HarnessSchematic.new()
 	# A picture here, not the designer: selecting a segment is the room's, one press away.
 	_harness_diagram.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_control_diagram = ControlDiagram.new()
 
 
 ## "← Back to drone" and the breadcrumb (§2), across the top of the stage while a page is open.
@@ -2070,6 +2108,11 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 			_item_view.set_body(_power_diagram)
 		_power_diagram.show_build(build, mode)
 		return
+	if mode in [ControlDiagram.MODE_FC, ControlDiagram.MODE_LINK, ControlDiagram.MODE_TUNE]:
+		if _item_view.body != _control_diagram:
+			_item_view.set_body(_control_diagram)
+		_control_diagram.show_build(build, mode, context.get("tune") as RateTune)
+		return
 	if mode == "harness":
 		if _item_view.body != _harness_diagram:
 			_item_view.set_body(_harness_diagram)
@@ -2096,6 +2139,10 @@ func item_diagram() -> FramePlanDiagram:
 
 func propulsion_diagram() -> PropulsionDiagram:
 	return _prop_diagram
+
+
+func control_diagram() -> ControlDiagram:
+	return _control_diagram
 
 
 func power_diagram() -> PowerDiagram:
@@ -2138,6 +2185,10 @@ func _refresh_list() -> void:
 		var tight := AirframeModel.prop_clearance_warning(lab.airframe.closest_to_prop())
 		if tight != null:
 			warnings.append(tight)
+	# The tune's own two warnings (D capped by the gyro, a hand tune) are the Tune row's; they live
+	# on the RateTune in force rather than in Build.warnings().
+	if lab.tune != null:
+		warnings.append_array(lab.tune.warnings())
 	# WHAT THE AIRFRAME PAGES FLAG, THE ROWS SAY: the bolted-joint checks the Screws & standoffs
 	# page runs and the drawn frame's own checks, off the same document those pages render.
 	if lab.frame_document != null and _focused_name() == "Airframe":
@@ -2152,6 +2203,9 @@ func _refresh_list() -> void:
 		"course": rooms.course_library.selected().course_name
 			if rooms.course_library.selected() != null else "",
 		"conditions": rooms.conditions_library.selected().conditions_name,
+		# The tune in force (derived, with the builder's saved axes over it): the Tune row and the
+		# FC page's D-noise number read it, as the Tune panel and the FC sheet do.
+		"tune": lab.tune,
 	}
 	_section_list.show_section(_focused_name(),
 		SectionRows.rows(_focused_name(), build, warnings, context))

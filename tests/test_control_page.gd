@@ -50,6 +50,19 @@ static func run() -> Array:
 	out.append(_fc_page_numbers(build, tune))
 	out.append(_receiver_page_numbers(build))
 	out.append(_tune_page_numbers(build, tune))
+
+	# --- the drawings
+	out.append(_fc_drawing_holds_the_three_patterns(build))
+	out.append(_fc_slots_are_the_parts_then_the_range(build))
+	out.append(_fc_slots_past_a_typed_count_are_over(build))
+	out.append(_fc_slots_with_no_published_count_are_the_parts_alone(build))
+	out.append(_link_drawing_lands_the_receiver_on_a_uart(build))
+	out.append(_link_drawing_marks_empty_bays(build))
+	out.append(_link_drawing_names_the_mast_and_the_buzzers_power())
+	out.append(_tune_drawing_gains_are_the_tunes(build, tune))
+	out.append(_tune_drawing_marks_a_hand_axis(build))
+	out.append(_tune_drawing_ceiling_is_the_tunes(build, tune))
+	out.append(_page_definitions_name_their_drawings())
 	return out
 
 
@@ -286,3 +299,140 @@ static func _tune_page_numbers(build: Build, tune: RateTune) -> TestResult:
 		["Loop τ roll · pitch · yaw", "%d · %d · %d ms" % [roundi(tau.x), roundi(tau.y), roundi(tau.z)]]]
 	return TestResult.new("page numbers: Tune shows roll D against the ceiling and the loop time constants",
 		got == want, "%s want %s" % [got, want])
+
+
+# ---------------------------------------------------------------------------
+# The drawings
+# ---------------------------------------------------------------------------
+
+static func _diagram(build: Build, mode: String, tune: RateTune = null) -> ControlDiagram:
+	var d := ControlDiagram.new()
+	d.show_build(build, mode, tune)
+	return d
+
+
+static func _fc_drawing_holds_the_three_patterns(build: Build) -> TestResult:
+	var d := _diagram(build, ControlDiagram.MODE_FC)
+	var want := Vector2(30.5, 30.5)
+	var ok: bool = d.stack.get("frame") == want and d.stack.get("fc") == want and d.stack.get("esc") == want
+	var detail := str(d.stack)
+	d.free()
+	return TestResult.new("control drawing: the stack is the frame's, the FC's and the ESC's patterns, mm",
+		ok, detail)
+
+
+static func _states(d: ControlDiagram) -> Array:
+	var out: Array = []
+	for slot in d.slots:
+		out.append(str(slot["state"]))
+	return out
+
+
+static func _fc_slots_are_the_parts_then_the_range(build: Build) -> TestResult:
+	var d := _diagram(build, ControlDiagram.MODE_FC)
+	var states := _states(d)
+	var names := [str(d.slots[0]["label"]), str(d.slots[1]["label"])] if d.slots.size() >= 2 else []
+	d.free()
+	return TestResult.new("control drawing: 5 slots — the receiver and the VTX, 2 empty to the low end, 1 dashed to the high",
+		states == ["used", "used", "empty", "empty", "maybe"] and names == ["Receiver", "VTX"],
+		"%s %s" % [states, names])
+
+
+static func _fc_slots_past_a_typed_count_are_over(build: Build) -> TestResult:
+	var copy := ReferenceBuild.build()
+	PortBudget.set_count(copy.config, 1)
+	var d := _diagram(copy, ControlDiagram.MODE_FC)
+	var states := _states(d)
+	d.free()
+	return TestResult.new("control drawing: a part past the board's count is drawn over, in its own slot",
+		states == ["used", "over"], str(states))
+
+
+static func _fc_slots_with_no_published_count_are_the_parts_alone(build: Build) -> TestResult:
+	var copy := _with_fc_catalog(build, {"processor": "F405"})
+	var d := _diagram(copy, ControlDiagram.MODE_FC)
+	var states := _states(d)
+	var caption := d.ports_caption
+	d.free()
+	return TestResult.new("control drawing: with no published count only the parts are drawn, and it says so",
+		states == ["used", "used"] and caption.contains("not published"), "%s '%s'" % [states, caption])
+
+
+static func _link_drawing_lands_the_receiver_on_a_uart(build: Build) -> TestResult:
+	var d := _diagram(build, ControlDiagram.MODE_LINK)
+	var receiver: Dictionary = d.wiring[0] if not d.wiring.is_empty() else {}
+	d.free()
+	return TestResult.new("control drawing: the receiver lands on a UART, with its name and mass",
+		receiver.get("category") == "receiver" and bool(receiver.get("fitted"))
+			and receiver.get("lands") == "UART"
+			and receiver.get("name") == str(build.components["receiver"]["name"])
+			and is_equal_approx(float(receiver.get("mass_g")), 2.0), str(receiver))
+
+
+static func _link_drawing_marks_empty_bays(build: Build) -> TestResult:
+	var d := _diagram(build, ControlDiagram.MODE_LINK)
+	var fitted: Array = []
+	for bay in d.wiring:
+		fitted.append(bool(bay["fitted"]))
+	d.free()
+	return TestResult.new("control drawing: all three bays are drawn, the GPS and buzzer bays empty",
+		fitted == [true, false, false], str(fitted))
+
+
+static func _link_drawing_names_the_mast_and_the_buzzers_power() -> TestResult:
+	var catalog := PartsCatalog.load_default()
+	var build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID, {"camera": "", "vtx": "", "antenna": "", "receiver": "rx_elrs_2400",
+			"gps": "gps_masted_compact", "buzzer": "buzz_active_5v"})
+	var d := _diagram(build, ControlDiagram.MODE_LINK)
+	var gps: Dictionary = d.wiring[1]
+	var buzzer: Dictionary = d.wiring[2]
+	d.free()
+	var mast := "mast %d mm" % roundi(build.rise_m_for(build.components["gps"]) * 1000.0)
+	return TestResult.new("control drawing: the GPS carries its mast, the FC-powered buzzer says it dies with the pack",
+		gps.get("note") == mast and gps.get("lands") == "UART" and buzzer.get("lands") == "beeper pad"
+			and buzzer.get("note") == "FC 5 V · dies with the pack", "%s / %s" % [gps, buzzer])
+
+
+static func _tune_drawing_gains_are_the_tunes(build: Build, tune: RateTune) -> TestResult:
+	var d := _diagram(build, ControlDiagram.MODE_TUNE, tune)
+	var ok := d.gains.size() == 3
+	for axis in d.gains.size():
+		ok = ok and d.gains[axis]["in_force"] == tune.gains_for(axis) \
+			and d.gains[axis]["derived"] == tune.derived_gains_for(axis) \
+			and not bool(d.gains[axis]["overridden"])
+	var detail := str(d.gains)
+	d.free()
+	return TestResult.new("control drawing: the tune table is the gains in force and the derived ones",
+		ok, detail)
+
+
+static func _tune_drawing_marks_a_hand_axis(build: Build) -> TestResult:
+	var tune := RateTune.derive(build)
+	tune.set_gains(2, Vector3(7.0, 0.4, 0.0))
+	var d := _diagram(build, ControlDiagram.MODE_TUNE, tune)
+	var flags: Array = []
+	for row in d.gains:
+		flags.append(bool(row["overridden"]))
+	var yaw: Vector3 = d.gains[2]["in_force"] if d.gains.size() == 3 else Vector3.ZERO
+	d.free()
+	return TestResult.new("control drawing: an axis set by hand is marked, and shows the hand gains",
+		flags == [false, false, true] and yaw == Vector3(7.0, 0.4, 0.0), "%s %s" % [flags, yaw])
+
+
+static func _tune_drawing_ceiling_is_the_tunes(build: Build, tune: RateTune) -> TestResult:
+	var d := _diagram(build, ControlDiagram.MODE_TUNE, tune)
+	var got := d.kd_ceiling
+	d.free()
+	return TestResult.new("control drawing: the D ceiling drawn is the tune's own",
+		is_equal_approx(got, tune.kd_ceiling) and got > 0.1, "%.4f" % got)
+
+
+static func _page_definitions_name_their_drawings() -> TestResult:
+	var modes := {}
+	for definition in SectionRows.DEFINITIONS["Control"]:
+		modes[definition["id"]] = str((definition["page"] as Dictionary).get("diagram", ""))
+	return TestResult.new("control rows: each Control page names its drawing",
+		modes == {&"fc": ControlDiagram.MODE_FC, &"receiver": ControlDiagram.MODE_LINK,
+			&"tune": ControlDiagram.MODE_TUNE}, str(modes))

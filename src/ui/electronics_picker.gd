@@ -72,6 +72,9 @@ var catalog: PartsCatalog
 var categories: Array[String] = []
 
 var _selectors: Dictionary = {}   # category -> OptionButton
+## The budget paragraph under the bays. Off on the Lab dock's Receiver page (lab dock design §3: no
+## paragraph on a page); the Electronics rail keeps it.
+var _note: Label
 ## category -> Array[String] of part ids, "" first. The selector's index is an index into THIS,
 ## never into catalog.list_category() — the lists differ by the "Not fitted" row, and reading a
 ## part out of the catalog by a selector index is off by one for the whole of every list here.
@@ -188,11 +191,21 @@ func _init(p_catalog: PartsCatalog, p_categories: Array, p_title: String) -> voi
 	note.theme_type_variation = &"MutedLabel"
 	note.text = " ".join(sentences)
 	root.add_child(note)
+	_note = note
 
 
 # ---------------------------------------------------------------------------
 # Public surface (also what the tests drive)
 # ---------------------------------------------------------------------------
+
+func set_note_visible(shown: bool) -> void:
+	if _note != null:
+		_note.visible = shown
+
+
+func note_visible() -> bool:
+	return _note != null and _note.visible
+
 
 ## THIS RAIL's half of the payload, in the shape Build.from_ids takes: every category this rail
 ## carries, "" for a bay left empty. Every one present ALWAYS — an absent key would mean "fit the

@@ -121,3 +121,27 @@ static func pattern_mm(pattern: String) -> Vector2:
 static func stack_patterns(build: Build) -> Dictionary:
 	return {"frame": str((build.frame.get("specs", {}) as Dictionary).get("stack_mount", "")),
 		"fc": build.fc_mount_pattern(), "esc": build.esc_mount_pattern()}
+
+
+## Where each link bay lands on the flight controller: `{category, fitted, name, mass_g, lands,
+## note}` per `LINK_BAYS` entry, fitted or not. `lands` is "UART" for a part in
+## `ControlPlausibility.SERIAL_PERIPHERALS` and "beeper pad" for the buzzer (its docstring: the
+## buzzer takes the beeper pad, not a UART). `note` is the one fact that is the reason the bay is
+## modelled at all: the GPS's mast (`Build.rise_m_for`, as the Link sheet reads it) and whether the
+## buzzer has its own cell (`specs.self_powered`, as the buzzer warning reads it).
+static func link_wiring(build: Build) -> Array:
+	var out: Array = []
+	for category in LINK_BAYS:
+		var fitted := build.components.has(category)
+		var part: Dictionary = build.components.get(category, {})
+		var lands := "UART" if ControlPlausibility.SERIAL_PERIPHERALS.has(category) else "beeper pad"
+		var note := ""
+		if fitted and category == "gps":
+			var rise_mm := build.rise_m_for(part) * 1000.0
+			note = "mast %d mm" % roundi(rise_mm) if rise_mm > 0.0 else "flat on the plate"
+		elif fitted and category == "buzzer":
+			note = "own cell" if bool((part.get("specs", {}) as Dictionary).get("self_powered", false)) \
+				else "FC 5 V · dies with the pack"
+		out.append({"category": category, "fitted": fitted, "name": str(part.get("name", "")),
+			"mass_g": float(part.get("mass_g", 0.0)), "lands": lands, "note": note})
+	return out
