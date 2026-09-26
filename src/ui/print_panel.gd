@@ -40,6 +40,18 @@ var _rows: Array = []
 var _updating := false
 ## The column of rows, kept so its natural height can be measured.
 var _root: VBoxContainer
+## Lab dock (lab dock design §3): "" for the whole room, or the one part whose page this is — the
+## sheet then shows only that part's line and its own "Printed before" buttons, and drops the
+## panel's explanatory sentences (the page's drawing and numbers say them).
+var _dock_part := ""
+var _title: Label
+var _intro: Label
+var _parts_title: Label
+var _before_title: Label
+## part id → its line (VBox) in `_parts`.
+var _lines: Dictionary = {}
+## part id → [message Label, button row] in `_before`.
+var _before_entries: Dictionary = {}
 
 
 ## How tall the panel's rows are, unscrolled.
@@ -68,6 +80,7 @@ func _init() -> void:
 	title.text = "PRINTED"
 	title.theme_type_variation = &"TitleLabel"
 	root.add_child(title)
+	_title = title
 
 	var note := Label.new()
 	note.text = "Parts this drone needs printed, generated from what is fitted. Saved with this drone, not across drones."
@@ -75,6 +88,7 @@ func _init() -> void:
 	note.custom_minimum_size = Vector2(280, 0)
 	note.theme_type_variation = &"MutedLabel"
 	root.add_child(note)
+	_intro = note
 
 	root.add_child(HSeparator.new())
 
@@ -107,6 +121,7 @@ func _init() -> void:
 	var parts_title := Label.new()
 	parts_title.text = "Parts"
 	root.add_child(parts_title)
+	_parts_title = parts_title
 
 	_parts = VBoxContainer.new()
 	root.add_child(_parts)
@@ -128,6 +143,7 @@ func render(build: Build, printing: Dictionary) -> void:
 	_buttons.clear()
 	_fit_toggles.clear()
 	_gap_sliders.clear()
+	_lines.clear()
 	_rows = PrintedParts.for_build(build)
 
 	if _rows.is_empty():
@@ -135,6 +151,7 @@ func render(build: Build, printing: Dictionary) -> void:
 		empty.text = "Nothing on this build is printed yet."
 		empty.theme_type_variation = &"MutedLabel"
 		_parts.add_child(empty)
+		_apply_dock_part()
 		return
 
 	for row in _rows:
@@ -219,6 +236,8 @@ func render(build: Build, printing: Dictionary) -> void:
 		line.add_child(button)
 		_parts.add_child(line)
 		_buttons[id] = button
+		_lines[id] = line
+	_apply_dock_part()
 
 
 ## The "Printed before" list (PR7): one line per divergence the shell found on open, each with Keep and
@@ -229,12 +248,15 @@ func set_divergence(findings: Array) -> void:
 		_before.remove_child(child)
 		child.queue_free()
 	_divergence_buttons.clear()
+	_before_entries.clear()
 	_before.visible = not findings.is_empty()
 	if findings.is_empty():
+		_apply_dock_part()
 		return
 	var title := Label.new()
 	title.text = "Printed before — differs from today"
 	_before.add_child(title)
+	_before_title = title
 	for finding in findings:
 		var part := String(finding["part"])
 		var message := Label.new()
@@ -256,6 +278,64 @@ func set_divergence(findings: Array) -> void:
 		_before.add_child(row)
 		_divergence_buttons["%s|keep" % part] = keep
 		_divergence_buttons["%s|reprint" % part] = reprint
+		_before_entries[part] = [message, row]
+	_apply_dock_part()
+
+
+## Cuts the panel to one part's page (lab dock design §3: each page shows only its own item): its
+## line — note, settings and Export — the clearance that shapes it, and its own Keep / Reprint.
+## The finding's sentence goes too: the page lists it behind Why?. "" puts the whole room back.
+func set_dock_part(part_id: String) -> void:
+	_dock_part = part_id
+	_apply_dock_part()
+
+
+func _apply_dock_part() -> void:
+	var whole := _dock_part == ""
+	_intro.visible = whole
+	_hint.visible = whole
+	_parts_title.visible = whole
+	_title.text = "PRINTED"
+	for id in _lines:
+		(_lines[id] as Control).visible = whole or id == _dock_part
+		if id == _dock_part:
+			for row in _rows:
+				if String(row["id"]) == id:
+					_title.text = String(row["label"]).split(" — ")[0].to_upper()
+	var own_finding := false
+	for part in _before_entries:
+		var mine: bool = part == _dock_part
+		own_finding = own_finding or mine
+		(_before_entries[part][0] as Control).visible = whole
+		(_before_entries[part][1] as Control).visible = whole or mine
+	if _before_title != null and is_instance_valid(_before_title):
+		_before_title.text = "Printed before — differs from today" if whole \
+			else "Printed before — keep it, or reprint?"
+	_before.visible = not _before_entries.is_empty() and (whole or own_finding)
+
+
+## Which part's lines are showing, in order, for tests.
+func shown_parts() -> Array:
+	var out: Array = []
+	for row in _rows:
+		var id := String(row["id"])
+		if _lines.has(id) and (_lines[id] as Control).visible:
+			out.append(id)
+	return out
+
+
+## The panel's explanatory sentences (the room's intro, the clearance hint) are showing.
+func prose_visible() -> bool:
+	return _intro.visible or _hint.visible
+
+
+## The "Printed before" block, and one part's sentence in it, are showing. For tests.
+func before_visible() -> bool:
+	return _before.visible
+
+
+func finding_text_visible(part_id: String) -> bool:
+	return _before_entries.has(part_id) and (_before_entries[part_id][0] as Control).is_visible_in_tree()
 
 
 ## A "Printed before" button, `which` = "keep" or "reprint", or null. For tests.

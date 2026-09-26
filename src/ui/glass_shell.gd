@@ -326,6 +326,8 @@ var _harness_diagram: HarnessSchematic
 var _control_diagram: ControlDiagram
 ## The Video pages' side view (the camera and its clear cone; the VTX and antenna against the CoM).
 var _video_diagram: VideoDiagram
+## A Printed part's page drawing: its plan and side off the exported triangles, and its key fit.
+var _printed_diagram: PrintedDiagram
 ## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
 var _list_refresh_queued := false
 ## The builder unfolded the strip while such a room was up; respected until the page closes.
@@ -1807,6 +1809,7 @@ func _build_inspector() -> void:
 	_harness_diagram.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_control_diagram = ControlDiagram.new()
 	_video_diagram = VideoDiagram.new()
+	_printed_diagram = PrintedDiagram.new()
 
 
 ## "← Back to drone" and the breadcrumb (§2), across the top of the stage while a page is open.
@@ -1959,7 +1962,10 @@ func _show_page(row: Dictionary) -> void:
 		if page.has("diagram"):
 			_item_page.visible = true
 		# Which half of the Prop panel this page is: the blade, or the guard (SectionRows `sheet`).
-		lab.propeller_details.set_dock_sheet(str(page.get("sheet", "")))
+		var panels: Array = page.get("panels", [])
+		lab.propeller_details.set_dock_sheet(str(page.get("sheet", "")) if panels.has("Prop") else "")
+		# And which printed part the Print sheet is cut to (a Printed row's page), or the whole room.
+		lab.print_panel.set_dock_part(str(page.get("sheet", "")) if panels.has("Print") else "")
 		# And which cut of the Electronics sheet: the VTX page's two parts, or all of it.
 		lab.electronics_details.set_dock_sheet("vtx" if str(page.get("sheet", "")) == "vtx" else "")
 	_section_list.set_open_row(row["id"])
@@ -2130,6 +2136,11 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 			_item_view.set_body(_video_diagram)
 		_video_diagram.show_build(build, mode, lab.airframe, context.get("camera_view", {}))
 		return
+	if mode == "printed":
+		if _item_view.body != _printed_diagram:
+			_item_view.set_body(_printed_diagram)
+		_printed_diagram.show_part(build, SectionRows.printed_part_of(id))
+		return
 	if mode == "harness":
 		if _item_view.body != _harness_diagram:
 			_item_view.set_body(_harness_diagram)
@@ -2164,6 +2175,10 @@ func control_diagram() -> ControlDiagram:
 
 func video_diagram() -> VideoDiagram:
 	return _video_diagram
+
+
+func printed_diagram() -> PrintedDiagram:
+	return _printed_diagram
 
 
 func power_diagram() -> PowerDiagram:

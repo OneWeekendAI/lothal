@@ -62,7 +62,128 @@ static func run() -> Array:
 	out.append(_page_numbers_drop_the_guess_once_set(loose))
 	out.append(_guard_page_numbers(guarded))
 	out.append(_no_print_time_anywhere(build))
+
+	# --- the drawing
+	out.append(_drawing_draws_the_exported_triangles(build))
+	out.append(_drawing_dimensions_are_the_records_bbox(build))
+	out.append(_drawing_fit_labels_follow_the_clearance(loose))
+	out.append(_drawing_of_a_guard_has_no_fit(guarded))
+	out.append(_drawing_of_a_refused_part_is_empty())
+	out.append(_drawing_plan_is_x_right_y_up(build))
+
+	# --- the sheet
+	out.append(_sheet_cut_to_one_part(build))
+	out.append(_sheet_cut_drops_the_prose(build))
+	out.append(_sheet_whole_room_comes_back(build))
+	out.append(_sheet_keeps_only_its_own_keep_and_reprint(build))
 	return out
+
+
+static func _diagram(build: Build, part: String) -> PrintedDiagram:
+	var d := PrintedDiagram.new()
+	d.size = Vector2(700, 500)
+	d.show_part(build, part)
+	return d
+
+
+static func _drawing_draws_the_exported_triangles(build: Build) -> TestResult:
+	var d := _diagram(build, "antenna_mount")
+	var want: Array = PrintedParts.solid_for(build, "antenna_mount")["triangles"]
+	var ok: bool = d.triangles.size() == want.size() and want.size() > 100 and d.triangles == want
+	d.free()
+	return TestResult.new("printed drawing: the antenna mount is drawn from the triangles its Export writes", ok,
+		"%d triangles" % want.size())
+
+
+static func _drawing_dimensions_are_the_records_bbox(build: Build) -> TestResult:
+	var d := _diagram(build, "battery_pad")
+	var box := PrintedExport.bbox_mm(PrintedParts.solid_for(build, "battery_pad")["triangles"])
+	var labels := d.dimension_labels()
+	d.free()
+	return TestResult.new("printed drawing: the pad's three dimensions are its record's bounding box",
+		labels.size() >= 3 and labels.slice(0, 3) == ["%.1f mm" % box[0], "%.1f mm" % box[1],
+			"%.1f mm" % box[2]] and float(box[1]) > 70.0, str(labels))
+
+
+static func _drawing_fit_labels_follow_the_clearance(loose: Build) -> TestResult:
+	var d := _diagram(loose, "arm_guard")
+	var labels := d.dimension_labels()
+	d.free()
+	return TestResult.new("printed drawing: at 0.35 mm the arm sleeve's section reads arm 5.0, hole 5.7, 0.35 each side",
+		labels.slice(3) == ["Arm 5.0 mm", "hole 5.7 mm", "0.35 mm each side"], str(labels))
+
+
+static func _drawing_of_a_guard_has_no_fit(guarded: Build) -> TestResult:
+	var d := _diagram(guarded, "prop_guard")
+	var labels := d.dimension_labels()
+	var ok := labels.size() == 3 and d.fit.is_empty() and not d.triangles.is_empty()
+	d.free()
+	return TestResult.new("printed drawing: a guard ring draws plan and side, and no fit section", ok, str(labels))
+
+
+static func _drawing_of_a_refused_part_is_empty() -> TestResult:
+	var build := ReferenceBuild.build()
+	var printing := {}
+	CameraMount.set_value(printing, CameraMount.PLATE_SPACING, CameraMount.MIN_PLATE_SPACING_MM)
+	build.set_printing(printing)
+	var d := _diagram(build, "camera_mount")
+	var ok := d.triangles.is_empty() and d.refused_reason != "" and d.dimension_labels().is_empty()
+	d.free()
+	return TestResult.new("printed drawing: a part the build refuses draws nothing and keeps its reason", ok, "")
+
+
+static func _drawing_plan_is_x_right_y_up(build: Build) -> TestResult:
+	var d := _diagram(build, "battery_pad")
+	d._fit_views()
+	var origin := d.plan_px(Vector3.ZERO)
+	var ok := d.plan_px(Vector3(10, 0, 0)).x > origin.x and d.plan_px(Vector3(0, 10, 0)).y < origin.y \
+		and d.side_px(Vector3(0, 0, 10)).y < d.side_px(Vector3.ZERO).y \
+		and absf((d.plan_px(Vector3(10, 0, 0)) - origin).length() - (d.plan_px(Vector3(0, 10, 0)) - origin).length()) < 1e-3
+	d.free()
+	return TestResult.new("printed drawing: plan is X right and Y up the page, side Z up, one scale", ok, "")
+
+
+static func _panel(build: Build, part: String) -> PrintPanel:
+	var panel := PrintPanel.new()
+	panel.render(build, build.printing)
+	panel.set_dock_part(part)
+	return panel
+
+
+static func _sheet_cut_to_one_part(build: Build) -> TestResult:
+	var panel := _panel(build, "camera_mount")
+	var shown := panel.shown_parts()
+	var ok: bool = shown == ["camera_mount"] and panel.export_button("camera_mount") != null \
+		and panel.export_button("camera_mount").visible
+	panel.free()
+	return TestResult.new("printed sheet: the camera mount's page shows its own line and Export only", ok, str(shown))
+
+
+static func _sheet_cut_drops_the_prose(build: Build) -> TestResult:
+	var panel := _panel(build, "arm_guard")
+	var ok := not panel.prose_visible()
+	panel.free()
+	return TestResult.new("printed sheet: on a part's page the room's sentences go", ok, "")
+
+
+static func _sheet_whole_room_comes_back(build: Build) -> TestResult:
+	var panel := _panel(build, "arm_guard")
+	panel.set_dock_part("")
+	var shown := panel.shown_parts()
+	var ok := shown.size() == 4 and panel.prose_visible()
+	panel.free()
+	return TestResult.new("printed sheet: cut back to \"\" the whole room and its sentences return", ok, str(shown))
+
+
+static func _sheet_keeps_only_its_own_keep_and_reprint(build: Build) -> TestResult:
+	var panel := _panel(build, "arm_guard")
+	panel.set_divergence([_finding("arm_guard", "differs"), _finding("camera_mount", "differs")])
+	var own_keep := panel.divergence_button("arm_guard", "keep")
+	var other := panel.divergence_button("camera_mount", "keep")
+	var ok: bool = panel.before_visible() and own_keep != null and own_keep.visible \
+		and other != null and not other.get_parent().visible
+	panel.free()
+	return TestResult.new("printed sheet: a part's page keeps its own Keep and Reprint, not another part's", ok, "")
 
 
 static func _loose(mm: float) -> Build:

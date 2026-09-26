@@ -6,7 +6,8 @@ extends SceneTree
 ##
 ## `collapsed` folds the right-hand list to its strip; `page:<row id>` opens that row's page in the
 ## stage (e.g. `page:frame`, `page:motors`, `page:battery`) — lab dock design §5.5's drilled-in shot;
-## `page:guards@<guard id>` fits that guard first.
+## `page:guards@<guard id>` fits that guard first; `page:printed:<part>@diverged` prints every
+## part, loosens the clearance and checks again, so the Printed rows show a real divergence.
 ##
 ## A fifth argument of `menu` drops the project menu open before the shot, which is the only way
 ## to photograph an entry that is greyed — and greyed entries are most of that menu today. `sim`
@@ -96,6 +97,15 @@ func _init() -> void:
 
 	# `page:guards@<guard id>` fits that guard first, through the Prop panel's own selector handler
 	# (not saved: the scratch HOME the captures run under holds the project).
+	# `page:printed:<part>@diverged` prints every part (into the scratch HOME), loosens the fit
+	# clearance to 0.35 mm, and checks again — a real divergence on every printed row.
+	if page_row.ends_with("@diverged"):
+		page_row = page_row.trim_suffix("@diverged")
+		shell.open_folder_after_export = false
+		shell.export_printed_parts()
+		shell.lab.print_panel.clearance_edited.emit(0.35)
+		await process_frame
+		shell._report_printed_divergence()
 	if page_row.contains("@"):
 		var guard_id := page_row.get_slice("@", 1)
 		page_row = page_row.get_slice("@", 0)
