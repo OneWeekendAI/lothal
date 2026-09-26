@@ -215,6 +215,11 @@ static func _padded(parent: Control) -> MarginContainer:
 	# Exception: Programmatic margin container insets using spacing scale
 	for side in ["left", "right", "top", "bottom"]:
 		margin.add_theme_constant_override("margin_%s" % side, LothalTheme.SPACE_2)
+	# FILL THE SCROLL'S WIDTH. A ScrollContainer stretches its child only when the child asks to
+	# expand; without it the content sat at its own minimum — which, once a footer with a 280 px
+	# floor was hidden (a Lab dock page), was the one-character minimum of an autowrapping value, and
+	# every value wrapped a letter per line in a 500 px column.
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	parent.add_child(margin)
 	return margin
 

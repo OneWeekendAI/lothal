@@ -395,7 +395,7 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 		&"arms":
 			var mode := VibrationModel.for_build(build).resonance_hz
 			var stock := FrameHardware.arm_thickness_mm(document)
-			return [["Arm 1st mode", "~%d Hz" % roundi(mode) if mode > 0.0 else "—"],
+			return [["1st mode, motors on", "~%d Hz" % roundi(mode) if mode > 0.0 else "—"],
 				["Arm stock", "%.1f mm" % stock if stock > 0.0 else "—"]]
 		&"hardware":
 			var grams := FrameHardware.mass_g(document, AirframePanel.materials()) \

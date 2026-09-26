@@ -15,6 +15,9 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 	shell.back_to_drone()
 	shell.select_system_by_name("Airframe")
 	await _settle(tree)
+	out.append(_the_frame_is_lit(shell))
+	out.append(_the_pack_is_dimmed(shell))
+	out.append(_a_propeller_is_dimmed(shell))
 	out.append(_hardware_row_reads_the_live_document(shell))
 	out.append(_hardware_row_carries_the_joint_verdict(shell))
 	out.append(_layout_row_reads_the_assembled_airframe(shell))
@@ -23,6 +26,29 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 	await _settle(tree)
 	out.append(_the_frame_page_carries_the_fitted_catalogue_sheet(shell))
 	shell.back_to_drone()
+
+	# THE THREE DRAWN PAGES — each asserted on its own lines, not in a loop.
+	shell.open_row(&"arms")
+	await _settle(tree)
+	out.append(_the_page_is_a_drawing_beside_its_sheet(shell, "Arms", "arms"))
+	out.append(_the_page_lists_only_its_own_warnings(shell, &"arms"))
+	out.append(_no_paragraph_under_the_sheet(shell, "Arms", shell.lab.arms_details))
+	shell.open_row(&"hardware")
+	await _settle(tree)
+	out.append(_the_page_is_a_drawing_beside_its_sheet(shell, "Screws & standoffs", "hardware"))
+	out.append(_the_page_lists_only_its_own_warnings(shell, &"hardware"))
+	out.append(_no_paragraph_under_the_sheet(shell, "Screws & standoffs", shell.lab.fasteners_details))
+	shell.open_row(&"layout")
+	await _settle(tree)
+	out.append(_the_page_is_a_drawing_beside_its_sheet(shell, "Layout & fit", "layout"))
+	out.append(_the_page_lists_only_its_own_warnings(shell, &"layout"))
+	out.append(_no_paragraph_under_the_sheet(shell, "Layout & fit", shell.lab.layout_details))
+	out.append(TestResult.new("airframe dock: the dock's Fit sheet is told to carry no warning block",
+		not shell.lab.assembly_panel.warnings_shown(), ""))
+	shell.back_to_drone()
+	await _settle(tree)
+	out.append(TestResult.new("airframe dock: Back takes the drawing down with the page",
+		not shell.item_page().is_visible_in_tree(), ""))
 	shell.back_to_drone()
 	shell.select_system_by_name("Propulsion")
 	await _settle(tree)
@@ -100,3 +126,87 @@ static func _the_frame_page_carries_the_fitted_catalogue_sheet(shell: GlassShell
 			and drawer.catalogue_text("frame_type") == FrameDetails.published(frame, "frame_type"),
 		"tab '%s' / fitted '%s'" % [drawer.catalogue_text("mass_g"),
 			FrameDetails.published(frame, "mass_g")])
+
+
+## The stage is used: the drawing takes the left of it, the sheet stands against the list, and
+## between them they span the stage — no narrow panel in an empty field.
+static func _the_page_is_a_drawing_beside_its_sheet(shell: GlassShell, name: String,
+		mode: String) -> TestResult:
+	var view := shell.item_page()
+	var drawing := view.get_global_rect()
+	var sheet := shell._inspector.get_global_rect()
+	var list := shell.section_list().get_global_rect()
+	var stage := shell.stage_rect()
+	var ok := view.is_visible_in_tree() and shell._inspector.is_visible_in_tree() \
+		and shell.item_diagram().mode == mode \
+		and drawing.end.x <= sheet.position.x and sheet.end.x <= list.position.x \
+		and drawing.position.x - stage.position.x <= GlassShell.CLUSTER_MARGIN + 1.0 \
+		and list.position.x - sheet.end.x <= GlassShell.CLUSTER_MARGIN + 1.0 \
+		and drawing.size.x >= 300.0
+	return TestResult.new("airframe dock: the %s page is a %s drawing beside its sheet, across the stage"
+		% [name, mode], ok, "drawing %s, sheet %s, list %s, mode %s" % [drawing, sheet, list,
+		shell.item_diagram().mode])
+
+
+static func _the_page_lists_only_its_own_warnings(shell: GlassShell, id: StringName) -> TestResult:
+	var row := _row(shell, id)
+	var owned: Array = row.get("warnings", [])
+	var view := shell.item_page_view()
+	var ok := view.warning_count() == owned.size()
+	for i in owned.size():
+		ok = ok and view.short_text(i).ends_with((owned[i] as BuildWarning).short) \
+			and not view.why_visible(i)
+	return TestResult.new("airframe dock: the %s page lists the row's own %d warning(s), Why? closed"
+		% [row.get("name"), owned.size()], ok, "view %d, row %d" % [view.warning_count(), owned.size()])
+
+
+## The sheet's footer (the frame's whole warning list and its prose note) is not on a dock page:
+## the page's own "Why?" list above the drawing replaces it.
+static func _no_paragraph_under_the_sheet(_shell: GlassShell, name: String,
+		panel: AirframePanel) -> TestResult:
+	return TestResult.new("airframe dock: the %s sheet shows no warning paragraph or footer note" % name,
+		not panel.footer_visible(), "")
+
+
+## The Airframe section lights the frame and dims what is not the frame (the brief: "still dims
+## non-frame parts correctly? verify"). Three separate lines, so a regression names its part.
+static func _transparencies(node: Node) -> Array:
+	var out: Array = []
+	for child in [node] + node.find_children("*", "GeometryInstance3D", true, false):
+		if child is GeometryInstance3D:
+			out.append((child as GeometryInstance3D).transparency)
+	return out
+
+
+## The frame's OWN meshes — every one with no system-named node (Motor_, Battery, Stack …) on its
+## path — are lit; the model's frame node also carries the parts bolted to it, which are not.
+static func _the_frame_is_lit(shell: GlassShell) -> TestResult:
+	var root: Node = shell.lab.airframe.frame_model
+	var dimmed: Array = []
+	var count := 0
+	for child in root.find_children("*", "GeometryInstance3D", true, false):
+		var path := root.get_path_to(child)
+		var owned := false
+		for i in path.get_name_count():
+			owned = owned or GlassShell._system_of_name(path.get_name(i)) != ""
+		if owned:
+			continue
+		count += 1
+		if (child as GeometryInstance3D).transparency != 0.0:
+			dimmed.append(str(path))
+	return TestResult.new("airframe dock: with Airframe chosen, every frame mesh is lit",
+		count > 0 and dimmed.is_empty(), "%d frame meshes, dimmed: %s" % [count, dimmed])
+
+
+static func _the_pack_is_dimmed(shell: GlassShell) -> TestResult:
+	var values := _transparencies(shell.lab.airframe.battery_mesh)
+	return TestResult.new("airframe dock: with Airframe chosen, the pack is dimmed",
+		not values.is_empty() and values.all(func(t): return is_equal_approx(t, GlassShell.DIM_TRANSPARENCY)),
+		str(values.slice(0, 6)))
+
+
+static func _a_propeller_is_dimmed(shell: GlassShell) -> TestResult:
+	var values := _transparencies(shell.lab.airframe.propeller_meshes["M1"])
+	return TestResult.new("airframe dock: with Airframe chosen, a propeller is dimmed",
+		not values.is_empty() and values.all(func(t): return is_equal_approx(t, GlassShell.DIM_TRANSPARENCY)),
+		str(values.slice(0, 6)))

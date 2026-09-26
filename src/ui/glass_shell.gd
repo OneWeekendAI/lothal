@@ -309,6 +309,11 @@ var _page: Dictionary = {}
 ## True while the list is folded to its strip because the open room page needs its width — see
 ## `_fold_list_for_room`. Not saved: it is the room's need, not the builder's preference.
 var _list_folded_for_page := false
+## The drawn half of a page whose row names a `diagram`: `_item_view` (numbers, own warnings) over
+## `_item_diagram`, standing left of the sheet (`_inspector`).
+var _item_page: PanelContainer
+var _item_view: ItemPageView
+var _item_diagram: FramePlanDiagram
 ## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
 var _list_refresh_queued := false
 ## The builder unfolded the strip while such a room was up; respected until the page closes.
@@ -520,6 +525,12 @@ func _ready() -> void:
 		for details in [child] + child.find_children("*", "", true, false):
 			if details is PartDetails:
 				(details as PartDetails).set_build_stats_visible(false)
+	# A DOCK PAGE SHOWS ONLY ITS ROW'S WARNINGS (§3), in the item view's short + "Why?" list — so
+	# the Airframe sheets drop their whole-frame warning footers and Fit its mixed warning block.
+	for panel in [lab.structure_details, lab.arms_details, lab.fasteners_details,
+			lab.layout_details]:
+		(panel as AirframePanel).set_footer_visible(false)
+	lab.assembly_panel.set_warnings_visible(false)
 
 	_autosave = Timer.new()
 	_autosave.wait_time = AUTOSAVE_SECONDS
@@ -675,6 +686,16 @@ func _layout_stage() -> void:
 		_inspector.offset_right = left + width
 		_inspector.offset_top = page_top + LothalTheme.SPACE_2
 		_inspector.offset_bottom = -(BOTTOM_KEEPOUT + LothalTheme.SPACE_2)
+		if _item_page != null and _item_page.visible:
+			# A DRAWN PAGE USES THE STAGE: the sheet stands against the list, at the width its rows
+			# want, and the drawing takes everything to its left — the mockup's canvas + params.
+			var right := size.x - list_w - CLUSTER_MARGIN
+			_inspector.offset_right = right
+			_inspector.offset_left = right - width
+			_item_page.offset_left = left
+			_item_page.offset_right = _inspector.offset_left - CLUSTER_MARGIN
+			_item_page.offset_top = _inspector.offset_top
+			_item_page.offset_bottom = _inspector.offset_bottom
 
 
 # ---------------------------------------------------------------------------
@@ -1689,6 +1710,27 @@ func _build_inspector() -> void:
 	_inspector_stub.visible = false
 	_inspector.add_child(_inspector_stub)
 
+	# THE DRAWN HALF OF A PAGE: the row's two numbers, its own warnings, and the item in plan —
+	# left of the sheet, for a row whose page names a `diagram` (SectionRows.DEFINITIONS).
+	_item_page = PanelContainer.new()
+	_item_page.name = "ItemPage"
+	var item_box := solid.duplicate() as StyleBoxFlat
+	item_box.content_margin_left = LothalTheme.SPACE_4
+	item_box.content_margin_right = LothalTheme.SPACE_4
+	item_box.content_margin_top = LothalTheme.SPACE_3
+	item_box.content_margin_bottom = LothalTheme.SPACE_3
+	_item_page.add_theme_stylebox_override("panel", item_box)
+	_item_page.anchor_left = 0.0
+	_item_page.anchor_right = 0.0
+	_item_page.anchor_top = 0.0
+	_item_page.anchor_bottom = 1.0
+	_item_page.visible = false
+	add_child(_item_page)
+	_item_view = ItemPageView.new()
+	_item_page.add_child(_item_view)
+	_item_diagram = FramePlanDiagram.new()
+	_item_view.set_body(_item_diagram)
+
 
 ## "← Back to drone" and the breadcrumb (§2), across the top of the stage while a page is open.
 func _build_page_bar() -> void:
@@ -1837,7 +1879,12 @@ func _show_page(row: Dictionary) -> void:
 		lab.panels.visible = true
 		_show_only_tabs(lab.panels, page.get("panels", []))
 		_inspector.visible = true
+		if page.has("diagram"):
+			_item_page.visible = true
 	_section_list.set_open_row(row["id"])
+	if _item_page.visible:
+		# Fills the drawing and the numbers from the same pass that builds the rows.
+		_refresh_list()
 	_sync_thrust_overlay()
 	_fit_columns.call_deferred()
 
@@ -1887,6 +1934,8 @@ func _hide_pages() -> void:
 		_field.visible = false
 	if _inspector != null:
 		_inspector.visible = false
+	if _item_page != null:
+		_item_page.visible = false
 	if _rail_glass != null:
 		_rail_glass.visible = false
 	if lab != null:
@@ -1961,6 +2010,38 @@ func set_list_collapsed(collapsed: bool) -> void:
 		_section_list.set_collapsed(collapsed, true)
 
 
+## The drawn page for the open row: its numbers and own warnings, and the item in plan — off the
+## row just built, so the page and the list are one pass over one build.
+func _fill_item_page(build: Build, context: Dictionary) -> void:
+	var id: StringName = _page.get("id", &"")
+	var row: Dictionary = {}
+	for candidate in _section_list.rows():
+		if candidate["id"] == id:
+			row = candidate
+	var mode := str((_page.get("page", {}) as Dictionary).get("diagram", ""))
+	var numbers_context := context.duplicate()
+	var extras := {}
+	if lab.airframe != null:
+		numbers_context["pack_side_mm"] = float(lab.airframe.battery_overhang_m()["lateral"]) * 1000.0
+		if mode == FramePlanDiagram.MODE_LAYOUT:
+			extras = {"discs": lab.airframe.prop_discs_mm(), "parts": lab.airframe.plan_parts_mm()}
+	_item_view.show_item(row, SectionRows.page_numbers(id, build, numbers_context))
+	# Layout is the fitted aircraft's geometry; arms and hardware are the frame document's.
+	_item_diagram.show_plan(lab.frame_document, mode, extras)
+
+
+func item_page() -> Control:
+	return _item_page
+
+
+func item_page_view() -> ItemPageView:
+	return _item_view
+
+
+func item_diagram() -> FramePlanDiagram:
+	return _item_diagram
+
+
 ## Asks for one `_refresh_list` at the end of this frame. Coalesced: a vertex drag publishes an
 ## edit per mouse motion, and the list only needs the last of them.
 func _queue_list_refresh() -> void:
@@ -2012,6 +2093,8 @@ func _refresh_list() -> void:
 		SectionRows.rows(_focused_name(), build, warnings, context))
 	if _workbench != null and _workbench.visible:
 		_workbench.numbers.show_catalogue(build.frame)
+	if _item_page != null and _item_page.visible:
+		_fill_item_page(build, context)
 	_section_list.set_open_row(_page.get("id", &"") if not _page.is_empty() else &"")
 
 

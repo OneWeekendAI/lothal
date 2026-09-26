@@ -726,10 +726,12 @@ func battery_fit_warnings() -> Array[BuildWarning]:
 
 
 ## Below this many millimetres between a part and a propeller disc, the fit is TIGHT. A GUESS, not a
-## published figure: a 5" prop flexes a few mm under load and a strapped pack slips a few mm in a
-## crash, so a gap smaller than that is one hard landing from a strike. Labelled here so it can be
-## replaced by a measured value (existence before precision).
-const TIGHT_PROP_CLEARANCE_MM := 5.0
+## published figure: a 5" prop tip flexes a millimetre or two under load and a strapped pack slips
+## about as much in a crash, so a gap smaller than that is one hard landing from a strike. Labelled
+## here so it can be replaced by a measured value (existence before precision). NOT 5 mm: the
+## reference build's pack sits 4 mm from its discs in plan, as real 5" builds do, and a figure that
+## turns the default drone amber is noise nobody can act on (battery_fit_warnings' own rule).
+const TIGHT_PROP_CLEARANCE_MM := 3.0
 
 
 ## The part that comes closest to any propeller disc, in plan view: `{part, mm}` — the pack or one
@@ -750,6 +752,37 @@ func closest_to_prop() -> Dictionary:
 		if best.is_empty() or mm < float(best["mm"]):
 			best = {"part": _component_label(category), "mm": mm}
 	return best
+
+
+## Every propeller's swept disc in plan, `{centre: Vector2, radius}` in mm, in the airframe's XZ
+## plane (x across, y = z, forward up the page as -z). The discs `footprint_prop_clearance_m`
+## measures against — what the Layout & fit page draws.
+func prop_discs_mm() -> Array:
+	var out: Array = []
+	for motor_name in MotorLayout.MOTOR_NAMES:
+		if not propeller_meshes.has(motor_name):
+			continue
+		var hub := MotorLayout.motor_position(motor_name, arm_m)
+		out.append({"centre": Vector2(hub.x, hub.z) * 1000.0,
+			"radius": (propeller_meshes[motor_name] as PropellerMesh).radius_m * 1000.0})
+	return out
+
+
+## The pack and every fitted component as the plan rectangles their prop clearance is measured
+## from, `{label, rect}` in mm — the same footprints `closest_to_prop` reads.
+func plan_parts_mm() -> Array:
+	var out: Array = []
+	if battery_mesh != null:
+		var half := Vector2(battery_mesh.size_m.x, battery_mesh.size_m.z) * 0.5
+		var centre := Vector2(0.0, -battery_offset_m)
+		out.append({"label": "pack", "rect": Rect2((centre - half) * 1000.0, half * 2000.0)})
+	for category in Build.OPTIONAL_COMPONENTS:
+		if not component_meshes.has(category):
+			continue
+		var bounds := component_bounds_m(category)
+		out.append({"label": _component_label(category),
+			"rect": Rect2(bounds.position * 1000.0, bounds.size * 1000.0)})
+	return out
 
 
 ## The warning a TIGHT but clear gap earns (`closest_to_prop`'s shape), or null. Null inside the

@@ -148,13 +148,13 @@ static func _airframe_geometry_rows(build: Build, warnings: Array, context: Dict
 		layout.get("number") == "pack 9 mm from a prop" and layout.get("status") == SectionRows.OK,
 		_show(layout)))
 
-	var tight := AirframeModel.prop_clearance_warning({"part": "antenna", "mm": 3.2})
-	out.append(TestResult.new("section rows: 3 mm from a prop is a LIMITING warning on Layout & fit",
+	var tight := AirframeModel.prop_clearance_warning({"part": "antenna", "mm": 2.2})
+	out.append(TestResult.new("section rows: 2 mm from a prop is a LIMITING warning on Layout & fit",
 		tight != null and tight.severity == BuildWarning.Severity.LIMITING
-			and tight.item == &"layout" and tight.short == "antenna 3 mm from a prop disc",
+			and tight.item == &"layout" and tight.short == "antenna 2 mm from a prop disc",
 		"%s" % (tight.short if tight != null else "null")))
-	out.append(TestResult.new("section rows: 9 mm from a prop is not tight",
-		AirframeModel.prop_clearance_warning({"part": "pack", "mm": 9.0}) == null, ""))
+	out.append(TestResult.new("section rows: 4 mm from a prop (the default drone in the app) is not tight",
+		AirframeModel.prop_clearance_warning({"part": "pack", "mm": 4.0}) == null, ""))
 	out.append(TestResult.new(
 		"section rows: inside the disc is left to the impossible warning, not repeated as tight",
 		AirframeModel.prop_clearance_warning({"part": "pack", "mm": -2.0}) == null, ""))
@@ -163,7 +163,7 @@ static func _airframe_geometry_rows(build: Build, warnings: Array, context: Dict
 	var tight_row := _row(SectionRows.rows("Airframe", build, tight_list, ctx), &"layout")
 	out.append(TestResult.new("section rows: a tight clearance turns Layout & fit amber and says so",
 		tight_row.get("status") == SectionRows.WARN
-			and tight_row.get("line3") == "⚠ antenna 3 mm from a prop disc", _show(tight_row)))
+			and tight_row.get("line3") == "⚠ antenna 2 mm from a prop disc", _show(tight_row)))
 
 	fasteners.free()
 	airframe.free()
@@ -218,7 +218,7 @@ static func _airframe_page_numbers(build: Build) -> Array:
 	var arms := SectionRows.page_numbers(&"arms", build, context)
 	var mode := VibrationModel.for_build(build).resonance_hz
 	out.append(TestResult.new("page numbers: Arms shows the guessed first mode and the arm stock",
-		arms == [["Arm 1st mode", "~%d Hz" % roundi(mode)],
+		arms == [["1st mode, motors on", "~%d Hz" % roundi(mode)],
 			["Arm stock", "%.1f mm" % FrameHardware.arm_thickness_mm(document)]], str(arms)))
 	var hardware := SectionRows.page_numbers(&"hardware", build, context)
 	out.append(TestResult.new("page numbers: Screws & standoffs shows ~mass and the screw count",

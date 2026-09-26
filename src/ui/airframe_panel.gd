@@ -45,6 +45,11 @@ var _props: AirframeProperties
 
 var _footer_note: Label
 var _warnings: WarningList
+var _footer_rule: HSeparator
+## False on a Lab dock page (lab dock design §3): the page's own "Why?" list, filtered to its row,
+## replaces this footer's whole-frame warning list and its prose note. The designer's drawer keeps
+## both.
+var _footer_shown := true
 
 
 func _init(p_spec_rows: Array) -> void:
@@ -68,7 +73,9 @@ static func materials() -> FrameMaterials:
 ## to bite, a layout that cannot be mixed. `FrameWarnings` derives them from the document, so they
 ## survive the removal of the build that used to supply them.
 func _build_footer(root: VBoxContainer) -> void:
-	root.add_child(HSeparator.new())
+	var rule := HSeparator.new()
+	root.add_child(rule)
+	_footer_rule = rule
 
 	_warnings = WarningList.new(280)
 	root.add_child(_warnings)
@@ -96,6 +103,7 @@ func render(document: AirframeDocument) -> void:
 		return
 
 	_warnings.show_warnings(FrameWarnings.of(document, _props))
+	_apply_footer()
 	var record := materials().get_material(document.material_id)
 	var material_name := str(record.get("name", document.material_id)) if not record.is_empty() \
 		else document.material_id
@@ -104,6 +112,25 @@ func render(document: AirframeDocument) -> void:
 		document.plates.size(),
 		material_name,
 		"" if document.author == "" else " · %s" % document.author]
+
+
+## Shows or hides the footer: the warning list, the rule above it and the note under it.
+func set_footer_visible(shown: bool) -> void:
+	_footer_shown = shown
+	_apply_footer()
+
+
+func footer_visible() -> bool:
+	return _footer_shown and (_warnings.visible or _footer_note.visible)
+
+
+func _apply_footer() -> void:
+	if _footer_rule == null:
+		return
+	_footer_rule.visible = _footer_shown
+	_footer_note.visible = _footer_shown
+	if not _footer_shown:
+		_warnings.visible = false
 
 
 # ---------------------------------------------------------------------------
