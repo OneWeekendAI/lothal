@@ -28,7 +28,7 @@ extends CustomParts
 ## it.
 ##
 ## MASS COMES OUT OF THE BUDGET AND A CUSTOM PART IS NO EXCEPTION. A builder's 30 g camera does not
-## add 30 g beside Build.ELECTRONICS_MASS_G; it takes the camera's budgeted share out of it and
+## add 30 g beside Build.ELECTRONICS_BUDGET_G; it takes the camera's budgeted share out of it and
 ## costs the aircraft the excess, exactly as a shipped 12 g one does. Nothing in this file has to
 ## do anything to make that true — mass_parts() reads `mass_g` and does not care where the record
 ## came from — and it is stated here because "my part must be being added on top" is the first

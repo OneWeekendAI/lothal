@@ -1,8 +1,20 @@
 class_name ElectronicsPicker
 extends PanelContainer
-## Lab's electronics rail: the camera, the video transmitter, the antenna and the receiver.
+## Lab's payload rails: the parts that are fitted by naming them and can be left off entirely.
 ##
-## ONE RAIL FOR FOUR CATEGORIES, which breaks the pattern the other six rails follow, and the
+## TWO INSTANCES SINCE C3, ONE CLASS. Video's `Electronics` rail carries the camera, the video
+## transmitter and the antenna; Control's `Link` rail carries the receiver, the GPS and the buzzer.
+## Which categories an instance renders is an ARGUMENT, and both call sites derive it by filtering
+## `Build.OPTIONAL_COMPONENTS` through `Build.COMPONENT_SYSTEM` — neither is a hand-written list of
+## three names, because that is the arrangement P10f found had drifted (*the two lists were never
+## the same list*), and `Build.components_for_system` refuses outright rather than quietly dropping
+## a category no system claims.
+##
+## The class did not have to change shape for the split: nothing in it was ever about video, and
+## the argument below for a form of dropdowns is about what KIND of decision these parts are, not
+## about which system they belong to.
+##
+## ONE RAIL FOR SEVERAL CATEGORIES, which breaks the pattern the other six rails follow, and the
 ## reason is what these parts are. The other rails each browse a shelf — there are twelve frames
 ## and a builder narrows them by material, size and mount, which is what PartPicker's filters and
 ## its tall ItemList are for. These four are a PAYLOAD DECISION taken in one sitting: four entries
@@ -26,33 +38,59 @@ extends PanelContainer
 ## version control"), and it computes nothing: it emits ids and Build does the weighing.
 
 signal components_changed()
+## A custom part was saved or deleted from this rail. The CATALOG changed, not just the selection —
+## LabScreen reloads on it, exactly as it does on the six older rails' custom_*_changed.
+signal custom_components_changed()
 
 ## What the "" row reads as. One constant rather than a literal per list, so the four lists
 ## cannot drift into saying it three different ways.
 const NOT_FITTED := "Not fitted"
 
-## The label each category browses under. The ORDER comes from Build.OPTIONAL_COMPONENTS rather
-## than from this table, so the rail lists the components in the order the mass model weighs them
-## and a fifth component cannot be added to the model and silently left off this rail — it turns
-## up here as a missing label instead, which is loud.
+## The label each category browses under. ONE TABLE FOR BOTH RAILS, because a label is a property
+## of the component and not of the system that owns it — splitting it in two would be the third
+## hand-written list in a slice whose whole subject is that two were already one too many.
+##
+## The ORDER comes from `Build.components_for_system` rather than from this table, so each rail
+## lists its components in the order the mass model weighs them, and a seventh component added to
+## the model cannot be silently left off — it turns up as a missing label, which is loud. C2 shipped
+## `gps` and `buzzer` into the model without entries here and they rendered as `gps` and `buzzer`:
+## loud worked, and this is the fix.
 const CATEGORY_LABELS := {
 	"camera": "Camera",
 	"vtx": "Video TX",
 	"antenna": "Antenna",
 	"receiver": "Receiver",
+	"gps": "GPS",
+	"buzzer": "Buzzer",
 }
 
 var catalog: PartsCatalog
+## The categories THIS instance renders, in Build's weighing order. Held because every public
+## method below answers about this rail rather than about every optional component there is:
+## `component_ids()` returning six keys from a rail carrying three would hand Build a payload for
+## bays this rail cannot see, and the other rail's selections would be overwritten with defaults.
+var categories: Array[String] = []
 
 var _selectors: Dictionary = {}   # category -> OptionButton
+## The budget paragraph under the bays. Off on the Lab dock's Receiver page (lab dock design §3: no
+## paragraph on a page); the Electronics rail keeps it.
+var _note: Label
 ## category -> Array[String] of part ids, "" first. The selector's index is an index into THIS,
 ## never into catalog.list_category() — the lists differ by the "Not fitted" row, and reading a
 ## part out of the catalog by a selector index is off by one for the whole of every list here.
 var _ids: Dictionary = {}
+var _authoring_selector: OptionButton
+var _delete_button: Button
 
 
-func _init(p_catalog: PartsCatalog) -> void:
+func _init(p_catalog: PartsCatalog, p_categories: Array, p_title: String) -> void:
 	catalog = p_catalog
+	for category in p_categories:
+		categories.append(String(category))
+	# The tab title and the heading are one string, set here rather than by the caller: they are
+	# the same name in the rail strip and at the top of the form, and LabScreen setting one while
+	# this file drew the other is how a rail comes to be called two things.
+	name = p_title
 
 	custom_minimum_size = Vector2(272, 0)
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -61,15 +99,30 @@ func _init(p_catalog: PartsCatalog) -> void:
 	PartDetails._padded(self).add_child(root)
 
 	var title := Label.new()
-	title.text = "Electronics"
+	title.text = p_title
 	title.theme_type_variation = &"TitleLabel"
 	root.add_child(title)
+
+	# WHAT AN EMPTY RAIL SAYS. `Build.components_for_system` answers nothing at all when any
+	# optional component is claimed by no system (see its header), so this is the shape that
+	# refusal takes on screen: a rail that says why it is empty, rather than a form with no rows
+	# in it that reads as a rendering fault. There is no other way to reach this branch — both
+	# call sites pass that function's result — so it is the refusal made visible and nothing else.
+	if categories.is_empty():
+		var refused := Label.new()
+		refused.text = ("No component category is claimed by this system.\n"
+			+ "Build.COMPONENT_SYSTEM is missing an entry — see the error log.")
+		refused.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		refused.custom_minimum_size = Vector2(252, 0)
+		refused.theme_type_variation = &"WarnLabel"
+		root.add_child(refused)
+		return
 
 	var grid := GridContainer.new()
 	grid.columns = 2
 	root.add_child(grid)
 
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in categories:
 		var label := Label.new()
 		label.text = str(CATEGORY_LABELS.get(category, category))
 		grid.add_child(label)
@@ -97,31 +150,73 @@ func _init(p_catalog: PartsCatalog) -> void:
 		var default_id := str(Build.DEFAULT_COMPONENT_IDS.get(category, ""))
 		selector.select(maxi(ids.find(default_id), 0))
 		selector.item_selected.connect(_on_selector_changed)
+		# Touching a bay makes it the one the authoring row below acts on — see that row's note.
+		selector.item_selected.connect(func(_i: int) -> void: _set_authoring_category(category))
 		grid.add_child(selector)
 		_selectors[category] = selector
 
+	_build_authoring_row(root)
+
 	root.add_child(HSeparator.new())
+
+	# TWO SENTENCES BECAUSE THERE ARE TWO KINDS OF ROW, and which ones this rail has is a
+	# question about its own categories. The carved components were a share of the 55 g lump, so
+	# taking one off makes the aircraft LIGHTER; the added ones never were, so fitting one makes it
+	# HEAVIER. The old single sentence said the first about all four, which was true of Video's
+	# three and false of two of Control's — so it is derived from Build.CARVED_SHARES per rail
+	# rather than written once and left to go wrong on whichever rail it does not describe.
+	var carved: Array[String] = []
+	var added: Array[String] = []
+	for category in categories:
+		if Build.CARVED_SHARES.has(category):
+			carved.append(category)
+		else:
+			added.append(category)
+
+	var sentences: Array[String] = []
+	if not carved.is_empty():
+		sentences.append(("%s was a share of the flat %.0f g electronics budget until it became "
+			+ "a part. Take one off and the aircraft is lighter by what it actually weighs — "
+			+ "an AIO whoop carries none of them.") % [
+				"Each of these" if added.is_empty() else "Each of the first %d" % carved.size(),
+				Build.ELECTRONICS_BUDGET_G])
+	if not added.is_empty():
+		sentences.append(("%s was never in that budget. Fitting one makes the aircraft heavier "
+			+ "by what it weighs.") % [
+				"Each of these" if carved.is_empty() else "The rest"])
 
 	var note := Label.new()
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(252, 0)
 	note.theme_type_variation = &"MutedLabel"
-	note.text = ("Each of these was a share of the flat %.0f g electronics budget until it "
-		+ "became a part. Take one off and the aircraft is lighter by what it actually "
-		+ "weighs — an AIO whoop carries none of the four.") % Build.ELECTRONICS_MASS_G
+	note.text = " ".join(sentences)
 	root.add_child(note)
+	_note = note
 
 
 # ---------------------------------------------------------------------------
 # Public surface (also what the tests drive)
 # ---------------------------------------------------------------------------
 
-## The whole payload, in the shape Build.from_ids takes: every category present, "" for a bay
-## left empty. Every category present ALWAYS — an absent key would mean "fit the default" to
-## Build, which is the one thing an empty bay must not turn back into.
+func set_note_visible(shown: bool) -> void:
+	if _note != null:
+		_note.visible = shown
+
+
+func note_visible() -> bool:
+	return _note != null and _note.visible
+
+
+## THIS RAIL's half of the payload, in the shape Build.from_ids takes: every category this rail
+## carries, "" for a bay left empty. Every one present ALWAYS — an absent key would mean "fit the
+## default" to Build, which is the one thing an empty bay must not turn back into.
+##
+## THIS RAIL's, not every optional component: the two rails' dictionaries are merged before they
+## reach Build (LabScreen.component_ids), and a rail that answered for the other rail's categories
+## would answer "" for bays it cannot see — silently emptying them.
 func component_ids() -> Dictionary:
 	var out := {}
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in categories:
 		out[category] = selected_id(category)
 	return out
 
@@ -161,3 +256,102 @@ func select_component(category: String, part_id: String) -> bool:
 
 func _on_selector_changed(_index: int) -> void:
 	components_changed.emit()
+
+
+# ---------------------------------------------------------------------------
+# Authoring (C7)
+# ---------------------------------------------------------------------------
+
+## ONE ROW FOR THE WHOLE RAIL — a category dropdown, "New custom…" and "Delete" — rather than a New
+## and a Delete beside every bay, and the reason is Delete rather than New.
+##
+## A button pair per bay is two more columns in a 292 px rail whose selectors are already clipped to
+## fit (see the width note above), so it does not fit. A single "New custom…" menu listing the
+## categories would fit, and would answer the question for New — but it leaves Delete ambiguous: this
+## rail has three selections at once, and a lone Delete has to delete ONE of them. Whatever rule
+## picked it silently ("the last one touched") would be a rule the builder cannot see before pressing
+## a button that removes a file record.
+##
+## So the category is a visible control that BOTH buttons read: the builder can see what New will
+## create and which bay's part Delete will remove before pressing either. It follows the bay they last
+## touched, so the common path — pick the camera row, decide to enter your own — needs no extra click,
+## and Delete is disabled, not hidden, unless that bay holds a part the builder owns (FcPicker's rule,
+## so the row does not reflow as the selection moves).
+func _build_authoring_row(root: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	root.add_child(row)
+
+	_authoring_selector = OptionButton.new()
+	_authoring_selector.clip_text = true
+	_authoring_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for category in categories:
+		_authoring_selector.add_item(str(CATEGORY_LABELS.get(category, category)))
+	_authoring_selector.select(0)
+	_authoring_selector.item_selected.connect(func(_i: int) -> void: _refresh_delete_button())
+	row.add_child(_authoring_selector)
+
+	var new_button := Button.new()
+	new_button.text = "New custom…"
+	new_button.pressed.connect(_open_dialog)
+	row.add_child(new_button)
+
+	_delete_button = Button.new()
+	_delete_button.text = "Delete"
+	_delete_button.pressed.connect(_delete_selected)
+	row.add_child(_delete_button)
+
+	components_changed.connect(_refresh_delete_button)
+	_refresh_delete_button()
+
+
+## The category the New and Delete buttons act on. Public because it is what a test drives and what
+## the builder reads.
+func authoring_category() -> String:
+	if _authoring_selector == null or _authoring_selector.selected < 0:
+		return ""
+	return categories[_authoring_selector.selected]
+
+
+func _set_authoring_category(category: String) -> void:
+	var index := categories.find(category)
+	if _authoring_selector != null and index >= 0:
+		_authoring_selector.select(index)
+		_refresh_delete_button()
+
+
+func set_authoring_category(category: String) -> bool:
+	if not categories.has(category):
+		return false
+	_set_authoring_category(category)
+	return true
+
+
+func _refresh_delete_button() -> void:
+	var category := authoring_category()
+	_delete_button.disabled = category == "" or not PartsCatalog.is_custom(selected_id(category))
+
+
+## The dialog a New press opens. Returned so a test can reach it without a window server.
+func open_dialog() -> CustomComponentDialog:
+	return _open_dialog()
+
+
+func _open_dialog() -> CustomComponentDialog:
+	var dialog := CustomComponentDialog.new(authoring_category())
+	dialog.component_saved.connect(func(_part_id: String) -> void:
+		dialog.queue_free()
+		custom_components_changed.emit())
+	add_child(dialog)
+	dialog.popup_centered()
+	return dialog
+
+
+func _delete_selected() -> void:
+	var category := authoring_category()
+	var part_id := selected_id(category) if category != "" else ""
+	if not PartsCatalog.is_custom(part_id):
+		return
+	var document := CustomComponentDialog.document_for(category)
+	if document != null and document.remove(part_id):
+		document.save()
+		custom_components_changed.emit()

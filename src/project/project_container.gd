@@ -14,7 +14,8 @@ extends RefCounted
 ##       MANIFEST.json            what kind of container this is, and what wrote it
 ##       project.json             the decisions (Project)
 ##       parts/custom_parts.json  copies of the custom parts this drone uses
-##       printed/…                what has actually been printed. Nothing writes these yet.
+##       printed/…                what has actually been printed: one STL per export, each named by
+##                                a print record in project.json (PrintedExport, printed-room PR4).
 ##       thumbnail.png            a cache. Deletable. Nothing writes it yet.
 ##
 ## ---------------------------------------------------------------------------
@@ -276,6 +277,23 @@ static func _read_json(reader: ZIPReader, member: String) -> Dictionary:
 # ---------------------------------------------------------------------------
 # Custom parts travel with the drone
 # ---------------------------------------------------------------------------
+
+## One carried-through member's bytes — a `printed/…` STL, say — or empty when there is none.
+##
+## The container still does not interpret it: PrintedExport decides what a printed member is, and the
+## print record in the document says which one it is. This only stores bytes by name.
+func member_bytes(name: String) -> PackedByteArray:
+	return _members.get(name, PackedByteArray())
+
+
+## Adds or replaces a member this class does not author; it is written on the next `write`. Refuses
+## the three authored names, which this class rebuilds from the document on every write.
+func set_member_bytes(name: String, data: PackedByteArray) -> void:
+	if AUTHORED_MEMBERS.has(name):
+		push_warning("%s is written by the container itself" % name)
+		return
+	_members[name] = data
+
 
 ## The custom-part records this container carries, in `custom_parts.json`'s own shape.
 func custom_parts() -> Dictionary:

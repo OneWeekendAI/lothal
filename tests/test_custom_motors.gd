@@ -176,7 +176,7 @@ static func _test_a_custom_motor_does_not_move_the_reference_build() -> TestResu
 
 	_restore(CustomMotors.SAVE_PATH, previous)
 	return TestResult.new(
-		"a defined custom motor does not move the reference build's 496 g / 11.69 / 29.6%",
+		"a defined custom motor does not move the reference build's 507.5 g / 11.43 / 29.9%",
 		merged_has_it and pinned and merged_pinned and merged_motors == shipped_motors + 1,
 		"merged sees it=%s, %d shipped vs %d merged motors, shipped build %.2f g / %.2f TWR, merged build %.2f g / %.2f TWR" % [
 			merged_has_it, shipped_motors, merged_motors,
@@ -185,9 +185,9 @@ static func _test_a_custom_motor_does_not_move_the_reference_build() -> TestResu
 
 
 static func _is_the_oracle(build: Build) -> bool:
-	return absf(build.all_up_weight_g() - 496.0) < EPS \
-		and absf(build.thrust_to_weight() - 11.69) < 0.01 \
-		and absf(build.hover_throttle() - 0.296) < 0.001
+	return absf(build.all_up_weight_g() - 507.48) < EPS \
+		and absf(build.thrust_to_weight() - 11.43) < 0.01 \
+		and absf(build.hover_throttle() - 0.299) < 0.001
 
 
 # ---------------------------------------------------------------------------
@@ -611,11 +611,14 @@ static func _test_a_custom_motor_is_selectable_and_flyable() -> TestResult:
 	var test: Dictionary = record["thrust_test"]
 	var expected_at_test := PropellerModel.fit_k_t(float(specs["max_thrust_g"]),
 		float(specs["kv"]) * float(test["voltage_v"]))
-	var from_geom := ThrustValidation.geometry_of(catalog.get_part(str(test["prop_id"])))
-	var to_geom := build.prop_geometry()
-	var expected := PropellerModel.scale_k_t_to_prop(expected_at_test,
-		from_geom.diameter_m, from_geom.pitch_m, from_geom.blades,
-		to_geom.diameter_m, to_geom.pitch_m, to_geom.blades)
+	# The move to the fitted prop is the BEMT geometry ratio (§0, P5) — the same law
+	# build.gd now uses — computed here from the record's own planforms.
+	var from_doc := PropellerDocument.from_catalog_prop(catalog.get_part(str(test["prop_id"])))
+	var to_doc := PropellerDocument.from_catalog_prop(build.propeller)
+	var expected := BemtModel.scale_k_t_to_prop(expected_at_test,
+		from_doc.diameter_mm * 0.001, from_doc.pitch_mm * 0.001, float(from_doc.blades), from_doc.chord,
+		to_doc.diameter_mm * 0.001, to_doc.pitch_mm * 0.001, float(to_doc.blades), to_doc.chord,
+		float(specs["kv"]) * float(test["voltage_v"]))
 
 	var k_t_ok := absf(build.k_t - expected) < expected * 0.001
 	# And it is a DIFFERENT aircraft from the reference build, so this cannot be passing by

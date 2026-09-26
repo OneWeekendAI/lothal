@@ -1,6 +1,11 @@
 class_name TestForwardFlight
 extends RefCounted
-## The forward-flight propeller model (docs/lothal/plans/2026-08-14-forward-flight-prop-design.md).
+## The forward-flight propeller model (docs/lothal/plans/2026-08-14-forward-flight-prop-design.md),
+## as it stands after P6's closure: the model UNDER these checks is now blade-element theory on the
+## blade's own planform, read through `BemtRatios`, and `PropellerModel::thrust_factor` /
+## `power_factor` are deleted. Not one check here changed its CLAIM in that swap — the claims were
+## always about the physics rather than about the implementation — but every one of them now
+## exercises BEMT, so this file is the regression net the closure was carried out under.
 ##
 ## Every check here was DEMONSTRATED TO FAIL before it was kept — the way each one was made to fail
 ## is written above it, so a future reader can break it again in ten seconds rather than trusting
@@ -21,9 +26,9 @@ extends RefCounted
 ## The three fixed points, to the digit. Hover and static, i.e. J = 0 — a correct implementation
 ## leaves them BIT-IDENTICAL, not merely close, because the forward-flight terms short-circuit at
 ## zero velocity rather than evaluating to something that rounds to one.
-const REFERENCE_AUW_G := 496.0
-const REFERENCE_TWR := 11.69
-const REFERENCE_HOVER_THROTTLE := 0.296
+const REFERENCE_AUW_G := 507.5
+const REFERENCE_TWR := 11.43
+const REFERENCE_HOVER_THROTTLE := 0.299
 
 const CRUISE_MPS := 10.0
 
@@ -51,9 +56,11 @@ static func run() -> Array:
 # The trap
 # ---------------------------------------------------------------------------
 
-## TO MAKE THIS FAIL: return 1.0 unconditionally from PropellerModel::power_factor — that is
-## precisely a model with effect (a) and not effect (b). Current at 10 m/s becomes 11.85 A against
-## a 10.95 A hover, +8%, and this reports the regression. With both effects it is 9.13 A, -17%.
+## TO MAKE THIS FAIL: return 1.0 unconditionally from `BemtRatios::power_ratio` — that is precisely
+## a model with effect (a) and not effect (b), since the trim would still raise the throttle to hold
+## the aircraft up while the rotor doing that work never got cheaper. Under BEMT the reference build
+## draws 10.15 A at 10 m/s against 10.95 A hovering, 93%; with the power ratio pinned at 1 the
+## throttle rise is all that survives and the figure goes above the hover current.
 ##
 ## Both models raise the throttle to trim, because both unload the prop. Only the full one knows
 ## the rotor doing that work has become cheaper.
@@ -78,18 +85,18 @@ static func _translational_lift_is_not_missing(build: Build) -> TestResult:
 ## so at once — which is the coupling worth having.
 ##
 ## Worth stating what does NOT break them, because it was the first guess and it was wrong:
-## deleting the zero-velocity short circuit in thrust_factor changes nothing here. These three
+## deleting the zero-velocity short circuit in the forward-flight ratio changes nothing here. These three
 ## figures never touch the forward-flight code at all — they are the static path, and what protects
 ## them is that the static path stayed static. That is the next check, and these two are a pair.
 static func _the_three_oracles_have_not_moved(build: Build) -> Array:
 	return [
-		TestResult.new("the reference build still weighs exactly 496.0 g",
+		TestResult.new("the reference build still weighs exactly 507.5 g",
 			is_equal_approx(snappedf(build.all_up_weight_g(), 0.1), REFERENCE_AUW_G),
 			"%.4f g" % build.all_up_weight_g()),
-		TestResult.new("thrust-to-weight is still exactly 11.69:1",
+		TestResult.new("thrust-to-weight is still exactly 11.43:1",
 			is_equal_approx(snappedf(build.thrust_to_weight(), 0.01), REFERENCE_TWR),
 			"%.6f:1" % build.thrust_to_weight()),
-		TestResult.new("hover throttle is still exactly 29.6%",
+		TestResult.new("hover throttle is still exactly 29.9%",
 			is_equal_approx(snappedf(build.hover_throttle(), 0.001), REFERENCE_HOVER_THROTTLE),
 			"%.6f%%" % (build.hover_throttle() * 100.0)),
 	]
@@ -97,20 +104,23 @@ static func _the_three_oracles_have_not_moved(build: Build) -> Array:
 
 ## The callers that legitimately want a stand rather than an aircraft must keep getting one.
 ##
-## TO MAKE THIS FAIL: route max_total_thrust_n() through PropellerModel.thrust_n_in_flight() with
-## any non-zero airspeed. The bench figure drops, and with it the 11.69:1 above and every held-out
+## TO MAKE THIS FAIL: multiply max_total_thrust_n() by `BemtRatios::thrust_ratio` at any non-zero
+## airspeed. The bench figure drops, and with it the 11.69:1 above and every held-out
 ## point ThrustValidation checks its 10%/20% tiers against.
+## The ratio must be EXACTLY 1.0 at rest — the bit, not a rounding — because the whole calibration
+## chain P5 anchored hangs off the static solve. Under a tabulated surface (P6's closure) that is a
+## sharper claim than it was: a bilinear read of node (0,0) has to return the node's own value with
+## no arithmetic done to it, and `BemtRatios::read`'s zero-velocity short circuit is what guarantees
+## it rather than the interpolation happening to land there.
 static func _the_static_callers_are_still_static(build: Build) -> TestResult:
-	var geometry := build.prop_geometry()
 	var rpm := build.max_rpm_at_nominal()
 	var static_n := PropellerModel.thrust_n(build.k_t, rpm)
-	var at_rest_n := PropellerModel.thrust_n_in_flight(
-		build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, 0.0)
+	var ratio_at_rest := build.forward_ratios().thrust_ratio(rpm, 0.0, 0.0)
 	return TestResult.new(
-		"the in-flight form IS the static form when the aircraft is not moving",
-		static_n == at_rest_n and is_equal_approx(build.max_total_thrust_n(), 4.0 * static_n),
-		"static %.9f N, in-flight-at-rest %.9f N, bench figure %.9f N (4x static = %.9f N)" % [
-			static_n, at_rest_n, build.max_total_thrust_n(), 4.0 * static_n]
+		"the forward-flight ratio is EXACTLY 1.0 when the aircraft is not moving",
+		ratio_at_rest == 1.0 and is_equal_approx(build.max_total_thrust_n(), 4.0 * static_n),
+		"ratio at rest %.20f, bench figure %.9f N (4x static = %.9f N)" % [
+			ratio_at_rest, build.max_total_thrust_n(), 4.0 * static_n]
 	)
 
 
@@ -118,22 +128,23 @@ static func _the_static_callers_are_still_static(build: Build) -> TestResult:
 # Effect (a), and its edges
 # ---------------------------------------------------------------------------
 
-## TO MAKE THE MONOTONICITY CHECK FAIL: make thrust_factor use absf(J), or drop the term entirely.
-## TO MAKE THE CLAMP CHECK FAIL: remove the `.clamp(0.0, 1.0)` in thrust_factor. Past J0 thrust
-## goes NEGATIVE, and an aircraft at speed is pulled backwards by its own propellers.
+## TO MAKE THE MONOTONICITY CHECK FAIL: make the ratio read absf(mu), or drop the axial term.
+## TO MAKE THE CLAMP CHECK FAIL: remove the `.max(0.0)` in `thrust_ratio_forward`. Past the advance
+## where the blade stops pulling, BEMT reports NEGATIVE thrust, and an aircraft at speed is pulled
+## backwards by its own propellers.
 static func _thrust_falls_with_airspeed(build: Build) -> Array:
 	var results: Array = []
 	var geometry := build.prop_geometry()
+	var ratios := build.forward_ratios()
 	var rpm := 20000.0
+	var static_n := PropellerModel.thrust_n(build.k_t, rpm)
 
-	var previous := PropellerModel.thrust_n_in_flight(
-		build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, 0.0)
+	var previous := static_n
 	var strictly_decreasing := true
 	var reached_zero := false
 	for i in range(1, 41):
 		var v := float(i)
-		var thrust := PropellerModel.thrust_n_in_flight(
-			build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, v)
+		var thrust := static_n * ratios.thrust_ratio(rpm, v, 0.0)
 		if thrust > previous:
 			strictly_decreasing = false
 		if thrust <= 0.0:
@@ -143,22 +154,40 @@ static func _thrust_falls_with_airspeed(build: Build) -> Array:
 	results.append(TestResult.new(
 		"thrust at a fixed RPM falls as the aircraft flies faster, and reaches zero",
 		strictly_decreasing and reached_zero,
-		"at %.0f RPM: %.2f N standing still, %.2f N at 40 m/s" % [rpm,
-			PropellerModel.thrust_n_in_flight(build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, 0.0),
-			PropellerModel.thrust_n_in_flight(build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, 40.0)]
+		"at %.0f RPM: %.2f N standing still, %.2f N at 40 m/s" % [rpm, static_n,
+			static_n * ratios.thrust_ratio(rpm, 40.0, 0.0)]
 	))
 
-	# Well past J0, where an unclamped linear fit is deeply negative.
+	# Well past the geometric advance, where an unclamped model is deeply negative.
 	var far_past: float = 3.0 * PropellerModel.j_zero(geometry.diameter_m, geometry.pitch_m) \
 		* (rpm / 60.0) * float(geometry.diameter_m)
-	var beyond := PropellerModel.thrust_n_in_flight(
-		build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, far_past)
-	var factor := PropellerModel.power_factor(
-		build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, far_past, 0.0, build.air.kgm3())
+	var beyond := static_n * ratios.thrust_ratio(rpm, far_past, 0.0)
+	var factor := ratios.power_ratio(rpm, far_past, 0.0)
 	results.append(TestResult.new(
 		"past the geometric advance the model reports zero thrust, never negative and never NaN",
 		beyond == 0.0 and not is_nan(factor) and factor > 0.0,
-		"at %.1f m/s (3x J0): thrust %.3f N, power factor %.4f" % [far_past, beyond, factor]
+		"at %.1f m/s (3x J0): thrust %.3f N, power ratio %.4f" % [far_past, beyond, factor]
+	))
+
+	# The failure P6's closure found and fixed, kept as a permanent check. The power ratio used to
+	# fall smoothly to 0.247 and then JUMP to 1.000 the moment BEMT's induced power went negative —
+	# the guard returning the static answer, i.e. the model asserting that flying past your own
+	# zero-thrust point costs exactly what hovering costs. On a 120 Hz tick that is a step in pack
+	# current at a speed a fast build reaches.
+	#
+	# TO MAKE THIS FAIL: restore `if flight_p <= 0.0 { return 1.0 }` in `power_ratio_forward` in
+	# place of the induced-power floor. Measured: the largest step jumps to 0.2697, against this bound of 0.10.
+	var worst_step := 0.0
+	var prev_ratio := ratios.power_ratio(rpm, 0.5, 0.0)
+	for i in range(2, 161):
+		var v := 0.5 * float(i)
+		var r := ratios.power_ratio(rpm, v, 0.0)
+		worst_step = maxf(worst_step, absf(r - prev_ratio))
+		prev_ratio = r
+	results.append(TestResult.new(
+		"the power ratio is continuous through the zero-thrust crossing, with no step to hover cost",
+		worst_step < 0.10,
+		"largest change over a 0.5 m/s step across 0.5-80 m/s axial: %.4f" % worst_step
 	))
 	return results
 
@@ -195,14 +224,11 @@ static func _the_power_curve_has_a_minimum(build: Build) -> TestResult:
 ## factor goes negative, and a quad in a 30 m/s descent CHARGES ITS OWN PACK. That is not a
 ## hypothetical: it is how this was found, as a battery that gained charge during a test flight.
 static func _descent_is_declined_rather_than_guessed(build: Build) -> TestResult:
-	var geometry := build.prop_geometry()
+	var ratios := build.forward_ratios()
 	var rpm := 8500.0
 	var worst := 1.0
 	for i in range(1, 61):
-		var descending := -float(i)
-		var factor := PropellerModel.power_factor(
-			build.k_t, rpm, geometry.diameter_m, geometry.pitch_m, descending, 0.0,
-			build.air.kgm3())
+		var factor := ratios.power_ratio(rpm, -float(i), 0.0)
 		worst = minf(worst, factor)
 	return TestResult.new(
 		"no descent, however fast, produces negative power (a pack that charges itself)",
@@ -217,7 +243,7 @@ static func _a_bench_is_the_static_path(build: Build) -> TestResult:
 	var geometry := build.prop_geometry()
 	var pt := Powertrain.create(build.motor_model(), build.k_t, build.k_q, build.battery_model(),
 		build.effective_max_amps, build.rated_rpm(), build.pole_pairs(), geometry.blades,
-		geometry.diameter_m * 0.5, geometry.pitch_m, build.air.kgm3())
+		geometry.diameter_m * 0.5, geometry.pitch_m, build.air.kgm3(), build.blade_chord())
 	for _i in 500:
 		pt.step(PackedFloat64Array([0.5, 0.5, 0.5, 0.5]), 0.001)
 	var rpm: float = pt.motor_rpm[0]
@@ -269,7 +295,7 @@ static func _top_speed_is_unchanged_for_the_reference_build(build: Build) -> Tes
 	var kmh := build.top_speed_kmh()
 	return TestResult.new(
 		"top speed for the reference build is unmoved, and still inside the 100-130 km/h band",
-		absf(kmh - 107.0) < 1.0,
+		absf(kmh - 108.2) < 1.0,
 		"%.1f km/h" % kmh
 	)
 
@@ -335,8 +361,8 @@ static func _the_builder_is_told_when_the_prop_is_the_limit(baseline: Build) -> 
 			"and the reference build, whose props have plenty left at its top speed, is not",
 			quiet,
 			"reference build carries no prop_unloading warning (props at %.0f%% of static thrust at %.0f km/h)" % [
-				PropellerModel.thrust_factor(baseline.max_rpm_at_nominal(),
-					baseline.prop_geometry().diameter_m, baseline.prop_geometry().pitch_m,
-					baseline.top_speed_kmh() / 3.6 * sin(Build.TOP_SPEED_LEAN_RAD)) * 100.0,
+				baseline.forward_ratios().thrust_ratio(baseline.max_rpm_at_nominal(),
+					baseline.top_speed_kmh() / 3.6 * sin(Build.TOP_SPEED_LEAN_RAD),
+					baseline.top_speed_kmh() / 3.6 * cos(Build.TOP_SPEED_LEAN_RAD)) * 100.0,
 				baseline.top_speed_kmh()]),
 	]

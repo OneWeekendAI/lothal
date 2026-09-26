@@ -3,7 +3,7 @@ extends Control
 ## The rooms, and the rules for entering and leaving them (labs-and-sim.md §1).
 ##
 ## This holds everything that used to live in `AppShell` except the tab bar itself: Lab, the four
-## benches, the field editor, Studio, Sim, and the two stores every room touches. A shell decides
+## benches, Studio, Sim, and the two stores every room touches. A shell decides
 ## how the builder ASKS for a room — eight tabs, or a dropdown and a Lab/Sim toggle — and this
 ## decides what actually happens when they do.
 ##
@@ -57,12 +57,14 @@ var esc_bench: EscBenchScreen = null
 ## at four different throttles out of a real pack, and a step response left running behind Lab would
 ## be flattening a battery to answer a question nobody was still asking.
 var frame_bench: FrameBenchScreen = null
-## The field editor — where the course is laid out — or null when it is not the room you are in.
-## Freed on the way out like the others, but for a different reason: it holds no powertrain and
-## costs no charge (laying out gates turns no motors, labs-and-sim.md §5). What it does hold is a
-## SubViewport rendering a 3D world, and Lab's stated virtue is that it is quiet and cheap while
-## you work.
-var field_editor: FieldEditorScreen = null
+## THERE IS NO FIELD EDITOR HERE ANY MORE (F11), and its absence is the slice.
+##
+## Laying out a course was a ROOM — a door off the Rooms menu, a screen of its own, a second
+## viewport, its own copy of "which course is open". F10 made the field a SYSTEM on the dock, and
+## F11 moved the authoring into it: `FieldSystem` is built once by `GlassShell` and shown with its
+## icon, so there is nothing here to open and nothing to free. What used to be this room's one
+## unusual property — that it costs no charge, because nothing in it turns — is unchanged and is
+## now a property of a system rather than of a door.
 ## Studio — the flights already flown — or null when it is not the room you are in. Freed on the
 ## way out like the others, and for the field editor's reason rather than the benches': it turns
 ## no motors and costs no charge. What it holds is a list of headers read off disk, which goes
@@ -72,7 +74,22 @@ var studio: StudioScreen = null
 ## The courses that have been laid out, and which one is flown. Held here for the same reason
 ## `pack_charge` is: two rooms touch it — the editor writes it and the field reads it — and one
 ## instance within a session is what stops the door from handing over a stale copy.
-var course_library := CourseLibrary.load_from()
+##
+## LOADED IN `_init`, NOT HERE, and that is not a style choice — see the block comment there. The
+## order these two are built in is load-bearing, and a `:=` initialiser hides that order inside the
+## order two `var` lines happen to sit in.
+var course_library: CourseLibrary
+## The PLACES those courses are laid out in — the ground, the obstacles and the elevation. Held
+## beside the courses and for the same reason: two rooms touch it, and one instance within a
+## session is what stops the door from handing over a stale copy.
+var site_library: SiteLibrary
+## The WEATHER those places are flown in — the wind, the gustiness and the temperature. Held beside
+## the sites and for the same reason: the field editor switches it and the garage reads it, and two
+## copies would be two opinions.
+##
+## LOADED IN `_init`, NOT HERE, like the two above, and for the same load-bearing reason — see the
+## block comment there.
+var conditions_library: ConditionsLibrary
 ## How much charge is in each pack right now. Loaded once on startup and held here rather than in
 ## any one room, because it is the one piece of state every room touches: two benches and the
 ## field all drain it, and Lab is where it gets charged back up. It is saved whenever a room that
@@ -110,6 +127,36 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	anchor_bottom = 1.0
 	mouse_filter = Control.MOUSE_FILTER_PASS
 
+	# ---------------------------------------------------------------------------
+	# THE MIGRATION RUNS FIRST. THIS ORDER IS THE FEATURE.
+	# ---------------------------------------------------------------------------
+	#
+	# `SiteLibrary.migrate_courses()` REWRITES `courses.json` — it is what puts a `site_id` into
+	# every record of a v1 file. So a CourseLibrary loaded before it runs is loaded from the old
+	# document: every course comes back with no site id, reads as the default field, and the garage
+	# quotes sea-level air at a builder who typed 3500 m. It does not even stop there — the first
+	# edit in the field editor would save that `default_site` back over the migrated pointer and
+	# orphan the site the migration had just made, losing the elevation for good.
+	#
+	# Both used to be `var x := …` initialisers, which run in DECLARATION order, and the comment on
+	# them claimed this order while the declarations had the opposite one. Two lines that must
+	# happen in a particular order are written here, in that order, where the order is visible.
+	site_library = SiteLibrary.migrate_courses()
+	course_library = CourseLibrary.load_from()
+
+	# AND THE ABSORPTION RUNS AFTER THE MIGRATION, for the same reason the migration runs before
+	# the courses: it drains the slot the migration fills. Run first, it would find nothing parked
+	# on a v1 install, and a builder who typed 35 C into a v1 course would walk into the garage
+	# reading 15 C — the typed fact lost silently on the one launch that was supposed to rescue it.
+	#
+	# The two files are written only when something actually moved. Saving unconditionally here
+	# would rewrite `sites.json` and `conditions.json` on every launch for ever, which is exactly
+	# the quiet rewrite of a builder's own file that the byte-identity checks exist to prevent.
+	conditions_library = ConditionsLibrary.load_from()
+	if conditions_library.absorb_parked_temperatures(site_library, site_of_selected_course()):
+		site_library.save()
+		conditions_library.save()
+
 	pack_charge = p_pack_charge if p_pack_charge != null else PackCharge.load_from()
 
 	# Lab's Controls go in a host inset below whatever chrome the shell draws. Sim is added as a
@@ -126,8 +173,39 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 		p_catalog if p_catalog != null else catalog_for_lab(), p_tweaks, pack_charge)
 	# The garage quotes its numbers in the air of the course that is selected to be flown. Set here
 	# rather than read by Lab, so there is one owner of the library and one reader of it.
-	lab.air = course_library.selected().air
+	lab.air = air_of_selected_course()
+	# The weather those numbers are quoted under, set the same way and for the same reason as
+	# `air` above — the selected conditions, not a bare default, from the first frame Lab draws.
+	lab.wind_mps = conditions_library.selected().wind_speed_mps
+	lab.conditions_name = conditions_library.selected().conditions_name
 	_host.add_child(lab)
+
+
+## The air the garage quotes its numbers in: the air of the PLACE the selected course is laid out
+## in (design §3.1). Not the course's — a course has no air to give any more, and it never should
+## have had one — and emphatically not a hard-coded standard, which reads identically on a fresh
+## install and is wrong for everybody who has typed an elevation.
+##
+## A course pointing at a site that is not there falls back to the selected site rather than to
+## standard air, on the same rule: the builder is somewhere, and the nearest true answer to where
+## is where they are.
+##
+## THE TEMPERATURE COMES FROM THE SELECTED CONDITIONS, not from the site, and not from a hard-coded
+## standard — the second of which reads identically on a fresh install and is wrong for everybody
+## who has switched to a hot day. `compose` handles a null on either side as the standard half.
+func air_of_selected_course() -> AirDensity:
+	return AirDensity.compose(site_of_selected_course(), conditions_library.selected())
+
+
+## The place the selected course is laid out in — where the builder is. Split out of
+## `air_of_selected_course()` because the absorption in `_init` needs the same answer before there
+## is any air to ask for, and two spellings of "where are we" is how the two would come to disagree.
+func site_of_selected_course() -> Site:
+	var course := course_library.selected()
+	var where: Site = null
+	if course != null:
+		where = site_library.site(course.site_id)
+	return where if where != null else site_library.selected()
 
 
 func catalog_for_lab() -> PartsCatalog:
@@ -230,25 +308,6 @@ func show_frame_bench() -> void:
 	_enter_room(frame_bench)
 
 
-## Into the field editor, with the build currently on Lab's rails. The build is here for exactly one
-## reason — a ring smaller than the aircraft that has to fly through it is impossible, and that is a
-## comparison of two known dimensions — and this room changes nothing about it.
-##
-## Notably it does NOT call _unplug_for(). A charger running while you lay out gates is fine: this
-## room draws no current, so there is nothing for it to overwrite. That is labs-and-sim.md §5 read
-## literally rather than by analogy with the benches.
-func show_field_editor() -> void:
-	_close_rooms()
-	field_editor = FieldEditorScreen.new(course_library, lab.current_build())
-	# Editing the field changes what the aircraft next door CAN DO, so Lab's readout has to follow
-	# it. Without this the builder types 3500 m, walks back to the garage and reads a
-	# thrust-to-weight for a place they are not — which is the exact stale reading this feature
-	# exists to remove, reintroduced one room over.
-	field_editor.course_changed.connect(func() -> void:
-		lab.set_air(course_library.selected().air))
-	_enter_room(field_editor)
-
-
 ## Into Studio, to look at flights already flown (LTHL-54).
 ##
 ## The library is constructed HERE and fresh on every entry, rather than held as a field alongside
@@ -286,6 +345,19 @@ func show_sim() -> void:
 		# Handed over rather than re-loaded so a course laid out next door is the course you fly
 		# without a trip through the file; Sim reads it and never writes it (labs-and-sim.md §4).
 		sim.course_library = course_library
+		# And the places those courses are in, for the same reason: the ground the aircraft can
+		# crash into is the terrain the editor next door authored, not a second copy read off
+		# disk before the save. Handed over BEFORE adopt_selected_course(), which resolves the
+		# open course's site through it.
+		sim.site_library = site_library
+		# AND THE WEATHER, across the same door and for the same reason. Sim used to do
+		# `ConditionsLibrary.load_from()` in its own `_ready` — a second copy read off disk before
+		# the save, which is the thing the comment four lines up forbids in as many words. It was
+		# safe only because every weather edit saves synchronously; that is a property of the
+		# Field room today, not a guarantee, and it is exactly the seam an unpersisted piece of
+		# weather state falls through. Handed over BEFORE `adopt_selected_course()`, which reads
+		# the selected conditions into the lap key.
+		sim.conditions_library = conditions_library
 		sim.adopt_selected_course()
 		# Sim is a direct child rather than living in `_host`, so nothing insets it below the
 		# shell's chrome the way Lab is inset. Its panel is told how much room that chrome takes
@@ -352,13 +424,6 @@ func _close_rooms() -> void:
 		_host.remove_child(frame_bench)
 		frame_bench.free()
 		frame_bench = null
-	# No persist_pack_charge() here, and its absence is the assertion: the field editor cannot have
-	# drained anything, because nothing in it turns. A write-back "for symmetry" would be inventing
-	# a consequence, which is precisely what §5 does not permit.
-	if field_editor != null:
-		_host.remove_child(field_editor)
-		field_editor.free()
-		field_editor = null
 	# No persist_pack_charge() here either, and for the same reason: Studio reads files. Nothing
 	# in it turns, draws current or holds a Powertrain, so a write-back would be inventing a
 	# consequence out of having opened a room.

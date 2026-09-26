@@ -185,15 +185,15 @@ static func run() -> Array:
 	# whole slice is most likely to make, and the one that would silently move two of the
 	# project's three oracles for what was meant to be a change to the catalog.
 	# Hover is held to the project's OWN oracle tolerance (test_hover.gd: +/-0.02 of 0.29)
-	# rather than a tighter one invented here. The solver has always returned 29.6%, which is
-	# what parts.md rounds to 29%; asserting a bound the project does not itself hold would
+	# rather than a tighter one invented here. The solver returns 29.9% since PW2 re-baselined the
+	# harness (29.6% before it); asserting a bound the project does not itself hold would
 	# be this test disagreeing with the oracle it claims to be guarding.
 	var ref := ReferenceBuild.build()
 	results.append(TestResult.new(
-		"the reference build is unchanged: 496 g, 11.7:1, 29% hover",
-		absf(ref.all_up_weight_g() - 496.0) < 0.5
-			and absf(ref.thrust_to_weight() - 11.7) < 0.05
-			and absf(ref.hover_throttle() - 0.29) < 0.02,
+		"the reference build is unchanged: 507.5 g, 11.43:1, 29.9% hover",
+		absf(ref.all_up_weight_g() - 507.48) < 0.5
+			and absf(ref.thrust_to_weight() - 11.43) < 0.05
+			and absf(ref.hover_throttle() - 0.299) < 0.02,
 		"%.1f g, %.2f:1, %.1f%% hover"
 			% [ref.all_up_weight_g(), ref.thrust_to_weight(), ref.hover_throttle() * 100.0]
 	))

@@ -54,6 +54,9 @@ var _derived_labels: Dictionary = {}
 var _plant_labels: Dictionary = {}
 var _warnings: WarningList
 var _summary: Label
+var _note: Label
+## Held across renders: `render` shows the warning list again otherwise.
+var _warnings_shown := true
 ## Set while the panel is writing its own controls from the model. Range.value_changed does not
 ## fire for code-set values on Godot 4.7.1, so this is belt and braces rather than load-bearing —
 ## but a guard that is only correct on one engine version is a guard worth keeping.
@@ -82,6 +85,7 @@ func _init() -> void:
 	root.add_child(title)
 
 	var note := Label.new()
+	_note = note
 	note.text = "Rate PID, per axis. The baseline is derived from what this aircraft can accelerate at — change it and the derived figure stays beside it."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
@@ -210,6 +214,31 @@ func render(p_build: Build, p_tune: RateTune) -> void:
 	_summary.text = "Roll, pitch and yaw are scaled separately — this airframe accelerates %.1fx harder in roll than in yaw." % [
 		p_tune.plant_alpha.x / p_tune.plant_alpha.z if p_tune.plant_alpha.z > 0.0 else 0.0]
 	_warnings.show_warnings(p_tune.warnings())
+	if not _warnings_shown:
+		_warnings.visible = false
+
+
+## Shows or hides the tune's warning list. Off on the Lab dock's Tune page, whose own short + Why?
+## list carries the same two warnings (lab dock design §3: a warning appears once).
+func set_warnings_visible(shown: bool) -> void:
+	_warnings_shown = shown
+	if not shown:
+		_warnings.visible = false
+
+
+func warnings_visible() -> bool:
+	return _warnings.visible
+
+
+## Shows or hides the two explanatory sentences under the title. Off on the Lab dock's Tune page
+## (§3: no paragraph on a page); the drawing beside it shows derived against in force.
+func set_prose_visible(shown: bool) -> void:
+	_note.visible = shown
+	_summary.visible = shown
+
+
+func prose_visible() -> bool:
+	return _note.visible or _summary.visible
 
 
 ## Sets one field without going through the mouse. Exists because Range.value_changed does not

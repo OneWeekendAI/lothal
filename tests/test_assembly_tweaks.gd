@@ -37,6 +37,12 @@ const SAVE_PATH := "user://test_assembly_tweaks.json"
 
 static func run() -> Array:
 	var results: Array = []
+	# THE HOLD ON THE BUILDER'S OWN FILES. Taken here and released below, because a section that
+	# aborts mid-way never reaches its own restore — measured, and it is what left a 3500 m
+	# elevation and an invented weather row on this developer's disk. `run()` is the only frame
+	# GDScript guarantees will resume after an abort inside a section, so the hold lives here and
+	# `run()` does nothing else but call sections and append results. See tests/real_files.gd.
+	var held := RealFiles.hold([AssemblyTweaks.SAVE_PATH])
 	var catalog := PartsCatalog.load_default()
 
 	results.append(_test_defaults_are_the_derived_geometry(catalog))
@@ -49,6 +55,11 @@ static func run() -> Array:
 	results.append(_test_a_broken_file_falls_back_to_defaults(catalog))
 	results.append(_test_the_panel_moves_the_airframe_and_resets(catalog))
 	results.append(_test_the_configuration_survives_a_restart(catalog))
+
+	held.restore()
+	results.append(TestResult.new(
+		"the builder's own files are back the way they were found, whatever the sections did",
+		held.intact(), held.report()))
 
 	return results
 

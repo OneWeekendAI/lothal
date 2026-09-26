@@ -9,9 +9,9 @@ static func run() -> Array:
 	var parts := ReferenceBuild.mass_parts()
 	var mp := MassProperties.compute(parts)
 
-	var expected_mass_kg := 0.496
+	var expected_mass_kg := 0.5075
 	results.append(TestResult.new(
-		"total mass = sum of part masses (~496 g)",
+		"total mass = sum of part masses (~507 g)",
 		absf(mp.total_mass_kg - expected_mass_kg) < 0.001,
 		"got %.4f kg" % mp.total_mass_kg
 	))
@@ -52,13 +52,17 @@ static func run() -> Array:
 		"com.z = %.9f m, the components' moment / total mass = %.9f m" % [
 			mp.com_m.z, _component_moment_z(ReferenceBuild.build())]
 	))
-	# 11.633 mm until LTHL-11, and 11.971 now. The four components sit on and between the plates
-	# rather than at the origin, and three of the four are above the plate midplane — so taking
-	# 21 g out of a box at y = 0 and putting it where it actually lives raises the whole aircraft's
-	# centre of mass by a third of a millimetre. The bound is unchanged.
+	# 11.633 mm until LTHL-11, 11.971 after it, and 11.832 since PW2. The four components sit on and
+	# between the plates rather than at the origin, and three of the four are above the plate
+	# midplane — so taking 21 g out of a box at y = 0 and putting it where it actually lives raises
+	# the whole aircraft's centre of mass by a third of a millimetre. PW2 moved it back DOWN by
+	# a seventh of a millimetre, which is the opposite of what a heavier aircraft suggests and is the
+	# harness being real: the 14 g lump sat at the origin, and what replaced it is 8 g of lead lying
+	# in the plane of the frame and 5 g of straps at the origin against only 3 g of plug up at the
+	# pack and 3.5 g of capacitor on the ESC. The bound is unchanged.
 	results.append(TestResult.new(
 		"COM sits above the plates, because the pack is strapped on top of them",
-		absf(mp.com_m.y - 0.011971) < 1e-5,
+		absf(mp.com_m.y - 0.011832) < 1e-5,
 		"got %.5f m up" % mp.com_m.y
 	))
 
@@ -103,9 +107,11 @@ static func run() -> Array:
 	# identically to I_xx and I_zz, and so do the square centre plate and the electronics box. So
 	# the whole difference must be the pack's own, to numerical precision — an assertion that fails
 	# if an arm term ever stops being symmetric, which "within 5%" could never have noticed.
-	# The pack was the WHOLE of this difference until LTHL-11, and it is now the larger of two
+	# The pack was the WHOLE of this difference until LTHL-11, and it is now the largest of three
 	# terms: the four unbundled components lie fore-and-aft too, so they contribute the same way a
-	# pack does. The claim is unchanged in kind and is now stated as a PARTITION — every part that
+	# pack does, and PW2's main lead contributes for a different reason — it is on the centreline,
+	# so its position cancels, but it is a rod lying fore-and-aft and a rod has no inertia about its
+	# own axis at all. The claim is unchanged in kind and is now stated as a PARTITION — every part that
 	# is symmetric in X and Z contributes exactly nothing, and the parts that do contribute account
 	# for the total to numerical precision. That is strictly stronger than the old form, which
 	# asserted a single term and could not have noticed a fifth one appearing.
@@ -120,16 +126,20 @@ static func run() -> Array:
 	var symmetric_mass := 0.0
 	var component_labels := _component_labels(ReferenceBuild.build())
 	for part in ReferenceBuild.build().mass_parts():
-		if (part as PartMass).label != "Pack" and not component_labels.has((part as PartMass).label):
+		if (part as PartMass).label != "Pack" and (part as PartMass).label != "Main lead" \
+				and not component_labels.has((part as PartMass).label):
 			symmetric_mass += (part as PartMass).mass_kg
 	var predicted_residue: float = mp.com_m.z * mp.com_m.z * symmetric_mass
 
 	results.append(TestResult.new(
 		"pitch inertia exceeds roll inertia, and the parts lying fore-and-aft are the whole of it",
 		i_xx > i_zz and absf((i_xx - i_zz) - contributions["total"]) < 1e-9
-			and absf(contributions["symmetric_parts"] - predicted_residue) < 1e-10,
-		"I_xx - I_zz = %.9f, of which the pack accounts for %.9f and the camera, VTX and antenna for %.9f; the %.0f g of symmetric parts add %.12f against a predicted com.z^2 * m of %.12f" % [
+			and absf(contributions["symmetric_parts"] - predicted_residue) < 1e-10
+			# And the new term is real rather than a bucket that happens to be empty.
+			and contributions["main_lead"] > 0.0,
+		"I_xx - I_zz = %.9f, of which the pack accounts for %.9f, the camera, VTX and antenna for %.9f and the main lead for %.9f; the %.0f g of symmetric parts add %.12f against a predicted com.z^2 * m of %.12f" % [
 			i_xx - i_zz, contributions["pack"], contributions["components"],
+			contributions["main_lead"],
 			symmetric_mass * 1000.0, contributions["symmetric_parts"], predicted_residue]
 	))
 
@@ -235,7 +245,8 @@ static func _component_moment_z(build: Build) -> float:
 ## every motor pair, the frame, the boards, the receiver and the wiring.
 static func _pitch_minus_roll_contributions(build: Build) -> Dictionary:
 	var com := build.mass_properties.com_m
-	var out := {"pack": 0.0, "components": 0.0, "symmetric_parts": 0.0, "total": 0.0}
+	var out := {"pack": 0.0, "components": 0.0, "main_lead": 0.0, "symmetric_parts": 0.0,
+		"total": 0.0}
 	var component_names: Array[String] = []
 	for category in Build.OPTIONAL_COMPONENTS:
 		if build.components.has(category):
@@ -251,6 +262,13 @@ static func _pitch_minus_roll_contributions(build: Build) -> Dictionary:
 			out["pack"] += contribution
 		elif component_names.has(entry.label):
 			out["components"] += contribution
+		elif entry.label == "Main lead":
+			# THE THIRD TERM, AND IT IS A LOCAL TENSOR RATHER THAN A POSITION (PW2). The main lead
+			# sits on the centreline, so its m·d² terms cancel exactly the way every symmetric
+			# part's do — but it is a ROD lying fore-and-aft, and a rod has no inertia about its own
+			# axis. So it contributes to pitch and nothing to roll, which is real: a wire lying
+			# along the aircraft resists pitching and does not resist rolling.
+			out["main_lead"] += contribution
 		else:
 			out["symmetric_parts"] += contribution
 	return out

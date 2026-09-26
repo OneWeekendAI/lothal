@@ -1,6 +1,6 @@
 class_name TestElectronicsParts
 extends RefCounted
-## LTHL-11: the camera, VTX, antenna and receiver, out of Build.ELECTRONICS_MASS_G's lump and into
+## LTHL-11: the camera, VTX, antenna and receiver, out of Build.ELECTRONICS_BUDGET_G's lump and into
 ## parts that declare their own mounting.
 ##
 ## THE RULE THIS SUITE EXISTS TO ENFORCE is that mass comes OUT of the budget and is never added
@@ -15,7 +15,7 @@ extends RefCounted
 ##
 ## Unbundling is necessary and it is not sufficient at the small end. Take the four components off
 ## a 65 mm whoop and 21 g comes off an aircraft that was 63 g too heavy. The remainder is the
-## 14 g wiring term, which is flat and stays flat (Build.wiring_mass_g says why), and the catalog's
+## harness term, which PW2 stopped being flat (see `Harness`), and the catalog's
 ## own whoop-class part masses, which are a data problem and out of scope.
 ##
 ## _the_span_table_before_and_after() prints that arithmetic rather than describing it, and
@@ -88,18 +88,18 @@ static func _the_reference_build_is_unmoved() -> Array:
 	var build := ReferenceBuild.build()
 
 	out.append(TestResult.new(
-		"the reference build still weighs 496.0 g with the default components fitted",
-		absf(build.all_up_weight_g() - 496.0) < 0.05,
+		"the reference build still weighs 507.5 g with the default components fitted",
+		absf(build.all_up_weight_g() - 507.48) < 0.05,
 		"got %.4f g" % build.all_up_weight_g()
 	))
 	out.append(TestResult.new(
-		"and its thrust-to-weight is still 11.69:1",
-		absf(build.thrust_to_weight() - 11.69) < 0.005,
+		"and its thrust-to-weight is still 11.43:1",
+		absf(build.thrust_to_weight() - 11.432) < 0.005,
 		"got %.4f" % build.thrust_to_weight()
 	))
 	out.append(TestResult.new(
-		"and it still hovers at 29.6%",
-		absf(build.hover_throttle() * 100.0 - 29.6) < 0.05,
+		"and it still hovers at 29.9%",
+		absf(build.hover_throttle() * 100.0 - 29.92) < 0.05,
 		"got %.4f%%" % (build.hover_throttle() * 100.0)
 	))
 
@@ -107,16 +107,22 @@ static func _the_reference_build_is_unmoved() -> Array:
 	# EXACTLY, which is what "carved out rather than added beside" means expressed as arithmetic
 	# rather than as an intention in a comment.
 	out.append(TestResult.new(
-		"a fully-fitted build's electronics weigh the budget exactly, to the gram",
-		absf(build.electronics_mass_g() - Build.ELECTRONICS_MASS_G) < MASS_EPS,
-		"%.9f g against a %.1f g budget" % [build.electronics_mass_g(), Build.ELECTRONICS_MASS_G]
+		"a fully-fitted build's electronics are the carved shares plus its harness, to the gram",
+		absf(build.electronics_mass_g()
+			- (Build.carved_total_g() + build.harness_mass_g())) < MASS_EPS,
+		"%.9f g against %.1f g of carved shares + %.9f g of harness" % [
+			build.electronics_mass_g(), Build.carved_total_g(), build.harness_mass_g()]
 	))
 
 	# And the reason it holds: each default part weighs its own share. Asserted per category rather
 	# than only in the total, because two shares wrong in opposite directions would sum correctly
 	# and move the centre of mass without moving the weight.
+	# OVER THE CARVED FOUR, NOT OVER OPTIONAL_COMPONENTS. C2 added two components that have no
+	# share and no default by design, and a loop that indexed either table by every optional
+	# category would not have failed this check — it would have crashed it, which reads as a
+	# suite-level error rather than as the statement this check is making.
 	var mismatched: Array[String] = []
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		var default_mass := _catalog_mass_g(String(Build.DEFAULT_COMPONENT_IDS[category]))
 		var share := float(Build.CARVED_SHARES[category])
 		if absf(default_mass - share) > MASS_EPS:
@@ -124,8 +130,9 @@ static func _the_reference_build_is_unmoved() -> Array:
 				category, default_mass, share])
 	out.append(TestResult.new(
 		"every default component weighs exactly the share carved out for it",
-		mismatched.is_empty(),
-		"4 categories checked" if mismatched.is_empty() else str(mismatched)
+		mismatched.is_empty() and not Build.carved_components().is_empty(),
+		"%d carved categories checked" % Build.carved_components().size() \
+			if mismatched.is_empty() else str(mismatched)
 	))
 	return out
 
@@ -169,7 +176,7 @@ static func _omitting_one_component_costs_exactly_that_component() -> Array:
 	# All four categories, so that "omittable" is a property of the mechanism rather than of the
 	# one category the first two checks happen to use.
 	var not_omittable: Array[String] = []
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		var without := _reference_with({category: ""})
 		var expected := _catalog_mass_g(String(Build.DEFAULT_COMPONENT_IDS[category]))
 		var actual := fitted.all_up_weight_g() - without.all_up_weight_g()
@@ -177,8 +184,9 @@ static func _omitting_one_component_costs_exactly_that_component() -> Array:
 			not_omittable.append("%s: lost %.4f g, expected %.4f g" % [category, actual, expected])
 	out.append(TestResult.new(
 		"each of the four is omittable, and each costs its own mass",
-		not_omittable.is_empty(),
-		"4 categories checked" if not_omittable.is_empty() else str(not_omittable)
+		not_omittable.is_empty() and not Build.carved_components().is_empty(),
+		"%d carved categories checked" % Build.carved_components().size() \
+			if not_omittable.is_empty() else str(not_omittable)
 	))
 	return out
 
@@ -193,31 +201,32 @@ static func _a_build_with_none_of_the_four() -> Array:
 	var bare := _reference_with(_nothing_fitted())
 
 	var shares := 0.0
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		shares += float(Build.CARVED_SHARES[category])
 
 	out.append(TestResult.new(
-		"a build with none of the four weighs the budget less all four shares",
-		absf(bare.electronics_mass_g() - (Build.ELECTRONICS_MASS_G - shares)) < MASS_EPS,
-		"%.4f g of electronics against %.1f - %.1f = %.1f" % [
-			bare.electronics_mass_g(), Build.ELECTRONICS_MASS_G, shares,
-			Build.ELECTRONICS_MASS_G - shares]
+		"a build with none of the four weighs its shares and harness less all four shares",
+		absf(bare.electronics_mass_g()
+			- (Build.carved_total_g() + bare.harness_mass_g() - shares)) < MASS_EPS,
+		"%.4f g of electronics against %.1f + %.4f - %.1f = %.4f" % [
+			bare.electronics_mass_g(), Build.carved_total_g(), bare.harness_mass_g(), shares,
+			Build.carved_total_g() + bare.harness_mass_g() - shares]
 	))
 	out.append(TestResult.new(
 		"and the aircraft is lighter by exactly that, all the way through to all-up weight",
 		absf((ReferenceBuild.build().all_up_weight_g() - bare.all_up_weight_g()) - shares) < MASS_EPS,
-		"496.0 g -> %.4f g, a difference of %.4f g" % [
+		"507.5 g -> %.4f g, a difference of %.4f g" % [
 			bare.all_up_weight_g(), ReferenceBuild.build().all_up_weight_g() - bare.all_up_weight_g()]
 	))
 
-	# What is LEFT is the stack plus the wiring, and it is worth naming: 34 g, of which 14 g is the
-	# term this slice did not fix.
+	# What is LEFT is the stack plus the harness, and it is worth naming. It was 34 g of which 14 g
+	# was the flat wiring term; PW2 weighed that term, so the harness half now moves with the build.
 	out.append(TestResult.new(
-		"what is left is the two stack boards and the wiring, and nothing else",
+		"what is left is the two stack boards and the harness, and nothing else",
 		absf(bare.electronics_mass_g()
-			- (bare.fc_mass_g() + bare.esc_mass_g() + Build.wiring_mass_g())) < MASS_EPS,
-		"%.1f g = %.1f FC + %.1f ESC + %.1f wiring" % [
-			bare.electronics_mass_g(), bare.fc_mass_g(), bare.esc_mass_g(), Build.wiring_mass_g()]
+			- (bare.fc_mass_g() + bare.esc_mass_g() + bare.harness_mass_g())) < MASS_EPS,
+		"%.1f g = %.1f FC + %.1f ESC + %.4f harness" % [
+			bare.electronics_mass_g(), bare.fc_mass_g(), bare.esc_mass_g(), bare.harness_mass_g()]
 	))
 
 	# A build with nothing fitted is fore/aft symmetric again, which is not a coincidence and is
@@ -278,40 +287,57 @@ static func _a_heavier_component_costs_exactly_the_excess() -> Array:
 ## wiring term negative — and a negative wiring term is caught here rather than being quietly
 ## carried as an aircraft that weighs less than its parts.
 ##
-## FAILS IF: wiring_mass_g() is ever written as a literal rather than derived, or if a share is
-## added that the budget cannot pay for.
+## FAILS IF: budget_remainder_g() is ever written as a literal rather than derived, or if a share
+## is added that the budget cannot pay for.
 static func _the_budget_cannot_be_exceeded_silently() -> Array:
 	var out: Array = []
 
 	out.append(TestResult.new(
 		"the carved shares never exceed the electronics budget",
-		Build.carved_total_g() <= Build.ELECTRONICS_MASS_G + MASS_EPS,
-		"%.1f g carved out of a %.1f g budget" % [Build.carved_total_g(), Build.ELECTRONICS_MASS_G]
+		Build.carved_total_g() <= Build.ELECTRONICS_BUDGET_G + MASS_EPS,
+		"%.1f g carved out of a %.1f g budget" % [Build.carved_total_g(), Build.ELECTRONICS_BUDGET_G]
 	))
 	out.append(TestResult.new(
-		"and the wiring remainder is what is left, never a number of its own",
-		absf((Build.carved_total_g() + Build.wiring_mass_g()) - Build.ELECTRONICS_MASS_G) < MASS_EPS
-			and Build.wiring_mass_g() >= 0.0,
-		"%.1f carved + %.1f wiring = %.1f" % [
-			Build.carved_total_g(), Build.wiring_mass_g(),
-			Build.carved_total_g() + Build.wiring_mass_g()]
+		"and the budget remainder is what is left, never a number of its own",
+		absf((Build.carved_total_g() + Build.budget_remainder_g())
+				- Build.ELECTRONICS_BUDGET_G) < MASS_EPS
+			and Build.budget_remainder_g() >= 0.0,
+		"%.1f carved + %.1f remaining = %.1f" % [
+			Build.carved_total_g(), Build.budget_remainder_g(),
+			Build.carved_total_g() + Build.budget_remainder_g()]
 	))
 
 	# Every optional component has a share, and every share belongs to a category that exists. The
 	# failure this catches is a fifth component added to OPTIONAL_COMPONENTS whose mass is carried
 	# by the aircraft and paid for by nobody.
+	# REFORMULATED IN C2, AND IT IS STRONGER THAN IT WAS RATHER THAN LOOSER. It used to say that
+	# every optional component has a share, a mount and a default, which was true while all four
+	# were carved out of the 55 g lump. GPS and buzzer are ADDED mass with no share and no default
+	# (design §3), so the old wording would have failed on a correct build — and "relax it to the
+	# carved four" would have made the share half tautological, since the carved four ARE the
+	# optional categories CARVED_SHARES names.
+	#
+	# So it asks the question the partition makes meaningful: a mount for EVERYTHING, because
+	# nothing is weighed nowhere; a share and a default for exactly the carved ones; and NEITHER
+	# for the added ones, which is the property that keeps every oracle in the project still.
 	var orphans: Array[String] = []
 	for category in Build.OPTIONAL_COMPONENTS:
-		if not Build.CARVED_SHARES.has(category):
-			orphans.append("%s is weighed but has no share carved out of the budget" % category)
 		if not Build.COMPONENT_MOUNTS.has(category):
 			orphans.append("%s is weighed but has no mount" % category)
+	for category in Build.carved_components():
 		if not Build.DEFAULT_COMPONENT_IDS.has(category):
-			orphans.append("%s is weighed but has no default part" % category)
+			orphans.append("%s carves a share but has no default part" % category)
+	for category in Build.added_components():
+		if Build.CARVED_SHARES.has(category):
+			orphans.append("%s is added mass and carves a share as well" % category)
+		if Build.DEFAULT_COMPONENT_IDS.has(category):
+			orphans.append("%s is added mass and has a default, so it is fitted by surprise" % category)
 	out.append(TestResult.new(
-		"every component that is weighed has a share, a mount and a default",
-		orphans.is_empty(),
-		"%d components checked" % Build.OPTIONAL_COMPONENTS.size() if orphans.is_empty() else str(orphans)
+		"every component has a mount, the carved ones have shares and defaults, the added ones have neither",
+		orphans.is_empty() and not Build.added_components().is_empty(),
+		"%d components: %d carved, %d added" % [Build.OPTIONAL_COMPONENTS.size(),
+			Build.carved_components().size(), Build.added_components().size()] \
+			if orphans.is_empty() else str(orphans)
 	))
 	return out
 
@@ -331,9 +357,12 @@ static func _every_component_sits_where_mount_layout_puts_it() -> Array:
 	var build := ReferenceBuild.build()
 	var mounts := build.mount_points()
 
+	# Over what the REFERENCE BUILD fits, which is the carved four: the added two have no default
+	# and are not on this aircraft. Their own placement is asserted in test_control_components.gd,
+	# on builds that actually fit them.
 	var missing: Array[String] = []
 	var misplaced: Array[String] = []
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		var mount_id := String(Build.COMPONENT_MOUNTS[category])
 		var mount := MountLayout.by_id(mounts, mount_id)
 		if mount == null:
@@ -366,7 +395,7 @@ static func _every_component_sits_where_mount_layout_puts_it() -> Array:
 	var tall := ReferenceBuild.build()
 	tall.set_assembly({"plate_gap_m": MountLayout.max_plate_gap_m(build.arm_m)})
 	var unmoved: Array[String] = []
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		var name := str(build.components[category]["name"])
 		var before := _part_mass_named(build, name)
 		var after := _part_mass_named(tall, name)
@@ -496,18 +525,21 @@ static func _custom_components_work_in_all_four_categories() -> Array:
 		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
 		ReferenceBuild.FC_ID, overrides)
 
-	var fitted_all_four := custom_build.components.size() == Build.OPTIONAL_COMPONENTS.size()
+	# Against `records`, not against OPTIONAL_COMPONENTS: this fixture authors a custom part in the
+	# four categories that HAVE a custom-parts document, and C2's two do not have one yet.
+	var fitted_all_four := custom_build.components.size() == records.size()
 	out.append(TestResult.new(
 		"and it is loaded back into its own category and fitted to a build",
 		fitted_all_four and catalog.load_errors.is_empty(),
-		"%d of 4 fitted, load errors %s" % [custom_build.components.size(), catalog.load_errors]
+		"%d of %d fitted, load errors %s" % [custom_build.components.size(), records.size(),
+			catalog.load_errors]
 	))
 
 	# The mass rule, on parts nobody reviewed: 44 g of custom components against a 21 g share is
 	# 23 g of excess, and 23 g is exactly what the aircraft gains. Not 44.
 	var custom_total := 0.0
 	var shares := 0.0
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in records:
 		custom_total += float(records[category]["mass_g"])
 		shares += float(Build.CARVED_SHARES[category])
 	var gained := custom_build.all_up_weight_g() - ReferenceBuild.build().all_up_weight_g()
@@ -549,7 +581,7 @@ static func _custom_components_work_in_all_four_categories() -> Array:
 ## THE NUMBER IS STATED AND THE RESIDUAL IS NAMED. A real 65 mm whoop is 20-25 g all-up. This build
 ## comes out at 64.8 g, against 85.8 g before the unbundling: the 21 g the four components were
 ## worth is off, and the aircraft is STILL about 2.7x too heavy. The remainder is not mysterious
-## and it is not fixed here — 14 g of it is the flat wiring term (Build.wiring_mass_g), and most of
+## and it is not fixed here — part of it is the harness term (`Harness`), and most of
 ## the rest is the catalog's own whoop-class part masses, where a 22 g frame entry stands for a
 ## real 6 g moulding. Both are named in the detail so a reader is not left to infer them.
 ##
@@ -589,7 +621,7 @@ static func _a_whoop_with_an_aio() -> Array:
 		after.all_up_weight_g() < before.all_up_weight_g()
 			and after.all_up_weight_g() / real_world_g > 2.0,
 		"%.1f g against a real %.0f g: %.1f g of residual, of which %.0f g is the flat wiring term and the rest is whoop-class catalog masses (the frame entry alone is %.0f g against a real ~6 g)" % [
-			after.all_up_weight_g(), real_world_g, residual, Build.wiring_mass_g(),
+			after.all_up_weight_g(), real_world_g, residual, after.harness_mass_g(),
 			_catalog_mass_g("frame_65mm_whoop")]
 	))
 	return out
@@ -628,7 +660,7 @@ static func _the_span_table_before_and_after() -> TestResult:
 
 	# 19 g, not 21: the whoop keeps its 2 g antenna, because a whoop has one.
 	var whoop_lighter := whoop_after.all_up_weight_g() < whoop_before.all_up_weight_g() - 15.0
-	var reference_unmoved := absf(mid.all_up_weight_g() - 496.0) < 0.05
+	var reference_unmoved := absf(mid.all_up_weight_g() - 507.48) < 0.05
 	var long_heavier := long_after.all_up_weight_g() > long_before.all_up_weight_g() + 10.0
 
 	return TestResult.new(
@@ -637,7 +669,7 @@ static func _the_span_table_before_and_after() -> TestResult:
 		"whoop %.1f -> %.1f g (%.1f%% hover -> %.1f%%); reference %.1f -> %.1f g (exact); 10\" %.1f -> %.1f g (%.1f%% hover -> %.1f%%)" % [
 			whoop_before.all_up_weight_g(), whoop_after.all_up_weight_g(),
 			whoop_before.hover_throttle() * 100.0, whoop_after.hover_throttle() * 100.0,
-			496.0, mid.all_up_weight_g(),
+			507.48, mid.all_up_weight_g(),
 			long_before.all_up_weight_g(), long_after.all_up_weight_g(),
 			long_before.hover_throttle() * 100.0, long_after.hover_throttle() * 100.0]
 	)

@@ -8,7 +8,7 @@
 
 use godot::prelude::*;
 
-use crate::propeller::{BLADE_COUNT_EXPONENT, PITCH_EXPONENT};
+use crate::bemt::BemtModel;
 
 #[derive(GodotClass)]
 #[class(no_init, base=RefCounted)]
@@ -87,40 +87,25 @@ impl Plausibility {
         ])
     }
 
-    /// The three scaling factors between two props, their product, its magnitude from 1.0, and
-    /// which term is doing the work (0=diameter, 1=blades, 2=pitch — ranked by |ln factor|).
-    /// Returns [diameter_factor, blade_factor, pitch_factor, combined, magnitude, dominant].
-    /// The exponents come from propeller.rs — the public rule-of-thumb pair, one source of truth.
+    /// The distance between two props in THRUST terms, and its magnitude from 1.0. Since P5
+    /// the cross-prop k_t move is the BEMT geometry ratio (§0) — blade count and twist enter
+    /// the integral where they act — so this is no longer a separable D⁴/blades^0.8/pitch^0.5
+    /// decomposition with a dominant term; it is the single ratio, applied at the test RPM.
+    /// Returns [ratio, magnitude] where magnitude = max(ratio, 1/ratio) (symmetric around 1.0:
+    /// a prop that HALVES k_t is extrapolating just as far as one that DOUBLES it).
     #[func]
-    fn extrapolation_factors(from_d: f64, from_pitch: f64, from_blades: f64,
-                             to_d: f64, to_pitch: f64, to_blades: f64) -> PackedFloat64Array {
-        let diameter_factor = (to_d / from_d).powi(4);
-        let blade_factor = (to_blades / from_blades).powf(BLADE_COUNT_EXPONENT);
-        let pitch_factor = (to_pitch / from_pitch).powf(PITCH_EXPONENT);
-        let combined = diameter_factor * blade_factor * pitch_factor;
-        // Symmetric around 1.0: an aircraft flown on a prop that HALVES its k_t is extrapolating
-        // just as far as one that DOUBLES it.
-        let magnitude = combined.max(1.0 / combined);
-
-        // The biggest offender by log-distance from 1.0 (the factors combine multiplicatively,
-        // so log|f| ranks them honestly). |ln f|, NOT ln|f| — the two differ below f = 1.
-        let mut dominant = 0usize;
-        let mut best = -f64::INFINITY;
-        for (i, f) in [diameter_factor, blade_factor, pitch_factor].iter().enumerate() {
-            let d = f.ln().abs();
-            if d > best {
-                best = d;
-                dominant = i;
-            }
-        }
-
-        PackedFloat64Array::from([
-            diameter_factor,
-            blade_factor,
-            pitch_factor,
-            combined,
-            magnitude,
-            dominant as f64,
-        ])
+    fn extrapolation_factors(
+        from_d: f64, from_pitch: f64, from_blades: f64, from_chord: PackedFloat64Array,
+        to_d: f64, to_pitch: f64, to_blades: f64, to_chord: PackedFloat64Array,
+        rpm: f64,
+    ) -> PackedFloat64Array {
+        let ratio = BemtModel::scale_k_t_to_prop(
+            1.0,
+            from_d, from_pitch, from_blades, from_chord,
+            to_d, to_pitch, to_blades, to_chord,
+            rpm,
+        );
+        let magnitude = ratio.max(1.0 / ratio);
+        PackedFloat64Array::from([ratio, magnitude])
     }
 }

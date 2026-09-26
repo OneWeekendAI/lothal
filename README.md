@@ -94,7 +94,17 @@ last gate you cleared and voids the lap in progress.
 - Motors are current-limited, so an oversized prop runs out of amps before it runs out of volts
 
 Run the test suite headless — every check must pass, including the hover-throttle oracle
-the whole model is calibrated against:
+the whole model is calibrated against. Use `tools/run_tests_safe.sh` (macOS/Linux) or
+`tools/run_tests_safe.ps1` (Windows) — it points `user://` at a throwaway directory for the
+duration of the run, so a suite (or a run killed mid-way) can never touch your real Lothal
+application data:
+
+```bash
+tools/run_tests_safe.sh
+```
+
+The raw invocation still works if you need it — for example to compare against a known-good run,
+or on a platform the wrapper hasn't been verified on:
 
 ```bash
 godot --headless --script res://tests/run_tests.gd
@@ -186,17 +196,17 @@ clone of this same repo.
 
 <!-- CLOC-START -->
 ```
-github.com/AlDanial/cloc v 2.10  T=1.57 s (1327.6 files/s, 489136.4 lines/s)
+github.com/AlDanial/cloc v 2.10  T=3.03 s (704.0 files/s, 258489.8 lines/s)
 -------------------------------------------------------------------------------
 Language                     files          blank        comment           code
 -------------------------------------------------------------------------------
-Rust                          1061          17051            666         575779
-GDScript                       365          12861          28717          52314
-JSON                           315              0              0          43505
-D                              251            723              0           8794
+Rust                          1063          17115           1056         576508
+GDScript                       406          14559          34088          59808
+JSON                           319              0              0          43671
+D                              253            725              0           8816
 Text                            12              0              0           6119
 diff                            17            618           2837           5456
-Markdown                        24            874              4           3186
+Markdown                        26            904              4           3274
 Python                          10            654           1610           2228
 Bourne Shell                     8            124            322            667
 TypeScript                       3             50             91            264
@@ -208,7 +218,7 @@ Godot Scene                      4             23             32             77
 JavaScript                       1             14             47             57
 SVG                              1              0              5             27
 -------------------------------------------------------------------------------
-SUM:                          2082          33115          34768         699191
+SUM:                          2133          34909          40529         707690
 -------------------------------------------------------------------------------
 ```
 

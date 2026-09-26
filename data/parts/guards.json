@@ -1,0 +1,67 @@
+{
+  "_schema": "Prop guards as parts — propulsion.md §6 and slice P10a (the P9 deferral). `kind` decides whether a thrust model applies at all: a bumper claims mass, inertia and clearance only; a duct claims tip-loss suppression through the geometry the closure fraction 1/(1+gap/chord) reads (§6.3). The physics is in src/propulsion/prop_guard.gd and NOTHING here duplicates it — every field is what PropGuard.compute() reads. `outer_radius_mm` is a RADIUS not a diameter (P9 asserts a 68 mm outer ring against a 63.5 mm 5\" tip). `mount_radius_mm` is a length, not a position — PropGuard.as_part_mass() plants the guard's mass at the motor's own plan position and lets AirframeProperties' parallel-axis shift supply the R² roll-inertia bite exactly once, on the P9 row's own warning that handing that scalar to a local tensor would double-count. `mass_g` at the top level is DERIVED from `specs` through PropGuard.mass_kg() and carried here for the browsing rail only; tests/test_parts_system.gd asserts entry.mass_g == PropGuard.mass_kg(entry.specs), and that every entry's declared `kind` agrees with what clearance_check makes of its geometry against its own prop_class so the two cannot drift. No mass could be authored here that PropGuard's own arithmetic would not also produce. Colour, price and vendor links are banned by name from both tiers.",
+  "parts": [
+    {
+      "part_id": "guard_bumper_5in_abs",
+      "name": "5\" bumper ring (ABS, 110 mm arm)",
+      "category": "guard",
+      "mass_g": 16.74,
+      "specs": {
+        "kind": "bumper",
+        "outer_radius_mm": 72.0,
+        "wall_mm": 3.0,
+        "height_mm": 12.0,
+        "density_kg_m3": 1050.0,
+        "mount_radius_mm": 110.0
+      },
+      "catalog": {
+        "prop_class": "5\"",
+        "intended_use": "freestyle",
+        "material": "ABS"
+      },
+      "source": "class-typical moulded ABS ring for a 5\" freestyle build (arm 110 mm, frame_5in_freestyle). Inner wall at outer − wall = 69 mm against a 63.5 mm 5\" tip radius: a 5.5 mm gap, more than two tip chords, so PropGuard.clearance_check classifies it geometrically as a bumper and agrees with the declared kind — which is what makes this entry a real representative of the unchanged-thrust branch rather than a shroud wearing a bumper label. The ring also fits: at a 110 mm arm the motors are 155.6 mm apart and two 144 mm rings clear each other. A per-motor bumper needs the longer arm; on the 96 mm cinewhoop arm the same ring can only ever be a duct, which is the entry below."
+    },
+    {
+      "part_id": "guard_duct_5in_cinewhoop",
+      "name": "5\" cinewhoop shroud (ABS, 1.5 mm gap)",
+      "category": "guard",
+      "mass_g": 15.79,
+      "specs": {
+        "kind": "duct",
+        "outer_radius_mm": 68.0,
+        "wall_mm": 3.0,
+        "height_mm": 12.0,
+        "density_kg_m3": 1050.0,
+        "mount_radius_mm": 96.0,
+        "tip_gap_mm": 1.5
+      },
+      "catalog": {
+        "prop_class": "5\"",
+        "intended_use": "cinewhoop",
+        "material": "ABS"
+      },
+      "source": "the reference cinewhoop shroud from P9's showcase test: inner wall at outer − wall = 65 mm against a 63.5 mm 5\" tip radius = 1.5 mm gap, a fifth of a tip chord (propulsion.md §9 P9 row)."
+    },
+    {
+      "part_id": "guard_duct_3in_tpu",
+      "name": "3\" ducted whoop shroud (TPU, 0.9 mm gap)",
+      "category": "guard",
+      "mass_g": 4.83,
+      "specs": {
+        "kind": "duct",
+        "outer_radius_mm": 41.0,
+        "wall_mm": 2.0,
+        "height_mm": 8.0,
+        "density_kg_m3": 1200.0,
+        "mount_radius_mm": 65.0,
+        "tip_gap_mm": 0.9
+      },
+      "catalog": {
+        "prop_class": "3\"",
+        "intended_use": "cinewhoop",
+        "material": "TPU"
+      },
+      "source": "class-typical TPU 3\" ducted whoop shroud (tip radius 38.1 mm, inner wall at 39 mm = 0.9 mm gap). The second duct case, at a smaller diameter and a tighter gap-to-chord ratio, so P10b's BEMT-closure suite has a case where the tip-loss suppression is stronger than the reference cinewhoop's."
+    }
+  ]
+}

@@ -42,6 +42,9 @@ var _sliders: Dictionary = {}   # key -> HSlider
 var _values: Dictionary = {}    # key -> Label
 var _fit_values: Dictionary = {}   # FIT_ROWS key -> Label
 var _fit_warnings: WarningList
+## False on the Lab dock's Layout & fit page, whose own "Why?" list shows the row's warnings; the
+## block here mixes in the camera's and the mounts', which are other rows'.
+var _warnings_shown := true
 ## Set while the panel is writing its own controls from the model, so that programmatic slider
 ## moves do not read back as the builder having dragged something.
 var _updating := false
@@ -233,7 +236,7 @@ func render(build: Build, airframe: AirframeModel = null) -> void:
 		var suffix := ""
 		if not tweaks.has_override(key):
 			suffix = "  (as built)"
-		_values[key].text = "%.1f mm%s" % [current, suffix]
+		_values[key].text = "%.1f %s%s" % [current, String(row.get("unit", "mm")), suffix]
 	_updating = false
 
 
@@ -260,13 +263,36 @@ func _render_fit(airframe: AirframeModel) -> void:
 	var warnings := airframe.mount_warnings()
 	warnings.append_array(airframe.battery_fit_warnings())
 	warnings.append_array(airframe.component_fit_warnings())
+	# And what the fitted camera is looking past. Same block, because a builder looking for "what is
+	# wrong with how this went together" is looking for this too — see AirframeModel.camera_view_warnings.
+	warnings.append_array(airframe.camera_view_warnings())
 	_fit_warnings.show_warnings(warnings)
+	if not _warnings_shown:
+		_fit_warnings.visible = false
 
 
 ## What one fit row currently reads, and what the warning currently says. Named accessors rather
 ## than tests reaching into _fit_values, so the panel's internals stay its own.
 func fit_row_text(key: String) -> String:
 	return (_fit_values[key] as Label).text if _fit_values.has(key) else ""
+
+
+## What one tweak row currently reads, in the panel's own words and formatting. Named accessor for
+## `fit_row_text`'s reason — the panel's internals stay its own — and public because PW6's pack view
+## shows this same value in the Power room, and the check that the two cannot diverge has to be able
+## to ask both what they SAY rather than what they hold.
+func tweak_row_text(key: String) -> String:
+	return (_values[key] as Label).text if _values.has(key) else ""
+
+
+func set_warnings_visible(shown: bool) -> void:
+	_warnings_shown = shown
+	if not shown:
+		_fit_warnings.visible = false
+
+
+func warnings_shown() -> bool:
+	return _warnings_shown
 
 
 func fit_warning_text() -> String:

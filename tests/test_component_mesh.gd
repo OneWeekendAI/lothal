@@ -83,7 +83,8 @@ static func _the_drawn_centre_is_where_the_mass_model_weighs_it(catalog: PartsCa
 	var worst := 0.0
 	var checked := 0
 	var detail := ""
-	for category in Build.OPTIONAL_COMPONENTS:
+	# The carved four, which is what the reference build fits. The added two have no default.
+	for category in Build.carved_components():
 		var part: Dictionary = build.components[category]
 		var weighed := Vector3.INF
 		for entry in build.mass_parts():

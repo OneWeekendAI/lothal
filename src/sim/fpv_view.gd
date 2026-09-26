@@ -30,13 +30,15 @@ extends PanelContainer
 ## is which and that the angle is a placeholder. The header's argument is worth nothing if the
 ## screen implies a spec it is not reading.
 ##
-## THERE IS NO CAMERA TILT, AND IT IS A WORSE GAP HERE THAN IT WAS ON THE BENCH. Real builds run
-## 15-40 deg of uptilt and it is the most-adjusted thing on a quad; MountLayout's camera bay is a
-## seat and a normal with no angle in it at all. Level, you fly staring at the horizon and have to
-## pitch hard to see what you are flying at — which is a real setup (a 0-degree cinematic build) but
-## not the one most people fly, and on the bench it cost nothing while here it costs you the lap.
-## Tilt is a property of the BUILD rather than of the part, so it belongs in AssemblyTweaks beside
-## standoff height and pack offset, and it is its own slice.
+## CAMERA TILT ARRIVES FOR FREE, AND THAT IS BY DESIGN (video slice V3). Real builds run 15-40 deg
+## of uptilt, and flown level you stare at the horizon and pitch hard to see the gate. Tilt is a
+## property of the BUILD, so it lives in AssemblyTweaks (`camera_tilt_deg`, 25 deg until the builder
+## says otherwise); ComponentMesh tips the drawn camera and its Eye marker with it. This class takes
+## the lens from `world_transform_of(_eye)`, which walks every parent transform — so the tipped eye
+## IS the lens, and there is no tilt code here beyond the caption.
+##
+## The caption's number is READ OFF THE EYE, not handed in: see `tilt_deg()`. A value passed through
+## main.gd would be a second copy of the angle that could say 25 over a feed looking level.
 ##
 ## WHAT IS DELIBERATELY ABSENT is everything about the LINK: no static, no breakup at range, no
 ## RSSI, and no path from VTX power or antenna choice to picture quality. A 25 mW setup on a stock
@@ -95,7 +97,7 @@ func _init() -> void:
 
 	_caption = Label.new()
 	_caption.name = "Caption"
-	_caption.add_theme_font_size_override("font_size", 11)
+	_caption.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	column.add_child(_caption)
 
 	var container := SubViewportContainer.new()
@@ -126,7 +128,7 @@ func _empty_label() -> Label:
 	_empty = Label.new()
 	_empty.name = "NotFitted"
 	_empty.text = "no camera fitted"
-	_empty.add_theme_font_size_override("font_size", 12)
+	_empty.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	_empty.set_anchors_preset(Control.PRESET_CENTER)
 	return _empty
 
@@ -238,9 +240,28 @@ func _refresh() -> void:
 	if not is_fitted():
 		_caption.text = "CHASE — no camera fitted, no FPV"
 	elif _fpv_is_main:
-		_caption.text = "CHASE (inset) — flying FPV, %d° placeholder, no tilt" % int(PLACEHOLDER_FOV_DEG)
+		_caption.text = "CHASE (inset) — flying FPV, %d° placeholder, uptilt %d°" % [
+			int(PLACEHOLDER_FOV_DEG), roundi(tilt_deg())]
 	else:
-		_caption.text = "FPV (inset) — %d° placeholder, no tilt" % int(PLACEHOLDER_FOV_DEG)
+		_caption.text = "FPV (inset) — %d° placeholder, uptilt %d°" % [
+			int(PLACEHOLDER_FOV_DEG), roundi(tilt_deg())]
+
+
+## How far the attached lens looks above the AIRFRAME's horizontal, in degrees — 0 with no camera.
+##
+## Measured off the eye's own transform in the camera's parent frame (the eye, then the ComponentMesh
+## holding it), not off the world: in the air the whole aircraft pitches, and the caption states the
+## build's uptilt, not the aircraft's attitude. The plate stack the camera is seated in is never
+## rotated relative to the airframe, which is what lets two local transforms stand for "the build".
+func tilt_deg() -> float:
+	if not is_fitted():
+		return 0.0
+	var placement := _eye.transform
+	var holder := _eye.get_parent() as Node3D
+	if holder != null:
+		placement = holder.transform * placement
+	var forward := placement.basis * Vector3(0.0, 0.0, -1.0)
+	return rad_to_deg(atan2(forward.y, -forward.z))
 
 
 ## What the caption currently reads. A named accessor so tests do not reach into the node tree.

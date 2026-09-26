@@ -1,5 +1,5 @@
 {
-  "_schema": "The flight controllers — the board the control loop actually runs on, and the last required component that could not be chosen. Two tiers, as in frames.json, motors.json, propellers.json, batteries.json and escs.json: `specs` is physics-bearing and `catalog` is browsing metadata only, admitted only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale. Colour, price and vendor links are banned by name, from either block. THE FOUR GYRO SPECS ARE THE POINT OF THIS FILE. src/sim/gyro.gd models a MEMS rate sensor properly — sample rate, PT1 cutoff, noise floor, bias — and those four quantities are properties of the IMU on the board you buy, not of the project. 'gyro_noise_rad_s' is the per-sample, per-axis standard deviation, computed as the part's published rate noise density carried across its sample rate: an MPU-6000's 0.005 deg/s/sqrt(Hz) over 1 kHz is 0.158 deg/s, which is 0.0028 rad/s. Every entry's `source` states the density and the bandwidth so the arithmetic is checkable rather than asserted. What actually reaches the flight controller is that figure AFTER the PT1, and it is set by the density rather than by the sample rate — a faster sensor integrates more noise and the filter averages proportionally more of it away — so the span across this file is the span of the densities, about 2.5x from an ICM-42688-P to a BMI270. 'gyro_bias_rad_s' IS THE ONE ILLUSTRATIVE FIELD HERE and must not be read as a measurement: no datasheet publishes calibration residue, because it is what one particular board's one particular bench calibration left behind, and it varies unit to unit. The figures are class-typical residues scaled by sensor grade, and each entry says so. 'gyro_cutoff_hz' is 150 on every entry because it is Betaflight's firmware default rather than a hardware property; it is carried per-board because it IS per-board configurable and Gyro reads it, and it is stated here that the entries do not currently differ so that nobody infers a hardware difference that is not there. 'gyro_sample_rate_hz' NEEDS THE SAME WARNING and does not get it from the entries alone: it is firmware configuration too, not a chip ceiling. The MPU-6000 appears twice in this file, on fc_f411_25x25_whoop at 8 kHz and on the reference fc_f405_30x30 at 1 kHz — the same sensor, sampled differently because the reference board is synced to Lothal's 1 kHz rate loop (a real and common Betaflight setting, and the configuration every oracle in the project is defined at). The consequence is that their published 'gyro_noise_rad_s' figures differ 2.8x, 0.0028 against 0.0078, on IDENTICAL HARDWARE. That is not a quieter board. It is the same board averaging fewer samples, and per the density argument above the difference very largely disappears after the PT1 — which is why the comparable number is what the details panel derives at the motors, never the raw noise floor. A future entry must not be read as, or authored as, a hardware comparison on this field. 'loop_rate_hz' lives in `catalog` and IS DELIBERATELY INERT: nothing reads it. A real board's PID loop rate bounds achievable D, but Lothal's dynamics substep at 1 kHz (physics.md §6) and the FC ticks once per substep, so the loop rate today IS the substep rate — and since every real FC runs at 1 kHz or faster, a modelled rate would decimate nothing. Making it real means fixing the substep rate at the catalog's fastest board so that physics dt stays constant across boards, which re-baselines the step-response oracles; that is a slice of its own. The number is here because a builder comparing an F4 to an H7 compares it, and putting an unread number in `specs` would be a claim that the sim models something it does not. Mass is real and it comes OUT of Build.ELECTRONICS_MASS_G rather than being added beside it, exactly as the ESC's did; the reference board weighs exactly Build.FC_BUDGET_MASS_G, so the reference build still weighs 496 g to the gram. A heavier board is carried honestly and says so. 'mounting' says how the board is held on: it BOLTS, through the same centre pattern the ESC uses, and its pattern must match the frame's `stack_mount` or it does not bolt down — it still MOUNTS, because zip-tying a mismatched board on is a thing real builders do (labs-and-sim.md §2.6). Entries are ordered by processor class, which gives the picker an ascending order without anything sorting it.",
+  "_schema": "The flight controllers — the board the control loop actually runs on, and the last required component that could not be chosen. Two tiers, as in frames.json, motors.json, propellers.json, batteries.json and escs.json: `specs` is physics-bearing and `catalog` is browsing metadata only, admitted only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale. Colour, price and vendor links are banned by name, from either block. THE FOUR GYRO SPECS ARE THE POINT OF THIS FILE. src/sim/gyro.gd models a MEMS rate sensor properly — sample rate, PT1 cutoff, noise floor, bias — and those four quantities are properties of the IMU on the board you buy, not of the project. 'gyro_noise_rad_s' is the per-sample, per-axis standard deviation, computed as the part's published rate noise density carried across its sample rate: an MPU-6000's 0.005 deg/s/sqrt(Hz) over 1 kHz is 0.158 deg/s, which is 0.0028 rad/s. Every entry's `source` states the density and the bandwidth so the arithmetic is checkable rather than asserted. What actually reaches the flight controller is that figure AFTER the PT1, and it is set by the density rather than by the sample rate — a faster sensor integrates more noise and the filter averages proportionally more of it away — so the span across this file is the span of the densities, about 2.5x from an ICM-42688-P to a BMI270. 'gyro_bias_rad_s' IS THE ONE ILLUSTRATIVE FIELD HERE and must not be read as a measurement: no datasheet publishes calibration residue, because it is what one particular board's one particular bench calibration left behind, and it varies unit to unit. The figures are class-typical residues scaled by sensor grade, and each entry says so. 'gyro_cutoff_hz' is 150 on every entry because it is Betaflight's firmware default rather than a hardware property; it is carried per-board because it IS per-board configurable and Gyro reads it, and it is stated here that the entries do not currently differ so that nobody infers a hardware difference that is not there. 'gyro_sample_rate_hz' NEEDS THE SAME WARNING and does not get it from the entries alone: it is firmware configuration too, not a chip ceiling. The MPU-6000 appears twice in this file, on fc_f411_25x25_whoop at 8 kHz and on the reference fc_f405_30x30 at 1 kHz — the same sensor, sampled differently because the reference board is synced to Lothal's 1 kHz rate loop (a real and common Betaflight setting, and the configuration every oracle in the project is defined at). The consequence is that their published 'gyro_noise_rad_s' figures differ 2.8x, 0.0028 against 0.0078, on IDENTICAL HARDWARE. That is not a quieter board. It is the same board averaging fewer samples, and per the density argument above the difference very largely disappears after the PT1 — which is why the comparable number is what the details panel derives at the motors, never the raw noise floor. A future entry must not be read as, or authored as, a hardware comparison on this field. 'loop_rate_hz' lives in `catalog` and IS DELIBERATELY INERT: nothing reads it. A real board's PID loop rate bounds achievable D, but Lothal's dynamics substep at 1 kHz (physics.md §6) and the FC ticks once per substep, so the loop rate today IS the substep rate — and since every real FC runs at 1 kHz or faster, a modelled rate would decimate nothing. Making it real means fixing the substep rate at the catalog's fastest board so that physics dt stays constant across boards, which re-baselines the step-response oracles; that is a slice of its own. The number is here because a builder comparing an F4 to an H7 compares it, and putting an unread number in `specs` would be a claim that the sim models something it does not. Mass is real and it comes OUT of Build.ELECTRONICS_MASS_G rather than being added beside it, exactly as the ESC's did; the reference board weighs exactly Build.FC_BUDGET_MASS_G, so the reference build still weighs 496 g to the gram. A heavier board is carried honestly and says so. 'mounting' says how the board is held on: it BOLTS, through the same centre pattern the ESC uses, and its pattern must match the frame's `stack_mount` or it does not bolt down — it still MOUNTS, because zip-tying a mismatched board on is a thing real builders do (labs-and-sim.md §2.6). 'uart_range' lives in `catalog` and is THE SECOND ILLUSTRATIVE FIELD in this file, beside 'gyro_bias_rad_s': it is a two-ended CLASS-TYPICAL serial port count, not a product's, because no entry here is a product and the count varies across the class each one is typical of. It is a range rather than a number because a range is what is genuinely known, and a range still decides most real questions — four peripherals do not fit a 1-2 port whoop at either end. src/assembly/port_budget.gd is the only reader, it states the provenance in the same breath as the figure, and every build carries an editable override that replaces it outright. A future entry must carry the same sentence in its `source`; a range stated as a measurement is the one thing this field must never become. Entries are ordered by processor class, which gives the picker an ascending order without anything sorting it.",
   "parts": [
     {
       "part_id": "fc_f411_25x25_whoop",
@@ -14,14 +14,18 @@
         "gyro_sample_rate_hz": 8000.0,
         "gyro_cutoff_hz": 150.0,
         "gyro_noise_rad_s": 0.0078,
-        "gyro_bias_rad_s": 0.0020
+        "gyro_bias_rad_s": 0.002
       },
       "catalog": {
         "processor": "F411",
         "imu": "MPU-6000",
-        "loop_rate_hz": 4000
+        "loop_rate_hz": 4000,
+        "uart_range": [
+          1,
+          2
+        ]
       },
-      "source": "representative 25.5x25.5 whoop-class F411 board; class-typical, not a specific product. Noise from the MPU-6000's published 0.005 deg/s/sqrt(Hz) rate noise density (InvenSense PS-MPU-6000A-00 rev 3.4) across an 8 kHz sample rate: 0.005 * sqrt(8000) = 0.447 deg/s = 0.0078 rad/s. Bias is a class-typical calibration residue for an older 6-axis part, NOT a datasheet figure — no datasheet publishes calibration residue. loop_rate_hz is carried and read by nothing; see _schema."
+      "source": "representative 25.5x25.5 whoop-class F411 board; class-typical, not a specific product. Noise from the MPU-6000's published 0.005 deg/s/sqrt(Hz) rate noise density (InvenSense PS-MPU-6000A-00 rev 3.4) across an 8 kHz sample rate: 0.005 * sqrt(8000) = 0.447 deg/s = 0.0078 rad/s. Bias is a class-typical calibration residue for an older 6-axis part, NOT a datasheet figure — no datasheet publishes calibration residue. loop_rate_hz is carried and read by nothing; see _schema. uart_range is a CLASS-TYPICAL serial port count for this kind of board (1-2 UARTs), NOT read off a product — no entry in this file is a product, and the port count varies across the class each one is typical of. It is a labelled guess in the sense of gyro_bias_rad_s, and every build carries an editable override that replaces it."
     },
     {
       "part_id": "fc_f405_20x20",
@@ -41,9 +45,13 @@
       "catalog": {
         "processor": "F405",
         "imu": "ICM-20602",
-        "loop_rate_hz": 8000
+        "loop_rate_hz": 8000,
+        "uart_range": [
+          3,
+          4
+        ]
       },
-      "source": "representative 20x20 micro F405 board; class-typical, not a specific product. Noise from the ICM-20602's published 0.004 deg/s/sqrt(Hz) rate noise density (TDK ICM-20602 datasheet) across an 8 kHz sample rate: 0.004 * sqrt(8000) = 0.358 deg/s = 0.0062 rad/s. Bias is a class-typical calibration residue, NOT a datasheet figure. loop_rate_hz is carried and read by nothing; see _schema."
+      "source": "representative 20x20 micro F405 board; class-typical, not a specific product. Noise from the ICM-20602's published 0.004 deg/s/sqrt(Hz) rate noise density (TDK ICM-20602 datasheet) across an 8 kHz sample rate: 0.004 * sqrt(8000) = 0.358 deg/s = 0.0062 rad/s. Bias is a class-typical calibration residue, NOT a datasheet figure. loop_rate_hz is carried and read by nothing; see _schema. uart_range is a CLASS-TYPICAL serial port count for this kind of board (3-4 UARTs), NOT read off a product — no entry in this file is a product, and the port count varies across the class each one is typical of. It is a labelled guess in the sense of gyro_bias_rad_s, and every build carries an editable override that replaces it."
     },
     {
       "part_id": "fc_f405_30x30",
@@ -63,9 +71,13 @@
       "catalog": {
         "processor": "F405",
         "imu": "MPU-6000",
-        "loop_rate_hz": 8000
+        "loop_rate_hz": 8000,
+        "uart_range": [
+          4,
+          5
+        ]
       },
-      "source": "the reference build's board, and the one Gyro's DEFAULT_* constants describe — its four specs are those constants exactly, and a test pins them together. Noise from the MPU-6000's published 0.005 deg/s/sqrt(Hz) rate noise density (InvenSense PS-MPU-6000A-00 rev 3.4) across the 1 kHz sample rate: 0.005 * sqrt(1000) = 0.158 deg/s = 0.0028 rad/s. The sample rate is 1 kHz rather than the part's 8 kHz maximum because the sensor is synced to Lothal's 1 kHz rate loop, which is the configuration every oracle in the project is defined at; gyro-to-loop sync is a real and common Betaflight setting, not a modelling shortcut. Mass is exactly Build.FC_BUDGET_MASS_G, so the reference build still weighs 496 g. Bias is a class-typical calibration residue, NOT a datasheet figure."
+      "source": "the reference build's board, and the one Gyro's DEFAULT_* constants describe — its four specs are those constants exactly, and a test pins them together. Noise from the MPU-6000's published 0.005 deg/s/sqrt(Hz) rate noise density (InvenSense PS-MPU-6000A-00 rev 3.4) across the 1 kHz sample rate: 0.005 * sqrt(1000) = 0.158 deg/s = 0.0028 rad/s. The sample rate is 1 kHz rather than the part's 8 kHz maximum because the sensor is synced to Lothal's 1 kHz rate loop, which is the configuration every oracle in the project is defined at; gyro-to-loop sync is a real and common Betaflight setting, not a modelling shortcut. Mass is exactly Build.FC_BUDGET_MASS_G, so the reference build still weighs 496 g. Bias is a class-typical calibration residue, NOT a datasheet figure. uart_range is a CLASS-TYPICAL serial port count for this kind of board (4-5 UARTs), NOT read off a product — no entry in this file is a product, and the port count varies across the class each one is typical of. It is a labelled guess in the sense of gyro_bias_rad_s, and every build carries an editable override that replaces it."
     },
     {
       "part_id": "fc_f722_30x30",
@@ -85,9 +97,13 @@
       "catalog": {
         "processor": "F722",
         "imu": "ICM-20602",
-        "loop_rate_hz": 8000
+        "loop_rate_hz": 8000,
+        "uart_range": [
+          4,
+          6
+        ]
       },
-      "source": "representative full-size F722 board; class-typical, not a specific product. Noise from the ICM-20602's published 0.004 deg/s/sqrt(Hz) rate noise density (TDK ICM-20602 datasheet) across an 8 kHz sample rate: 0.004 * sqrt(8000) = 0.358 deg/s = 0.0062 rad/s. Bias is a class-typical calibration residue, NOT a datasheet figure. loop_rate_hz is carried and read by nothing; see _schema."
+      "source": "representative full-size F722 board; class-typical, not a specific product. Noise from the ICM-20602's published 0.004 deg/s/sqrt(Hz) rate noise density (TDK ICM-20602 datasheet) across an 8 kHz sample rate: 0.004 * sqrt(8000) = 0.358 deg/s = 0.0062 rad/s. Bias is a class-typical calibration residue, NOT a datasheet figure. loop_rate_hz is carried and read by nothing; see _schema. uart_range is a CLASS-TYPICAL serial port count for this kind of board (4-6 UARTs), NOT read off a product — no entry in this file is a product, and the port count varies across the class each one is typical of. It is a labelled guess in the sense of gyro_bias_rad_s, and every build carries an editable override that replaces it."
     },
     {
       "part_id": "fc_h743_30x30",
@@ -107,9 +123,13 @@
       "catalog": {
         "processor": "H743",
         "imu": "ICM-42688-P",
-        "loop_rate_hz": 8000
+        "loop_rate_hz": 8000,
+        "uart_range": [
+          6,
+          8
+        ]
       },
-      "source": "representative H743 flagship board; class-typical, not a specific product. Noise from the ICM-42688-P's published 0.0028 deg/s/sqrt(Hz) rate noise density (TDK DS-000347 rev 1.6) across an 8 kHz sample rate: 0.0028 * sqrt(8000) = 0.250 deg/s = 0.0044 rad/s. Higher integrated noise than the reference board and LESS noise reaching the FC, because the PT1 averages proportionally more of it away — the density is what carries through, and this part's is the lowest in the file. 12 g is 4 g over the electronics budget's share, which the aircraft carries and the build readout says so. Bias is a class-typical calibration residue for a current-generation part, NOT a datasheet figure. loop_rate_hz is carried and read by nothing; see _schema."
+      "source": "representative H743 flagship board; class-typical, not a specific product. Noise from the ICM-42688-P's published 0.0028 deg/s/sqrt(Hz) rate noise density (TDK DS-000347 rev 1.6) across an 8 kHz sample rate: 0.0028 * sqrt(8000) = 0.250 deg/s = 0.0044 rad/s. Higher integrated noise than the reference board and LESS noise reaching the FC, because the PT1 averages proportionally more of it away — the density is what carries through, and this part's is the lowest in the file. 12 g is 4 g over the electronics budget's share, which the aircraft carries and the build readout says so. Bias is a class-typical calibration residue for a current-generation part, NOT a datasheet figure. loop_rate_hz is carried and read by nothing; see _schema. uart_range is a CLASS-TYPICAL serial port count for this kind of board (6-8 UARTs), NOT read off a product — no entry in this file is a product, and the port count varies across the class each one is typical of. It is a labelled guess in the sense of gyro_bias_rad_s, and every build carries an editable override that replaces it."
     },
     {
       "part_id": "fc_f405_30x30_budget",
@@ -129,9 +149,13 @@
       "catalog": {
         "processor": "F405",
         "imu": "BMI270",
-        "loop_rate_hz": 8000
+        "loop_rate_hz": 8000,
+        "uart_range": [
+          3,
+          4
+        ]
       },
-      "source": "representative budget F405 board on the BMI270, which is what a lot of cheap boards moved to when the MPU-6000 went scarce; class-typical, not a specific product. Noise from the BMI270's published 0.007 deg/s/sqrt(Hz) rate noise density in performance mode (Bosch BST-BMI270-DS000 rev 1.6) across a 3.2 kHz sample rate: 0.007 * sqrt(3200) = 0.396 deg/s = 0.0069 rad/s. The noisiest board in the file, and about 2.5x the ICM-42688-P's density — this is the board that shows what a noise floor costs you in usable D. Bias is a class-typical calibration residue, NOT a datasheet figure. loop_rate_hz is carried and read by nothing; see _schema."
+      "source": "representative budget F405 board on the BMI270, which is what a lot of cheap boards moved to when the MPU-6000 went scarce; class-typical, not a specific product. Noise from the BMI270's published 0.007 deg/s/sqrt(Hz) rate noise density in performance mode (Bosch BST-BMI270-DS000 rev 1.6) across a 3.2 kHz sample rate: 0.007 * sqrt(3200) = 0.396 deg/s = 0.0069 rad/s. The noisiest board in the file, and about 2.5x the ICM-42688-P's density — this is the board that shows what a noise floor costs you in usable D. Bias is a class-typical calibration residue, NOT a datasheet figure. loop_rate_hz is carried and read by nothing; see _schema. uart_range is a CLASS-TYPICAL serial port count for this kind of board (3-4 UARTs), NOT read off a product — no entry in this file is a product, and the port count varies across the class each one is typical of. It is a labelled guess in the sense of gyro_bias_rad_s, and every build carries an editable override that replaces it."
     }
   ]
 }

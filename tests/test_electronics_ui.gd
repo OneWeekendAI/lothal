@@ -64,16 +64,48 @@ static func run() -> Array:
 # The rail
 # ---------------------------------------------------------------------------
 
+## Both payload rails, built the way LabScreen builds them. TWO SINCE C3, and these checks are
+## written over the pair rather than over one: "the rail carries every optional component" became
+## "the RAILS carry every optional component between them", which is the property that still has
+## to hold. Which rail carries which is asserted in tests/test_control_rails.gd, next to the table
+## that decides it.
+static func _rails(catalog: PartsCatalog) -> Array:
+	return [
+		ElectronicsPicker.new(catalog, Build.components_for_system("Video"), "Electronics"),
+		ElectronicsPicker.new(catalog, Build.components_for_system("Control"), "Link"),
+	]
+
+
+static func _rail_for(rails: Array, category: String) -> ElectronicsPicker:
+	for rail in rails:
+		if (rail as ElectronicsPicker).has_category(category):
+			return rail
+	return null
+
+
+static func _payload_of(rails: Array) -> Dictionary:
+	var out := {}
+	for rail in rails:
+		out.merge((rail as ElectronicsPicker).component_ids())
+	return out
+
+
+static func _free_all(rails: Array) -> void:
+	for rail in rails:
+		(rail as ElectronicsPicker).free()
+
+
 static func _test_rail_lists_and_defaults(catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var rail := ElectronicsPicker.new(catalog)
+	var rails := _rails(catalog)
 
-	# Data-driven over Build.OPTIONAL_COMPONENTS rather than naming the four categories, so a
-	# fifth component added to the model shows up here as a failure rather than as silence.
+	# Data-driven over Build.OPTIONAL_COMPONENTS rather than naming the categories, so a seventh
+	# component added to the model shows up here as a failure rather than as silence.
 	var missing: Array = []
 	var miscounted: Array = []
 	for category in Build.OPTIONAL_COMPONENTS:
-		if not rail.has_category(category):
+		var rail := _rail_for(rails, category)
+		if rail == null:
 			missing.append(category)
 			continue
 		# Every part in the category, plus the one "Not fitted" row.
@@ -83,7 +115,7 @@ static func _test_rail_lists_and_defaults(catalog: PartsCatalog) -> Array:
 				category, rail.options_for(category).size(), expected])
 
 	results.append(TestResult.new(
-		"the rail carries every optional component category",
+		"the rails carry every optional component category between them",
 		missing.is_empty(),
 		"missing: %s" % ("none" if missing.is_empty() else ", ".join(missing))
 	))
@@ -98,7 +130,8 @@ static func _test_rail_lists_and_defaults(catalog: PartsCatalog) -> Array:
 	# answer "what is this costing me", so it must not be at the bottom of a scrolled list.
 	var not_first: Array = []
 	for category in Build.OPTIONAL_COMPONENTS:
-		if rail.options_for(category)[0] != "":
+		var owner_rail := _rail_for(rails, category)
+		if owner_rail == null or owner_rail.options_for(category)[0] != "":
 			not_first.append(category)
 	results.append(TestResult.new(
 		"\"not fitted\" is the first row in every list",
@@ -109,27 +142,37 @@ static func _test_rail_lists_and_defaults(catalog: PartsCatalog) -> Array:
 	# The rail opens on what Build would have fitted anyway, so opening Lab and touching nothing
 	# is the same aircraft it was before this rail existed. If these disagree, every stat in Lab
 	# moves the day the rail is added and nothing says why.
+	# The payload is EVERY optional category, and "no default" is a real default: C2's added two
+	# have no entry in DEFAULT_COMPONENT_IDS and open on "Not fitted", which is exactly what keeps
+	# opening Lab and touching nothing from fitting a GPS nobody asked for. So the expectation is
+	# built the way `Build.from_ids` resolves it rather than compared against the table directly —
+	# a comparison against the table alone would now be a comparison of four keys against six.
+	var expected_payload := {}
+	for category in Build.OPTIONAL_COMPONENTS:
+		expected_payload[category] = str(Build.DEFAULT_COMPONENT_IDS.get(category, ""))
 	results.append(TestResult.new(
-		"the rail opens on Build's own default components",
-		rail.component_ids() == Build.DEFAULT_COMPONENT_IDS,
-		"rail %s vs Build %s" % [rail.component_ids(), Build.DEFAULT_COMPONENT_IDS]
+		"the rails open on Build's own default components, and on \"not fitted\" where there is none",
+		_payload_of(rails) == expected_payload,
+		"rails %s vs Build %s" % [_payload_of(rails), expected_payload]
 	))
 
-	rail.free()
+	_free_all(rails)
 	return results
 
 
 static func _test_not_fitted_reaches_the_build(catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var rail := ElectronicsPicker.new(catalog)
+	var rails := _rails(catalog)
 
 	for category in Build.OPTIONAL_COMPONENTS:
-		rail.select_component(category, "")
+		var rail := _rail_for(rails, category)
+		if rail != null:
+			rail.select_component(category, "")
 
 	results.append(TestResult.new(
 		"choosing \"not fitted\" everywhere is exactly Build.no_components()",
-		rail.component_ids() == Build.no_components(),
-		"rail %s" % [rail.component_ids()]
+		_payload_of(rails) == Build.no_components(),
+		"rails %s" % [_payload_of(rails)]
 	))
 
 	# The arithmetic, end to end: a stripped aircraft is lighter than a fitted one by the sum of
@@ -140,10 +183,13 @@ static func _test_not_fitted_reaches_the_build(catalog: PartsCatalog) -> Array:
 		ReferenceBuild.FC_ID, Build.DEFAULT_COMPONENT_IDS)
 	var stripped := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
 		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
-		ReferenceBuild.FC_ID, rail.component_ids())
+		ReferenceBuild.FC_ID, _payload_of(rails))
 
+	# The carved four: those are the categories with a default, and therefore the only ones the
+	# "fitted" build above has anything in. C2's added two are unfitted on both sides and drop
+	# nothing, which is the whole point of them having no default.
 	var expected_drop := 0.0
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.carved_components():
 		expected_drop += float(catalog.get_part(
 			Build.DEFAULT_COMPONENT_IDS[category]).get("mass_g", 0.0))
 	var actual_drop := fitted.all_up_weight_g() - stripped.all_up_weight_g()
@@ -154,7 +200,7 @@ static func _test_not_fitted_reaches_the_build(catalog: PartsCatalog) -> Array:
 		"dropped %.2f g, four parts weigh %.2f g" % [actual_drop, expected_drop]
 	))
 
-	rail.free()
+	_free_all(rails)
 	return results
 
 
@@ -173,9 +219,10 @@ static func _test_the_rail_moves_the_aircraft(catalog: PartsCatalog) -> Array:
 
 	results.append(TestResult.new(
 		"Lab opens with the default payload fitted",
-		before.components.size() == Build.OPTIONAL_COMPONENTS.size(),
-		"%d of %d components fitted" % [
-			before.components.size(), Build.OPTIONAL_COMPONENTS.size()]
+		before.components.size() == Build.carved_components().size(),
+		"%d of %d components with defaults fitted, %d added components left empty" % [
+			before.components.size(), Build.carved_components().size(),
+			Build.added_components().size()]
 	))
 
 	# Take the camera off. Chosen because it is the heaviest of the four shares and the one with
@@ -241,13 +288,17 @@ static func _test_details_panel(catalog: PartsCatalog) -> Array:
 	# Every fitted component names itself and its mass. Asserted by reading back what the panel
 	# RENDERED rather than what the build holds — the panel's whole job is putting the number on
 	# screen, and checking the build here would test the catalog twice and the panel not at all.
+	# VIDEO'S OWN CATEGORIES, not `carved_components()`, and C6 is why: the receiver is carved out
+	# of the same 55 g budget as the other three, but it is reported by LinkDetails under Control
+	# now that it is chosen there. The question this panel has to answer is "did you name what you
+	# are responsible for", and COMPONENT_SYSTEM is what says which those are.
 	var unreported: Array = []
-	for category in Build.OPTIONAL_COMPONENTS:
+	for category in Build.components_for_system("Video"):
 		var part_name := str(build.components[category].get("name", ""))
 		if not text.contains(part_name):
 			unreported.append(category)
 	results.append(TestResult.new(
-		"the panel names every fitted component",
+		"the panel names every fitted component Video is responsible for",
 		unreported.is_empty(),
 		"unreported: %s" % ("none" if unreported.is_empty() else ", ".join(unreported))
 	))
@@ -262,15 +313,16 @@ static func _test_details_panel(catalog: PartsCatalog) -> Array:
 			panel.detail_text({}, "total"), build.electronics_mass_g()]
 	))
 
-	# The remainder is shown as its own row, because it is 14 g of the 55 and it is the dominant
-	# term at the small end — a builder looking at a whoop's mass budget has to be able to see
-	# that the wiring is most of it. (parts.md, and LTHL-43.)
+	# The harness is shown as its own row. It used to be a flat 14 g of the 55 and it is now weighed
+	# off the build's own gauges and lengths (PW2), which makes the row MORE worth having rather than
+	# less: a builder looking at a whoop's mass budget can now see a harness that is actually that
+	# whoop's. (parts.md, and LTHL-43.)
 	results.append(TestResult.new(
-		"the flat wiring remainder is a visible row of its own",
-		panel.detail_text({}, "wiring") == "%.1f g" % Build.wiring_mass_g()
+		"the harness is a visible row of its own, at the build's own harness mass",
+		panel.detail_text({}, "wiring") == "%.1f g" % build.harness_mass_g()
 			and text.to_lower().contains("wiring"),
 		"wiring row %s vs %.1f g; panel:\n%s" % [
-			panel.detail_text({}, "wiring"), Build.wiring_mass_g(), text]
+			panel.detail_text({}, "wiring"), build.harness_mass_g(), text]
 	))
 
 	# An empty bay reads as empty, not as 0 g and not as an em dash: "0 g" is a component that
@@ -374,9 +426,9 @@ static func _test_build_panel_dropdowns(catalog: PartsCatalog) -> Array:
 	panel._rebuild()
 
 	results.append(TestResult.new(
-		"a selection naming no components still opens on the reference 496 g aircraft",
-		absf(panel.build.all_up_weight_g() - 496.0) < 1.0
-			and panel.build.components.size() == Build.OPTIONAL_COMPONENTS.size(),
+		"a selection naming no components still opens on the reference 507.5 g aircraft",
+		absf(panel.build.all_up_weight_g() - 507.48) < 1.0
+			and panel.build.components.size() == Build.carved_components().size(),
 		"%.1f g with %d components" % [
 			panel.build.all_up_weight_g(), panel.build.components.size()]
 	))

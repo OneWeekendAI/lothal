@@ -18,10 +18,11 @@ extends RefCounted
 ##   BLADES OUTSIDE 2-4. The catalog spans 2-, 3- and 4-blade props (propellers.json). Real props
 ##   exist outside the range — five-blade cinelifter, single-blade of, ducted whoop stators — but
 ##   they are class outliers on any airframe Lothal knows how to build. The mass model reads
-##   blades as a factor in rotor inertia; the render draws exactly that many blades; the k_t
-##   scaling law's blades^0.8 exponent was fitted against nothing tighter than tables of tri-
-##   blades and bi-blades, so extrapolating to eight blades is an exercise the model has not
-##   earned. WARN, never block: an aircraft with a 5-blade prop flies fine on paper, and if the
+##   blades as a factor in rotor inertia; the render draws exactly that many blades; and since
+##   P5 blade count enters the BEMT integral directly rather than through a fitted exponent —
+##   but the integral is fed a GENERATED planform whose chord-per-blade taper was only ever
+##   checked against tri- and bi-blade props, so extrapolating to eight blades is an exercise
+##   the model has not earned. WARN, never block: an aircraft with a 5-blade prop flies fine on paper, and if the
 ##   builder knows what they are doing that is their business.
 ##
 ##   MASS vs DIAMETER. Prop mass scales as diameter cubed, near enough — it is a small piece of
@@ -38,10 +39,6 @@ extends RefCounted
 
 const BAND_WIDENING_FACTOR := 2.0
 
-## Mirrors propeller.rs BLADE_COUNT_EXPONENT. Rust cannot export constants to GDScript;
-## keep in step with the Rust source of truth (enforced by the golden cross-check).
-const BLADE_COUNT_EXPONENT := 0.8
-
 ## The blade counts the catalog spans. Outside these is a fact about the aircraft, said out loud.
 const MIN_TYPICAL_BLADES := 2
 const MAX_TYPICAL_BLADES := 4
@@ -51,6 +48,14 @@ const MAX_TYPICAL_BLADES := 4
 ## prop: every check here is a check on numbers one person typed.
 static func warnings_for(build: Build) -> Array[BuildWarning]:
 	var out: Array[BuildWarning] = []
+
+	# BEFORE the custom-part gate, deliberately. Everything else in this file is a check on numbers
+	# one person typed, and returns nothing for a shipped prop. This one is a check on whether the
+	# aircraft is flying the blade its record claims, and a shipped file that has been hand-edited to
+	# carry an unreadable blade block deserves the same sentence a custom one does.
+	if PropellerDocument.has_unreadable_blade(build.propeller):
+		out.append(_unreadable_blade(build.propeller))
+
 	if not PartsCatalog.is_custom(str(build.propeller.get("part_id", ""))):
 		return out
 
@@ -76,6 +81,25 @@ static func _provenance(prop: Dictionary) -> BuildWarning:
 		{"part_id": str(prop.get("part_id", "")), "source": source})
 
 
+## The record claims an authored blade and hands over one nothing can read — a truncated write, a
+## hand-edited file, a document from a newer Lothal. The model falls back to the generated arch,
+## which is `build.gd`'s own "an unreadable part models as no part" posture, and this is the half
+## that keeps the fallback from being a lie: the aircraft is flying a planform nobody drew, and the
+## builder is told which one and why.
+##
+## `characteristic` rather than `limiting`: nothing about the aircraft is impossible or capped. It
+## is a different propeller from the one the record claims, which is a fact about what is being
+## flown (plans/2026-09-01-authored-blade-design.md §2.2).
+static func _unreadable_blade(prop: Dictionary) -> BuildWarning:
+	var specs: Dictionary = prop.get("specs", {})
+	return BuildWarning.characteristic(&"unreadable_blade",
+		"The %s carries an authored blade that could not be read, so every thrust and hover figure on this build comes from a planform GENERATED from its %.1f\" diameter, %.1f\" pitch and %d blades — not from the shape that was drawn. Open it in the Propulsion room and publish it again to replace the assumption with the real planform." % [
+			prop.get("name", prop.get("part_id", "?")),
+			float(specs.get("diameter_inches", 0.0)), float(specs.get("pitch_inches", 0.0)),
+			int(specs.get("blades", 0))],
+		{"part_id": str(prop.get("part_id", ""))})
+
+
 static func _blade_count(prop: Dictionary) -> Array[BuildWarning]:
 	var out: Array[BuildWarning] = []
 	var blades := int(prop.get("specs", {}).get("blades", 0))
@@ -83,9 +107,8 @@ static func _blade_count(prop: Dictionary) -> Array[BuildWarning]:
 		return out
 
 	out.append(BuildWarning.characteristic(&"implausible_blade_count",
-		"%d-blade props are outside the %d-%d range the catalog carries. The physics still runs — blades scale k_t through a documented rule of thumb (blades^%.1f) — but the exponent was fitted against tri- and bi-blade tables, and %d blades is extrapolation this file has no way to check." % [
-			blades, MIN_TYPICAL_BLADES, MAX_TYPICAL_BLADES,
-			BLADE_COUNT_EXPONENT, blades],
+		"%d-blade props are outside the %d-%d range the catalog carries. The physics still runs — blade count enters the BEMT integral directly, no rule of thumb — but the integral was validated on tri- and bi-blade presets, and %d blades is extrapolation this file has no way to check." % [
+			blades, MIN_TYPICAL_BLADES, MAX_TYPICAL_BLADES, blades],
 		{"blades": blades, "min_typical": MIN_TYPICAL_BLADES, "max_typical": MAX_TYPICAL_BLADES}))
 	return out
 

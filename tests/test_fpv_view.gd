@@ -83,8 +83,15 @@ static func _the_feed_is_taken_from_the_node_on_the_drawn_camera(catalog: PartsC
 ## the half a "does it point roughly forward" test would miss: a feed that dropped roll would still
 ## show the gate ahead, still move with the aircraft, and be wrong in the one way that matters.
 ##
-## The airframe is banked 30 deg and the lens's own up-vector is checked against the airframe's,
-## rather than against world up — the assertion is "it carries the roll", not "it has some roll".
+## The airframe is banked 30 deg and the lens's own axes are checked against the airframe's, rather
+## than against world up — the assertion is "it carries the roll", not "it has some roll".
+##
+## SINCE V2 THE LENS IS TIPPED UP, so its up-vector is no longer the airframe's (it is the camera
+## tilt off it, 25 deg on this untweaked build) and the old "lens up == airframe up" would be wrong.
+## Roll is about the forward axis and tilt about the right axis, so the two separate cleanly: the
+## lens's RIGHT axis must be the banked airframe's right axis, and its FORWARD axis must be the
+## airframe's own boresight carried through the bank. A feed that dropped the roll fails the first;
+## one that dropped the tilt fails the second.
 static func _the_feed_carries_the_airframes_roll(catalog: PartsCatalog) -> TestResult:
 	var airframe := _reference(catalog)
 	var drone := Node3D.new()
@@ -97,10 +104,11 @@ static func _the_feed_carries_the_airframes_roll(catalog: PartsCatalog) -> TestR
 	view.toggle_main()
 	view.place_lenses(camera, Transform3D.IDENTITY)
 
-	var lens_up: Vector3 = camera.transform.basis.y
-	var airframe_up: Vector3 = drone.basis.y
-	var banked := lens_up.angle_to(Vector3.UP)
-	var agreement := lens_up.angle_to(airframe_up)
+	var lens_right: Vector3 = camera.transform.basis.x
+	var lens_forward: Vector3 = -camera.transform.basis.z
+	var banked := lens_right.angle_to(Vector3.RIGHT)
+	var roll_agreement := lens_right.angle_to(drone.basis.x)
+	var forward_agreement := lens_forward.angle_to(drone.basis * airframe.camera_boresight())
 
 	drone.free()
 	view.free()
@@ -108,9 +116,9 @@ static func _the_feed_carries_the_airframes_roll(catalog: PartsCatalog) -> TestR
 
 	return TestResult.new(
 		"the feed rolls with the airframe rather than staying level",
-		agreement < 1e-4 and banked > deg_to_rad(29.0),
-		"lens up is %.2f deg off the airframe's and %.2f deg off world up" % [
-			rad_to_deg(agreement), rad_to_deg(banked)])
+		roll_agreement < 1e-4 and forward_agreement < 1e-4 and banked > deg_to_rad(29.0),
+		"lens right is %.2f deg off the airframe's and %.2f deg off world right; forward %.4f deg off the banked boresight" % [
+			rad_to_deg(roll_agreement), rad_to_deg(banked), rad_to_deg(forward_agreement)])
 
 
 ## The one failure the swap can actually have. Reparenting a camera between viewports, or toggling
@@ -245,8 +253,13 @@ static func _the_caption_says_the_angle_is_a_placeholder(catalog: PartsCatalog) 
 	airframe.free()
 	view.free()
 
+	# REWRITTEN IN VIDEO SLICE V3, deliberately rather than deleted. This used to assert both captions
+	# said "no tilt", which was true when the model had none. The camera now flies Build's 25 deg
+	# default on this untweaked build, so the honest caption states the uptilt — and "no tilt" still
+	# appearing would be the screen contradicting the feed it labels.
 	return TestResult.new(
-		"both modes say the angle is a placeholder and there is no tilt",
-		inset.contains("placeholder") and inset.contains("no tilt")
-			and full.contains("placeholder") and full.contains("no tilt"),
+		"both modes say the angle is a placeholder and state the uptilt the lens is flying",
+		inset.contains("placeholder") and inset.contains("uptilt 25°")
+			and full.contains("placeholder") and full.contains("uptilt 25°")
+			and not inset.contains("no tilt") and not full.contains("no tilt"),
 		"inset: %s | full: %s" % [inset, full])

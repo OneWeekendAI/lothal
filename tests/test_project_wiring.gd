@@ -104,7 +104,7 @@ static func _test_a_new_drone_is_a_real_starting_build(catalog: PartsCatalog) ->
 	# §5: a blank canvas is the worst possible first screen. A new drone is a whole aircraft.
 	results.append(TestResult.new(
 		"a new drone is a complete, known-good aircraft rather than an empty canvas",
-		build != null and absf(build.all_up_weight_g() - 496.0) < 0.05,
+		build != null and absf(build.all_up_weight_g() - 507.48) < 0.05,
 		"%.2f g" % (0.0 if build == null else build.all_up_weight_g())
 	))
 	results.append(TestResult.new(

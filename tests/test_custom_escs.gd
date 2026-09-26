@@ -102,7 +102,7 @@ static func _with_saved(records: Array, body: Callable) -> Variant:
 # The oracles
 # ---------------------------------------------------------------------------
 
-## 496 g / 11.69 / 29.6%, asserted here as well as in every other custom-parts suite because THIS
+## 507.5 g / 11.43 / 29.9%, asserted here as well as in every other custom-parts suite because THIS
 ## is the suite that would notice a custom board move it for a custom-ESC reason.
 static func _test_reference_build_is_out_of_reach() -> TestResult:
 	var seen: bool = _with_saved([CustomEscs.make_record("Reference Impostor ESC", 999.0, 1200.0, 4,
@@ -114,10 +114,10 @@ static func _test_reference_build_is_out_of_reach() -> TestResult:
 	var auw := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
-	var pinned := absf(auw - 496.0) < EPS and absf(twr - 11.69) < 0.01 and absf(hover - 0.296) < 0.001
+	var pinned := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.299) < 0.001
 
 	return TestResult.new(
-		"a defined custom ESC does not move the reference build's 496 g / 11.69 / 29.6%",
+		"a defined custom ESC does not move the reference build's 507.5 g / 11.43 / 29.9%",
 		bool(seen) and pinned,
 		"merged sees it=%s, AUW %.2f g, TWR %.2f, hover %.1f%%" % [
 			seen, auw, twr, hover * 100.0])
@@ -283,7 +283,7 @@ static func _test_a_mismatched_esc_pattern_raises_the_stack_fit_warning() -> Tes
 			result["raised"], result["names_both"], result["reference_clear"]])
 
 
-## Mass comes OUT of ELECTRONICS_MASS_G, so a board at exactly the budget changes nothing and a
+## Mass comes OUT of ELECTRONICS_BUDGET_G, so a board at exactly the budget changes nothing and a
 ## heavier one adds exactly its excess. Asserted as a difference rather than as an absolute, which
 ## is what makes it a statement about the budget rather than about this particular board.
 static func _test_a_heavy_esc_adds_exactly_its_excess() -> TestResult:
@@ -300,12 +300,12 @@ static func _test_a_heavy_esc_adds_exactly_its_excess() -> TestResult:
 				"heavy": _build_on(merged, "custom_shed_heavy_esc").all_up_weight_g(),
 			})
 
-	var at_budget := absf(float(result["budget"]) - 496.0) < EPS
+	var at_budget := absf(float(result["budget"]) - 507.48) < EPS
 	var excess := float(result["heavy"]) - float(result["budget"])
 	var exact := absf(excess - 7.0) < EPS
 
 	return TestResult.new(
-		"an ESC at the budget mass leaves the aircraft at 496 g; 7 g over adds exactly 7 g",
+		"an ESC at the budget mass leaves the aircraft at 507.5 g; 7 g over adds exactly 7 g",
 		at_budget and exact,
 		"at budget %.2f g, heavy %.2f g, difference %.2f g (want 7.00)" % [
 			result["budget"], result["heavy"], excess])

@@ -74,18 +74,18 @@ static func _reference_is_unmoved() -> Array:
 		"fitted %s, bays empty %s" % [com, ReferenceBuild.fore_aft_symmetric().mass_properties.com_m]
 	))
 	out.append(TestResult.new(
-		"and sits 12.0 mm up, because the pack is strapped to the top plate",
-		absf(com.y - 0.011971) < 1e-5,
+		"and sits 11.8 mm up, because the pack is strapped to the top plate",
+		absf(com.y - 0.011832) < 1e-5,
 		"got %.4f mm up" % (com.y * 1000.0)
 	))
 	out.append(TestResult.new(
-		"the reference build still weighs 496 g",
-		absf(build.all_up_weight_g() - 496.0) < 0.5,
+		"the reference build still weighs 507.5 g",
+		absf(build.all_up_weight_g() - 507.48) < 0.5,
 		"got %.1f g" % build.all_up_weight_g()
 	))
 	out.append(TestResult.new(
-		"the reference build's thrust-to-weight is still 11.7:1",
-		absf(build.thrust_to_weight() - 11.7) < 0.05,
+		"the reference build's thrust-to-weight is still 11.43:1",
+		absf(build.thrust_to_weight() - 11.43) < 0.05,
 		"got %.2f" % build.thrust_to_weight()
 	))
 	out.append(TestResult.new(
@@ -122,8 +122,16 @@ static func _sliding_moves_the_com() -> Array:
 	var centred := ReferenceBuild.build()
 	var forward := _build(offset_mm)
 
-	var pack_fraction: float = (float(centred.battery["mass_g"]) / 1000.0) \
-		/ centred.mass_properties.total_mass_kg
+	# WHAT MOVES WITH THE PACK IS NO LONGER ONLY THE PACK, and that is PW2 rather than a slip. The
+	# connector is soldered to the pack's own lead, so it rides at the pack's position; the main lead
+	# spans the stack and the pack, so its centroid rides half as far. Both are named here as terms,
+	# from the harness's own masses, rather than folded into a fudge — a model that moved the CoM by
+	# the offset of the wrong part is exactly what this check exists to catch, and it can only catch
+	# it while the expected value is built out of parts this file can point at.
+	var moving_kg: float = float(centred.battery["mass_g"]) / 1000.0 \
+		+ centred.harness.connector_mass_g(centred) / 1000.0 \
+		+ centred.harness.main_lead_mass_g(centred) / 1000.0 * 0.5
+	var pack_fraction: float = moving_kg / centred.mass_properties.total_mass_kg
 	# Forward is -Z (physics.md §1), so a positive offset moves the CoM to negative Z — FROM WHERE
 	# IT ALREADY WAS. That baseline was zero until LTHL-11 gave the camera, VTX and antenna real
 	# bays, and it is 0.18 mm aft now; the claim being tested is the DISPLACEMENT, so what changed
@@ -141,7 +149,7 @@ static func _sliding_moves_the_com() -> Array:
 	out.append(TestResult.new(
 		"the centre of mass moves by the offset times the pack's mass fraction",
 		absf(actual.z - expected_z) < 1e-9,
-		"got %.6f m, expected %.6f m (pack is %.1f%% of AUW)" % [
+		"got %.6f m, expected %.6f m (pack, plug and half the lead are %.1f%% of AUW)" % [
 			actual.z, expected_z, pack_fraction * 100.0]
 	))
 	# Sliding is fore/aft only: a pack that gained lateral offset would mean the mount's own axes

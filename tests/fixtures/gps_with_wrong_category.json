@@ -1,0 +1,29 @@
+{
+  "_schema": "Fixture for test_control_parts.gd. Not a catalog file — exercises _load_category's refusal of an entry whose own `category` field disagrees with the category it is being loaded as, against a minimal file rather than CATEGORY_FILES. That branch had NO coverage anywhere in tests/ before C1: every shipped file agrees with itself, so the only way to drive it is a file written to disagree.",
+  "parts": [
+    {
+      "part_id": "gps_fixture_ordinary",
+      "name": "Fixture Ordinary GPS",
+      "category": "gps",
+      "mass_g": 6.0,
+      "specs": {
+        "length_mm": 20.0,
+        "width_mm": 20.0,
+        "height_mm": 6.0,
+        "mast_height_mm": 0.0
+      }
+    },
+    {
+      "part_id": "gps_fixture_mislabelled",
+      "name": "Fixture GPS Declaring Itself A Buzzer",
+      "category": "buzzer",
+      "mass_g": 6.0,
+      "specs": {
+        "length_mm": 20.0,
+        "width_mm": 20.0,
+        "height_mm": 6.0,
+        "mast_height_mm": 0.0
+      }
+    }
+  ]
+}

@@ -62,6 +62,9 @@ var tune: Dictionary = {}
 var air: Dictionary = {}
 ## Sparse. Absent means the app's defaults — including a fit clearance that is a labelled guess.
 var printing: Dictionary = {}
+## Sparse. The Config room's decisions — motor map, ports, failsafe, rates (C1). Absent means the
+## app's defaults, which is what lets a default follow the app rather than freeze in the file.
+var config: Dictionary = {}
 
 ## Named versions (⌘S), newest last. Each is {version_id, label, saved_at, decisions}.
 var versions: Array = []
@@ -138,6 +141,7 @@ static func from_dict(document: Dictionary, ladder: Array = ProjectSchema.MIGRAT
 	project.tune = project._read_block(decisions as Dictionary, "tune")
 	project.air = project._read_block(decisions as Dictionary, "air")
 	project.printing = project._read_block(decisions as Dictionary, "printing")
+	project.config = project._read_block(decisions as Dictionary, "config")
 
 	project.versions = _array_or(doc, "versions")
 	project.print_records = _array_or(doc, "prints")
@@ -177,8 +181,8 @@ func _read_parts(raw: Variant) -> Dictionary:
 
 
 ## One sparse block, with unrecognised keys kept. No key list is enforced: the keys inside
-## `assembly`, `tune`, `air` and `printing` belong to AssemblyTweaks, RateTune and the print
-## settings respectively, and a whitelist here would be a fourth place to remember a field.
+## `assembly`, `tune`, `air`, `printing` and `config` belong to AssemblyTweaks, RateTune, the print
+## settings and the Config room respectively, and a whitelist here would be a fourth place to remember a field.
 func _read_block(decisions: Dictionary, block_name: String) -> Dictionary:
 	var raw: Variant = decisions.get(block_name, {})
 	if not (raw is Dictionary):
@@ -199,6 +203,7 @@ func to_dict() -> Dictionary:
 	decisions["tune"] = tune.duplicate(true)
 	decisions["air"] = air.duplicate(true)
 	decisions["printing"] = printing.duplicate(true)
+	decisions["config"] = config.duplicate(true)
 
 	var out: Dictionary = (_unknown.get("", {}) as Dictionary).duplicate(true)
 	out["schema"] = ProjectSchema.current_version()
@@ -261,6 +266,7 @@ func restore_version(version_id: String) -> bool:
 		tune = _read_block(decisions as Dictionary, "tune")
 		air = _read_block(decisions as Dictionary, "air")
 		printing = _read_block(decisions as Dictionary, "printing")
+		config = _read_block(decisions as Dictionary, "config")
 		touch()
 		return true
 	return false
@@ -294,10 +300,22 @@ func to_build(catalog: PartsCatalog, missing: Array = []) -> Build:
 	if not missing.is_empty():
 		return null
 
-	return Build.from_ids(catalog,
+	# The guard leaves the components dictionary and becomes the trailing argument, because
+	# `Build.from_ids` reads `component_ids` for `Build.OPTIONAL_COMPONENTS` only and the guard is
+	# not one of them — it is the optional part that also changes the aerodynamics, so it arrives
+	# on its own parameter. Erased rather than left in place, so the two paths cannot both claim it.
+	var guard_id := String(components.get("guard", ""))
+	components.erase("guard")
+
+	var build := Build.from_ids(catalog,
 		String(parts["frame"]), String(parts["motor"]), String(parts["propeller"]),
 		String(parts["battery"]), String(parts["esc"]), String(parts["flight_controller"]),
-		components, to_air())
+		components, to_air(), guard_id)
+	# The configuration decisions travel with the aircraft (C2). Set rather than passed to
+	# `from_ids`, because nothing in this block is a part and none of it moves a mass.
+	if build != null:
+		build.set_config(config.duplicate(true))
+	return build
 
 
 ## Sea-level standard when the block is absent — Build's own default, so a project written before

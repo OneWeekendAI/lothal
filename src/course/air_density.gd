@@ -25,9 +25,11 @@ extends RefCounted
 ## THIS ONE IS NOT A GUESS, WHICH IS UNUSUAL HERE
 ## ---------------------------------------------------------------------------
 ##
-## Almost every other constant in this project has to admit what it is. FIGURE_OF_MERIT is an
-## outright guess with no source. REFERENCE_RESONANCE_HZ is characteristic. The blade-count and
-## pitch exponents are documented rules of thumb the shipped catalog cannot validate.
+## Almost every other constant in this project has to admit what it is. REFERENCE_RESONANCE_HZ is
+## characteristic. The section polar BEMT runs on is two free constants at a Reynolds number nobody
+## publishes data for. (FIGURE_OF_MERIT used to head this list — an outright guess with no source —
+## and P6's closure deleted it: the figure of merit is an OUTPUT of the two power quadratures now,
+## not an input to them.)
 ##
 ## Rho is not in that company, and the comment says so BECAUSE it is unusual here. The barometric
 ## formula and the ideal gas law are textbook and exact within the troposphere, and every constant
@@ -72,8 +74,8 @@ extends RefCounted
 ##    2.10% exists only at 35 C; at 15 C it is 0.63%. The two are not independent, and the one a
 ##    builder can answer carries most of the signal.
 ## 3. The residual bias is small, one-directional and in company: dry air is denser, so this
-##    OVERSTATES rho and therefore overstates thrust, by at most ~2% — the same direction as
-##    j_zero's omission and the constant-profile-power assumption in propeller.rs.
+##    OVERSTATES rho and therefore overstates thrust, by at most ~2% — the same direction as the
+##    axisymmetric closure's treatment of edgewise flow in bemt.rs.
 ##
 ## The table is here rather than the word "negligible" so a future reader can overrule this
 ## decision with data instead of taking it on trust.
@@ -127,6 +129,26 @@ func _init(p_elevation_m: float = STANDARD_ELEVATION_M,
 ## Sea level, 15 C. The oracle's air, and what a course that never said otherwise is flown in.
 static func standard() -> AirDensity:
 	return AirDensity.new()
+
+
+## The air at a place, on a day (design §3.1). The elevation comes from the SITE, because where a
+## field sits above sea level is a fact about that field; the temperature comes from the
+## CONDITIONS, because how warm it is is the thing you switch while holding the place still.
+##
+## This is the only new surface this slice puts on AirDensity. The model, its constants and its
+## clamps are untouched — `compose` decides nothing about air, it decides which two typed facts
+## the existing constructor is handed, and it exists so that decision is made in ONE place instead
+## of at every call site. Composed here rather than as `Site.air()` because a site cannot answer
+## what air it is: half the answer is not a fact about it.
+##
+## A missing half reads as the standard one, on `from_data`'s rule: standard air is not a fallback
+## papering over missing data, it is the correct reading of a world nobody has told about its
+## weather, and it is exactly what every number in this project was quoted in before any of this
+## existed.
+static func compose(p_site: Site, p_conditions: Conditions) -> AirDensity:
+	var where := p_site if p_site != null else Site.new()
+	var weather := p_conditions if p_conditions != null else Conditions.standard()
+	return AirDensity.new(where.elevation_m, weather.temperature_c)
 
 
 ## Pressure at this elevation, from the barometric formula on the standard lapse rate.

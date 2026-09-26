@@ -25,6 +25,19 @@ var motor_meshes: Dictionary = {}
 ## propeller physically bolts — so a taller motor lifts its prop without anything recomputing
 ## a clearance, and a frame change moves motors and props together in one step.
 var propeller_meshes: Dictionary = {}
+## motor name -> GuardMesh. Empty when the build fits no guard. Parented onto the arm-tip pad
+## as a sibling of the motor: the ring wraps its motor at the plan position, so it rides the
+## same pad the motor does and a frame rebuild takes it with the arm rather than leaving a
+## stale ring where a motor used to be. Reads its inner wall from PropGuard.tip_clearance_mm
+## against the prop's own drawn radius (never a second geometry copy) — see guard_mesh.gd.
+var guard_meshes: Dictionary = {}
+## motor name -> ArmGuardMesh. Empty unless the build's printing block FITS arm guards (printed-room
+## PR1). Parented onto the frame body rather than the pad, because a sleeve sits inboard of the motor
+## along the arm and its seat is ArmGuard.seat_position_m — the point Build.mass_parts weighs it at.
+var arm_guard_meshes: Dictionary = {}
+## part id -> PrintedPartMesh, for the printed parts other than arm guards that the build FITS
+## (printed-room PR16-PR18). Parented onto the frame body, drawn from each part's own `triangles_mm`.
+var printed_part_meshes: Dictionary = {}
 ## The pack. Parented onto the frame for the same reason the motors hang off the arm-tip pads: the
 ## mount's height is FrameModel's, the standoff tweak moves it, and a frame rebuild frees it rather
 ## than leaving a stale pack behind.
@@ -49,11 +62,19 @@ var component_meshes: Dictionary = {}
 ## Arm length of the build currently drawn, kept so clearance can be reported against the
 ## geometry actually on screen rather than against whatever Build was asked about last.
 var arm_m := 0.0
+## The motor map drawn on the aircraft — Config room C3 (design §4.3): M1..M4 in Betaflight's
+## numbering, each with the direction it is configured to turn. A child of the airframe rather than
+## of the frame, because it is annotation ON the aircraft rather than a part of it, and it must not
+## be freed and re-parented by a frame rebuild. Hidden until Config is the focused system; the
+## default picture of a drone is the drone.
+var motor_map: MotorMapMarkers
 
 func _init() -> void:
 	frame_model = FrameModel.new()
 	frame_model.name = "Frame"
 	add_child(frame_model)
+	motor_map = MotorMapMarkers.new()
+	add_child(motor_map)
 
 
 ## Regenerates the whole airframe from `build`. Safe to call on every part change; the frame
@@ -73,6 +94,9 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 	frame_model.rebuild(build.frame, tweak_m["plate_gap_m"])
 	motor_meshes.clear()
 	propeller_meshes.clear()
+	guard_meshes.clear()
+	arm_guard_meshes.clear()
+	printed_part_meshes.clear()
 	arm_m = build.arm_m
 
 	# The pack, on whichever of the frame's strap mounts the builder chose, slid to wherever they
@@ -97,7 +121,7 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		# where the pack's mass is. That is what makes labs-and-sim.md §2.2 — "the fit check and the
 		# picture are the same geometry" — true of mass as well as of clearance.
 		battery_mesh.position = MountLayout.seated_centre_m(
-			battery_mount, battery_mesh.size_m, battery_offset_m)
+			battery_mount, battery_mesh.size_m, battery_offset_m, build.battery_rise_m())
 	frame_model.add_child(battery_mesh)
 
 	# The stack, in the frame's own standoff stack. Nothing here decides where that is: the mount
@@ -135,10 +159,21 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 			continue
 		var component := ComponentMesh.new()
 		component.name = "Component_%s" % category
-		component.rebuild(category, build.components[category])
-		component.position = MountLayout.seated_centre_m(bay, component.size_m)
+		# The tilt crosses as a number from the same resolved dictionary as the plate gap, and every
+		# category is handed it — only the camera reads it, so the loop stays free of a category branch.
+		component.rebuild(category, build.components[category], float(tweak_m["camera_tilt_deg"]))
+		# The mast rides along, and it has to: the moment this call and Build.mass_parts()'s call
+		# pass different arguments, a masted GPS is drawn on the plate and weighed 70 mm above it,
+		# and an inertia tensor does not appear on screen to say so. Same argument as the comment
+		# above, one slice later and with a new parameter to forget.
+		component.position = MountLayout.seated_centre_m(bay, component.size_m, 0.0,
+			build.rise_m_for(build.components[category]))
 		frame_model.add_child(component)
 		component_meshes[category] = component
+
+	# Read once, outside the loop, and handed to the drawing and the map alike — one dictionary, so
+	# the propeller a builder watches and the label beside it cannot come from two reads.
+	var spin_map := MotorLayout.spin_map(build.config)
 
 	for motor_name in MotorLayout.MOTOR_NAMES:
 		var pad: Node3D = frame_model.arm_tips[motor_name]
@@ -169,9 +204,122 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 		# Direction from MotorLayout, not from anything this file decides: it is the same table the
 		# yaw torque is computed from, so the rotor you can see and the rotor the physics is
 		# integrating cannot disagree about which way they go. Diagonals together, adjacents opposed.
-		propeller.spin = MotorLayout.SPIN[motor_name]
+		# Direction through MotorLayout's ONE ACCESSOR, not from the constant table: C2 made the
+		# map an authored value that reaches the mixer, and C3 is what stops the drawing being the
+		# one reader left behind. A props-in build whose propellers kept turning the old way would
+		# teach a builder that Lothal's controls are decorative — the most expensive lesson this
+		# app can give (design §5). Diagonals together, adjacents opposed, unless the builder said
+		# otherwise, in which case it is drawn as they said.
+		propeller.spin = float(spin_map[motor_name])
 		motor.add_child(propeller)
 		propeller_meshes[motor_name] = propeller
+
+		# The prop guard, if the build fits one. Sibling of the motor under the same arm-tip
+		# pad — the ring wraps the motor at the plan position, so the pad is where it belongs.
+		# Y is the propeller disc's own, because a shroud is what wraps that disc and the tip
+		# clearance the ring reads describes the gap between them at that plane. An empty
+		# build.guard clears any previous ring and leaves the pad without one, which is what
+		# "not fitted" means — same posture as component_meshes above.
+		if not build.guard.is_empty():
+			var guard := GuardMesh.new()
+			guard.name = "Guard_%s" % motor_name
+			guard.rebuild(build.guard, propeller.radius_m)
+			# Position the ring at the disc plane, in the pad's own frame — the motor's y is
+			# already relative to the pad, and propeller.position.y is relative to the motor,
+			# so the total is the motor's y plus the prop's y for the ring's centre.
+			guard.position = Vector3(0, motor.position.y + propeller.position.y, 0)
+			pad.add_child(guard)
+			guard_meshes[motor_name] = guard
+
+		# The arm guard, when fitted and readable. Drawn from the same triangle list the export writes
+		# and seated where the mass model weighs it — never a second seat computed here.
+		if ArmGuard.is_fitted(build.printing):
+			var dims := ArmGuard.dimensions(build.frame, build.printing)
+			if bool(dims["ok"]):
+				var sleeve := ArmGuardMesh.new()
+				sleeve.name = "ArmGuard_%s" % motor_name
+				sleeve.rebuild(dims)
+				sleeve.transform = Transform3D(ArmGuardMesh.arm_basis(motor_name),
+					ArmGuard.seat_position_m(motor_name, build.arm_m,
+						ArmGuard.motor_stator_radius_m(build.motor), float(dims["length_mm"])))
+				frame_model.add_child(sleeve)
+				arm_guard_meshes[motor_name] = sleeve
+
+	_draw_printed_parts(build, tweak_m)
+
+	# The map last, so the propeller it is sized from has been generated. The radius is the drawn
+	# propeller's own — never a second copy of it here.
+	var disc_radius := 0.0
+	if propeller_meshes.has(MotorLayout.MOTOR_NAMES[0]):
+		disc_radius = (propeller_meshes[MotorLayout.MOTOR_NAMES[0]] as PropellerMesh).radius_m
+	motor_map.rebuild(build, disc_radius)
+
+
+## The fitted printed parts other than arm guards (printed-room PR18-PR20), each drawn from its own
+## `triangles_mm` — the list the export writes. The mast and the pad are seated from the point
+## `part_masses` weighs them at, never a second seat computed here. Not fitted, or refused, draws nothing.
+func _draw_printed_parts(build: Build, tweak_m: Dictionary) -> void:
+	# PR19: the cheeks either side of the DRAWN camera, at the drawn tilt (tweak_m's, the number the camera
+	# was just drawn with). Each cheek's inner face is clearance off the camera's side; its outer face is
+	# half the plate gap out.
+	if CameraMount.is_fitted(build.printing) and component_meshes.has("camera"):
+		var cam_dims := CameraMount.dimensions(build.components["camera"], build.printing,
+			float(tweak_m["camera_tilt_deg"]))
+		if bool(cam_dims["ok"]):
+			var camera: ComponentMesh = component_meshes["camera"]
+			var across := (float(cam_dims["camera_width_mm"]) * 0.5 + float(cam_dims["clearance_mm"])
+				+ float(cam_dims["cheek_thickness_mm"]) * 0.5) / StlWriter.MM_PER_M
+			var triangles := CameraMount.triangles_mm(cam_dims)
+			for side in [["left", -1.0], ["right", 1.0]]:
+				var cheek := _printed_mesh("%s_%s" % [CameraMount.PART_ID, side[0]], triangles, 1.0,
+					PrintedPartMesh.CHEEK)
+				cheek.position = camera.position + Vector3(float(side[1]) * across, 0.0, 0.0)
+
+	# PR20: the tube's axis on the DRAWN whip — through its base (the antenna box's underside, on the plate) and
+	# along its lean, which is the tube's own lean because both read ComponentMesh.WHIP_LEAN_DEGREES.
+	if AntennaMount.is_fitted(build.printing) and component_meshes.has("antenna"):
+		var ant_dims := AntennaMount.dimensions(build.components["antenna"], build.printing)
+		if bool(ant_dims["ok"]):
+			var antenna: ComponentMesh = component_meshes["antenna"]
+			var whip := antenna.get_node_or_null("Whip") as Node3D
+			if whip != null:
+				var mount := _printed_mesh(AntennaMount.PART_ID, AntennaMount.triangles_mm(ant_dims), 1.0,
+					PrintedPartMesh.AFT_Y)
+				mount.position = antenna.position + whip.position \
+					- PrintedPartMesh.AFT_Y * AntennaMount.tube_foot_mm(ant_dims) / StlWriter.MM_PER_M
+
+	# The weighed point is the one gate: part_masses is empty unless the part is Fitted and readable.
+	var mast_masses := GpsMast.part_masses(build, build.printing)
+	if not mast_masses.is_empty():
+		var mast_dims := GpsMast.dimensions(build, build.printing)
+		var bay := mount_point(String(Build.COMPONENT_MOUNTS["gps"]))
+		if bool(mast_dims["ok"]) and bay != null:
+			var mast := _printed_mesh(GpsMast.PART_ID, GpsMast.triangles_mm(mast_dims), float(bay.normal))
+			# Weighed half the mast up the post; the flange's foot is on the bay.
+			mast.position = (mast_masses[0] as PartMass).position_m \
+				- Vector3(0.0, float(bay.normal) * float(mast_dims["mast_height_mm"]) * 0.0005, 0.0)
+
+	var pad_masses := BatteryPad.part_masses(build, build.printing)
+	if not pad_masses.is_empty():
+		var pad_dims := BatteryPad.dimensions(build.battery, build.printing)
+		if bool(pad_dims["ok"]) and battery_mount != null:
+			var pad := _printed_mesh(BatteryPad.PART_ID, BatteryPad.triangles_mm(pad_dims), float(battery_mount.normal))
+			# Weighed at its own centre; printed from the bed up, so the node sits half a pad back towards the plate.
+			pad.position = (pad_masses[0] as PartMass).position_m \
+				- Vector3(0.0, float(battery_mount.normal) * float(pad_dims["thickness_mm"]) * 0.0005, 0.0)
+
+
+## One printed part's node on the frame body, Z-up print frame, turned over for a mount facing down.
+func _printed_mesh(id: String, triangles: Array, normal: float,
+		print_frame: Basis = PrintedPartMesh.Z_UP) -> PrintedPartMesh:
+	var mesh := PrintedPartMesh.new()
+	mesh.name = "Printed_%s" % id
+	mesh.rebuild(triangles, print_frame)
+	if normal < 0.0:
+		mesh.basis = Basis(Vector3.RIGHT, PI)
+	frame_model.add_child(mesh)
+	printed_part_meshes[id] = mesh
+	return mesh
 
 
 ## Hands each propeller the RPM of its own motor, in MotorLayout.MOTOR_NAMES order — which is the
@@ -202,6 +350,105 @@ func camera_eye() -> Node3D:
 	if not component_meshes.has("camera"):
 		return null
 	return (component_meshes["camera"] as ComponentMesh).get_node_or_null("Eye")
+
+
+## Where the lens is IN THE AIRFRAME'S OWN FRAME, metres, or null when no camera is fitted.
+##
+## The same eye `camera_eye()` returns, as a number rather than as a node. Both come off the same
+## marker — this reads the node's own `position` and the mesh's, and adds them — so there is one
+## answer to where the lens is and not a second derivation that could drift from the drawing.
+##
+## It exists because `global_transform` is unusable for this: a `Node3D` outside the tree returns
+## identity, so a check written against it silently measures an aircraft whose every part sits on
+## the origin. That is the exact defect the 2026-08-28 review found in the guard polygon, and it
+## would be a worse one here because the eye is the thing every angle is measured FROM.
+##
+## THE ROTATION IS COMPOSED IN, and since V2 it has to be. The camera tilt tips the eye marker up
+## about the camera's centre, and the eye sits AHEAD of the box — so tilt moves where the lens is,
+## not only which way it looks. Adding positions would put a 40 deg lens where a level one sits.
+## So the eye is placed by the full local transforms, mesh then marker, which is exactly what
+## `FpvView.world_transform_of` walks: the check and the feed cannot disagree about the lens.
+func camera_eye_m() -> Variant:
+	var placement = _camera_eye_transform()
+	if placement == null:
+		return null
+	return (placement as Transform3D).origin
+
+
+## The direction the fitted camera looks, in the airframe's own frame: (0, sin θ, -cos θ) for an
+## uptilt of θ, and plain forward (-Z, physics.md §1) when no camera is fitted.
+##
+## Composed from the eye marker's own basis rather than computed from the tilt setting, and that is
+## the point: the angle is stated ONCE, on the drawn camera, and this reads what was drawn. A second
+## `sin(tilt)` here would agree with the picture right up until the day one of them flipped a sign.
+## A named function rather than callers writing a vector, so `CameraView` is handed a number and
+## never a node.
+func camera_boresight() -> Vector3:
+	var placement = _camera_eye_transform()
+	if placement == null:
+		return Vector3(0.0, 0.0, -1.0)
+	return ((placement as Transform3D).basis * Vector3(0.0, 0.0, -1.0)).normalized()
+
+
+## The eye marker's transform in the airframe's frame, composed from LOCAL transforms because
+## `global_transform` outside the tree is identity (the 2026-08-28 defect). Null with no camera.
+func _camera_eye_transform() -> Variant:
+	if not component_meshes.has("camera"):
+		return null
+	var mesh: ComponentMesh = component_meshes["camera"]
+	var eye := mesh.get_node_or_null("Eye") as Node3D
+	if eye == null:
+		return null
+	return mesh.transform * eye.transform
+
+
+## Everything the camera can be blocked by, `{name: PackedVector3Array}` in the airframe's own
+## frame — what `CameraView` measures angles to.
+##
+## TWO KINDS OF THING ARE IN HERE AND THERE IS NO THIRD BY OVERSIGHT:
+##
+##   - every drawn plate, by node name. THE ARMS ARE THESE. Frames are plates in this app, so an
+##     arm is part of a plate's outline rather than a solid of its own, and the outline IS the
+##     silhouette. `FrameModel.plate_polygons_m()` publishes them; the plan-to-world mapping is
+##     `AirframeDocument.world_m`, the same one `PlateMesh` extrudes through, so the polygon
+##     measured here is the polygon drawn.
+##   - every fitted guard ring, from `guard_ring_polygons_m()` unchanged — the polygon P10c shipped
+##     and left waiting for exactly this caller.
+##
+## The propellers are NOT here, and that is a decision rather than a gap: a spinning disc is in
+## front of an FPV camera on most builds and everyone flying knows it, so reporting it as an
+## obstruction would bury the two findings that are actually actionable under four that are not.
+## The disc's geometry is already published by `PropellerMesh` if that judgement is ever revisited.
+##
+## Empty for a moulded frame with no plates and no guard, which is a real aircraft and not a
+## failure: `FrameModel` draws a stand-in body precisely because the plate model cannot describe
+## that shape, and inventing an outline for it would be a claim about a frame nobody measured.
+func camera_obstruction_points_m() -> Dictionary:
+	var out := {}
+
+	for record in frame_model.plate_polygons_m():
+		var points := PackedVector3Array()
+		var y: float = record["y_m"]
+		for plan_mm in record["outline_mm"]:
+			points.append(AirframeDocument.world_m(plan_mm, 0.0) + Vector3(0.0, y, 0.0))
+		if not points.is_empty():
+			out[str(record["name"])] = points
+
+	var rings := guard_ring_polygons_m()
+	for motor_name in rings:
+		var guard: GuardMesh = guard_meshes[motor_name]
+		# The ring's height is the propeller disc plane, which is where GuardMesh puts it and why —
+		# a shroud wraps the disc. Read off the node under the arm-tip pad and added to the pad's
+		# own height, because the polygon above is in the AIRCRAFT's plan frame and the node's Y is
+		# in the pad's.
+		var pad: Node3D = frame_model.arm_tips[motor_name]
+		var y: float = pad.position.y + guard.position.y
+		var points := PackedVector3Array()
+		for plan_m in rings[motor_name]:
+			points.append(Vector3(plan_m.x, y, plan_m.y))
+		out["guard %s" % motor_name] = points
+
+	return out
 
 
 ## One of the frame's mount points by id, or null. Named accessor rather than callers walking
@@ -302,6 +549,127 @@ func battery_prop_clearance_m() -> float:
 		-half_x, centre_z - half_z, half_x * 2.0, half_z * 2.0))
 
 
+## Every fitted guard's ring silhouette in plan view, motor name -> 32-vertex polygon, in the
+## airframe's own XZ plane. Empty when the build fits no guard.
+##
+## For the camera-frustum containment test plans/2026-08-26-propulsion-room-design.md §5 P10c
+## asks for. The arm half of that check does not exist yet, so nothing reads this — it is here
+## so the guard plugs into the check on the day it lands rather than becoming a second thing to
+## catch up.
+##
+## The plan centre comes from `MotorLayout.motor_position`, which is the SAME source
+## `footprint_prop_clearance_m` reads two functions below, and not from the GuardMesh node's own
+## transform: the ring is parented onto the arm-tip pad, so its local XZ is the pad's origin and
+## four rings read that way would all sit on the aircraft's centre. One definition of where a
+## motor is, here as there.
+func guard_ring_polygons_m() -> Dictionary:
+	var out := {}
+	for motor_name in MotorLayout.MOTOR_NAMES:
+		if not guard_meshes.has(motor_name):
+			continue
+		var guard: GuardMesh = guard_meshes[motor_name]
+		var hub := MotorLayout.motor_position(motor_name, arm_m)
+		var polygon := guard.ring_polygon_m(Vector2(hub.x, hub.z))
+		if not polygon.is_empty():
+			out[motor_name] = polygon
+	return out
+
+
+## How far off the lens axis the airframe and each fitted part come, split the way the obstruction
+## warning reads them: `{frame_deg, fitted: [{name, deg}] nearest first, report}` — `frame_deg` the
+## plates' (the arms are these) nearest approach, INF with no plate outline (a moulded frame);
+## `fitted` every other obstruction (the guard rings). Empty with no camera fitted. The warning below
+## and the Camera page's numbers and drawing (`VideoFigures`) all read this one call.
+func camera_clearances() -> Dictionary:
+	var eye = camera_eye_m()
+	if eye == null:
+		return {}
+	var report := CameraView.off_axis_report(eye, camera_boresight(), camera_obstruction_points_m())
+	# The frame's own silhouette is the baseline. INF when there is no plate geometry at all — a
+	# moulded whoop — which is the right answer rather than a missing one: nothing of the airframe
+	# is in the picture to compare against, so anything fitted has nothing to beat.
+	var frame_deg := INF
+	var fitted: Array = []
+	for part_name in report:
+		var angle: float = report[part_name]
+		if str(part_name).begins_with("Plate"):
+			frame_deg = minf(frame_deg, angle)
+		else:
+			fitted.append({"name": part_name, "deg": angle})
+	# Sorted so the sentence names the most intrusive part rather than whichever one the dictionary
+	# happened to yield first — the order IS the finding.
+	fitted.sort_custom(func(a, b): return a["deg"] < b["deg"])
+	return {"frame_deg": frame_deg, "fitted": fitted, "report": report}
+
+
+## What the fitted camera is looking past, in words — plans/2026-08-26-propulsion-room-design.md
+## §5 P10c's check, in the vocabulary every other check here speaks.
+##
+## ## THE COMPARISON IS AGAINST THE FRAME, AND THAT IS WHAT MAKES IT SAYABLE
+##
+## The first version of this reported everything forward of the lens plane — a hard geometric
+## boundary needing no field of view, which was the point. It fired on EVERY build with a plate
+## frame, because the arms of a standard X sit about 54 deg off centre and are therefore in shot on
+## any real 150 deg lens. That is true, and it is noise: it is the same objection that keeps the
+## propellers out of `camera_obstruction_points_m()` — four findings nobody can act on bury the one
+## they can.
+##
+## So the thing reported is a FITTED PART THAT IS MORE IN SHOT THAN THE AIRCRAFT ITSELF. The
+## frame's own silhouette is the baseline, and it is not a free constant: every build has one, it
+## is measured rather than chosen, and it moves with the frame — which is exactly right, because a
+## deadcat frame EXISTS to get the arms out of the picture, and against a deadcat's baseline a
+## guard has further to go before it is worth mentioning.
+##
+## Still no field of view anywhere. See `CameraView` for why none exists to test against and why
+## inventing one here would be a fabricated spec inside a build warning. The sentence carries the
+## angle, and the builder — who knows what lens they own — reads the verdict off it: a part at
+## 20 deg is in shot on anything wider than 40. Doubling is arithmetic, not a claim about a camera.
+##
+## CHARACTERISTIC, never LIMITING, and BuildWarning's own rule is why: there is no boundary in the
+## physics being crossed. Ducts in the corners of the picture are what a cinewhoop IS, and telling
+## somebody who built one that they have made a mistake is the exact failure that file's header was
+## written about.
+func camera_view_warnings() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	var eye = camera_eye_m()
+	if eye == null:
+		return out
+
+	var clearances := camera_clearances()
+	var report: Dictionary = clearances["report"]
+	var frame_deg: float = clearances["frame_deg"]
+	var fitted: Array = clearances["fitted"]
+
+	var worse: Array = []
+	for entry in fitted:
+		# Forward of the lens plane AND further into the picture than the aircraft already is.
+		if entry["deg"] < 90.0 and entry["deg"] < frame_deg:
+			worse.append(entry)
+	if worse.is_empty():
+		return out
+
+	var closest: Dictionary = worse[0]
+	var message := "%s enters the camera's view %.0f° off centre — visible on any lens wider than %.0f°" % [
+		closest["name"], closest["deg"], closest["deg"] * 2.0]
+	if is_inf(frame_deg):
+		message += ", and this frame has no plate silhouette to hide behind."
+	else:
+		message += ", ahead of the airframe's own %.0f°." % frame_deg
+	if worse.size() > 1:
+		message += " %d other fitted part%s the same." % [
+			worse.size() - 1, " does" if worse.size() == 2 else "s do"]
+	message += " No lens angle is published for any camera in the catalog, so this is geometry rather than a verdict."
+
+	out.append(BuildWarning.characteristic(&"camera_obstruction", message, {
+		"closest_name": closest["name"],
+		"closest_deg": closest["deg"],
+		"frame_deg": frame_deg,
+		"worse_count": worse.size(),
+		"off_axis_deg": report,
+	}))
+	return out
+
+
 ## The narrowest gap in PLAN VIEW between an arbitrary footprint and any propeller's swept disc, in
 ## metres. Negative means the footprint is inside a disc.
 ##
@@ -369,6 +737,81 @@ func battery_fit_warnings() -> Array[BuildWarning]:
 			{"intrusion_mm": -clearance * 1000.0}))
 
 	return out
+
+
+## Below this many millimetres between a part and a propeller disc, the fit is TIGHT. A GUESS, not a
+## published figure: a 5" prop tip flexes a millimetre or two under load and a strapped pack slips
+## about as much in a crash, so a gap smaller than that is one hard landing from a strike. Labelled
+## here so it can be replaced by a measured value (existence before precision). NOT 5 mm: the
+## reference build's pack sits 4 mm from its discs in plan, as real 5" builds do, and a figure that
+## turns the default drone amber is noise nobody can act on (battery_fit_warnings' own rule).
+const TIGHT_PROP_CLEARANCE_MM := 3.0
+
+
+## The part that comes closest to any propeller disc, in plan view: `{part, mm}` — the pack or one
+## of the fitted components, measured by the SAME `footprint_prop_clearance_m` their fit warnings
+## use. Negative mm is inside a disc. `{}` before anything is assembled.
+##
+## This is the Lab list's "Layout & fit" number (lab dock design §4: "worst clearance in mm").
+func closest_to_prop() -> Dictionary:
+	if propeller_meshes.is_empty():
+		return {}
+	var best := {}
+	if battery_mesh != null:
+		best = {"part": "pack", "mm": battery_prop_clearance_m() * 1000.0}
+	for category in Build.OPTIONAL_COMPONENTS:
+		if not component_meshes.has(category):
+			continue
+		var mm := footprint_prop_clearance_m(component_bounds_m(category)) * 1000.0
+		if best.is_empty() or mm < float(best["mm"]):
+			best = {"part": _component_label(category), "mm": mm}
+	return best
+
+
+## Every propeller's swept disc in plan, `{centre: Vector2, radius}` in mm, in the airframe's XZ
+## plane (x across, y = z, forward up the page as -z). The discs `footprint_prop_clearance_m`
+## measures against — what the Layout & fit page draws.
+func prop_discs_mm() -> Array:
+	var out: Array = []
+	for motor_name in MotorLayout.MOTOR_NAMES:
+		if not propeller_meshes.has(motor_name):
+			continue
+		var hub := MotorLayout.motor_position(motor_name, arm_m)
+		out.append({"centre": Vector2(hub.x, hub.z) * 1000.0,
+			"radius": (propeller_meshes[motor_name] as PropellerMesh).radius_m * 1000.0})
+	return out
+
+
+## The pack and every fitted component as the plan rectangles their prop clearance is measured
+## from, `{label, rect}` in mm — the same footprints `closest_to_prop` reads.
+func plan_parts_mm() -> Array:
+	var out: Array = []
+	if battery_mesh != null:
+		var half := Vector2(battery_mesh.size_m.x, battery_mesh.size_m.z) * 0.5
+		var centre := Vector2(0.0, -battery_offset_m)
+		out.append({"label": "pack", "rect": Rect2((centre - half) * 1000.0, half * 2000.0)})
+	for category in Build.OPTIONAL_COMPONENTS:
+		if not component_meshes.has(category):
+			continue
+		var bounds := component_bounds_m(category)
+		out.append({"label": _component_label(category),
+			"rect": Rect2(bounds.position * 1000.0, bounds.size * 1000.0)})
+	return out
+
+
+## The warning a TIGHT but clear gap earns (`closest_to_prop`'s shape), or null. Null inside the
+## disc too: that is `pack_in_prop_disc` / `component_in_prop_disc`, IMPOSSIBLE, already said.
+static func prop_clearance_warning(closest: Dictionary) -> BuildWarning:
+	if closest.is_empty():
+		return null
+	var mm := float(closest.get("mm", INF))
+	if mm < 0.0 or mm >= TIGHT_PROP_CLEARANCE_MM:
+		return null
+	var part := str(closest.get("part", "part"))
+	return BuildWarning.limiting(&"tight_prop_clearance",
+		"The %s clears a propeller disc by %.0f mm. It fits, but a prop flexes a few millimetres under load and a strapped part slips in a crash, so under %.0f mm is one hard landing from a strike (%.0f mm is a guess, not a published figure)." % [
+			part, mm, TIGHT_PROP_CLEARANCE_MM, TIGHT_PROP_CLEARANCE_MM],
+		{"part": part, "clearance_mm": mm, "tight_mm": TIGHT_PROP_CLEARANCE_MM})
 
 
 # ---------------------------------------------------------------------------

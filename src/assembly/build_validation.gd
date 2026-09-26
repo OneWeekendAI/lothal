@@ -6,7 +6,7 @@ extends RefCounted
 ## ThrustValidation answers "does the thrust model predict a prop it was never fitted on".
 ## Everything ABOVE thrust in this project is still self-referential: the reference build's
 ## 496 g, 11.7:1 and 29% hover are asserted in six test files, and every one of those
-## assertions checks the model against itself. If ELECTRONICS_MASS_G were wrong by 15 g the
+## assertions checks the model against itself. If ELECTRONICS_BUDGET_G were wrong by 15 g the
 ## whole suite would stay green and every build in the catalog would be quietly wrong by the
 ## same amount. This class is the first thing in the project that could notice.
 ##
@@ -15,7 +15,7 @@ extends RefCounted
 ##
 ##   Build.mass_parts() — the sum of frame, four motor-and-prop pairs, the two boards, and
 ##   the loose electronics budget. Not a physical prediction; an addition. The interesting
-##   term by far is Build.ELECTRONICS_MASS_G's undisplaced remainder (LTHL-11): 35 g standing
+##   term by far is Build.ELECTRONICS_BUDGET_G's undisplaced remainder (LTHL-11): 35 g standing
 ##   in for a VTX, a camera, a receiver, an antenna, straps, screws and wiring, whose real
 ##   total varies a lot between aircraft and is the one number here nobody has ever measured.
 ##
@@ -71,7 +71,7 @@ extends RefCounted
 ##   - published frame masses that sometimes exclude the TPU the assembled aircraft carries.
 ##
 ## If a build busts this, the answer is to report it and look at the model — most likely at
-## ELECTRONICS_MASS_G. A bound moved to fit the data it measures is not a bound
+## ELECTRONICS_BUDGET_G. A bound moved to fit the data it measures is not a bound
 ## (thrust_validation.gd:44 says this first, and it applies here verbatim).
 const DRY_MASS_BOUND := 0.05
 

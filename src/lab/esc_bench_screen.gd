@@ -186,7 +186,7 @@ func _rebuild() -> void:
 		_motor_model_for_the_sweep(), _build.k_t, _build.k_q, _build.battery_model(),
 		_build.effective_max_amps, _build.rated_rpm(),
 		_build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, geometry.pitch_m,
-		_build.air.kgm3()
+		_build.air.kgm3(), _build.blade_chord()
 	)
 
 	# The pack arrives as it actually is, not as it came off the shelf — the same line that makes
@@ -207,7 +207,12 @@ func _rebuild() -> void:
 ## The motor model this bench sweeps, whose ceiling is the MOTORS' current limit and not the
 ## build's. See the header: a sweep clamped by the board under test cannot fail.
 func _motor_model_for_the_sweep() -> MotorModel:
-	return MotorModel.create(float(_build.motor["specs"]["kv"]), sweep_ceiling())
+	# P7 (propulsion.md §3.4): the sweep's motor is the SAME motor the build runs, only with a
+	# different throttle ceiling — so its tau is the build's tau. Deriving tau twice would risk
+	# two slightly different numbers reaching the two panels; asking Build for its own tau keeps
+	# them one.
+	return MotorModel.create_with_tau(float(_build.motor["specs"]["kv"]), sweep_ceiling(),
+		float(_build.spin_up().get("tau_s", MotorSpinUp.FALLBACK_TAU_S)))
 
 
 ## The ceiling the ramp runs to — what these MOTORS will ask for, and deliberately not

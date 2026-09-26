@@ -13,10 +13,10 @@ extends RefCounted
 ## WHAT IS ACTUALLY UNDER TEST, stated precisely, because a validation number that does not
 ## say what it validates is worth as little as no number at all:
 ##
-##   PropellerModel.scale_k_t_to_prop — moving a fitted k_t from the prop it was measured on
-##   to another prop. Its D^4 term is the exact dimensional law; its blade-count exponent
-##   (0.8) and pitch exponent (0.5) are documented rules of thumb. Those two rules of thumb
-##   are what the error bar is measuring.
+##   BemtModel.scale_k_t_to_prop — moving a fitted k_t from the prop it was measured on to
+##   another prop. Since P5 this is the BEMT geometry ratio (propulsion.md §0): blade count
+##   and twist enter the integral where they act, at the RPM the fit came from. The integral
+##   on the two props' planforms is what the error bar is measuring.
 ##
 ## The prediction deliberately uses the SAME convention the fit uses — rpm = KV x voltage at
 ## full throttle, with no current cap and no sag — so that the two sides of the comparison
@@ -74,17 +74,22 @@ static func evaluate_motor(catalog: PartsCatalog, motor: Dictionary) -> Array:
 	# The same two lines Build._recompute uses to fit, so the bench cannot validate a
 	# coefficient that differs from the one the physics actually flies on.
 	var k_t_at_fit_prop := PropellerModel.fit_k_t(float(motor["specs"]["max_thrust_g"]), fit_rpm)
-	var fit_geometry := geometry_of(fit_prop)
+	var fit_doc := PropellerDocument.from_catalog_prop(fit_prop)
 
 	for point in motor.get("validation", []):
 		var prop: Dictionary = catalog.get_part(String(point.get("prop_id", "")))
 		if prop.is_empty():
 			continue
 
-		var geometry := geometry_of(prop)
-		var k_t := PropellerModel.scale_k_t_to_prop(
-			k_t_at_fit_prop, fit_geometry.diameter_m, fit_geometry.pitch_m, fit_geometry.blades,
-			geometry.diameter_m, geometry.pitch_m, geometry.blades)
+		# The cross-prop move is the BEMT geometry ratio (§0, P5) — blade count and twist in
+		# the integral, at the RPM the fit came from — not the deleted exponent law. The
+		# held-out point is predicted on the SAME convention the fit uses.
+		var hold_doc := PropellerDocument.from_catalog_prop(prop)
+		var k_t := BemtModel.scale_k_t_to_prop(
+			k_t_at_fit_prop,
+			fit_doc.diameter_mm * 0.001, fit_doc.pitch_mm * 0.001, float(fit_doc.blades), fit_doc.chord,
+			hold_doc.diameter_mm * 0.001, hold_doc.pitch_mm * 0.001, float(hold_doc.blades), hold_doc.chord,
+			fit_rpm)
 		var voltage_v: float = float(point.get("voltage_v", 0.0))
 		var predicted_n := PropellerModel.thrust_n(k_t, kv * voltage_v)
 		var predicted_g := predicted_n / GRAVITY_MPS2 * 1000.0
@@ -93,7 +98,7 @@ static func evaluate_motor(catalog: PartsCatalog, motor: Dictionary) -> Array:
 		if measured_g <= 0.0:
 			continue
 
-		var cross_diameter: bool = absf(geometry.diameter_m - fit_geometry.diameter_m) > 1e-6
+		var cross_diameter: bool = absf(hold_doc.diameter_mm - fit_doc.diameter_mm) > 0.01
 		var bound := CROSS_DIAMETER_BOUND if cross_diameter else SAME_DIAMETER_BOUND
 		var error_fraction := (predicted_g - measured_g) / measured_g
 
@@ -113,14 +118,19 @@ static func evaluate_motor(catalog: PartsCatalog, motor: Dictionary) -> Array:
 	return out
 
 
-## Prop geometry in SI. Mirrors Build._prop_geometry rather than calling it, because a
-## validation point is evaluated against a motor and a prop with no frame and no pack — there
-## is no Build to ask, and inventing one to reach a private helper would be the tail wagging.
+## Prop geometry in SI, plus the generated chord planform. Mirrors Build._prop_geometry
+## rather than calling it, because a validation point is evaluated against a motor and a prop
+## with no frame and no pack — there is no Build to ask, and inventing one to reach a private
+## helper would be the tail wagging. The `chord` is needed by the BEMT cross-prop ratio (§0,
+## P5) that motor_plausibility uses to draw its band; the other three fields stay for the
+## callers that only need geometry.
 static func geometry_of(prop: Dictionary) -> Dictionary:
+	var doc := PropellerDocument.from_catalog_prop(prop)
 	return {
 		"diameter_m": float(prop["specs"]["diameter_inches"]) * INCH_M,
 		"pitch_m": float(prop["specs"]["pitch_inches"]) * INCH_M,
 		"blades": float(prop["specs"]["blades"]),
+		"chord": doc.chord,
 	}
 
 

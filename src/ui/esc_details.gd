@@ -7,6 +7,20 @@ extends PartDetails
 ## passes in total, and whether it or something else is the thing capping the aircraft.
 ##
 ## "45A" is an abstraction. "180 A total, and your pack runs out at 112 A" is a decision.
+##
+## **The ESC bench opens from here**, which is the move P10f named and did not make. It was the
+## second entry in the Rooms menu — a machine that loads one board, sitting in a list of
+## destinations beside the field editor — and `room_menu.gd`'s own header states the arrangement
+## that menu is a holding position for: *a bench belongs to the system it tests, reached from that
+## system's inspector*. The two rows above ("Passes in total", "Limited by") are exactly what the
+## bench puts under load, so this panel is that inspector.
+##
+## Same posture as the Motor panel's thrust stand and the Prop panel's blade designer: the button
+## says what happened and the shell decides what to do about it. This panel opens nothing, and the
+## room lifecycle stays `RoomHost`'s.
+
+## Emitted when the builder asks for the ESC bench. The shell opens it.
+signal esc_bench_requested()
 
 const SPEC_ROWS := [
 	{"key": "board_class", "label": "Board"},
@@ -31,6 +45,21 @@ func _init() -> void:
 func render(part: Dictionary, build: Build) -> void:
 	_build = build
 	super(part, build)
+
+## The bench door, under the spec rows and above PartDetails' own footer — the same placement and
+## the same argument as the Motor panel's: the button sits directly under the rows that motivate
+## pressing it.
+func _build_footer(root: VBoxContainer) -> void:
+	var bench_button := Button.new()
+	bench_button.text = "Open ESC bench…"
+	bench_button.tooltip_text = ("Run this board under load: what it passes, what it heats to, and "
+		+ "which of the three limits above is the one that actually binds.")
+	bench_button.pressed.connect(func() -> void: esc_bench_requested.emit())
+	root.add_child(bench_button)
+
+	# PartDetails' stat block still has to be built: `render()` writes into the labels it creates.
+	super(root)
+
 
 func _read(esc: Dictionary, key: String) -> String:
 	var specs: Dictionary = esc.get("specs", {})

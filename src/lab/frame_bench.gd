@@ -151,7 +151,7 @@ static func _powertrain_for(p_build: Build) -> Powertrain:
 		p_build.motor_model(), p_build.k_t, p_build.k_q, p_build.battery_model(),
 		p_build.effective_max_amps, p_build.rated_rpm(),
 		p_build.pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, geometry.pitch_m,
-		p_build.air.kgm3())
+		p_build.air.kgm3(), p_build.blade_chord())
 
 
 # ---------------------------------------------------------------------------

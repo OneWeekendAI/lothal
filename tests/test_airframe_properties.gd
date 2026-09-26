@@ -36,6 +36,167 @@ static func run() -> Array:
 	results.append(_test_cg_rises_with_a_raised_plate(materials))
 	results.append(_test_preset_masses_land_within_ten_percent(catalog, materials))
 	results.append(_test_against_the_existing_mass_model(catalog, materials))
+	results.append_array(_test_prop_guard_enters_via_extra_parts(materials))
+	return results
+
+
+# ---------------------------------------------------------------------------
+# P10a — the prop-guard wiring (plans/2026-08-26-propulsion-room-design.md §3)
+# ---------------------------------------------------------------------------
+
+## Four checks in one, because the wiring's correctness has four faces and one bad shape can
+## satisfy any subset. §3.5 of the design doc: nothing in AirframeProperties changes — the
+## extra_parts slot is already the right shape. So this test asserts BEHAVIOUR (the numbers
+## AirframeProperties produces) rather than INTERFACE (which needs no new checks).
+##
+## The fixture is a symmetric X — a single square plate at the origin, so the plate's own tensor
+## is diagonal in body axes, and guards at four symmetric arm positions add only a diagonal
+## roll+pitch+yaw contribution the arithmetic can be pinned to. Every number below is elementary
+## and nothing is fitted.
+static func _test_prop_guard_enters_via_extra_parts(materials: FrameMaterials) -> Array:
+	var results: Array = []
+
+	# A 200x200 mm carbon plate at the origin. Its own tensor is symmetric about all three axes
+	# and is the SAME with or without guards, so the delta is exclusively the guards.
+	var plate_side_mm := 200.0
+	var doc := _document_of([AirframeDocument.make_plate(
+		_rectangle(plate_side_mm, plate_side_mm), [], 2.0, 0.0, "centre_plate")])
+
+	# The reference cinewhoop ring, from the P9 finding: outer 68 mm, wall 3 mm, height 12 mm,
+	# ABS ρ = 1050. Mount radius 96 mm — a real 5" arm length from frames.json. The four motors
+	# sit at the corners of a square, at x = ±arm and z = ±arm in the plate's plane (their radial
+	# distance from the centre is arm·√2, which is deliberate and does not enter the arithmetic
+	# below: roll is I_ZZ = Σ m(x² + y²), and with y = 0 only the x-offset contributes).
+	var arm_m := 0.096
+	var guard_spec := {
+		"kind": PropGuard.KIND_BUMPER,
+		"outer_radius_mm": 68.0, "wall_mm": 3.0, "height_mm": 12.0,
+		"density_kg_m3": 1050.0, "mount_radius_mm": 96.0,
+	}
+	# One PartMass per motor position, at the four corners of the ±arm square.
+	var motor_positions := [
+		Vector3(arm_m, 0.0, arm_m),
+		Vector3(-arm_m, 0.0, arm_m),
+		Vector3(arm_m, 0.0, -arm_m),
+		Vector3(-arm_m, 0.0, -arm_m),
+	]
+	var guards_extra: Array = []
+	for pos in motor_positions:
+		var pm: PartMass = PropGuard.as_part_mass(guard_spec, pos)
+		if pm != null:
+			guards_extra.append(pm)
+
+	# ---- Check 1: without guards, the tensor has NO CONTRIBUTION from prop_guard ----------
+	# A default extra_parts = [] fixture must produce a tensor that contains no guard mass.
+	# This is the guard against a load-time regression that would enumerate guards.json even
+	# when a build fits none — the reference-build oracle depends on this being true.
+	var props_without := AirframeProperties.compute(doc, materials)
+	var guard_labels_without := 0
+	for c in props_without.contributions:
+		if String(c["label"]) == "prop_guard":
+			guard_labels_without += 1
+	results.append(TestResult.new(
+		"a document with no guards fitted produces zero 'prop_guard' contributions — the reference-build oracle stands",
+		guard_labels_without == 0,
+		"contributions contain %d prop_guard labels (must be 0)" % guard_labels_without))
+
+	# ---- Check 2: with four guards, mass increases by 4 × PropGuard.mass_kg -------------
+	# Every number here is elementary: four rings, each PropGuard.mass_kg(spec), added to the
+	# plate mass. A guard that failed to add mass would fail this by 4× the ring mass.
+	var props_with := AirframeProperties.compute(doc, materials, guards_extra)
+	var expected_ring_mass_kg := PropGuard.mass_kg(guard_spec)
+	var expected_delta_kg := 4.0 * expected_ring_mass_kg
+	var actual_delta_kg := props_with.total_mass_kg - props_without.total_mass_kg
+	results.append(TestResult.new(
+		"four guards add 4 × ring_mass to the total — mass enters through extra_parts unchanged",
+		absf(actual_delta_kg - expected_delta_kg) < 1.0e-9,
+		"delta=%.6f g, expected=%.6f g (ring=%.6f g)" % [actual_delta_kg * 1000.0,
+			expected_delta_kg * 1000.0, expected_ring_mass_kg * 1000.0]))
+
+	# ---- Check 3: the roll-inertia delta matches 4 × m × arm², NOT twice that -----------
+	# The load-bearing check, and the reason P10a exists. Four rings at ±arm on X and ±arm on
+	# Z contribute, about the roll axis (Z), a parallel-axis term of m·d² where d² = x² + y².
+	# For rings at (±arm, 0, ±arm), the x-component contributes m·arm² each (four times) so the
+	# roll-inertia delta is exactly 4·m·arm². If a stub wired the scalar
+	# roll_inertia_contribution_kg_m2 into the ROLL component of local_inertia_diag, this check
+	# would fail by EXACTLY 4·m·R_guard² extra — the double-count the P9 row's own paragraph
+	# warned about, and check 5 below inserts that mutation and asserts it does fail.
+	#
+	# Which component is the roll one matters and is easy to get backwards: AirframeProperties
+	# names roll = I_ZZ (rotation about the fore/aft axis), so the double-count lands on the Z
+	# component of local_inertia_diag and NOT on the X one. A stub that wired the scalar to X
+	# would land in PITCH inertia and slip past this check entirely — which is why the
+	# `local_inertia_diag == Vector3.ZERO` assertion in test_prop_guard.gd is the axis-blind
+	# half of the pair and this one is the consequence-showing half.
+	#
+	# Numbers, so a mutation is caught by name rather than by tolerance:
+	#   m = PropGuard.mass_kg(spec) ≈ 0.01579 kg (5" cinewhoop ring)
+	#   arm² = 0.096² = 0.009216 m²
+	#   4·m·arm² = 4 × 0.01579 × 0.009216 = 5.82e-4 kg·m²
+	# A double-count would add ANOTHER 4·m·R_guard², with R_guard = mount_radius + outer_radius =
+	# 164 mm: 4 × 0.01579 × 0.164² = 1.70e-3 kg·m² of spurious extra inertia, taking the delta to
+	# 2.28e-3 — 3.9× the truth, which the tolerance below rejects by four orders of magnitude.
+	var actual_roll_delta := props_with.roll_inertia_kg_m2() - props_without.roll_inertia_kg_m2()
+	var expected_roll_delta := 4.0 * expected_ring_mass_kg * arm_m * arm_m
+	results.append(TestResult.new(
+		"roll-inertia delta is 4·m·arm² — parallel-axis supplies the R² bite ONCE, no double-count",
+		absf(actual_roll_delta - expected_roll_delta) / absf(expected_roll_delta) < 1.0e-5,
+		"actual=%f, expected=%f (m=%.3f g, arm=%.3f m)" % [actual_roll_delta,
+			expected_roll_delta, expected_ring_mass_kg * 1000.0, arm_m]))
+
+	# ---- Check 4: a refused spec adds no mass — no class-typical fallback --------------
+	# A guard whose spec PropGuard.compute() refuses returns null from as_part_mass. A build
+	# that filters those out (the pattern the design doc recommends) contributes exactly the
+	# base mass, and nothing labelled prop_guard sneaks in.
+	var bad_guards: Array = []
+	var bad_pm := PropGuard.as_part_mass({"kind": PropGuard.KIND_BUMPER,
+			"outer_radius_mm": 68.0, "wall_mm": -3.0, "height_mm": 12.0,
+			"density_kg_m3": 1050.0, "mount_radius_mm": 96.0}, motor_positions[0])
+	if bad_pm != null:
+		bad_guards.append(bad_pm)
+	var props_bad := AirframeProperties.compute(doc, materials, bad_guards)
+	results.append(TestResult.new(
+		"a spec compute() refuses contributes no mass — no fallback to a class-typical ring",
+		absf(props_bad.total_mass_kg - props_without.total_mass_kg) < 1.0e-12,
+		"delta_kg=%.9f (must be 0)" % (props_bad.total_mass_kg - props_without.total_mass_kg)))
+
+	# ---- Check 5: the double-count, INSERTED and caught -------------------------------
+	# Design doc §3.6's last bullet, and the one check here that is written as a positive
+	# assertion about a mutation rather than as a pin on the correct answer. Check 3 would fail
+	# if as_part_mass regressed, but "check 3 would fail" is a claim about a test, and the whole
+	# point of the P9 row's warning is that the double-count is invisible in every mass number
+	# and shows up only in the tensor. So: build the mutant by hand — the same four guards, but
+	# each carrying compute()'s scalar `roll_inertia_contribution_kg_m2` on the ROLL (Z) axis of
+	# its local diagonal, which is exactly what a well-meaning wiring of "the guard's roll
+	# inertia contribution" looks like — and assert the roll inertia it produces is WRONG, by
+	# the specific 4·m·R_guard² the parallel-axis shift has already supplied.
+	#
+	# Without as_part_mass's Vector3.ZERO this test's subject and check 3's subject are the same
+	# object, and check 3 goes red. That is the point: the mutation has nowhere to hide.
+	var scalar_roll_kg_m2 := float(PropGuard.compute(guard_spec)["roll_inertia_contribution_kg_m2"])
+	var mutant_extra: Array = []
+	for pos in motor_positions:
+		mutant_extra.append(PartMass.new(expected_ring_mass_kg, pos,
+			Vector3(0.0, 0.0, scalar_roll_kg_m2), "prop_guard"))
+	var props_mutant := AirframeProperties.compute(doc, materials, mutant_extra)
+	var mutant_roll_delta := props_mutant.roll_inertia_kg_m2() - props_without.roll_inertia_kg_m2()
+	var spurious := 4.0 * scalar_roll_kg_m2
+	results.append(TestResult.new(
+		"the double-count mutation DOES fail: the scalar on the local roll axis adds 4·m·R_guard² of inertia the parallel-axis shift already supplied",
+		absf(mutant_roll_delta - (expected_roll_delta + spurious)) / absf(expected_roll_delta) < 1.0e-5
+			and mutant_roll_delta > expected_roll_delta * 2.0,
+		"mutant delta=%.9f, correct delta=%.9f, spurious term=%.9f (ratio %.2fx)" % [
+			mutant_roll_delta, expected_roll_delta, spurious,
+			mutant_roll_delta / expected_roll_delta]))
+
+	# And the mass is IDENTICAL under the mutation — which is why a mass-only test suite would
+	# have shipped the double-count. Stated as an assertion so the claim above is not rhetoric.
+	results.append(TestResult.new(
+		"the same mutation moves NO mass number — the double-count is invisible outside the tensor",
+		absf(props_mutant.total_mass_kg - props_with.total_mass_kg) < 1.0e-12,
+		"mutant total=%.9f kg, correct total=%.9f kg" % [props_mutant.total_mass_kg,
+			props_with.total_mass_kg]))
+
 	return results
 
 

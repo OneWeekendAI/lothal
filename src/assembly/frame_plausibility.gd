@@ -43,12 +43,30 @@ extends RefCounted
 ##   than inventing it.
 ##
 ## ELECTRONICS_LUMP_FRACTION — 0.25.
-##   Build.ELECTRONICS_MASS_G is a FLAT 55 g — camera, VTX, antenna, receiver and wiring, the same
-##   on every aircraft — and it is wrong at both ends of the catalog's own span:
 ##
-##       frame_65mm_whoop      AUW   85.8 g | TWR  1.31 | hover 80.2%
+##   **PW4 REWROTE THIS WARNING'S SENTENCE, AND THE REASON IS THE POINT OF THE ROW.** It used to
+##   tell the builder "the wiring share of that is a flat figure on every build regardless of size,
+##   so at this weight you are partly reading a constant rather than your own parts." That has been
+##   FALSE since PW2: `Harness` weighs a connector, a capacitor and four gauged wire runs off the
+##   parts and lengths this build actually specifies, and `HarnessChecks` warns about them by name.
+##   The cost of leaving it was not abstract — a whoop got that sentence sitting in the same warning
+##   list as an ampacity warning naming its actual 26 AWG lead, so Lothal was telling the builder
+##   their wiring was a constant one line under a warning derived from it. A warning that
+##   contradicts its neighbour teaches a builder to trust neither.
+##
+##   What survives of the caveat is `Harness.REMAINDER_MASS_G`: 5 g of straps, tape, solder and
+##   heat-shrink at the origin, flat because harness sundries scale with something Lothal has
+##   measured on zero aircraft. It is quoted by name and by size so the reader can see it is far
+##   too small to be the explanation, which is the honest shape of a caveat that has shrunk.
+##
+##   The BOUND itself is unchanged and so is why it exists.
+##   Build.ELECTRONICS_BUDGET_G is a FLAT 55 g — the allowance camera, VTX, antenna, receiver and
+##   wiring were budgeted against, no longer the mass of any of them — and it is wrong at both ends
+##   of the catalog's own span:
+##
+##       frame_65mm_whoop      AUW   79.9 g | TWR  1.40 | hover 80.2%
 ##       frame_5in_freestyle   AUW  496.0 g | TWR 11.69 | hover 29.6%   <- exact
-##       frame_10in_long_range AUW 1220.0 g | TWR  7.20 | hover 29.3%
+##       frame_10in_long_range AUW 1251.2 g | TWR  7.02 | hover 29.7%
 ##
 ##   A real 65 mm whoop is 20-25 g all-up and hovers near 35%. Lothal is about 3.5x heavy there
 ##   because the lump alone outweighs the aircraft. It is wrong the other way at the top: a
@@ -60,10 +78,11 @@ extends RefCounted
 ##   entire spread of frame masses in the 5" class — at that point the builder is reading Lothal's
 ##   constant rather than their own frame, and has to be told.
 ##
-##   Custom frames do NOT cause this and this file does NOT try to fix it. Scaling the lump would
-##   mean inventing a scaling law with nothing behind it, which is exactly the precision-not-yet-
-##   earned that physics.md exists to prevent. LTHL-11 is where it gets fixed; until then, saying
-##   so is the honest move, and the warning names the ticket so a builder can find out why.
+##   Custom frames do NOT cause this and this file does NOT try to fix it. The wiring half of
+##   LTHL-11 is closed — PW2 scaled it — and what is left is the four fixed component masses at the
+##   small end, where a 65 mm whoop is quoted the same camera and VTX as a 5". That is a catalog
+##   question rather than a scaling law, so the warning still names the ticket and no longer
+##   promises that a term is about to start moving.
 ##
 ##   Emitted for EVERY build, not only custom ones. It is a true statement about the aircraft
 ##   whichever shelf the frame came off, and gating an honest warning on the provenance of a
@@ -150,8 +169,7 @@ static func _bounds(build: Build) -> Array[BuildWarning]:
 	return out
 
 
-## See ELECTRONICS_LUMP_FRACTION above for the whole of the reasoning; it is the longest note in
-## this file because it is the one place Lothal is knowingly wrong.
+## See ELECTRONICS_LUMP_FRACTION above for the whole of the reasoning.
 static func _electronics_lump(build: Build) -> Array[BuildWarning]:
 	var out: Array[BuildWarning] = []
 	var auw := build.all_up_weight_g()
@@ -167,7 +185,11 @@ static func _electronics_lump(build: Build) -> Array[BuildWarning]:
 	if fraction < ELECTRONICS_LUMP_FRACTION:
 		return out
 	out.append(BuildWarning.characteristic(&"electronics_lump",
-		"%.0f%% of this aircraft's %.0f g is its electronics: %.0f g of stack, camera, VTX, antenna, receiver and wiring, against Lothal's %.0f g allowance for all of it. The wiring share of that is a flat figure on every build regardless of size, so at this weight you are partly reading a constant rather than your own parts, and a real aircraft this light carries less. Tracked as LTHL-11; until the wiring term scales, treat everything derived from all-up weight here as an upper bound." % [
-			fraction * 100.0, auw, electronics_g, Build.ELECTRONICS_MASS_G],
-		{"electronics_g": electronics_g, "all_up_g": auw, "fraction": fraction}))
+		"%.0f%% of this aircraft's %.0f g is its electronics: %.0f g of stack, camera, VTX, antenna, receiver and harness, against Lothal's %.0f g allowance for all of it. Every one of those is now weighed off the part you fitted — the harness included, down to the gauge and length of each lead — except a flat %.0f g of straps, tape, solder and heat-shrink, which is the only constant left in it. So this is your parts rather than a stand-in — but at this all-up weight the catalog is the thing to check next, because a camera, VTX, antenna and receiver chosen for a 5\" are most of a much smaller aircraft, and the ones that class actually flies are lighter or are on the board already. Tracked as LTHL-11." % [
+			fraction * 100.0, auw, electronics_g, Build.ELECTRONICS_BUDGET_G,
+			Harness.REMAINDER_MASS_G],
+		# `remainder_g` is here because the message quotes it: the one constant left in this figure,
+		# carried as a value so the shrinking of that caveat is checkable rather than prose.
+		{"electronics_g": electronics_g, "all_up_g": auw, "fraction": fraction,
+			"remainder_g": Harness.REMAINDER_MASS_G}))
 	return out

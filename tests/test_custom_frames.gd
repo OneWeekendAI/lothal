@@ -25,6 +25,7 @@ static func run() -> Array:
 	results.append(_test_an_implausible_frame_still_flies())
 	results.append(_test_the_electronics_lump_names_itself_on_a_light_build())
 	results.append(_test_the_long_range_rows_third_row_is_a_real_build())
+	results.append(_test_the_header_tables_whoop_row_is_a_real_build())
 	results.append(_test_the_picker_marks_a_custom_frame())
 	results.append(_test_the_details_panel_names_the_provenance())
 	results.append(_test_the_dialog_saves_a_frame_and_refuses_a_bad_one())
@@ -69,16 +70,16 @@ static func _test_loader_refuses_a_custom_prefixed_entry() -> TestResult:
 			impostor_rejected, ordinary_loaded, error_named, catalog.load_errors])
 
 
-## The 496 g / 11.69 / 29.6% oracle, asserted here as well as in the day-2 tests, because THIS is
+## The 507.5 g / 11.43 / 29.9% oracle, asserted here as well as in the day-2 tests, because THIS is
 ## the suite that would notice it moving for a custom-frames reason.
 static func _test_reference_build_is_out_of_reach() -> TestResult:
 	var build := ReferenceBuild.build()
 	var auw := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
-	var ok := absf(auw - 496.0) < EPS and absf(twr - 11.69) < 0.01 and absf(hover - 0.296) < 0.001
+	var ok := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.299) < 0.001
 	return TestResult.new(
-		"the reference build is 496 g / 11.69 : 1 / 29.6% hover",
+		"the reference build is 507.5 g / 11.43 : 1 / 29.9% hover",
 		ok, "AUW %.2f g, TWR %.2f, hover %.1f%%" % [auw, twr, hover * 100.0])
 
 
@@ -279,7 +280,7 @@ static func _test_a_custom_frame_does_not_move_the_reference_build() -> TestResu
 	var auw := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
-	var pinned := absf(auw - 496.0) < EPS and absf(twr - 11.69) < 0.01 and absf(hover - 0.296) < 0.001
+	var pinned := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.299) < 0.001
 
 	# And the shipped frame count is unchanged in load_default(), so nothing leaked sideways.
 	var shipped_frames: int = PartsCatalog.load_default().list_category("frame").size()
@@ -287,7 +288,7 @@ static func _test_a_custom_frame_does_not_move_the_reference_build() -> TestResu
 
 	_restore(CustomFrames.SAVE_PATH, previous)
 	return TestResult.new(
-		"a defined custom frame does not move the reference build's 496 g / 11.69 / 29.6%",
+		"a defined custom frame does not move the reference build's 507.5 g / 11.43 / 29.9%",
 		merged_has_it and pinned and merged_frames == shipped_frames + 1,
 		"merged sees it=%s, %d shipped vs %d merged frames, AUW %.2f g, TWR %.2f, hover %.1f%%" % [
 			merged_has_it, shipped_frames, merged_frames, auw, twr, hover * 100.0])
@@ -476,9 +477,18 @@ static func _test_an_implausible_frame_still_flies() -> TestResult:
 			flies, arm != null, mass != null, overlap != null])
 
 
-## LTHL-11 made visible. ELECTRONICS_MASS_G is a flat 55 g on every aircraft, and on a build light
-## enough for that lump to be a quarter of all-up weight the number a builder is reading is mostly
-## Lothal's constant rather than their frame. The warning names the number and names the ticket.
+## LTHL-11 made visible. ELECTRONICS_BUDGET_G is a flat 55 g allowance on every aircraft, and on a
+## build light enough for the electronics to be a quarter of all-up weight the builder has to be
+## told which way to look. The warning names the number and names the ticket.
+##
+## **PW4 ADDED THE SECOND HALF, AND IT IS A CONTRADICTION CHECK RATHER THAN A WORDING ONE.** Until
+## PW4 this warning also told the builder "the wiring share of that is a flat figure on every build
+## regardless of size" — which PW2 made false, because `Harness` weighs four gauged wire runs off
+## the lengths this build specifies. The cost was not abstract: on this exact whoop that sentence
+## sat in the same warning list as an ampacity warning naming the build's own lead gauge, so one
+## warning called the wiring a constant one line under a warning derived from it. A builder who
+## catches two warnings disagreeing learns to read neither. So the assertion is: this message must
+## not claim the wiring is flat WHILE a harness warning on the same build is quoting a gauge.
 static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestResult:
 	var catalog := PartsCatalog.load_default()
 
@@ -494,23 +504,42 @@ static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestRe
 	var names_the_ticket: bool = light != null and light.message.contains("LTHL-11")
 	var names_the_number: bool = light != null and light.message.contains("55")
 
+	# The other warnings this same build raises about its own wiring, by the gauge they name.
+	var gauge_warnings: Array = []
+	for warning in whoop.warnings():
+		if warning.values.has("awg"):
+			gauge_warnings.append("%s (%d AWG)" % [warning.id, int(warning.values["awg"])])
+	var contradicts: bool = light != null and (
+		light.message.contains("flat figure on every build")
+		or light.message.contains("regardless of size"))
+
 	return TestResult.new(
-		"a build where the flat 55 g electronics lump dominates says so and names LTHL-11",
-		light != null and heavy == null and names_the_ticket and names_the_number,
-		"whoop AUW=%.1f g (want 85.8), TWR=%.2f (want 1.31), hover=%.1f%% (want 80.2), warns=%s (%.1f%% of AUW), reference warns=%s (%.1f%% of AUW)" % [
+		"a build where the electronics dominate says so, names LTHL-11, and does not call the wiring flat while a harness warning names its gauge",
+		light != null and heavy == null and names_the_ticket and names_the_number
+			and not contradicts and not gauge_warnings.is_empty(),
+		"whoop AUW=%.1f g (want 79.9), TWR=%.2f (want 1.40), hover=%.1f%% (want 80.2), warns=%s (%.1f%% of AUW), reference warns=%s (%.1f%% of AUW), calls the wiring flat=%s, harness warnings naming a gauge=%s" % [
 			whoop.all_up_weight_g(), whoop.thrust_to_weight(), whoop.hover_throttle() * 100.0,
-			light != null, Build.ELECTRONICS_MASS_G / whoop.all_up_weight_g() * 100.0,
-			heavy != null, Build.ELECTRONICS_MASS_G / ReferenceBuild.build().all_up_weight_g() * 100.0])
+			light != null, Build.ELECTRONICS_BUDGET_G / whoop.all_up_weight_g() * 100.0,
+			heavy != null, Build.ELECTRONICS_BUDGET_G / ReferenceBuild.build().all_up_weight_g() * 100.0,
+			contradicts, gauge_warnings])
 
 
 ## The third row of FramePlausibility's header table, docs/lothal/parts.md's quoted copy of it,
-## was never checked against a real build — a grep for 1220, 7.20 and 29.3 across tests/ found
+## was never checked against a real build — a grep for 1220, 7.20 and 29.7 across tests/ found
 ## nothing before this test existed. The whoop row is pinned by the test above (a whoop FRAME
 ## carrying a whoop); the reference row is pinned by
 ## _test_a_custom_frame_does_not_move_the_reference_build (496 / 11.69 / 29.6). This test is the
 ## 10" row's turn: a 10" long-range FRAME carrying an actual 10" long-range aircraft, not the 10"
 ## frame under the reference build's 5"-class stack (that mistake is exactly what happened to the
 ## original whoop fixture in this file, before Task 4's coordinator caught it).
+##
+## **The numbers are PARSED out of the header row, not written here.** They were not, and the row
+## and this check spent PW2 onwards disagreeing in public: the row read 1220.0 / 7.20 / 29.3 while
+## the assertion underneath it — in a function whose NAME says it pins that row — demanded
+## 1251.24 / 7.021 / 29.71. A test holding its own copy of the thing it is checking cannot notice
+## the copy drifting, which is the whole defect, so this now reads the row the way
+## `_test_the_header_tables_whoop_row_is_a_real_build` reads its own. Editing the row without
+## re-measuring fails here.
 ##
 ## Parts, and why: motor_2808_1300kv is the only motor in the catalog whose 19x19 mount_pattern
 ## matches the frame's 19x19 motor_mount. prop_10x5x2 is the only propeller in the catalog whose
@@ -521,6 +550,16 @@ static func _test_the_electronics_lump_names_itself_on_a_light_build() -> TestRe
 ## (rather than the catalog's 60A option) is headroom over the motor's 50 A max_amps rating, which
 ## is the conventional margin an ESC is chosen with, not a number reached-for to hit a target mass.
 static func _test_the_long_range_rows_third_row_is_a_real_build() -> TestResult:
+	var source := FileAccess.get_file_as_string("res://src/assembly/frame_plausibility.gd")
+	var pattern := RegEx.create_from_string(
+		"frame_10in_long_range\\s+AUW\\s+([0-9.]+) g \\| TWR\\s+([0-9.]+) \\| hover ([0-9.]+)%")
+	var row := pattern.search(source)
+	if row == null:
+		return TestResult.new(
+			"the header table's 10\" long-range row is a real build, not an unchecked figure",
+			false,
+			"no 10\" row found in src/assembly/frame_plausibility.gd's header table")
+
 	var catalog := PartsCatalog.load_default()
 	var long_range := Build.from_ids(catalog, "frame_10in_long_range", "motor_2808_1300kv",
 		"prop_10x5x2", "battery_6s_4000_liion", "esc_4in1_80a_30x30", "fc_f405_30x30")
@@ -529,15 +568,59 @@ static func _test_the_long_range_rows_third_row_is_a_real_build() -> TestResult:
 	var twr := long_range.thrust_to_weight()
 	var hover := long_range.hover_throttle() * 100.0
 
-	var matches_auw := absf(auw - 1220.0) < 0.05
-	var matches_twr := absf(twr - 7.20) < 0.005
-	var matches_hover := absf(hover - 29.3) < 0.05
+	# Half a unit in the last place the row prints, the whoop row's own tolerance and its reason:
+	# tighter would fail on the rounding itself, looser would let a real drift through.
+	var matches_auw := absf(auw - row.get_string(1).to_float()) < 0.05
+	var matches_twr := absf(twr - row.get_string(2).to_float()) < 0.005
+	var matches_hover := absf(hover - row.get_string(3).to_float()) < 0.05
 
 	return TestResult.new(
 		"the header table's 10\" long-range row is a real build, not an unchecked figure",
 		matches_auw and matches_twr and matches_hover,
-		"AUW=%.2f g (want 1220.0), TWR=%.3f (want 7.20), hover=%.2f%% (want 29.3)" % [
-			auw, twr, hover])
+		"AUW=%.2f g (row says %s), TWR=%.3f (row says %s), hover=%.2f%% (row says %s)" % [
+			auw, row.get_string(1), twr, row.get_string(2), hover, row.get_string(3)])
+
+
+## The FIRST row of FramePlausibility's header table, read out of the header rather than retyped.
+##
+## The row is a claim about a build, and it went stale the moment PW2 replaced the flat wiring
+## allowance with four gauged runs: it still read 85.8 g / TWR 1.31 against a build that measures
+## 79.9 / 1.40. Nothing caught it, because the figures lived only in prose and in a detail string
+## nobody asserts — the same gap `_test_the_long_range_rows_third_row_is_a_real_build` was written
+## to close for the 10" row.
+##
+## **The numbers are PARSED out of the comment, not written here.** A test carrying its own copy
+## would go stale in exactly the way the comment did, and this defect is precisely a copy drifting
+## from the thing it copies. Editing the row without re-measuring now fails here.
+static func _test_the_header_tables_whoop_row_is_a_real_build() -> TestResult:
+	var source := FileAccess.get_file_as_string("res://src/assembly/frame_plausibility.gd")
+	var pattern := RegEx.create_from_string(
+		"frame_65mm_whoop\\s+AUW\\s+([0-9.]+) g \\| TWR\\s+([0-9.]+) \\| hover ([0-9.]+)%")
+	var row := pattern.search(source)
+	if row == null:
+		return TestResult.new(
+			"the header table's 65 mm whoop row is a real build, not an unchecked figure",
+			false,
+			"no whoop row found in src/assembly/frame_plausibility.gd's header table")
+
+	var catalog := PartsCatalog.load_default()
+	var whoop := Build.from_ids(catalog, "frame_65mm_whoop", "motor_0802_19000kv",
+		"prop_16x12x4", "battery_1s_300", "esc_aio_5a_whoop", "fc_f411_25x25_whoop")
+	var auw := whoop.all_up_weight_g()
+	var twr := whoop.thrust_to_weight()
+	var hover := whoop.hover_throttle() * 100.0
+
+	# Half a unit in the last place the row prints, which is what "the row rounds to the build"
+	# means. Tighter would fail on the rounding itself; looser would let a real drift through.
+	var matches_auw := absf(auw - row.get_string(1).to_float()) < 0.05
+	var matches_twr := absf(twr - row.get_string(2).to_float()) < 0.005
+	var matches_hover := absf(hover - row.get_string(3).to_float()) < 0.05
+
+	return TestResult.new(
+		"the header table's 65 mm whoop row is a real build, not an unchecked figure",
+		matches_auw and matches_twr and matches_hover,
+		"build AUW=%.2f g, TWR=%.3f, hover=%.2f%% against the row's %s / %s / %s" % [
+			auw, twr, hover, row.get_string(1), row.get_string(2), row.get_string(3)])
 
 
 static func _test_the_picker_marks_a_custom_frame() -> TestResult:

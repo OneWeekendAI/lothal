@@ -23,6 +23,12 @@ var rigid_body := RigidBodyState.new()
 ## without one gets the stock sensor, so every call site written before flight controllers
 ## were selectable still means what it meant.
 var gyro: Gyro
+## The air's own motion, or null on a still day. HANDED IN, not constructed here, for the same
+## reason `gyro` is: null means "nobody has told this core about the field it is flying at",
+## which is every core built before F7 and every test that has never heard of `Wind` — those keep
+## flying the calm air they always did, and check 1 is the proof that keeping this null costs them
+## nothing. `Sim authors nothing`: this class never writes to it, only reads `velocity_mps()`.
+var wind: Wind = null
 var arm_m: float
 ## 0.5 * rho * Cd * A, supplied per build — a 7" airframe presents far more area than a 3".
 var drag_coefficient: float
@@ -32,10 +38,24 @@ var drag_coefficient: float
 ## should read physics internals directly.
 var observables: Observables
 
+## The build's `config` decision block (C1), for the one value of it that reaches the physics:
+## motor spin direction, read through MotorLayout.spin_map() — design §5. Empty means today's
+## constants, so a core built by any caller that has never heard of Config is the aircraft it
+## always was.
+var config: Dictionary = {}
+
 func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m: float, p_k_t: float, p_k_q: float, p_battery: BatteryModel, p_motor_max_amps: float, p_rated_rpm: float, p_drag_coefficient: float, p_pole_pairs: float = 7.0, p_blades: float = 3.0, p_prop_radius_m: float = 0.0635, p_gyro: Gyro = null, p_prop_pitch_m: float = 0.10922,
-		p_air_density_kgm3: float = AirDensity.standard_kgm3()) -> void:
-	powertrain = Powertrain.create(p_motor_model, p_k_t, p_k_q, p_battery, p_motor_max_amps,
-		p_rated_rpm, p_pole_pairs, p_blades, p_prop_radius_m, p_prop_pitch_m, p_air_density_kgm3)
+		p_air_density_kgm3: float = AirDensity.standard_kgm3(),
+		p_blade_chord_mm: PackedFloat64Array = PackedFloat64Array(),
+		p_guard_closure: float = 0.0) -> void:
+	# ONE call, always `create_with_guard`. A branch on `p_guard_closure > 0.0` would be two
+	# code paths to keep in step for no gain: `Powertrain.create` itself delegates here with
+	# 0.0, and the Rust cache key bit-encodes 0.0 verbatim, so an unguarded build reaches the
+	# SAME cache entry `create` used to and pays no extra solve. Its 496 g / 11.69:1 / 29.6%
+	# oracles are bit-identical for that reason rather than because a branch skipped the code.
+	powertrain = Powertrain.create_with_guard(p_motor_model, p_k_t, p_k_q, p_battery,
+		p_motor_max_amps, p_rated_rpm, p_pole_pairs, p_blades, p_prop_radius_m,
+		p_prop_pitch_m, p_air_density_kgm3, p_blade_chord_mm, p_guard_closure)
 	observables = powertrain.observables
 	mass_properties = p_mass_properties
 	arm_m = p_arm_m
@@ -77,11 +97,27 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# component of velocity that unloads the prop is simply .y, and nothing has to decide what a
 	# lean angle's sign convention is. Taken BEFORE integration, so it is the velocity this tick's
 	# forces are being built at, which is the same convention every other term here uses.
-	powertrain.step_in_flight(cmds, dt, rigid_body.orientation.inverse() * rigid_body.velocity_mps)
+	#
+	# AIRSPEED, not ground speed: what unloads a prop and pushes against a frame is the air moving
+	# past it, and wind is exactly the difference between the two. Subtracted in the WORLD frame,
+	# THEN rotated into body — subtracting after rotation would rotate the wind by the aircraft's
+	# own attitude instead of leaving it as the ground-referenced vector it is (check 4/5's guard).
+	# Wind reaches here and the drag term below, and nowhere else: everything downstream of the
+	# powertrain — thrust, lean, current, the edgewise-flow term — still reads a velocity and never
+	# knows where it came from.
+	# Advanced once per substep, here — the ONE place the gust process steps forward, so a
+	# consumer reading wind.velocity_mps() between substeps (the HUD) sees this tick's value
+	# without itself advancing anything.
+	var wind_mps := wind.update(dt) if wind != null else Vector3.ZERO
+	var relative_velocity_mps := rigid_body.velocity_mps - wind_mps
+	powertrain.step_in_flight(cmds, dt, rigid_body.orientation.inverse() * relative_velocity_mps)
 
 	var total_force := Vector3(0, -GRAVITY_MPS2 * mass_properties.total_mass_kg, 0)
 	var total_torque := Vector3.ZERO
 	var total_thrust_body_n := 0.0
+
+	# Resolved once per step rather than per motor, and from the SAME accessor the mixer reads.
+	var spin_map := MotorLayout.spin_map(config)
 
 	for i in MotorLayout.MOTOR_NAMES.size():
 		var name: String = MotorLayout.MOTOR_NAMES[i]
@@ -100,7 +136,7 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 		# product; this loop must not grow a second one, which is the duplication that made the
 		# reference point possible to get wrong in only one of two places.
 		var tau := MotorLayout.thrust_torque(name, thrust_n, arm_m, mass_properties.com_m)
-		var spin: float = MotorLayout.SPIN[name]
+		var spin: float = spin_map[name]
 		var reaction_about_y := -spin * reaction_n_m   # Newton's third law: opposes the rotor's own spin
 		total_torque += Vector3(tau.x, reaction_about_y, tau.z)
 
@@ -111,9 +147,12 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# which is where the inertia tensor and the gyroscopic term live.
 	total_force += rigid_body.orientation * Vector3(0, total_thrust_body_n, 0)
 
-	var speed := rigid_body.velocity_mps.length()
+	# Drag is against the AIR, the same relative_velocity_mps the powertrain read above — flying
+	# downwind at wind speed costs no drag, into it costs more, exactly like the airspeed the
+	# powertrain sees (check 6's guard: wind reaching one and not the other is the stated mutation).
+	var speed := relative_velocity_mps.length()
 	if speed > 0.0:
-		total_force += -rigid_body.velocity_mps.normalized() * drag_coefficient * speed * speed
+		total_force += -relative_velocity_mps.normalized() * drag_coefficient * speed * speed
 
 	# Specific force — total force minus gravity — is captured BEFORE integration, while
 	# the force that produced this tick's acceleration is still in hand. Recovering it

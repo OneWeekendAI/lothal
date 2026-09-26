@@ -16,20 +16,19 @@ extends RefCounted
 ## are about what a document MEANS are honoured here:
 ##
 ##     {
-##       "schema": 1,
+##       "schema": 2,
 ##       "selected": "default_circuit",
 ##       "courses": [
-##         {"id": "default_circuit", "name": "Circuit",
-##          "air": {"elevation_m": 920.0, "temperature_c": 35.0},
+##         {"id": "default_circuit", "name": "Circuit", "site_id": "default_site",
 ##          "gates": [{"position": [18, 2.5, 0], "normal": [0, 0, 1], "radius": 1.5}, ...]}
 ##       ]
 ##     }
 ##
 ## - **Only what was authored is stored.** A fresh install has no file at all and gets the default
 ##   circuit from GateCourse.build_gates(), which is the same arithmetic that used to be the world.
-##   The `air` block obeys this too: it is absent until a builder says where they fly, and an
-##   absent block reads as standard sea-level air — which is exactly what every course saved
-##   before air existed was flown in, so old files keep their numbers to the bit.
+##   WHERE a course is no longer lives here: v1 carried an `air` block, and v2 carries a `site_id`
+##   pointing at `sites.json`, which is where the elevation, the ground and the obstacles are.
+##   `SiteLibrary.migrate_courses` does that conversion once, one-way, and stamps the schema.
 ## - **Unknown fields are kept, not dropped** — at the top level (a later version's `weather`
 ##   block) and inside each course (a later version's `surface`). A gate's own unknown fields are
 ##   not preserved, and that is the one deliberate exception: gates are rewritten wholesale every
@@ -48,7 +47,7 @@ extends RefCounted
 ## position is what the world IS, and what the world is gets authored in the garage.
 
 const SAVE_PATH := "user://courses.json"
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 
 ## Which course is flown when the door to the field is opened.
 var selected_id := ""
@@ -95,16 +94,17 @@ static func load_from(path: String = SAVE_PATH) -> CourseLibrary:
 				push_warning("%s: skipping a course with no readable gates" % path)
 				continue
 			var loaded := GateCourse.new(gates, id, String(record.get("name", id)))
-			# An absent `air` block is standard air, and that is the CORRECT reading rather than a
-			# fallback: a course saved before this existed was flown at 1.225, so reading it that
-			# way leaves its numbers bit-identical. There is deliberately no migration — stamping
-			# 0 m / 15 C into a record whose author never said it would be manufacturing an
-			# authored fact, which is what the "only what was authored is stored" rule above
-			# exists to prevent. See the air-density design §2.1.
-			loaded.air = AirDensity.from_data(record.get("air"))
+			# Where this course IS. An absent id reads as the default field, which is the correct
+			# reading of a v1 record rather than a fallback — though a v1 record should not reach
+			# here at all, because `SiteLibrary.migrate_courses` runs first and writes one in.
+			loaded.site_id = String(record.get("site_id", Site.DEFAULT_ID))
 			library._courses[id] = loaded
+			# `air` is in the KNOWN list although nothing reads it any more, and that is
+			# deliberate: it is the v1 block, both of its numbers now live on the site, and letting
+			# it fall through to the unknown half would preserve a second spelling of the site's
+			# elevation for ever — free to drift the first time either was edited.
 			library._unknown_course[id] = JsonStore.unknown_fields(
-					record, ["id", "name", "gates", "air"])
+					record, ["id", "name", "gates", "air", "site_id"])
 
 	if library._courses.is_empty():
 		return with_default()
@@ -123,14 +123,7 @@ func save(path: String = SAVE_PATH) -> bool:
 		record["id"] = entry_course.course_id
 		record["name"] = entry_course.course_name
 		record["gates"] = GateCourse.gates_to_data(entry_course.gates)
-		# Written only when it is not standard air, which is the "only what was authored is
-		# stored" rule applied to the new block: a course nobody has told about its field must
-		# round-trip to a file byte-identical to the one it came from, or this slice would rewrite
-		# every course file on first launch to say something none of their authors said.
-		if entry_course.air.is_standard():
-			record.erase("air")
-		else:
-			record["air"] = entry_course.air.to_data()
+		record["site_id"] = entry_course.site_id
 		courses.append(record)
 
 	var document := _unknown_top.duplicate(true)

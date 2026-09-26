@@ -17,6 +17,7 @@
 use godot::prelude::*;
 
 use crate::battery::BatteryModel;
+use crate::bemt_ratios::BemtRatios;
 use crate::motor::MotorModel;
 use crate::propeller::PropellerModel;
 
@@ -43,12 +44,21 @@ pub struct Powertrain {
     pub blades: f64,
     #[var]
     pub prop_radius_m: f64,
-    /// Prop pitch, needed only by the forward-flight model (PropellerModel::j_zero). A bench never
-    /// reads it, and it is required at construction anyway rather than settable afterwards: a
-    /// powertrain that flew with an unset pitch would silently be the static model, which is the
-    /// one failure this whole slice exists to make impossible.
+    /// Prop pitch. Carried for the panels and the audio, and required at construction rather than
+    /// settable afterwards: a powertrain that flew with an unset pitch would silently be the
+    /// static model, which is the one failure the forward-flight slice exists to make impossible.
     #[var]
     pub prop_pitch_m: f64,
+    /// The BEMT forward-flight ratio surface for the fitted propeller (P6's closure,
+    /// bemt_ratios.rs). Since this landed, `PropellerModel::thrust_factor` and `power_factor` —
+    /// the linear-C_T rule of thumb and the Glauert-plus-FIGURE_OF_MERIT construction — are
+    /// deleted, and forward flight reaches the tick through blade-element theory on the blade's
+    /// own planform.
+    ///
+    /// Required at construction, and for exactly `prop_pitch_m`'s reason: a powertrain handed no
+    /// surface would fly the static model with total confidence. A bench pays nothing for
+    /// carrying it — `for_prop` is cached, and every read short-circuits to 1.0 at zero velocity.
+    pub forward_ratios: Gd<BemtRatios>,
     /// The air this powertrain is running in — a property of the FIELD, handed in by whoever
     /// built it (labs-and-sim.md §1). Required at construction for exactly prop_pitch_m's reason:
     /// a powertrain that flew with an unset density would silently be a sea-level powertrain, and
@@ -115,8 +125,26 @@ impl Powertrain {
     #[func]
     fn create(motor_model: Gd<MotorModel>, k_t: f64, k_q: f64, battery: Gd<BatteryModel>,
               motor_max_amps: f64, rated_rpm: f64, pole_pairs: f64, blades: f64,
-              prop_radius_m: f64, prop_pitch_m: f64, air_density_kgm3: f64) -> Gd<Self> {
+              prop_radius_m: f64, prop_pitch_m: f64, air_density_kgm3: f64,
+              blade_chord_mm: PackedFloat64Array) -> Gd<Self> {
+        Self::create_with_guard(motor_model, k_t, k_q, battery, motor_max_amps, rated_rpm,
+            pole_pairs, blades, prop_radius_m, prop_pitch_m, air_density_kgm3,
+            blade_chord_mm, 0.0)
+    }
+
+    /// The P10b closure-aware form. `guard_closure` is the `PropGuard::tip_loss_closure` value
+    /// for whatever guard this build has fitted; it reaches the ratio surface here so the
+    /// same aircraft with and without a duct fits two different surfaces (plans/
+    /// 2026-08-26-propulsion-room-design.md §4.0). The static path is handled in `Build`,
+    /// which multiplies k_t by `BemtRatios::static_closure_factor()` at recompute time.
+    #[func]
+    fn create_with_guard(motor_model: Gd<MotorModel>, k_t: f64, k_q: f64, battery: Gd<BatteryModel>,
+              motor_max_amps: f64, rated_rpm: f64, pole_pairs: f64, blades: f64,
+              prop_radius_m: f64, prop_pitch_m: f64, air_density_kgm3: f64,
+              blade_chord_mm: PackedFloat64Array, guard_closure: f64) -> Gd<Self> {
         let last_voltage_v = battery.bind().nominal_v;
+        let forward_ratios = BemtRatios::for_prop_with_guard(
+            prop_radius_m * 2.0, prop_pitch_m, blades, blade_chord_mm, guard_closure);
         let observables = Self::make_observables();
         let mut pt = Gd::from_object(Self {
             motor_model,
@@ -129,6 +157,7 @@ impl Powertrain {
             blades,
             prop_radius_m,
             prop_pitch_m,
+            forward_ratios,
             air_density_kgm3,
             motor_rpm: PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0]),
             last_voltage_v,
@@ -160,9 +189,8 @@ impl Powertrain {
     /// pack sees disagreeing about what the rotor is doing.
     #[func]
     fn current_in_flight_at_rpm(&self, rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
-        self.current_at_rpm(rpm) * PropellerModel::power_factor(
-            self.k_t, rpm, self.prop_diameter_m(), self.prop_pitch_m, v_axial_mps, v_edge_mps,
-            self.air_density_kgm3)
+        self.current_at_rpm(rpm)
+            * self.forward_ratios.bind().power_ratio(rpm, v_axial_mps, v_edge_mps)
     }
 
     #[func]
@@ -240,8 +268,8 @@ impl Powertrain {
                 dt,
             );
             self.motor_rpm[i] = rpm;
-            let thrust = PropellerModel::thrust_n_in_flight(
-                self.k_t, rpm, self.prop_diameter_m(), self.prop_pitch_m, v_axial);
+            let thrust = PropellerModel::thrust_n(self.k_t, rpm)
+                * self.forward_ratios.bind().thrust_ratio(rpm, v_axial, v_edge);
             thrusts[i] = thrust;
             total_current_a += self.current_in_flight_at_rpm(rpm, v_axial, v_edge);
         }
@@ -289,9 +317,8 @@ impl Powertrain {
         // republish still recomputes from stored state and integrates nothing, so it is still
         // idempotent, which is what tests/test_observables.gd writes rpm directly to check.
         let (v_axial, v_edge) = self.airspeed_components();
-        let power_factor_at = |rpm: f64| PropellerModel::power_factor(
-            self.k_t, rpm, self.prop_diameter_m(), self.prop_pitch_m, v_axial, v_edge,
-            self.air_density_kgm3);
+        let power_ratio_at = |rpm: f64| self.forward_ratios.bind()
+            .power_ratio(rpm, v_axial, v_edge);
 
         let mut total_thrust = 0.0;
         for i in 0..4 {
@@ -302,9 +329,9 @@ impl Powertrain {
             electrical.push((rev_per_s * self.pole_pairs) as f32);
             tip_speed.push((PropellerModel::rpm_to_rad_s(rpm) * self.prop_radius_m) as f32);
             let reaction_nm = PropellerModel::reaction_torque_n_m(self.k_q, rpm)
-                * power_factor_at(rpm);
+                * power_ratio_at(rpm);
             reaction.push(reaction_nm);
-            current.push(self.current_at_rpm(rpm) * power_factor_at(rpm));
+            current.push(self.current_at_rpm(rpm) * power_ratio_at(rpm));
             // Recomputed from stored rpm like everything else in this function, so a republish
             // is still idempotent — the value step() published this tick, read back the same.
             total_thrust += thrust_arr[i] as f64;

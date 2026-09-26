@@ -15,6 +15,7 @@ static func run() -> Array:
 	results.append_array(_limiting())
 	results.append_array(_characteristic())
 	results.append_array(_no_taste())
+	results.append_array(_obstacles())
 	return results
 
 
@@ -247,5 +248,169 @@ static func _no_taste() -> Array:
 		not scored,
 		"warning ids: %s" % ", ".join(_ids(warnings))
 	))
+
+	return results
+
+
+# ---------------------------------------------------------------------------
+# F6 — obstacles: three new ids, checks 1-6 and 10-12 of the F6 brief
+# ---------------------------------------------------------------------------
+
+static func _site(terrain: Terrain, obstacles: Array[Obstacle] = []) -> Site:
+	var out := Site.new()
+	out.terrain = terrain
+	out.obstacles = obstacles
+	return out
+
+
+static func _obstacles() -> Array:
+	var results: Array = []
+	var build := _reference()
+
+	# --- checks 1-2: GATE_INTERSECTS_OBSTACLE, a gate ring against a box -----------------------
+	var terrain := Terrain.flat(60.0, 60.0)
+	var course := _course([
+		GateCourse.make_gate(Vector3(0.0, 4.0, 0.0), 0.0, 1.5),
+		GateCourse.make_gate(Vector3(0.0, 4.0, 20.0), 0.0, 1.5),
+	])
+
+	# Box centred at x=1.5, spanning x in [0.5, 2.5] and y in [0, 6]: gate 1's rightmost ring
+	# point, (1.5, 4, 0), sits dead centre in it.
+	var overlapping_box := Obstacle.place(Obstacle.BOX, 1.5, 0.0,
+		{"w": 2.0, "h": 6.0, "d": 2.0, "yaw_deg": 0.0}, terrain)
+	var hit := _find(CourseWarnings.evaluate(course, build, _site(terrain, [overlapping_box])),
+		CourseWarnings.GATE_INTERSECTS_OBSTACLE)
+	results.append(TestResult.new(
+		"a gate ring intersecting a box is impossible, and names the gate",
+		hit != null and hit.severity == BuildWarning.Severity.IMPOSSIBLE
+			and int(hit.values.get("gate", -1)) == 1,
+		"gate 1's ring through a box centred 1.5 m away -> %s" % [
+			"nothing" if hit == null else hit.message]))
+
+	# The same box, moved so its near face sits exactly 0.28 m from the ring's own tube surface:
+	# 0.18 m of that is the ring's own tube radius (GateCourse.RING_THICKNESS_M — the same number
+	# `_rings_intersect` uses for a second ring), so the ring itself is genuinely 10 cm clear.
+	var clear_box := Obstacle.place(Obstacle.BOX, 2.78, 0.0,
+		{"w": 2.0, "h": 6.0, "d": 2.0, "yaw_deg": 0.0}, terrain)
+	var clear := _find(CourseWarnings.evaluate(course, build, _site(terrain, [clear_box])),
+		CourseWarnings.GATE_INTERSECTS_OBSTACLE)
+	results.append(TestResult.new(
+		"a gate 10 cm clear of the same box raises nothing — geometry, not a proximity bubble",
+		clear == null,
+		"box moved 1.28 m further out (0.28 m clear of the ring's tube) -> %s" % [
+			"nothing" if clear == null else clear.message]))
+
+	# --- checks 3-4: ROUTE_THROUGH_OBSTACLE, a leg against a wall ------------------------------
+	var wall := Obstacle.place(Obstacle.WALL, 0.0, 0.0,
+		{"length": 4.0, "height": 6.0, "thickness": 1.0, "yaw_deg": 0.0}, terrain)
+	var straight_through := _course([
+		GateCourse.make_gate(Vector3(0.0, 4.0, -10.0), 0.0, 1.5),
+		GateCourse.make_gate(Vector3(0.0, 4.0, 10.0), 0.0, 1.5),
+	])
+	var blocked := _find(CourseWarnings.evaluate(straight_through, build, _site(terrain, [wall])),
+		CourseWarnings.ROUTE_THROUGH_OBSTACLE)
+	results.append(TestResult.new(
+		"a leg straight through a wall is limiting",
+		blocked != null and blocked.severity == BuildWarning.Severity.LIMITING,
+		"leg from (0,4,-10) to (0,4,10) through a wall at z=0 -> %s" % [
+			"nothing" if blocked == null else blocked.message]))
+
+	var goes_round := _course([
+		GateCourse.make_gate(Vector3(5.0, 4.0, -10.0), 0.0, 1.5),
+		GateCourse.make_gate(Vector3(5.0, 4.0, 10.0), 0.0, 1.5),
+	])
+	var clear_leg := _find(CourseWarnings.evaluate(goes_round, build, _site(terrain, [wall])),
+		CourseWarnings.ROUTE_THROUGH_OBSTACLE)
+	results.append(TestResult.new(
+		"a leg that goes round the same wall (never within its footprint) raises nothing",
+		clear_leg == null,
+		"leg at x=5, wall spans x in [-2, 2] -> %s" % [
+			"nothing" if clear_leg == null else clear_leg.message]))
+
+	# --- check 5: OUTSIDE_SITE_EXTENT, a gate outside, a gate on the boundary ------------------
+	var bounded := Terrain.flat(40.0, 40.0)
+	var outside_course := _course([
+		GateCourse.make_gate(Vector3(25.0, 4.0, 0.0), 0.0, 1.0),
+		GateCourse.make_gate(Vector3(0.0, 4.0, 5.0), 0.0, 1.0),
+	])
+	var outside := _find(CourseWarnings.evaluate(outside_course, build, _site(bounded)),
+		CourseWarnings.OUTSIDE_SITE_EXTENT)
+	results.append(TestResult.new(
+		"a gate outside the site's extent (half-width 20 m, gate at x=25) raises it",
+		outside != null and outside.severity == BuildWarning.Severity.LIMITING,
+		"%s" % ["nothing" if outside == null else outside.message]))
+
+	var boundary_course := _course([
+		GateCourse.make_gate(Vector3(20.0, 4.0, 0.0), 0.0, 1.0),
+		GateCourse.make_gate(Vector3(0.0, 4.0, 5.0), 0.0, 1.0),
+	])
+	var on_boundary := _find(CourseWarnings.evaluate(boundary_course, build, _site(bounded)),
+		CourseWarnings.OUTSIDE_SITE_EXTENT)
+	results.append(TestResult.new(
+		"a gate exactly ON the boundary (x=20, half-width 20 m) does not raise it",
+		on_boundary == null,
+		"%s" % ["nothing" if on_boundary == null else on_boundary.message]))
+
+	# NOTE on check 6 (a leg that leaves the extent and returns even though both of its gates are
+	# inside): NOT constructible against this shape. `Terrain`'s extent is always an axis-aligned
+	# rectangle, and a rectangle is convex — a straight leg between two points strictly inside a
+	# convex region cannot leave it and come back; that is what "convex" means. So whole-leg
+	# sampling (`_leg_leaves_extent`, walked at `EXTENT_SAMPLE_STEP_M`) and a check that only asks
+	# each gate decide the SAME truth value for this shape, and no fixture can tell them apart.
+	# The sampling is still implemented — it is what ROUTE_THROUGH_OBSTACLE genuinely needs, since
+	# an obstacle carves a NON-convex hole out of the flyable space, and checks 3/4 above are that
+	# proof. Flagged rather than faked: a check that cannot fail on this geometry is exactly the
+	# defect this plan cares most about, and I did not write one for it.
+
+	# --- check 10: no obstacles -> none of the three new ids, list bit-identical to pre-F6 ------
+	var default_course := GateCourse.new()
+	var plain_terrain := Terrain.flat(Terrain.DEFAULT_WIDTH_M, Terrain.DEFAULT_LENGTH_M)
+	var without_site := CourseWarnings.evaluate(default_course, build)
+	var with_empty_site := CourseWarnings.evaluate(default_course, build, _site(plain_terrain))
+	var identical := without_site.size() == with_empty_site.size()
+	for i in mini(without_site.size(), with_empty_site.size()):
+		if without_site[i].id != with_empty_site[i].id \
+				or without_site[i].severity != with_empty_site[i].severity \
+				or without_site[i].message != with_empty_site[i].message:
+			identical = false
+	results.append(TestResult.new(
+		"a site with no obstacles raises none of the three new ids, and its warning list is " +
+			"bit-identical to a null-site evaluation (same terrain, no obstacles)",
+		identical
+			and _find(with_empty_site, CourseWarnings.GATE_INTERSECTS_OBSTACLE) == null
+			and _find(with_empty_site, CourseWarnings.ROUTE_THROUGH_OBSTACLE) == null
+			and _find(with_empty_site, CourseWarnings.OUTSIDE_SITE_EXTENT) == null,
+		"null-site: %s | empty-obstacle site: %s" % [
+			", ".join(_ids(without_site)), ", ".join(_ids(with_empty_site))]))
+
+	# --- check 11: the vocabulary is not extended — the three new ids are impossible/limiting only
+	var everything := CourseWarnings.evaluate(course, build,
+		_site(terrain, [overlapping_box])) \
+		+ CourseWarnings.evaluate(straight_through, build, _site(terrain, [wall])) \
+		+ CourseWarnings.evaluate(outside_course, build, _site(bounded))
+	var new_ids: Array[StringName] = [CourseWarnings.GATE_INTERSECTS_OBSTACLE,
+		CourseWarnings.ROUTE_THROUGH_OBSTACLE, CourseWarnings.OUTSIDE_SITE_EXTENT]
+	var only_two_severities := true
+	var saw_any := false
+	for entry in everything:
+		if entry.id in new_ids:
+			saw_any = true
+			if entry.severity != BuildWarning.Severity.IMPOSSIBLE \
+					and entry.severity != BuildWarning.Severity.LIMITING:
+				only_two_severities = false
+	results.append(TestResult.new(
+		"the three new ids use only impossible/limiting — the vocabulary is not extended",
+		saw_any and only_two_severities,
+		"severities seen: %s" % ", ".join(_ids(everything))))
+
+	# --- check 12: still no difficulty score, over a full list that includes the new warnings ---
+	var scored_with_obstacles := false
+	for entry in everything:
+		if String(entry.id).contains("difficulty"):
+			scored_with_obstacles = true
+	results.append(TestResult.new(
+		"no difficulty score even once obstacles are in play, asserted by id over the full list",
+		not scored_with_obstacles,
+		"warning ids: %s" % ", ".join(_ids(everything))))
 
 	return results

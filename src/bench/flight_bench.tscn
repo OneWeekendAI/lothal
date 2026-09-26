@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+; Scripted benchmark flight — see flight_bench.gd. Run the shipped app with this scene path as
+; its argument; nothing in the normal app opens it.
+
+[ext_resource type="Script" path="res://src/bench/flight_bench.gd" id="1"]
+
+[node name="FlightBench" type="Node"]
+script = ExtResource("1")

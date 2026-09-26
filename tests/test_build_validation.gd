@@ -8,7 +8,7 @@ extends RefCounted
 ## build's 496 g, 11.7:1 and 29% hover are asserted in test_hover, test_esc, test_build_panel,
 ## test_build_warnings, test_flight_controller and test_battery_model — and every one of those
 ## checks the model against a fixture the model's own constants were chosen to reproduce. Move
-## Build.ELECTRONICS_MASS_G by 15 g and all six stay green while every aircraft in the catalog
+## Build.ELECTRONICS_BUDGET_G by 15 g and all six stay green while every aircraft in the catalog
 ## becomes wrong by 15 g. Nothing in the project noticed that until this file.
 ##
 ## THE BOUND IS FIXED IN BuildValidation AND WAS COMMITTED BEFORE THE DATA WAS. That ordering
@@ -40,9 +40,40 @@ extends RefCounted
 ## Entering something here requires the `why` to be a claim about the WORLD — a spec sheet, a
 ## missing part, a published number that disagrees with itself — never "the model is a bit off".
 ## If the reason is that the model is wrong, the fix is the model.
+##
+## PW2 MOVED EVERY POINT IN THIS DATASET, AND ALL THREE RECORDS BELOW WERE REWRITTEN FOR IT ON
+## 2026-09-10. Replacing `Build.wiring_mass_g()`'s flat 14 g lump with a weighed harness — half an
+## XT60, a 120 mm 14 AWG main lead, the wire four motor leads add beyond what the motors ship with,
+## a capacitor sized off the pack, and 5 g of straps and shrink — added about 14.7 g of DRY mass to
+## every 6S 5" aircraft here. Nothing was tuned: the harness is the same model on all three, and
+## each recorded fraction below is simply what the check now measures.
+##
+## READ THE DIRECTION BEFORE READING THE NUMBERS. Two of the three findings SHRANK — the V3 from
+## -7.0% to -3.8% and the MARK5 from -9.8% to -6.2% — because the old lump was too light to cover
+## an XT60 pigtail and a capacitor, let alone the straps it was also standing for. The third, the
+## V2, was the one build the model already over-predicted, so the same 14.7 g pushed it out of the
+## bound. That pattern is itself the evidence that no constant fixes this dataset: the correction
+## that improves two of these aircraft is the one that busts the third, which is exactly what both
+## of the older entries below already argued from their own side.
 const KNOWN_MISSES := {
+	"iflight_nazgul_evoque_f5_v2_o4_6s": {
+		"error_fraction": 0.068,
+		"tolerance": 0.015,
+		"why": "The other end of the V3 entry below, and it became a bust rather than a near miss "
+			+ "when PW2 weighed the harness. iFlight publish these two aircraft 56 g apart — 436 g "
+			+ "for the V2, 492 g for the V3 — while publishing frame kits only 7 g apart, and the "
+			+ "two BNFs carry the same motors, the same propellers, the same O4 air unit and the "
+			+ "same 20x20 stack class. Lothal models them from those shared parts and predicts "
+			+ "465 g and 473 g: an 8 g spread against a published 56 g one. So the model lands "
+			+ "BETWEEN the two product pages, over one and under the other, and at least one of "
+			+ "those pages is wrong about its own aircraft. That is a fact about iFlight's "
+			+ "listings, not about mass_parts(): a constant large enough to bring the V2 inside "
+			+ "the bound is ~30 g, and taking 30 g off the V3 and the MARK5 would throw them to "
+			+ "-9.9% and -13.5%, further out than either has ever been. It stands until somebody "
+			+ "weighs a V2 and a V3 on the same scale.",
+	},
 	"iflight_nazgul_evoque_f5_v3_o4_6s": {
-		"error_fraction": -0.070,
+		"error_fraction": -0.038,
 		"tolerance": 0.015,
 		"why": "iFlight publishes the V3 as 56 g heavier than the V2 while publishing its frame "
 			+ "kit as only 7 g heavier. Same motors, same propellers, same O4 air unit, same "
@@ -58,10 +89,16 @@ const KNOWN_MISSES := {
 			+ "argument sharpened: the V2, built from the same constants and the same air unit, "
 			+ "now comes in at +3.4%, so a constant large enough to close the V3's 34 g would "
 			+ "push the V2 to about +11% — further out than the V3 is now, and in the opposite "
-			+ "direction. It stands until somebody weighs a V3 themselves.",
+			+ "direction. It stands until somebody weighs a V3 themselves. "
+			+ "RE-RECORDED 2026-09-10 at -3.8%, from -7.0%, and the cause is the harness "
+			+ "re-baseline described at the top of this table rather than anything about this "
+			+ "aircraft: a weighed harness is 14.7 g heavier than the lump it replaced, and the "
+			+ "published gap it was never going to explain is 56 g. The argument is unchanged and "
+			+ "its counterweight is now inside this table — see the V2 entry above, which the same "
+			+ "14.7 g pushed OUT of the bound in the opposite direction.",
 	},
 	"geprc_mark5_o4_pro_wide_x_6s": {
-		"error_fraction": -0.098,
+		"error_fraction": -0.062,
 		"tolerance": 0.015,
 		"why": "GEPRC publish 165.1 g for the MK5 O4 Pro Wide X frame and publish the aircraft's "
 			+ "fitted hardware as SEPARATE lines of the same page's 'Includes' list: a 3D "
@@ -81,7 +118,14 @@ const KNOWN_MISSES := {
 			+ "above documents from the other end. It stands until either GEPRC itemise the "
 			+ "165.1 g or somebody weighs a MARK5 themselves. The real fix is LTHL-11 unbundling "
 			+ "frame hardware into parts that can be named, at which point this entry should "
-			+ "fail as stale — which is exactly what the drift check below is for.",
+			+ "fail as stale — which is exactly what the drift check below is for. "
+			+ "RE-RECORDED 2026-09-10 at -6.2%, from -9.8%. PW2 weighed the harness and the "
+			+ "sentence above about 'Build\'s 14 g wiring lump is the only place it could land "
+			+ "and it is not big enough' is now half answered by the model itself: the harness is "
+			+ "25-29 g and it closed 14.7 g of the 41 g gap. What is left is the part of GEPRC\'s "
+			+ "'Includes' list this catalog still cannot name — the 3D prints, the screw pack, the "
+			+ "Velcro and the anti-slip pads — which is the same claim about a frame-kit weight, "
+			+ "with a third of it now accounted for and the finding correspondingly smaller.",
 	},
 }
 
@@ -199,7 +243,7 @@ static func _test_every_build_is_within_its_bound(catalog: PartsCatalog) -> Arra
 ## The spread and the bias are different facts and only one of them is fixable. A dataset
 ## scattered either side of zero says the mass model is right on average and noisy about
 ## individual aircraft; a dataset all of one sign says a constant in Build is wrong by a fixed
-## amount, and names ELECTRONICS_MASS_G as the first place to look. Averaging the magnitudes
+## amount, and names ELECTRONICS_BUDGET_G as the first place to look. Averaging the magnitudes
 ## would destroy exactly the distinction worth having, so the signed mean is printed as its own
 ## line whether or not anything failed.
 ##
@@ -236,10 +280,21 @@ static func _test_the_error_is_reported_with_its_sign(catalog: PartsCatalog) -> 
 			continue
 		points.append(point)
 
-	var mean := BuildValidation.signed_mean_error(points)
 	# Reported whichever way it goes, so excluding a point can never quietly improve the number
 	# a reader sees.
 	var mean_all := BuildValidation.signed_mean_error(all_points)
+	# WHEN EVERY BUILD IS A RECORDED MISS, THIS ASSERTS ON THE WHOLE DATASET RATHER THAN ON
+	# NOTHING — which is what PW2 made possible and what would otherwise have turned the one check
+	# in this file that watches for a wrong constant into a check that cannot fail. An empty
+	# `points` gives a mean of zero, and a zero that is inside any bound is not a measurement; it
+	# is the suite agreeing with itself. The exclusion exists so that a spec-sheet outlier does not
+	# masquerade as a bias, and it earns nothing once there is no unexcluded build left to protect.
+	# So the fallback keeps the assertion pointed at real numbers, and the reading below says which
+	# set it was computed over so a reader is never left guessing.
+	var over_all_points := points.is_empty()
+	var mean := mean_all if over_all_points else BuildValidation.signed_mean_error(points)
+	if over_all_points:
+		points = all_points.filter(func(p: Dictionary) -> bool: return not p.is_empty())
 
 	var negligible := BuildValidation.DRY_MASS_BOUND * ON_THE_NUMBER
 	var same_sign := true
@@ -279,12 +334,17 @@ static func _test_the_error_is_reported_with_its_sign(catalog: PartsCatalog) -> 
 			reading = "same sign but %.0fx apart (%.1f%% to %.1f%%) — an outlier, not a constant" % [
 				largest / smallest, smallest * 100.0, largest * 100.0]
 		else:
-			reading = "a consistent OVER-prediction — look at ELECTRONICS_MASS_G" if first_sign > 0.0 \
-				else "a consistent UNDER-prediction — look at ELECTRONICS_MASS_G"
+			reading = "a consistent OVER-prediction — look at ELECTRONICS_BUDGET_G" if first_sign > 0.0 \
+				else "a consistent UNDER-prediction — look at ELECTRONICS_BUDGET_G"
 
+	# Which set the mean was taken over, said out loud, because "signed mean" over the excluded
+	# points and over all of them are different claims and only one of them is on screen.
+	if over_all_points:
+		reading += " — over EVERY build, since all of them are recorded findings"
 	var detail := "signed mean %+.1f%%, %s" % [mean * 100.0, reading]
 	if not excluded.is_empty():
-		detail += " (excluding recorded miss %s; all-in mean %+.1f%%)" % [
+		detail += " (%s recorded miss %s; all-in mean %+.1f%%)" % [
+			"including" if over_all_points else "excluding",
 			" ".join(excluded), mean_all * 100.0]
 
 	return [TestResult.new(
@@ -342,8 +402,15 @@ static func _test_the_data_is_genuinely_held_out() -> Array:
 
 ## The pack is a stand-in, and BuildValidation's header claims it cancels out of the reported
 ## quantity. That is a claim about arithmetic, so it is checked rather than asserted: assemble
-## the same aircraft on a 320 g Li-ion instead of the 205 g LiPo and the dry mass must not
-## move. If it ever does, every number in this file is measuring the stand-in.
+## the same aircraft on a 320 g Li-ion instead of the 205 g LiPo and the dry mass must not move.
+##
+## PW2 PUT ONE HOLE IN THAT, AND IT IS NAMED HERE RATHER THAN WEAKENED AWAY. The harness derives
+## its plug from the pack's own connector family and its capacitor from the pack's cell count, so
+## an aircraft assembled on a 4S pack and the same aircraft on a 6S one carry different capacitors
+## and therefore differ in DRY mass by exactly that difference. That is correct — a 6S bus really
+## does want a bigger can — and it means the pack cancels to WITHIN THE HARNESS'S OWN
+## PACK-DEPENDENCE and not to zero. So the residual is asserted to be that difference EXACTLY,
+## which is a sharper claim than "close enough": anything else moving with the pack fails here.
 static func _test_the_pack_cancels(catalog: PartsCatalog) -> Array:
 	var frame_id := "frame_5in_race"
 	var with_lipo := Build.from_ids(catalog, frame_id, "motor_2207_1750kv", "prop_5x45x3",
@@ -354,11 +421,17 @@ static func _test_the_pack_cancels(catalog: PartsCatalog) -> Array:
 	var a := BuildValidation.predicted_dry_mass_g(with_lipo)
 	var b := BuildValidation.predicted_dry_mass_g(with_liion)
 
+	# The only pack-dependent term left in dry mass, computed from the two harnesses themselves.
+	var harness_delta := with_lipo.harness_mass_g() - with_liion.harness_mass_g()
+
 	return [TestResult.new(
-		"the stand-in pack cancels out of the validated quantity",
-		absf(a - b) < 1e-6 and absf(with_lipo.all_up_weight_g() - with_liion.all_up_weight_g()) > 100.0,
-		"dry %.3f g either way, while all-up differs by %.0f g" % [
-			a, absf(with_lipo.all_up_weight_g() - with_liion.all_up_weight_g())]
+		"the stand-in pack cancels out of the validated quantity but for the harness it implies",
+		absf((a - b) - harness_delta) < 1e-6
+			and absf(with_lipo.all_up_weight_g() - with_liion.all_up_weight_g()) > 100.0
+			and absf(harness_delta) < 10.0,
+		"dry %.3f g vs %.3f g — a %.3f g difference, all of it the harness (%.3f g), while all-up differs by %.0f g" % [
+			a, b, a - b, harness_delta,
+			absf(with_lipo.all_up_weight_g() - with_liion.all_up_weight_g())]
 	)]
 
 

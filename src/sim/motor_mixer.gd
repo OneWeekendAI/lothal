@@ -54,7 +54,12 @@ extends RefCounted
 
 const MIX_GAIN := 0.2   # fraction of throttle range given to attitude authority
 
-static func mix(throttle: float, roll_cmd: float, pitch_cmd: float, yaw_cmd: float) -> Dictionary:
+## `config` is the build's `config` decision block. Spin direction is read through
+## MotorLayout.spin_map() — the SAME accessor torque_from_motor() uses, per design §5.1: the mixer
+## that commands a yaw and the model that produces its torque cannot be allowed to hold two
+## different opinions about which way a motor turns.
+static func mix(throttle: float, roll_cmd: float, pitch_cmd: float, yaw_cmd: float, config: Dictionary = {}) -> Dictionary:
+	var spin := MotorLayout.spin_map(config)
 	# Step 1: attitude only. Throttle is deliberately not in here yet — mixing it in first
 	# is what makes saturation depend on where the throttle sits.
 	var delta := {}
@@ -63,7 +68,7 @@ static func mix(throttle: float, roll_cmd: float, pitch_cmd: float, yaw_cmd: flo
 	for name in MotorLayout.MOTOR_NAMES:
 		var d := pitch_cmd * MIX_GAIN * (1.0 if MotorLayout.IS_FRONT[name] else -1.0)
 		d += roll_cmd * MIX_GAIN * (-1.0 if MotorLayout.IS_RIGHT[name] else 1.0)
-		d += yaw_cmd * MIX_GAIN * MotorLayout.SPIN[name]
+		d += yaw_cmd * MIX_GAIN * float(spin[name])
 		delta[name] = d
 		lo = minf(lo, d)
 		hi = maxf(hi, d)

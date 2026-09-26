@@ -243,12 +243,22 @@ static func _com_under_a_slid_pack() -> Array:
 	# And the mass model DOES hear about it, by the right amount: the drawn pack's own displacement
 	# times its share of the aircraft. Both terms are read off the objects under test rather than
 	# restated as constants, so this stays true when the reference pack or frame changes.
-	var pack_fraction: float = (float(build.battery["mass_g"]) / 1000.0) \
-		/ build.mass_properties.total_mass_kg
+	# The pack, the plug soldered to its lead, and half the main lead that spans the stack and the
+	# pack: everything that moves when the pack does (PW2). Read off the harness rather than
+	# restated as a constant, for the same reason the pack's own mass is.
+	var moving_kg: float = float(build.battery["mass_g"]) / 1000.0 \
+		+ build.harness.connector_mass_g(build) / 1000.0 \
+		+ build.harness.main_lead_mass_g(build) / 1000.0 * 0.5
+	var pack_fraction: float = moving_kg / build.mass_properties.total_mass_kg
 	var expected_z := centred_com.z + (slid_z - centred_z) * pack_fraction
 	results.append(TestResult.new(
 		"and the modelled centre of mass moves with it, by the pack's share of the weight",
-		absf(bench_com.z - expected_z) < 1e-9 and absf(bench_com.z) > 1e-4,
+		# 1e-8 rather than 1e-9, and it is a FLOATING-POINT bound rather than a modelling one:
+		# PW2 took the mass list from thirteen entries to twenty, and a composite centre of mass is
+		# a sum over all of them divided by another sum over all of them. The residual measured
+		# 1.5 nanometres. A bound at ten of those is still four orders under the millimetre this
+		# check is about, and could not absorb a wrong part.
+		absf(bench_com.z - expected_z) < 1e-8 and absf(bench_com.z) > 1e-4,
 		"COM moved to %.2f mm fore/aft, expected %.2f mm, with the pack slid %.0f mm forward"
 			% [bench_com.z * 1000.0, expected_z * 1000.0, travel_mm]
 	))

@@ -39,13 +39,18 @@ const COLOR_DIM := LothalTheme.TEXT_MUTED
 ## How much of the bottom-left corner the flight readouts claim. Stated rather than measured
 ## because the panel that has to keep clear of them is sized before this block has ever been
 ## laid out — and a HUD that another panel draws over is not a HUD.
-const FLIGHT_BLOCK_HEIGHT := 136.0
+## +22 over the pre-F7 figure for the one new wind readout line this slice adds (a ReadoutLabel's
+## own row height, matched against its siblings rather than measured, since nothing here reads a
+## real layout either).
+const FLIGHT_BLOCK_HEIGHT := 158.0
 
 var _throttle_bar: ProgressBar
 var _throttle_label: Label
 var _voltage_label: Label
 var _pack_label: Label
 var _speed_label: Label
+## States what the wind is doing; never grades it. See render()'s comment.
+var _wind_label: Label
 var _current_lap_label: Label
 var _best_lap_label: Label
 var _gate_label: Label
@@ -92,6 +97,7 @@ func _init() -> void:
 	throttle_row.add_child(_throttle_label)
 
 	_speed_label = _add_readout(flight)
+	_wind_label = _add_readout(flight)
 	_voltage_label = _add_readout(flight)
 	_pack_label = _add_readout(flight)
 
@@ -164,6 +170,18 @@ func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, 
 	_throttle_label.text = "%.0f %%" % (throttle_fraction * 100.0)
 
 	_speed_label.text = "%.0f km/h" % (obs.airspeed_mps * 3.6)
+
+	# States the wind — speed and the bearing it comes FROM, both with units — and stops there.
+	# `core.wind` is null on a core nobody has handed a `Wind` to (pre-F7 callers, tests): the HUD
+	# reads that as "no wind" rather than crashing, the same reading a builder gets from a calm
+	# `Conditions` set. NEVER a grade: check 13's forbidden-word list is exactly why. A pilot reads
+	# the number and judges it themselves; "too windy" or "strong for this build" is Lothal
+	# deciding what the pilot can handle, which is the warning vocabulary's job (impossible /
+	# limiting / characteristic), not the HUD's.
+	if core.wind != null:
+		_wind_label.text = "WIND %.1f m/s @ %.0f°" % [core.wind.speed_mps, core.wind.from_deg]
+	else:
+		_wind_label.text = "WIND —"
 
 	_voltage_label.text = "%.2f V   %.0f A" % [obs.voltage_live_v, obs.current_total_a]
 	# Exception: Dynamic runtime voltage sag color shift

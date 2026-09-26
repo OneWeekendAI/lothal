@@ -13,6 +13,12 @@ const EPS := 0.05
 
 static func run() -> Array:
 	var results: Array = []
+	# THE HOLD ON THE BUILDER'S OWN FILES. Taken here and released below, because a section that
+	# aborts mid-way never reaches its own restore — measured, and it is what left a 3500 m
+	# elevation and an invented weather row on this developer's disk. `run()` is the only frame
+	# GDScript guarantees will resume after an abort inside a section, so the hold lives here and
+	# `run()` does nothing else but call sections and append results. See tests/real_files.gd.
+	var held := RealFiles.hold([CustomParts.SAVE_PATH])
 	results.append(_test_reference_build_is_untouched_by_any_custom_prop())
 	results.append(_test_a_colliding_id_is_refused_and_the_catalog_survives())
 	results.append(_test_extrapolation_warning_fires_on_a_far_prop_and_not_on_the_test_prop())
@@ -24,6 +30,10 @@ static func run() -> Array:
 	results.append(_test_unknown_fields_survive_a_round_trip())
 	results.append(_test_extrapolation_bound_is_at_least_the_catalog_noise_floor())
 	results.append(_test_a_custom_prop_is_selectable_and_flyable())
+	held.restore()
+	results.append(TestResult.new(
+		"the builder's own files are back the way they were found, whatever the sections did",
+		held.intact(), held.report()))
 	return results
 
 
@@ -98,7 +108,7 @@ static func _with_scratch_savepath(body: Callable) -> Variant:
 # ---------------------------------------------------------------------------
 
 ## Defining a custom prop — any custom prop, including one wearing an id that tries to shadow the
-## reference build's — must not move 496 g / 11.69 / 29.6% by a gram or a point. Same shape as
+## reference build's — must not move 507.5 g / 11.43 / 29.9% by a gram or a point. Same shape as
 ## test_custom_motors.gd's oracle test, and for the same reason: load_default() is what the
 ## reference build reads, and load_with_custom() is what Lab flies, and the isolation between
 ## the two IS the whole of the collision defence.
@@ -135,7 +145,7 @@ static func _test_reference_build_is_untouched_by_any_custom_prop() -> TestResul
 	var counts_agree: bool = int(out["merged_count"]) == int(out["shipped_count"]) + 1
 
 	return TestResult.new(
-		"a defined custom prop does not move the reference build's 496 g / 11.69 / 29.6%",
+		"a defined custom prop does not move the reference build's 507.5 g / 11.43 / 29.9%",
 		pinned and counts_agree,
 		"%d shipped vs %d merged props, reference %.2f g / %.2f TWR, merged reference %.2f g / %.2f TWR" % [
 			out["shipped_count"], out["merged_count"],
@@ -144,9 +154,9 @@ static func _test_reference_build_is_untouched_by_any_custom_prop() -> TestResul
 
 
 static func _is_the_oracle(build: Build) -> bool:
-	return absf(build.all_up_weight_g() - 496.0) < EPS \
-		and absf(build.thrust_to_weight() - 11.69) < 0.01 \
-		and absf(build.hover_throttle() - 0.296) < 0.001
+	return absf(build.all_up_weight_g() - 507.48) < EPS \
+		and absf(build.thrust_to_weight() - 11.43) < 0.01 \
+		and absf(build.hover_throttle() - 0.299) < 0.001
 
 
 # ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ const LOG_DIR := FlightLogLibrary.LOG_DIR
 @onready var drone: Node3D = $Drone
 @onready var camera: Camera3D = $Camera3D
 @onready var ground_mesh: MeshInstance3D = $Ground/GroundMesh
+@onready var ground_collision: CollisionShape3D = $Ground/CollisionShape3D
 
 # Behind (+Z, per the coordinate contract's -Z-is-forward) and above the ~15cm frame.
 # Applied in the drone's own heading frame, not world space (see _update_camera).
@@ -43,17 +44,28 @@ const CAMERA_FOLLOW_RATE := 6.0
 ## the screen space, rather than the drone sitting dead centre hiding what it is flying at.
 const CAMERA_LOOK_AHEAD_UP := 0.6
 
-const GROUND_SIZE_M := 400.0
-
 # Where the drone sits before the course exists (and the seed for _previous_position).
 # The real start line comes from GateCourse.start_position() — spawning airborne matters
 # either way, since the ground plane's surface is y = 0.
 const SPAWN_POSITION := Vector3(0, 2.0, 0)
-## Frame half-height (~5 mm) plus a little clearance: below this the drone has hit the ground.
-const CRASH_ALTITUDE_M := 0.02
+## Frame half-height (~5 mm) plus a little clearance: this far above the ground and the drone has
+## hit it. Read from GateCourse rather than typed here, because the course places the start line
+## and the respawn at exactly this clearance and a second copy of the number is how a spawn ends up
+## below the altitude this test rejects — a respawn loop, with no evidence but a drone that will
+## not stay put.
+const CRASH_ALTITUDE_M := GateCourse.GROUND_CLEARANCE_M
 
 var core: DroneCore
 var build: Build
+## The air's own motion at the selected weather (design §4.3). Built once in `_ready`, HANDED to
+## every `core` this scene builds after — one stream survives a part swap, and only a respawn
+## (`_reset_to`) re-seeds it, the same rule `core.gyro` lives under. Read-only here and in
+## `DroneCore`: `Sim authors nothing`, and `ConditionsLibrary.load_from()` is a read.
+var wind: Wind
+## The name of the conditions set `wind` was built from, held because `Wind` keeps only the numbers
+## a builder typed and not the label on them. Stamped onto every Build this scene flies so the
+## HUD's countdown and Lab's estimate are quoted in — and named after — the same weather.
+var conditions_name := Conditions.STANDARD_NAME
 var build_panel: BuildPanel
 ## The visible aircraft, generated from `build` rather than authored in main.tscn — see the
 ## comment on the Drone node there, and AirframeModel's header.
@@ -93,9 +105,34 @@ var hud: Hud
 ## instance before _ready so that both rooms are looking at one library within a session.
 var course_library: CourseLibrary = CourseLibrary.load_from()
 var course: GateCourse = course_library.selected()
+## The places the courses are laid out in, read the same way and for the same reason as
+## `course_library` above: one file, Lab is the only writer, and Sim reads it and never writes it.
+## RoomHost replaces this with its own instance before `adopt_selected_course()` so both rooms read
+## one library (room_host.gd's `show_sim`). This load is what a direct run of `main.tscn` gets, and
+## it is why the field initialiser stays: there is no door in that case to hand anything over.
+var site_library: SiteLibrary = SiteLibrary.load_from()
+## THE WEATHER, handed across the door like the other two libraries (`RoomHost.show_sim`) so that
+## Lab and Sim look at ONE set within a session. This `load_from()` is the standalone-boot
+## fallback — main.tscn run on its own from the editor, and capture_frame.gd — where there is no
+## door to hand anything over; it is not the door path's copy.
+##
+## It used to be read fresh in `_ready` instead, which is the thing `room_host.gd`'s own comment
+## forbids in as many words: "not a second copy read off disk before the save". That was safe only
+## because every weather edit saves synchronously, and it is the seam a piece of unpersisted
+## weather state falls straight through.
+var conditions_library: ConditionsLibrary = ConditionsLibrary.load_from()
+## THE GROUND (F4). Null is flat at zero — a course whose site is missing is flown on the field
+## every course was flown on before terrain existed, rather than on nothing.
+var terrain: Terrain = _course_terrain()
+## WHAT IS STANDING ON IT (F6). Read off the same site `terrain` came from, so the two can never
+## name two different places — an obstacle and a hill that quietly disagreed about which site they
+## were describing is exactly the stale-reading failure this whole room exists to close. Empty for
+## a site that is not there, the same "nothing means nothing standing" reading `terrain`'s `null`
+## already carries.
+var obstacles: Array[Obstacle] = _course_obstacles()
 ## Keyed on the course being flown, so a time set on one track is never reported as the record on
 ## another. See lap_timer.gd's header — this is the one line that stops a best lap becoming a lie.
-var lap_timer := LapTimer.new(course.fingerprint())
+var lap_timer := LapTimer.new(_lap_key())
 var course_renderer: CourseRenderer
 var drone_audio: DroneAudio
 ## The feed from the fitted camera — inset by default, whole screen on C. See FpvView: the swap
@@ -146,10 +183,129 @@ var _hover_throttle := 0.0
 ## lap_timer.gd's header exists to describe.
 func adopt_selected_course() -> void:
 	course = course_library.selected()
-	lap_timer = LapTimer.new(course.fingerprint())
+	terrain = _course_terrain()
+	obstacles = _course_obstacles()
+	lap_timer = LapTimer.new(_lap_key())
+	_rebuild_ground()
+
+
+## THE KEY A BEST LAP IS FILED UNDER, and the ONE place this scene builds it. Both callers —
+## the initialiser above and `adopt_selected_course()` — go through here, because two spellings of
+## a hash is how one of them quietly stops passing the world.
+##
+## PASSING THE WORLD IS THE WHOLE POINT, and it is the line that was missing. `fingerprint()`
+## defaults all three of `p_air`/`p_site`/`p_conditions` to `null` (see `gate_course.gd:312`), and
+## a bare `course.fingerprint()` therefore keys a lap on the GATE GEOMETRY AND NOTHING ELSE — so a
+## lap flown at 3500 m in a 20 m/s gale over a 6 m rise is filed under the same key as a calm
+## sea-level lap on flat ground. That is, word for word, the record `gate_course.gd`'s own header
+## exists to prevent, and it shipped: `air` was a property on `GateCourse` before the field room,
+## the bare call read it, and turning it into a defaulted argument silently absorbed this call
+## site.
+##
+## The air is COMPOSED from the same two typed facts the Field room composes it from
+## (`AirDensity.compose`, and `FieldSystem.air()` one door over), not read off a third place.
+##
+## Appending terms does NOT orphan an existing best lap: every term is gated on being
+## non-standard (`p_air.is_standard()`, `terrain.is_flat_at_zero()`, `has_steady_wind()`), so on
+## default data the hash is byte-identical to the bare call's. That is pinned by
+## `tests/test_fingerprint_survival.gd`, and measured: applying this fix moved no check.
+func _lap_key() -> String:
+	var where := _course_site()
+	var weather := conditions_library.selected()
+	return course.fingerprint(AirDensity.compose(where, weather), where, weather)
+
+
+## The site under the open course. A course pointing at a site that is not there falls back to the
+## selected one, on the Field room's `site()` rule: a damaged file lands somewhere flyable and the
+## room still opens. `terrain` and `obstacles` both read off THIS, never off two separate lookups,
+## so they cannot name two different sites on the same frame.
+func _course_site() -> Site:
+	var where := site_library.site(course.site_id)
+	if where == null:
+		where = site_library.selected()
+	return where
+
+
+## The ground under the open course. Null is flat at zero — see the field's own header.
+func _course_terrain() -> Terrain:
+	var where := _course_site()
+	return where.terrain if where != null else null
+
+
+## What is standing on that same ground. Empty for a site that is not there, matching
+## `_course_terrain()`'s null.
+func _course_obstacles() -> Array[Obstacle]:
+	var where := _course_site()
+	return where.obstacles if where != null else []
+
+
+## The ground's mesh, collider and grid tiling — all from `terrain` (F5), plus whatever
+## `obstacles` (F6) stands on it, drawn and collidable through the SAME triangle list `TerrainMesh`
+## builds either from.
+##
+## CALLED FROM TWO PLACES, AND ONLY ONE OF THEM HAS THE NODES. `_ready` always has them. But
+## `RoomHost.show_sim` calls `adopt_selected_course()` BEFORE `add_child(sim)`, and `@onready`
+## members resolve on tree entry — so on the shipped path into Sim, `ground_mesh` and
+## `ground_collision` are still null when the adopt path reaches here. That used to raise
+## `Invalid assignment of property 'mesh' ... on a base object of type 'Nil'` on EVERY entry into
+## Sim: harmless, because `_ready` rebuilds a few lines later and every field the adopt path sets
+## was already set before the call, but it is production stderr noise on the happy path, and real
+## aborts hide in exactly that texture.
+##
+## So the nodes are GUARDED rather than assumed, inline and not behind a helper (this repo's own
+## abort rule: a guard in a helper still aborts the helper). Returning early is correct and not a
+## skipped rebuild: the only way to get here without the nodes is before `_ready`, and `_ready`
+## rebuilds unconditionally. The staleness the two call sites exist to prevent is unaffected —
+## `RoomHost` frees `sim` on exit, so a re-entry runs `_ready` again anyway.
+##
+## `GROUND_SIZE_M` used to be an independent 400 m constant; it is not one any more (Ruling 34) —
+## it was only ever the grid material's tiling size (`GroundGrid.build_material`'s `uv1_scale`),
+## so it now follows the terrain's own extent, the way the field room already ties its
+## ground tiling to the layout it is drawing.
+func _rebuild_ground() -> void:
+	if ground_mesh == null or ground_collision == null:
+		return
+	ground_mesh.mesh = TerrainMesh.build_mesh(terrain, obstacles)
+	ground_collision.shape = TerrainMesh.build_collider(terrain, obstacles)
+	var extent := terrain.extent() if terrain != null else Vector2(Terrain.DEFAULT_WIDTH_M, Terrain.DEFAULT_LENGTH_M)
+	var ground_size := maxf(absf(extent.x), absf(extent.y))
+	ground_mesh.material_override = GroundGrid.build_material(ground_size)
+
+## Whether the aircraft has hit the ground. STILL AN ALTITUDE COMPARISON and deliberately not a
+## physics query: the recorded decision above was that a shape cast costs more than it tells us,
+## and `Terrain.height_at` is arithmetic, so giving the ground a shape does not overturn it. Static
+## and pure so the decision can be tested by calling it as well as by reading it.
+##
+## `p_terrain` null is flat at zero, the ground this scene tested against before F4.
+static func _check_crash(at: Vector3, p_terrain: Terrain) -> bool:
+	var ground := p_terrain.height_at(at.x, at.z) if p_terrain != null else 0.0
+	return at.y < ground + CRASH_ALTITUDE_M
+
+
+## THE AIR'S OWN MOTION, built from the builder's selected conditions — the settling time
+## included. `Wind._init` takes `p_gust_tau_s` as a defaulted argument rather than reading it off
+## the set, so a bare `Wind.new(conditions)` silently flies at the shipped default no matter what
+## the Field room's "Gust settle" field says. That is what this scene used to do, and it is why
+## that field had no consumer at all: it moved a number nothing downstream ever read.
+##
+## Static and pure for `_check_crash`'s reason: it can be CALLED by a check rather than read out
+## of the source. BUT THAT IS AN API, NOT THE WIRING, and this header used to claim otherwise —
+## a check that calls `Main.make_wind()` says nothing about whether `_ready` below calls it, and
+## measured, reverting the line that does to `Wind.new(selected_conditions)` left the whole suite
+## green. The wiring is covered separately, by a check that BOOTS `main.tscn` and reads
+## `scene.wind` (`tests/test_field_room.gd`'s `_the_booted_scene_flies_the_typed_settle_time`).
+## Neither stands alone: this one is the oracle, that one is the subject.
+static func make_wind(p_conditions: Conditions) -> Wind:
+	return Wind.new(p_conditions, p_conditions.gust_tau_s)
 
 func _ready() -> void:
-	ground_mesh.material_override = GroundGrid.build_material(GROUND_SIZE_M)
+	# Read off the HANDED-OVER library (see `conditions_library` above), not re-loaded here. The
+	# standalone-boot fallback is that member's own initialiser, so this line is the same object
+	# either way and there is never a second copy.
+	var selected_conditions := conditions_library.selected()
+	wind = make_wind(selected_conditions)
+	conditions_name = selected_conditions.conditions_name
+	_rebuild_ground()
 
 	course_renderer = CourseRenderer.new(course)
 	add_child(course_renderer)
@@ -211,6 +367,18 @@ func _on_build_changed(new_build: Build) -> void:
 		_stop_recording()
 	build = new_build
 	core = build.build_drone_core()
+	# The field this build is about to fly in, not a fresh calm core — a `DroneCore` is built with
+	# no opinion about the air (`wind = null`, drone_core.gd), and this is the one path every part
+	# change lands on, so there is no ordering in which the aircraft on screen flies one weather and
+	# the loop stepping it assumes another.
+	core.wind = wind
+	# And the same weather onto the Build itself, not only onto the loop stepping it (F8 fix round
+	# 1, review finding 5). `remaining_flight_time_min()` — the HUD's "N min left" — averages over
+	# the mission profile in this Build's own `field_wind_mps`, so leaving it at 0.0 here would
+	# have the garage quote one number under the selected conditions and the HUD count down from
+	# the calm one, which is precisely the split that function's docstring promises cannot happen.
+	build.field_wind_mps = wind.speed_mps
+	build.field_conditions_name = conditions_name
 	# The pack comes out of the bag as it actually is. Seeded here rather than inside Build,
 	# which must stay pure: the reference build's 11.7:1 and 29% are quoted at the nominal
 	# voltage datum and cannot become a function of how much flying anyone has done.
@@ -226,6 +394,10 @@ func _on_build_changed(new_build: Build) -> void:
 	# lands on, so there is no ordering in which the airframe on screen is one aircraft and the
 	# loop flying it is tuned for another.
 	fc.rate_loop.adopt_tune(pid_tunes.tune_for(build))
+	# And the motor map the builder configured, on the same one path, for the same reason: the
+	# core above already flies it, and a mixer commanding yaw through a different map than the
+	# physics reacts with is the disagreement config-room design §5.1 exists to prevent.
+	fc.rate_loop.config = build.config
 	# One call, and the airframe on screen is the airframe being flown — frame, motors and
 	# props, all from this same Build. There is no second description of the aircraft to keep
 	# in step, which is what the old _fit_drone_mesh_to_arm was: a scale factor applied to a
@@ -273,13 +445,14 @@ func _restart_course() -> void:
 		# The pilot stands at the start line and stays there. That is the whole point of the
 		# default listener: the drone leaves, comes back, and passes — which is where
 		# distance, air absorption and doppler actually do something.
-		drone_audio.set_listener(drone_audio.listener_mode, course.start_position())
-	_reset_to(course.start_position(), course.start_forward())
+		drone_audio.set_listener(drone_audio.listener_mode, course.start_position(terrain))
+	_reset_to(course.start_position(terrain), course.start_forward())
 
 ## Day 3's gate (week1.md): "Ground is one static box; hitting it resets to spawn." Day 6
 ## moves that to the last gate cleared, so a clip on gate 6 does not send a new pilot back
 ## to the start line. Ground contact is a plain altitude test rather than a Jolt query —
-## the ground is a single flat plane this week, so a shape cast would cost more than it tells us.
+## the ground is a shape now (F4) but it is still arithmetic, so a shape cast would still cost
+## more than it tells us. See _check_crash.
 func _respawn_after_crash() -> void:
 	# A crash is a landing, and a landing is when the pack state is written down. Recorded rather
 	# than reset: hitting the ground does not refill a battery.
@@ -291,7 +464,10 @@ func _respawn_after_crash() -> void:
 	# most interesting seconds in the file are the ones just before it.
 	if _recorder != null:
 		_recorder.discontinuities += 1
-	_reset_to(course.respawn_position(), course.next_gate()["position"] - course.respawn_position())
+	# Asked once. The two calls this replaced were one arithmetic answer either way; now that the
+	# answer reads the terrain, they were also one shape of the ground being sampled twice.
+	var at := course.respawn_position(terrain)
+	_reset_to(at, course.next_gate()["position"] - at)
 
 ## Places the drone level, stationary, and pointed at `forward` (yaw only — respawning
 ## already banked would just hand the pilot a second crash).
@@ -321,6 +497,9 @@ func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 	# noise stream across a teleport, which is the same class of artefact as the audio swoop
 	# the line above prevents.
 	core.gyro.reset()
+	# And a respawn replays the same gust rather than continuing the old stream, for the identical
+	# reason: "the same flight twice" must mean the same flight, gust for gust.
+	wind.reset()
 	rc.throttle = _hover_throttle
 	_previous_position = position
 
@@ -387,7 +566,7 @@ func _physics_process(delta: float) -> void:
 	# pass that ends in a clip just past the ring is silently thrown away.
 	_score_gates(delta)
 
-	if core.rigid_body.position_m.y < CRASH_ALTITUDE_M:
+	if _check_crash(core.rigid_body.position_m, terrain):
 		_respawn_after_crash()
 
 	drone.position = core.rigid_body.position_m
@@ -422,7 +601,7 @@ func _toggle_listener() -> void:
 	var next := DroneAudio.Listener.CHASE_CAMERA
 	if drone_audio.listener_mode == DroneAudio.Listener.CHASE_CAMERA:
 		next = DroneAudio.Listener.PILOT_GROUND
-	drone_audio.set_listener(next, course.start_position())
+	drone_audio.set_listener(next, course.start_position(terrain))
 	hud.show_banner("EARS: %s" % ("PILOT" if next == DroneAudio.Listener.PILOT_GROUND else "CHASE"))
 
 ## Swaps the FPV feed between the corner inset and the whole screen. Says so in the banner either

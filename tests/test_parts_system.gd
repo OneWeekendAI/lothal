@@ -31,7 +31,101 @@ static func run() -> Array:
 	results.append(_arm_length_dominates_roll_inertia(catalog))
 	results.append(_blade_count_ab(catalog))
 	results.append_array(_liion_tradeoff(catalog))
+	results.append(_guard_mass_matches_the_physics(catalog))
+	results.append(_guard_kind_agrees_with_its_geometry(catalog))
 	return results
+
+
+## P10a: `mass_g` at the top of every guards.json entry is DERIVED from `specs` — it exists so
+## the browsing rail can print the number without instantiating a spec, and it must not drift
+## away from what `PropGuard.mass_kg()` actually computes. The check runs against `specs` alone
+## and never against `kind`, because the mass integral does not read the discriminator: a duct and
+## a bumper of the same ring geometry weigh the same, and an authored number that differed between
+## them would be describing something the physics does not model.
+##
+## Tolerance is 0.02 g — the two-decimal rounding the JSON authors, which is the smallest
+## quantum a browsing rail displays. Any wider tolerance would let a real physics bug hide
+## behind it; any tighter would fail on the last digit of an honest hand-typed value.
+static func _guard_mass_matches_the_physics(catalog: PartsCatalog) -> TestResult:
+	var problems: Array[String] = []
+	var checked := 0
+	for guard in catalog.list_category("guard"):
+		checked += 1
+		var authored_g := float(guard.get("mass_g", -1.0))
+		var computed_kg := PropGuard.mass_kg(guard.get("specs", {}))
+		var computed_g := computed_kg * 1000.0
+		if computed_g <= 0.0:
+			problems.append("%s: PropGuard.mass_kg refused the specs (returned %.4f g)" %
+				[guard["part_id"], computed_g])
+			continue
+		if absf(authored_g - computed_g) > 0.02:
+			problems.append("%s: mass_g=%.3f g but PropGuard computes %.3f g" %
+				[guard["part_id"], authored_g, computed_g])
+	# A category that loaded EMPTY would sail through the loop above with no problems and pass
+	# vacuously — the failure mode where a renamed CATEGORY_FILES key silently deletes the
+	# check rather than the catalog. So the count is part of the assertion, not just the detail.
+	if checked == 0:
+		problems.append("the guard category loaded no parts — this check would pass vacuously")
+	return TestResult.new(
+		"every guard's mass_g matches PropGuard's own geometry integral",
+		problems.is_empty(),
+		"%d guards checked, %s" % [checked,
+			"all consistent" if problems.is_empty() else str(problems)])
+
+
+## P10a: a shipped guard's declared `kind` must agree with what its own geometry says it is.
+##
+## prop_guard.gd's header names the two failures this catches, and calls both silent: "a bumper
+## credited with duct thrust is a free lunch. A cinewhoop treated as a bumper reports a hover
+## throttle that will not fly the aircraft." `clearance_check` already detects the disagreement —
+## nothing in the catalog was asking it. This check does, for every entry, against the propeller
+## its own `prop_class` says it wraps, so a ring authored 1.5 mm off a 5" tip and labelled
+## `bumper` fails here rather than shipping a thrust claim of "unchanged" that a builder flies on.
+##
+## The tip radius comes from the NOMINAL class diameter, not from the widest propeller carried in
+## that class: a 5.15" prop inside class 5" has a tip radius past the reference cinewhoop's inner
+## wall, and a guard is not mislabelled because a builder can fit an oversized prop into it. The
+## tip chord comes from `PropellerDocument.from_catalog_prop`, i.e. the generated planform — an
+## assumption, flagged as one by `chord_is_assumed`, and the SAME length scale `tip_loss_closure`
+## divides by, which is what makes the classification boundary here the model's own rather than a
+## second one invented for a test.
+static func _guard_kind_agrees_with_its_geometry(catalog: PartsCatalog) -> TestResult:
+	var problems: Array[String] = []
+	var checked := 0
+	for guard in catalog.list_category("guard"):
+		var prop_class := String(guard.get("catalog", {}).get("prop_class", ""))
+		var nominal_inches := float(prop_class.replace("\"", ""))
+		if nominal_inches <= 0.0:
+			problems.append("%s: prop_class '%s' names no diameter" % [guard["part_id"], prop_class])
+			continue
+		var reference_prop := {}
+		for prop in catalog.list_category("propeller"):
+			if absf(float(prop["specs"]["diameter_inches"]) - nominal_inches) < 1.0e-9:
+				reference_prop = prop
+				break
+		if reference_prop.is_empty():
+			problems.append("%s: no catalog propeller at the nominal %s" %
+				[guard["part_id"], prop_class])
+			continue
+		var doc := PropellerDocument.from_catalog_prop(reference_prop)
+		var check := PropGuard.clearance_check(guard.get("specs", {}), doc.radius_mm(),
+			doc.chord_at(1.0))
+		checked += 1
+		if bool(check["kind_disagrees"]):
+			problems.append("%s: declared %s, geometry says %s (clearance %.2f mm = %.2f tip chords against %s)" %
+				[guard["part_id"], guard["specs"]["kind"], check["geometric_kind"],
+					float(check["clearance_mm"]), float(check["gap_ratio"]), doc.id])
+	# Same vacuity guard as the mass check above, and here it is doing slightly more work: this
+	# loop `continue`s past an entry whose prop_class names no diameter, so a catalog where every
+	# entry lost its prop_class would reach here with checked == 0 AND problems non-empty. The
+	# count still belongs in the assertion for the case where the category itself is empty.
+	if checked == 0 and problems.is_empty():
+		problems.append("the guard category loaded no parts — this check would pass vacuously")
+	return TestResult.new(
+		"every shipped guard's declared kind agrees with its own geometry — no shroud labelled bumper",
+		problems.is_empty(),
+		"%d guards checked, %s" % [checked,
+			"all agree" if problems.is_empty() else str(problems)])
 
 
 ## parts.md: "If a spec does not appear in the right column, it does not go in the JSON
@@ -44,6 +138,14 @@ static func _every_part_has_the_specs_the_physics_reads(catalog: PartsCatalog) -
 		"propeller": ["diameter_inches", "pitch_inches", "blades"],
 		"battery": ["cells", "nominal_v", "mah", "internal_r_ohm",
 			"length_mm", "width_mm", "height_mm"],
+		# P10a (plans/2026-08-26-propulsion-room-design.md §3): the fields PropGuard.compute()
+		# reads. A guard with `kind` missing or unknown is refused by compute() itself; a guard
+		# with any of these five geometry fields non-positive is refused too. Listing them here
+		# means a PR that removes `wall_mm` from an entry fails at load time rather than at
+		# an as_part_mass() call that then returns null and a build that then quietly weighs
+		# less than it should.
+		"guard": ["kind", "outer_radius_mm", "wall_mm", "height_mm", "density_kg_m3",
+			"mount_radius_mm"],
 	}
 	var missing: Array[String] = []
 	var count := 0
@@ -175,6 +277,7 @@ static func _every_part_carries_browsing_metadata(catalog: PartsCatalog) -> Test
 		"frame": ["frame_type", "size_class", "material"],
 		"motor": ["stator_class", "kv_class", "intended_use"],
 		"propeller": ["blade_count", "diameter_class", "intended_use", "material"],
+		"guard": ["prop_class", "intended_use", "material"],
 	}
 	# Substrings, not exact keys, so "vendor_url", "price_usd" and "colour" are all caught.
 	var banned := ["colour", "color", "price", "cost", "vendor", "url", "link", "buy", "shop", "sku"]
@@ -234,8 +337,8 @@ static func _reference_build_matches_the_documented_table(_catalog: PartsCatalog
 	var results: Array = []
 
 	results.append(TestResult.new(
-		"reference build from JSON: 496 g all-up",
-		absf(b.all_up_weight_g() - 496.0) < 1.0,
+		"reference build from JSON: 507.5 g all-up",
+		absf(b.all_up_weight_g() - 507.48) < 1.0,
 		"got %.1f g" % b.all_up_weight_g()
 	))
 	results.append(TestResult.new(

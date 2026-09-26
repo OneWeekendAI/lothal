@@ -77,7 +77,7 @@ static func _find(warnings: Array, id: StringName) -> BuildWarning:
 # The oracles
 # ---------------------------------------------------------------------------
 
-## 496 g / 11.69 / 29.6%, asserted here as well as in every other custom-parts suite because THIS
+## 507.5 g / 11.43 / 29.9%, asserted here as well as in every other custom-parts suite because THIS
 ## is the suite that would notice a custom pack move it for a custom-battery reason. Anything that
 ## touches the id space or the catalog merge is exactly what makes this test the trip-wire.
 static func _test_reference_build_is_out_of_reach() -> TestResult:
@@ -99,11 +99,11 @@ static func _test_reference_build_is_out_of_reach() -> TestResult:
 	var auw := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
-	var pinned := absf(auw - 496.0) < EPS and absf(twr - 11.69) < 0.01 and absf(hover - 0.296) < 0.001
+	var pinned := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.299) < 0.001
 
 	_restore(CustomBatteries.SAVE_PATH, previous)
 	return TestResult.new(
-		"a defined custom pack does not move the reference build's 496 g / 11.69 / 29.6%",
+		"a defined custom pack does not move the reference build's 507.5 g / 11.43 / 29.9%",
 		merged_has_it and pinned,
 		"merged sees it=%s, AUW %.2f g, TWR %.2f, hover %.1f%%" % [
 			merged_has_it, auw, twr, hover * 100.0])

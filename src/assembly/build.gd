@@ -38,26 +38,43 @@ const SAG_WORTH_NAMING := 0.75
 ## than where it was aimed.
 const UNLOADING_WORTH_NAMING := 0.50
 
-## Fixed electronics package (parts.md): FC+ESC stack, camera, VTX, antenna, receiver,
-## wiring. Not selectable in v1, but it is 55 g of real mass, so it stays in the
-## mass-properties calculation. A constant, not an omission.
+## THE 55 g ELECTRONICS BUDGET, AND WHAT PW2 DID TO IT.
 ##
-## THIS IS A BUDGET, AND IT DOES NOT GROW. As components come out of the lump and get physical
-## form, they take their share OUT of this number rather than being added beside it — see
-## STACK_MASS_G below and mass_parts(). The reference build's 496 g, 11.7:1 and 29% hover were
-## computed with the whole 55 g included, so a component that gained mass on its way to becoming
-## visible would silently move two of the project's three fixed points for what was meant to be a
-## change to the picture.
-const ELECTRONICS_MASS_G := 55.0
-## The part of the lump still lumped: WIRING AND STRAPS, as one box at the origin. Its SIZE stayed
-## as it was rather than shrinking with the mass — an inertia box is linear in mass, and the
-## boards' own boxes below carry the difference honestly.
+## It was: a flat fixed electronics package — FC+ESC stack, camera, VTX, antenna, receiver, wiring
+## — 55 g of real mass carried as a constant, with each component that grew a physical form taking
+## its share OUT of it rather than being added beside it. That is what CARVED_SHARES below records,
+## and the REMAINDER was `wiring_mass_g()`: 14 g standing for wiring, connector, capacitor, solder
+## and straps, lumped at the origin.
 ##
-## It used to be camera, VTX, antenna, receiver and wiring; LTHL-11 took the first four out of it.
+## THE REMAINDER MECHANISM IS RETIRED (plans/2026-09-10-power-room-design.md §4.4). The harness is
+## now real objects with real masses in real places — see `Harness` and `mass_parts()` — so there
+## is nothing left for a budget to be the leftover of, and this aircraft's electronics no longer
+## sum to 55 g. That is why this constant is no longer called ELECTRONICS_MASS_G: it stopped being
+## the mass of anything, and a constant that keeps its name while changing its meaning is the
+## quietest kind of wrong.
+##
+## WHAT IT STILL IS: the budget the six shares in CARVED_SHARES were cut from, which is exactly
+## what makes "does the budget still balance" an arithmetic question rather than an inspection —
+## a seventh share that grew past what the budget has left is still an error worth catching. It is
+## also the figure FramePlausibility quotes at the builder when it says how much of a small
+## aircraft is electronics; replacing that sentence with the build's own electronics mass is PW4's,
+## not this slice's.
+##
+## WHAT IT IS NOT, ANY MORE: a bound on the aircraft. The reference build's all-up weight moved
+## when the harness became real, and the whole point of PW2 being its own slice is that the figure
+## follows the model rather than the other way round. See docs/lothal/parts.md for the new number.
+const ELECTRONICS_BUDGET_G := 55.0
+## The box the SURVIVING REMAINDER is carried in: straps, tape, solder and heat-shrink, at the
+## origin, which is where a thing that genuinely is everywhere belongs. Its SIZE stayed as it was
+## rather than shrinking with the mass — an inertia box is linear in mass, and every entry that has
+## since come out of the lump carries the difference honestly in its own box.
+##
+## It used to hold camera, VTX, antenna, receiver and wiring; LTHL-11 took the first four out and
+## PW2 took the wiring, the connector and the capacitor. What is left is `Harness.REMAINDER_MASS_G`.
 const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
 
 ## The FC/ESC stack's share of that budget, straight off parts.md's published breakdown of the
-## fixed electronics package rather than re-estimated here. Taken OUT of ELECTRONICS_MASS_G, not
+## fixed electronics package rather than re-estimated here. Taken OUT of ELECTRONICS_BUDGET_G, not
 ## added to it, which leaves 35 g of camera, VTX, antenna, receiver and wiring lumped at the origin.
 ## (This line read 43 g until build-level validation went looking for the number: 43 was the remainder
 ## when only the ESC had been carved out, and nothing updated it when the FC's 8 g followed. The code
@@ -84,7 +101,7 @@ const ESC_BUDGET_MASS_G := 12.0
 const STACK_MASS_G := FC_BUDGET_MASS_G + ESC_BUDGET_MASS_G
 
 ## The CAMERA's budgeted share, and the three that follow it: the same shape FC_BUDGET_MASS_G and
-## ESC_BUDGET_MASS_G have, for the same reason, and taken OUT of ELECTRONICS_MASS_G rather than
+## ESC_BUDGET_MASS_G have, for the same reason, and taken OUT of ELECTRONICS_BUDGET_G rather than
 ## added beside it. The default part in each category weighs exactly its share, so the reference
 ## build is unchanged at 496.0 g to the gram; fit a heavier one and the aircraft gains exactly the
 ## excess, which is the pattern the H743's 4 g overage already established.
@@ -100,7 +117,7 @@ const RECEIVER_BUDGET_MASS_G := 2.0
 
 ## Every share carved out of the budget, by the category that carved it. ONE TABLE RATHER THAN SIX
 ## CONSTANTS READ SIX PLACES, so "does the budget still balance" is a question with an arithmetic
-## answer instead of an inspection: wiring_mass_g() is the remainder, and a share that grew past
+## answer instead of an inspection: budget_remainder_g() is the remainder, and a share that grew past
 ## what the budget has left makes it negative rather than making the aircraft heavier.
 const CARVED_SHARES := {
 	"flight_controller": FC_BUDGET_MASS_G,
@@ -111,25 +128,65 @@ const CARVED_SHARES := {
 	"receiver": RECEIVER_BUDGET_MASS_G,
 }
 
-## The four components that come out of the lump and MAY BE OMITTED, in the order they are weighed.
+## The components that come out of the lump and MAY BE OMITTED, in the order they are weighed.
 ## The stack's two are not here: a quad without a flight controller is not a build with something
 ## missing, it is not an aircraft.
-const OPTIONAL_COMPONENTS := ["camera", "vtx", "antenna", "receiver"]
+##
+## SIX SINCE C2, AND THE LAST TWO ARE A DIFFERENT KIND OF MEMBER. Camera, VTX, antenna and receiver
+## were CARVED out of ELECTRONICS_BUDGET_G — the 55 g lump stood for them, so unbundling them cost
+## the aircraft nothing. GPS and buzzer are ADDED: the lump was never their mass, the reference
+## build carries neither, and there is nothing to carve them out of. Fitting one therefore makes
+## the aircraft heavier, which — with navigation unmodelled — is the single most useful thing
+## Lothal can say about a GPS. `CARVED_SHARES` is what tells the two kinds apart, and
+## `added_components()` below derives the second list from it rather than restating it.
+const OPTIONAL_COMPONENTS := ["camera", "vtx", "antenna", "receiver", "gps", "buzzer"]
 
 ## Which mount each optional component sits on. The ids are MountLayout's, and this table is the
 ## only place a component is associated with a place — no component carries an offset of its own,
-## and nothing here is a coordinate.
+## and nothing here is a coordinate. A masted GPS is not an exception to that: the mast is the
+## MODULE's own published dimension, read the same way its box is, and it reaches the seat through
+## MountLayout.seated_centre_m's `rise_m`. See component_rise_m().
 const COMPONENT_MOUNTS := {
 	"camera": "camera_bay",
 	"vtx": "vtx_bay",
 	"antenna": "antenna_mount",
 	"receiver": "rx_bay",
+	"gps": "gps_mount",
+	"buzzer": "buzzer_mount",
+}
+
+## Which SYSTEM owns each optional component — the single source for which rail a component is
+## picked on, which panel describes it, and which system lights it on the model.
+##
+## THE TABLE EXISTS BECAUSE THE ALTERNATIVE IS TWO HAND-WRITTEN LISTS. Until C3, one
+## `ElectronicsPicker` iterated OPTIONAL_COMPONENTS directly and rendered all of it on Video's
+## rail, which is why `gps` and `buzzer` arrived there in C2 without anybody choosing that. The
+## split could have been done with a list of three names per picker; that is exactly the shape
+## P10f found — *the two lists were never the same list* — so the pickers are built by FILTERING
+## OPTIONAL_COMPONENTS through this table instead, and a seventh component that is not named here
+## does not land quietly on one rail or the other.
+##
+## The system names are `GlassShell.SYSTEMS`' own, and C4 asserts that rather than trusting it.
+const COMPONENT_SYSTEM := {
+	"camera": "Video",
+	"vtx": "Video",
+	"antenna": "Video",
+	"receiver": "Control",
+	"gps": "Control",
+	"buzzer": "Control",
 }
 
 ## The part each category gets when a selection does not name one. Every Build call site written
 ## before these categories existed still means what it meant, and the reference build still weighs
 ## 496 g — each of these weighs exactly its share above. An EMPTY string means "not fitted", which
 ## is what a whoop passes.
+##
+## GPS AND BUZZER ARE DELIBERATELY ABSENT, and the absence is the feature. A category with no entry
+## here resolves to "" — not fitted — through the `.get(category, "")` the two readers below use,
+## so every Build call site written before C2 builds the same aircraft it always did and every
+## oracle in the project is bit-identical. Giving either one a default would retrofit a few grams
+## and a centre-of-mass shift onto every build in the app, which is the same mistake
+## `project_schema.gd:43` uses a GPS as its worked example of.
 const DEFAULT_COMPONENT_IDS := {
 	"camera": "cam_micro_analog",
 	"vtx": "vtx_analog_400mw",
@@ -137,31 +194,28 @@ const DEFAULT_COMPONENT_IDS := {
 	"receiver": "rx_elrs_2400",
 }
 
-## What is left of the budget once every share above has been taken out of it: WIRING, connectors,
-## solder, heat-shrink, the battery strap, and the double-sided tape holding the receiver on. 14 g
-## on the reference build.
+## WHAT THE BUDGET HAS LEFT once every share above has been taken out of it: 14 g, and it is a
+## FIGURE RATHER THAN A MASS NOW.
 ##
-## IT IS FLAT, AND FLAT IS A DECISION HERE RATHER THAN THE LEFTOVER IT LOOKS LIKE. Wiring mass on a
-## real aircraft scales with something — arm length, current, cell count, how many things are
-## soldered to how many other things — and every one of those is a plausible-sounding law with
-## nothing behind it. Lothal has no measurements of harness mass at any size, so any exponent put
-## here would be invented, and physics.md is written to keep invented laws out. A flat remainder is
-## wrong in a way that is stated and bounded; a scaled one would be wrong in a way that looked
-## derived. When somebody weighs the harnesses off three builds at three sizes, this becomes a
-## function of something and the argument changes.
+## It used to be `wiring_mass_g()` — the mass of the wiring, connectors, capacitor, solder,
+## heat-shrink and straps, lumped at the origin because a harness is everywhere on the aircraft by
+## definition. PW2 replaced every one of those with a real object at a real place (`Harness`,
+## `harness_mass_g()`), so nothing reads this as a mass any more. It survives as the arithmetic
+## that keeps CARVED_SHARES honest: a seventh share that grew past what the budget has left makes
+## this negative rather than making the aircraft heavier, and the check that watches it is the
+## reason the table exists.
 ##
-## THIS IS THE DOMINANT TERM AT THE SMALL END and this slice does not fix it: it is more than the
-## whole of a real whoop's wiring, and it is the largest single piece of the residual error the
-## unbundling leaves behind. See docs/lothal/parts.md for the measured before/after span.
-static func wiring_mass_g() -> float:
-	return ELECTRONICS_MASS_G - carved_total_g()
+## The 14 g it returns is NOT what the reference build's harness weighs. That number is on the
+## harness now, and it is bigger — see the re-baseline in docs/lothal/parts.md.
+static func budget_remainder_g() -> float:
+	return ELECTRONICS_BUDGET_G - carved_total_g()
 
 
 ## Every optional component omitted, in the shape from_ids takes. What a whoop on an AIO passes,
 ## and what a fixture passes when it needs an aircraft that is FORE/AFT SYMMETRIC.
 ##
 ## That second use is not a test convenience and it is worth stating where the mechanism lives.
-## The four components sit at real places, so a fitted build's centre of mass is 0.18 mm behind the
+## The fitted components sit at real places, so a fitted build's centre of mass is 0.18 mm behind the
 ## origin — small, correct, and enough to tip an aircraft over in three seconds if it is flown with
 ## four equal motor commands and no flight controller, because a constant torque integrates twice.
 ## Two suites do exactly that on purpose, to ask a question about the PACK with no controller in
@@ -183,6 +237,124 @@ static func carved_total_g() -> float:
 	for category in CARVED_SHARES:
 		total += float(CARVED_SHARES[category])
 	return total
+
+
+## The optional components the budget never stood for: everything in OPTIONAL_COMPONENTS that
+## CARVED_SHARES does not name. GPS and buzzer today.
+##
+## DERIVED, NOT WRITTEN DOWN, and that is the whole point of it — P10f's finding was that the two
+## lists were never the same list. A seventh component added to OPTIONAL_COMPONENTS and given a
+## carved share appears here automatically as carved; one added without a share appears as added.
+## There is no second table to forget to edit, and `electronics_mass_g()` splitting into carved and
+## added terms means the identity `electronics = carved + harness + added` holds by construction
+## rather than by two authors agreeing.
+static func added_components() -> Array[String]:
+	var out: Array[String] = []
+	for category in OPTIONAL_COMPONENTS:
+		if not CARVED_SHARES.has(category):
+			out.append(String(category))
+	return out
+
+
+## The other half of the same partition: the optional components the 55 g lump DID stand for.
+## Camera, VTX, antenna and receiver — CARVED_SHARES' other two entries are the stack's boards,
+## which are not optional at all.
+##
+## Its existence is what lets a caller say "the carved four" without writing them down, which
+## several checks needed the moment OPTIONAL_COMPONENTS stopped being four names: a loop that
+## indexes CARVED_SHARES or DEFAULT_COMPONENT_IDS by category is asking about THIS list, and
+## before C2 the two were accidentally the same.
+static func carved_components() -> Array[String]:
+	var out: Array[String] = []
+	for category in OPTIONAL_COMPONENTS:
+		if CARVED_SHARES.has(category):
+			out.append(String(category))
+	return out
+
+
+## The optional components one system owns, in the order the mass model weighs them — what each
+## payload rail is built from.
+##
+## **IT REFUSES RATHER THAN SHRUGS**, and that is the whole of why this is a function and not a
+## dictionary comprehension at the call site. The failure mode of two lists is SILENCE: a category
+## in OPTIONAL_COMPONENTS with no entry in COMPONENT_SYSTEM belongs to no system, so a filter that
+## skipped it would leave it weighed by the mass model, saved by the schema, drawn on the aircraft
+## — and pickable on no rail in the app. Nothing would be broken enough to notice. So an unclaimed
+## category is not skipped: this answers NOTHING for anybody until the table is fixed, pushes an
+## error naming the category, and leaves the rail that asked with no rows in it, which is the one
+## thing a builder cannot miss. A blank rail with an error in the log is a bug report; a component
+## that silently cannot be fitted is a mystery six months later.
+##
+## The two tables are parameters with the constants as defaults so the refusal itself can be
+## tested: `COMPONENT_SYSTEM` is a const Dictionary and therefore read-only at runtime, so a test
+## that could not pass its own seventh category in could only assert the happy path.
+static func components_for_system(system: String, p_categories: Array = OPTIONAL_COMPONENTS,
+		p_owner: Dictionary = COMPONENT_SYSTEM) -> Array[String]:
+	var unclaimed := unclaimed_components(p_categories, p_owner)
+	if not unclaimed.is_empty():
+		push_error(("Build.COMPONENT_SYSTEM claims no system for %s; "
+			+ "no component rail can be built until it does") % ", ".join(unclaimed))
+		return [] as Array[String]
+
+	var out: Array[String] = []
+	for category in p_categories:
+		if String(p_owner[category]) == system:
+			out.append(String(category))
+	return out
+
+
+## Every optional component no system owns. Empty is the only correct answer; it is returned as a
+## list rather than a bool so the error above can name what is missing, and so C4's coverage check
+## can report the category rather than just the fact.
+static func unclaimed_components(p_categories: Array = OPTIONAL_COMPONENTS,
+		p_owner: Dictionary = COMPONENT_SYSTEM) -> Array[String]:
+	var out: Array[String] = []
+	for category in p_categories:
+		if not p_owner.has(category):
+			out.append(String(category))
+	return out
+
+
+## How many grams the fitted ADDED components put on this aircraft, and therefore how much heavier
+## it is than the same build without them. Zero on every build that fits neither, which is every
+## build the project had before C2.
+func added_components_mass_g() -> float:
+	var total := 0.0
+	for category in added_components():
+		if components.has(category):
+			total += float((components[category] as Dictionary).get("mass_g", 0.0))
+	return total
+
+
+## How far a component's own centre stands off the face it mounts to, beyond half its own box: the
+## mast. Read from `specs.mast_height_mm`, in metres, zero for a part that publishes none.
+##
+## GENERIC RATHER THAN A GPS BRANCH. Nothing here asks what category the part is, so a future
+## masted antenna or a standoff-mounted receiver needs a spec field and no code. The one component
+## that publishes the field today is the GPS, and design §2.3 is why it is worth a mechanism: a
+## masted module puts several grams 45-70 mm above the top plate, which is the highest mass on the
+## aircraft and the one that moves the centre of mass vertically more than anything else fitted.
+##
+## The HEIGHT is a labelled default with a field beside it (design §0). WHERE THE MASS GOES is not
+## a default — it is wiring, and it is asserted.
+static func component_rise_m(part: Dictionary) -> float:
+	return float((part.get("specs", {}) as Dictionary).get("mast_height_mm", 0.0)) / 1000.0
+
+
+## The same height with the BUILDER'S value preferred, which is what the mass model and the drawing
+## both read. C6: the mast is a builder's choice — design §9 is explicit that nothing would sharpen
+## the catalog's figure, because the stalk you actually fitted is the answer — so the field beside
+## the row is the source and the catalog entry is only where it starts.
+##
+## GENERIC, and deliberately not keyed on "gps": the override applies to any part whose specs
+## DECLARE a mast, so a masted antenna arriving later needs a spec field and no code here. Keying
+## it on the category name would put a seventh hand-written list in a wave whose whole subject is
+## that two were already one too many.
+func rise_m_for(part: Dictionary) -> float:
+	var override := float(assembly_value("mast_height_m"))
+	if override >= 0.0 and (part.get("specs", {}) as Dictionary).has("mast_height_mm"):
+		return override
+	return component_rise_m(part)
 
 ## The FC/ESC stack's own bolt pattern. 30.5x30.5 is the full-size standard, and it is a property
 ## of the STACK rather than of the frame — which is the whole reason a fit check is worth having.
@@ -294,13 +466,44 @@ var propeller: Dictionary
 var battery: Dictionary
 var esc: Dictionary
 var fc: Dictionary
-## The optional components, by category — camera, VTX, antenna, receiver. A category ABSENT from
-## this dictionary is a component not fitted, which is a real build rather than an incomplete one,
-## and it costs the aircraft nothing. Held as one dictionary rather than four fields because
-## everything that reads them reads all four the same way (mass_parts, electronics_mass_g), and
-## four near-identical fields is four places a fifth component would have to be added.
+## The optional components, by category — camera, VTX, antenna, receiver, GPS, buzzer. A category
+## ABSENT from this dictionary is a component not fitted, which is a real build rather than an
+## incomplete one, and it costs the aircraft nothing. Held as one dictionary rather than a field
+## each because everything that reads them reads them all the same way (mass_parts,
+## electronics_mass_g), and near-identical fields are places a seventh component would have to be
+## added — a prediction C2 collected on, twice.
 var components: Dictionary = {}
+## The prop guard, applied to every motor (v1: one guard for the whole build). Empty when nothing
+## is fitted — the reference build's default, so its 496 g / 11.69:1 / 29.6% oracles are unmoved
+## bit-identically. See guard_id below for the id that resolved to this dictionary.
+##
+## LANDED IN P10b (plans/2026-08-26-propulsion-room-design.md §3.4), which is the wiring P10a's
+## `PropGuard.as_part_mass` was written for but the slice did not carry across. Without this
+## field the closure the BEMT solve reads through `forward_ratios()` would have nothing to close
+## against — a duct fitted on paper and forgotten in flight.
+var guard: Dictionary = {}
+## THE CURRENT PATH, as data — plans/2026-09-10-power-room-design.md §4.2, slice PW2. Connector,
+## capacitor, and a gauge and length for each of the two wire runs, every one of them a default
+## DERIVED from this build with an authored override on top.
+##
+## An object rather than six fields, and a HARNESS rather than a resolved dictionary — which is the
+## opposite of the call `assembly` makes above, so it is worth saying why they differ. `assembly`
+## is resolved because AssemblyTweaks reads a user file and clamps against limits computed FROM a
+## Build, so a Build holding one would be a cycle. `Harness` clamps against nothing and reads no
+## file: it holds a sparse override table and asks the build for the rest, which means a Build can
+## hold one without the cycle and without a second copy of the defaults living anywhere.
+##
+## Never null. A Build assembled field by field — several fixtures still do — gets the derived
+## harness for the parts it was given, which is the same answer `from_ids` would have produced.
+var harness := Harness.new()
 var catalog: PartsCatalog
+
+## THE IDS THIS BUILD IS AN AIRCRAFT MADE OF, kept beside the resolved dictionaries so the build can
+## be re-resolved when the catalog under it moves — see `refit_from`, which is §4 of
+## plans/2026-09-01-authored-blade-design.md. Written once by `from_ids` and never edited: a Build
+## assembled field by field, which several fixtures still do, carries an empty table here and
+## therefore has nothing to refit from, which is honest rather than wrong.
+var _part_ids: Dictionary = {}
 
 ## THE AIR THIS BUILD IS FLOWN IN, and the line that makes a Build an aircraft AT A PLACE rather
 ## than an aircraft.
@@ -318,8 +521,58 @@ var catalog: PartsCatalog
 ## and omitting it lands on standard air, which is where the oracle must be.
 var air := AirDensity.standard()
 
+## The steady wind speed, m/s, that the selected conditions read at the moment this Build was last
+## rendered (F8, design §4.3). NOT threaded through `from_ids` or `refit_from` — unlike `air`, no
+## oracle or reference figure is ever quoted at a non-zero wind, so there is no "at construction"
+## datum for a default to protect. Set by whoever renders this Build's stats (`lab_screen.gd`) and
+## by whoever flies it (`main.gd`, so the HUD's countdown is quoted in the same weather).
+##
+## THE ONE SOURCE OF TRUTH FOR "THE WIND THESE NUMBERS ARE IN" (F8 fix round 1, review finding 6).
+## It used to be one of two: this field, and a `wind_mps := 0.0` argument on each of the three
+## functions below, so a caller that simply forgot the argument quoted a CALM number under a row
+## labelled with a windy conditions name, and nothing could detect the forgetting. The argument is
+## still there — a caller may still ask a hypothetical, "what would this build do in 12 m/s" —
+## but its default is now `WIND_FROM_FIELD`, meaning "this Build's own wind", so forgetting it
+## lands on the truth instead of on calm.
+var field_wind_mps := 0.0
+
+## Passed as a `wind_mps` argument (and its default) to mean "use this Build's own `field_wind_mps`"
+## rather than a caller-supplied hypothetical. Negative because a headwind term added to a leg's
+## airspeed is non-negative by construction, so no real wind can collide with the sentinel.
+const WIND_FROM_FIELD := -1.0
+
+## The name of the selected conditions, held beside `field_wind_mps` for the same reason and set
+## the same way. Read by the stats panel (`part_details.gd`) so a conditional row can name its own
+## conditions (check 7) without the panel reaching into a library this Build was never handed.
+var field_conditions_name := Conditions.STANDARD_NAME
+
 var arm_m: float
 var mass_properties: MassProperties
+## Lazily built by forward_ratios(). Never read directly. Cleared in _recompute so a Build that
+## is reconfigured — different guard, different prop — pays the ~150 ms BEMT solve once for its
+## new surface rather than flying the previous fit's, which would be a silent regression the
+## Rust-side cache key alone cannot save.
+var _forward_ratios: BemtRatios = null
+## The tip-loss suppression the fitted guard earns (§4.0). 0.0 when no guard is fitted, positive
+## when a duct's `tip_gap_mm` is small compared with the blade's tip chord. Derived once in
+## `_recompute` from `PropellerDocument.chord_at(1.0)` — the physics's own length scale, per
+## `PropGuard.tip_loss_closure`'s own refusal to keep the chord as a constant.
+var guard_closure: float = 0.0
+## What the closure does to STATIC thrust and to STATIC torque, from `BemtModel.
+## static_closure_factors()`. Both are 1.0 when no guard is fitted.
+##
+## TWO NUMBERS, NOT ONE, AND THAT IS THE POINT. `k_q` is fit from `k_t` by a fixed multiple
+## (`PropellerModel.fit_k_q`), so scaling `k_t` by the thrust factor and then fitting `k_q`
+## from the scaled value would move torque the same way thrust moved. The solve says the
+## opposite: closing the tip leak enlarges the momentum sink, the induced velocity drops, and
+## induced drag drops with it. Measured on the reference 5x4.5x3 at the cinewhoop duct's
+## closure of 0.5615 — thrust x1.0017, torque x0.9829. Fitting k_q from the scaled k_t would
+## have reported a duct costing 0.17% MORE current where the model says it saves 1.71%, and
+## `effective_max_amps` (which is a ratio of two k_q values) would have carried that the same
+## wrong way. `tests/test_prop_guard.gd`'s `_a_duct_saves_current_rather_than_costing_it`
+## asserts the direction so the shortcut cannot come back.
+var _static_closure_factor: float = 1.0
+var _static_closure_torque_factor: float = 1.0
 var k_t: float
 var k_q: float
 ## Motor max_amps adjusted for the selected prop: current tracks shaft torque, so a prop
@@ -358,6 +611,15 @@ const DEFAULT_ASSEMBLY := {
 	"prop_spacer_m": 0.0, "soft_mount_m": 0.0, "plate_gap_m": -1.0,
 	"battery_mount": "strap_top", "battery_offset_m": 0.0,
 	"prop_imbalance_g": VibrationModel.DEFAULT_IMBALANCE_KG * 1000.0,
+	# The GPS mast, and -1.0 means "whatever the fitted module publishes" — the same sentinel
+	# plate_gap_m uses, and for the same reason: zero is a LEGITIMATE mast height (a flat module),
+	# so absence cannot be spelled 0.0 without making "flat" and "unset" the same answer.
+	"mast_height_m": -1.0,
+	# Camera uptilt in DEGREES (video-room design §2). A labelled guess: 25 is what most builds fly,
+	# and at 0 Sim makes you pitch hard to see the gate. No sentinel is needed, unlike the mast —
+	# nothing in the catalog publishes an angle for this to fall back to, so the default IS the
+	# answer. Touches no physics: the reference oracles do not read it, and that is asserted.
+	"camera_tilt_deg": 25.0,
 }
 
 ## `component_ids` names the optional components — camera, VTX, antenna, receiver — and anything it
@@ -372,22 +634,67 @@ const DEFAULT_ASSEMBLY := {
 static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String, prop_id: String,
 		battery_id: String, esc_id: String = DEFAULT_ESC_ID,
 		fc_id: String = DEFAULT_FC_ID, component_ids: Dictionary = {},
-		p_air: AirDensity = null) -> Build:
+		p_air: AirDensity = null, guard_id: String = "",
+		harness_overrides: Dictionary = {}) -> Build:
 	var b := Build.new()
 	# `null` rather than AirDensity.standard() as the default value, because a GDScript default
 	# argument is evaluated once and shared: a literal object default would hand every Build in the
 	# process the SAME AirDensity instance, and one caller mutating its elevation would move the
 	# oracle. The null is the language's shape, not an admission that air is optional.
 	b.air = p_air if p_air != null else AirDensity.standard()
-	b.catalog = p_catalog
-	b.frame = p_catalog.get_part(frame_id)
-	b.motor = p_catalog.get_part(motor_id)
-	b.propeller = p_catalog.get_part(prop_id)
-	b.battery = p_catalog.get_part(battery_id)
-	b.esc = p_catalog.get_part(esc_id)
-	b.fc = p_catalog.get_part(fc_id)
+	b._part_ids = {
+		"frame": frame_id,
+		"motor": motor_id,
+		"propeller": prop_id,
+		"battery": battery_id,
+		"esc": esc_id,
+		"fc": fc_id,
+		"guard": guard_id,
+	}
+	# The harness grows here the way the guard did in P10b — one more trailing argument, defaulting
+	# to what the parts imply, so every call site written before Power existed builds exactly the
+	# aircraft it used to except for the harness it was always carrying. SPARSE: only what the
+	# caller authored is stored, and everything else follows the frame and the pack.
+	b.harness = Harness.from_overrides(harness_overrides)
 	for category in OPTIONAL_COMPONENTS:
-		var part_id := String(component_ids.get(category, DEFAULT_COMPONENT_IDS[category]))
+		b._part_ids[category] = String(component_ids.get(category, DEFAULT_COMPONENT_IDS.get(category, "")))
+	b.refit_from(p_catalog)
+	return b
+
+
+## Re-resolves every part from `p_catalog` by the id it was fitted under, and recomputes.
+##
+## THE RULE (plans/2026-09-01-authored-blade-design.md §4): a Build is rebuilt from its parts when
+## the parts store changes. Publishing an edited blade re-writes a record a build may already be
+## flying, and P10b's finding applies unchanged — `_forward_ratios` caches the ratio surface, and a
+## build holding one solved from the old planform keeps flying the old planform. The stale set is
+## larger than the surface: `_static_closure_factor` read the old tip chord, `k_t` was scaled
+## against the old blade, and the spin-up τ was fitted to the old blade's inertia. Every one of
+## them is derived in `_recompute`, so re-resolving the dictionaries and recomputing clears all
+## four at once rather than clearing four handles by name and forgetting the fifth.
+##
+## IN PLACE rather than returning a twin, and that is the load-bearing half. A caller that rebuilt
+## a fresh Build would trivially get a fresh `_forward_ratios` object whether or not the planform
+## under it had moved — which is exactly why §4's assertion is a PAIR, and why the object-identity
+## half of it only means something against a build that was asked to refit itself.
+##
+## `from_ids` is this function's first caller, so there is one resolution path rather than two: the
+## constructor records the ids and then refits, and a category added to one is added to both by
+## construction.
+func refit_from(p_catalog: PartsCatalog) -> void:
+	catalog = p_catalog
+	frame = p_catalog.get_part(String(_part_ids.get("frame", "")))
+	motor = p_catalog.get_part(String(_part_ids.get("motor", "")))
+	propeller = p_catalog.get_part(String(_part_ids.get("propeller", "")))
+	battery = p_catalog.get_part(String(_part_ids.get("battery", "")))
+	esc = p_catalog.get_part(String(_part_ids.get("esc", "")))
+	fc = p_catalog.get_part(String(_part_ids.get("fc", "")))
+	# Rebuilt rather than patched, so a component whose id no longer resolves is UNFITTED after a
+	# refit instead of left behind as the part it used to be. A builder who deletes a custom camera
+	# and finds the aircraft still 8 g heavier would be reading a part that is gone.
+	components = {}
+	for category in OPTIONAL_COMPONENTS:
+		var part_id := String(_part_ids.get(category, DEFAULT_COMPONENT_IDS.get(category, "")))
 		if part_id == "":
 			continue
 		var part: Dictionary = p_catalog.get_part(part_id)
@@ -396,9 +703,17 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 		# would have given and is at least visible in the details panel as a missing component.
 		if part.is_empty():
 			continue
-		b.components[category] = part
-	b._recompute()
-	return b
+		components[category] = part
+	# The guard, one for the whole build. Same treatment as an optional component: an id that
+	# resolves to nothing leaves the guard slot empty rather than filled with a massless ghost,
+	# which is what keeps the reference build's 496 g oracle bit-identical at guard_id = "".
+	guard = {}
+	var fitted_guard_id := String(_part_ids.get("guard", ""))
+	if fitted_guard_id != "":
+		var guard_part: Dictionary = p_catalog.get_part(fitted_guard_id)
+		if not guard_part.is_empty():
+			guard = guard_part
+	_recompute()
 
 ## The same aircraft, at a different field.
 ##
@@ -418,9 +733,20 @@ func at_air(p_air: AirDensity) -> Build:
 			ids[category] = str((components[category] as Dictionary)["part_id"])
 		else:
 			ids[category] = ""
+	# A twin at a different air must carry the same guard — otherwise "would this fly at sea
+	# level" answers about a different aircraft. Fits the guard by its id, same as every other
+	# component, so the twin re-runs the closure derivation at the new density rather than
+	# copying the old scalar (the closure IS density-invariant, but stating that here would
+	# duplicate the property BemtRatios asserts and drift is exactly the failure mode).
+	var g_id := str(guard.get("part_id", "")) if not guard.is_empty() else ""
 	var twin := Build.from_ids(catalog, str(frame["part_id"]), str(motor["part_id"]),
 		str(propeller["part_id"]), str(battery["part_id"]), str(esc["part_id"]),
-		str(fc["part_id"]), ids, p_air)
+		str(fc["part_id"]), ids, p_air, g_id)
+	# The harness comes with it, for the assembly's reason: a twin that forgot the builder's lead
+	# lengths would answer a question about a different aircraft. The OVERRIDES travel, not the
+	# resolved values — the twin re-derives its defaults from its own parts, which is the whole
+	# point of a sparse table.
+	twin.harness = Harness.from_overrides(harness.overrides())
 	twin.set_assembly(assembly)
 	return twin
 
@@ -434,6 +760,56 @@ func at_air(p_air: AirDensity) -> Build:
 func set_assembly(resolved: Dictionary) -> void:
 	assembly = resolved
 	_recompute()
+
+
+## This drone's printing decisions (`Project.printing`) — printed-room PR1. Read by `mass_parts` for
+## the printed parts a builder has FITTED, and by AirframeModel to draw them. Empty is every build
+## written before the Printed room, and fits nothing: the reference build's 507.48 g is unmoved.
+var printing: Dictionary = {}
+
+
+## This drone's configuration decisions (`Project.config`) — Config room C1/C2. Only one key of it
+## reaches the physics today, `motor_spin`, and it does so through `MotorLayout.spin_map()` alone.
+## Empty is every build written before the Config room, and is today's constants exactly.
+var config: Dictionary = {}
+
+
+## No `_recompute()`: nothing in the config block changes a mass, a coefficient or a geometry, so
+## the 507.48 g / 11.43:1 / 29.9 % oracles cannot move by setting it. It is read where it is used.
+func set_config(p_config: Dictionary) -> void:
+	config = p_config
+
+
+func set_printing(p_printing: Dictionary) -> void:
+	printing = p_printing
+	_recompute()
+
+
+## Where the pack sits: `{"mount": MountPoint or null, "position": Vector3}`. THE ONE SEAT — `mass_parts`
+## weighs the pack here and the printed battery pad (PR11) hangs beneath it, so the two cannot disagree.
+##
+## A fitted, readable pad lifts the pack off its mount by the pad's thickness (PR17, `battery_rise_m`): the
+## pad sits on the plate and the pack on the pad. Before PR17 the pack stayed on the plate and the pad was
+## weighed inside it — found by drawing the pad where it is weighed.
+##
+## A frame that does not offer the saved mount — a whoop whose bottom plate has no room for strap slots —
+## falls back to the top plate rather than dropping the pack at the origin. Same rule as AirframeModel's
+## drawing: the pack is somewhere on every real aircraft.
+func battery_seat() -> Dictionary:
+	var battery_mount := MountLayout.by_id(mount_points(), String(assembly_value("battery_mount")))
+	if battery_mount == null:
+		battery_mount = MountLayout.by_id(mount_points(), "strap_top")
+	return {"mount": battery_mount, "position": MountLayout.seated_centre_m(battery_mount, battery_size_m(),
+		float(assembly_value("battery_offset_m")), battery_rise_m())}
+
+
+## How far the pack stands off its mount, metres: a fitted, readable battery pad's thickness, else zero.
+## AirframeModel seats the drawn pack with the same number.
+func battery_rise_m() -> float:
+	if not BatteryPad.is_fitted(printing):
+		return 0.0
+	var dims := BatteryPad.dimensions(battery, printing)
+	return float(dims["thickness_mm"]) / 1000.0 if bool(dims["ok"]) else 0.0
 
 
 ## One assembly value, with the parts-implied fallback applied. The single reader, so a caller
@@ -451,21 +827,63 @@ func mount_points() -> Array[MountPoint]:
 func _recompute() -> void:
 	arm_m = float(frame["specs"]["arm_mm"]) / 1000.0
 
+	# The guard's tip-loss closure and static thrust boost — computed first, before k_t, because
+	# k_t scales by the static factor and everything downstream (peak thrust, hover throttle,
+	# TWR) reads that scaled k_t. Zero-closure short-circuit is not an optimisation: it keeps
+	# the reference build's 496 g / 11.69:1 / 29.6% oracles bit-identical at guard_id = "",
+	# because `PropGuard.tip_loss_closure` returns 0.0 for a bumper AND for an unfitted guard,
+	# and `BemtRatios.static_closure_factor` returns 1.0 at closure = 0.0. See P10a's row for
+	# why the oracle-preservation check that guards this is a positive assertion.
+	guard_closure = 0.0
+	_static_closure_factor = 1.0
+	_static_closure_torque_factor = 1.0
+	if not guard.is_empty():
+		# The blade's tip chord IS the length scale §0's rule names, and PropellerDocument's
+		# `chord_at(1.0)` is the ONE place it lives — a constant here would be a second copy
+		# `tip_loss_closure`'s own refusal exists to prevent. The three plumbing links §4.0
+		# names run through here: this one (the length scale), the k_t scaling below (the
+		# static path), and _forward_ratios clearance (the surface cache).
+		#
+		# READABLE FIRST, THEN THE CLAIM. `tip_loss_closure` asks only about `kind` and
+		# `tip_gap_mm` — it never calls `compute()`, because P9 wrote it as a pure statement
+		# about a gap and a length scale. `mass_parts()` DOES call `compute()`, through
+		# `as_part_mass`, and drops a guard whose geometry is refused. Without this check the
+		# two disagree: a duct with a mistyped `wall_mm` fits no mass, appears on no inspector
+		# row, and still hands the aircraft its tip-loss suppression. One unreadable part, two
+		# answers. So the closure is claimed only for a guard the geometry can read, which is
+		# the same "an unreadable part models as no part" posture the refusal exists for.
+		var guard_specs: Dictionary = guard.get("specs", {})
+		if String(PropGuard.compute(guard_specs).get("tier", "")) == "computed":
+			var guarded_prop_doc := PropellerDocument.from_catalog_prop(propeller)
+			var chord_at_tip_mm := guarded_prop_doc.chord_at(1.0)
+			guard_closure = PropGuard.tip_loss_closure(guard_specs, chord_at_tip_mm)
+	# _forward_ratios cleared here even when nothing changed, so the check does not have to know
+	# what changed — a stale surface is what §4.0's third bullet warns against.
+	_forward_ratios = null
+
 	# --- Thrust coefficient, fit from the manufacturer table, then moved to this prop ---
 	# physics.md §4 is explicit that C_T must be fit from published thrust tables rather
 	# than guessed. A motor's headline thrust figure is only meaningful together with the
 	# prop and pack it was measured on, so motors.json names both. Fit k_t for that exact
 	# pairing, then rescale it to whatever prop is actually fitted.
+	#
+	# THE MOVE IS NOW THE BEMT GEOMETRY RATIO (§0, P5): blade count and twist enter the
+	# integral where they act, at the RPM the motor's k_t was fitted at, instead of the old
+	# D⁴·blades^0.8·pitch^0.5 rules of thumb. When the fitted prop IS the motor's test prop
+	# (the reference build), the ratio short-circuits to 1.0 bit-exact — the anchor the
+	# 496 g / 11.69:1 / 29.6% oracles hang on.
 	var test_prop: Dictionary = catalog.get_part(motor["thrust_test"]["prop_id"])
 	var test_voltage: float = float(motor["thrust_test"]["voltage_v"])
 	var test_max_rpm: float = float(motor["specs"]["kv"]) * test_voltage
 	var k_t_at_test_prop := PropellerModel.fit_k_t(float(motor["specs"]["max_thrust_g"]), test_max_rpm)
 
-	var test_geom := _prop_geometry(test_prop)
-	var prop_geom := _prop_geometry(propeller)
-	k_t = PropellerModel.scale_k_t_to_prop(
-		k_t_at_test_prop, test_geom.diameter_m, test_geom.pitch_m, test_geom.blades,
-		prop_geom.diameter_m, prop_geom.pitch_m, prop_geom.blades)
+	var test_doc := PropellerDocument.from_catalog_prop(test_prop)
+	var prop_doc := PropellerDocument.from_catalog_prop(propeller)
+	k_t = BemtModel.scale_k_t_to_prop(
+		k_t_at_test_prop,
+		test_doc.diameter_mm * 0.001, test_doc.pitch_mm * 0.001, float(test_doc.blades), test_doc.chord,
+		prop_doc.diameter_mm * 0.001, prop_doc.pitch_mm * 0.001, float(prop_doc.blades), prop_doc.chord,
+		test_max_rpm)
 	# --- And then moved to the AIR THIS BUILD IS FLOWN IN ---
 	# T = C_T * rho * n^2 * D^4, so k_t is linear in density. Without this line the whole air slice
 	# is decoration: thrust_n is k_t * omega^2 with no rho in it, and fit_k_t has none either, so
@@ -489,7 +907,36 @@ func _recompute() -> void:
 	# is false as physics rather than merely uncertain as data.
 	k_t *= air.kgm3() / AirDensity.standard_kgm3()
 
-	k_q = PropellerModel.fit_k_q(k_t, _prop_geometry(propeller).diameter_m)
+	# The guard's static thrust boost, from §4.0's "the closure reaches both". `k_t` reaches
+	# `PropellerModel.thrust_n` at hover — the panel's own hover-throttle bisection — and the
+	# forward-flight tick reads through `forward_ratios()`, whose closure-aware surface takes
+	# the same closure into both numerator and denominator so the ratio is nearly closure-
+	# invariant. Which means: without this line, a fitted duct would raise the flight-tick
+	# thrust and NOT the hover-throttle the panel quotes, and a builder would see two answers.
+	#
+	# Solved once when the guard is fitted, cached on the build so hover_throttle's ~60 bisect
+	# iterations do not each pay a fresh solve. Follows the k_t scaling for air density above
+	# for the same reason: the panel quotes k_t already scaled by the field, and the closure
+	# is another multiplicative correction to the same number.
+	#
+	# The torque half of the same pair is applied to k_q below rather than here, because k_q is
+	# fit FROM k_t and the closure moves the two in opposite directions — see this file's
+	# `_static_closure_torque_factor` for the measured numbers.
+	var k_t_open_rotor := k_t
+	if guard_closure > 0.0:
+		var prop_g := prop_geometry()
+		var closure_factors := BemtModel.static_closure_factors(
+			prop_g.diameter_m, prop_g.pitch_m, prop_g.blades, blade_chord(), guard_closure)
+		_static_closure_factor = closure_factors[0]
+		_static_closure_torque_factor = closure_factors[1]
+		k_t *= _static_closure_factor
+
+	# k_q is fit from the OPEN-ROTOR k_t and then carries the closure's own torque factor. Both
+	# steps are needed: fitting from the closed k_t would double the closure into torque with
+	# the wrong sign, and skipping the torque factor would leave a duct's current draw — the
+	# number a duct is actually fitted for — untouched by the duct.
+	k_q = PropellerModel.fit_k_q(k_t_open_rotor, _prop_geometry(propeller).diameter_m) \
+		* _static_closure_torque_factor
 
 	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop, _prop_geometry(test_prop).diameter_m)
 	effective_max_amps = float(motor["specs"]["max_amps"]) * (k_q / k_q_at_test_prop)
@@ -506,6 +953,36 @@ func _recompute() -> void:
 ## inch-to-metre conversion.
 func prop_geometry() -> Dictionary:
 	return _prop_geometry(propeller)
+
+
+## The fitted propeller's planform, flat as `PropellerDocument.chord` stores it: r/R and chord in
+## millimetres, alternating. The blade's own geometry, which §0's rule says must be the SAME
+## geometry the mesh draws and the integral reads — this is the accessor that carries it out of the
+## document and into the powertrain.
+func blade_chord() -> PackedFloat64Array:
+	return PropellerDocument.from_catalog_prop(propeller).chord
+
+
+## The forward-flight ratio surface for the fitted prop (P6's closure). Cached on the build,
+## because `BemtRatios.for_prop` costs ~150 ms of BEMT solves the first time a given planform is
+## asked for and every panel refresh reconstructs a Build.
+##
+## This is the ONE place forward flight is decided for this aircraft. Both the flight tick (through
+## `Powertrain`) and the panel figures below read the same surface, so the current the pack sees
+## and the current the stats page quotes cannot disagree about what the rotor is doing — the same
+## property `current_in_flight_at_rpm`'s "one factor rather than two" comment defends.
+func forward_ratios() -> BemtRatios:
+	if _forward_ratios == null:
+		var geometry := prop_geometry()
+		# `for_prop_with_guard` at closure = 0.0 reaches the SAME cache entry `for_prop` used
+		# to, since the Rust key bit-encodes 0.0 verbatim — so a build with no guard fitted
+		# pays no extra solve. A fitted guard keys a different table, which is the point of
+		# threading the closure at all: two builds that differ only in their guard get two
+		# different surfaces, one solve each, cached forever after.
+		_forward_ratios = BemtRatios.for_prop_with_guard(
+			geometry.diameter_m, geometry.pitch_m, geometry.blades, blade_chord(),
+			guard_closure)
+	return _forward_ratios
 
 
 ## Per-prop geometry in SI, since the catalog quotes props in inches like the real world.
@@ -566,20 +1043,15 @@ func mass_parts() -> Array:
 	# are the same geometry" true of mass and not just of clearance.
 	var battery_mass_kg := float(battery["mass_g"]) / 1000.0
 	var battery_size := battery_size_m()
-	var battery_mount := MountLayout.by_id(mount_points(), String(assembly_value("battery_mount")))
-	if battery_mount == null:
-		# A frame that does not offer the saved mount — a whoop whose bottom plate has no room for
-		# strap slots — falls back to the top plate rather than dropping the pack at the origin.
-		# Same rule as AirframeModel's drawing: the pack is somewhere on every real aircraft.
-		battery_mount = MountLayout.by_id(mount_points(), "strap_top")
-	parts.append(PartMass.new(battery_mass_kg,
-		MountLayout.seated_centre_m(battery_mount, battery_size,
-			float(assembly_value("battery_offset_m"))),
+	var battery_position: Vector3 = battery_seat()["position"]
+	parts.append(PartMass.new(battery_mass_kg, battery_position,
 		InertiaPrimitives.box(battery_mass_kg, battery_size), "Pack"))
 
-	# The electronics, in two entries that sum to ELECTRONICS_MASS_G exactly. The stack is separate
-	# because it is a real object with a real footprint, and its 36.5 mm board has a different
-	# tensor from the 30 mm cube the lump stands on; the two together weigh what the one did.
+	# The electronics: the two stack boards, at their carved shares. They summed with the old lump
+	# to ELECTRONICS_BUDGET_G exactly, and PW2 ended that — the harness below is weighed rather than
+	# left over, so this aircraft's electronics no longer add to 55 g. The stack is separate from
+	# the lump for the reason it always was: it is a real object with a real footprint, and its
+	# 36.5 mm board has a different tensor from the 30 mm cube the remainder stands on.
 	#
 	# BOTH BOARDS NOW SIT WHERE THEY ARE DRAWN: on the standoff stack's seat — the bottom plate's
 	# upper face — each raised by its own offset within the stack, ESC below and FC above it. Both
@@ -609,8 +1081,10 @@ func mass_parts() -> Array:
 		stack_position + Vector3(0.0, StackMesh.esc_centre_height_m(), 0.0),
 		InertiaPrimitives.box(esc_mass_kg, StackMesh.size_m(esc_mount_pattern())), "ESC"))
 
-	# The four components LTHL-11 took out of the lump: camera, VTX, antenna, receiver, each at its
-	# OWN catalog mass, in its OWN bay, and each of them omittable.
+	# The optional components, each at its OWN catalog mass, in its OWN bay, and each omittable:
+	# the four LTHL-11 took out of the lump (camera, VTX, antenna, receiver) and the two C2 ADDED
+	# beside it (GPS, buzzer). The loop does not know which kind it is holding, and it should not —
+	# the difference is in the budget's bookkeeping, not in how a part is weighed or placed.
 	#
 	# THIS IS THE LOOP THAT MOVES THE CENTRE OF MASS, and it is the reason the previous comment
 	# here refused to do it. What changed is not the appetite for precision but where the positions
@@ -630,21 +1104,146 @@ func mass_parts() -> Array:
 		var component: Dictionary = components[category]
 		var component_mass_kg := float(component.get("mass_g", 0.0)) / 1000.0
 		var component_size := component_size_of(component)
-		var bay := MountLayout.by_id(mounts, String(COMPONENT_MOUNTS[category]))
-		parts.append(PartMass.new(component_mass_kg,
-			MountLayout.seated_centre_m(bay, component_size),
+		# The mast, and it is the part's own published dimension rather than an offset this file
+		# carries — the same kind of read as component_size_of() on the line above. A part with no
+		# mast rises zero, which is every component in the app but a masted GPS.
+		parts.append(PartMass.new(component_mass_kg, component_centre_m(category, mounts),
 			InertiaPrimitives.box(component_mass_kg, component_size),
 			str(component.get("name", category))))
 
-	# WHAT IS STILL LUMPED AT THE ORIGIN IS THE WIRING, and it is the honest remainder rather than
-	# the entry that got forgotten. A harness is everywhere on the aircraft by definition — that is
-	# what makes the origin the right place for it and not a shrug — and its mass is what the
-	# budget has left once every share is carved out. See wiring_mass_g() for why it does not
-	# scale, and for the fact that it is the dominant term at the small end and this slice did not
-	# fix it.
-	var loose_mass_kg := wiring_mass_g() / 1000.0
-	parts.append(PartMass.new(loose_mass_kg, Vector3.ZERO,
-		InertiaPrimitives.box(loose_mass_kg, ELECTRONICS_SIZE_M), "Wiring"))
+	# THE HARNESS, and this is the block PW2 exists for. It was ONE 14 g lump at the origin — the
+	# budget's remainder, standing for wiring, connector, capacitor, solder, heat-shrink and straps,
+	# put at the origin because a harness is everywhere on the aircraft by definition. That was
+	# honest about the mass and silent about the distribution, and the distribution is the half that
+	# is actually knowable: the connector is at the pack, the trunk runs down the spine, four leads
+	# run out to the motors, and the cap stands on the ESC.
+	#
+	# So it is now five entries and a remainder, each weighed off `Harness` (which is where the
+	# gauges, lengths and part ids live) and each placed by the same geometry everything else on
+	# this aircraft is placed by. What is left at the origin is straps, tape, solder and shrink,
+	# which genuinely is everywhere.
+	#
+	# ---------------------------------------------------------------------------
+	# THE TRAP, AND THIS CODEBASE HAS PAID FOR IT ONCE
+	# ---------------------------------------------------------------------------
+	#
+	# Every entry below goes in as a `PartMass` at a position with a LOCAL DIAGONAL — the part's own
+	# tensor about its own centre — so that `MassProperties.compute`'s parallel-axis step supplies
+	# the m·d² term EXACTLY ONCE. Handing a local diagonal a term that already contains the offset
+	# (a pre-shifted scalar, the way P10a's guard row nearly did) counts it twice, and the four
+	# motor leads are precisely the geometry where that would happen and not be noticed.
+	#
+	# And the sharper half of P10b's review finding applies unchanged: ROLL IS I_ZZ. A double-count
+	# wired into the X entry of a local diagonal lands in PITCH, and a roll check looks straight
+	# past it. That is why tests/test_harness.gd asserts the zero-offset property and the tensor
+	# term as a PAIR — neither is sufficient alone, and the pair is what makes the mutation visible
+	# whichever axis it is misfiled under.
+	var harness_connector_kg := harness.connector_mass_g(self) / 1000.0
+	var harness_main_kg := harness.main_lead_mass_g(self) / 1000.0
+	var harness_motor_lead_kg := harness.motor_lead_mass_g(self) / 1000.0
+	var harness_cap_kg := harness.capacitor_mass_g(self) / 1000.0
+
+	# The connector, at the pack's own position. A plug is bolted to nothing and hangs off the end
+	# of the lead, so the pack is the only place on the aircraft it is definitely near. Point mass:
+	# an XT60 pair is 16 mm long and its own tensor is four orders under the parallel-axis term.
+	if harness_connector_kg > 0.0:
+		parts.append(PartMass.new(harness_connector_kg, battery_position, Vector3.ZERO,
+			"Connector"))
+
+	# The main lead, as a ROD and not a point. It is dressed ALONG THE FRAME between the ESC's pads
+	# and the connector at the pack: mid-way between the two in plan, and at the STACK'S OWN HEIGHT
+	# rather than anywhere between the plates and the pack.
+	#
+	# THE HEIGHT IS THE PART THAT WAS GOT WRONG TWICE BEFORE IT WAS GOT RIGHT, so it is written down.
+	# Running the rod out by half its own length towards the pack pointed it nearly straight up — a
+	# lead is 120 mm and the pack sits about 20 mm above the plate — and put eight grams of copper
+	# sixty millimetres in the air. Putting its centroid at the geometric midpoint of the stack and
+	# the pack was better and still wrong in the same direction: it lifted the modelled centre of
+	# mass and pushed the airframe's perpendicular-axis relation (I_yaw ≈ I_roll + I_pitch, which
+	# tests/test_frame_bench.gd holds to the parts' own thickness) from 11.5% out to 12.0%.
+	#
+	# A battery lead does not fly through the air to meet the pack. It comes off the pads, lies on
+	# the plate, and the slack is coiled there — so its mass is in the PLANE OF THE FRAME, which is
+	# what the model now says. Length is mass and slack, not reach.
+	#
+	# Three properties this project asserts elsewhere survive because of that, and would each have
+	# broken silently otherwise: a build with no components fitted is still FORE/AFT SYMMETRIC,
+	# sliding the pack does not change how HIGH the centre of mass sits, and sliding it fore and aft
+	# still leaves ROLL inertia alone.
+	var main_length_m := float(harness.value(Harness.MAIN_LEAD_LENGTH_MM, self)) / 1000.0
+	var run := battery_position - stack_position
+	var main_position := Vector3(
+		stack_position.x + run.x * 0.5, stack_position.y, stack_position.z + run.z * 0.5)
+	# The rod lies along the spine: a lead is dressed fore and aft, never across the airframe.
+	if harness_main_kg > 0.0:
+		parts.append(PartMass.new(harness_main_kg, main_position,
+			Harness.rod_diag_kg_m2(harness_main_kg, main_length_m, Vector3(0.0, 0.0, 1.0)),
+			"Main lead"))
+
+	# FOUR MOTOR LEADS, one at each motor's plan position. This is the previously absent
+	# contribution to roll and pitch inertia the re-baseline was expected to surface: four masses at
+	# the arm ends, each carrying its own rod tensor about its own centre and NOTHING ELSE. The R²
+	# bite is `MassProperties`'s to add.
+	#
+	# `motor_lead_mass_g` is the wire the HARNESS adds, not the whole run — see
+	# `Harness.MOTOR_SUPPLIED_LEAD_MM` for why, and it is the same double-count argument that
+	# governs `pigtail_mass_g`. Zero on a build whose arms are shorter than a motor's own leads,
+	# which appends nothing rather than four zero-mass entries.
+	if harness_motor_lead_kg > 0.0:
+		var motor_lead_length_m := float(
+			harness.value(Harness.MOTOR_LEAD_LENGTH_MM, self)) / 1000.0
+		for motor_name in MotorLayout.MOTOR_NAMES:
+			var lead_position := MotorLayout.motor_position(motor_name, arm_m)
+			parts.append(PartMass.new(harness_motor_lead_kg, lead_position,
+				Harness.rod_diag_kg_m2(harness_motor_lead_kg, motor_lead_length_m,
+					lead_position),
+				"Motor lead %s" % motor_name))
+
+	# The capacitor, standing on the ESC's pads — the same seat and the same height StackMesh draws
+	# the board at, so the can is where the picture puts it. A real object with published body
+	# dimensions, so it gets a real box rather than a point.
+	if harness_cap_kg > 0.0:
+		var cap_size := harness.capacitor_size_m(self)
+		parts.append(PartMass.new(harness_cap_kg,
+			stack_position + Vector3(0.0, StackMesh.esc_centre_height_m(), 0.0),
+			InertiaPrimitives.box(harness_cap_kg, cap_size), "Capacitor"))
+
+	# What is genuinely everywhere: straps, tape, solder and heat-shrink, at the origin. The
+	# honest remainder rather than the entry that got forgotten, and — unlike the 14 g it replaces —
+	# AUTHORED at what those things weigh instead of being whatever a budget had left over.
+	var remainder_kg := Harness.REMAINDER_MASS_G / 1000.0
+	parts.append(PartMass.new(remainder_kg, Vector3.ZERO,
+		InertiaPrimitives.box(remainder_kg, ELECTRONICS_SIZE_M), "Harness remainder"))
+
+	# Prop guards, one ring at each motor — the P10a `as_part_mass` finally has a caller
+	# (§3.4 shipped in P10b). PartMass carries the guard's mass at the motor's plan position
+	# with `Vector3.ZERO` local diagonal, so `AirframeProperties.compute`'s parallel-axis shift
+	# adds the R² roll-inertia bite exactly ONCE — the double-count trap this file's guard row
+	# would fall into if anyone handed the local diagonal the scalar
+	# `roll_inertia_contribution_kg_m2` instead. The `null` return from `as_part_mass` on an
+	# unreadable guard is what stops a class-typical default masquerading as a real fit, so
+	# nothing is appended when the guard's spec is one `compute()` refuses.
+	#
+	# One guard applied to every motor (v1: whole-build guard_id in from_ids). A per-motor
+	# per-guard authoring is future work; the physics already accepts a heterogeneous fit
+	# because `as_part_mass` takes the motor position as a separate arg.
+	if not guard.is_empty():
+		var guard_specs: Dictionary = guard.get("specs", {})
+		for motor_name in MotorLayout.MOTOR_NAMES:
+			var pm := PropGuard.as_part_mass(guard_specs,
+				MotorLayout.motor_position(motor_name, arm_m))
+			if pm != null:
+				parts.append(pm)
+
+	# Printed parts the builder FITTED in this drone's Printed room (printed-room PR1). Added on top,
+	# not carved from a budget — nothing ever budgeted for them — and absent unless fitted, which is
+	# what keeps the reference build at 507.48 g. The seats are ArmGuard's, the same ones ArmGuardMesh
+	# is drawn at.
+	parts.append_array(ArmGuard.part_masses(self, printing))
+	# PR10: the printed GPS mast, on the same terms — only when fitted, over the GPS bay.
+	parts.append_array(GpsMast.part_masses(self, printing))
+	# PR11: the printed battery pad, only when fitted, beneath the pack's own seat.
+	parts.append_array(BatteryPad.part_masses(self, printing))
 
 	return parts
 
@@ -668,20 +1267,72 @@ static func component_size_of(part: Dictionary) -> Vector3:
 	return Vector3.ONE * 0.010
 
 
+## The camera's uptilt as a rotation about the camera's own centre: a positive rotation about +X,
+## so forward (-Z) goes to (0, sin θ, -cos θ) and the lens looks above the horizon (video-room
+## design §2). THE ONE PLACE THIS ROTATION IS WRITTEN — ComponentMesh tips the drawn camera with it
+## and VideoPlausibility measures the published box with it, so the picture and the clearance
+## warning cannot come to disagree about which way up is.
+static func camera_tilt_transform(tilt_deg: float) -> Transform3D:
+	return Transform3D(Basis(Vector3.RIGHT, deg_to_rad(tilt_deg)), Vector3.ZERO)
+
+
+## How tall a camera stands when tipped up by `tilt_deg`, in metres: the vertical extent of its
+## PUBLISHED box under `camera_tilt_transform`, which works out to l·sin θ + h·cos θ.
+##
+## Not written as that formula, and not read off the drawn mesh. Godot's AABB transform does the
+## trigonometry, so there is no second copy of the rotation to drift; and the published box rather
+## than the drawing, because the published box is what a builder can check against the part in
+## their hand. The drawn silhouette is a little shorter — the lens barrel is narrower than the body
+## — so a warning quoting this figure errs towards speaking, by 2.7 mm on a micro camera at 40°.
+static func camera_standing_height_m(part: Dictionary, tilt_deg: float) -> float:
+	var size := component_size_of(part)
+	return (camera_tilt_transform(tilt_deg) * AABB(-size * 0.5, size)).size.y
+
+
 ## What this build's electronics actually weigh: the two stack boards at their own masses, every
 ## optional component that is fitted at its own mass, and the wiring remainder.
 ##
-## Exactly ELECTRONICS_MASS_G when the default part is fitted in every category, which is what
-## keeps the reference build at 496 g. It is LOWER when something is omitted and HIGHER when a
-## heavier-than-budget part is fitted, and both of those are the point — this is the number that
-## replaced a flat 55 g in the one place that was quoting it at the builder
-## (FramePlausibility._electronics_lump).
+## What this build's harness weighs, all of it: connector, main lead, four motor leads, capacitor
+## and the straps-and-tape remainder. THE SAME CLAIM `mass_parts()` MAKES, computed the same way —
+## `Harness.total_mass_g` is the one place the five terms are added up, so an entry appended above
+## and not counted here (or the reverse) is a discrepancy a check can see rather than a number two
+## functions quietly disagree about.
+func harness_mass_g() -> float:
+	return harness.total_mass_g(self)
+
+
+## NO LONGER PINNED TO THE BUDGET, and that is PW2's doing rather than a drift. It used to come out
+## at exactly ELECTRONICS_BUDGET_G with the default part in every category, because the harness term
+## in it was the budget's own remainder; the harness is weighed now, so this is the sum of what the
+## build actually carries and the 55 g is a figure it happens to be near. It is still LOWER when
+## something is omitted and HIGHER when a heavier-than-budget part is fitted, which was always the
+## point — this is the number that replaced a flat 55 g in the one place that was quoting it at the
+## builder (FramePlausibility._electronics_lump).
+##
+## It counts CARVED AND ADDED components alike, because it is the mass of the electronics this
+## aircraft carries and a GPS is electronics. What tells the two apart is the identity test_esc.gd
+## asserts — `electronics = carved shares + harness + added` — where the added term is what makes
+## the two ways of accounting for the aircraft agree on a build that fits a GPS.
 func electronics_mass_g() -> float:
-	var total := fc_mass_g() + esc_mass_g() + wiring_mass_g()
+	var total := fc_mass_g() + esc_mass_g() + harness_mass_g()
 	for category in OPTIONAL_COMPONENTS:
 		if components.has(category):
 			total += float(components[category].get("mass_g", 0.0))
 	return total
+
+
+## Where a fitted optional component's box is centred, metres, in the airframe's frame — the
+## position `mass_parts()` weighs it at and `AirframeModel` draws it at (both are this seat:
+## `MountLayout.seated_centre_m` on the category's bay, with the part's mast). ZERO when the
+## component is not fitted. `mounts` may be passed by a caller that already resolved them.
+func component_centre_m(category: String, mounts: Array[MountPoint] = []) -> Vector3:
+	if not components.has(category):
+		return Vector3.ZERO
+	if mounts.is_empty():
+		mounts = mount_points()
+	var component: Dictionary = components[category]
+	var bay := MountLayout.by_id(mounts, String(COMPONENT_MOUNTS[category]))
+	return MountLayout.seated_centre_m(bay, component_size_of(component), 0.0, rise_m_for(component))
 
 
 ## The fitted pack as a box in BODY axes: width across X, height up Y, length along Z — because
@@ -820,7 +1471,123 @@ func limiting_component() -> Dictionary:
 		candidates[0]["throttle"], candidates[1]["throttle"], candidates[2]["throttle"])]
 
 func motor_model() -> MotorModel:
-	return MotorModel.create(float(motor["specs"]["kv"]), max_throttle_fraction())
+	# P7 (propulsion.md §3.4): tau is per-motor now, computed from J_rotor + J_blade and
+	# the motor/prop torque slopes at the linearisation point. No caller path may hand out a
+	# MotorModel without this — the pre-P7 shared 0.03 s constant is gone; MotorModel's own
+	# fallback matches it identically so a probe that skips the derivation reproduces the
+	# old numbers rather than a silent zero.
+	return MotorModel.create_with_tau(float(motor["specs"]["kv"]), max_throttle_fraction(),
+		_tau_s())
+
+
+## The τ this build hands to MotorModel. Derived at the hover operating point when the build
+## can hover — the case throttle-response feel is written about — and at rated_rpm otherwise,
+## so an unflyable configuration still gets a meaningful spin-up rather than a zero. Public
+## so the panel and the ESC bench can render every intermediate through
+## `MotorSpinUp.compute()` without recomputing k_q or rebuilding the prop document.
+func spin_up() -> Dictionary:
+	var prop_doc := PropellerDocument.from_catalog_prop(propeller)
+	var test_prop: Dictionary = catalog.get_part(motor["thrust_test"]["prop_id"])
+	var k_t_at_test_prop := PropellerModel.fit_k_t(float(motor["specs"]["max_thrust_g"]),
+		float(motor["specs"]["kv"]) * float(motor["thrust_test"]["voltage_v"]))
+	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop,
+		_prop_geometry(test_prop).diameter_m)
+	var omega_ref: float = _omega_hover_rad_s()
+	return MotorSpinUp.compute(motor, prop_doc, _spin_up_materials(), k_q, k_q_at_test_prop,
+		omega_ref)
+
+
+func _tau_s() -> float:
+	var s := spin_up()
+	var value: float = float(s.get("tau_s", 0.0))
+	return value if value > 0.0 else MotorSpinUp.FALLBACK_TAU_S
+
+
+func _omega_hover_rad_s() -> float:
+	return PropellerModel.rpm_to_rad_s(operating_rpm())
+
+
+## The RPM this aircraft is judged at: hover if it hovers, rated if it does not.
+##
+## rated_rpm() is the RPM at max throttle at the test voltage. Multiply by hover_throttle when the
+## build actually hovers so the linearisation lands where a stick input actually operates; fall
+## back to rated_rpm otherwise, since 0.5 · rated is the wrong number when the aircraft cannot
+## hover at all.
+##
+## Public and named because P10e's thrust-distribution overlay needs the SAME operating point the
+## spin-up linearisation uses. Two definitions of "the RPM this drone sits at" would let the
+## overlay draw a blade loading the τ nobody flies, and the disagreement would be invisible —
+## both numbers are plausible and neither is labelled.
+func operating_rpm() -> float:
+	var rated := rated_rpm()
+	if not can_hover():
+		return rated
+	return rated * hover_throttle()
+
+
+## The static thrust the fitted blade makes at each annulus of the solve, at `operating_rpm()`.
+##
+## `[r_m, dT_N]` interleaved, straight out of `BemtModel.thrust_distribution` — which taps the
+## per-annulus addends of the very sum `solve()` returns. There is deliberately NO arithmetic here
+## beyond assembling the call: the moment this method starts adjusting what Rust handed back, the
+## overlay is drawing something the aircraft does not fly.
+##
+## Empty for a rotor the solve declines (P10e §3): a refusal and a blade that makes no thrust are
+## different answers and must not render the same.
+func thrust_distribution() -> PackedFloat64Array:
+	var geometry := prop_geometry()
+	return BemtModel.thrust_distribution(
+		air.kgm3(), geometry.diameter_m, geometry.pitch_m, geometry.blades,
+		operating_rpm(), blade_chord(), guard_closure)
+
+
+## The per-rev orders the airframe is excited at, name → multiples of one revolution.
+##
+## Three, and they are three different physical mechanisms rather than three harmonics of one:
+## an out-of-balance blade forces once per revolution, the blades force once each per revolution,
+## and the motor's electrical drive forces once per POLE PAIR per revolution. P10e's Campbell
+## overlay turns each into a line at `order · rpm / 60`.
+##
+## Assembled here rather than in the overlay for the reason `thrust_distribution` is: the
+## multipliers are properties of the aircraft, and an overlay that recomputed one of them from
+## `specs.poles` would be a second definition of a number that already has one — the P10d defect
+## in a new file. `pole_pairs()` is that one definition, halving included.
+##
+## BLADE PASSING IS `blades × rpm/60` ONLY FOR EVENLY SPACED BLADES. That is every propeller
+## Lothal can express today — blade count is a scalar on the record and the authored planform
+## carries one chord table for all blades. If a future slice ever lets a builder space blades
+## unequally, the forcing splits into a set of lines around this one and this method is where it
+## stops being true; nothing downstream would notice on its own.
+func excitation_orders() -> Dictionary:
+	return {
+		"1x rotation": 1.0,
+		"blade passing": float(prop_geometry().blades),
+		"motor electrical": pole_pairs(),
+	}
+
+
+## The highest RPM this aircraft can actually turn: full throttle as the weakest of the motor,
+## pack and ESC limits allows it, sag included.
+##
+## A composition of two methods that already exist, named because P10e's Campbell diagram has to
+## draw the difference between "an RPM on the axis" and "an RPM this build can reach". Marking a
+## resonance crossing the aircraft cannot get to is the overlay telling a builder to avoid a
+## throttle setting that does not exist.
+func reachable_rpm() -> float:
+	return rpm_at_throttle(max_throttle_fraction())
+
+
+## FrameMaterials for the blade-density fallback in MotorSpinUp — used only when a
+## propeller has no `published_mass_g` and the density-integral form has to be used instead.
+## Loaded once and cached because there is exactly one materials table and this method may
+## be called every UI refresh of the propulsion panel.
+static var _spin_up_materials_cached: FrameMaterials
+
+
+static func _spin_up_materials() -> FrameMaterials:
+	if _spin_up_materials_cached == null:
+		_spin_up_materials_cached = FrameMaterials.load_default()
+	return _spin_up_materials_cached
 
 func battery_model() -> BatteryModel:
 	return BatteryModel.create(
@@ -833,10 +1600,14 @@ func battery_model() -> BatteryModel:
 
 func build_drone_core() -> DroneCore:
 	var geometry := _prop_geometry(propeller)
-	return DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
+	var core := DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
 		effective_max_amps, rated_rpm(), drag_coefficient,
 		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m,
-		air.kgm3())
+		air.kgm3(), blade_chord(), guard_closure)
+	# The aircraft the sim flies is the aircraft the builder configured, including a spin map
+	# Lothal has warned about: design §5.3 — fly it badly, do not refuse it.
+	core.config = config
+	return core
 
 ## Electrical frequency is per POLE PAIR, not per pole — a 14-pole motor turns through
 ## seven electrical cycles per revolution, not fourteen. Getting this wrong is a factor of
@@ -1120,9 +1891,7 @@ func hover_throttle_for(pack: BatteryModel) -> float:
 ## cheaper. Both come out of the one angle; neither is a separate assumption.
 func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceiling: float,
 		open_circuit_v: float = AT_NOMINAL) -> float:
-	var geometry := prop_geometry()
-	var diameter_m: float = geometry.diameter_m
-	var pitch_m: float = geometry.pitch_m
+	var ratios := forward_ratios()
 
 	var lift_n := load_factor * weight_n()
 	var drag_n := drag_coefficient * airspeed_mps * airspeed_mps
@@ -1135,8 +1904,9 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 	var high := throttle_ceiling
 	for _i in 40:
 		var mid := (low + high) * 0.5
-		var thrust_n := 4.0 * PropellerModel.thrust_n_in_flight(
-			k_t, rpm_at_throttle(mid, open_circuit_v), diameter_m, pitch_m, v_axial)
+		var mid_rpm := rpm_at_throttle(mid, open_circuit_v)
+		var thrust_n := 4.0 * PropellerModel.thrust_n(k_t, mid_rpm) \
+			* ratios.thrust_ratio(mid_rpm, v_axial, v_edge)
 		if thrust_n < target_n:
 			low = mid
 		else:
@@ -1146,13 +1916,24 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 	# still not holding it" — the same convention hover_throttle() uses for a build that cannot
 	# hold itself up, rather than a number quietly clamped into looking achievable.
 	var rpm := rpm_at_throttle(high, open_circuit_v)
-	return 4.0 * current_at_rpm(rpm) * PropellerModel.power_factor(
-		k_t, rpm, diameter_m, pitch_m, v_axial, v_edge, air.kgm3())
+	return 4.0 * current_at_rpm(rpm) * ratios.power_ratio(rpm, v_axial, v_edge)
 
 
 ## The current a pack actually sees over a flight: the model's answer at each row of
 ## FREESTYLE_FLIGHT_PROFILE, weighted by how much of the time is spent there.
-func average_flight_current_a(open_circuit_v: float = AT_NOMINAL) -> float:
+##
+## `wind_mps` is a HEADWIND term added to every segment's own airspeed (F8, design §4.3): the
+## mission profile already states each leg as a speed over the ground, so a headwind is simply more
+## airspeed at the same leg — the honest conservative reading, and no new physics.
+##
+## Defaults to `WIND_FROM_FIELD`, i.e. this Build's own `field_wind_mps` — which is 0.0 on a Build
+## nobody has handed a conditions set, so every caller written before F8 still gets exactly the
+## calm figure it always did (check 1 pins that against the pre-F8 literal), while a caller that
+## forgets the argument on a Build that IS in weather gets that weather rather than silently
+## quoting calm. See `field_wind_mps`.
+func average_flight_current_a(open_circuit_v: float = AT_NOMINAL,
+		wind_mps: float = WIND_FROM_FIELD) -> float:
+	var leg_wind := field_wind_mps if wind_mps < 0.0 else wind_mps
 	# One peak solve for all five segments. It is 400 thrust evaluations and it does not depend on
 	# airspeed, so paying for it per segment would quintuple the cost of every stats-panel refresh
 	# for an identical answer.
@@ -1160,19 +1941,48 @@ func average_flight_current_a(open_circuit_v: float = AT_NOMINAL) -> float:
 	var total := 0.0
 	for segment in FREESTYLE_FLIGHT_PROFILE:
 		total += float(segment["fraction"]) * flight_current_at_a(
-			float(segment["airspeed_mps"]), float(segment["load_factor"]), ceiling, open_circuit_v)
+			float(segment["airspeed_mps"]) + leg_wind, float(segment["load_factor"]), ceiling,
+			open_circuit_v)
 	return total
 
 
 ## Zero for a build that cannot hover — there is no flight to put a time on.
-func flight_time_min() -> float:
+##
+## `wind_mps` reaches `average_flight_current_a` unchanged (F8) — a headwind on every leg of the
+## mission profile, at the nominal voltage the stats panel always quotes at. Defaults to
+## `WIND_FROM_FIELD` (this Build's own `field_wind_mps`, 0.0 unless somebody set it), which is
+## bit-identical calm-day behaviour for every pre-F8 caller (check 1).
+func flight_time_min(wind_mps: float = WIND_FROM_FIELD) -> float:
 	if not can_hover():
 		return 0.0
-	var average_current_a := average_flight_current_a()
+	var average_current_a := average_flight_current_a(AT_NOMINAL, wind_mps)
 	if average_current_a <= 0.0:
 		return 0.0
 	var usable_mah: float = float(battery["specs"]["mah"]) * USABLE_CAPACITY_FRACTION
 	return (usable_mah / (average_current_a * 1000.0)) * 60.0
+
+
+## A hover held against a headwind — the same claim `flight_current_at_a` already answers for any
+## trimmed flight, at `load_factor = 1.0` (level) and the build's own peak-thrust ceiling. NOT a
+## second solve: a hover in a 25 km/h headwind IS a trimmed flight at 6.9 m/s, so this calls the
+## one function that already knows how to trim a lean against an airspeed (F8, design §4.3/§5.3).
+##
+## RULING 57 — MEASURED, NOT ASSUMED: at this build's trimmed hold-station, current at low-to-
+## moderate headwinds (measured 3 and 7 m/s) sits BELOW the calm figure — translational lift cuts
+## the thrust a hover needs faster than the lean adds drag, until well past the power curve's
+## minimum. It rises above the calm figure only once the headwind is large enough (measured
+## between 7 and 12 m/s for the reference build) that the extra drag has overtaken the lift
+## saved. Callers of this function must not assume monotonicity; `tests/test_wind_numbers.gd`
+## pins the measured (non-monotonic) shape rather than asserting the tidier, false one.
+##
+## NO PANEL ROW QUOTES THIS TODAY, and that is not an oversight (F8 fix round 1, review finding 7).
+## Design §4.3 names exactly two conditional Lab numbers — flight time and flight current — and
+## both are mission-profile averages, not a hold-station figure; this function is the profile's
+## own building block and the interface the F8 brief asked for. It is called by
+## `tests/test_wind_numbers.gd` and by whatever room next wants to quote a hover in weather.
+func hover_current_in_wind_a(wind_mps: float, open_circuit_v: float = AT_NOMINAL) -> float:
+	var ceiling: float = peak_thrust(open_circuit_v)["throttle"]
+	return flight_current_at_a(wind_mps, 1.0, ceiling, open_circuit_v)
 
 ## How much flying is LEFT in a pack in the state it is actually in, in minutes.
 ##
@@ -1181,6 +1991,14 @@ func flight_time_min() -> float:
 ## HUD's countdown and the stats panel's estimate are the same claim about the same aircraft, and
 ## a pilot who reads 4.1 minutes in the garage and 4.1 minutes at spawn is not being told two
 ## different things by two different formulas.
+##
+## THAT PROMISE IS WHY THIS IS WIND-AWARE (F8 fix round 1, review finding 5). `average_flight_current_a`
+## below is called with no wind argument, which since F8's fix round means "this Build's own
+## `field_wind_mps`" — the same field the stats panel's now-labelled estimate is quoted in, set on
+## the flying Build by `main.gd` from the same selected conditions Sim's `Wind` is built from. Left
+## as it was, the garage would have said 3.2 min under the selected conditions while the HUD counted
+## down from the calm 4.6, which is exactly the two-formulas-one-aircraft split this docstring
+## promises does not happen.
 ##
 ## What differs is only the capacity remaining, and the voltage it is solved at: a half-empty pack
 ## rests lower, so the hover it has to hold costs a little more current. Zero for a build that
@@ -1214,16 +2032,17 @@ func remaining_flight_time_min(pack: BatteryModel) -> float:
 ## for those the previous figure was an over-estimate.
 func top_speed_kmh() -> float:
 	var lean_horizontal_n := weight_n() * tan(TOP_SPEED_LEAN_RAD)
-	var geometry := prop_geometry()
 	var max_rpm := max_rpm_at_nominal()
+	var ratios := forward_ratios()
 
 	# The drag-only answer, which is an upper bound: unloading can only ever take thrust away.
 	var high := sqrt(lean_horizontal_n / drag_coefficient)
 	var low := 0.0
 	for _i in 40:
 		var mid := (low + high) * 0.5
-		var available_n := 4.0 * PropellerModel.thrust_n_in_flight(k_t, max_rpm,
-			geometry.diameter_m, geometry.pitch_m, mid * sin(TOP_SPEED_LEAN_RAD))
+		var available_n := 4.0 * PropellerModel.thrust_n(k_t, max_rpm) \
+			* ratios.thrust_ratio(max_rpm, mid * sin(TOP_SPEED_LEAN_RAD),
+				mid * cos(TOP_SPEED_LEAN_RAD))
 		var horizontal_n := minf(lean_horizontal_n, available_n * sin(TOP_SPEED_LEAN_RAD))
 		if drag_coefficient * mid * mid < horizontal_n:
 			low = mid
@@ -1326,6 +2145,7 @@ func warnings() -> Array[BuildWarning]:
 	# quoted in, and a reader who meets "cannot hover" before they have been told they are at
 	# 3500 m has been handed the conclusion before the premise.
 	out.append_array(_field_air())
+	out.append_array(_field_wind())
 	out.append_array(_flight_quality())
 	out.append_array(_prop_unloading())
 	out.append_array(_vibration_character())
@@ -1361,6 +2181,31 @@ func warnings() -> Array[BuildWarning]:
 	# datasheet-backed and its bias is illustrative.
 	out.append_array(EscPlausibility.warnings_for(self))
 	out.append_array(FcPlausibility.warnings_for(self))
+
+	# And what the pilot's intent passes through on its way to the motors
+	# (plans/2026-09-12-control-room-plan.md C6): an aircraft with no receiver at all, a buzzer that
+	# goes silent with the pack, and a COUNT of the parts wanting a serial port — stated without a
+	# port count, because no board in this catalog publishes one and a headroom figure derived from
+	# a number nobody published is the one thing design §0 still refuses.
+	out.append_array(ControlPlausibility.warnings_for(self))
+
+	# And what the picture passes through (video-room design §3, slice V4): a camera the builder's
+	# uptilt tips into the top plate, and a transmitter fitted with no antenna. Both read the build
+	# alone — the tilt comes out of `assembly`, never off a drawn node.
+	out.append_array(VideoPlausibility.warnings_for(self))
+
+	# And the path the current takes to get there (plans/2026-09-10-power-room-plan.md PW3): wire
+	# ampacity per segment, the harness's own voltage drop reported APART from the pack's sag, the
+	# plug's rating and — the one hard refusal in the set — whether the plug on the aircraft mates
+	# with the one on the pack. Last of the list because it is the only entry that reads a primed
+	# powertrain, and a reader meeting "your leads lose 0.4 V" before they have been told what the
+	# build draws has been handed a consequence with no premise.
+	out.append_array(HarnessChecks.warnings_for(self))
+
+	# And what the builder will type into a configurator (config-room design §5, slice C2): today,
+	# a motor map that cannot fly. Registered here exactly as the eleven modules above are, because
+	# a check the aggregate does not carry is a check nobody sees.
+	out.append_array(ConfigPlausibility.warnings_for(self))
 	return out
 
 
@@ -1540,7 +2385,8 @@ func _prop_unloading() -> Array[BuildWarning]:
 	var top_mps := top_speed_kmh() / 3.6
 	var v_axial := top_mps * sin(TOP_SPEED_LEAN_RAD)
 	var max_rpm := max_rpm_at_nominal()
-	var remaining := PropellerModel.thrust_factor(max_rpm, geometry.diameter_m, geometry.pitch_m, v_axial)
+	var v_edge := top_mps * cos(TOP_SPEED_LEAN_RAD)
+	var remaining := forward_ratios().thrust_ratio(max_rpm, v_axial, v_edge)
 
 	if remaining >= UNLOADING_WORTH_NAMING:
 		return out
@@ -1636,6 +2482,44 @@ func _field_air() -> Array[BuildWarning]:
 			absf(fraction) * 100.0, "lower" if fraction > 0.0 else "higher"],
 		{"elevation_m": air.elevation_m, "temperature_c": air.temperature_c,
 			"air_density_kgm3": air.kgm3(), "fraction_below_standard": fraction}))
+	return out
+
+
+## What the day's wind is, against what this build can do — with units, and no judgement (F8,
+## design §7's fourth row).
+##
+## CHARACTERISTIC, and deliberately, for `_field_air()`'s own reason restated for wind: there is no
+## boundary in a headwind. A build that cannot hold station in it already says so elsewhere in this
+## list (`current_limit`) — this row's whole job is to put the wind speed next to the number a
+## pilot would compare it against, in one sentence, so they judge it themselves.
+## THE WORD "GRADE" NEVER APPEARS HERE, ON PURPOSE: no "too windy", no wind_verdict, no threshold —
+## checks 10 and 11 assert both by id, over the whole list, not only this row.
+##
+## Silent BELOW `Conditions.CALM_TOLERANCE_MPS`, not below an exact zero, for `_field_air()`'s
+## reason: "0 km/h wind against a 108 km/h top speed" is a line that reports nothing, and the
+## warning list is not a status bar. `<= 0.0` was not enough (F8 fix round 1, review finding 4) —
+## a set typed as 0.004 m/s is calm in every sense a pilot means, and `conditions.gd` already owns
+## the number that says so, at 0.01 m/s. A second threshold spelled here would be a second source
+## of truth for "a wind is not a wind"; anything under 0.14 m/s rounds to "0 km/h" on this row
+## anyway, so the old comparison printed the exact vacuous line this function exists to prevent.
+##
+## The second sentence is the consequence clause every other characteristic row carries (see
+## `_field_air()`). It states only that the two conditional numbers beside it were quoted in this
+## wind — TRUE, checkable, and carrying no direction, because Ruling 57 measured that wind does not
+## always cost a builder current. A row that said "so expect less" would be a grade with better
+## manners.
+func _field_wind() -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	if absf(field_wind_mps) < Conditions.CALM_TOLERANCE_MPS:
+		return out
+
+	var wind_kmh := field_wind_mps * 3.6
+	var top_kmh := top_speed_kmh()
+	out.append(BuildWarning.characteristic(&"field_wind",
+		("This day's wind is %.0f km/h against this build's %.0f km/h top speed. "
+			+ "The flight time and flight current quoted beside this are quoted in it.") % [
+			wind_kmh, top_kmh],
+		{"wind_mps": field_wind_mps, "wind_kmh": wind_kmh, "top_speed_kmh": top_kmh}))
 	return out
 
 

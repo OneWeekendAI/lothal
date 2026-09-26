@@ -14,11 +14,11 @@ extends RefCounted
 ## the model did. If a point busts its tier, the honest response is to report the failure and
 ## fix the model — not to widen the tier.
 ##
-## What is under test is PropellerModel.scale_k_t_to_prop: its D^4 term is the exact
-## dimensional law, and its blade-count (0.8) and pitch (0.5) exponents are documented rules
-## of thumb. The two tiers exist because a same-diameter point exercises only the rules of
-## thumb, while a cross-diameter point runs the D^4 extrapolation as well and compounds all
-## three. See ThrustValidation's header for why each bound is the number it is.
+## What is under test is BemtModel.scale_k_t_to_prop — the BEMT geometry ratio (propulsion.md
+## §0, P5): blade count and twist enter the integral where they act, at the RPM the fit came
+## from. The two tiers exist because a same-diameter point exercises only the pitch-and-count
+## geometry inside the integral, while a cross-diameter point runs the full diameter scaling
+## as well. See ThrustValidation's header for why each bound is the number it is.
 
 static func run() -> Array:
 	var results: Array = []

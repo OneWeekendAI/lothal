@@ -12,6 +12,11 @@ extends RefCounted
 ## or a uniformly-angled paddle would sail through any check that only looked at diameter and
 ## blade count.
 ##
+## Since slice P3 the twist is not re-derived at all — the mesh DRAWS the document's beta(r).
+## PropellerDocument.beta_rad is the one definition (propulsion.md §3.2), and the two tests at
+## the bottom assert the angle read back from the drawn blade equals that beta, at every station,
+## including for an authored twist table.
+##
 ## Reading the angle back out is done with a principal-axis fit over each station's vertices.
 ## The blade has thickness, so a station is four corners of a thin rectangle; the major axis
 ## of that rectangle IS the chord line, exactly, because the thickness spreads symmetrically
@@ -30,6 +35,11 @@ static func run() -> Array:
 	results.append(_test_diameter_sets_the_sweep(catalog))
 	results.append(_test_a_3_blade_5in_is_not_a_2_blade_7in(catalog))
 	results.append(_test_rebuild_no_stale_blades(catalog))
+	results.append(_test_mesh_twist_is_the_documents_beta(catalog))
+	results.append(_test_authored_twist_is_drawn(catalog))
+	results.append(_test_mesh_chord_is_the_documents_chord(catalog))
+	results.append(_test_an_edited_planform_is_drawn(catalog))
+	results.append(_test_the_blade_is_not_inside_out(catalog))
 
 	return results
 
@@ -322,3 +332,311 @@ static func _test_rebuild_no_stale_blades(catalog: PartsCatalog) -> TestResult:
 		"%d children -> %d, old blade still inside: %s, radius now %.4f m" % [
 			four_blade_children, two_blade_children, old_still_inside, radius]
 	)
+
+
+# ---------------------------------------------------------------------------
+# P3 — the mesh draws the document's beta(r), not a copy of it
+# ---------------------------------------------------------------------------
+
+## P3'S PROOF, and the whole point of the slice: the angle the mesh draws and the angle the
+## document's beta(r) says are ONE NUMBER, asserted at every station. The mesh reads
+## PropellerDocument.beta_rad — that is the change — and this checks the vertex construction
+## (station -> rotated section -> mesh) encodes that angle honestly, with no sign error, no
+## offset and no second copy. For geometric presets the mesh and the document are the same helix,
+## so this also pins the two together the way test_propeller_document pins the chord: if either
+## ever drifts, the read-back stops matching the document.
+static func _test_mesh_twist_is_the_documents_beta(catalog: PartsCatalog) -> TestResult:
+	var checked := 0
+	var worst_error := 0.0
+	var worst_where := ""
+
+	for prop_id in ["prop_5x43x3", "prop_7x35x2", "prop_3x3x3", "prop_10x5x2"]:
+		var prop: Dictionary = catalog.get_part(prop_id)
+		var doc := PropellerDocument.from_catalog_prop(prop)
+		var mesh := PropellerMesh.new()
+		mesh.rebuild(prop)
+		var stations := _stations(_blade_vertices(mesh))
+		var radius_m := mesh.radius_m
+		mesh.free()
+
+		for station in stations:
+			var radius: float = station["radius"]
+			if radius <= 0.0:
+				continue
+			var read_back := _twist_rad(station["points"])
+			var expected := doc.beta_rad(radius / radius_m)
+			var error := absf(read_back - expected)
+			checked += 1
+			if error > worst_error:
+				worst_error = error
+				worst_where = "%s at r/R=%.3f (drawn %.3f°, doc %.3f°)" % [
+					prop_id, radius / radius_m, rad_to_deg(read_back), rad_to_deg(expected)]
+
+	return TestResult.new(
+		"the blade angle drawn equals the document's beta(r), one number at every station",
+		checked >= 40 and worst_error < 0.001,
+		"%d stations, worst deviation %.5f rad — %s" % [checked, worst_error, worst_where])
+
+
+## THE CASE ONLY READING THE DOCUMENT CAN GET RIGHT. A blade whose builder authored a twist table
+## (twist_mode: authored, §3.2 — the tip-unloaded shape good blades use) must be DRAWN with that
+## table, not with the constant-pitch helix. Before slice P3 the mesh held its own geometric
+## formula and would draw the helix; the physics (the document) would read the authored table, and
+## the picture and the physics would disagree by exactly the unload. This test fails on that state
+## and passes once the mesh reads beta_rad.
+static func _test_authored_twist_is_drawn(catalog: PartsCatalog) -> TestResult:
+	var prop: Dictionary = catalog.get_part("prop_5x43x3")
+	var doc := PropellerDocument.from_catalog_prop(prop)
+	# An unloaded tip: the root as the helix demands, the geometric middle, and a tip four degrees
+	# shallower — less twist at the tip, which is what "most good props unload the tip" means.
+	# The root/mid/tip are read while the document is still GEOMETRIC; switching mode first would
+	# make beta_rad read the still-empty authored table and every station would come back 0.
+	var root := doc.beta_rad(0.1)
+	var mid := doc.beta_rad(0.5)
+	var tip := doc.beta_rad(1.0)
+	doc.twist_mode = PropellerDocument.TWIST_MODE_AUTHORED
+	doc.twist = [0.1, root, 0.5, mid, 1.0, tip - deg_to_rad(4.0)]
+
+	var mesh := PropellerMesh.new()
+	mesh.rebuild(prop, doc)
+	var stations := _stations(_blade_vertices(mesh))
+	var radius_m := mesh.radius_m
+	mesh.free()
+
+	var checked := 0
+	var worst_error := 0.0
+	var worst_where := ""
+	for station in stations:
+		var radius: float = station["radius"]
+		if radius <= 0.0:
+			continue
+		var r_frac := radius / radius_m
+		var read_back := _twist_rad(station["points"])
+		var expected := doc.beta_rad(r_frac)
+		var error := absf(read_back - expected)
+		checked += 1
+		if error > worst_error:
+			worst_error = error
+			worst_where = "r/R=%.3f (drawn %.3f°, doc %.3f°)" % [
+				r_frac, rad_to_deg(read_back), rad_to_deg(expected)]
+
+	# And the unload must be REAL, checked against the helix the same prop would draw without the
+	# authored table — an independent oracle, so the test is not comparing the mesh to itself.
+	var tip_read := _tip_twist_rad(stations)
+	var helix_tip := atan(doc.pitch_mm / (TAU * radius_m * 1000.0))
+	var unloaded := absf(tip_read - (helix_tip - deg_to_rad(4.0))) < 0.001
+
+	return TestResult.new(
+		"an authored twist table is drawn as authored, not as the constant-pitch helix",
+		checked >= 10 and worst_error < 0.001 and unloaded,
+		"%d stations, worst deviation %.5f rad — %s; tip drawn %.2f°, helix tip %.2f°" % [
+			checked, worst_error, worst_where, rad_to_deg(tip_read), rad_to_deg(helix_tip)])
+
+
+## The blade angle at the outermost station — the tip, where beta is smallest and an unload shows.
+static func _tip_twist_rad(stations: Array) -> float:
+	if stations.is_empty():
+		return 0.0
+	return _twist_rad(stations[stations.size() - 1]["points"])
+
+
+# ---------------------------------------------------------------------------
+# P10d — the chord, which used to be defined twice
+# ---------------------------------------------------------------------------
+
+## The chord at one station, in millimetres: the extent of that station's points along the MAJOR
+## principal axis. That axis is the chord line (see `_twist_rad`), and for the four corners of a
+## thin rectangle the extent along it is the chord exactly. The diagonal `_chord_at_mid` measures
+## is a different number — sqrt(c² + t²), half a percent fat at t/c = 0.10 — which is fine for the
+## comparison it is used in and useless for an equality.
+static func _station_chord_mm(points: Array) -> float:
+	var mean := Vector2.ZERO
+	for p in points:
+		mean += p
+	mean /= float(points.size())
+
+	var sxx := 0.0
+	var syy := 0.0
+	var sxy := 0.0
+	for p in points:
+		var d: Vector2 = (p as Vector2) - mean
+		sxx += d.x * d.x
+		syy += d.y * d.y
+		sxy += d.x * d.y
+	var theta := 0.5 * atan2(2.0 * sxy, sxx - syy)
+	var axis := Vector2(cos(theta), sin(theta))
+
+	var lo := INF
+	var hi := -INF
+	for p in points:
+		var t: float = (p as Vector2).dot(axis)
+		lo = minf(lo, t)
+		hi = maxf(hi, t)
+	return (hi - lo) * 1000.0
+
+
+## P3's check, in the other half of the same object: the chord DRAWN equals the document's c(r) at
+## every station, read out of the built vertices rather than out of the function the mesh was
+## supposed to call.
+##
+## BE CLEAR ABOUT WHAT THIS ONE CAN AND CANNOT CATCH, because the plan doc was wrong about it and
+## the wrong version would have been a check that cannot fail. The plan claimed a station-by-station
+## chord equality "fails today" on the duplicated code. Measured: it does not. Before P10d the mesh
+## computed the sine arch analytically and the document sampled the SAME arch at 40 stations and
+## interpolated linearly between them, so on a generated preset the two agreed to 4e-6 mm — and the
+## read-back cannot resolve that, because `PackedVector3Array` is single precision and the vertices
+## come back with about 1.5e-7 of relative noise on a 22 mm chord, the same order as the difference
+## being looked for. No tolerance exists that passes the shared function and fails the duplicate.
+##
+## So this is a REGRESSION PIN, not the proof. What it does catch is everything about the wiring
+## that is not the curve: the wrong r/R (sampling span instead of radius/radius_m), the wrong units
+## (mm read as m, or the reverse — a factor of a thousand), the wrong station mapping, a chord read
+## at the twist's station or vice versa. Each of those moves the number by far more than float32
+## noise, and each is a live failure mode of the change P10d makes. The bound is therefore relative
+## and set at the read-back's own precision floor.
+##
+## The check that DOES fail on the duplicated code — by three millimetres rather than a nanometre —
+## is the next one, and it is the one to read this pair by.
+
+
+static func _test_mesh_chord_is_the_documents_chord(catalog: PartsCatalog) -> TestResult:
+	var checked := 0
+	var worst_error := 0.0
+	var worst_where := ""
+
+	for prop_id in ["prop_5x43x3", "prop_7x35x2", "prop_3x3x3", "prop_10x5x2", "prop_16x12x4"]:
+		var prop: Dictionary = catalog.get_part(prop_id)
+		var doc := PropellerDocument.from_catalog_prop(prop)
+		var mesh := PropellerMesh.new()
+		mesh.rebuild(prop)
+		var stations := _stations(_blade_vertices(mesh))
+		var radius_m := mesh.radius_m
+		mesh.free()
+
+		for station in stations:
+			var radius: float = station["radius"]
+			if radius <= 0.0:
+				continue
+			var drawn_mm := _station_chord_mm(station["points"])
+			var doc_mm := doc.chord_at(radius / radius_m)
+			var error := absf(drawn_mm - doc_mm) / maxf(absf(doc_mm), 1e-9)
+			checked += 1
+			if error > worst_error:
+				worst_error = error
+				worst_where = "%s at r/R=%.3f (drawn %.9f mm, doc %.9f mm)" % [
+					prop_id, radius / radius_m, drawn_mm, doc_mm]
+
+	return TestResult.new(
+		"[P10d] the chord drawn equals the document's c(r), one function at every station",
+		checked >= 60 and worst_error < 1e-6,
+		"%d stations, worst RELATIVE deviation %.12f (float32 read-back floor) — %s" % [checked, worst_error, worst_where])
+
+
+## THE CASE ONLY READING THE DOCUMENT CAN GET RIGHT, and the reason P10d is the slice that exposes
+## the defect rather than the slice that creates it. A builder edits the planform — narrows the tip,
+## widens the root, which is the first thing anyone does to a blade — and the blade on screen must
+## change. Before P10d it did not: the mesh recomputed its own sine arch from its own five constants
+## and drew the catalog shape whatever the document said, so an edited planform moved the physics
+## and not the picture. Exactly P3's defect, in the other half of the same object.
+##
+## The edit here is deliberately violent — half the chord outboard, a fifth more inboard — because
+## the failure being caught is "the picture ignores the document entirely", and a subtle edit would
+## make a real failure hide inside the read-back's own noise. The assertion is per-station against
+## the edited document, so a mesh that applied the edit at one end only fails too.
+static func _test_an_edited_planform_is_drawn(catalog: PartsCatalog) -> TestResult:
+	var prop: Dictionary = catalog.get_part("prop_5x43x3")
+
+	var doc := PropellerDocument.from_catalog_prop(prop)
+	var original := doc.chord.duplicate()
+	# The edit: a scale that varies along the blade, so no single factor can fake it.
+	var i := 0
+	while i + 1 < doc.chord.size():
+		var r_frac: float = doc.chord[i]
+		doc.chord[i + 1] = doc.chord[i + 1] * (1.2 - 0.7 * r_frac)
+		i += 2
+
+	var mesh := PropellerMesh.new()
+	mesh.rebuild(prop, doc)
+	var stations := _stations(_blade_vertices(mesh))
+	var radius_m := mesh.radius_m
+	mesh.free()
+
+	var checked := 0
+	var worst_error := 0.0
+	var worst_unedited := 0.0
+	var worst_where := ""
+	for station in stations:
+		var radius: float = station["radius"]
+		if radius <= 0.0:
+			continue
+		var r_frac := radius / radius_m
+		var drawn_mm := _station_chord_mm(station["points"])
+		var edited_mm := doc.chord_at(r_frac)
+		checked += 1
+		var error := absf(drawn_mm - edited_mm) / maxf(absf(edited_mm), 1e-9)
+		if error > worst_error:
+			worst_error = error
+			worst_where = "r/R=%.3f (drawn %.5f mm, edited doc %.5f mm)" % [
+				r_frac, drawn_mm, edited_mm]
+		# And the distance from the shape it WOULD have drawn before the edit, which is the size
+		# of the failure this test exists to catch — a check that could pass on both shapes would
+		# be no check at all.
+		var unedited := PropellerDocument.new()
+		unedited.chord = original
+		worst_unedited = maxf(worst_unedited, absf(edited_mm - unedited.chord_at(r_frac)))
+
+	return TestResult.new(
+		"[P10d] a blade whose planform was EDITED is drawn with the edited chord, not the preset's",
+		checked >= 12 and worst_error < 1e-6 and worst_unedited > 0.5,
+		"%d stations, worst relative deviation %.12f; the edit moves the chord by up to %.3f mm, which is what a mesh drawing its own arch would be wrong by — %s" % [
+			checked, worst_error, worst_unedited, worst_where])
+
+
+## The blade is a CLOSED SOLID with its faces wound outward, and this is the assertion that catches
+## the one mutation the section geometry's two readers cannot see between them.
+##
+## Since P10d both the mesh and the room's section view build their corners from
+## `PropellerDocument.section_corners_mm`. That shared definition is the point of the slice, and it
+## has a cost: reversing the face-normal vector inside that function reverses the winding of every
+## face, and BOTH readers reverse together — so every check that compares them still passes while
+## the blade is inside out. Measured, not reasoned: with the sign flipped, all ten checks in
+## `test_propulsion_room.gd` pass.
+##
+## Winding is what is left, and it is checked without normals: for a closed surface wound outward,
+## the signed volume of the tetrahedra spanned from the origin by each triangle is POSITIVE. One
+## number over the whole mesh, no per-face argument, and it reverses sign exactly when the winding
+## does. The magnitude is asserted too — a degenerate blade of zero volume would otherwise sit on
+## the boundary and pass whichever way the sign fell.
+static func _test_the_blade_is_not_inside_out(catalog: PartsCatalog) -> TestResult:
+	var problems: Array = []
+	var reported: Array = []
+
+	for prop_id in ["prop_5x43x3", "prop_7x35x2", "prop_3x3x3"]:
+		var mesh := PropellerMesh.new()
+		mesh.rebuild(catalog.get_part(prop_id))
+		var blade := mesh.get_node("Blade_0") as MeshInstance3D
+		var arrays: Array = (blade.mesh as ArrayMesh).surface_get_arrays(0)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		mesh.free()
+
+		var volume := 0.0
+		var i := 0
+		while i + 2 < indices.size():
+			var a: Vector3 = vertices[indices[i]]
+			var b: Vector3 = vertices[indices[i + 1]]
+			var c: Vector3 = vertices[indices[i + 2]]
+			volume += a.dot(b.cross(c)) / 6.0
+			i += 3
+
+		reported.append("%s %.9f mm3" % [prop_id, volume * 1e9])
+		if volume <= 0.0:
+			problems.append("%s is wound inward (signed volume %.9f mm3)" % [prop_id, volume * 1e9])
+		elif volume < 1e-9:
+			problems.append("%s has no volume to speak of (%.9f mm3)" % [prop_id, volume * 1e9])
+
+	return TestResult.new(
+		"[P10d] the blade is a closed solid wound OUTWARD, so a shared sign flip cannot hide",
+		problems.is_empty() and reported.size() == 3,
+		"signed volumes: %s" % ", ".join(PackedStringArray(reported)) if problems.is_empty()
+			else "; ".join(problems))

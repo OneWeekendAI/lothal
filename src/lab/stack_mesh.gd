@@ -8,7 +8,7 @@ extends Node3D
 ## §2.2), and a component with no picture cannot be fit-checked at all — you could not see that the
 ## board you had chosen was drilled for a pattern your frame does not carry.
 ##
-## THE MASS DID NOT GO UP. What is drawn here was already in Build.ELECTRONICS_MASS_G, and giving it
+## THE MASS DID NOT GO UP. What is drawn here was already in Build.ELECTRONICS_BUDGET_G, and giving it
 ## physical form takes it OUT of that lump rather than adding beside it — see Build.mass_parts().
 ## The reference build's all-up weight, thrust-to-weight and hover throttle are unchanged.
 ##

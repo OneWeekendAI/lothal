@@ -15,13 +15,47 @@ const CATEGORY_FILES := {
 	"battery": "res://data/parts/batteries.json",
 	"esc": "res://data/parts/escs.json",
 	"flight_controller": "res://data/parts/flight_controllers.json",
-	# The four LTHL-11 unbundled out of Build.ELECTRONICS_MASS_G. Unlike the six above, a build
+	# The four LTHL-11 unbundled out of Build.ELECTRONICS_BUDGET_G. Unlike the six above, a build
 	# may fit NONE of these — see Build.OPTIONAL_COMPONENTS — so their presence in this table is
 	# what makes them selectable, not what makes them required.
 	"camera": "res://data/parts/cameras.json",
 	"vtx": "res://data/parts/vtxs.json",
 	"antenna": "res://data/parts/antennas.json",
 	"receiver": "res://data/parts/receivers.json",
+	# P10a (propulsion.md §9 P10 row / plans/2026-08-26-propulsion-room-design.md §3): guards enter
+	# on the same shape as the four above — a build may fit NONE, in which case nothing here
+	# touches the reference-build oracle (496 g / 11.69:1 / 29.6%). Physics is
+	# src/propulsion/prop_guard.gd; wiring into AirframeProperties.extra_parts is
+	# PropGuard.as_part_mass(), which plants the guard's mass at the motor's plan position and
+	# lets parallel-axis supply the R² bite exactly once — P9's row spells out the double-count
+	# trap that would otherwise result.
+	"guard": "res://data/parts/guards.json",
+	# PW1 (plans/2026-09-10-power-room-design.md §4.1). The two halves of the current path that are
+	# products you buy; the third — wire — is deliberately NOT here, because wire is a gauge and a
+	# length rather than a part, and a row per gauge could not answer "what if I shorten these
+	# leads". That lives in src/power/wire_gauge.gd on HardwareMass's argument.
+	#
+	# `connector` carries the join this slice exists to get right: its catalog.family must match
+	# batteries.json's catalog.connector character for character, or PW3's compatibility check
+	# compares two strings that never match and passes on every build forever.
+	"connector": "res://data/parts/connectors.json",
+	"capacitor": "res://data/parts/capacitors.json",
+	# C1 (plans/2026-09-12-control-room-design.md §2.3, §2.4). The two things on the aircraft that
+	# TALK BACK — one to the flight controller, one to the person walking through long grass looking
+	# for it — and Control's membership rule (§1) is what puts them here rather than under Video
+	# beside the camera.
+	#
+	# Both are OPTIONAL in the strong sense: they join Build.OPTIONAL_COMPONENTS in C2 and
+	# DEFAULT_COMPONENT_IDS gets no entry for either, so a build fits neither unless asked and every
+	# existing oracle stays bit-identical (§3). Registration here is what makes them SELECTABLE, not
+	# what makes them required.
+	#
+	# The one physics-bearing field in each is the reason its file exists rather than a lump added to
+	# the harness remainder: gps.json's `mast_height_mm` puts mass ABOVE the top plate on a stalk,
+	# which moves the vertical centre of mass more than anything else fitted, and buzzers.json's
+	# `self_powered` decides whether the thing is still audible after the pack has ejected.
+	"gps": "res://data/parts/gps.json",
+	"buzzer": "res://data/parts/buzzers.json",
 }
 
 ## The id prefix a builder-entered part MUST carry, and which a SHIPPED part may never carry.
@@ -98,6 +132,11 @@ static func load_with_custom(path: String = CustomParts.SAVE_PATH) -> PartsCatal
 	catalog._merge_custom(path, CustomVtxs.load_from(path))
 	catalog._merge_custom(path, CustomAntennas.load_from(path))
 	catalog._merge_custom(path, CustomReceivers.load_from(path))
+	# C7: C2's two ADDED components, last for the same reason and cross-referencing nothing. Merged
+	# here and nowhere else — neither has a default or a carved share, so a custom GPS nobody fits
+	# changes no aircraft, the reference build included.
+	catalog._merge_custom(path, CustomGps.load_from(path))
+	catalog._merge_custom(path, CustomBuzzers.load_from(path))
 	return catalog
 
 
@@ -151,6 +190,17 @@ static func schema_for(category: String) -> String:
 	if not (parsed is Dictionary):
 		return ""
 	return str((parsed as Dictionary).get("_schema", ""))
+
+## Whether a catalog entry is printed, bought, or can be either (printed-room PR9, track.md W1P.2).
+## `""` means the catalog does not say — which is every shipped entry today, because no source publishes
+## it and none is invented. An unrecognised value reads as unstated rather than as a guess at intent.
+const FABRICATION_VALUES := ["printed", "bought", "either"]
+
+
+static func fabrication_of(part: Dictionary) -> String:
+	var raw: Variant = part.get("fabrication", null)
+	return String(raw) if raw is String and FABRICATION_VALUES.has(String(raw)) else ""
+
 
 func get_part(part_id: String) -> Dictionary:
 	return by_id.get(part_id, {})

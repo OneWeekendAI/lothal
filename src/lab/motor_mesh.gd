@@ -38,12 +38,31 @@ extends Node3D
 ## the same size. A 2207's stator is 22 mm across and its bell is about 28 mm — the winding
 ## sits inside a can with a wall, a magnet ring and an air gap. Same story vertically: 7 mm of
 ## stator sits inside roughly 18 mm of can, because the bell also has to cover the bearings
-## and the magnets above and below the winding. Both ratios are class-typical from 14xx
-## through 28xx, which is why they are ratios here rather than two more fields in the JSON —
-## parts.md's spec-field table has no body-dimension field for a motor, and the precedent for
-## deriving rather than authoring is FrameModel's arm cross-section.
-const BELL_TO_STATOR_DIAMETER_RATIO := 1.27
-const BELL_HEIGHT_TO_STATOR_HEIGHT_RATIO := 2.6
+## and the magnets above and below the winding.
+##
+## PRE-P7 THESE WERE LOCAL CONSTANTS: 1.27 and 2.6, "class-typical from 14xx through 28xx",
+## kept off the JSON because "parts.md's spec-field table has no body-dimension field for a
+## motor". P7 (propulsion.md §3.4) reads them from `specs` because MotorSpinUp's J_rotor
+## depends on the bell radius — the same rule airframe.md §6.1 applied to `material` and §9b
+## applied to `construction`: the moment a drawing constant is read by physics, it stops
+## being visual and becomes a spec. `_FALLBACK_*` here is only for motors authored through
+## the custom-motor form (which does not ask for these fields) — every motor in motors.json
+## carries its own values.
+const _FALLBACK_BELL_TO_STATOR_DIAMETER_RATIO := 1.27
+const _FALLBACK_BELL_HEIGHT_TO_STATOR_HEIGHT_RATIO := 2.6
+
+
+## Reads the diameter ratio from specs, falling back for a custom motor authored without one.
+## Static so `MotorSpinUp` and other callers get the same value MotorMesh draws — one number
+## for the geometry and the physics.
+static func bell_diameter_ratio(motor: Dictionary) -> float:
+	var specs: Dictionary = motor.get("specs", {})
+	return float(specs.get("bell_diameter_ratio", _FALLBACK_BELL_TO_STATOR_DIAMETER_RATIO))
+
+
+static func bell_height_ratio(motor: Dictionary) -> float:
+	var specs: Dictionary = motor.get("specs", {})
+	return float(specs.get("bell_height_ratio", _FALLBACK_BELL_HEIGHT_TO_STATOR_HEIGHT_RATIO))
 
 ## The mounting boss under the bell: the stator's own footprint, and thin. The can overhangs
 ## what it bolts to, which is why this is not the bell radius.
@@ -109,11 +128,11 @@ static func dimensions(motor: Dictionary) -> Dictionary:
 	if stator_height_m <= 0.0:
 		stator_height_m = FALLBACK_STATOR_HEIGHT_MM / 1000.0
 
-	var bell_height := stator_height_m * BELL_HEIGHT_TO_STATOR_HEIGHT_RATIO
+	var bell_height := stator_height_m * bell_height_ratio(motor)
 	var shaft_diameter := stator_diameter_m * SHAFT_TO_STATOR_DIAMETER_RATIO
 	return {
 		"stator_radius": stator_diameter_m * 0.5,
-		"bell_radius": stator_diameter_m * BELL_TO_STATOR_DIAMETER_RATIO * 0.5,
+		"bell_radius": stator_diameter_m * bell_diameter_ratio(motor) * 0.5,
 		"bell_height": bell_height,
 		"base_height": stator_diameter_m * BASE_HEIGHT_TO_STATOR_DIAMETER_RATIO,
 		"shaft_radius": shaft_diameter * 0.5,

@@ -1,0 +1,110 @@
+{
+  "_schema": "The GPS module — plans/2026-09-12-control-room-design.md §2.3, slice C1. Two tiers, as in every other catalog file: `specs` is physics-bearing and `catalog` is browsing metadata only. Colour, price and vendor links are banned by name, from either block. WHAT THE PHYSICS READS IS THE MASS, THE THREE BOX DIMENSIONS AND `mast_height_mm`. Everything else here is a string a builder browses on. `mast_height_mm` IS THE REASON THIS CATEGORY EXISTS rather than a few grams added to the harness remainder: a masted GPS puts its mass ABOVE THE TOP PLATE ON A STALK, which makes it the highest mass on the aircraft and the single thing fitted that moves the centre of mass VERTICALLY more than anything else. A flat module carries 0 and sits on the plate; a masted one carries the stalk's real height. MassProperties already has the machinery — the module only has to sit where it really sits — so getting this field wrong is not a rounding error, it is mass in the wrong place. It ships as an EDITABLE DEFAULT, because a mast's height is a builder's choice and not a product specification. `constellations`, `compass` and `protocol` are in `catalog` and reach NOTHING: there is no navigation, no position hold, no return-to-home and no magnetometer model in Lothal, and a GPS here is mass, height, and a port on the flight controller. Claiming otherwise would be inventing a spec to unlock a feature. Entries are ordered by mass. THE MASSES AND MAST HEIGHTS HERE ARE CLASS-TYPICAL RATHER THAN VENDOR-SOURCED, and each entry's `source` says so in the guess voice — design §0 relaxed the bar on values and not on honesty.",
+  "parts": [
+    {
+      "part_id": "gps_micro_flat",
+      "name": "Micro GPS, flat",
+      "category": "gps",
+      "mass_g": 4.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 16.0,
+        "width_mm": 16.0,
+        "height_mm": 6.0,
+        "mast_height_mm": 0.0
+      },
+      "catalog": {
+        "constellations": "GPS + GLONASS",
+        "compass": false,
+        "protocol": "UBX"
+      },
+      "source": "class-typical 16 x 16 mm flat micro module of the kind taped to a toothpick or 3\" top plate, not a specific product. Mass is ROUGH — sub-5 g modules rarely publish one, and the figure moves with how much of the pigtail you count. mast_height_mm is 0 because this class has no stalk at all."
+    },
+    {
+      "part_id": "gps_compact_flat",
+      "name": "Compact GPS + compass, flat",
+      "category": "gps",
+      "mass_g": 6.5,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 20.0,
+        "width_mm": 20.0,
+        "height_mm": 6.5,
+        "mast_height_mm": 0.0
+      },
+      "catalog": {
+        "constellations": "GPS + GLONASS + Galileo + BeiDou",
+        "compass": true,
+        "protocol": "UBX"
+      },
+      "source": "class-typical 20 x 20 mm flat module with a magnetometer on the board, the commonest thing fitted to a 5\" freestyle build that wants a rescue mode. Mass is ROUGH and class-typical, not a specific product."
+    },
+    {
+      "part_id": "gps_standard_flat",
+      "name": "Standard GPS + compass, flat",
+      "category": "gps",
+      "mass_g": 9.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 25.0,
+        "width_mm": 25.0,
+        "height_mm": 8.0,
+        "mast_height_mm": 0.0
+      },
+      "catalog": {
+        "constellations": "GPS + GLONASS + Galileo + BeiDou",
+        "compass": true,
+        "protocol": "UBX"
+      },
+      "source": "class-typical 25 x 25 mm flat module — the larger patch antenna is where the extra grams are, and it is fitted flat on a 7\" top plate where there is room for it. Mass is ROUGH and class-typical, not a specific product."
+    },
+    {
+      "part_id": "gps_masted_compact",
+      "name": "Masted GPS + compass, short mast",
+      "category": "gps",
+      "mass_g": 11.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 22.0,
+        "width_mm": 22.0,
+        "height_mm": 7.0,
+        "mast_height_mm": 45.0
+      },
+      "catalog": {
+        "constellations": "GPS + GLONASS + Galileo + BeiDou",
+        "compass": true,
+        "protocol": "UBX"
+      },
+      "source": "class-typical masted module: a 20-odd mm board on a short folding stalk, fitted to get the magnetometer away from the ESC's current path. Mass includes the mast and its base. THE 45 mm MAST HEIGHT IS A ROUGH DEFAULT, not a specification — folding stalks are cut to length by the builder, and design §2.3 says the editable field beside it is the real answer."
+    },
+    {
+      "part_id": "gps_masted_long_range",
+      "name": "Long-range GPS + compass, tall mast",
+      "category": "gps",
+      "mass_g": 14.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 28.0,
+        "width_mm": 28.0,
+        "height_mm": 9.0,
+        "mast_height_mm": 70.0
+      },
+      "catalog": {
+        "constellations": "GPS + GLONASS + Galileo + BeiDou",
+        "compass": true,
+        "protocol": "NMEA"
+      },
+      "source": "class-typical long-range module on a tall stalk, the heaviest thing in this file and deliberately so: 14 g at 70 mm above the top plate is the case design §2.3 exists to make visible. Mass and mast height are both ROUGH class-typical figures, not a specific product."
+    }
+  ]
+}

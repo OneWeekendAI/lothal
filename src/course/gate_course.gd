@@ -56,13 +56,17 @@ var gates: Array[Dictionary] = []
 var course_id := DEFAULT_ID
 var course_name := DEFAULT_NAME
 
-## The air this course is flown in (air_density.gd). A property of the WORLD, not of the aircraft
-## and not of a flight — labs-and-sim.md §1 puts it in Lab beside the gates, and Sim receives it
-## inside the finished field exactly as it receives them.
+## The SITE this course is laid out in — the place you fly, which owns the ground, the obstacles
+## and the elevation (site.gd).
 ##
-## Standard until a builder says otherwise, which is the correct reading of every course saved
-## before this existed rather than a fallback: 1.225 is precisely what those courses were flown in.
-var air := AirDensity.standard()
+## This replaced `var air`, and the replacement is the point rather than a tidy-up. Air was a
+## property of the WORLD living on the ROUTE, so laying out a second route at the same spot meant
+## typing the elevation twice, and the two copies were free to disagree the first time one was
+## edited. Now the place holds it once and every route in it reads the same number.
+##
+## Defaults to the default field, which is the correct reading of a course that has never been
+## told where it is rather than a fallback.
+var site_id := Site.DEFAULT_ID
 
 var next_gate_index := 0
 ## Where to put the drone back after a crash: the gate it most recently flew through,
@@ -137,9 +141,48 @@ const START_SETBACK_M := 7.0
 ## default circuit (13.8 m between gates) the cap does not bind and the start line is unmoved.
 const START_SETBACK_FRACTION := 0.6
 
-func start_position() -> Vector3:
+## How far above the ground the aircraft is placed when it is put somewhere — the start line, and
+## the respawn after a crash. THE SAME NUMBER `scenes/main.gd` names `CRASH_ALTITUDE_M`, and it
+## reads it from here rather than keeping its own: spawning at an altitude the crash test rejects
+## would put a pilot in a respawn loop, and two copies of the number is exactly how that arrives.
+const GROUND_CLEARANCE_M := 0.02
+
+## `p_terrain` is the ground this course is laid out on (F4). **Null means flat at zero**, which is
+## what every course flown before terrain existed was laid out on — so the default is the right
+## reading of an unspecified site rather than a convenience, and the start line on a flat field is
+## bit-identical to the one that shipped.
+##
+## The terrain is asked AT THE START LINE, not at gate 1. On a slope those are metres apart in
+## height, and the gate's answer would spawn the aircraft underground at one end of the field and
+## in the air at the other.
+func start_position(p_terrain: Terrain = null) -> Vector3:
 	var gate := gates[0]
-	return gate["position"] - gate["normal"] * start_setback_m()
+	var at: Vector3 = gate["position"] - gate["normal"] * start_setback_m()
+	return _above_ground(at, p_terrain)
+
+
+## The hair above the clearance that a placed point is actually lifted to. NOT a fudge factor, and
+## it is here because a `Vector3` holds 32-bit floats while every line of arithmetic around it runs
+## in 64: a y computed as exactly `ground + GROUND_CLEARANCE_M` and stored in one comes back LOW by
+## up to its own magnitude times 2^-24, and `main.gd`'s crash test — which recomputes the same sum
+## in doubles — then reads the spawn as a crash and respawns it again, for ever. Measured on the
+## default circuit over a 20 m slope: the stored respawn came back 1.4e-7 m below the threshold it
+## had just been placed on.
+##
+## Relative rather than a fixed epsilon so it is still a margin 200 m up, and ~16 times the 2^-24
+## storage error rather than 1, because the terrain read in front of it rounds too. A millimetre
+## it is not: at 10 m altitude this is ten microns.
+const PLACEMENT_MARGIN := 1.0e-6
+
+## Lifts a point to clear the ground, and never lowers one. A gate authored high above a hill is
+## flown at the height it was authored; only a point the terrain has swallowed moves.
+static func _above_ground(at: Vector3, p_terrain: Terrain) -> Vector3:
+	if p_terrain == null:
+		return at
+	var lowest := p_terrain.height_at(at.x, at.z) + GROUND_CLEARANCE_M
+	if at.y >= lowest:
+		return at
+	return Vector3(at.x, lowest + maxf(absf(lowest), 1.0) * PLACEMENT_MARGIN, at.z)
 
 ## The setback actually used, which is the shorter of the nominal 7 m and most of the way back to
 ## the preceding gate. A one-gate course has nothing behind it and keeps the full 7 m.
@@ -209,16 +252,19 @@ func just_completed_lap() -> bool:
 ## course. Respawning at the original spawn point after every clip would make the back half
 ## of the circuit effectively unreachable for a new pilot (week1.md day 6's gate is that a
 ## stranger completes a lap).
-func respawn_position() -> Vector3:
+## `p_terrain` as `start_position()`: null is flat at zero. BOTH branches ask it — the fallback
+## below is the start line, and a fallback that skipped the ground would put a pilot who has not
+## cleared a gate yet into the hill, which is the one pilot least able to recover from it.
+func respawn_position(p_terrain: Terrain = null) -> Vector3:
 	if last_gate_passed < 0:
 		# Nothing cleared yet, so the last gate cleared is the start line. Derived rather than the
 		# old fixed Vector3(0, GATE_LOW_M, 0), which was the centre of the default circle and is
 		# an arbitrary point in a field for any other course — on a course laid out 200 m away it
 		# put a crashed pilot in an empty field with no gate in sight.
-		return start_position()
+		return start_position(p_terrain)
 	var gate := gates[last_gate_passed]
 	# Just past the ring, so the drone does not immediately re-trigger the gate it left.
-	return gate["position"] + gate["normal"] * 1.0
+	return _above_ground(gate["position"] + gate["normal"] * 1.0, p_terrain)
 
 func reset() -> void:
 	next_gate_index = 0
@@ -240,6 +286,12 @@ const FINGERPRINT_PRECISION_NORMAL := 0.0001
 ## Air quantises on the same idea. A thousandth of a kg/m3 is 0.08% of standard air — far finer
 ## than any effect on a lap time, and far coarser than a float's round trip through JSON.
 const FINGERPRINT_PRECISION_RHO := 0.001
+## The steady wind quantises at a centimetre per second — the same figure `Conditions` calls calm,
+## so a speed too small to be weather is also too small to be a different track.
+const FINGERPRINT_PRECISION_WIND_MPS := 0.01
+## And its bearing at a tenth of a degree. Far finer than any wind anybody can report, far coarser
+## than a float read back out of JSON.
+const FINGERPRINT_PRECISION_WIND_DEG := 0.1
 
 ## What a best lap is set ON: the geometry, not the id and not the name.
 ##
@@ -250,7 +302,15 @@ const FINGERPRINT_PRECISION_RHO := 0.001
 ##
 ## Order matters, and it should: the same rings taken in a different sequence is a different
 ## course to fly, and the times are not comparable.
-func fingerprint() -> String:
+## The air is passed IN rather than read off this object, because a course no longer carries one —
+## the site does. `null` means standard, and that default is load-bearing rather than a
+## convenience: every existing caller passes nothing, and the paragraph below says what happens to
+## a hash that starts appending a term unconditionally.
+## `p_site` and `p_conditions` arrived with the field room, and BOTH default to null for the same
+## load-bearing reason `p_air` does: every existing caller passes nothing, and a term appended
+## unconditionally would change every hash there has ever been.
+func fingerprint(p_air: AirDensity = null, p_site: Site = null,
+		p_conditions: Conditions = null) -> String:
 	var parts := PackedStringArray()
 	for gate in gates:
 		var position: Vector3 = gate["position"]
@@ -277,8 +337,41 @@ func fingerprint() -> String:
 	# same rule the file follows, where what was never authored is not represented. It also has to
 	# be true — appending a standard-air term unconditionally would change every existing course's
 	# hash and orphan every best lap ever set.
-	if not air.is_standard():
-		parts.append("rho=%d" % roundi(air.kgm3() / FINGERPRINT_PRECISION_RHO))
+	if p_air != null and not p_air.is_standard():
+		parts.append("rho=%d" % roundi(p_air.kgm3() / FINGERPRINT_PRECISION_RHO))
+	# THE GROUND IS PART OF THE TRACK on the same argument the air is. A lap flown over a 6 m rise
+	# and a lap flown over the same rings on a flat field are not comparable times, and reporting
+	# one as a best on the other is the record that quietly means nothing.
+	#
+	# The term carries the shape's DIMENSIONS and not just its name (`Terrain.fingerprint_term()`),
+	# because two slopes differing only in their rise are two different courses to fly.
+	#
+	# ONE CONSEQUENCE, WRITTEN DOWN RATHER THAN DISCOVERED (F3's carry-forward): `Terrain.from_data`
+	# maps a shape name this build cannot read to FLAT, so `is_flat_at_zero()` is true for it and no
+	# term is appended at all. That means TWO DIFFERENT TERRAINS SCULPTED BY A NEWER BUILD HASH
+	# IDENTICALLY HERE. It is the defensible reading — this build's `height_at` genuinely answers 0
+	# everywhere for a shape it cannot evaluate, so as far as it can tell they ARE the same flat
+	# field — and it must not be "fixed" by treating an unknown shape as non-flat, which would hash
+	# a term derived from geometry this build cannot compute. `tests/test_fingerprint_survival.gd`
+	# pins it so a later slice cannot change it by accident.
+	if p_site != null and not p_site.terrain.is_flat_at_zero():
+		parts.append("terrain=%s" % p_site.terrain.fingerprint_term())
+	# THE STEADY WIND IS PART OF THE TRACK, and the bearing as much as the speed: the same 6 m/s
+	# is a headwind down one straight and a tailwind down it, and those are different laps.
+	#
+	# GUSTINESS IS DELIBERATELY NOT HASHED. It is a noise process whose mean is the steady figure
+	# already here, so hashing it would retire a record for a number that changed nothing about the
+	# track. Stated so the omission is a decision rather than an oversight.
+	#
+	# Gated on `has_steady_wind()` and NOT on `not is_calm()`, which is the same decision seen from
+	# the other side. `is_calm()` counts gustiness — correctly, for the question it answers — so
+	# gating on it would open this branch for a set with no steady wind at all, append `wind=0,0`,
+	# and orphan every best lap on the course the moment somebody typed a gust amplitude. See
+	# `conditions.gd`.
+	if p_conditions != null and p_conditions.has_steady_wind():
+		parts.append("wind=%d,%d" % [
+			roundi(p_conditions.wind_speed_mps / FINGERPRINT_PRECISION_WIND_MPS),
+			roundi(p_conditions.wind_from_deg / FINGERPRINT_PRECISION_WIND_DEG)])
 	# Hashed rather than stored whole, so the best-lap file stays a short readable table instead of
 	# growing a copy of every course anyone has ever flown. Truncated to 16 hex characters: the file
 	# holds a handful of courses, and a collision there needs 2^32 of them.

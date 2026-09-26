@@ -77,7 +77,6 @@ static func _test_every_room_opens_and_is_freed() -> Array:
 		"battery_bench": host.show_battery_bench,
 		"esc_bench": host.show_esc_bench,
 		"frame_bench": host.show_frame_bench,
-		"field_editor": host.show_field_editor,
 		"studio": host.show_studio,
 		"sim": host.show_sim,
 	}
@@ -164,21 +163,34 @@ static func _test_sim_retracts_the_chrome_and_lab_restores_it() -> Array:
 	shell.rooms.show_lab()
 	var back_chrome := _chrome_of(shell)
 
-	var all_up: bool = lab_chrome["top"] and lab_chrome["tools"] and lab_chrome["rail"] \
-		and lab_chrome["inspector"]
+	# THREE clusters, not four, and the rail is deliberately NOT among them (QC5). The garage's
+	# default focus is Airframe, whose shelves the finder now opens, so its column is down — a
+	# check that still demanded `rail` would be asserting the thing the slice removed.
+	#
+	# The rail's absence is asserted SEPARATELY rather than dropped. Deleting the term would have
+	# left a check that passes whether the column is down because QC5 retired it or up because a
+	# regression brought it back, and "the garage shows its clusters" is exactly the check that
+	# should notice a column reappearing.
+	var all_up: bool = lab_chrome["top"] and lab_chrome["tools"] and lab_chrome["list"] \
+		and not lab_chrome["inspector"]
 	results.append(TestResult.new(
-		"the garage shows all four clusters",
+		"the garage shows its three clusters — top bar, tools, and the section list (no page open)",
 		all_up,
-		"top=%s tools=%s rail=%s inspector=%s" % [lab_chrome["top"], lab_chrome["tools"],
-			lab_chrome["rail"], lab_chrome["inspector"]]))
+		"top=%s tools=%s list=%s inspector=%s" % [lab_chrome["top"], lab_chrome["tools"],
+			lab_chrome["list"], lab_chrome["inspector"]]))
+
+	results.append(TestResult.new(
+		"and the garage does NOT show a parts rail — the finder opens Airframe's shelves",
+		not lab_chrome["rail"],
+		"rail=%s" % [lab_chrome["rail"]]))
 
 	var all_gone: bool = not sim_chrome["top"] and not sim_chrome["tools"] \
-		and not sim_chrome["rail"] and not sim_chrome["inspector"]
+		and not sim_chrome["rail"] and not sim_chrome["inspector"] and not sim_chrome["list"]
 	results.append(TestResult.new(
 		"the field retracts every cluster — nothing on screen can author a part",
 		all_gone,
-		"top=%s tools=%s rail=%s inspector=%s" % [sim_chrome["top"], sim_chrome["tools"],
-			sim_chrome["rail"], sim_chrome["inspector"]]))
+		"top=%s tools=%s rail=%s inspector=%s list=%s" % [sim_chrome["top"], sim_chrome["tools"],
+			sim_chrome["rail"], sim_chrome["inspector"], sim_chrome["list"]]))
 
 	results.append(TestResult.new(
 		"and walking back into the garage puts them back",
@@ -199,6 +211,27 @@ static func _test_sim_retracts_the_chrome_and_lab_restores_it() -> Array:
 	shell.rooms.show_lab()
 	shell.free()
 	return results
+
+
+## One system's rail titles, off GlassShell's own table.
+static func _rails_of(system_name: String) -> Array:
+	for system in GlassShell.SYSTEMS:
+		if str(system["name"]) == system_name:
+			return system["rails"]
+	return []
+
+
+## Where a system sits in `GlassShell.SYSTEMS`, by name.
+##
+## Derived from the same array the shell indexes rather than written out, for `_rails_of`'s reason
+## one line up: a hardcoded 2 would keep passing if a system were inserted above Power and would be
+## asserting the wrong aircraft. Returns -1 for a name that is not there, which cannot equal a real
+## focus index, so a typo in the name fails the check instead of quietly matching nothing.
+static func _index_of(system_name: String) -> int:
+	for i in GlassShell.SYSTEMS.size():
+		if str(GlassShell.SYSTEMS[i]["name"]) == system_name:
+			return i
+	return -1
 
 
 ## The nearest CanvasLayer above a node, or null if it is in the ordinary tree.
@@ -224,12 +257,24 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 	shell.rooms.show_lab()
 	results.append(TestResult.new(
 		"returning from the field lands on the system you left, not the first one",
-		_visible_rail_titles(shell) == ["Pack"],
-		"rail shows %s" % [_visible_rail_titles(shell)]))
+		# Asserted on the FOCUS, not on the visible rail titles. The original read
+		# `_visible_rail_titles(shell) == _rails_of("Power")`, which was the right idea while every
+		# system wore its shelves in a column: QC5 made both of Power's shelves finder-reachable, so
+		# its column is down and the titles come back `[]` — the check failed for a reason that had
+		# nothing to do with what it asserts. The focus index is what "which system came back"
+		# actually means, and it survives a shelf moving from the column into the finder.
+		shell._focused_index == _index_of("Power"),
+		"focus is %d, Power is %d, rail shows %s" % [
+			shell._focused_index, _index_of("Power"), _visible_rail_titles(shell)]))
 
-	# Config has no model: stubs, and no rail column at all. A restore that unhides both columns
-	# comes back with a Frame rail under a dropdown reading "Config".
-	shell.select_system_by_name("Config")
+	# Ground kit has no model: stubs, and no rail column at all. A restore that unhides both columns
+	# comes back with a Frame rail under a dropdown reading "Ground kit".
+	#
+	# This used to be Config, which stopped being unmodelled in Config-room slice C3 — it has a
+	# Motors panel now. The fixture moved to the next system that is genuinely a stub rather than
+	# the check being relaxed: what is asserted here is about a system with NO model, so it needs
+	# one to stand on.
+	shell.select_system_by_name("Ground kit")
 	var stub_before := shell.lab.rails().visible
 	shell.rooms.show_sim()
 	shell.rooms.show_lab()
@@ -242,13 +287,54 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 	return results
 
 
-## The six rooms that are neither Lab nor Sim, reached the way a builder reaches them.
+## Every room reached from an inspector rather than from the Rooms menu — P10f.
 ##
-## **The coverage check is the one that matters.** Asserting that six named ids open six rooms
-## passes forever while a seventh room is added to RoomHost and left with no door — which is
-## precisely the failure this shell is exposed to, because the tab bar that used to list every room
-## is gone. So the menu's ids are checked against RoomHost's own doors, derived rather than typed
-## out: every `show_*` method that is not Lab or Sim must have an entry.
+## **A LIST, and deliberately not a flag on RoomHost.** The design doc's §7 names the way this
+## amendment could land green while a room loses its door: an exemption that a room sets for
+## itself is one a room can set by accident, and then it simply vanishes from both the menu and
+## this check. An explicit list next to the assertion is an edit a reviewer sees in the same diff
+## as the room, which is the whole difference.
+##
+## Adding to it is therefore a claim, and the claim is checked one assertion down: every id here
+## must be a door RoomHost actually has, so a typo or a room that is later deleted fails rather
+## than quietly excusing nothing.
+const INSPECTOR_DOORS := ["battery_bench", "bench", "esc_bench"]
+
+## And the rooms reached from the DOCK rather than from the menu or from an inspector — F10.
+##
+## A second explicit list rather than a second entry in the one above, because the two are
+## different claims and a reviewer should see which is being made: an inspector door is a button
+## inside a system's panel, and a dock door is a system of its own with an icon. The claim this
+## list makes is checked one assertion down, exactly as the inspector list's is — and the icon it
+## claims is checked too, against `Dock.ICONED_SYSTEMS`, so "Field is exempt" cannot be asserted by
+## a slice that never gave it a door.
+##
+## `field_editor` WAS THE ONE ENTRY AND F11 EMPTIED THE LIST, which is the honest state rather
+## than a deletion. F10 made Field a system with an icon; F11 moved the AUTHORING into that system
+## and retired `RoomHost.show_field_editor()` altogether, so there is no longer a room here for a
+## dock icon to excuse — `FieldSystem` is not a room `RoomHost` opens at all.
+##
+## THE LIST IS KEPT, EMPTY, AND ITS EMPTINESS IS ASSERTED rather than left to be true by accident.
+## An empty exemption list satisfies the two loops below vacuously, which is exactly the shape of
+## check this project keeps re-inventing; so `_the_dock_list_is_empty_and_field_is_still_on_it`
+## says what replaced it, and the icon assertion further down — which never depended on this list —
+## still stands on its own.
+const DOCK_DOORS := []
+
+
+## The rooms that are neither Lab nor Sim, reached the way a builder reaches them.
+##
+## **The coverage check is the one that matters.** Asserting that some named ids open some rooms
+## passes forever while a new room is added to RoomHost and left with no door — which is precisely
+## the failure this shell is exposed to, because the tab bar that used to list every room is gone.
+## So RoomHost's own doors are derived rather than typed out — every `show_*` method that is not
+## Lab or Sim — and each must be reachable from EITHER the Rooms menu OR an inspector.
+##
+## P10f moved the thrust stand from the first to the second. That change had to amend this check
+## rather than break it: deleting the `bench` entry from `RoomMenu.ENTRIES` while
+## `RoomHost.show_bench()` still exists fails the original set equality, and "the menu no longer
+## lists Thrust" is the opposite polarity of that assertion — it would have sat beside a failing
+## check rather than replacing it. The guarantee is unchanged: no room is left with no door.
 static func _test_the_room_menu_reaches_every_room() -> Array:
 	var results: Array = []
 	var host := RoomHost.new()
@@ -259,18 +345,89 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 		if name.begins_with("show_") and name != "show_lab" and name != "show_sim":
 			doors.append(name.trim_prefix("show_"))
 	doors.sort()
-	var offered := RoomMenu.room_ids()
-	offered.sort()
+	var reachable: Array = []
+	reachable.append_array(RoomMenu.room_ids())
+	reachable.append_array(INSPECTOR_DOORS)
+	reachable.append_array(DOCK_DOORS)
+	reachable.sort()
 
 	results.append(TestResult.new(
-		"the Rooms menu offers every room RoomHost can open, and no room it cannot",
-		doors == offered and not doors.is_empty(),
-		"RoomHost opens %s · the menu offers %s" % [doors, offered]))
+		"every room RoomHost can open has a door — in the Rooms menu, on an inspector or on the "
+			+ "dock — and nothing has a door to a room it cannot open",
+		doors == reachable and not doors.is_empty(),
+		"RoomHost opens %s · reachable %s (menu %s + inspector %s + dock %s)" % [
+			doors, reachable, RoomMenu.room_ids(), INSPECTOR_DOORS, DOCK_DOORS]))
+
+	# The exemption list is itself checked, so it cannot excuse a room that does not exist.
+	var stale: Array = []
+	for room_id in INSPECTOR_DOORS:
+		if not doors.has(room_id):
+			stale.append(room_id)
+	results.append(TestResult.new(
+		"and every inspector-reached room named here is a room RoomHost actually has",
+		stale.is_empty(),
+		"not doors: %s" % [stale] if not stale.is_empty() else "all of %s" % [INSPECTOR_DOORS]))
+
+	# THE DOCK LIST IS CHECKED THE SAME WAY, and then its CLAIM is checked as well: naming a room
+	# here excuses it from the menu, so the icon it is excused in favour of has to exist. Without
+	# the second half, adding "field_editor" to this list would silence the coverage check for a
+	# room with no door at all.
+	var stale_dock: Array = []
+	for room_id in DOCK_DOORS:
+		if not doors.has(room_id):
+			stale_dock.append(room_id)
+	results.append(TestResult.new(
+		"and every dock-reached room named here is a room RoomHost actually has",
+		stale_dock.is_empty(),
+		"not doors: %s" % [stale_dock] if not stale_dock.is_empty()
+			else "all of %s" % [DOCK_DOORS]))
+
+	# AND THE EXEMPTION IS EMPTY BECAUSE THE ROOM IS GONE, not because someone cleared the list.
+	# The loop above is vacuous on an empty list, so this is what carries the claim: `RoomHost`
+	# must no longer have a field door at all, and the field must still be a system on the dock.
+	results.append(TestResult.new(
+		"no room is exempted by the dock any more — the field editor is retired, not excused",
+		DOCK_DOORS.is_empty() and not doors.has("field_editor"),
+		"dock exemptions %s · RoomHost opens %s" % [DOCK_DOORS, doors]))
+	# Asked of a live dock built off the shell's own table: the section words are what excuses the
+	# field from the menu now (lab dock design §2), and there is no icon list to read back.
+	var dock := Dock.new(GlassShell.SYSTEMS, StyleBoxEmpty.new())
+	var words := dock.action_names()
+	dock.free()
+	results.append(TestResult.new(
+		"and the dock really carries a Field section word, which is what excuses it from the menu",
+		Array(words).has("Field") and not RoomMenu.room_ids().has("field_editor"),
+		"dock offers %s · menu offers %s" % [words, RoomMenu.room_ids()]))
+
+	# THE MENU NO LONGER LISTS THRUST, asserted by name rather than left to the set equality
+	# above — which a re-addition would satisfy by moving `bench` back into the menu and out of
+	# INSPECTOR_DOORS in one edit. This is the assertion that makes putting it back a visible
+	# decision.
+	results.append(TestResult.new(
+		"the Rooms menu no longer lists the thrust stand",
+		not RoomMenu.room_ids().has("bench"),
+		"menu offers %s" % [RoomMenu.room_ids()]))
+
+	# The same assertion for the ESC bench, which P10f named as the next to move and left in the
+	# menu. Written as its own check rather than folded into the one above, because two rooms
+	# sharing one assertion means one of them can come back and the check still fails for the
+	# other — a failure that names the wrong room is barely better than no failure.
+	results.append(TestResult.new(
+		"the Rooms menu no longer lists the ESC bench",
+		not RoomMenu.room_ids().has("esc_bench"),
+		"menu offers %s" % [RoomMenu.room_ids()]))
+
+	# And the pack bench, PW4's move, for the same reason again. Three rooms, three assertions: a
+	# failure has to name the bench that came back, and one shared assertion could not.
+	results.append(TestResult.new(
+		"the Rooms menu no longer lists the pack bench",
+		not RoomMenu.room_ids().has("battery_bench"),
+		"menu offers %s" % [RoomMenu.room_ids()]))
 
 	host.free()
 
-	# And each id actually lands. A menu that names six rooms and opens none is the same missing
-	# door wearing a label.
+	# And each id actually lands. A menu that names rooms and opens none is the same missing door
+	# wearing a label.
 	var shell := GlassShell.new()
 	var unreachable: Array = []
 	for room_id in RoomMenu.room_ids():
@@ -282,18 +439,70 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 	results.append(TestResult.new(
 		"and every entry opens the room it names",
 		unreachable.is_empty(),
-		"did not open: %s" % [unreachable] if not unreachable.is_empty() else "all six opened"))
+		"did not open: %s" % [unreachable] if not unreachable.is_empty() else
+			"all %d opened" % RoomMenu.room_ids().size()))
 
 	# The chrome retracts for a bench exactly as it does for Sim: a rail floating over a thrust
 	# stand would be a part picker on a screen where changing a part means nothing.
+	# QC4 gave the inspector a second way to be invisible: it now gates on selection, so with
+	# nothing selected it is simply absent. `not _inspector.visible` therefore no longer means
+	# "retraction happened" on its own — it also holds for a shell whose inspector never appeared
+	# at all, which is the one failure this check exists to catch. So the precondition is captured
+	# and asserted BEFORE the door opens: the check now states the state it started in, and a
+	# shell that stopped showing the inspector fails here instead of sliding through the
+	# conclusion.
+	# Since the lab dock the garage's standing chrome is the section LIST (the inspector is a page,
+	# up only while a row is open), so the list is the precondition and must go with the rest.
+	var inspector_up_before := shell.section_list().visible
 	shell._open_room("frame_bench")
 	var retracted := not shell._top_bar.visible and not shell._rail_glass.visible \
-		and not shell._inspector.visible and not shell._tools_glass.visible
+		and not shell._inspector.visible and not shell._tools_glass.visible \
+		and not shell.section_list().visible
 	shell.rooms.show_lab()
 	results.append(TestResult.new(
 		"a bench retracts the chrome the same way the field does",
-		retracted,
-		"chrome retracted on the frame bench: %s" % retracted))
+		inspector_up_before and retracted,
+		"list up beforehand: %s · chrome retracted on the frame bench: %s" % [
+			inspector_up_before, retracted]))
+
+	# AND THE INSPECTOR PATH DOES THE SAME — P10f moved this assertion onto the new door, which is
+	# where the design doc says it should now live. Driven through the SIGNAL the Motor panel
+	# emits rather than by calling `_open_room` again: that would re-assert what the line above
+	# already proved and would say nothing about whether the button is connected to anything. The
+	# bench must be open afterwards, which is what distinguishes "the chrome went away" from "the
+	# signal did nothing and the chrome was already down".
+	# Same QC4 precondition as above, and needed independently here: this site opens a different
+	# door, so it has to prove for itself that the inspector was up before the signal fired.
+	# The bench's door is on the Motor PAGE now, so that page is opened first — which is also what
+	# makes "the inspector was up" a real precondition again.
+	shell.select_system_by_name("Propulsion")
+	shell.open_row(&"motors")
+	var inspector_up_before_bench := shell._inspector.visible
+	shell.lab.motor_details.thrust_bench_requested.emit()
+	var bench_open := shell.rooms.bench != null
+	var bench_retracted := not shell._top_bar.visible and not shell._rail_glass.visible \
+		and not shell._inspector.visible and not shell._tools_glass.visible \
+		and not shell.section_list().visible
+	shell.rooms.show_lab()
+	results.append(TestResult.new(
+		"the thrust stand opens from the Motor inspector, and retracts the chrome identically",
+		inspector_up_before_bench and bench_open and bench_retracted,
+		"inspector up beforehand=%s opened=%s retracted=%s" % [
+			inspector_up_before_bench, bench_open, bench_retracted]))
+
+	# §7.5's "no room is left running" on the new path rather than assumed from the old. Asserted
+	# on `is_instance_valid` of the instance captured while it was up: asserting the FIELD is null
+	# passes against a teardown that nulls the reference and leaves a Powertrain turning, which is
+	# the bug wearing the fix's clothes — the same mutation this suite's header records finding in
+	# `frame_bench.free()`.
+	shell.lab.motor_details.thrust_bench_requested.emit()
+	var bench_instance: Node = shell.rooms.bench
+	var was_open := bench_instance != null
+	shell.rooms.show_lab()
+	results.append(TestResult.new(
+		"and the bench opened from the inspector is FREED on the way out, not merely forgotten",
+		was_open and not is_instance_valid(bench_instance),
+		"was open: %s · still alive: %s" % [was_open, is_instance_valid(bench_instance)]))
 
 	shell.free()
 	return results
@@ -305,6 +514,9 @@ static func _chrome_of(shell: GlassShell) -> Dictionary:
 		"tools": shell._tools_glass.visible,
 		"rail": shell._rail_glass.visible,
 		"inspector": shell._inspector.visible,
+		# The lab dock's right-hand list (design §2) — the garage's third cluster since the
+		# inspector became a page that is only up while a row is open.
+		"list": shell.section_list().visible,
 	}
 
 

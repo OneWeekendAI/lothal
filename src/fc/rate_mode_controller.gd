@@ -118,6 +118,11 @@ func adopt_tune(p_tune: RateTune) -> void:
 static func rate_setpoint(rc: Dictionary) -> Vector3:
 	return Vector3(rc.roll, rc.pitch, rc.yaw)
 
+## The build's `config` decision block, for the one value of it the inner loop needs: which way
+## each motor turns (design §5). Empty is today's constants, so a bare controller — the reference
+## every oracle in this project is defined against — is unchanged.
+var config: Dictionary = {}
+
 ## setpoint_normalized — Vector3(roll, pitch, yaw), each -1..1 as a fraction of
 ##   MAX_RATE_RAD_S, whatever produced it.
 ## gyro_rate_rad_s — the SENSOR's body-frame reading (DroneCore.gyro), never ground truth.
@@ -133,7 +138,7 @@ func update(setpoint_normalized: Vector3, gyro_rate_rad_s: Vector3, throttle: fl
 	var pitch_cmd := pid_pitch.update(setpoint_normalized.y, measured.y, dt)
 	var yaw_cmd := pid_yaw.update(setpoint_normalized.z, measured.z, dt)
 
-	return MotorMixer.mix(throttle, roll_cmd, pitch_cmd, yaw_cmd)
+	return MotorMixer.mix(throttle, roll_cmd, pitch_cmd, yaw_cmd, config)
 
 func reset() -> void:
 	pid_roll.reset()

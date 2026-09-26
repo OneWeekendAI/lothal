@@ -20,7 +20,16 @@ const CATEGORY_ORDER := [
 	{"category": "vtx", "label": "Video TX"},
 	{"category": "antenna", "label": "Antenna"},
 	{"category": "receiver", "label": "Receiver"},
+	{"category": "gps", "label": "GPS"},
+	{"category": "buzzer", "label": "Buzzer"},
 ]
+## ^ THIS LIST AND Build.OPTIONAL_COMPONENTS ARE TWO LISTS, and C2 collected on that: the moment
+## GPS and buzzer joined the mass model, `component_ids()` below started asking `selected_id()` for
+## a category this panel had never built a selector for. A hand-written table beside a derived one
+## is the P10f finding, and the check that caught it — "Sim's BUILD panel has a dropdown for every
+## component" — was already in the suite, written for exactly this. The two rows are added rather
+## than the table being derived because six of the ten categories here are NOT optional components
+## and the order and the labels are this panel's own; C4 is where the coverage rule gets teeth.
 
 ## The four categories whose lists carry a "Not fitted" row, and the only ones that may resolve to
 ## "". Derived from Build rather than listed, so this panel cannot know about a different set of
@@ -230,7 +239,16 @@ func _refresh_stats() -> void:
 
 	if build.can_hover():
 		_stat_values["hover"].text = "%.1f %%" % (build.hover_throttle() * 100.0)
-		_stat_values["time"].text = "%.1f min" % build.flight_time_min()
+		# THE CONDITIONS THE FIGURE WAS COMPUTED UNDER, named beside it (F8, design §4.3/§3.3).
+		# `flight_time_min()` picks up the flown Build's own wind, so since F8 the NUMBER here has
+		# been right and only the LABEL was missing — which is exactly the defect F8 exists to
+		# remove ("a figure quoted without the conditions it was computed under"), in one file
+		# outside F8's own scope. `part_details.gd` is the sibling that already says it this way.
+		#
+		# No wind argument, for that file's reason: the function defaults to the Build's own
+		# `field_wind_mps`, so the number and the label beside it cannot come apart.
+		_stat_values["time"].text = "%.1f min (%s)" % [
+			build.flight_time_min(), build.field_conditions_name]
 	else:
 		_stat_values["hover"].text = "won't hover"
 		_stat_values["time"].text = "—"

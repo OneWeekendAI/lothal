@@ -1,0 +1,131 @@
+{
+  "_schema": "The plug between the pack and the build — plans/2026-09-10-power-room-design.md §3.3, slice PW1. Two tiers, as in frames.json, motors.json, propellers.json, batteries.json and escs.json: `specs` is physics-bearing and `catalog` is browsing metadata only, admitted only if it is a factual, checkable property of the real product AND is needed to navigate the catalog at scale. Colour, price and vendor links are banned by name, from either block. THE FAMILY STRING IS A JOIN KEY AND THERE IS ONLY ONE SPELLING OF IT: `catalog.family` here must match `catalog.connector` in batteries.json character for character, because PW3's compatibility check is a string comparison between the pack's connector and the lead's, and two files that each look fine and do not join would make that check silently pass on every build forever. It sits in `catalog` rather than `specs` for one reason and it is consistency, not category theory: batteries.json already carries `connector` in its catalog block, and a join whose two halves live in different tiers is a join somebody will look for in the wrong place. `specs` therefore holds only numbers. tests/test_power_parts.gd asserts the join in BOTH directions. `catalog.shipped_on_packs` is what makes that assertion two-directional rather than one: true means some pack in batteries.json terminates in this family and the test requires the string to appear there; false means this is a lead-side family the shipped pack catalog does not currently offer, and the test requires it NOT to appear. Adding a pack in a new family without a row here, or a row here in a family no pack uses without flipping the flag, fails rather than drifting. 'continuous_a' is the rating the model uses as a limit. 'burst_a' is carried, shown, and NEVER used as a limit — the precedent is escs.json's own burst_a and it is the same argument: modelling burst honestly needs a thermal state, and applied as though it were continuous it is a bigger continuous rating wearing a misleading name. A test asserts two builds differing only in connector burst rating behave identically, so the day that changes, something says so. 'contact_resistance_ohm' is real, small, and unpublished per product (§3.5): every value here is a CLASS-TYPICAL guess, every `source` string says so, and the field is editable in the inspector rather than presented as measured — design §0's rule exactly. 'pigtail_mass_g' is the mass of the lead pair a product ships pre-soldered, and it is an ALTERNATIVE to WireGauge.mass_g for that stretch of wire, never an addition to it: PW2 must count a pigtail or count a modelled lead and not both, and a harness that does both is the quiet double-count this note exists to prevent. It is 0.0 for a bare connector pair. 'mass_g' at the top level is the mass of the PAIR — male and female together — since that is what a build actually carries and what a vendor actually sells. Entries are ordered by continuous rating, which gives a current filter an ascending order without anything sorting it.",
+  "parts": [
+    {
+      "part_id": "connector_ph20",
+      "name": "PH2.0 pair",
+      "category": "connector",
+      "mass_g": 0.6,
+      "specs": {
+        "continuous_a": 5.0,
+        "burst_a": 8.0,
+        "contact_resistance_ohm": 0.0020,
+        "pigtail_mass_g": 0.0
+      },
+      "catalog": {
+        "family": "PH2.0",
+        "shipped_on_packs": true,
+        "typical_use": "1-2S micro packs"
+      },
+      "source": "class-typical JST-PH 2.0 mm two-pin pair, not a specific product. The 5 A continuous figure is the one hobby vendors print for PH2.0 on micro packs; JST's own PH series datasheet rates the contact at 2 A, and the gap is real — the hobby figure assumes short duty and a 22 AWG lead. Carried at the hobby figure because that is what the packs in batteries.json are sold against, and flagged here so nobody reads it as a datasheet number. Mass and contact resistance are ROUGH: the pair is well under a gram and no vendor publishes either."
+    },
+    {
+      "part_id": "connector_bt20",
+      "name": "BT2.0 pair",
+      "category": "connector",
+      "mass_g": 0.7,
+      "specs": {
+        "continuous_a": 9.0,
+        "burst_a": 12.0,
+        "contact_resistance_ohm": 0.0015,
+        "pigtail_mass_g": 0.0
+      },
+      "catalog": {
+        "family": "BT2.0",
+        "shipped_on_packs": true,
+        "typical_use": "1S whoop packs"
+      },
+      "source": "BetaFPV BT2.0, published at 9 A continuous — the connector BetaFPV designed specifically to replace PH2.0 on 1S whoops because PH2.0 sagged under a 9 A draw. Continuous and burst follow that published figure. Mass and contact resistance are ROUGH class-typical values; neither is published."
+    },
+    {
+      "part_id": "connector_xt30",
+      "name": "XT30 pair",
+      "category": "connector",
+      "mass_g": 2.0,
+      "specs": {
+        "continuous_a": 30.0,
+        "burst_a": 40.0,
+        "contact_resistance_ohm": 0.0006,
+        "pigtail_mass_g": 0.0
+      },
+      "catalog": {
+        "family": "XT30",
+        "shipped_on_packs": true,
+        "typical_use": "2-4S micro and toothpick"
+      },
+      "source": "AMASS XT30U, published 30 A continuous. The 40 A burst figure is ROUGH — AMASS publishes a continuous rating and hobby listings quote burst inconsistently — and it is carried only because burst is never read as a limit. Pair mass ~2 g is the commonly listed figure. Contact resistance is a ROUGH class-typical guess."
+    },
+    {
+      "part_id": "connector_xt60",
+      "name": "XT60 pair",
+      "category": "connector",
+      "mass_g": 6.0,
+      "specs": {
+        "continuous_a": 60.0,
+        "burst_a": 80.0,
+        "contact_resistance_ohm": 0.00025,
+        "pigtail_mass_g": 0.0
+      },
+      "catalog": {
+        "family": "XT60",
+        "shipped_on_packs": true,
+        "typical_use": "3-6S 5-inch and up"
+      },
+      "source": "AMASS XT60, published 60 A continuous; the pair mass ~6 g is the commonly listed figure for the bare gold-plated pair. Burst 80 A is ROUGH, as with XT30. Contact resistance is a ROUGH class-typical guess — sub-milliohm, and smaller than the harness resistance it sits in series with, which is why §3.5 folds it in rather than modelling it."
+    },
+    {
+      "part_id": "connector_xt60h",
+      "name": "XT60H pair (housed, with pigtails)",
+      "category": "connector",
+      "mass_g": 8.0,
+      "specs": {
+        "continuous_a": 60.0,
+        "burst_a": 80.0,
+        "contact_resistance_ohm": 0.00025,
+        "pigtail_mass_g": 5.0
+      },
+      "catalog": {
+        "family": "XT60H",
+        "shipped_on_packs": false,
+        "typical_use": "3-6S, the housed variant sold pre-leaded"
+      },
+      "source": "AMASS XT60H — electrically the XT60 above, in a longer housing with a strain relief, and sold pre-soldered to a short 14 AWG lead pair. Ratings are therefore the XT60's published ones. Housed pair mass ~8 g is a ROUGH class-typical figure. 'pigtail_mass_g' 5.0 g is the modelled mass of two 100 mm 14 AWG silicone leads via WireGauge (34.2 g/m), stated so that PW2 counts it OR a modelled lead and never both. shipped_on_packs is false: no pack in batteries.json terminates in XT60H, and a pack that did would be spelled XT60 anyway — the H is a lead-side housing choice."
+    },
+    {
+      "part_id": "connector_xt90",
+      "name": "XT90 pair",
+      "category": "connector",
+      "mass_g": 20.0,
+      "specs": {
+        "continuous_a": 90.0,
+        "burst_a": 120.0,
+        "contact_resistance_ohm": 0.00015,
+        "pigtail_mass_g": 0.0
+      },
+      "catalog": {
+        "family": "XT90",
+        "shipped_on_packs": false,
+        "typical_use": "6S cinelifter and high-capacity packs"
+      },
+      "source": "AMASS XT90, published 90 A continuous; pair mass ~20 g is the commonly listed figure. Burst 120 A is ROUGH. shipped_on_packs is false: the largest pack in batteries.json today terminates in XT60, so XT90 exists here as a lead-side choice a builder can make ahead of a pack that needs it. Contact resistance is a ROUGH class-typical guess."
+    },
+    {
+      "part_id": "connector_xt90s",
+      "name": "XT90-S pair (anti-spark)",
+      "category": "connector",
+      "mass_g": 22.0,
+      "specs": {
+        "continuous_a": 90.0,
+        "burst_a": 120.0,
+        "contact_resistance_ohm": 0.00015,
+        "pigtail_mass_g": 0.0
+      },
+      "catalog": {
+        "family": "XT90-S",
+        "shipped_on_packs": false,
+        "typical_use": "6S, where the inrush into a large capacitor bank would otherwise arc"
+      },
+      "source": "AMASS XT90-S: the XT90 above with a series resistor on a leading pin that pre-charges the ESC's capacitors before the main contacts meet. Ratings are the XT90's published ones — the anti-spark pin carries nothing once seated, so it does not change the continuous rating and is NOT modelled as extra resistance. The extra ~2 g over the plain XT90 is a ROUGH figure. shipped_on_packs is false, for the XT90's reason."
+    }
+  ]
+}

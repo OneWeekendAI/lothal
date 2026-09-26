@@ -90,6 +90,17 @@ const HAND_SPIN_RPM := 150.0
 ## before any library is loaded — quoting the same figures it always has.
 var air := AirDensity.standard()
 
+## The steady wind the garage quotes flight time and current in, m/s (F8, design §4.3). Same
+## convention as `air`: standard/calm by DEFAULT, so a LabScreen built in a test or before any
+## library is loaded quotes the same calm figures it always has, and the shell (`room_host.gd`)
+## sets this from the selected `Conditions` the same way it sets `air` from the selected course.
+var wind_mps := 0.0
+
+## The name of the conditions the garage is quoting under right now — "Standard" until the shell
+## says otherwise. Held so every panel that renders a wind-dependent stat can put the builder's own
+## name on the row (check 7) without reaching back into a library this screen was never handed.
+var conditions_name := Conditions.STANDARD_NAME
+
 var catalog: PartsCatalog
 var picker: FramePicker
 var motor_picker: MotorPicker
@@ -97,7 +108,13 @@ var propeller_picker: PropellerPicker
 var battery_picker: BatteryPicker
 var esc_picker: EscPicker
 var fc_picker: FcPicker
+## The two payload rails. Same class, same signal, same handler; they differ only in which
+## categories they render, and each derives that by filtering Build.OPTIONAL_COMPONENTS through
+## Build.COMPONENT_SYSTEM (C3). `electronics_picker` is Video's — camera, VTX, antenna — and
+## `link_picker` is Control's — receiver, GPS, buzzer. Neither name is a list of categories, which
+## is why every call site below routes by ASKING which rail carries a category rather than knowing.
 var electronics_picker: ElectronicsPicker
+var link_picker: ElectronicsPicker
 var details: FrameDetails
 ## The four Airframe tabs. Read-only inspectors over the airframe maths (airframe.md §3–§5); none
 ## of them owns state, so a reload rebuilds them with everything else and nothing is lost.
@@ -118,9 +135,53 @@ var _frame_document_id := ""
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
 var battery_details: BatteryDetails
+var harness_panel: HarnessPanel
+## THE OPEN HARNESS DOCUMENT, and it lives here for `tweaks`' reason exactly: `current_build()`
+## makes a fresh `Build` on every selection change, so anything the builder authored has to be held
+## by the room that outlives the build rather than by the build. `AssemblyTweaks` is the same shape
+## one field up — a sparse override table owned by Lab and pushed into every aircraft it makes.
+##
+## Sparse, so the defaults keep following the parts: swapping a 5" frame for a 7" moves the main
+## lead the builder never touched and leaves the one they did.
+var harness := Harness.new()
 var esc_details: EscDetails
 var fc_details: FcDetails
 var electronics_details: ElectronicsDetails
+## Control's Link panel: the receiver, the GPS and the buzzer. See LinkDetails.
+var link_details: LinkDetails
+## Video's Camera panel: the uptilt slider and the warnings the tilt moves. See CameraPanel.
+var camera_panel: CameraPanel
+## The Printed room's panel: fit clearance and the parts to print. See PrintPanel.
+var print_panel: PrintPanel
+## Config's Motors panel: the motor map in words, and the convention behind it. See ConfigMotorsPanel.
+var motors_panel: ConfigMotorsPanel
+
+## Config's Ports panel: the serial-port budget and the override field. See ConfigPortsPanel.
+var ports_panel: ConfigPortsPanel
+
+## Config's Failsafe panel: what happens when the link drops, and the three checks predictable from
+## the build behind it (C6). See ConfigFailsafePanel.
+var failsafe_panel: ConfigFailsafePanel
+
+## Config's Rates panel: the pilot's max rate and expo, and the sentence that says where the sim
+## stops being this aircraft (C8). See ConfigRatesPanel.
+var rates_panel: ConfigRatesPanel
+
+## Config's Sheet panel: the door the artifact leaves the room by (C9). See ConfigSheetPanel.
+var sheet_panel: ConfigSheetPanel
+
+## THIS drone's name, for the sheet's header and its file name. A working copy the way `config` and
+## `printing` are — GlassShell hands it over when a project is opened, and nothing here writes it
+## back. A sheet with no name on it is indistinguishable from the next one on the same bench.
+var drone_name: String = "Untitled build"
+## THIS drone's printing decisions — a working copy of `Project.printing`, kept the way the rails keep
+## the part selection. GlassShell hands it in on open (`set_printing`) and copies it back out on
+## autosave; nothing here writes a file. Per drone by design (PrintSettings' header).
+var printing: Dictionary = {}
+## THIS drone's configuration decisions — a working copy of `Project.config`, kept exactly the way
+## `printing` above is kept: GlassShell hands it in on open (`set_config`) and copies it back out
+## on sync. Per drone, never per app (design §6): a motor map describes THIS aircraft.
+var config: Dictionary = {}
 ## The charger. Lab's, because charging is a garage activity — there is a charger in the garage
 ## and there is not one in the field (labs-and-sim.md §5).
 var charge_panel: PackChargePanel
@@ -252,9 +313,19 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	motor_details.name = "Motor"
 	panels.add_child(motor_details)
 
-	propeller_details = PropellerDetails.new()
+	propeller_details = PropellerDetails.new(catalog)
 	propeller_details.name = "Prop"
 	panels.add_child(propeller_details)
+	# Fitting a guard is a selection change like any other, and it has to run through the SAME
+	# handler: it moves the mass, the roll inertia, the ring on the aircraft and — for a duct —
+	# the current the aircraft draws. A dropdown that only redrew its own panel would report an
+	# aircraft nobody built.
+	#
+	# Connected HERE and not beside the rails' six connections, because the guard's control is a
+	# panel and the panels are built after the rails — the rail block runs while
+	# `propeller_details` is still null.
+	propeller_details.guard_changed.connect(func(_guard_id: String) -> void:
+		_on_selection_changed())
 
 	# The pack tab holds two things: what the battery IS, and what state it is in. They are stacked
 	# in one tab rather than split across two, because "4S 1500, and it is 12% full" is one thought.
@@ -288,13 +359,43 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	esc_details.name = "ESC"
 	panels.add_child(esc_details)
 
+	# Power's third panel. It sits beside Pack and ESC because that is the system it belongs to —
+	# every ampere from cell to motor lead. PW4 held this place with a stub that said the view was
+	# PW5's; PW5 is here, so the stub is gone and the panel summarises the current path and opens
+	# the room that draws it. A named panel in SYSTEMS with no tab behind it routes to nothing and
+	# hides silently; see GlassShell._show_only_tabs.
+	harness_panel = HarnessPanel.new()
+	panels.add_child(harness_panel)
+
 	fc_details = FcDetails.new()
 	fc_details.name = "FC"
 	panels.add_child(fc_details)
 
+	# Video's Camera panel (video slice V5), added BEFORE Electronics so it is the tab in front when
+	# Video is chosen — `_show_only_tabs` fronts the first named tab in container order: the camera's uptilt, where a builder looking at the
+	# camera looks for it. Named for routing, like Electronics. Its slider writes nothing — the edit
+	# is routed into the Fit panel's `set_tweak_mm`, the single path every tweak takes, which emits
+	# the `tweaks_changed` this screen rebuilds and saves on. See CameraPanel's header, and GlassShell's
+	# pack-offset routing for the same shape one room over. Resolved at call time, so the Fit panel
+	# being built a few lines below is not an ordering problem.
+	camera_panel = CameraPanel.new()
+	camera_panel.name = "Camera"
+	camera_panel.tilt_edited.connect(func(degrees: float) -> void:
+		assembly_panel.set_tweak_mm(AssemblyTweaks.CAMERA_TILT, degrees))
+	panels.add_child(camera_panel)
+
 	electronics_details = ElectronicsDetails.new()
 	electronics_details.name = "Electronics"
 	panels.add_child(electronics_details)
+
+	# Control's third panel (C3). It holds the place of design §5's LinkDetails, which C6 writes:
+	# Control's Link panel. C3 stood a stub here so that panel_for_rail() — which resolves by TITLE
+	# — had a tab to find for the rail it had just registered in SYSTEMS; C6 replaces it with the
+	# real rows. The name is set explicitly for the same reason it is on Electronics: the title is
+	# the routing key, not a label.
+	link_details = LinkDetails.new()
+	link_details.name = "Link"
+	panels.add_child(link_details)
 
 	# A panel with no rail behind it, because a fit adjustment is not a part choice: there is
 	# nothing to browse and nothing to filter. It sits with the other panels rather than becoming a
@@ -314,15 +415,108 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	tune_panel.tune_changed.connect(_on_tune_changed)
 	panels.add_child(tune_panel)
 
+	# The Printed room's panel, after Tune: like Fit and Tune it has no rail, because printed parts
+	# are generated from the build rather than browsed (printed-room design §3). The clearance edit
+	# is a PRINTING decision, not an assembly tweak — it is stored per drone and is not saved here.
+	# Config's Motors panel (C3). The props-in/props-out choice, and the same four directions in
+	# words that the markers draw on the aircraft. It writes nothing itself — the edit lands on this
+	# screen's `config` working copy, which is what the Build, the mixer and the drawing all read.
+	motors_panel = ConfigMotorsPanel.new()
+	motors_panel.name = "Motors"
+	motors_panel.motor_spin_edited.connect(func(value: String) -> void:
+		config["motor_spin"] = value
+		_on_selection_changed())
+	panels.add_child(motors_panel)
+
+	# Config's Ports panel (C5). The demand count, the board's class-typical figure WITH its
+	# provenance, and the field that replaces the guess with the builder's own number. Like the
+	# Motors panel it writes nothing: the edit lands on this screen's `config` working copy.
+	ports_panel = ConfigPortsPanel.new()
+	ports_panel.name = "Ports"
+	ports_panel.uart_count_edited.connect(func(count: int) -> void:
+		PortBudget.set_count(config, count)
+		_on_selection_changed())
+	panels.add_child(ports_panel)
+
+	# Config's Failsafe panel (C6). Like its two siblings it writes nothing: both edits land on this
+	# screen's `config` working copy, through FailsafeSettings so the checks and the panel read one
+	# spelling of each value.
+	failsafe_panel = ConfigFailsafePanel.new()
+	failsafe_panel.name = "Failsafe"
+	failsafe_panel.failsafe_stage2_edited.connect(func(value: String) -> void:
+		FailsafeSettings.set_stage2(config, value)
+		_on_selection_changed())
+	failsafe_panel.bidir_dshot_edited.connect(func(on: bool) -> void:
+		FailsafeSettings.set_bidir_dshot(config, on)
+		_on_selection_changed())
+	panels.add_child(failsafe_panel)
+
+	# Config's Rates panel (C8). Same arrangement as its three siblings: the panel announces, this
+	# screen writes, and both values go through RateSettings so the panel and the sheet read one
+	# spelling of each.
+	rates_panel = ConfigRatesPanel.new()
+	rates_panel.name = "Rates"
+	rates_panel.max_rate_edited.connect(func(deg_s: float) -> void:
+		RateSettings.set_max_rate_deg_s(config, deg_s)
+		_on_selection_changed())
+	rates_panel.expo_edited.connect(func(value: float) -> void:
+		RateSettings.set_expo(config, value)
+		_on_selection_changed())
+	panels.add_child(rates_panel)
+
+	# Config's Sheet panel (C9). The artifact that leaves the room. Like its four siblings the panel
+	# writes nothing itself: it announces, and this screen writes the file and says where it went —
+	# because this screen is the thing that knows which drone this is.
+	sheet_panel = ConfigSheetPanel.new()
+	sheet_panel.name = "Sheet"
+	sheet_panel.export_requested.connect(_on_config_sheet_requested)
+	panels.add_child(sheet_panel)
+
+	print_panel = PrintPanel.new()
+	print_panel.name = "Print"
+	print_panel.clearance_edited.connect(func(mm: float) -> void:
+		PrintSettings.set_clearance_mm(printing, mm)
+		_on_selection_changed())
+	print_panel.arm_guard_edited.connect(func(key: String, value: Variant) -> void:
+		ArmGuard.set_value(printing, key, value)
+		_on_selection_changed())
+	print_panel.camera_mount_edited.connect(func(key: String, value: Variant) -> void:
+		CameraMount.set_value(printing, key, value)
+		_on_selection_changed())
+	print_panel.antenna_mount_edited.connect(func(key: String, value: Variant) -> void:
+		AntennaMount.set_value(printing, key, value)
+		_on_selection_changed())
+	print_panel.gps_mast_edited.connect(func(key: String, value: Variant) -> void:
+		GpsMast.set_value(printing, key, value)
+		_on_selection_changed())
+	print_panel.battery_pad_edited.connect(func(key: String, value: Variant) -> void:
+		BatteryPad.set_value(printing, key, value)
+		_on_selection_changed())
+	panels.add_child(print_panel)
+
 	# Working on a rail should show the panel for the part being chosen, so the two columns
 	# never describe different components. Connected once, against the TabContainer itself, which
 	# survives a reload_catalog() even though its children (the rails) do not.
 	# Ignore the transient -1 TabContainer emits while reload_catalog() tears the rails down —
 	# panels does not allow deselection, and _build_rails() reselects a real tab right after.
+	#
+	# BY TITLE, NOT BY INDEX. The two columns stopped being the same list the moment Airframe's
+	# four panels landed between Frame and Motor: seven rails against fourteen panels, so the ESC
+	# rail used to route to the Layout panel. GlassShell.SYSTEMS already matches rails to panels by
+	# tab title for exactly this reason, and this is the same arrangement one layer down.
 	_rails.tab_changed.connect(func(index: int) -> void:
 		if index < 0:
 			return
-		panels.current_tab = index)
+		var panel := panel_for_rail(index)
+		if panel < 0:
+			# LOUD, because quiet is what hid the index bug for two slices. Leaving the previous
+			# panel up is still what happens — there is no honest panel to show for a rail nothing
+			# describes, and blanking the column would be a worse lie than a stale one — but a rail
+			# with no panel of its name is a wiring mistake in this file, not a runtime condition,
+			# so it says so instead of looking like a design.
+			push_error("no panel titled \"%s\" for that rail" % _rails.get_tab_title(index))
+			return
+		panels.current_tab = panel)
 
 	# Lab opens on the reference build rather than on whatever happens to be first in each
 	# catalog file — a 65 mm whoop frame under a 2807 and a 10" prop is a strange thing to
@@ -375,13 +569,31 @@ func _build_rails() -> void:
 	fc_picker.name = "FC"
 	_rails.add_child(fc_picker)
 
-	electronics_picker = ElectronicsPicker.new(catalog)
-	electronics_picker.name = "Electronics"
+	# THE TWO PAYLOAD RAILS, and neither category list is written here. Video keeps camera, VTX
+	# and antenna; Control's new Link rail takes the receiver and the two parts C2 put on the
+	# aircraft. Both lists come out of Build.components_for_system, which refuses to answer at all
+	# if any optional component is claimed by no system — so a seventh component cannot end up on
+	# whichever rail happens to be built first, which is exactly how gps and buzzer arrived on
+	# Video's rail in C2.
+	electronics_picker = ElectronicsPicker.new(
+		catalog, Build.components_for_system("Video"), "Electronics")
 	_rails.add_child(electronics_picker)
-	# The one rail whose signal is not part_selected, because it does not select a part — it
-	# emits the whole payload at once. Same destination as all six others: one handler rebuilds
-	# the aircraft, so a bay emptied here cannot leave a panel describing a camera that is off.
-	electronics_picker.components_changed.connect(_on_selection_changed)
+
+	link_picker = ElectronicsPicker.new(
+		catalog, Build.components_for_system("Control"), "Link")
+	_rails.add_child(link_picker)
+
+	# The two rails whose signal is not part_selected, because they do not select a part — each
+	# emits its whole payload at once. Same destination as all six others, and the same one for
+	# both of these: one handler rebuilds the aircraft, so a bay emptied on either rail cannot
+	# leave a panel describing a camera that is off.
+	for rail in component_rails():
+		rail.components_changed.connect(_on_selection_changed)
+		# C7: a component authored or deleted on either payload rail changes the CATALOG, so it takes
+		# the same full rebuild the six older rails take — below — and on BOTH rails, because a
+		# custom GPS saved from Link with only Video's rail wired would sit on disk, absent from the
+		# dropdown it was entered from, until the app restarted.
+		rail.custom_components_changed.connect(reload_catalog)
 
 	# A frame added or deleted changes the CATALOG, not just the rail — the camera distance is
 	# computed from the largest arm in it, so the whole screen is rebuilt rather than the list
@@ -458,10 +670,12 @@ func reload_catalog() -> void:
 	# was chosen, fall back". So the fallback is only taken when the id no longer resolves — a
 	# custom camera deleted out from under the rail — and never merely because it is empty.
 	for category in Build.OPTIONAL_COMPONENTS:
-		var previous_id := str(previous.get(category, Build.DEFAULT_COMPONENT_IDS[category]))
-		if not electronics_picker.select_component(category, previous_id):
-			electronics_picker.select_component(
-				category, str(Build.DEFAULT_COMPONENT_IDS[category]))
+		# "" for a category with no default — C2's added two — which is the "Not fitted" row and
+		# is a real selection rather than a missing one.
+		var fallback := str(Build.DEFAULT_COMPONENT_IDS.get(category, ""))
+		var previous_id := str(previous.get(category, fallback))
+		if not select_component(category, previous_id):
+			select_component(category, fallback)
 
 	_on_selection_changed()
 
@@ -599,6 +813,18 @@ func set_air(p_air: AirDensity) -> void:
 	_on_selection_changed()
 
 
+## The selected conditions changed — same argument as `set_air`, and check 9's whole point: a
+## builder who switches conditions sees new numbers on the panel already open, without leaving Lab
+## and coming back. One method rather than a bare property assignment for the same reason `set_air`
+## is one: setting `wind_mps` without re-deriving leaves the flight-time and current rows describing
+## the previous day's weather.
+func set_conditions(p_conditions: Conditions) -> void:
+	var weather := p_conditions if p_conditions != null else Conditions.standard()
+	wind_mps = weather.wind_speed_mps
+	conditions_name = weather.conditions_name
+	_on_selection_changed()
+
+
 ## Regenerates the Airframe document when, and only when, the selected frame changes.
 ##
 ## The guard is the whole function. Without it every selection change — a different pack, a nudged
@@ -618,6 +844,9 @@ func _refresh_frame_document(frame: Dictionary) -> void:
 ## the failure this project has already been bitten by.
 func _on_selection_changed() -> void:
 	var build := current_build()
+	# The day's wind is stamped inside current_build() rather than here — see its own comment, and
+	# F8 fix round 2. It used to be set on this local, which meant every OTHER caller of
+	# current_build() got an aircraft that did not know the weather.
 	# The assembly reaches the BUILD before it reaches the drawing, because it is no longer only a
 	# drawing: where the pack is strapped and how far it is slid decide where its mass sits, and
 	# every panel below reads mass properties off this object. Resolved once, here, and handed to
@@ -639,6 +868,9 @@ func _on_selection_changed() -> void:
 	propeller_details.render(build.propeller, build)
 	battery_details.render(build.battery, build)
 	esc_details.render(build.esc, build)
+	# The harness rows follow the parts as well as the authored values: a bigger frame lengthens the
+	# motor leads nobody typed, so this cannot be rendered only when the harness is edited.
+	harness_panel.render(build)
 	# The tune is derived BEFORE the FC panel is rendered, because that panel quotes what the
 	# board's noise costs at the D gain actually installed — and "actually installed" is this
 	# object. Derived from scratch on every selection change rather than patched: a part change
@@ -648,13 +880,47 @@ func _on_selection_changed() -> void:
 	fc_details.render(build.fc, build, tune)
 	charge_panel.render(build)
 	electronics_details.render_components(build)
+	link_details.render_components(build)
 	# The fit panel is re-rendered on a PART change too, not only on a fit change: the limits are
 	# derived from the parts, so a smaller motor has to narrow the shim slider then and there.
 	# The airframe goes in as well as the build, because the fit rows are measured off the geometry
 	# that was just rebuilt two lines above — so the overhang on the panel is the overhang on the
 	# screen, in the same call, and cannot describe a pack that is no longer fitted.
 	assembly_panel.render(build, airframe)
+	# After the Fit panel and against the same rebuilt airframe, so the tilt row and the camera-view
+	# report describe the camera that was just drawn.
+	camera_panel.render(build, tweaks, airframe)
 	tune_panel.render(build, tune)
+	print_panel.render(build, printing)
+	# Against the same Build the airframe was rebuilt from, so the four rows and the four markers on
+	# the aircraft are one map read twice rather than two answers.
+	motors_panel.render(build)
+	ports_panel.render(build)
+	failsafe_panel.render(build)
+	rates_panel.render(build)
+	# The preview is the file. Rebuilt with everything else so the sheet on screen is never one
+	# edit behind the aircraft it describes.
+	sheet_panel.render(build, drone_name)
+
+
+## The sheet leaves the room. The panel asked; this screen knows which drone it is and writes it,
+## then says where it went — BOTH ways, because a save that failed silently is an evening lost at a
+## bench with nothing in your hand (build-sheet design §7).
+##
+## The folder is opened rather than only named, on `FrameWorkbench._on_export_chosen`'s precedent:
+## a file you cannot find has not been exported. Headless, `OS.shell_open` does nothing and the
+## status line still carries the path, which is why the path is in the message as well.
+func _on_config_sheet_requested() -> void:
+	var build := current_build()
+	if build == null:
+		return
+	DirAccess.make_dir_recursive_absolute(ConfigSheet.DIRECTORY)
+	var path := ConfigSheet.default_path(drone_name,
+		Time.get_date_string_from_system())
+	var landed := ConfigSheet.write(build, drone_name, path, Time.get_date_string_from_system())
+	sheet_panel.show_result(ProjectSettings.globalize_path(path), landed)
+	if landed:
+		OS.shell_open(ProjectSettings.globalize_path(ConfigSheet.DIRECTORY))
 
 
 ## A shim, a pad or a standoff moved. Same single path as a part change — the geometry, the panels
@@ -687,6 +953,24 @@ func _on_charge_changed() -> void:
 	pack_charge.save()
 
 
+## Which panel describes the part a given rail chooses, by TAB TITLE, or -1 when no panel carries
+## that rail's title.
+##
+## Public and index-returning rather than folded into the signal handler, because what has to be
+## checkable is the RESOLUTION and not its effect: `TabContainer.current_tab` does not take until
+## the container has been laid out, and the test runner processes no frames, so a check that read
+## the selection back would agree with any wiring at all (tests/test_glass_shell.gd says the same
+## thing about `_show_only_tabs`).
+func panel_for_rail(rail_index: int) -> int:
+	if rail_index < 0 or rail_index >= _rails.get_tab_count():
+		return -1
+	var title := _rails.get_tab_title(rail_index)
+	for i in panels.get_tab_count():
+		if panels.get_tab_title(i) == title:
+			return i
+	return -1
+
+
 ## Brings one of the right-hand panels to the front by its tab name ("Frame", "Motor", "Prop",
 ## "Fit"). Returns false for a name that is not there rather than selecting something arbitrary.
 func show_panel(panel_name: String) -> bool:
@@ -705,7 +989,116 @@ func show_panel(panel_name: String) -> bool:
 ## no battery rail and is the single line this slice existed to delete: every number Lab reported
 ## was a number about one particular 4S 1500, and a rail that emitted a selection nobody read
 ## would have looked finished from every angle except the stats.
+##
+## **The guard comes from the Prop panel and not from a rail** (P10f). It is the same shape of
+## deletion one slice later: `Build.from_ids` has taken a `guard_id` since P10b and nothing in the
+## app passed one, so every number Lab reported was a number about an unguarded aircraft even when
+## the ring was on screen. The trailing argument rather than a seventh picker, because the row is
+## a dropdown on an inspector — see `PropellerDetails.guard_changed` for why it lives there.
+## The aircraft as it stands with the OPEN harness ON it, rather than a copy of it.
+##
+## `current_build()` hands every caller a fresh `Build` carrying a fresh `Harness` rebuilt from the
+## override table — which is right for everything that only READS. The Power room WRITES, and a
+## room editing a copy would be a room whose edits vanished on the next selection change with
+## nothing on screen to say so. So the room is handed the aircraft with Lab's own harness object
+## seated in it: one document, edited in one place.
+func build_with_open_harness() -> Build:
+	var build := current_build()
+	build.set_assembly(tweaks.resolved_m(build))
+	build.harness = harness
+	return build
+
+
+## Re-derives everything from the parts and repaints every panel. Public because the Power room
+## edits a document Lab owns and the consequence — a heavier harness, a moved centre of mass — has
+## to reach the panels; it is the same path a part change takes, so there is one rebuild rather
+## than a second one that could fall behind it.
+func refresh_build() -> void:
+	_on_selection_changed()
+
+
+## Both payload rails, in rail order. Every caller that used to name `electronics_picker` asks for
+## this instead: there are two of them since C3 and there is no reason for any call site outside
+## this file to know how many, or which categories are on which.
+func component_rails() -> Array[ElectronicsPicker]:
+	var out: Array[ElectronicsPicker] = []
+	if electronics_picker != null:
+		out.append(electronics_picker)
+	if link_picker != null:
+		out.append(link_picker)
+	return out
+
+
+## The WHOLE payload — both rails merged — in the shape Build.from_ids takes. Each rail answers
+## only for its own bays (ElectronicsPicker.component_ids), so merging is what makes a complete
+## payload; a caller that read one rail would hand Build a dictionary with three categories absent,
+## and absent means "fit the default", which is a camera nobody chose.
+func component_ids() -> Dictionary:
+	var out := {}
+	for rail in component_rails():
+		out.merge(rail.component_ids())
+	return out
+
+
+## Fits one optional component, on whichever rail carries its category. Reports whether it could,
+## exactly as ElectronicsPicker.select_component does — so a category no rail carries is `false`
+## rather than a crash, and the caller restoring a saved project reports it like any other id it
+## could not honour.
+func select_component(category: String, part_id: String) -> bool:
+	for rail in component_rails():
+		if rail.has_category(category):
+			return rail.select_component(category, part_id)
+	return false
+
+
+## Takes on a drone's printing decisions. A COPY, so the Project's own block changes only when the
+## shell syncs it back — the same one-way-per-direction rule the part selection follows.
+func set_printing(p_printing: Dictionary) -> void:
+	printing = p_printing.duplicate(true)
+	_on_selection_changed()
+
+
+## Takes on a drone's configuration decisions. A COPY, on `set_printing`'s rule and for its reason.
+func set_config(p_config: Dictionary) -> void:
+	config = p_config.duplicate(true)
+	_on_selection_changed()
+
+
+## Puts the motor map on the aircraft, or takes it off. Called by the shell when Config is focused:
+## the markers belong to the section that asks the question, not to every screen.
+func set_motor_map_visible(shown: bool) -> void:
+	if airframe != null and airframe.motor_map != null:
+		airframe.motor_map.visible = shown
+
+
+## The day's wind and the name of the conditions it was read from ride on every Build this room
+## hands out, for the reason `_build_from_rails` already passes `air`: they are the weather these
+## rails are being asked about, and a Build that carries the air but not the wind quotes a calm
+## flight time under a row labelled with a windy conditions name.
+##
+## STAMPED HERE, NOT IN `_on_selection_changed` (F8 fix round 2 — a production defect, found by a
+## test assertion that could not fail because of it). It was set on that handler's own local, so
+## the panels it rendered were right and EVERY OTHER caller of this function was wrong: the config
+## sheet export, the FC panel's re-render after a tune, `build_with_open_harness()`, the Printed
+## room, and the aircraft `room_host.gd` hands the course room — each of them received an aircraft
+## whose `field_wind_mps` was 0.0 while Lab's own panel beside it quoted the selected conditions.
+##
+## Read on every call rather than cached, which is still check 9's rule: `set_conditions` writes
+## `wind_mps` and re-renders, and the next Build out of here carries the new value.
 func current_build() -> Build:
+	var build := _build_from_rails()
+	build.field_wind_mps = wind_mps
+	build.field_conditions_name = conditions_name
+	# Only when there is something to say: `set_printing` recomputes, and an empty block fits nothing.
+	if not printing.is_empty():
+		build.set_printing(printing)
+	# The configuration reaches the Build unconditionally, because an EMPTY config block is a real
+	# answer here rather than a missing one: it is props-out, today's constants, bit for bit.
+	build.set_config(config)
+	return build
+
+
+func _build_from_rails() -> Build:
 	return Build.from_ids(
 		catalog,
 		picker.selected_part()["part_id"],
@@ -714,8 +1107,10 @@ func current_build() -> Build:
 		battery_picker.selected_part()["part_id"],
 		esc_picker.selected_part()["part_id"],
 		fc_picker.selected_part()["part_id"],
-		electronics_picker.component_ids(),
-		air
+		component_ids(),
+		air,
+		propeller_details.guard_id(),
+		harness.overrides()
 	)
 
 
@@ -754,8 +1149,17 @@ func apply_selection(selection_by_category: Dictionary) -> Array:
 			continue
 		var part_id := String(selection_by_category[category])
 		# "" is a real answer here — not fitted — and ElectronicsPicker takes it as one.
-		if not electronics_picker.select_component(category, part_id) and part_id != "":
+		if not select_component(category, part_id) and part_id != "":
 			failed.append({"category": category, "part_id": part_id})
+
+	# The guard, by the same rule as the rest: "" is a real answer (not fitted), and an id this
+	# catalog no longer knows is REPORTED rather than substituted. A guard silently dropped to
+	# "none" would reopen a saved drone lighter, with more roll authority and — if it was a duct —
+	# more current draw than the one that was saved.
+	if selection_by_category.has("guard"):
+		var guard_id := String(selection_by_category["guard"])
+		if not propeller_details.select_guard(guard_id):
+			failed.append({"category": "guard", "part_id": guard_id})
 	return failed
 
 
@@ -774,7 +1178,11 @@ func selection() -> Dictionary:
 	# Merged rather than listed, for the reason this function exists at all: the payload is
 	# already a category -> id dictionary in exactly this shape, and copying its four keys out by
 	# hand would be the fifth place a component category has to be remembered.
-	out.merge(electronics_picker.component_ids())
+	out.merge(component_ids())
+	# The guard rides in the same dictionary as every other category, which is what lets the
+	# project file, the bench door and the field door all carry it without any of them knowing
+	# that it comes from an inspector row rather than from a rail.
+	out["guard"] = propeller_details.guard_id()
 	return out
 
 

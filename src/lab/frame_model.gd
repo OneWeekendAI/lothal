@@ -53,6 +53,45 @@ var plate_side_m := 0.0
 ## Regenerated on every rebuild, because a mount is a position on a plate and the plates move.
 var mount_points: Array[MountPoint] = []
 
+## Every plate that was actually drawn, as `{name, outline_mm, y_m}` in the order they were built.
+##
+## THE ARMS ARE IN HERE, and that is why this exists. Frames are plates in this app (§7.2) — an arm
+## is part of a plate's outline, not a separate solid — so the silhouette a camera looks past is the
+## plate outline and there is nothing else to ask. `CameraView` reads this for the containment check
+## plans/2026-08-26-propulsion-room-design.md §5 P10c asks for.
+##
+## The OUTLINE is stored at build time for the same reason `_plate_top_face_m` is: an extruded plate
+## is an ArrayMesh, and recovering a polygon from its triangles would be a second, lossier
+## definition of a shape the document already states exactly.
+##
+## The HEIGHT is not stored. It is read off the node when asked, because `_seat_top_plate_on_its_mount`
+## MOVES both structural plates after `_build_plates` has run — the mount table wins over the
+## drawing, see its note — so a height captured at build time would be right for every decorative
+## plate and wrong for the top and bottom ones. That is the same shape of defect as the guard ring
+## reading its own `position`: correct in isolation, wrong on every aircraft, and invisible to a
+## test that captures the number the same way the code does.
+##
+## Empty for a moulded frame, and that is a real answer rather than a missing one: `_build_placeholder_body`
+## draws a stand-in precisely because the plate model cannot describe that shape, so it has no
+## outline to publish and the check says so instead of inventing one.
+var plate_polygons: Array[Dictionary] = []
+
+
+## Each drawn plate as `{name, outline_mm, y_m}`, the height read off the node as it now stands.
+func plate_polygons_m() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for record in plate_polygons:
+		var node: Node3D = record["node"]
+		if not is_instance_valid(node):
+			continue
+		out.append({
+			"name": record["name"],
+			"outline_mm": record["outline_mm"],
+			"thickness_mm": float(record.get("thickness_mm", 0.0)),
+			"y_m": node.position.y,
+		})
+	return out
+
 ## Height of the top plate's upper face above the datum, metres. Stored rather than measured back
 ## off the mesh: an extruded plate is an ArrayMesh with no `size` to read, and the number was always
 ## a property of the document rather than of the box that happened to represent it.
@@ -86,6 +125,7 @@ func rebuild_document(
 		remove_child(child)
 		child.queue_free()
 	arm_tips.clear()
+	plate_polygons.clear()
 	plate_top = null
 	plate_side_m = 0.0
 	_plate_top_face_m = 0.0
@@ -214,6 +254,15 @@ func _build_plates(
 		node.material_override = material
 		node.position = Vector3(0.0, centre / 1000.0, 0.0)
 		add_child(node)
+
+		# Recorded here rather than anywhere later: this is the one place that knows both the
+		# outline and the height it was seated at.
+		plate_polygons.append({
+			"name": node.name,
+			"outline_mm": outline,
+			"thickness_mm": thickness,
+			"node": node,
+		})
 
 		# The top plate is a MOUNTING SURFACE, not just geometry — the pack is strapped to it and
 		# hangs off this node, so a frame rebuild takes its payload with it.

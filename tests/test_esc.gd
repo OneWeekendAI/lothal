@@ -24,7 +24,7 @@ extends RefCounted
 ## THE BUDGET DOES NOT GROW
 ## ---------------------------------------------------------------------------
 ##
-## The ESC's mass comes OUT of Build.ELECTRONICS_MASS_G, exactly as the flight controller's did.
+## The ESC's mass comes OUT of Build.ELECTRONICS_BUDGET_G, exactly as the flight controller's did.
 ## The reference build must still weigh 496 g to the gram, and a heavier board must still make the
 ## aircraft heavier — both, or the unbundling has either moved a fixed point or achieved nothing.
 
@@ -49,6 +49,24 @@ static func run() -> Array:
 
 static func _build(catalog: PartsCatalog, motor_id: String, battery_id: String, esc_id: String) -> Build:
 	return Build.from_ids(catalog, "frame_5in_freestyle", motor_id, "prop_5x43x3", battery_id, esc_id)
+
+
+## The reference build with every ADDED component fitted — the aircraft the identity's second form
+## is about. The ids come off the catalog rather than being written here: the identity is about the
+## arithmetic, not about which GPS, and a named id would make this fixture a second place a renamed
+## part has to be edited.
+##
+## Every category in Build.added_components() is fitted, not just the two that exist today, so a
+## third added component arrives in this fixture instead of being quietly left out of the one check
+## that would have caught it landing in only one of the two accounts.
+static func _reference_with_added(catalog: PartsCatalog) -> Build:
+	var ids := {}
+	for category in Build.added_components():
+		var rows := catalog.list_category(category)
+		ids[category] = str(rows[0]["part_id"]) if not rows.is_empty() else ""
+	return Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID, ids)
 
 
 # ---------------------------------------------------------------------------
@@ -226,26 +244,53 @@ static func _test_the_mass_came_out_of_the_lump(catalog: PartsCatalog) -> Array:
 	var built := ReferenceBuild.build()
 
 	results.append(TestResult.new(
-		"the reference build still weighs 496 g to the gram with the ESC unbundled",
-		absf(built.all_up_weight_g() - 496.0) < 0.5,
-		"%.1f g (FC %.0f g + ESC %.0f g + %.0f g of camera, VTX, antenna and receiver + %.0f g of wiring = %.0f g of electronics)" % [
+		"the reference build still weighs its re-baselined 507.5 g with the ESC unbundled",
+		absf(built.all_up_weight_g() - 507.48) < 0.5,
+		"%.1f g (FC %.0f g + ESC %.0f g + %.0f g of camera, VTX, antenna and receiver + %.1f g of harness = %.1f g of electronics)" % [
 			built.all_up_weight_g(), Build.FC_BUDGET_MASS_G, built.esc_mass_g(),
 			built.electronics_mass_g() - built.fc_mass_g() - built.esc_mass_g()
-				- Build.wiring_mass_g(),
-			Build.wiring_mass_g(), built.electronics_mass_g()]
+				- built.harness_mass_g(),
+			built.harness_mass_g(), built.electronics_mass_g()]
 	))
 
-	# The budget is spent, not exceeded: the parts of the electronics package still sum to the
-	# constant they always did, for the boards the budget was sized around. The identity used to be
-	# written out here as FC + ESC + remainder, which was a restatement of arithmetic this file
-	# performed itself; since LTHL-11 carved four more shares out of the same budget it is asked of
-	# the BUILD instead, which is the same claim about a number that now has six terms in it.
+	# The SHARES are spent, not exceeded: the six carved categories still weigh exactly what they
+	# were budgeted, for the boards the budget was sized around. What is no longer asserted is that
+	# the electronics total lands on 55 g — PW2 stopped the harness being the budget's remainder, so
+	# the total is the shares plus a weighed harness and the constant bounds only the shares.
 	results.append(TestResult.new(
-		"the electronics package still sums to its budget rather than growing beside it",
-		is_equal_approx(built.electronics_mass_g(), Build.ELECTRONICS_MASS_G)
+		"the carved shares are still spent exactly, with the harness weighed beside them",
+		is_equal_approx(built.electronics_mass_g(),
+				Build.carved_total_g() + built.harness_mass_g())
 			and is_equal_approx(built.esc_mass_g(), Build.ESC_BUDGET_MASS_G),
-		"%.1f g of fitted electronics against a %.1f g budget, ESC at its %.0f g share" % [
-			built.electronics_mass_g(), Build.ELECTRONICS_MASS_G, Build.ESC_BUDGET_MASS_G]
+		"%.1f g of fitted electronics = %.1f g of carved shares + %.1f g of harness, ESC at its %.0f g share" % [
+			built.electronics_mass_g(), Build.carved_total_g(), built.harness_mass_g(),
+			Build.ESC_BUDGET_MASS_G]
+	))
+
+	# THE SECOND FORM OF THE SAME IDENTITY, on an aircraft that carries something the budget never
+	# stood for. C2 added GPS and buzzer to Build.OPTIONAL_COMPONENTS as ADDED mass rather than
+	# carved shares, and `electronics_mass_g()` counts every optional component it finds — so on a
+	# build that fits either one, `carved + harness` is short by exactly the added mass and the
+	# check above would have had to be loosened to survive. It is not loosened: it keeps its own
+	# form on a build that fits neither, and gains this one, which names the missing term.
+	#
+	# The point of writing it as a THIRD term rather than folding the GPS into the left-hand side
+	# is that both sides stay a full account of the aircraft: one walks the fitted components, the
+	# other walks CARVED_SHARES plus the harness plus what CARVED_SHARES does not name. A component
+	# that reached one account and not the other — added to OPTIONAL_COMPONENTS and given a carved
+	# share as well, say, which would count it twice — breaks the equality rather than passing
+	# quietly, which is what the first form was for.
+	var with_added := _reference_with_added(catalog)
+	results.append(TestResult.new(
+		"and with a GPS and a buzzer fitted the identity holds with the added mass named",
+		is_equal_approx(with_added.electronics_mass_g(),
+				Build.carved_total_g() + with_added.harness_mass_g()
+					+ with_added.added_components_mass_g())
+			and with_added.added_components_mass_g() > 0.0,
+		"%.2f g of fitted electronics = %.1f g carved + %.2f g harness + %.2f g added (%s)" % [
+			with_added.electronics_mass_g(), Build.carved_total_g(),
+			with_added.harness_mass_g(), with_added.added_components_mass_g(),
+			", ".join(Build.added_components())]
 	))
 
 	# ...and a heavier board makes a heavier aircraft. Without this the unbundling would be

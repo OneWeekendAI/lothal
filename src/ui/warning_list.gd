@@ -33,6 +33,13 @@ const COLORS := {
 
 var _labels: Dictionary = {}   # Severity -> Label
 
+## WHAT THIS CONTROL IS CURRENTLY SHOWING, by id, held for the reason `text_for()` below exists:
+## a caller that wanted to know whether a particular warning had reached the builder had to match
+## PROSE, and a message is wording — it is rewritten without the rule behind it changing. The ids
+## are what every other check in this repo names a warning by, and this is where a check can read
+## the ones that are actually on screen rather than the ones a function returned.
+var shown: Array[BuildWarning] = []
+
 
 func _init(width: float = 280.0) -> void:
 	custom_minimum_size = Vector2(width, 0)
@@ -53,6 +60,9 @@ func _init(width: float = 280.0) -> void:
 ## Show these warnings, grouped by severity and ordered most severe first. An empty list hides the
 ## whole block, and a severity with nothing in it hides its own label rather than leaving a gap.
 func show_warnings(entries: Array[BuildWarning]) -> void:
+	# REPLACED, never appended to: a list that only ever grows would keep reporting a warning the
+	# edit that caused it has undone.
+	shown = entries.duplicate()
 	# Array rather than PackedStringArray, deliberately: a packed array read back out of a
 	# Dictionary is a COPY, so appending to it appends to nothing and every label comes out empty.
 	var grouped: Dictionary = {}
