@@ -807,13 +807,17 @@ static func _test_log_reader() -> Array:
 	for column_name in FlightRecorder.COLUMNS:
 		all_names.append(str(column_name))
 
-	var all_start := Time.get_ticks_usec()
-	LogReader.read_columns(wide, all_names)
-	var all_us := Time.get_ticks_usec() - all_start
-
-	var two_start := Time.get_ticks_usec()
-	LogReader.read_columns(wide, PackedStringArray(["t_s", "gyro_x_rad_s"]))
-	var two_us := Time.get_ticks_usec() - two_start
+	# Best of 5, interleaved: one sample each flaked on a shared Windows CI runner (3746 us vs
+	# 7065 us). The minimum drops scheduler noise; parsing every column still gives a ratio near 1.
+	var all_us := 1 << 62
+	var two_us := 1 << 62
+	for _trial in 5:
+		var all_start := Time.get_ticks_usec()
+		LogReader.read_columns(wide, all_names)
+		all_us = mini(all_us, Time.get_ticks_usec() - all_start)
+		var two_start := Time.get_ticks_usec()
+		LogReader.read_columns(wide, PackedStringArray(["t_s", "gyro_x_rad_s"]))
+		two_us = mini(two_us, Time.get_ticks_usec() - two_start)
 
 	results.append(TestResult.new(
 		"reading two columns costs less than half of reading all %d" % all_names.size(),
