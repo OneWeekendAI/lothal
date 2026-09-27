@@ -14,10 +14,11 @@ extends RefCounted
 ##
 ## `draw` reads two figures back off the app and derives neither of them.
 ##
-## **The peak** is a real `Powertrain`, primed at this build's throttle ceiling, read back through
-## `last_current_total_a` and `last_voltage_v` — the same two published values the HUD, the ESC
-## bench and the battery bench all consume. It does NOT multiply four motors by anything of its
-## own. The reason is drift, and it is worse here than almost anywhere else in the app: a second
+## **The peak** is `Build.fresh_draw_at_a` at this build's throttle ceiling — the one draw the pack
+## and ESC ceilings are solved on and every Power screen prints. (Until 2026-09-27 it was a primed
+## `Powertrain`'s `last_current_total_a`; that agrees to ~3e-7 A, and at a binding pack limit the
+## difference printed "113 A" beside "112 A". A test still holds the two within 1e-5 A.) It does
+## NOT multiply four motors by anything of its own. The reason is drift, and it is worse here than almost anywhere else in the app: a second
 ## current expression would agree with the first on the day it was written and would be a slowly
 ## widening lie afterwards, and nothing on screen would look wrong, because a voltage drop and an
 ## ampacity margin are both plausible at any value.
@@ -137,7 +138,7 @@ const MOTOR_LEAD_CURRENT_SHARE := 0.25
 ## What this aircraft draws, and what its pack is sitting at while it draws it. See the header;
 ## this is the whole reason the file has a header.
 ##
-## Keys: `peak_a` (the four motors together at the throttle ceiling, off a primed `Powertrain`),
+## Keys: `peak_a` (the four motors together at the throttle ceiling on a fresh pack, `Build.fresh_draw_at_a`),
 ## `sustained_a` (the flight-profile average, off `Build`), `terminal_v` (what the pack's own posts
 ## are at under the peak), `open_circuit_v` (what they would be at with the throttle shut),
 ## `throttle` (the ceiling all of that is quoted at).
@@ -151,14 +152,19 @@ const MOTOR_LEAD_CURRENT_SHARE := 0.25
 ## ceiling peak thrust, hover and top speed are evaluated under, so the harness is checked against
 ## the aircraft that flies rather than against a throttle nobody can reach.
 static func draw(build: Build) -> Dictionary:
+	# ONE DRAW (2026-09-27): the peak is Build.fresh_draw_at_a at the ceiling — the draw the pack and
+	# ESC ceilings are solved on and PowerFigures.worst_draw_a prints — not a primed Powertrain's.
+	# The two agree to ~3e-7 A, but at a binding pack limit that was enough to print "At 113 A"
+	# (112.5000003) beside every other screen's 112 A (112.5). The terminal voltage follows from it
+	# by the pack's own rest - I*R, which is all BatteryModel.voltage_live is.
 	var throttle := build.max_throttle_fraction()
-	var core := build.build_drone_core()
-	core.prime_motors(throttle)
+	var pack := build.battery_model()
+	var peak_a := build.fresh_draw_at_a(throttle)
 	return {
-		"peak_a": float(core.powertrain.last_current_total_a),
+		"peak_a": peak_a,
 		"sustained_a": build.average_flight_current_a(),
-		"terminal_v": float(core.powertrain.last_voltage_v),
-		"open_circuit_v": float(core.powertrain.battery.resting_voltage_v()),
+		"terminal_v": pack.resting_voltage_v() - peak_a * pack.internal_r_ohm,
+		"open_circuit_v": pack.resting_voltage_v(),
 		"throttle": throttle,
 	}
 

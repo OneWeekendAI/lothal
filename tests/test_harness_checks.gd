@@ -497,14 +497,19 @@ static func _test_the_current_is_the_powertrains_own_published_figure() -> TestR
 	var published: float = core.powertrain.last_current_total_a
 	var published_v: float = core.powertrain.last_voltage_v
 
+	# CHANGED 2026-09-27 (old: reading == the powertrain's figure, bit for bit). The peak is now
+	# Build.fresh_draw_at_a — the draw the ceilings are solved on and the pages print — because the
+	# powertrain's 112.5000003 A printed "At 113 A" beside "112 A". Still not a second model: it must
+	# be that draw exactly, and still agree with the physical powertrain to 1e-5 A / 1e-5 V.
 	var reading := HarnessChecks.draw(build)
-	var passed: bool = reading["peak_a"] == published
-	passed = passed and reading["terminal_v"] == published_v
+	var passed: bool = reading["peak_a"] == build.fresh_draw_at_a(build.max_throttle_fraction())
+	passed = passed and absf(float(reading["peak_a"]) - published) < 1.0e-5
+	passed = passed and absf(float(reading["terminal_v"]) - published_v) < 1.0e-5
 	# And the sustained figure is Build's own flight-profile average, likewise not re-derived.
 	passed = passed and reading["sustained_a"] == build.average_flight_current_a()
 
 	return TestResult.new(
-		"the checks read the powertrain's published current rather than deriving one",
+		"the checks read the draw the ceilings are solved on, which the powertrain agrees with",
 		passed,
 		"published %.6f A / %.6f V vs read %.6f A / %.6f V" % [
 			published, published_v, reading["peak_a"], reading["terminal_v"]]

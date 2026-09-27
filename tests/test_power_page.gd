@@ -24,6 +24,7 @@ static func run() -> Array:
 	out.append(_esc_channel_reads_the_board_and_the_motors(build))
 	out.append(_esc_drawn_is_a_quarter_of_the_worst(build))
 	out.append(_harness_drop_is_the_checks_drop(build))
+	out.append(_harness_warning_quotes_the_same_draw_as_the_page(build))
 
 	# --- the rows
 	out.append(_harness_row_reads_the_lead_drop(build))
@@ -72,6 +73,19 @@ static func _worst_draw_is_the_harness_checks_peak(build: Build) -> TestResult:
 	var want := float(HarnessChecks.draw(build)["peak_a"])
 	return TestResult.new("power figures: the worst draw is HarnessChecks' peak (fresh pack, ceiling)",
 		absf(got - want) < 0.01 and got > 50.0, "%.3f vs %.3f" % [got, want])
+
+
+## The harness_voltage_drop sentence names the draw it prices, and it must be the draw every other
+## screen prints. It read "At 113 A" beside "112 A of 112 A": its peak came off a primed Powertrain
+## (112.5000003 A, whose "%.0f" rounds up) while the page reads Build.fresh_draw_at_a (112.5 A).
+static func _harness_warning_quotes_the_same_draw_as_the_page(build: Build) -> TestResult:
+	var w := _warning(build, &"harness_voltage_drop")
+	var long := w.long() if w != null else ""
+	var want := "At %.0f A " % PowerFigures.worst_draw_a(build)
+	return TestResult.new("harness warning: quotes the page's full-throttle draw (112 A on the reference build)",
+		want == "At 112 A " and long.begins_with(want)
+			and float(w.values["peak_a"]) == PowerFigures.worst_draw_a(build),
+		"'%s' want prefix '%s'" % [long.substr(0, 40), want])
 
 
 ## A fresh pack rests above nominal and drives the motors harder: the worst case is not the datum.
