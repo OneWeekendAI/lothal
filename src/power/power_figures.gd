@@ -37,7 +37,9 @@ static func pack_limit_a(build: Build) -> float:
 ## Total draw at the throttle ceiling on a fresh pack, amps: the worst the pack, the board and the
 ## harness see. Equal to `HarnessChecks.draw().peak_a`.
 static func worst_draw_a(build: Build) -> float:
-	return build.hover_current_a(build.max_throttle_fraction(), fresh_rest_v(build))
+	# The very draw the pack and ESC ceilings are solved on (`Build.supply_limit_for`), so at a
+	# binding supply limit this reads the rating — "112 A of 112 A", not 116.
+	return build.fresh_draw_at_a(build.max_throttle_fraction())
 
 
 ## Total draw at the throttle ceiling at the nominal datum, amps.

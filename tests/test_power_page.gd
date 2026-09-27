@@ -161,7 +161,9 @@ static func _harness_row_fits_the_line(build: Build) -> TestResult:
 static func _battery_page_numbers(build: Build) -> TestResult:
 	var got := SectionRows.page_numbers(&"battery", build)
 	# "of 112 A": the rating as the Pack sheet prints it ("75C (112 A)"), not rounded up to 113.
-	var want := [["Full-throttle draw", "%d A of 112 A" % roundi(PowerFigures.worst_draw_a(build))],
+	# The draw is printed the same way (2026-09-27): at a binding pack limit it IS the rating, and
+	# "%d" rounded 112.5 up to 113 beside its own rating's 112.
+	var want := [["Full-throttle draw", "112 A of 112 A"],
 		["Sag at full throttle", "−%.1f V" % PowerFigures.worst_sag_v(build)]]
 	return TestResult.new("page numbers: Battery shows the worst draw against its rating, and the sag",
 		got == want, "%s want %s" % [got, want])

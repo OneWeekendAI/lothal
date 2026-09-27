@@ -47,6 +47,11 @@ static func run() -> Array:
 	results.append_array(_test_a_big_pack_on_small_motors_is_motor_limited(catalog))
 	results.append_array(_test_the_limit_actually_costs_thrust(catalog))
 	results.append_array(_test_the_bench_figure_is_untouched(catalog))
+	# ONE MODEL (2026-09-27): the ceiling is solved on the draw the harness is checked against — a
+	# fresh pack, sag included — so the draw at the ceiling is the rating, never over it.
+	results.append(_test_fresh_pack_draw_at_the_ceiling_is_the_pack_rating())
+	results.append(_test_supply_limited_draw_never_exceeds_the_supply_rating(catalog))
+	results.append(_test_battery_row_page_motors_page_and_warning_agree())
 
 	return results
 
@@ -95,19 +100,21 @@ static func _test_the_rating_reaches_the_model(catalog: PartsCatalog) -> Array:
 # Which component binds
 # ---------------------------------------------------------------------------
 
-## A tiny pack on the reference build's motors. Four 2207s ask for about 128 A flat out; this
-## pack can give 9 A. The throttle has to be cut hard, and the pack has to be named as the reason.
+## A tiny pack on the reference build's motors. THIS EXPECTATION CHANGED (2026-09-27). It used to
+## say "four 2207s ask for about 128 A flat out; this pack can give 9 A, so the PACK binds" — but
+## 128 A is their draw at their 14.8 V test voltage without sag, the model the ceiling no longer
+## uses. At a 1S pack's 4.2 V the same motors cannot pull even 9 A flat out, so the rating never
+## binds: what stops this aircraft is the pack's VOLTAGE (it cannot hover), not its C-rating.
 static func _test_a_small_pack_on_big_motors_is_pack_limited(catalog: PartsCatalog) -> Array:
 	var results: Array = []
 	var build := _build(catalog, "motor_2207_1960kv", "prop_5x43x3", "battery_1s_300")
 
 	results.append(TestResult.new(
-		"a whoop pack on 2207s is throttle-limited by the PACK, and says so",
-		build.limiting_component()["name"] == "battery"
-			and build.pack_throttle_limit() < build.motor_throttle_limit(),
-		"limited by %s at %.0f%% throttle (pack %.0f%%, motors %.0f%%)" % [
-			build.limiting_component()["name"], build.max_throttle_fraction() * 100.0,
-			build.pack_throttle_limit() * 100.0, build.motor_throttle_limit() * 100.0]
+		"a whoop pack on 2207s cannot reach its own 9 A at 4.2 V, so its rating does not bind — its voltage does",
+		build.fresh_draw_at_a(1.0) < build.pack_max_amps()
+			and build.pack_throttle_limit() == 1.0 and not build.can_hover(),
+		"%.1f A flat out against a %.1f A rating, hovers: %s" % [build.fresh_draw_at_a(1.0),
+			build.pack_max_amps(), build.can_hover()]
 	))
 
 	# The Li-ion is the catalog's other deliberate lesson: 3000 mAh at 10C is 30 A, so an enormous
@@ -218,3 +225,62 @@ static func _test_the_bench_figure_is_untouched(_catalog: PartsCatalog) -> Array
 	))
 
 	return results
+
+
+# ---------------------------------------------------------------------------
+# One model for the ceiling and the draw
+# ---------------------------------------------------------------------------
+
+## The reference build is pack-limited, so at its ceiling a fresh pack must deliver exactly its
+## 112.5 A rating. Before, the ceiling was solved without sag at the motor's test voltage (94%)
+## while the draw was a fresh pack's with sag, and the page read "116 A of 112 A".
+static func _test_fresh_pack_draw_at_the_ceiling_is_the_pack_rating() -> TestResult:
+	var build := ReferenceBuild.build()
+	var draw := PowerFigures.worst_draw_a(build)
+	return TestResult.new("a fresh pack at the pack-limited ceiling draws its rating, not more",
+		build.limiting_component()["name"] == "battery"
+			and absf(draw - build.pack_max_amps()) < 0.05,
+		"%.2f A at %.1f%% against %.1f A" % [draw, build.max_throttle_fraction() * 100.0,
+			build.pack_max_amps()])
+
+
+## The ESC is a supply-side rating too, held to the same draw: whatever binds, the fresh-pack draw
+## at the ceiling never exceeds the ESC's four channels.
+static func _test_supply_limited_draw_never_exceeds_the_supply_rating(catalog: PartsCatalog) -> TestResult:
+	var worst := 0.0
+	var over: Array = []
+	for pack in catalog.list_category("battery"):
+		var build := _build(catalog, "motor_2207_1960kv", "prop_5x43x3", pack["part_id"])
+		var draw := PowerFigures.worst_draw_a(build)
+		var supply := minf(build.pack_max_amps(), build.esc_max_amps())
+		worst = maxf(worst, draw - supply)
+		if draw > supply + 0.05:
+			over.append("%s %.1f A > %.1f A" % [pack["part_id"], draw, supply])
+	return TestResult.new("on every pack the fresh-pack draw at the ceiling stays within the pack and ESC ratings",
+		over.is_empty(), "worst margin %.2f A; %s" % [worst, over])
+
+
+## The four places the ceiling is said — the Battery row, the Battery page's draw, the Motors page's
+## ceiling and the warning's sentence — agree on the reference build.
+static func _test_battery_row_page_motors_page_and_warning_agree() -> TestResult:
+	var build := ReferenceBuild.build()
+	var pct := roundi(build.max_throttle_fraction() * 100.0)
+	var rows := SectionRows.rows("Power", build, build.warnings())
+	var battery_row: Dictionary = {}
+	for row in rows:
+		if row["id"] == &"battery":
+			battery_row = row
+	var page: Array = SectionRows.page_numbers(&"battery", build)
+	var motors: Array = SectionRows.page_numbers(&"motors", build)
+	var long := ""
+	for w in build.warnings():
+		if w.id == &"current_limit":
+			long = w.long()
+	var want_draw := "%.0f A of %.0f A" % [build.pack_max_amps(), build.pack_max_amps()]
+	var ok := str(battery_row.get("line3", "")) == "⚠ pack limits you to %d%% throttle" % pct \
+		and str(page[0][1]) == want_draw \
+		and str(motors[1][1]) == "%d%% · pack" % pct \
+		and long.contains("%d%% throttle" % pct)
+	return TestResult.new("Battery row, Battery page draw, Motors page ceiling and warning agree",
+		ok, "row '%s' · page '%s' (want '%s') · motors '%s' · warning '%s'" % [
+			battery_row.get("line3", ""), page[0][1], want_draw, motors[1][1], long])

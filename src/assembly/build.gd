@@ -463,6 +463,8 @@ const USABLE_CAPACITY_FRACTION := 0.80
 var frame: Dictionary
 ## The designer's edit to the fitted frame (FittedFrame.edit_of) — `{}` flies the catalogue frame.
 var _frame_edit: Dictionary = {}
+## throttle_limit_for's memo, amps -> throttle. Cleared wherever what it is solved from changes.
+var _throttle_limits: Dictionary = {}
 var motor: Dictionary
 var propeller: Dictionary
 var battery: Dictionary
@@ -847,6 +849,7 @@ func mount_points() -> Array[MountPoint]:
 
 
 func _recompute() -> void:
+	_throttle_limits.clear()
 	arm_m = float(frame["specs"]["arm_mm"]) / 1000.0
 
 	# The guard's tip-loss closure and static thrust boost — computed first, before k_t, because
@@ -962,6 +965,8 @@ func _recompute() -> void:
 
 	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop, _prop_geometry(test_prop).diameter_m)
 	effective_max_amps = float(motor["specs"]["max_amps"]) * (k_q / k_q_at_test_prop)
+	# Every current limit is solved against effective_max_amps; one set before this line is stale.
+	_throttle_limits.clear()
 
 	var drag_area_m2: float = REFERENCE_DRAG_AREA_M2 * pow(arm_m / REFERENCE_ARM_M, 2.0)
 	drag_coefficient = 0.5 * air.kgm3() * drag_area_m2
@@ -1437,7 +1442,7 @@ func pack_max_amps() -> float:
 
 
 func pack_throttle_limit() -> float:
-	return throttle_limit_for(pack_max_amps())
+	return supply_limit_for(pack_max_amps())
 
 
 ## The throttle at which the four motors together draw `total_amps`. Current tracks shaft torque
@@ -1450,7 +1455,72 @@ func pack_throttle_limit() -> float:
 func throttle_limit_for(total_amps: float) -> float:
 	# The arithmetic lives in Rust (rust/src/fitting.rs) — the current-limit expression, one
 	# copy in the codebase, and the part of the fitting pipeline the compiled core exists for.
+	# THE MOTORS' limit only (see `supply_limit_for`): a motor's max_amps is a bench figure at its
+	# own test voltage, and the T:W the spec sheet quotes is taken at this ceiling on purpose.
 	return Fitting.throttle_limit_for(total_amps, 4.0 * effective_max_amps)
+
+
+## The throttle a SUPPLY-side rating (the pack's, the ESC's) allows: the highest throttle at which
+## a FRESH (full) pack, sagging under its own current, delivers no more than `total_amps`.
+##
+## ONE MODEL WITH THE DRAW (2026-09-27). The pack and ESC limits used `throttle_limit_for` — current
+## WITHOUT sag at the motor's test voltage — while every figure that quotes the draw at the ceiling
+## (PowerFigures.worst_draw_a, the harness checks, the ESC channel) asks a fresh pack with sag. On
+## the reference build the two disagreed: a 94% ceiling that drew 116 A from a 112.5 A pack. Now
+## the ceiling is solved on that same draw (`fresh_draw_at_a`), so the draw at a binding supply
+## limit IS the rating. A fresh pack is the worst case: it rests highest (16.8 V on a 4S).
+##
+## Memoised per recompute: `rpm_at_throttle` reads the ceiling on every call, and peak_thrust asks
+## it 400 times.
+func supply_limit_for(total_amps: float) -> float:
+	if total_amps <= 0.0 or effective_max_amps <= 0.0:
+		return 1.0   # "no limit stated" — the unrated-part rule `limiting_component` relies on
+	if _throttle_limits.has(total_amps):
+		return float(_throttle_limits[total_amps])
+	var limit := 1.0
+	if fresh_draw_at_a(1.0) > total_amps:
+		var low := 0.0
+		var high := 1.0
+		for _i in 50:
+			var mid := (low + high) * 0.5
+			if fresh_draw_at_a(mid) > total_amps:
+				high = mid
+			else:
+				low = mid
+		limit = low
+	_throttle_limits[total_amps] = limit
+	return limit
+
+
+## Total pack current at `throttle` on a FRESH pack with sag, ignoring every ceiling — the draw a
+## supply limit is solved against, and the draw PowerFigures quotes at the ceiling.
+##
+## Solved for the CURRENT by bisection, not by iterating the sag: I = 4·I_max·(t·kv·(V₀ − I·R) /
+## rpm_rated)² has exactly one root in [0, V₀/R] (the right side falls as I rises), whereas the
+## fixed-point loop in `rpm_at_throttle` oscillates on a high-resistance pack — the Li-ion reads
+## anywhere in its cycle after twelve steps, which is the divergence `thrust_at_throttle_n` warns of.
+func fresh_draw_at_a(throttle: float) -> float:
+	var rated := rated_rpm()
+	if rated <= 0.0 or throttle <= 0.0:
+		return 0.0
+	var rest_v := battery_model().resting_voltage_v()
+	var r := float(battery["specs"]["internal_r_ohm"])
+	var kv := float(motor["specs"]["kv"])
+	var t := clampf(throttle, 0.0, 1.0)
+	var low := 0.0
+	var high := rest_v / r if r > 0.0 else 4.0 * Fitting.current_at_rpm(t * kv * rest_v,
+		effective_max_amps, rated)
+	if r <= 0.0:
+		return high
+	for _i in 60:
+		var amps := (low + high) * 0.5
+		var demand := 4.0 * Fitting.current_at_rpm(t * kv * maxf(rest_v - amps * r, 0.0),
+			effective_max_amps, rated)
+		if demand > amps:
+			low = amps
+		else:
+			high = amps
+	return (low + high) * 0.5
 
 
 ## WHICH component is holding this build back, by name, with the ceiling it imposes.
@@ -1819,7 +1889,7 @@ func esc_max_amps() -> float:
 
 
 func esc_throttle_limit() -> float:
-	return throttle_limit_for(esc_max_amps())
+	return supply_limit_for(esc_max_amps())
 
 
 ## The board's continuous rating for ONE CHANNEL, which is the number printed on the product and

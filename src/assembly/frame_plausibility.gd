@@ -64,9 +64,15 @@ extends RefCounted
 ##   wiring were budgeted against, no longer the mass of any of them — and it is wrong at both ends
 ##   of the catalog's own span:
 ##
-##       frame_65mm_whoop      AUW   79.9 g | TWR  1.40 | hover 80.2%
+##       frame_65mm_whoop      AUW   79.9 g | TWR  1.40 | hover 87.5%
 ##       frame_5in_freestyle   AUW  496.0 g | TWR 11.69 | hover 29.6%   <- exact
-##       frame_10in_long_range AUW 1251.2 g | TWR  7.02 | hover 29.7%
+##       frame_10in_long_range AUW 1251.2 g | TWR  7.02 | hover 33.7%
+##
+##   (Re-measured 2026-09-27. Both "hover" figures were, and the whoop's still is, the PACK'S
+##   ceiling — neither build could hover inside it. The ceiling is now solved on a fresh pack's
+##   draw with sag; a sagging high-resistance pack draws less than the old no-sag estimate, so its
+##   C-rating allows more throttle: the 10" rises from 29.7% to a 38.3% ceiling and now hovers at
+##   33.7%; the whoop's ceiling rises to 87.5% and it still cannot lift itself.)
 ##
 ##   A real 65 mm whoop is 20-25 g all-up and hovers near 35%. Lothal is about 3.5x heavy there
 ##   because the lump alone outweighs the aircraft. It is wrong the other way at the top: a

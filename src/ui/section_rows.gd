@@ -565,7 +565,9 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 			# what that draw costs in volts — the two things the sag chart is about.
 			# The rating as the Pack sheet prints it ("%.0f"): 112.5 A must not read 113 here and
 			# 112 beside it.
-			return [["Full-throttle draw", "%d A of %.0f A" % [roundi(PowerFigures.worst_draw_a(build)),
+			# One formatter for both: the draw at a binding pack limit IS the rating (Build.supply_limit_for),
+			# and "%d" beside "%.0f" rounded 112.5 two ways — "113 A of 112 A" for an equal pair.
+			return [["Full-throttle draw", "%.0f A of %.0f A" % [PowerFigures.worst_draw_a(build),
 					PowerFigures.pack_limit_a(build)]],
 				["Sag at full throttle", "−%.1f V" % PowerFigures.worst_sag_v(build)]]
 		&"esc":

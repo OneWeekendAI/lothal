@@ -328,16 +328,17 @@ static func _test_the_pack_is_what_differs(catalog: PartsCatalog) -> Array:
 
 	# ...and the other half of why a Li-ion flies like a brick, which is not sag at all. A 3000 mAh
 	# 10C pack is a 30 A pack against the 1300 mAh 95C's 124 A, so the big battery cannot even be
-	# ASKED for the punch. Both are nominally pack-limited against four 2207s wanting 128 A — the
-	# high-C LiPo only just, at 98% throttle, which is what a good pack looks like — so the claim
-	# is about the SEVERITY, and about the Li-ion being told what is stopping it.
+	# ASKED for the punch. Both are pack-limited — the high-C LiPo only mildly, at 94% throttle
+	# (98% until 2026-09-27, when the ceiling began to be solved on a FRESH 6S pack's draw with
+	# sag: 25.2 V drives the 2207s harder than the 14.8 V test voltage the old ceiling priced every
+	# pack at) — so the claim is about the SEVERITY, and about the Li-ion being told what stops it.
 	var liion_build := liion.current_build()
 	var lipo_build := lipo.current_build()
 	results.append(TestResult.new(
 		"the Li-ion is throttle-capped by its own C-rating where the high-C LiPo is barely touched",
 		liion_build.limiting_component()["name"] == "battery"
 			and liion_build.max_throttle_fraction() < 0.6
-			and lipo_build.max_throttle_fraction() > 0.95,
+			and lipo_build.max_throttle_fraction() > 0.9,
 		"Li-ion %.0f A capping throttle at %.0f%%, LiPo %.0f A at %.0f%%" % [
 			liion_build.pack_max_amps(), liion_build.max_throttle_fraction() * 100.0,
 			lipo_build.pack_max_amps(), lipo_build.max_throttle_fraction() * 100.0]
