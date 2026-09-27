@@ -1,4 +1,3 @@
-class_name AngleModeController
 extends RefCounted
 ## The self-levelling OUTER loop (physics.md §7). It produces rate setpoints, not motor
 ## commands — a proportional controller on attitude error whose output is handed to
@@ -16,7 +15,7 @@ extends RefCounted
 ## running a second derivative term on top of it would be two controllers fighting over
 ## the same physics.
 
-## MAX_ANGLE_RAD (30 degrees at full stick) now lives in rust/src/flight_law.rs.
+const MAX_ANGLE_RAD := 0.5235988   # 30 degrees at full stick
 
 ## Attitude error (rad) -> rate setpoint (rad/s), so its units are 1/s and it sets how
 ## briskly the aircraft returns to level. At full stick (30 deg = 0.524 rad) it asks for
@@ -47,14 +46,14 @@ extends RefCounted
 ## The clamp below is what makes this robust rather than merely true. Even on an aircraft whose
 ## inner loop cannot keep up, the outer one cannot demand more than MAX_LEVEL_RATE_RAD_S, so the
 ## worst case is a slow recovery rather than a saturated inner loop.
-## LEVEL_P = 10.0 now lives in rust/src/flight_law.rs.
+const LEVEL_P := 10.0
 
 ## The clamp matters more than the gain. An outer loop that can demand unbounded rate makes
 ## the inner loop saturate at large attitude errors — and a saturated inner loop is one that
 ## has stopped tracking, so the aircraft feels unpredictable exactly when it is furthest
 ## from level and the pilot most needs it to behave. 400 deg/s is half the inner loop's
 ## 800 deg/s ceiling, which leaves the rate loop headroom to actually track the demand.
-## MAX_LEVEL_RATE_RAD_S (400 deg/s) now lives in rust/src/flight_law.rs.
+const MAX_LEVEL_RATE_RAD_S := 6.981317   # 400 deg/s
 
 ## rc = {roll: -1..1, pitch: -1..1, yaw: -1..1, throttle: 0..1}
 ## Returns Vector3(roll, pitch, yaw) rate setpoints, normalized against
@@ -62,7 +61,21 @@ extends RefCounted
 ## they feed the same loop.
 static func rate_setpoint(orientation: Quaternion, rc: Dictionary) -> Vector3:
 	var euler := orientation.get_euler(EULER_ORDER_YXZ)
-	# +Pitch = nose up is rotation about +X; +Roll = right side down is rotation about -Z
-	# (coordinate contract). The level loop itself is FlightLaw.level_rate_setpoint.
-	return FlightLaw.level_rate_setpoint(euler.x, -euler.z,
-		float(rc.roll), float(rc.pitch), float(rc.yaw))
+	var pitch_current := euler.x    # rotation about +X; +Pitch = nose up (coordinate contract)
+	var roll_current := -euler.z    # rotation about -Z; +Roll = right side down (contract)
+
+	var pitch_error: float = (rc.pitch * MAX_ANGLE_RAD) - pitch_current
+	var roll_error: float = (rc.roll * MAX_ANGLE_RAD) - roll_current
+
+	var pitch_rate_sp := clampf(LEVEL_P * pitch_error, -MAX_LEVEL_RATE_RAD_S, MAX_LEVEL_RATE_RAD_S)
+	var roll_rate_sp := clampf(LEVEL_P * roll_error, -MAX_LEVEL_RATE_RAD_S, MAX_LEVEL_RATE_RAD_S)
+
+	# Yaw: the stick IS a rate setpoint, handed straight through. Angle mode deliberately
+	# does NOT lock absolute heading — no real flight controller does in this mode, and a
+	# heading lock would fight the pilot every time they pointed the aircraft somewhere.
+	# What it does now, and did not before, is close a RATE loop on yaw: stick centred means
+	# "rate zero", not "no torque".
+	return Vector3(
+		roll_rate_sp / RateModeController.MAX_RATE_RAD_S,
+		pitch_rate_sp / RateModeController.MAX_RATE_RAD_S,
+		rc.yaw)

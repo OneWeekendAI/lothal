@@ -27,35 +27,14 @@ func _init(p_kp: float, p_ki: float, p_kd: float, p_integral_limit: float = 1.0,
 	output_limit = p_output_limit
 
 func update(target: float, measured: float, dt: float) -> float:
-	var error := target - measured
-
-	var derivative := 0.0
-	if _has_last and dt > 0.0:
-		derivative = -(measured - _last_measured) / dt
-	_last_measured = measured
+	# Conditional-integration anti-windup and derivative-on-measurement live in the native core
+	# (FlightLaw.pid_step); the reasoning above still describes exactly what it does.
+	var r := FlightLaw.pid_step(kp, ki, kd, integral_limit, output_limit,
+		_integral, _last_measured, _has_last, target, measured, dt)
+	_integral = r[1]
+	_last_measured = r[2]
 	_has_last = true
-
-	# CONDITIONAL INTEGRATION, the anti-windup this controller went without.
-	#
-	# The old code clamped the integral to +/-1.0 and did nothing when the OUTPUT saturated.
-	# Those are different failures. While the actuator is pinned, more integral buys no more
-	# control — the motors are already at the limit — but the integrator carries on
-	# accumulating anyway, and every bit of it has to be unwound before the output can come
-	# off the stop. On yaw, whose authority is an eighth of roll's, that is seconds of the
-	# aircraft ignoring the sticks: exactly the "I can't get it back" the pilot described.
-	#
-	# So the integrator is advanced speculatively and the step is taken back if it would
-	# push an already-saturated output further into the stop. Error that would bring the
-	# output back INTO range still integrates, which is what keeps this from being a
-	# disable-I-when-saturated hack that cannot recover.
-	var candidate := clampf(_integral + error * dt, -integral_limit, integral_limit)
-	var output := kp * error + ki * candidate + kd * derivative
-	if absf(output) > output_limit and signf(error) == signf(output):
-		output = kp * error + ki * _integral + kd * derivative
-	else:
-		_integral = candidate
-
-	return clampf(output, -output_limit, output_limit)
+	return r[0]
 
 func reset() -> void:
 	_integral = 0.0

@@ -1,4 +1,3 @@
-class_name MotorMixer
 extends RefCounted
 ## Standard X-quad mixer: turns normalized throttle + roll/pitch/yaw correction commands
 ## into a per-motor throttle command. This is the inverse of motor_layout.gd's
@@ -60,12 +59,36 @@ const MIX_GAIN := 0.2   # fraction of throttle range given to attitude authority
 ## different opinions about which way a motor turns.
 static func mix(throttle: float, roll_cmd: float, pitch_cmd: float, yaw_cmd: float, config: Dictionary = {}) -> Dictionary:
 	var spin := MotorLayout.spin_map(config)
-	var spins := PackedFloat64Array()
+	# Step 1: attitude only. Throttle is deliberately not in here yet — mixing it in first
+	# is what makes saturation depend on where the throttle sits.
+	var delta := {}
+	var lo := INF
+	var hi := -INF
 	for name in MotorLayout.MOTOR_NAMES:
-		spins.append(float(spin[name]))
-	# The three steps described above run in the native core (FlightLaw.mix).
-	var cmds := FlightLaw.mix(throttle, roll_cmd, pitch_cmd, yaw_cmd, spins)
+		var d := pitch_cmd * MIX_GAIN * (1.0 if MotorLayout.IS_FRONT[name] else -1.0)
+		d += roll_cmd * MIX_GAIN * (-1.0 if MotorLayout.IS_RIGHT[name] else 1.0)
+		d += yaw_cmd * MIX_GAIN * float(spin[name])
+		delta[name] = d
+		lo = minf(lo, d)
+		hi = maxf(hi, d)
+
+	# Step 2: one common scale factor across all three axes, so the torque VECTOR keeps its
+	# direction. Inactive at MIX_GAIN = 0.2 — see the header — and live from 0.25 up.
+	var spread := hi - lo
+	if spread > 1.0:
+		var scale := 1.0 / spread
+		for name in MotorLayout.MOTOR_NAMES:
+			delta[name] *= scale
+		lo *= scale
+		hi *= scale
+
+	# Step 3: the collective goes wherever it must for the attitude deltas to fit. With the
+	# spread guaranteed <= 1, the window [-lo, 1-hi] is never empty, so this always has an
+	# answer and every motor lands inside [0, 1] by construction.
+	var collective := clampf(throttle, -lo, 1.0 - hi)
+
 	var out := {}
-	for i in MotorLayout.MOTOR_NAMES.size():
-		out[MotorLayout.MOTOR_NAMES[i]] = cmds[i]
+	for name in MotorLayout.MOTOR_NAMES:
+		# The clamp is now only mopping up float error; step 3 already guarantees the range.
+		out[name] = clampf(collective + delta[name], 0.0, 1.0)
 	return out

@@ -1,4 +1,3 @@
-class_name RateTune
 extends RefCounted
 ## The inner loop's gains, DERIVED FROM THE AIRCRAFT THEY ARE FLYING rather than typed in once and
 ## handed to everything (labs-and-sim.md §7, resolved).
@@ -200,16 +199,25 @@ static func derive(p_build: Build) -> RateTune:
 	tune.plant_alpha = plant_alpha_for(p_build)
 	tune.kd_ceiling = kd_ceiling_for(p_build)
 
-	# The scaling law (scale = anchor / plant, every gain times scale, D clamped at the noise
-	# ceiling) runs in the native core: FlightLaw.derive_gains -> [scale, kp, ki, kd, limited].
-	var law := FlightLaw.derive_gains(reference_alpha(), tune.plant_alpha,
-		RateModeController.REFERENCE_KP, RateModeController.REFERENCE_KI,
-		RateModeController.REFERENCE_KD, tune.kd_ceiling)
-	tune.scale = law[0]
-	tune.derived_kp = law[1]
-	tune.derived_ki = law[2]
-	tune.derived_kd = law[3]
-	tune.d_limited = law[4] != Vector3.ZERO
+	var anchor := reference_alpha()
+	for axis in 3:
+		# A build that cannot produce torque on an axis at all has no plant to scale against, and
+		# dividing by it would hand the loop an infinity. It keeps the reference gains, which are
+		# as meaningful as anything else on an aircraft that cannot rotate — and Build.warnings()
+		# has already said it will not leave the ground.
+		tune.scale[axis] = anchor[axis] / tune.plant_alpha[axis] if tune.plant_alpha[axis] > 0.0 else 1.0
+
+	tune.derived_kp = RateModeController.REFERENCE_KP * tune.scale
+	tune.derived_ki = RateModeController.REFERENCE_KI * tune.scale
+	tune.derived_kd = RateModeController.REFERENCE_KD * tune.scale
+
+	# The ceiling applies to what the law derived, not to what a builder typed: an override is the
+	# builder overruling the derivation, and this bound is part of the derivation. They are told
+	# what it costs (see warnings()) rather than prevented.
+	for axis in 3:
+		if tune.derived_kd[axis] > tune.kd_ceiling:
+			tune.derived_kd[axis] = tune.kd_ceiling
+			tune.d_limited = true
 
 	tune._apply()
 	return tune
@@ -252,7 +260,8 @@ static func reference_alpha() -> Vector3:
 ## a board costs you in usable D, and this function is where "usable" is decided.
 static func d_noise_fraction(p_build: Build, p_kd: float) -> float:
 	var gyro := p_build.gyro()
-	return FlightLaw.d_noise_fraction(p_kd, gyro.sample_step_noise_rad_s(), gyro.sample_rate_hz)
+	var period := 1.0 / gyro.sample_rate_hz
+	return p_kd * gyro.sample_step_noise_rad_s() / (period * RateModeController.MAX_RATE_RAD_S)
 
 
 ## How many sensor samples of vibration to measure the D term against, and where.
@@ -344,7 +353,10 @@ static func vibration_noise_fraction(p_build: Build, p_kd: float) -> float:
 ## bound on the vibration part. It is also the one that actually reached the motors.
 static func noise_fraction_for(p_step_noise_rad_s: float, p_sample_rate_hz: float,
 		p_kd: float) -> float:
-	return FlightLaw.noise_fraction_for(p_step_noise_rad_s, p_sample_rate_hz, p_kd)
+	if p_sample_rate_hz <= 0.0:
+		return 0.0
+	var period := 1.0 / p_sample_rate_hz
+	return p_kd * p_step_noise_rad_s / (period * RateModeController.MAX_RATE_RAD_S)
 
 
 ## The largest kd the fitted board can carry inside D_NOISE_BUDGET — the above, inverted. A board
@@ -399,7 +411,10 @@ static func noise_fraction_for(p_step_noise_rad_s: float, p_sample_rate_hz: floa
 ## Both walls, and the five criteria a usable log has to meet, are written up in
 ## landingpage/docs/lothal/validation.md 9.1.
 static func kd_ceiling_for(p_build: Build) -> float:
-	return FlightLaw.kd_ceiling(d_noise_fraction(p_build, 1.0))
+	var per_unit_kd := d_noise_fraction(p_build, 1.0)
+	if per_unit_kd <= 0.0:
+		return INF
+	return D_NOISE_BUDGET / per_unit_kd
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +510,11 @@ func warnings() -> Array[BuildWarning]:
 ## The closed-loop time constant this tune produces, per axis, in seconds — the quantity the law
 ## holds constant, so the panel can show that it did. MAX_RATE_RAD_S / (A * kp).
 func time_constant_s() -> Vector3:
-	return FlightLaw.time_constants(plant_alpha, kp)
+	var out := Vector3.ZERO
+	for axis in 3:
+		var loop_gain: float = plant_alpha[axis] * kp[axis]
+		out[axis] = RateModeController.MAX_RATE_RAD_S / loop_gain if loop_gain > 0.0 else INF
+	return out
 
 
 # ---------------------------------------------------------------------------
