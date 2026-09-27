@@ -77,7 +77,25 @@ jobs:
 
       - name: Build lothal_core.dll
         working-directory: rust
-        run: cargo build --release --target x86_64-pc-windows-msvc
+        shell: bash
+        # Same path scrub as build_macos.sh: panic strings embed source paths, so without the
+        # remap the .dll ships C:\Users\runneradmin\.cargo\registry\... and the checkout path.
+        # cygpath -w because rustc sees Windows-native paths, not the MSYS /c/ spelling.
+        run: |
+          set -euo pipefail
+          SYSROOT="$(rustc --print sysroot)"
+          CARGO_H="$(cygpath -w "${CARGO_HOME:-$HOME/.cargo}")"
+          RUSTUP_H="$(cygpath -w "${RUSTUP_HOME:-$HOME/.rustup}")"
+          REPO="$(cygpath -w "$GITHUB_WORKSPACE")"
+          export RUSTFLAGS="--remap-path-prefix=$CARGO_H=/cargo --remap-path-prefix=$RUSTUP_H=/rustup --remap-path-prefix=$SYSROOT=/rustc-sysroot --remap-path-prefix=$REPO=/lothal"
+          echo "RUSTFLAGS=$RUSTFLAGS"
+          cargo build --release --target x86_64-pc-windows-msvc
+      - name: Assert no build-machine paths in the .dll
+        shell: bash
+        run: |
+          if grep -a -c -i -E 'runneradmin|\\.cargo\\registry|/\.cargo/registry' rust/target/x86_64-pc-windows-msvc/release/lothal_core.dll; then
+            echo "error: lothal_core.dll still carries build-machine paths" >&2; exit 1
+          fi
 
       # The .gdextension points at res://build/lothal_core.dll. Copying rather than symlinking
       # because the export reads it as a project resource.

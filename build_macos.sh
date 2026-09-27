@@ -72,6 +72,12 @@ fi
 # that is being replaced. The lipo'd universal dylib lands in build/, which the export
 # ships inside the .pck (res://build/liblothal_core.dylib).
 echo "==> building native core (universal)"
+# Strip build-machine paths out of the binary. Panic messages embed the source path of the
+# panicking file, so without this the shipped dylib carries /Users/<name>/.cargo/registry/...
+# and the repo's absolute path. RUSTFLAGS (not rust/.cargo/config.toml) because the prefixes
+# are per-machine and config.toml cannot expand $HOME. Keep in sync with windows.yml.
+RUST_SYSROOT="$(cd rust && rustc --print sysroot)"
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=${RUSTUP_HOME:-$HOME/.rustup}=/rustup --remap-path-prefix=$RUST_SYSROOT=/rustc-sysroot --remap-path-prefix=$PWD=/lothal"
 (cd rust && \
   cargo build --release --target aarch64-apple-darwin && \
   cargo build --release --target x86_64-apple-darwin)
