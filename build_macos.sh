@@ -122,8 +122,11 @@ if [ "${SKIP_TESTS:-0}" != "1" ]; then
   # GDScript they replaced, held to EXACT equality.
   run_crosscheck "native core 2 tier 1 cross-check (flight law)" \
     res://tools/crosscheck/run_crosscheck_flight.gd "FLIGHT LAW CROSSCHECK OK"
+  # Native core 2, Tier 2a: ArmBeam's structural maths (FrameLaw), same method.
+  run_crosscheck "native core 2 tier 2a cross-check (frame law)" \
+    res://tools/crosscheck/run_crosscheck_frame.gd "FRAME LAW CROSSCHECK OK"
 else
-  echo "WARNING: SKIP_TESTS=1 — suite AND both golden cross-checks skipped." >&2
+  echo "WARNING: SKIP_TESTS=1 — suite AND every golden cross-check skipped." >&2
   echo "         Nothing has verified the Rust core against its GDScript reference." >&2
 fi
 

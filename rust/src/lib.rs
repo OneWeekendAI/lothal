@@ -2,6 +2,7 @@ mod battery;
 mod bemt;
 mod bemt_ratios;
 mod fitting;
+mod frame_law;
 mod flight_law;
 mod licence;
 mod log_reader;
