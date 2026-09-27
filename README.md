@@ -72,7 +72,7 @@ Bug reports, fixes and new real-world parts are welcome. See
 
 Lothal is free and always will be. If it is useful to you, you can
 [sponsor it on GitHub](https://github.com/sponsors/datasciritwik). Sponsorship pays for
-development time and for the planned hardware that will connect to Lothal.
+development time: new features, better physics and more real-world parts.
 
 Sponsors are listed here:
 
