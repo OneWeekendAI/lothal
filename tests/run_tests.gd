@@ -15,7 +15,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"battery rail", "battery model", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "battery bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
 	"yaw authority", "gyro", "wind", "wind numbers", "motor mixer", "control path", "stick release", "warnings", "build warnings", "warning rows", "section list",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio", "spectrum",
-	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "licence check", "activation gate", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
+	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "fitted frame", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "airframe page", "propulsion page", "power page", "control page", "video page", "config page", "printed page", "field page",
 	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "dock", "camera view", "part finder",
@@ -349,8 +349,6 @@ func _run_suite(suite_name: String) -> Array:
 		"electronics ui": return TestElectronicsUi.run()
 		"custom parts ui": return TestCustomPartsUi.run()
 		"update check": return TestUpdateCheck.run()
-		"licence check": return TestLicenceCheck.run()
-		"activation gate": return TestActivationGate.run()
 		"rust constants": return TestRustConstants.run()
 		"glass shell": return TestGlassShell.run()
 		"room host": return TestRoomHost.run()

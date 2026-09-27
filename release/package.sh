@@ -117,9 +117,9 @@ if [ "$MACOS_ONLY" = "0" ]; then
   # the deleted GDScript. Presence of the core is not orderable and not fakeable by rebuilding.
   [ -f "$WIN_DIR/lothal_core.dll" ] || {
     echo "error: $WIN_DIR/Lothal.exe has no lothal_core.dll beside it, so this export never" >&2
-    echo "       loaded the native core. The Rust core owns the powertrain and the licence" >&2
-    echo "       gate and the GDScript versions were deleted in the port, so this build has" >&2
-    echo "       no physics and cannot be activated — and if it predates the port it carries" >&2
+    echo "       loaded the native core. The Rust core owns the powertrain and the" >&2
+    echo "       GDScript version was deleted in the port, so this build has no physics" >&2
+    echo "       — and if it predates the port it carries" >&2
     echo "       the decompilable GDScript physics the port exists to remove." >&2
     echo "       Build Windows via the windows-build workflow, or use:" >&2
     echo "       release/package.sh $VERSION --macos-only" >&2

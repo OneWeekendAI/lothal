@@ -96,12 +96,8 @@ func _init() -> void:
 	# in the garage, you fly in the field, and then you look at what the flight left behind.
 	_studio_button = _add_tab(bar, "Studio", show_studio)
 
-	# Where the "Activated" tag used to sit. The app asks for nothing on launch now, so the only
-	# thing worth putting in that corner is a way to reach us — and it is a link out to the site
-	# rather than a form, because we are no longer collecting addresses inside the app.
-	#
-	# A browser, not an in-app view, for the reason ActivationScreen's button gave: anything
-	# resembling a sign-in window with no address bar is shaped like the phishing people are
+	# A way to reach us: a link out to the site in the user's own browser, not an in-app view —
+	# anything resembling a web window with no address bar is shaped like the phishing people are
 	# taught to refuse.
 	var contact := Button.new()
 	contact.text = "Contact us"
@@ -118,50 +114,17 @@ func _init() -> void:
 	# is on a layer of its own and would draw straight over anything sitting in the ordinary
 	# tree. Anchored to the bottom rather than the top so it never crowds the tab row, and it
 	# stays hidden unless a signed manifest offers something newer — see UpdateNotice.
-	#
-	# Not built at all in Store builds. The bar's only action is to open the dl.meetdev.in
-	# download page, and an app distributed through the Microsoft Store that points its users at
-	# an installer from somewhere else fails certification — Store copies update through the
-	# Store, so the bar would also be offering a route that is simply wrong for that install.
-	# The `store` feature comes from the "Windows Store" export preset's custom_features, so it
-	# is false in the editor and in every direct-download build.
-	if not OS.has_feature("store"):
-		var notice := UpdateNotice.new(LothalVersion.MANIFEST_URL)
-		notice.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-		notice.anchor_top = 1.0
-		notice.anchor_right = 1.0
-		notice.anchor_bottom = 1.0
-		notice.offset_top = -UpdateNotice.BAR_HEIGHT
-		tab_layer.add_child(notice)
+	var notice := UpdateNotice.new(LothalVersion.MANIFEST_URL)
+	notice.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	notice.anchor_top = 1.0
+	notice.anchor_right = 1.0
+	notice.anchor_bottom = 1.0
+	notice.offset_top = -UpdateNotice.BAR_HEIGHT
+	tab_layer.add_child(notice)
 
 func _ready() -> void:
 	if get_tree() != null and get_tree().root != null and settings != null:
 		get_tree().root.content_scale_factor = settings.ui_scale
-
-
-# ---------------------------------------------------------------------------
-# THERE IS NO LONGER AN ACTIVATION GATE
-# ---------------------------------------------------------------------------
-#
-# Lothal used to verify a signed .lothalkey out of user:// here, before `_ready()` let any room
-# appear, and show ActivationScreen instead when there wasn't one. That is gone. The app opens
-# straight into Lab for everybody, and the tab row carries a "Contact us" link to the site in
-# place of the "Activated" tag.
-#
-# The reason is the email, not the key. The gate's whole justification was collecting a verified
-# address to announce releases to, and we are not collecting addresses any more — which leaves a
-# lock on the front door whose only remaining job would be stopping people from using software we
-# are giving them. The update notice already tells an installed copy when a release exists, with
-# no address required, so nothing is lost by dropping it.
-#
-# `LicenceCheck` and `ActivationScreen` are deliberately KEPT in the source and still covered by
-# tests/test_licence_check.gd and tests/test_activation_gate.gd. They verify correctly; they are
-# simply not reached from here. If a paid tier ever needs them, the machinery — the shipped public
-# key, the key_id rotation, the byte-exact storage — is intact rather than something to rebuild
-# from memory. Do not delete them for tidiness.
-#
-# One knock-on worth knowing: the `capture_*` screenshot tools no longer need an activated
-# user:// on the machine running them, and a headless box photographs the app rather than a gate.
 
 
 func _add_tab(bar: HBoxContainer, text: String, handler: Callable) -> Button:

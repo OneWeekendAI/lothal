@@ -3,7 +3,7 @@ extends SceneTree
 ##
 ## Every class here is registered by rust/ and by nothing else — the GDScript implementations
 ## were deleted when the port landed — so if ClassDB does not know them, res://build/
-## lothal_core.dll was not loaded and the build has no powertrain and no activation.
+## lothal_core.dll was not loaded and the build has no powertrain.
 ##
 ## This exists because the test suite is NOT a reliable detector of that failure. With the
 ## extension unloaded, run_tests.gd does not fail: the missing types surface as parse errors,
@@ -16,7 +16,7 @@ extends SceneTree
 ## which Godot's ConfigFile parser does not accept, so parsing stopped at the first comment
 ## and every windows.* key below it was dropped. The .dll was present and correct.
 
-const REQUIRED := ["Powertrain", "MotorModel", "BatteryModel", "Licence"]
+const REQUIRED := ["Powertrain", "MotorModel", "BatteryModel"]
 
 func _init() -> void:
 	var missing: Array[String] = []

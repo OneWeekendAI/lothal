@@ -9,7 +9,7 @@ extends SceneTree
 ## placeholder FOV — the same lens Sim's feed uses, without the field around it.
 ##
 ## Deliberately NOT booting main.tscn, unlike capture_lab.gd and capture_frame.gd. Those two are the
-## right tools for looking at the SCREEN and they go through the activation gate to get there, which
+## right tools for looking at the SCREEN and boot the whole app to get there, which
 ## is correct for them and useless here — this one has one job, which is to look at generated
 ## geometry, and it builds the same AirframeModel Lab and Sim both build.
 ##

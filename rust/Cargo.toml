@@ -8,10 +8,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 godot = { version = "0.5.4", features = ["api-4-7"] }
-# Licence gate (design §5(a)): RSA PKCS#1 v1.5 verification in the compiled core. The "pem"
-# feature enables PEM decoding; PKCS#8 parsing comes from the pkcs8 crate rsa re-exports.
-rsa = { version = "0.9", features = ["pem"] }
-sha2 = { version = "0.10", features = ["oid"] }
 # The spectrum (LTHL-20). Any frame length, not just powers of two: the frame is
 # round(1.024 s * fs), which is 1024 at 1 kHz and 8192 at 8 kHz but nothing so tidy at the rates
 # a Betaflight log arrives at. A hand-rolled radix-2 would have to reject those.
@@ -22,4 +18,4 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"      # a panic across the FFI boundary is UB; abort instead
-strip = "symbols"    # remove the symbol table — this is the point of the exercise
+strip = "symbols"    # smaller release binary

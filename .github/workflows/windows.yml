@@ -8,10 +8,10 @@ name: windows-build
 # ---------------------------------------------------------------------------
 #
 # Godot exports Windows from any host, so the .exe was never the problem. The Rust core is.
-# rust/ compiles to a cdylib that owns the powertrain, the battery and motor models, and the
-# licence gate, and the GDScript implementations of all of it were deleted when the port landed.
+# rust/ compiles to a cdylib that owns the powertrain and the battery and motor models, and the
+# GDScript implementations of all of it were deleted when the port landed.
 # There is no "Windows build minus the native core" that is worth shipping — it is an app with
-# no physics that also cannot be activated.
+# no physics.
 #
 # That .dll could in principle be cross-compiled from macOS via mingw. The reason it is not is
 # that nothing on a Mac can RUN the result. The test suite is the only thing standing between a
@@ -52,8 +52,7 @@ jobs:
     # dies inside its own reporting loop without reaching quit(). The "Assert the Rust core
     # loaded" step below catches that specific case in seconds; this is the backstop for the
     # ones nobody has met yet. A cold cargo build plus a full suite is ~15 min.
-    # The encrypted-template compile (below) adds ~60-90 min on a hosted runner.
-    timeout-minutes: 150
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -106,62 +105,6 @@ jobs:
           mkdir -p build
           cp rust/target/x86_64-pc-windows-msvc/release/lothal_core.dll build/
           ls -l build/lothal_core.dll
-
-      # ---- Encrypted export template ------------------------------------
-      # The presets have encrypt_pck=true, and a pack encrypted with a key the template does not
-      # carry exports cleanly and then cannot start. The key has to be COMPILED into the
-      # template, so this builds 4.7.1-stable's Windows release template from source with the
-      # key from the GODOT_PCK_KEY repository secret (set once with
-      # `security find-generic-password -a lothal-pck -s lothal-pck-key -w | gh secret set GODOT_PCK_KEY`).
-      # scons reads it as SCRIPT_AES256_ENCRYPTION_KEY; the editor, at export, reads
-      # GODOT_SCRIPT_ENCRYPTION_KEY. Both are the same 64-hex-char value.
-      - name: Refuse to run without the PCK key
-        shell: bash
-        env:
-          GODOT_SCRIPT_ENCRYPTION_KEY: ${{ secrets.GODOT_PCK_KEY }}
-        run: |
-          printf '%s' "$GODOT_SCRIPT_ENCRYPTION_KEY" | grep -Eq '^[0-9a-fA-F]{64}$' || {
-            echo "error: secret GODOT_PCK_KEY missing or not 64 hex chars — see the comment above" >&2
-            exit 1
-          }
-
-      - name: Build encrypted Windows release template
-        shell: bash
-        timeout-minutes: 90
-        env:
-          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.GODOT_PCK_KEY }}
-        run: |
-          set -euo pipefail
-          python -m pip install --quiet scons
-          git clone --quiet --depth 1 --branch "${GODOT_RELEASE}" \
-            https://github.com/godotengine/godot.git "$RUNNER_TEMP/godot-src"
-          cd "$RUNNER_TEMP/godot-src"
-          # Same renderers as the official template: D3D12 (Agility SDK) and ANGLE for the
-          # compatibility renderer. Without these the build silently drops both drivers.
-          python misc/scripts/install_d3d12_sdk_windows.py
-          python misc/scripts/install_angle.py
-          scons platform=windows target=template_release arch=x86_64 production=yes
-          mkdir -p "$GITHUB_WORKSPACE/build/templates"
-          cp bin/godot.windows.template_release.x86_64.exe \
-            "$GITHUB_WORKSPACE/build/templates/windows_release_x86_64.exe"
-
-      # The pairing proof: the key's 32 bytes are in the binary. A mismatch here is the
-      # can-never-launch build, caught before anything is exported with it.
-      - name: Verify the template carries the key
-        shell: bash
-        env:
-          GODOT_SCRIPT_ENCRYPTION_KEY: ${{ secrets.GODOT_PCK_KEY }}
-        run: python release/check_template_key.py build/templates/windows_release_x86_64.exe
-
-      # Uploaded so build_windows.sh can cross-export from the Mac: drop it at
-      # ~/.lothal/templates/4.7.1.stable/windows_release_x86_64.exe. It contains the key (as
-      # every shipped Lothal.exe does), so the artifact is no more secret than a release.
-      - name: Upload encrypted template
-        uses: actions/upload-artifact@v4
-        with:
-          name: lothal-windows-template-${{ github.event.inputs.version || github.ref_name }}
-          path: build/templates/windows_release_x86_64.exe
-          if-no-files-found: error
 
       # ---- Godot ---------------------------------------------------------
       - name: Install Godot and export templates
@@ -224,8 +167,6 @@ jobs:
       - name: Export Windows build
         shell: bash
         timeout-minutes: 15
-        env:
-          GODOT_SCRIPT_ENCRYPTION_KEY: ${{ secrets.GODOT_PCK_KEY }}
         run: |
           set -euo pipefail
           mkdir -p build/windows
@@ -260,57 +201,3 @@ jobs:
           path: build/windows/
           if-no-files-found: error
 
-      # ---- Microsoft Store package ---------------------------------------
-      # A second export rather than a repackaging of the first. The "Windows Store" preset sets
-      # custom_features="store", and that tag is what removes the update bar from the build —
-      # a Store app that points users at the dl.meetdev.in download is a certification failure.
-      # Reusing build/windows/ here would ship the direct-download build with a Store identity
-      # stamped on it, which is the one combination that fails review for a reason no log
-      # explains.
-      #
-      # The whole Store half is skipped when the identity variables are absent, so the ordinary
-      # Windows build still runs to completion on a fork or before Partner Center is set up.
-      # The three values come from the product's Product Identity page and go in as repository
-      # variables (Settings -> Secrets and variables -> Actions -> Variables). They are not
-      # secrets — they are readable inside every copy of the installed package — but they are
-      # account-specific, so they are not committed.
-      - name: Export Windows Store build
-        if: vars.MSIX_IDENTITY_NAME != ''
-        shell: bash
-        timeout-minutes: 15
-        env:
-          GODOT_SCRIPT_ENCRYPTION_KEY: ${{ secrets.GODOT_PCK_KEY }}
-        run: |
-          set -euo pipefail
-          mkdir -p build/store
-          "$GODOT" --headless \
-            --export-release "Windows Store" build/store/Lothal.exe
-          test -f build/store/Lothal.exe || { echo "store export produced no executable"; exit 1; }
-          # Same two files, same reasons as the direct-download build above. package_msix.ps1
-          # checks them again before it packs; this is the earlier of the two so the failure
-          # names the export rather than the packaging step.
-          ls build/store | grep -qi 'lothal_core.dll' || { echo "store export dropped the GDExtension"; exit 1; }
-          ls build/store | grep -qi 'Lothal.pck'      || { echo "store export dropped the pack"; exit 1; }
-          ls -l build/store
-
-      # Produces an UNSIGNED .msix. That is what Partner Center wants: Microsoft signs Store
-      # packages with their own certificate at ingestion, which is the reason this project can
-      # ship a trusted Windows build without owning a code-signing certificate. The artifact
-      # cannot be installed by double-clicking it; see the note in package_msix.ps1.
-      - name: Package MSIX
-        if: vars.MSIX_IDENTITY_NAME != ''
-        shell: pwsh
-        timeout-minutes: 10
-        env:
-          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
-          MSIX_IDENTITY_PUBLISHER: ${{ vars.MSIX_IDENTITY_PUBLISHER }}
-          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
-        run: ./release/msix/package_msix.ps1
-
-      - name: Upload MSIX artifact
-        if: vars.MSIX_IDENTITY_NAME != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: lothal-msix-${{ github.event.inputs.version || github.ref_name }}
-          path: build/msix/Lothal.msix
-          if-no-files-found: error

@@ -2834,16 +2834,7 @@ func _open_room(room_id: String) -> void:
 ## Both come straight from the old shell, and both ride the toggle's CanvasLayer for the reason the
 ## toggle does: Sim's HUD is on a layer of its own and would draw over anything in the ordinary
 ## tree. An update bar that only appeared in the garage would be a bar most people never see.
-##
-## Not built at all in Store builds. The bar's only action is to open the dl.meetdev.in download
-## page, and an app distributed through the Microsoft Store that points its users at an installer
-## from somewhere else fails certification — Store copies update through the Store, so the bar would
-## also be offering a route that is simply wrong for that install. The `store` feature comes from
-## the "Windows Store" export preset's custom_features, so it is false in the editor and in every
-## direct-download build.
 func _build_update_notice() -> void:
-	if OS.has_feature("store"):
-		return
 	var layer := CanvasLayer.new()
 	layer.layer = TOGGLE_LAYER
 	add_child(layer)

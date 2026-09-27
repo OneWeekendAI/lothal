@@ -6,9 +6,7 @@ extends Node
 ## command line ("compiled without support for path overrides") — measured on the shipped
 ## macOS build, which is the build the bench exists to run.
 ##
-## No activation check: the app itself has none since the gate was retired (app_shell.gd), so
-## the flag opens nothing a user could not already reach by clicking Sim. If a paid tier ever
-## brings LicenceCheck back, this is a second door and must check it too.
+## The flag opens nothing a user could not already reach by clicking Sim.
 
 const FLAG := "--bench-flight"
 const BENCH_SCENE := "res://src/bench/flight_bench.tscn"

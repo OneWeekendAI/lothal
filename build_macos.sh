@@ -51,17 +51,6 @@ HAVE=$("$GODOT" --version 2>/dev/null | head -1)
   exit 1
 }
 
-# Encryption guard. `encrypt_pck=true` against stock export templates produces a build that
-# exports without complaint and then cannot decrypt its own pack at startup — it dies on every
-# machine, including this one, with no useful error. The key has to be compiled INTO the
-# template, so the only safe combination is encryption plus templates from build_templates.sh.
-#
-# The macOS preset is encrypted unconditionally now, so this always runs: key from env or
-# Keychain into GODOT_SCRIPT_ENCRYPTION_KEY, custom template staged into build/templates/, and
-# the template proven to carry that key. Any gap exits here, loudly. See release/pck_key.sh.
-. release/pck_key.sh
-lothal_pck_prepare macos.zip
-
 # Native core: build the Rust GDExtension universal, BEFORE the suite runs — the suite
 # tests the classes the dylib provides, and running it first would test the GDScript
 # that is being replaced. The lipo'd universal dylib lands in build/, which the export

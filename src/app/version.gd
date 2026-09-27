@@ -25,29 +25,11 @@ const CURRENT := "0.3.0"
 ## bucket.
 const MANIFEST_URL := "https://dl.meetdev.in/latest.json"
 
-## Where a user goes to sign in and collect an activation key.
-##
-## Compiled in, and so carrying the same permanent commitment MANIFEST_URL does: an installed
-## copy opens this address for ever, and a build that shipped pointing somewhere since abandoned
-## sends its users to a dead page with no way to activate. Hence a hostname on a domain that is
-## ours rather than the Cloudflare Pages subdomain the site currently also answers on — the page
-## can move hosts freely, this string cannot.
-##
-## Opened with OS.shell_open, in the user's own browser. Never an embedded web view: sign-in
-## belongs somewhere the address bar is visible and a password manager can reach, and an in-app
-## window asking for a Google password is shaped exactly like the phishing people are taught to
-## refuse.
-const ACTIVATION_URL := "https://lothal.meetdev.in"
-
 ## Where "Contact us" in the tab row sends people.
 ##
-## The same permanent commitment MANIFEST_URL and ACTIVATION_URL carry: compiled in, so every
-## installed copy opens this address for ever. A hostname on our own domain for that reason — the
-## site can move hosts, this string cannot.
-##
-## This is now the only outbound link the app offers on launch. Lothal no longer asks for an email
-## address or checks a licence before it opens; the activation machinery is retained in the source
-## (LicenceCheck, ActivationScreen) but nothing calls it.
+## The same permanent commitment MANIFEST_URL carries: compiled in, so every installed copy opens
+## this address for ever. A hostname on our own domain for that reason — the site can move hosts,
+## this string cannot.
 const CONTACT_URL := "https://lothal.meetdev.in"
 
 

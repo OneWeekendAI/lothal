@@ -37,18 +37,6 @@ HAVE=$("$GODOT" --version 2>/dev/null | head -1)
   exit 1
 }
 
-# Encryption guard. `encrypt_pck=true` against stock export templates produces a build that
-# exports without complaint and then cannot decrypt its own pack at startup — it dies on every
-# machine, including this one, with no useful error. The key has to be compiled INTO the
-# template, so the only safe combination is encryption plus templates from build_templates.sh.
-#
-# The Windows presets are encrypted unconditionally now. The encrypted Windows template is
-# built by CI (.github/workflows/windows.yml, uploaded as the lothal-windows-template
-# artifact); drop it at ~/.lothal/templates/4.7.1.stable/windows_release_x86_64.exe to
-# cross-export from this Mac. See release/pck_key.sh.
-. release/pck_key.sh
-lothal_pck_prepare windows_release_x86_64.exe
-
 # rcedit is a single Windows binary run through wine. Its absence is a warning rather than an
 # error so a build can still be produced in a hurry, but the warning is loud because shipping
 # an unsigned .exe that ALSO carries a stranger's icon and no publisher string is the version of
