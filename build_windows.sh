@@ -41,17 +41,13 @@ HAVE=$("$GODOT" --version 2>/dev/null | head -1)
 # exports without complaint and then cannot decrypt its own pack at startup — it dies on every
 # machine, including this one, with no useful error. The key has to be compiled INTO the
 # template, so the only safe combination is encryption plus templates from build_templates.sh.
-if grep -q '^encrypt_pck=true' export_presets.cfg; then
-  [ -f "$TEMPLATE_DIR/.lothal_encrypted" ] || {
-    echo "error: encrypt_pck=true but the installed export templates carry no encryption key." >&2
-    echo "       This export would produce a build that cannot start." >&2
-    echo "       Run ./release/build_templates.sh first, or set encrypt_pck=false." >&2
-    exit 1
-  }
-  SCRIPT_AES256_ENCRYPTION_KEY=$(tr -d '\n ' < "$TEMPLATE_DIR/.lothal_encrypted")
-  export SCRIPT_AES256_ENCRYPTION_KEY
-  echo "==> exporting with PCK encryption"
-fi
+#
+# The Windows presets are encrypted unconditionally now. The encrypted Windows template is
+# built by CI (.github/workflows/windows.yml, uploaded as the lothal-windows-template
+# artifact); drop it at ~/.lothal/templates/4.7.1.stable/windows_release_x86_64.exe to
+# cross-export from this Mac. See release/pck_key.sh.
+. release/pck_key.sh
+lothal_pck_prepare windows_release_x86_64.exe
 
 # rcedit is a single Windows binary run through wine. Its absence is a warning rather than an
 # error so a build can still be produced in a hurry, but the warning is loud because shipping

@@ -52,7 +52,8 @@ jobs:
     # dies inside its own reporting loop without reaching quit(). The "Assert the Rust core
     # loaded" step below catches that specific case in seconds; this is the backstop for the
     # ones nobody has met yet. A cold cargo build plus a full suite is ~15 min.
-    timeout-minutes: 45
+    # The encrypted-template compile (below) adds ~60-90 min on a hosted runner.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -105,6 +106,62 @@ jobs:
           mkdir -p build
           cp rust/target/x86_64-pc-windows-msvc/release/lothal_core.dll build/
           ls -l build/lothal_core.dll
+
+      # ---- Encrypted export template ------------------------------------
+      # The presets have encrypt_pck=true, and a pack encrypted with a key the template does not
+      # carry exports cleanly and then cannot start. The key has to be COMPILED into the
+      # template, so this builds 4.7.1-stable's Windows release template from source with the
+      # key from the GODOT_PCK_KEY repository secret (set once with
+      # `security find-generic-password -a lothal-pck -s lothal-pck-key -w | gh secret set GODOT_PCK_KEY`).
+      # scons reads it as SCRIPT_AES256_ENCRYPTION_KEY; the editor, at export, reads
+      # GODOT_SCRIPT_ENCRYPTION_KEY. Both are the same 64-hex-char value.
+      - name: Refuse to run without the PCK key
+        shell: bash
+        env:
+          GODOT_SCRIPT_ENCRYPTION_KEY: ${{ secrets.GODOT_PCK_KEY }}
+        run: |
+          printf '%s' "$GODOT_SCRIPT_ENCRYPTION_KEY" | grep -Eq '^[0-9a-fA-F]{64}$' || {
+            echo "error: secret GODOT_PCK_KEY missing or not 64 hex chars — see the comment above" >&2
+            exit 1
+          }
+
+      - name: Build encrypted Windows release template
+        shell: bash
+        timeout-minutes: 90
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.GODOT_PCK_KEY }}
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet scons
+          git clone --quiet --depth 1 --branch "${GODOT_RELEASE}" \
+            https://github.com/godotengine/godot.git "$RUNNER_TEMP/godot-src"
+          cd "$RUNNER_TEMP/godot-src"
+          # Same renderers as the official template: D3D12 (Agility SDK) and ANGLE for the
+          # compatibility renderer. Without these the build silently drops both drivers.
+          python misc/scripts/install_d3d12_sdk_windows.py
+          python misc/scripts/install_angle.py
+          scons platform=windows target=template_release arch=x86_64 production=yes
+          mkdir -p "$GITHUB_WORKSPACE/build/templates"
+          cp bin/godot.windows.template_release.x86_64.exe \
+            "$GITHUB_WORKSPACE/build/templates/windows_release_x86_64.exe"
+
+      # The pairing proof: the key's 32 bytes are in the binary. A mismatch here is the
+      # can-never-launch build, caught before anything is exported with it.
+      - name: Verify the template carries the key
+        shell: bash
+        env:
+          GODOT_SCRIPT_ENCRYPTION_KEY: ${{ secrets.GODOT_PCK_KEY }}
+        run: python release/check_template_key.py build/templates/windows_release_x86_64.exe
+
+      # Uploaded so build_windows.sh can cross-export from the Mac: drop it at
+      # ~/.lothal/templates/4.7.1.stable/windows_release_x86_64.exe. It contains the key (as
+      # every shipped Lothal.exe does), so the artifact is no more secret than a release.
+      - name: Upload encrypted template
+        uses: actions/upload-artifact@v4
+        with:
+          name: lothal-windows-template-${{ github.event.inputs.version || github.ref_name }}
+          path: build/templates/windows_release_x86_64.exe
+          if-no-files-found: error
 
       # ---- Godot ---------------------------------------------------------
       - name: Install Godot and export templates
@@ -167,6 +224,8 @@ jobs:
       - name: Export Windows build
         shell: bash
         timeout-minutes: 15
+        env:
+          GODOT_SCRIPT_ENCRYPTION_KEY: ${{ secrets.GODOT_PCK_KEY }}
         run: |
           set -euo pipefail
           mkdir -p build/windows
@@ -219,6 +278,8 @@ jobs:
         if: vars.MSIX_IDENTITY_NAME != ''
         shell: bash
         timeout-minutes: 15
+        env:
+          GODOT_SCRIPT_ENCRYPTION_KEY: ${{ secrets.GODOT_PCK_KEY }}
         run: |
           set -euo pipefail
           mkdir -p build/store
