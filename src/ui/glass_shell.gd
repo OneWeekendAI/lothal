@@ -560,6 +560,8 @@ func _ready() -> void:
 	# The pack sheet sits in the Pack tab's own scroll, under the charger; its inner scroll had no
 	# height there and folded the spec rows to nothing. The tab scrolls; the sheet takes its rows.
 	lab.battery_details.fit_to_content()
+	# Under the charger the ten rows push the bench button off a 1280x720 window; see the method.
+	lab.battery_details.put_bench_button_first()
 	# The "class-typical defaults" paragraph is the `~` on the Harness page's numbers.
 	lab.harness_panel.set_caption_visible(false)
 	lab.charge_panel.set_note_visible(false)
