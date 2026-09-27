@@ -124,14 +124,16 @@ static func _the_surface_really_is_two_dimensional(d_m: float, p_m: float, blade
 	var half: Array = at.call(10000.0, 1.225)
 	var triple: Array = at.call(30000.0, 1.225)
 
-	var rho_exact: bool = thin[0] == sea[0] and thin[1] == sea[1]
+	# Relative 1e-14 (~45 ULP), not ==: on x86 libm/FMA, T moves one ULP between the two densities.
+	# Any rho that failed to cancel shows up at 1e-3 or worse across a 1.6x range.
+	var rho_exact: bool = absf(thin[0] / sea[0] - 1.0) < 1.0e-14 and absf(thin[1] / sea[1] - 1.0) < 1.0e-14
 	var rpm_exact: bool = half[0] == sea[0] and half[1] == sea[1]
 	var rpm_close: bool = absf(triple[0] / sea[0] - 1.0) < 1.0e-14 \
 		and absf(triple[1] / sea[1] - 1.0) < 1.0e-14
 
 	return [
 		TestResult.new(
-			"both ratios are BIT-IDENTICAL across a 1.6x air-density range — rho cancels exactly",
+			"both ratios agree to 1e-14 relative across a 1.6x air-density range — rho cancels (to rounding)",
 			rho_exact,
 			"at mu = (%.2f, %.2f): sea level T %.17f P %.17f;  3500 m T %.17f P %.17f" % [
 				mu_ax, mu_ed, sea[0], sea[1], thin[0], thin[1]]),

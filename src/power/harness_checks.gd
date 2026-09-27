@@ -250,8 +250,8 @@ static func _voltage_drop(build: Build, reading: Dictionary) -> Array[BuildWarni
 		"drop_share": share, "share_worth_naming": DROP_SHARE_WORTH_NAMING,
 		"throttle": float(reading["throttle"]),
 	}
-	var sentence := "At %.0f A the pack rests at %.2f V, sags %.2f V in its own cells and loses a further %.2f V in the main lead and its plug — %.2f V at the ESC's pads. The %.2f V is the harness's alone: shorter or thicker leads recover it, a better pack does not." % [
-		peak_a, open_circuit_v, pack_sag_v, drop_v, esc_input_v, drop_v]
+	var sentence := "At %s A the pack rests at %.2f V, sags %.2f V in its own cells and loses a further %.2f V in the main lead and its plug — %.2f V at the ESC's pads. The %.2f V is the harness's alone: shorter or thicker leads recover it, a better pack does not." % [
+		PowerFigures.amps_text(peak_a), open_circuit_v, pack_sag_v, drop_v, esc_input_v, drop_v]
 
 	var out: Array[BuildWarning] = []
 	if share > DROP_SHARE_WORTH_NAMING:

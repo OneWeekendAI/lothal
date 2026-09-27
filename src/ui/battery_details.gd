@@ -88,8 +88,8 @@ func _read(battery: Dictionary, key: String) -> String:
 			# Shown as the rating AND as what it means. "75C" is the number on the wrapper; the
 			# amps are the thing that decides whether this pack can feed these motors, and a
 			# builder should not have to multiply to find out.
-			return "%.0fC (%.0f A)" % [float(specs.get("c_rating", 0.0)),
-				float(specs.get("mah", 0.0)) / 1000.0 * float(specs.get("c_rating", 0.0))]
+			return "%.0fC (%s A)" % [float(specs.get("c_rating", 0.0)), PowerFigures.amps_text(
+				float(specs.get("mah", 0.0)) / 1000.0 * float(specs.get("c_rating", 0.0)))]
 		"mass_g":
 			return "%.0f g" % float(battery.get("mass_g", 0.0))
 		"nominal_v":

@@ -81,7 +81,7 @@ static func _worst_draw_is_the_harness_checks_peak(build: Build) -> TestResult:
 static func _harness_warning_quotes_the_same_draw_as_the_page(build: Build) -> TestResult:
 	var w := _warning(build, &"harness_voltage_drop")
 	var long := w.long() if w != null else ""
-	var want := "At %.0f A " % PowerFigures.worst_draw_a(build)
+	var want := "At %s A " % PowerFigures.amps_text(PowerFigures.worst_draw_a(build))
 	return TestResult.new("harness warning: quotes the page's full-throttle draw (112 A on the reference build)",
 		want == "At 112 A " and long.begins_with(want)
 			and float(w.values["peak_a"]) == PowerFigures.worst_draw_a(build),

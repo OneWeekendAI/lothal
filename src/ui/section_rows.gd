@@ -458,8 +458,8 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			# because the lead lengths are class defaults and the plug's resistance a guess.
 			if build.harness == null:
 				return ""
-			return "~%.2f V lost in leads at %.0f A" % [PowerFigures.harness_drop_v(build),
-				PowerFigures.worst_draw_a(build)]
+			return "~%.2f V lost in leads at %s A" % [PowerFigures.harness_drop_v(build),
+				PowerFigures.amps_text(PowerFigures.worst_draw_a(build))]
 		&"fc":
 			# The UARTs the fitted parts want against the board's count — the class range carries
 			# its `~`. Never the difference: ControlPlausibility refuses a spare-port figure.
@@ -567,8 +567,8 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 			# 112 beside it.
 			# One formatter for both: the draw at a binding pack limit IS the rating (Build.supply_limit_for),
 			# and "%d" beside "%.0f" rounded 112.5 two ways — "113 A of 112 A" for an equal pair.
-			return [["Full-throttle draw", "%.0f A of %.0f A" % [PowerFigures.worst_draw_a(build),
-					PowerFigures.pack_limit_a(build)]],
+			return [["Full-throttle draw", "%s A of %s A" % [PowerFigures.amps_text(PowerFigures.worst_draw_a(build)),
+					PowerFigures.amps_text(PowerFigures.pack_limit_a(build))]],
 				["Sag at full throttle", "−%.1f V" % PowerFigures.worst_sag_v(build)]]
 		&"esc":
 			var channel := PowerFigures.esc_channel(build)
@@ -582,8 +582,8 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 		&"harness":
 			if build.harness == null:
 				return [["Lead drop, full throttle", "—"], ["Harness mass", "—"]]
-			return [["Lead drop, full throttle", "~%.2f V at %.0f A" % [PowerFigures.harness_drop_v(build),
-					PowerFigures.worst_draw_a(build)]],
+			return [["Lead drop, full throttle", "~%.2f V at %s A" % [PowerFigures.harness_drop_v(build),
+					PowerFigures.amps_text(PowerFigures.worst_draw_a(build))]],
 				["Harness mass", "~%.1f g" % PowerFigures.harness_mass_g(build)]]
 		&"fc":
 			var figure := ControlFigures.ports_figure(build)

@@ -275,7 +275,8 @@ static func _flight_time_falls() -> Array:
 	for i in 4:
 		results.append(TestResult.new(
 			"flight_time_min(%d) matches the measured literal" % [[0, 3, 7, 12][i]],
-			times[i] == pinned[i],
+			# Relative 1e-12, not ==: x86 libm/FMA lands a few ULP from the arm64 measurement.
+			absf(times[i] / pinned[i] - 1.0) < 1.0e-12,
 			"got %.17f, pinned %.17f" % [times[i], pinned[i]]))
 	results.append(TestResult.new(
 		"flight time falls monotonically across 0 / 3 / 7 / 12 m/s of wind (measured, weighted "
@@ -317,7 +318,8 @@ static func _hover_current_measured_shape() -> Array:
 	for pair in [[h0, HOVER_0, 0], [h3, HOVER_3, 3], [h7, HOVER_7, 7], [h12, HOVER_12, 12]]:
 		results.append(TestResult.new(
 			"hover_current_in_wind_a(%d) matches the measured literal" % [pair[2]],
-			pair[0] == pair[1],
+			# Relative 1e-12, not ==: x86 libm/FMA lands a few ULP from the arm64 measurement.
+			absf(pair[0] / pair[1] - 1.0) < 1.0e-12,
 			"got %.17f, pinned %.17f" % [pair[0], pair[1]]))
 
 	results.append(TestResult.new(

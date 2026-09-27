@@ -15,6 +15,17 @@ extends RefCounted
 ## so the Battery, ESC and Harness pages all quote the same 116 A.
 
 
+## Whole amps as every Power screen prints them, the SAME on every platform. "%.0f" is not: at an
+## exact .5 — which the reference build hits, its pack-limited draw IS the 112.5 A rating — macOS/
+## Linux printf rounds half to even ("112") and the Windows build rounds half away ("113"), and an
+## x86 ULP either side of .5 flips it again. Half to even, with a 1e-9 A band counted as the tie.
+static func amps_text(a: float) -> String:
+	var below := floorf(a)
+	if absf(a - below - 0.5) < 1.0e-9:
+		return "%d" % (int(below) if int(below) % 2 == 0 else int(below) + 1)
+	return "%d" % roundi(a)
+
+
 ## Where a fresh (full) pack rests, volts.
 static func fresh_rest_v(build: Build) -> float:
 	return build.battery_model().resting_voltage_v()

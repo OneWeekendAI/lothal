@@ -650,7 +650,8 @@ static func _a_library_with_no_sites() -> Array:
 	var room_source := ""
 	var room_file := FileAccess.open("res://src/ui/field_system.gd", FileAccess.READ)
 	if room_file != null:
-		room_source = room_file.get_as_text()
+		# Line-ending agnostic: a CRLF checkout must not hide the guard from the "\n\t" match below.
+		room_source = room_file.get_as_text().replace("\r\n", "\n")
 		room_file.close()
 	# SCANNED IN THE FUNCTION'S OWN BODY, not in the file. The first version of this matched the
 	# guard text ANYWHERE in an 1800-line file that already holds a second
