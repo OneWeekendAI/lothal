@@ -277,7 +277,9 @@ static func _test_battery_row_page_motors_page_and_warning_agree() -> TestResult
 	for w in build.warnings():
 		if w.id == &"current_limit":
 			long = w.long()
-	var want_draw := "%.0f A of %.0f A" % [build.pack_max_amps(), build.pack_max_amps()]
+	# amps_text, not "%.0f": the 112.5 A rating is a tie "%.0f" rounds differently per platform.
+	var want_draw := "%s A of %s A" % [PowerFigures.amps_text(build.pack_max_amps()),
+		PowerFigures.amps_text(build.pack_max_amps())]
 	var ok := str(battery_row.get("line3", "")) == "⚠ pack limits you to %d%% throttle" % pct \
 		and str(page[0][1]) == want_draw \
 		and str(motors[1][1]) == "%d%% · pack" % pct \

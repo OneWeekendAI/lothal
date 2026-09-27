@@ -299,8 +299,8 @@ static func _connector(build: Build, reading: Dictionary) -> Array[BuildWarning]
 	var rating_a := float((row.get("specs", {}) as Dictionary).get("continuous_a", 0.0))
 	if rating_a > 0.0 and sustained_a > rating_a:
 		out.append(BuildWarning.limiting(&"connector_rating",
-			"The %s is rated %.1f A continuous and this build draws %.1f A sustained, peaking at %.0f A. The plug gets warm and drops voltage across its contacts; it does not refuse." % [
-				row.get("name", "connector"), rating_a, sustained_a, peak_a],
+			"The %s is rated %.1f A continuous and this build draws %.1f A sustained, peaking at %s A. The plug gets warm and drops voltage across its contacts; it does not refuse." % [
+				row.get("name", "connector"), rating_a, sustained_a, PowerFigures.amps_text(peak_a)],
 			{"connector": String(row.get("part_id", "")), "rating_a": rating_a,
 				"sustained_a": sustained_a, "peak_a": peak_a,
 				"throttle": float(reading["throttle"])}))

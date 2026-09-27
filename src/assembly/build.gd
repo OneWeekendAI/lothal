@@ -2194,8 +2194,8 @@ func warnings() -> Array[BuildWarning]:
 		match limit["name"]:
 			"battery":
 				out.append(BuildWarning.limiting(&"current_limit",
-					"The %s runs out of current before the motors or the %s do — %.0f A continuous caps this build at %.0f%% throttle." % [
-						limit["label"], esc.get("name", "ESC"), limit["amps"], throttle_cap * 100.0],
+					"The %s runs out of current before the motors or the %s do — %s A continuous caps this build at %.0f%% throttle." % [
+						limit["label"], esc.get("name", "ESC"), PowerFigures.amps_text(float(limit["amps"])), throttle_cap * 100.0],
 					limit_values))
 			"esc":
 				out.append(BuildWarning.limiting(&"current_limit",
