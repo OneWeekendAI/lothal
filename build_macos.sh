@@ -55,17 +55,12 @@ HAVE=$("$GODOT" --version 2>/dev/null | head -1)
 # exports without complaint and then cannot decrypt its own pack at startup — it dies on every
 # machine, including this one, with no useful error. The key has to be compiled INTO the
 # template, so the only safe combination is encryption plus templates from build_templates.sh.
-if grep -q '^encrypt_pck=true' export_presets.cfg; then
-  [ -f "$TEMPLATE_DIR/.lothal_encrypted" ] || {
-    echo "error: encrypt_pck=true but the installed export templates carry no encryption key." >&2
-    echo "       This export would produce a build that cannot start." >&2
-    echo "       Run ./release/build_templates.sh first, or set encrypt_pck=false." >&2
-    exit 1
-  }
-  SCRIPT_AES256_ENCRYPTION_KEY=$(tr -d '\n ' < "$TEMPLATE_DIR/.lothal_encrypted")
-  export SCRIPT_AES256_ENCRYPTION_KEY
-  echo "==> exporting with PCK encryption"
-fi
+#
+# The macOS preset is encrypted unconditionally now, so this always runs: key from env or
+# Keychain into GODOT_SCRIPT_ENCRYPTION_KEY, custom template staged into build/templates/, and
+# the template proven to carry that key. Any gap exits here, loudly. See release/pck_key.sh.
+. release/pck_key.sh
+lothal_pck_prepare macos.zip
 
 # Native core: build the Rust GDExtension universal, BEFORE the suite runs — the suite
 # tests the classes the dylib provides, and running it first would test the GDScript
@@ -91,7 +86,14 @@ fi
 # Tests are the gate: never ship a build that cannot pass its own suite.
 if [ "${SKIP_TESTS:-0}" != "1" ]; then
   echo "==> running test suite"
-  "$GODOT" --headless --script res://tests/run_tests.gd
+  # Gated on the runner's own sentinel, not the exit code: Godot exits 0 on a parse error.
+  SUITE_OUT="$("$GODOT" --headless --script res://tests/run_tests.gd 2>&1)" || true
+  printf '%s\n' "$SUITE_OUT" | grep -E '^\[FAIL\]' || true
+  printf '%s\n' "$SUITE_OUT" | tail -n 3
+  printf '%s\n' "$SUITE_OUT" | grep -Eq '^ALL [0-9]+ TESTS PASSED' || {
+    echo "error: test suite did not report \"ALL n TESTS PASSED\"" >&2
+    exit 1
+  }
 
   # The golden cross-checks compare the Rust crate against the GDScript it replaced. The
   # unit suite CANNOT stand in for them: a 1% error in plausibility.rs's log_log_fit passes
