@@ -52,6 +52,7 @@ static func run() -> Array:
 	results.append(_test_fresh_pack_draw_at_the_ceiling_is_the_pack_rating())
 	results.append(_test_supply_limited_draw_never_exceeds_the_supply_rating(catalog))
 	results.append(_test_battery_row_page_motors_page_and_warning_agree())
+	results.append(_test_motor_limited_draw_is_the_motors_rating(catalog))
 
 	return results
 
@@ -284,3 +285,19 @@ static func _test_battery_row_page_motors_page_and_warning_agree() -> TestResult
 	return TestResult.new("Battery row, Battery page draw, Motors page ceiling and warning agree",
 		ok, "row '%s' · page '%s' (want '%s') · motors '%s' · warning '%s'" % [
 			battery_row.get("line3", ""), page[0][1], want_draw, motors[1][1], long])
+
+
+## The MOTOR ceiling on the same draw (2026-09-27). Small 1404s on a 6S 1300 bind on the motors; a
+## fresh 6S rests at 25.2 V, far above the motors' test voltage, so the old ceiling (no sag, test
+## voltage) let the four of them pull well past their rated max amps. Solved on the fresh-pack
+## draw, one motor at the ceiling draws its rating — and the case must actually be motor-limited
+## and at a ceiling below full throttle, or this proves nothing.
+static func _test_motor_limited_draw_is_the_motors_rating(catalog: PartsCatalog) -> TestResult:
+	var build := _build(catalog, "motor_1404_3800kv", "prop_3x3x3", "battery_6s_1300")
+	var per_motor := PowerFigures.worst_draw_a(build) / 4.0
+	var rating := float(build.motor["specs"]["max_amps"])
+	return TestResult.new("motor-limited: one motor draws its rated max amps at the ceiling on a fresh pack, not more",
+		build.limiting_component()["name"] == "motors" and build.max_throttle_fraction() < 0.99
+			and per_motor <= rating + 0.01 and per_motor > rating - 0.05,
+		"%s at %.1f%%: %.2f A per motor against %.1f A" % [build.limiting_component()["name"],
+			build.max_throttle_fraction() * 100.0, per_motor, rating])

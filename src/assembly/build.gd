@@ -1426,7 +1426,19 @@ func max_throttle_fraction() -> float:
 ## How much of the RPM ceiling the MOTORS can reach before their own current limit stops them,
 ## given the prop fitted. Exactly 1.0 when the fitted prop is the one the motor's amp rating was
 ## measured with. This is the limit the project had before packs had a rating.
+##
+## SOLVED ON A FRESH PACK'S DRAW WITH SAG (2026-09-27), like the pack and ESC ceilings: one motor at
+## this ceiling draws at most its rated max_amps. Priced at the test voltage without sag it let a
+## 6S pack (25.2 V fresh) drive 1404s rated 12 A to 29.5 A each at a "100%" motor ceiling.
 func motor_throttle_limit() -> float:
+	return supply_limit_for(4.0 * float(motor["specs"]["max_amps"]))
+
+
+## The motors' limit as their SPEC SHEET means it: max_amps at the motor's own test voltage, no sag
+## (`throttle_limit_for`). What the bench figures are quoted at — the T:W oracle, the bench RPM and
+## the per-channel demand the ESC bench sweeps to — which describe the motor-and-prop pairing, not
+## the pack it happens to be flown on. Flight uses `motor_throttle_limit`.
+func motor_bench_limit() -> float:
 	return throttle_limit_for(4.0 * float(motor["specs"]["max_amps"]))
 
 
@@ -1455,8 +1467,8 @@ func pack_throttle_limit() -> float:
 func throttle_limit_for(total_amps: float) -> float:
 	# The arithmetic lives in Rust (rust/src/fitting.rs) — the current-limit expression, one
 	# copy in the codebase, and the part of the fitting pipeline the compiled core exists for.
-	# THE MOTORS' limit only (see `supply_limit_for`): a motor's max_amps is a bench figure at its
-	# own test voltage, and the T:W the spec sheet quotes is taken at this ceiling on purpose.
+	# The BENCH form only (`motor_bench_limit`): a motor's max_amps at its own test voltage, which
+	# the spec-sheet T:W is quoted at on purpose. Every flight ceiling uses `supply_limit_for`.
 	return Fitting.throttle_limit_for(total_amps, 4.0 * effective_max_amps)
 
 
@@ -1744,7 +1756,7 @@ func max_total_thrust_n() -> float:
 ## current limit lets them reach. Factored out because top_speed_kmh() asks the same question at a
 ## non-zero airspeed, and two spellings of one RPM ceiling is one edit away from two answers.
 func max_rpm_at_nominal() -> float:
-	return float(motor["specs"]["kv"]) * float(battery["specs"]["nominal_v"]) * motor_throttle_limit()
+	return float(motor["specs"]["kv"]) * float(battery["specs"]["nominal_v"]) * motor_bench_limit()
 
 func thrust_to_weight() -> float:
 	return max_total_thrust_n() / weight_n()
@@ -1917,7 +1929,7 @@ func esc_burst_a() -> float:
 ## What ONE motor pulls at the highest throttle the MOTORS themselves can reach — the demand one
 ## channel of the board has to pass.
 ##
-## Quoted at motor_throttle_limit() and NOT at max_throttle_fraction(), which is the whole trick.
+## Quoted at motor_bench_limit() and NOT at max_throttle_fraction(), which is the whole trick.
 ## max_throttle_fraction() is already clamped by the ESC, so asking what the motors draw there
 ## would ask what they draw once the board has stopped them — and every board in the catalog would
 ## report exactly enough headroom for itself. A bench that cannot fail is not a bench.
@@ -1931,7 +1943,7 @@ func esc_burst_a() -> float:
 ## rating, and less on a prop too small to load the motor that far — which is why this bench, like
 ## the thrust stand, is testing a PAIRING and not a board against a datasheet.
 func motor_demand_per_channel_a() -> float:
-	var ceiling := motor_throttle_limit()
+	var ceiling := motor_bench_limit()
 	return effective_max_amps * ceiling * ceiling
 
 

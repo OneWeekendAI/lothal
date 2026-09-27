@@ -22,7 +22,7 @@ extends Control
 ## would ask what the motors draw once the board has already stopped them — so the draw would
 ## approach the rating and never cross it, and EVERY board in the catalog would report exactly
 ## enough headroom for itself. That is a failure that looks exactly like a working feature, which
-## is why the ceiling here comes from the motors alone (Build.motor_throttle_limit) and why
+## is why the ceiling here comes from the motors alone (Build.motor_bench_limit) and why
 ## tests/test_esc_bench.gd asserts that an undersized board is driven past its rating rather than
 ## up to it.
 ##
@@ -220,7 +220,7 @@ func _motor_model_for_the_sweep() -> MotorModel:
 ## a sweep capped by the thing it is measuring walks the draw up to the rating and stops, and
 ## reports that every board in the catalog is exactly big enough.
 func sweep_ceiling() -> float:
-	return _build.motor_throttle_limit()
+	return _build.motor_bench_limit()
 
 
 ## The current axis for this pairing: zero to comfortably above whichever is taller, the rating or
