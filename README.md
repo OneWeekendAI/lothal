@@ -80,6 +80,36 @@ Sponsors are listed here:
 
 Thank you.
 
+## Code size
+
+Counted with `cloc --vcs=git` (tracked files only, so build output is excluded):
+
+<!-- CLOC-START -->
+```
+github.com/AlDanial/cloc v 2.10
+-------------------------------------------------------------------------------
+Language                     files          blank        comment           code
+-------------------------------------------------------------------------------
+GDScript                       502          20056          47289          85905
+Text                             1              0              0           6000
+JSON                            23              0              0           3697
+Rust                            14            273           1172           2336
+Python                          11            661           1621           2264
+Bourne Shell                    10            130            461            756
+Markdown                         4            136              1            392
+YAML                             4             44            141            293
+TypeScript                       3             50             91            264
+TOML                             3             57            249            165
+PowerShell                       2             29             99            104
+Godot Scene                      4             21             33             64
+JavaScript                       1             14             47             57
+SVG                              1              0              5             27
+-------------------------------------------------------------------------------
+SUM:                           583          21471          51209         102324
+-------------------------------------------------------------------------------
+```
+<!-- CLOC-END -->
+
 ## License
 
 Lothal is licensed under **GPL-3.0-or-later**. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
