@@ -46,6 +46,8 @@ env:
 
 jobs:
   build:
+    # Only the owner may run CI; anyone else's dispatch is skipped before a runner starts.
+    if: github.actor == 'datasciritwik'
     runs-on: windows-latest
     # A job that hangs rather than fails burns the 6-hour default before anyone sees it, and
     # this pipeline has a known way to hang: with the GDExtension unloaded the test runner

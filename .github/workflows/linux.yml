@@ -19,6 +19,8 @@ env:
 
 jobs:
   build:
+    # Only the owner may run CI; anyone else's dispatch is skipped before a runner starts.
+    if: github.actor == 'datasciritwik'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
