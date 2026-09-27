@@ -14,7 +14,11 @@ config/name="Lothal"
 config/description="Build a drone from real parts. Fly it. Feel the difference."
 run/main_scene="res://src/scenes/root.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
+boot_splash/bg_color=Color(0.055, 0.062, 0.078, 1)
+boot_splash/image="res://splash.png"
 config/icon="res://icon.svg"
+config/macos_native_icon="res://icon.icns"
+config/windows_native_icon="res://icon.ico"
 
 [autoload]
 
