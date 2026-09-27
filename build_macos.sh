@@ -96,7 +96,9 @@ if [ "${SKIP_TESTS:-0}" != "1" ]; then
   SUITE_OUT="$("$GODOT" --headless --script res://tests/run_tests.gd 2>&1)" || true
   printf '%s\n' "$SUITE_OUT" | grep -E '^\[FAIL\]' || true
   printf '%s\n' "$SUITE_OUT" | tail -n 3
-  printf '%s\n' "$SUITE_OUT" | grep -Eq '^ALL [0-9]+ TESTS PASSED' || {
+  # A here-string, not `printf | grep -q`: under pipefail, grep -q exits on the first match and
+  # printf dies of SIGPIPE on the ~4,500-line output, so a PASSING suite read as a failure.
+  grep -Eq '^ALL [0-9]+ TESTS PASSED' <<<"$SUITE_OUT" || {
     echo "error: test suite did not report \"ALL n TESTS PASSED\"" >&2
     exit 1
   }
@@ -116,7 +118,7 @@ if [ "${SKIP_TESTS:-0}" != "1" ]; then
     echo "==> $label"
     out="$("$GODOT" --headless --script "$script" 2>&1)" || true
     printf '%s\n' "$out" | tail -n 4
-    if ! printf '%s\n' "$out" | grep -q "$sentinel"; then
+    if ! grep -q "$sentinel" <<<"$out"; then
       echo "error: $label did not report \"$sentinel\" — the Rust core disagrees with its" >&2
       echo "       GDScript reference, or the cross-check itself failed to run." >&2
       exit 1
