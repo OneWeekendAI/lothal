@@ -1,4 +1,3 @@
-class_name ArmBeam
 extends RefCounted
 ## One arm of an airframe, as a beam (airframe.md §4.2-§4.5) — the slice that replaces a guessed
 ## number with a computed one.
@@ -72,7 +71,7 @@ extends RefCounted
 ## source zero, and §5.4 says in as many words to resist exactly that. One honest guess beats
 ## thirteen tuned ones, and this one is applied in exactly one place: k_tip_n_per_m().
 const ROOT_FIXITY_BOLTED := 0.85
-## ROOT_FIXITY_UNIBODY now lives in rust/src/frame_law.rs.
+const ROOT_FIXITY_UNIBODY := 1.0
 
 ## In-plane shear modulus for a carbon plate, as a fraction of its quoted Young's modulus.
 ## CHARACTERISTIC and nothing better (§4.4). For an ISOTROPIC solid G = E/(2(1+nu)) puts this near
@@ -82,18 +81,18 @@ const ROOT_FIXITY_BOLTED := 0.85
 ##
 ## This is used ONLY by torsion_deg(), which returns a CHARACTERISTIC result and says so in its
 ## own docstring and in its returned dictionary. It may rank two arms. It may not be quoted.
-## CHARACTERISTIC_SHEAR_FRACTION now lives in rust/src/frame_law.rs.
+const CHARACTERISTIC_SHEAR_FRACTION := 0.065
 
 ## Rayleigh's effective mass of a cantilever deflecting in its static tip-loaded shape (§4.3). Not
 ## a tuned number and not adjustable — 33/140 falls out of integrating the static deflection shape
 ## against the mass distribution, and the bare-beam test in tests/test_arm_beam.gd is what proves
 ## it is the right one (it puts f1 ~1.5% above the exact Euler-Bernoulli answer, as §4.3 predicts).
-## RAYLEIGH_MASS_FRACTION now lives in rust/src/frame_law.rs.
+const RAYLEIGH_MASS_FRACTION := 33.0 / 140.0
 
 ## Sub-intervals per taper segment for the compliance integral. §4.2 asks for "~100 stations"; this
 ## is per SEGMENT and even (Simpson needs pairs), so a single-segment arm integrates over 121
 ## stations and a taper with kinks gets at least that many.
-## STATIONS_PER_SEGMENT now lives in rust/src/frame_law.rs.
+const STATIONS_PER_SEGMENT := 120
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +216,20 @@ func is_valid() -> bool:
 ## the profile rather than extrapolated: extrapolating a taper past its last authored point is how
 ## you get a negative width at the tip and a nonsense stiffness that still looks like a number.
 func width_at(s: float) -> float:
-	return FrameLaw.beam_width_at(profile_s_m, profile_b_m, s)
+	var n := profile_b_m.size()
+	if n == 0:
+		return 0.0
+	if n == 1 or s <= profile_s_m[0]:
+		return profile_b_m[0]
+	if s >= profile_s_m[n - 1]:
+		return profile_b_m[n - 1]
+	for i in range(n - 1):
+		if s <= profile_s_m[i + 1]:
+			var span := profile_s_m[i + 1] - profile_s_m[i]
+			if span <= 0.0:
+				return profile_b_m[i + 1]
+			return profile_b_m[i] + (profile_b_m[i + 1] - profile_b_m[i]) * (s - profile_s_m[i]) / span
+	return profile_b_m[n - 1]
 
 
 ## Second moment of area, m^4. I(s) = b(s)*t^3/12 for a rectangle bending about its own centroid.
@@ -228,7 +240,7 @@ func width_at(s: float) -> float:
 ## almost every builder is wrong. tests/test_arm_beam.gd asserts both ratios EXACTLY, because they
 ## are exact — they are the definition, not an approximation of it.
 func second_moment_at(s: float) -> float:
-	return FrameLaw.beam_second_moment_at(profile_s_m, profile_b_m, thickness_m, s)
+	return width_at(s) * pow(thickness_m, 3.0) / 12.0
 
 
 ## Pa. E(theta) for the material this arm is cut from, at the angle it is cut at.
@@ -239,7 +251,7 @@ func youngs_modulus_pa() -> float:
 
 
 func root_fixity() -> float:
-	return FrameLaw.beam_root_fixity(unibody)
+	return ROOT_FIXITY_UNIBODY if unibody else ROOT_FIXITY_BOLTED
 
 
 # ---------------------------------------------------------------------------
@@ -280,17 +292,37 @@ func root_fixity() -> float:
 func compliance_integral() -> float:
 	if not is_valid():
 		return 0.0
-	# Simpson per profile segment over (L - s)^2 / I(s): FrameLaw.beam_compliance_integral.
-	return FrameLaw.beam_compliance_integral(profile_s_m, profile_b_m, thickness_m, length_m)
+	var total := 0.0
+	var breakpoints := _integration_breakpoints()
+	for i in range(breakpoints.size() - 1):
+		total += _simpson(breakpoints[i], breakpoints[i + 1], STATIONS_PER_SEGMENT)
+	return total
 
 
+func _integration_breakpoints() -> PackedFloat64Array:
+	var out := PackedFloat64Array([0.0])
+	for station in profile_s_m:
+		if station > out[out.size() - 1] + 1.0e-12 and station < length_m - 1.0e-12:
+			out.append(station)
+	out.append(length_m)
+	return out
 
 
+func _integrand(s: float) -> float:
+	var inertia := second_moment_at(s)
+	if inertia <= 0.0:
+		return 0.0
+	var lever := length_m - s
+	return lever * lever / inertia
 
 
-
-
-
+func _simpson(a: float, b: float, intervals: int) -> float:
+	var n := intervals if intervals % 2 == 0 else intervals + 1
+	var h := (b - a) / float(n)
+	var total := _integrand(a) + _integrand(b)
+	for i in range(1, n):
+		total += _integrand(a + h * i) * (4.0 if i % 2 == 1 else 2.0)
+	return total * h / 3.0
 
 
 ## Metres of tip deflection under a tip load of `force_n`. ENGINEERING-GRADE.
@@ -311,7 +343,11 @@ func tip_deflection_m(force_n: float) -> float:
 ## THE ROOT FIXITY FACTOR IS APPLIED HERE AND NOWHERE ELSE. One multiplication, one place, so that
 ## anyone auditing the free constants can grep it and find one hit.
 func k_tip_n_per_m() -> float:
-	return FrameLaw.beam_k_tip(compliance_integral(), youngs_modulus_pa(), unibody)
+	var compliance := compliance_integral()
+	var modulus := youngs_modulus_pa()
+	if compliance <= 0.0 or modulus <= 0.0:
+		return 0.0
+	return root_fixity() * modulus / compliance
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +367,12 @@ func arm_mass_kg() -> float:
 
 
 func plan_area_m2() -> float:
-	return FrameLaw.beam_plan_area(profile_s_m, profile_b_m, length_m)
+	if profile_b_m.size() < 2:
+		return width_at(0.0) * length_m
+	var area := 0.0
+	for i in range(profile_b_m.size() - 1):
+		area += 0.5 * (profile_b_m[i] + profile_b_m[i + 1]) * (profile_s_m[i + 1] - profile_s_m[i])
+	return area
 
 
 # ---------------------------------------------------------------------------
@@ -365,7 +406,11 @@ func plan_area_m2() -> float:
 ##
 ## Reproducing the old law AND explaining its limit is the entire argument that this is right.
 func resonance_hz() -> float:
-	return FrameLaw.beam_resonance_hz(k_tip_n_per_m(), tip_mass_kg, arm_mass_kg())
+	var stiffness := k_tip_n_per_m()
+	var effective_mass := tip_mass_kg + RAYLEIGH_MASS_FRACTION * arm_mass_kg()
+	if stiffness <= 0.0 or effective_mass <= 0.0:
+		return 0.0
+	return sqrt(stiffness / effective_mass) / TAU
 
 
 # ---------------------------------------------------------------------------
@@ -390,11 +435,12 @@ func resonance_hz() -> float:
 ## arm is in; `characteristic` in the result is true regardless, so there is no aspect-ratio branch
 ## that could make this look quotable in some corner.
 func torsion_deg(torque_nm: float) -> Dictionary:
-	var t := FrameLaw.beam_torsion(torque_nm, youngs_modulus_pa(), plan_area_m2(), length_m,
-		thickness_m)
-	var twist_rad: float = t[0]
-	var torsion_constant: float = t[1]
-	var shear_modulus: float = t[2]
+	var shear_modulus := youngs_modulus_pa() * CHARACTERISTIC_SHEAR_FRACTION
+	var mean_width := plan_area_m2() / length_m if length_m > 0.0 else 0.0
+	var torsion_constant := mean_width * pow(thickness_m, 3.0) / 3.0
+	var twist_rad := 0.0
+	if shear_modulus > 0.0 and torsion_constant > 0.0:
+		twist_rad = torque_nm * length_m / (shear_modulus * torsion_constant)
 	return {
 		"twist_deg": rad_to_deg(twist_rad),
 		"torsion_constant_m4": torsion_constant,
@@ -419,7 +465,11 @@ func torsion_deg(torque_nm: float) -> Dictionary:
 ## is the real reason arms are tapered, and it is a stress argument rather than the mass argument
 ## builders usually give for it.
 func bending_stress_pa(force_n: float, s: float) -> float:
-	return FrameLaw.beam_bending_stress(profile_s_m, profile_b_m, thickness_m, length_m, force_n, s)
+	var b := width_at(s)
+	if b <= 0.0 or thickness_m <= 0.0:
+		return 0.0
+	var moment := force_n * (length_m - s)
+	return 6.0 * moment / (b * thickness_m * thickness_m)
 
 
 ## Pa. The same bending stress raised by the net section at a bolt hole of diameter `hole_d_m`:
@@ -434,15 +484,19 @@ func bending_stress_pa(force_n: float, s: float) -> float:
 ## Returns 0 for a hole that consumes the section: that is not a stress, it is a cut arm, and
 ## reporting a very large number would imply the beam model still applies.
 func net_section_stress_pa(force_n: float, s: float, hole_d_m: float) -> float:
-	return FrameLaw.beam_net_section_stress(profile_s_m, profile_b_m, thickness_m, length_m,
-		force_n, s, hole_d_m)
+	var b := width_at(s)
+	if b <= 0.0 or hole_d_m >= b:
+		return 0.0
+	return bending_stress_pa(force_n, s) * b / (b - hole_d_m)
 
 
 ## Pa. Bearing stress where a bolt presses on the hole wall: sigma = F/(d*t). Carbon crushes around
 ## under-sized bolts long before the plate itself breaks, which is why this is its own load case and
 ## not a footnote to the last one.
 func bearing_stress_pa(force_n: float, hole_d_m: float) -> float:
-	return FrameLaw.beam_bearing_stress(force_n, hole_d_m, thickness_m)
+	if hole_d_m <= 0.0 or thickness_m <= 0.0:
+		return 0.0
+	return force_n / (hole_d_m * thickness_m)
 
 
 ## The §4.5 report: every stress above as a FRACTION of the material's published strength, because

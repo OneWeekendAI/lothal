@@ -1,4 +1,3 @@
-class_name VibrationModel
 extends VibrationSource
 ## What a quadcopter shakes its own gyro with: prop imbalance at rotation frequency, blade
 ## passage at blades x that, and a frame mode that amplifies whichever harmonic happens to be
@@ -177,14 +176,14 @@ const BLADE_PASS_EQUIVALENT_KG := 0.00003
 ## number. Change it and every reading scales together. It sets the units of the y-axis and
 ## nothing else, which is precisely why a bench built on this may show the SHAPE of a sweep and
 ## must not quote a figure.
-## SENSOR_RESPONSE_RAD_S_PER_N now lives in rust/src/flight_law.rs.
+const SENSOR_RESPONSE_RAD_S_PER_N := 0.003
 
 ## How much of an arm's shaking shows up on the YAW axis rather than on roll and pitch.
 ##
 ## An arm bends far more easily than it twists, so most of what the sensor sees is roll and pitch —
 ## but not all of it, and a model that put nothing on yaw would tell a builder that yaw D is free.
 ## 0.15 is a guess with no source; its only defence is that it is small and not zero.
-## YAW_COUPLING now lives in rust/src/flight_law.rs.
+const YAW_COUPLING := 0.15
 
 ## Four props balanced independently have NO phase relationship, and the model must not accidentally
 ## assert one. With every motor at the same rpm and the same starting phase, the four arms' roll
@@ -195,7 +194,7 @@ const BLADE_PASS_EQUIVALENT_KG := 0.00003
 ## which is the standard trick for "spread out and not commensurate"). Fixed rather than random
 ## because gyro.gd's "the same flight twice" guarantee is not negotiable and this model contains no
 ## RNG at all.
-## PHASE_OFFSETS now lives in rust/src/flight_law.rs.
+const PHASE_OFFSETS := [0.0, 3.883222, 7.766444, 11.649666]
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +241,6 @@ var prop_radius_m := 0.0635
 ## cross product four times per sample at 1 kHz is the kind of thing that turns a sim into a
 ## slideshow.
 var _axis: Array[Vector3] = []
-var _axis_packed := PackedVector3Array()
 var _yaw_sign := PackedFloat64Array([1.0, -1.0, -1.0, 1.0])
 
 ## Integrated, not computed from t. A signal whose frequency follows rpm cannot be written as
@@ -285,7 +283,12 @@ static func tip_mass_kg_for(build: Build) -> float:
 ## The frame's first arm-bending mode — the scaling law at the top of this file, anchored on
 ## REFERENCE_RESONANCE_HZ. Static and takes raw numbers so a bench can sweep it without a Build.
 static func resonance_hz_for(arm_m: float, tip_kg: float) -> float:
-	return FlightLaw.resonance_hz_for(arm_m, tip_kg)
+	if arm_m <= 0.0 or tip_kg <= 0.0:
+		return REFERENCE_RESONANCE_HZ
+	return REFERENCE_RESONANCE_HZ \
+		* pow(REFERENCE_ARM_M / arm_m, ARM_LENGTH_EXPONENT) \
+		* sqrt(REFERENCE_TIP_MASS_KG / tip_kg)
+
 
 ## A single-degree-of-freedom mode's magnitude response to forcing at `hz`:
 ##
@@ -296,7 +299,13 @@ static func resonance_hz_for(arm_m: float, tip_kg: float) -> float:
 ## harmonics all miss the mode reads exactly what the forcing alone would give, and the resonance
 ## is visible as an addition rather than baked into every number.
 static func modal_gain(hz: float, res_hz: float, zeta: float) -> float:
-	return FlightLaw.modal_gain(hz, res_hz, zeta)
+	if res_hz <= 0.0:
+		return 1.0
+	var r := hz / res_hz
+	var real := 1.0 - r * r
+	var imag := 2.0 * zeta * r
+	return 1.0 / sqrt(real * real + imag * imag)
+
 
 ## The natural frequency of the fitted soft-mount pad, or INF when there is no pad — which makes
 ## transmissibility exactly 1 below, with no branch for "bare" anywhere else.
@@ -323,9 +332,15 @@ func mount_hz() -> float:
 ## at another zeta needs no write. See `mount_transmissibility_at`.
 func mount_transmissibility(hz: float, zeta: float = NAN) -> float:
 	var f_n := mount_hz()
-	if not is_inf(f_n) and is_nan(zeta):
+	if is_inf(f_n):
+		return 1.0
+	var r := hz / f_n
+	if is_nan(zeta):
 		zeta = SoftMount.damping_ratio_for(soft_mount_spec)
-	return FlightLaw.mount_transmissibility(hz, f_n, zeta)
+	var damped := 2.0 * zeta * r
+	var real := 1.0 - r * r
+	return sqrt((1.0 + damped * damped) / (real * real + damped * damped))
+
 
 ## The same curve, read at a STATED damping ratio rather than at the spec's.
 ##
@@ -371,16 +386,39 @@ func set_rpm(motor_rpm: PackedFloat64Array) -> void:
 func angular_rate_at(t_s: float) -> Vector3:
 	var dt := t_s - _last_t
 	_last_t = t_s
-	# The pad's two numbers are pure functions of the fitted mount, so they are read once here
-	# rather than once per harmonic per motor; the forcing loop itself is FlightLaw.vibration_rate.
-	var f_n := mount_hz()
-	var zeta := 0.0 if is_inf(f_n) else SoftMount.damping_ratio_for(soft_mount_spec)
-	var r := FlightLaw.vibration_rate(dt, rpm, _phase, _axis_packed, _yaw_sign,
-		PackedFloat64Array([prop_radius_m, blades, imbalance_kg, blade_pass_kg, resonance_hz,
-			damping_ratio, f_n, zeta]))
+
+	var out := Vector3.ZERO
 	for i in 4:
-		_phase[i] = r[3 + i]
-	return Vector3(r[0], r[1], r[2])
+		var hz := rpm[i] / 60.0
+		if hz <= 0.0:
+			continue
+
+		_phase[i] += TAU * hz * dt
+		var omega := TAU * hz
+		# m * r * omega^2 — the rotating-imbalance forcing, exactly. Everything rpm-dependent
+		# about the amplitude of this model is this one line.
+		var per_kg_n := prop_radius_m * omega * omega
+
+		var bp_hz := blades * hz
+		var imbalance_n := imbalance_kg * per_kg_n \
+			* modal_gain(hz, resonance_hz, damping_ratio) * mount_transmissibility(hz)
+		# Blade passage acts at blades x rotation but its MAGNITUDE is set by the loading at
+		# rotation, so the omega^2 above is the right one and only the frequency is multiplied.
+		# The modal gain and the pad, on the other hand, are asked about the frequency that is
+		# actually arriving — which is what lets blade pass sit on the frame mode while the 1x
+		# line is nowhere near it.
+		var blade_n := blade_pass_kg * per_kg_n \
+			* modal_gain(bp_hz, resonance_hz, damping_ratio) * mount_transmissibility(bp_hz)
+
+		var theta: float = _phase[i] + PHASE_OFFSETS[i]
+		var bending := imbalance_n * sin(theta) + blade_n * sin(blades * theta)
+		var torsion := imbalance_n * cos(theta) + blade_n * cos(blades * theta)
+
+		out += _axis[i] * (bending * SENSOR_RESPONSE_RAD_S_PER_N)
+		out.y += torsion * SENSOR_RESPONSE_RAD_S_PER_N * YAW_COUPLING * _yaw_sign[i]
+
+	return out
+
 
 ## Back to t = 0 with every phase where it started. Gyro.reset() calls this, and without it a
 ## respawn would continue the previous flight's shake — which would break "the same flight twice"
@@ -408,4 +446,3 @@ func _set_geometry(arm_m: float) -> void:
 		var r := MotorLayout.motor_position(name, arm_m)
 		var bending := r.cross(Vector3(0.0, 1.0, 0.0))
 		_axis.append(bending.normalized() if bending.length() > 0.0 else Vector3.ZERO)
-	_axis_packed = PackedVector3Array(_axis)

@@ -1,4 +1,3 @@
-class_name Wind
 extends RefCounted
 ## The air itself moves. A steady offset plus a seeded gust process, both authored by the
 ## builder's own `Conditions` (design §4.3) — `Wind` reads that set, it never writes one:
@@ -74,7 +73,9 @@ func _init(p_conditions: Conditions, p_gust_tau_s := DEFAULT_GUST_TAU_S,
 ## Nothing here normalises `from_deg` first — `conditions.gd`'s header is explicit that a 370 stays
 ## 370 — and `sin`/`cos` do not need it normalised either, so none happens here.
 static func steady_vector(p_speed_mps: float, p_from_deg: float) -> Vector3:
-	return FlightLaw.wind_steady_vector(p_speed_mps, p_from_deg)
+	# The direction the air MOVES, not the direction it comes from.
+	var towards_rad := deg_to_rad(p_from_deg + 180.0)
+	return Vector3(p_speed_mps * sin(towards_rad), 0.0, -p_speed_mps * cos(towards_rad))
 
 ## Steady plus the current gust — does not advance anything. `update()` is the only thing that
 ## moves the process forward; this is what a caller reads without paying for a step (e.g. the HUD,
@@ -94,9 +95,8 @@ func velocity_mps() -> Vector3:
 ## front lives in. Solving `sigma * sqrt(a / (2 - a)) = gustiness_mps` for sigma gives the
 ## expression used below.
 func update(dt: float) -> Vector3:
-	var k := FlightLaw.gust_coefficients(dt, gust_tau_s, gustiness_mps)
-	var a: float = k[0]
-	var sigma: float = k[1]
+	var a := dt / (gust_tau_s + dt)
+	var sigma := gustiness_mps * sqrt((2.0 - a) / a)
 	var drive := Vector3(
 		_rng.randfn(0.0, sigma),
 		_rng.randfn(0.0, sigma),

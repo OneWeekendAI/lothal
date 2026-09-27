@@ -1,4 +1,3 @@
-class_name Gyro
 extends RefCounted
 ## The aircraft's rate sensor — a MEMS gyro model sitting between the rigid body and the
 ## flight controller (physics.md §7).
@@ -199,7 +198,9 @@ func _sample(true_rate_rad_s: Vector3, period: float) -> void:
 	# alpha = dt / (RC + dt), RC = 1 / (2*pi*fc). This form has unity DC gain by
 	# construction — a filter that changed the steady-state reading would be a scale error
 	# on every rate the FC ever sees.
-	rate_rad_s += (raw - rate_rad_s) * FlightLaw.lowpass_alpha(period, cutoff_hz)
+	var rc := 1.0 / (TAU * cutoff_hz)
+	var alpha := period / (rc + period)
+	rate_rad_s += (raw - rate_rad_s) * alpha
 
 ## The standard deviation of the DIFFERENCE between two successive readings, rad/s — the signal a
 ## derivative term is actually differentiating when the aircraft is perfectly still.
@@ -223,7 +224,10 @@ func _sample(true_rate_rad_s: Vector3, period: float) -> void:
 ## RateTune, to bound the D gain it derives. One expression, so those two can never disagree about
 ## one board.
 func sample_step_noise_rad_s() -> float:
-	return FlightLaw.gyro_step_noise(noise_rad_s, sample_rate_hz, cutoff_hz)
+	var period := 1.0 / sample_rate_hz
+	var rc := 1.0 / (TAU * cutoff_hz)
+	var a := period / (rc + period)
+	return noise_rad_s * sqrt(2.0 * a * a / (2.0 - a))
 
 
 ## Body-axis rates re-expressed in the coordinate contract's roll/pitch/yaw
