@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package both platform builds into release artifacts and sign the manifest.
+# Package the macOS, Windows and Linux builds into release artifacts and sign the manifest.
 #
 #   ./release/package.sh 0.1.0
 #
@@ -31,11 +31,16 @@ MACOS_ONLY=0
 [ "${2:-}" = "--macos-only" ] && MACOS_ONLY=1
 
 PRIVATE_KEY="${LOTHAL_SIGNING_KEY:-$HOME/.lothal/update_private.pem}"
-BASE_URL="${LOTHAL_BASE_URL:-https://dl.meetdev.in}"
-NOTES_URL="${LOTHAL_NOTES_URL:-https://github.com/OneWeekendAI/lothal-public/releases}"
+# Downloads are the GitHub Release assets: parse_manifest accepts any https:// URL, and since
+# 0.3.0 the release on github.com/OneWeekendAI/lothal IS the distribution. The URL is only
+# live once `gh release create v<version>` has uploaded the zips — create the release before
+# upload.sh publishes latest.json, or clients are pointed at 404s.
+BASE_URL="${LOTHAL_BASE_URL:-https://github.com/OneWeekendAI/lothal/releases/download}"
+NOTES_URL="${LOTHAL_NOTES_URL:-https://github.com/OneWeekendAI/lothal/releases/tag/v$VERSION}"
 
 MAC_APP="build/Lothal.app"
-WIN_DIR="build/windows"
+WIN_DIR="${LOTHAL_WIN_DIR:-build/windows}"
+LINUX_DIR="${LOTHAL_LINUX_DIR:-build/linux}"
 OUT="build/release/v$VERSION"
 
 # The version in the binary and the version being packaged must be the same number. They are
@@ -125,6 +130,12 @@ if [ "$MACOS_ONLY" = "0" ]; then
     echo "       release/package.sh $VERSION --macos-only" >&2
     exit 1
   }
+  # The same artifact guard for Linux: the export copies liblothal_core.so beside the binary.
+  [ -f "$LINUX_DIR/Lothal.x86_64" ] && [ -f "$LINUX_DIR/liblothal_core.so" ] || {
+    echo "error: no Linux build with its native core at $LINUX_DIR (need Lothal.x86_64 and" >&2
+    echo "       liblothal_core.so). Download the linux-build workflow artifact there." >&2
+    exit 1
+  }
 fi
 
 # Re-check the bundle here as well as in build_macos.sh. This is the last point before the
@@ -138,8 +149,20 @@ codesign --verify --deep --strict "$MAC_APP" >/dev/null 2>&1 || {
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-MAC_ZIP="Lothal-$VERSION-macos-universal.zip"
-WIN_ZIP="Lothal-$VERSION-windows-x64.zip"
+MAC_ZIP="Lothal-$VERSION-macos.zip"
+WIN_ZIP="Lothal-$VERSION-windows-x86_64.zip"
+LINUX_ZIP="Lothal-$VERSION-linux-x86_64.zip"
+
+# Windows and Linux are zipped with Info-ZIP under a named top folder: it records Unix modes, so
+# the Linux binary arrives executable, and it writes no AppleDouble ._ entries.
+zip_dir() {
+  local src="$1" name="$2" stage
+  stage="$(mktemp -d)"
+  cp -R "$src" "$stage/${name%.zip}"
+  chmod +x "$stage/${name%.zip}"/Lothal.x86_64 2>/dev/null || true
+  ( cd "$stage" && zip -qrX "$OLDPWD/$OUT/$name" "${name%.zip}" )
+  rm -rf "$stage"
+}
 
 echo "==> zipping macOS bundle"
 # ditto rather than zip: it preserves the resource forks and extended attributes that carry the
@@ -149,14 +172,16 @@ ditto -c -k --sequesterRsrc --keepParent "$MAC_APP" "$OUT/$MAC_ZIP"
 
 if [ "$MACOS_ONLY" = "0" ]; then
   echo "==> zipping Windows build"
-  ditto -c -k "$WIN_DIR" "$OUT/$WIN_ZIP"
+  zip_dir "$WIN_DIR" "$WIN_ZIP"
+  echo "==> zipping Linux build"
+  zip_dir "$LINUX_DIR" "$LINUX_ZIP"
 else
   echo "==> SKIPPING Windows (--macos-only): no build will be advertised for it"
 fi
 
 echo "==> hashing"
 if [ "$MACOS_ONLY" = "0" ]; then
-  ( cd "$OUT" && shasum -a 256 "$MAC_ZIP" "$WIN_ZIP" > SHA256SUMS.txt )
+  ( cd "$OUT" && shasum -a 256 "$MAC_ZIP" "$WIN_ZIP" "$LINUX_ZIP" > SHA256SUMS.txt )
 else
   ( cd "$OUT" && shasum -a 256 "$MAC_ZIP" > SHA256SUMS.txt )
 fi
@@ -167,9 +192,13 @@ MAC_SIZE=$(stat -f%z "$OUT/$MAC_ZIP")
 if [ "$MACOS_ONLY" = "0" ]; then
   WIN_SHA=$(awk -v f="$WIN_ZIP" '$2 == f {print $1}' "$OUT/SHA256SUMS.txt")
   WIN_SIZE=$(stat -f%z "$OUT/$WIN_ZIP")
+  LINUX_SHA=$(awk -v f="$LINUX_ZIP" '$2 == f {print $1}' "$OUT/SHA256SUMS.txt")
+  LINUX_SIZE=$(stat -f%z "$OUT/$LINUX_ZIP")
 else
   WIN_SHA=""
   WIN_SIZE=0
+  LINUX_SHA=""
+  LINUX_SIZE=0
 fi
 
 echo "==> writing manifest"
@@ -180,7 +209,7 @@ echo "==> writing manifest"
 # in the field.
 PAYLOAD=$(python3 -c '
 import json, sys
-version, released, notes, base, mz, ms, msz, wz, ws, wsz = sys.argv[1:]
+version, released, notes, base, mz, ms, msz, wz, ws, wsz, lz, ls, lsz = sys.argv[1:]
 downloads = {
     "macos": {"url": "%s/v%s/%s" % (base, version, mz), "size": int(msz), "sha256": ms},
 }
@@ -190,6 +219,8 @@ downloads = {
 # offers nothing, which is the honest answer while the native core is macOS-only.
 if ws:
     downloads["windows"] = {"url": "%s/v%s/%s" % (base, version, wz), "size": int(wsz), "sha256": ws}
+if ls:
+    downloads["linux"] = {"url": "%s/v%s/%s" % (base, version, lz), "size": int(lsz), "sha256": ls}
 print(json.dumps({
     "schema": 1,
     "version": version,
@@ -199,7 +230,7 @@ print(json.dumps({
     "downloads": downloads,
 }, separators=(",", ":"), sort_keys=True))
 ' "$VERSION" "$(date -u +%Y-%m-%d)" "$NOTES_URL" "$BASE_URL" \
-  "$MAC_ZIP" "$MAC_SHA" "$MAC_SIZE" "$WIN_ZIP" "$WIN_SHA" "$WIN_SIZE")
+  "$MAC_ZIP" "$MAC_SHA" "$MAC_SIZE" "$WIN_ZIP" "$WIN_SHA" "$WIN_SIZE" "$LINUX_ZIP" "$LINUX_SHA" "$LINUX_SIZE")
 
 printf '%s' "$PAYLOAD" > "$OUT/payload.json"
 SIGNATURE=$(openssl dgst -sha256 -sign "$PRIVATE_KEY" "$OUT/payload.json" | openssl base64 -A)
