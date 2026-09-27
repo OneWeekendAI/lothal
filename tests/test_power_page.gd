@@ -27,6 +27,7 @@ static func run() -> Array:
 
 	# --- the rows
 	out.append(_harness_row_reads_the_lead_drop(build))
+	out.append(_pack_chart_worst_draw_label_matches_the_page(build))
 	out.append(_harness_row_fits_the_line(build))
 
 	# --- the page numbers
@@ -145,8 +146,9 @@ static func _harness_drop_is_the_checks_drop(build: Build) -> TestResult:
 
 static func _harness_row_reads_the_lead_drop(build: Build) -> TestResult:
 	var row := _row(SectionRows.rows("Power", build, []), &"harness")
-	var want := "~%.2f V lost in leads at %d A" % [PowerFigures.harness_drop_v(build),
-		roundi(PowerFigures.worst_draw_a(build))]
+	# "at 112 A", literally (2026-09-27): the draw at the pack-limited ceiling IS the 112.5 A rating,
+	# and roundi() printed it "113" beside the Battery page's "112 A of 112 A". One formatter now.
+	var want := "~%.2f V lost in leads at 112 A" % PowerFigures.harness_drop_v(build)
 	return TestResult.new("power rows: Harness reads the worst lead drop, marked ~",
 		row.get("number") == want, "'%s' want '%s'" % [row.get("number"), want])
 
@@ -178,8 +180,8 @@ static func _esc_page_numbers(build: Build) -> TestResult:
 
 static func _harness_page_numbers(build: Build) -> TestResult:
 	var got := SectionRows.page_numbers(&"harness", build)
-	var want := [["Lead drop, full throttle", "~%.2f V at %d A" % [PowerFigures.harness_drop_v(build),
-			roundi(PowerFigures.worst_draw_a(build))]],
+	# "at 112 A", literally — see _harness_row_reads_the_lead_drop.
+	var want := [["Lead drop, full throttle", "~%.2f V at 112 A" % PowerFigures.harness_drop_v(build)],
 		["Harness mass", "~%.1f g" % PowerFigures.harness_mass_g(build)]]
 	return TestResult.new("page numbers: Harness shows the lead drop and the harness mass, both ~",
 		got == want, "%s want %s" % [got, want])
@@ -226,6 +228,17 @@ static func _pack_chart_marks_the_worst_draw(build: Build) -> TestResult:
 	d.free()
 	return TestResult.new("power drawing: full throttle on a fresh pack sits at the page's draw and sag",
 		ok, str(p))
+
+
+## The chart's own label for that point says the same number as the page above it: at the
+## pack-limited ceiling the draw IS the 112.5 A rating, which roundi() printed "113" (2026-09-27).
+static func _pack_chart_worst_draw_label_matches_the_page(build: Build) -> TestResult:
+	var d := _diagram(build, PowerDiagram.MODE_PACK)
+	var p := _point(d, "full throttle, fresh")
+	var label := str(p.get("label", ""))
+	d.free()
+	return TestResult.new("power drawing: the fresh full-throttle label reads the page's 112 A",
+		label == "full throttle, fresh 112 A", label)
 
 
 static func _pack_chart_flight_point_carries_flight_time(build: Build) -> TestResult:

@@ -458,8 +458,8 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			# because the lead lengths are class defaults and the plug's resistance a guess.
 			if build.harness == null:
 				return ""
-			return "~%.2f V lost in leads at %d A" % [PowerFigures.harness_drop_v(build),
-				roundi(PowerFigures.worst_draw_a(build))]
+			return "~%.2f V lost in leads at %.0f A" % [PowerFigures.harness_drop_v(build),
+				PowerFigures.worst_draw_a(build)]
 		&"fc":
 			# The UARTs the fitted parts want against the board's count — the class range carries
 			# its `~`. Never the difference: ControlPlausibility refuses a spare-port figure.
@@ -582,8 +582,8 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 		&"harness":
 			if build.harness == null:
 				return [["Lead drop, full throttle", "—"], ["Harness mass", "—"]]
-			return [["Lead drop, full throttle", "~%.2f V at %d A" % [PowerFigures.harness_drop_v(build),
-					roundi(PowerFigures.worst_draw_a(build))]],
+			return [["Lead drop, full throttle", "~%.2f V at %.0f A" % [PowerFigures.harness_drop_v(build),
+					PowerFigures.worst_draw_a(build)]],
 				["Harness mass", "~%.1f g" % PowerFigures.harness_mass_g(build)]]
 		&"fc":
 			var figure := ControlFigures.ports_figure(build)

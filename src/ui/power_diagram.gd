@@ -80,7 +80,7 @@ func show_build(build: Build, p_mode: String) -> void:
 					"amps": flight, "volts": nominal_v - flight * r_ohm, "fresh": false})
 			points.append({"label": "full throttle %d A" % roundi(nominal_ft), "amps": nominal_ft,
 				"volts": nominal_v - nominal_ft * r_ohm, "fresh": false})
-			points.append({"label": "full throttle, fresh %d A" % roundi(worst), "amps": worst,
+			points.append({"label": "full throttle, fresh %.0f A" % worst, "amps": worst,
 				"volts": fresh_v - worst * r_ohm, "fresh": true})
 		MODE_ESC:
 			var channel := PowerFigures.esc_channel(build)
