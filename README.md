@@ -5,7 +5,7 @@ Build an FPV drone from real parts. Fly it. Feel the difference.
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink.svg)](https://github.com/sponsors/datasciritwik)
 
-![Lothal: the build panel's live stats, and a run at the first gate](preview.gif)
+![Lothal: the garage turning the build, the Motors and Battery pages, then a run through the first gate](preview.gif)
 
 Lothal is a drone design workbench and flight simulator. You assemble a quadcopter from a
 catalog of real components, and every choice changes the physics. Swap a 4S pack for 6S and
