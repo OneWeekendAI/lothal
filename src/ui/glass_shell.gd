@@ -332,6 +332,9 @@ var _config_diagram: ConfigDiagram
 var _printed_diagram: PrintedDiagram
 ## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
 var _list_refresh_queued := false
+var _frame_rebuild_queued := false
+## The frame edit Lab last rebuilt for — `_run_queued_frame_rebuild` compares against it.
+var _flown_frame_edit: Dictionary = {}
 ## The builder unfolded the strip while such a room was up; respected until the page closes.
 var _fold_declined := false
 ## Dry · AUW · T:W · Flight, in the top bar (§2) — the whole build's numbers, said once.
@@ -1055,11 +1058,16 @@ func _build_workbench() -> void:
 	# inertia, stiffness and the assembly checks move while a corner is being dragged.
 	_workbench.document_changed.connect(_on_frame_edited)
 	add_child(_workbench)
-	# OPENED ON A LAYOUT, NOT ON THE FITTED FRAME. Handing the room `lab.current_build().frame` put
-	# somebody's 5" freestyle product on screen — a vendor, a published mass and an inch size — in
-	# front of a builder who has chosen none of those and is here to design a part. A generated
-	# Quad X is the same amount of geometry to look at and makes no claim about anything.
-	_workbench.start_from({})
+	# OPENED ON THE FITTED FRAME — Lab's own document, the object the Airframe rows read (the
+	# builder's ruling: "whatever is closer to the real world"). It used to open on a generated
+	# Quad X, which weighed 77 g beside a Frame row saying 110 g, tripped a hole-to-edge amber on a
+	# frame nobody had fitted, and whose edits reached no aircraft. Now there is one frame: the
+	# designer draws it, the rows read it, and an edit flies (FittedFrame, `_on_frame_edited`).
+	# A different frame fitted from the finder reopens the designer on that frame's document.
+	lab.frame_document_replaced.connect(func(document: AirframeDocument) -> void:
+		_workbench.open_fitted(lab.catalog.get_part(str(document.id)), document))
+	_workbench.open_fitted(lab.catalog.get_part(str(lab.frame_document.id))
+		if lab.frame_document != null else {}, lab.frame_document)
 
 
 ## An edit in the plan view, pushed to the four Airframe tabs.
@@ -1711,8 +1719,22 @@ func _room_key(room: Control) -> String:
 	return ""
 
 
+## The designer's two frame-level lines that are not the drawing: the vendor's sheet (the CATALOGUE
+## entry — `frame` may carry an edit, and the published sheet must not quote an estimate as the
+## vendor's) and "Flies as", which says why the drawn mass and the Frame row's may differ.
+func _show_frame_numbers(frame: Dictionary) -> void:
+	var published: Dictionary = lab.catalog.get_part(str(frame.get("part_id", ""))) \
+		if not frame.is_empty() else {}
+	_workbench.numbers.show_catalogue(published if not published.is_empty() else frame)
+	_workbench.numbers.show_flown(frame)
+
+
 func _on_frame_edited(document: AirframeDocument) -> void:
 	lab.frame_document = document
+	# THE EDIT FLIES. When what the document changes about the fitted frame has moved, Lab rebuilds
+	# — the drone, the top bar, every panel — through the path a part change takes (the Power
+	# room's `refresh_build` precedent), once per frame however many drag events arrived.
+	_queue_frame_rebuild()
 	# The Airframe rows read this document (Screws & standoffs, the frame's own checks), so an edit
 	# in the designer reaches the list — once per frame, however many drag events arrived in it.
 	_queue_list_refresh()
@@ -1949,8 +1971,8 @@ func _show_page(row: Dictionary) -> void:
 			"frame":
 				_workbench.visible = true
 				_on_frame_edited(_workbench.editor.document)
-				# The fitted frame's published sheet, in the designer's Catalogue tab.
-				_workbench.numbers.show_catalogue(lab.current_build().frame)
+				# The fitted frame's published sheet, in the designer's Catalogue tab, and what flies.
+				_show_frame_numbers(lab.current_build().frame)
 			"field":
 				_field.visible = true
 				# The span of the build as it stands NOW — `set_power_room_open`'s posture.
@@ -2231,6 +2253,26 @@ func harness_diagram() -> HarnessSchematic:
 	return _harness_diagram
 
 
+## One `lab.refresh_build()` at the end of this frame, and only when the designer's document changed
+## what flies (`LabScreen.frame_edit`) — opening a document, or an edit that moved nothing the
+## physics reads, rebuilds nothing.
+func _queue_frame_rebuild() -> void:
+	if _frame_rebuild_queued or lab == null:
+		return
+	_frame_rebuild_queued = true
+	_run_queued_frame_rebuild.call_deferred()
+
+
+func _run_queued_frame_rebuild() -> void:
+	_frame_rebuild_queued = false
+	var edit := lab.frame_edit()
+	if edit == _flown_frame_edit:
+		return
+	_flown_frame_edit = edit
+	lab.refresh_build()
+	_refresh_status()
+
+
 ## Asks for one `_refresh_list` at the end of this frame. Coalesced: a vertex drag publishes an
 ## edit per mouse motion, and the list only needs the last of them.
 func _queue_list_refresh() -> void:
@@ -2279,6 +2321,9 @@ func _refresh_list() -> void:
 		warnings.append_array(FrameHardware.joint_warnings(lab.frame_document))
 		warnings.append_array(FrameWarnings.of(lab.frame_document,
 			AirframeProperties.compute(lab.frame_document, AirframePanel.materials())))
+		var unflown := FittedFrame.unflown_warning(lab.frame_document)
+		if unflown != null:
+			warnings.append(unflown)
 	var context := {
 		"frame_document": lab.frame_document,
 		"prop_clearance": lab.airframe.closest_to_prop() if lab.airframe != null else {},
@@ -2302,7 +2347,7 @@ func _refresh_list() -> void:
 	_section_list.show_section(_focused_name(),
 		SectionRows.rows(_focused_name(), build, warnings, context))
 	if _workbench != null and _workbench.visible:
-		_workbench.numbers.show_catalogue(build.frame)
+		_show_frame_numbers(build.frame)
 	if _item_page != null and _item_page.visible:
 		_fill_item_page(build, context)
 	if _field_page_up():

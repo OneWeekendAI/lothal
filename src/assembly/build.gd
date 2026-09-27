@@ -461,6 +461,10 @@ const FREESTYLE_FLIGHT_PROFILE: Array[Dictionary] = [
 const USABLE_CAPACITY_FRACTION := 0.80
 
 var frame: Dictionary
+## The designer's edit to the fitted frame (FittedFrame.edit_of) — `{}` flies the catalogue frame.
+var _frame_edit: Dictionary = {}
+## throttle_limit_for's memo, amps -> throttle. Cleared wherever what it is solved from changes.
+var _throttle_limits: Dictionary = {}
 var motor: Dictionary
 var propeller: Dictionary
 var battery: Dictionary
@@ -683,7 +687,11 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 ## construction.
 func refit_from(p_catalog: PartsCatalog) -> void:
 	catalog = p_catalog
-	frame = p_catalog.get_part(String(_part_ids.get("frame", "")))
+	# The designer's edit to the fitted frame, if any (FittedFrame): its mass and arm replace the
+	# catalogue's on a COPY, so every reader below — the mass model, MountLayout, the drawing, the
+	# warnings — follows the one frame through the paths it already has. `{}` is the frame as
+	# published, bit for bit.
+	frame = FittedFrame.apply(p_catalog.get_part(String(_part_ids.get("frame", ""))), _frame_edit)
 	motor = p_catalog.get_part(String(_part_ids.get("motor", "")))
 	propeller = p_catalog.get_part(String(_part_ids.get("propeller", "")))
 	battery = p_catalog.get_part(String(_part_ids.get("battery", "")))
@@ -747,8 +755,24 @@ func at_air(p_air: AirDensity) -> Build:
 	# resolved values — the twin re-derives its defaults from its own parts, which is the whole
 	# point of a sparse table.
 	twin.harness = Harness.from_overrides(harness.overrides())
+	# And the designer's edit to the frame: a twin at another field is the same drawn frame.
+	twin.set_frame_edit(_frame_edit)
 	twin.set_assembly(assembly)
 	return twin
+
+
+## Flies the designer's edit to the fitted frame (`FittedFrame.edit_of`), or the frame as published
+## for `{}`. Re-resolved from the catalogue and recomputed, the guard's reason: every derived figure
+## that read the old arm or mass is in `_recompute`, so one refit clears them all. An edit made for
+## a different frame is ignored by `FittedFrame.apply` — swapping the frame ends the edit.
+func set_frame_edit(edit: Dictionary) -> void:
+	_frame_edit = edit.duplicate()
+	if catalog != null:
+		refit_from(catalog)
+
+
+func frame_edit() -> Dictionary:
+	return _frame_edit.duplicate()
 
 
 ## Adopts an assembly configuration and recomputes. The mass properties are the only thing that
@@ -825,6 +849,7 @@ func mount_points() -> Array[MountPoint]:
 
 
 func _recompute() -> void:
+	_throttle_limits.clear()
 	arm_m = float(frame["specs"]["arm_mm"]) / 1000.0
 
 	# The guard's tip-loss closure and static thrust boost — computed first, before k_t, because
@@ -940,6 +965,8 @@ func _recompute() -> void:
 
 	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop, _prop_geometry(test_prop).diameter_m)
 	effective_max_amps = float(motor["specs"]["max_amps"]) * (k_q / k_q_at_test_prop)
+	# Every current limit is solved against effective_max_amps; one set before this line is stale.
+	_throttle_limits.clear()
 
 	var drag_area_m2: float = REFERENCE_DRAG_AREA_M2 * pow(arm_m / REFERENCE_ARM_M, 2.0)
 	drag_coefficient = 0.5 * air.kgm3() * drag_area_m2
@@ -1399,7 +1426,19 @@ func max_throttle_fraction() -> float:
 ## How much of the RPM ceiling the MOTORS can reach before their own current limit stops them,
 ## given the prop fitted. Exactly 1.0 when the fitted prop is the one the motor's amp rating was
 ## measured with. This is the limit the project had before packs had a rating.
+##
+## SOLVED ON A FRESH PACK'S DRAW WITH SAG (2026-09-27), like the pack and ESC ceilings: one motor at
+## this ceiling draws at most its rated max_amps. Priced at the test voltage without sag it let a
+## 6S pack (25.2 V fresh) drive 1404s rated 12 A to 29.5 A each at a "100%" motor ceiling.
 func motor_throttle_limit() -> float:
+	return supply_limit_for(4.0 * float(motor["specs"]["max_amps"]))
+
+
+## The motors' limit as their SPEC SHEET means it: max_amps at the motor's own test voltage, no sag
+## (`throttle_limit_for`). What the bench figures are quoted at — the T:W oracle, the bench RPM and
+## the per-channel demand the ESC bench sweeps to — which describe the motor-and-prop pairing, not
+## the pack it happens to be flown on. Flight uses `motor_throttle_limit`.
+func motor_bench_limit() -> float:
 	return throttle_limit_for(4.0 * float(motor["specs"]["max_amps"]))
 
 
@@ -1415,7 +1454,7 @@ func pack_max_amps() -> float:
 
 
 func pack_throttle_limit() -> float:
-	return throttle_limit_for(pack_max_amps())
+	return supply_limit_for(pack_max_amps())
 
 
 ## The throttle at which the four motors together draw `total_amps`. Current tracks shaft torque
@@ -1428,7 +1467,72 @@ func pack_throttle_limit() -> float:
 func throttle_limit_for(total_amps: float) -> float:
 	# The arithmetic lives in Rust (rust/src/fitting.rs) — the current-limit expression, one
 	# copy in the codebase, and the part of the fitting pipeline the compiled core exists for.
+	# The BENCH form only (`motor_bench_limit`): a motor's max_amps at its own test voltage, which
+	# the spec-sheet T:W is quoted at on purpose. Every flight ceiling uses `supply_limit_for`.
 	return Fitting.throttle_limit_for(total_amps, 4.0 * effective_max_amps)
+
+
+## The throttle a SUPPLY-side rating (the pack's, the ESC's) allows: the highest throttle at which
+## a FRESH (full) pack, sagging under its own current, delivers no more than `total_amps`.
+##
+## ONE MODEL WITH THE DRAW (2026-09-27). The pack and ESC limits used `throttle_limit_for` — current
+## WITHOUT sag at the motor's test voltage — while every figure that quotes the draw at the ceiling
+## (PowerFigures.worst_draw_a, the harness checks, the ESC channel) asks a fresh pack with sag. On
+## the reference build the two disagreed: a 94% ceiling that drew 116 A from a 112.5 A pack. Now
+## the ceiling is solved on that same draw (`fresh_draw_at_a`), so the draw at a binding supply
+## limit IS the rating. A fresh pack is the worst case: it rests highest (16.8 V on a 4S).
+##
+## Memoised per recompute: `rpm_at_throttle` reads the ceiling on every call, and peak_thrust asks
+## it 400 times.
+func supply_limit_for(total_amps: float) -> float:
+	if total_amps <= 0.0 or effective_max_amps <= 0.0:
+		return 1.0   # "no limit stated" — the unrated-part rule `limiting_component` relies on
+	if _throttle_limits.has(total_amps):
+		return float(_throttle_limits[total_amps])
+	var limit := 1.0
+	if fresh_draw_at_a(1.0) > total_amps:
+		var low := 0.0
+		var high := 1.0
+		for _i in 50:
+			var mid := (low + high) * 0.5
+			if fresh_draw_at_a(mid) > total_amps:
+				high = mid
+			else:
+				low = mid
+		limit = low
+	_throttle_limits[total_amps] = limit
+	return limit
+
+
+## Total pack current at `throttle` on a FRESH pack with sag, ignoring every ceiling — the draw a
+## supply limit is solved against, and the draw PowerFigures quotes at the ceiling.
+##
+## Solved for the CURRENT by bisection, not by iterating the sag: I = 4·I_max·(t·kv·(V₀ − I·R) /
+## rpm_rated)² has exactly one root in [0, V₀/R] (the right side falls as I rises), whereas the
+## fixed-point loop in `rpm_at_throttle` oscillates on a high-resistance pack — the Li-ion reads
+## anywhere in its cycle after twelve steps, which is the divergence `thrust_at_throttle_n` warns of.
+func fresh_draw_at_a(throttle: float) -> float:
+	var rated := rated_rpm()
+	if rated <= 0.0 or throttle <= 0.0:
+		return 0.0
+	var rest_v := battery_model().resting_voltage_v()
+	var r := float(battery["specs"]["internal_r_ohm"])
+	var kv := float(motor["specs"]["kv"])
+	var t := clampf(throttle, 0.0, 1.0)
+	var low := 0.0
+	var high := rest_v / r if r > 0.0 else 4.0 * Fitting.current_at_rpm(t * kv * rest_v,
+		effective_max_amps, rated)
+	if r <= 0.0:
+		return high
+	for _i in 60:
+		var amps := (low + high) * 0.5
+		var demand := 4.0 * Fitting.current_at_rpm(t * kv * maxf(rest_v - amps * r, 0.0),
+			effective_max_amps, rated)
+		if demand > amps:
+			low = amps
+		else:
+			high = amps
+	return (low + high) * 0.5
 
 
 ## WHICH component is holding this build back, by name, with the ceiling it imposes.
@@ -1652,7 +1756,7 @@ func max_total_thrust_n() -> float:
 ## current limit lets them reach. Factored out because top_speed_kmh() asks the same question at a
 ## non-zero airspeed, and two spellings of one RPM ceiling is one edit away from two answers.
 func max_rpm_at_nominal() -> float:
-	return float(motor["specs"]["kv"]) * float(battery["specs"]["nominal_v"]) * motor_throttle_limit()
+	return float(motor["specs"]["kv"]) * float(battery["specs"]["nominal_v"]) * motor_bench_limit()
 
 func thrust_to_weight() -> float:
 	return max_total_thrust_n() / weight_n()
@@ -1797,7 +1901,7 @@ func esc_max_amps() -> float:
 
 
 func esc_throttle_limit() -> float:
-	return throttle_limit_for(esc_max_amps())
+	return supply_limit_for(esc_max_amps())
 
 
 ## The board's continuous rating for ONE CHANNEL, which is the number printed on the product and
@@ -1825,7 +1929,7 @@ func esc_burst_a() -> float:
 ## What ONE motor pulls at the highest throttle the MOTORS themselves can reach — the demand one
 ## channel of the board has to pass.
 ##
-## Quoted at motor_throttle_limit() and NOT at max_throttle_fraction(), which is the whole trick.
+## Quoted at motor_bench_limit() and NOT at max_throttle_fraction(), which is the whole trick.
 ## max_throttle_fraction() is already clamped by the ESC, so asking what the motors draw there
 ## would ask what they draw once the board has stopped them — and every board in the catalog would
 ## report exactly enough headroom for itself. A bench that cannot fail is not a bench.
@@ -1839,7 +1943,7 @@ func esc_burst_a() -> float:
 ## rating, and less on a prop too small to load the motor that far — which is why this bench, like
 ## the thrust stand, is testing a PAIRING and not a board against a datasheet.
 func motor_demand_per_channel_a() -> float:
-	var ceiling := motor_throttle_limit()
+	var ceiling := motor_bench_limit()
 	return effective_max_amps * ceiling * ceiling
 
 

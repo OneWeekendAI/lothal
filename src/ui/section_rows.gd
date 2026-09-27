@@ -418,8 +418,9 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 				return ""
 			return "%s %d mm from a prop" % [str(closest["part"]), roundi(float(closest["mm"]))]
 		&"frame":
-			return "%d g" % roundi(float(build.frame.get("mass_g", 0.0))) \
-				if not build.frame.is_empty() else ""
+			# The mass that flies: the vendor's weighed figure, or with the designer's edit on it an
+			# estimate that carries its `~` (FittedFrame) — the Frame page's "Flies as" line.
+			return FittedFrame.row_mass_text(build.frame)
 		&"arms":
 			# A guessed scale (VibrationModel's one constant), so it carries its `~` (§3).
 			var model := VibrationModel.for_build(build)
@@ -457,8 +458,8 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			# because the lead lengths are class defaults and the plug's resistance a guess.
 			if build.harness == null:
 				return ""
-			return "~%.2f V lost in leads at %d A" % [PowerFigures.harness_drop_v(build),
-				roundi(PowerFigures.worst_draw_a(build))]
+			return "~%.2f V lost in leads at %.0f A" % [PowerFigures.harness_drop_v(build),
+				PowerFigures.worst_draw_a(build)]
 		&"fc":
 			# The UARTs the fitted parts want against the board's count — the class range carries
 			# its `~`. Never the difference: ControlPlausibility refuses a spare-port figure.
@@ -564,7 +565,9 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 			# what that draw costs in volts — the two things the sag chart is about.
 			# The rating as the Pack sheet prints it ("%.0f"): 112.5 A must not read 113 here and
 			# 112 beside it.
-			return [["Full-throttle draw", "%d A of %.0f A" % [roundi(PowerFigures.worst_draw_a(build)),
+			# One formatter for both: the draw at a binding pack limit IS the rating (Build.supply_limit_for),
+			# and "%d" beside "%.0f" rounded 112.5 two ways — "113 A of 112 A" for an equal pair.
+			return [["Full-throttle draw", "%.0f A of %.0f A" % [PowerFigures.worst_draw_a(build),
 					PowerFigures.pack_limit_a(build)]],
 				["Sag at full throttle", "−%.1f V" % PowerFigures.worst_sag_v(build)]]
 		&"esc":
@@ -579,8 +582,8 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 		&"harness":
 			if build.harness == null:
 				return [["Lead drop, full throttle", "—"], ["Harness mass", "—"]]
-			return [["Lead drop, full throttle", "~%.2f V at %d A" % [PowerFigures.harness_drop_v(build),
-					roundi(PowerFigures.worst_draw_a(build))]],
+			return [["Lead drop, full throttle", "~%.2f V at %.0f A" % [PowerFigures.harness_drop_v(build),
+					PowerFigures.worst_draw_a(build)]],
 				["Harness mass", "~%.1f g" % PowerFigures.harness_mass_g(build)]]
 		&"fc":
 			var figure := ControlFigures.ports_figure(build)

@@ -337,6 +337,7 @@ func show_sim() -> void:
 	if sim == null:
 		sim = load(SIM_SCENE).instantiate()
 		sim.initial_selection = lab.selection()
+		sim.initial_frame_edit = lab.frame_edit()
 		_unplug_for(sim.initial_selection)
 		# Handed over rather than loaded by Sim, so both rooms are looking at ONE set of packs
 		# within a session. Sim drains it and writes back on landing; it authors nothing else.

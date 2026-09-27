@@ -24,9 +24,11 @@ static func run() -> Array:
 	out.append(_esc_channel_reads_the_board_and_the_motors(build))
 	out.append(_esc_drawn_is_a_quarter_of_the_worst(build))
 	out.append(_harness_drop_is_the_checks_drop(build))
+	out.append(_harness_warning_quotes_the_same_draw_as_the_page(build))
 
 	# --- the rows
 	out.append(_harness_row_reads_the_lead_drop(build))
+	out.append(_pack_chart_worst_draw_label_matches_the_page(build))
 	out.append(_harness_row_fits_the_line(build))
 
 	# --- the page numbers
@@ -71,6 +73,19 @@ static func _worst_draw_is_the_harness_checks_peak(build: Build) -> TestResult:
 	var want := float(HarnessChecks.draw(build)["peak_a"])
 	return TestResult.new("power figures: the worst draw is HarnessChecks' peak (fresh pack, ceiling)",
 		absf(got - want) < 0.01 and got > 50.0, "%.3f vs %.3f" % [got, want])
+
+
+## The harness_voltage_drop sentence names the draw it prices, and it must be the draw every other
+## screen prints. It read "At 113 A" beside "112 A of 112 A": its peak came off a primed Powertrain
+## (112.5000003 A, whose "%.0f" rounds up) while the page reads Build.fresh_draw_at_a (112.5 A).
+static func _harness_warning_quotes_the_same_draw_as_the_page(build: Build) -> TestResult:
+	var w := _warning(build, &"harness_voltage_drop")
+	var long := w.long() if w != null else ""
+	var want := "At %.0f A " % PowerFigures.worst_draw_a(build)
+	return TestResult.new("harness warning: quotes the page's full-throttle draw (112 A on the reference build)",
+		want == "At 112 A " and long.begins_with(want)
+			and float(w.values["peak_a"]) == PowerFigures.worst_draw_a(build),
+		"'%s' want prefix '%s'" % [long.substr(0, 40), want])
 
 
 ## A fresh pack rests above nominal and drives the motors harder: the worst case is not the datum.
@@ -145,8 +160,9 @@ static func _harness_drop_is_the_checks_drop(build: Build) -> TestResult:
 
 static func _harness_row_reads_the_lead_drop(build: Build) -> TestResult:
 	var row := _row(SectionRows.rows("Power", build, []), &"harness")
-	var want := "~%.2f V lost in leads at %d A" % [PowerFigures.harness_drop_v(build),
-		roundi(PowerFigures.worst_draw_a(build))]
+	# "at 112 A", literally (2026-09-27): the draw at the pack-limited ceiling IS the 112.5 A rating,
+	# and roundi() printed it "113" beside the Battery page's "112 A of 112 A". One formatter now.
+	var want := "~%.2f V lost in leads at 112 A" % PowerFigures.harness_drop_v(build)
 	return TestResult.new("power rows: Harness reads the worst lead drop, marked ~",
 		row.get("number") == want, "'%s' want '%s'" % [row.get("number"), want])
 
@@ -161,7 +177,9 @@ static func _harness_row_fits_the_line(build: Build) -> TestResult:
 static func _battery_page_numbers(build: Build) -> TestResult:
 	var got := SectionRows.page_numbers(&"battery", build)
 	# "of 112 A": the rating as the Pack sheet prints it ("75C (112 A)"), not rounded up to 113.
-	var want := [["Full-throttle draw", "%d A of 112 A" % roundi(PowerFigures.worst_draw_a(build))],
+	# The draw is printed the same way (2026-09-27): at a binding pack limit it IS the rating, and
+	# "%d" rounded 112.5 up to 113 beside its own rating's 112.
+	var want := [["Full-throttle draw", "112 A of 112 A"],
 		["Sag at full throttle", "−%.1f V" % PowerFigures.worst_sag_v(build)]]
 	return TestResult.new("page numbers: Battery shows the worst draw against its rating, and the sag",
 		got == want, "%s want %s" % [got, want])
@@ -176,8 +194,8 @@ static func _esc_page_numbers(build: Build) -> TestResult:
 
 static func _harness_page_numbers(build: Build) -> TestResult:
 	var got := SectionRows.page_numbers(&"harness", build)
-	var want := [["Lead drop, full throttle", "~%.2f V at %d A" % [PowerFigures.harness_drop_v(build),
-			roundi(PowerFigures.worst_draw_a(build))]],
+	# "at 112 A", literally — see _harness_row_reads_the_lead_drop.
+	var want := [["Lead drop, full throttle", "~%.2f V at 112 A" % PowerFigures.harness_drop_v(build)],
 		["Harness mass", "~%.1f g" % PowerFigures.harness_mass_g(build)]]
 	return TestResult.new("page numbers: Harness shows the lead drop and the harness mass, both ~",
 		got == want, "%s want %s" % [got, want])
@@ -224,6 +242,17 @@ static func _pack_chart_marks_the_worst_draw(build: Build) -> TestResult:
 	d.free()
 	return TestResult.new("power drawing: full throttle on a fresh pack sits at the page's draw and sag",
 		ok, str(p))
+
+
+## The chart's own label for that point says the same number as the page above it: at the
+## pack-limited ceiling the draw IS the 112.5 A rating, which roundi() printed "113" (2026-09-27).
+static func _pack_chart_worst_draw_label_matches_the_page(build: Build) -> TestResult:
+	var d := _diagram(build, PowerDiagram.MODE_PACK)
+	var p := _point(d, "full throttle, fresh")
+	var label := str(p.get("label", ""))
+	d.free()
+	return TestResult.new("power drawing: the fresh full-throttle label reads the page's 112 A",
+		label == "full throttle, fresh 112 A", label)
 
 
 static func _pack_chart_flight_point_carries_flight_time(build: Build) -> TestResult:

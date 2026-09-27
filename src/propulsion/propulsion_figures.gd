@@ -100,6 +100,7 @@ static func without_guard(build: Build) -> Build:
 		str(build.motor["part_id"]), str(build.propeller["part_id"]), str(build.battery["part_id"]),
 		str(build.esc["part_id"]), str(build.fc["part_id"]), ids, build.air, "",
 		build.harness.overrides())
+	twin.set_frame_edit(build.frame_edit())
 	twin.set_assembly(build.assembly)
 	twin.set_printing(build.printing)
 	return twin

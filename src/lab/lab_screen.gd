@@ -132,6 +132,12 @@ var layout_details: LayoutDetails
 ## which is the one event that really does mean "you are now looking at a different object".
 var frame_document: AirframeDocument
 var _frame_document_id := ""
+## What `frame_document` weighed and measured when it was generated (`FittedFrame.baseline`) —
+## the "as fitted" an edit is measured from. Computed once per fitted frame, not per build.
+var _frame_baseline: Dictionary = {}
+## The document was regenerated because the FITTED frame changed. The shell reopens the designer
+## on it, so the Frame page is always the frame that is fitted.
+signal frame_document_replaced(document: AirframeDocument)
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
 var battery_details: BatteryDetails
@@ -835,7 +841,12 @@ func _refresh_frame_document(frame: Dictionary) -> void:
 	if frame_document != null and id == _frame_document_id:
 		return
 	_frame_document_id = id
-	frame_document = AirframeDocument.from_catalog_frame(frame)
+	# From the CATALOGUE entry, never from a Build's frame: a build carrying an edit has a moved
+	# arm, and a document generated from that would re-draw the edit as the baseline.
+	var published: Dictionary = catalog.get_part(id) if catalog != null and id != "" else frame
+	frame_document = AirframeDocument.from_catalog_frame(published)
+	_frame_baseline = FittedFrame.drawn(frame_document)
+	frame_document_replaced.emit(frame_document)
 
 
 ## The single path from a selection to everything that shows it. Geometry, all three panels'
@@ -1087,6 +1098,11 @@ func set_motor_map_visible(shown: bool) -> void:
 ## `wind_mps` and re-renders, and the next Build out of here carries the new value.
 func current_build() -> Build:
 	var build := _build_from_rails()
+	# The designer's edits to the fitted frame fly (FittedFrame) — once the document exists for THIS
+	# frame; a frame just picked has no edit until its own document has been generated.
+	var edit := frame_edit()
+	if not edit.is_empty():
+		build.set_frame_edit(edit)
 	build.field_wind_mps = wind_mps
 	build.field_conditions_name = conditions_name
 	# Only when there is something to say: `set_printing` recomputes, and an empty block fits nothing.
@@ -1096,6 +1112,15 @@ func current_build() -> Build:
 	# answer here rather than a missing one: it is props-out, today's constants, bit for bit.
 	build.set_config(config)
 	return build
+
+
+## What the designer's document changes about the fitted frame (`FittedFrame.edit_of`), `{}` when
+## nothing — the one value that crosses to the Sim door with the selection.
+func frame_edit() -> Dictionary:
+	var fitted: Dictionary = picker.selected_part() if picker != null else {}
+	if frame_document == null or str(fitted.get("part_id", "")) != _frame_document_id:
+		return {}
+	return FittedFrame.edit_of(fitted, frame_document, _frame_baseline)
 
 
 func _build_from_rails() -> Build:

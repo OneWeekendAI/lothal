@@ -63,8 +63,14 @@ static func run() -> Array:
 ## no arguments, `git stash pop`. Full precision (%.17f) so the comparison is bit-for-bit rather
 ## than "close". A golden value taken from the implementation it is guarding is a test that cannot
 ## fail (this plan's standing rule); these are frozen from the OLD code, which never heard of wind.
-const GOLDEN_AVG_CURRENT := 15.75313526557218502
-const GOLDEN_FLIGHT_TIME := 4.57051874348803278
+## RE-FROZEN 2026-09-27, deliberately, by the one physics change since: the pack's throttle ceiling
+## is now solved on a fresh pack's draw with sag (Build.supply_limit_for), 93.8% -> 91.8% on this
+## build. Every figure below bisects its throttle inside [0, ceiling], so the converged roots moved
+## in the 11th significant digit (e.g. 15.75313526557218502 -> 15.75313526557580346, 2e-13 relative)
+## while hover (11 A) is nowhere near any limit. Re-measured with the same %.17f capture; the
+## bit-identical claim now reads "identical to the code as of the ceiling change", not pre-F8.
+const GOLDEN_AVG_CURRENT := 15.753135265575803  # 17 sig. digits: the 20-digit literal parses one ulp off
+const GOLDEN_FLIGHT_TIME := 4.57051874348698295
 
 ## MUTATION THIS CATCHES: the wind term added as `+ wind_mps` with no zero guard, using a non-zero
 ## default. That mutation moves BOTH figures away from the golden literals even at the call sites
@@ -249,10 +255,11 @@ static func _hover_delegates_in_source() -> Array:
 ## `average_flight_current_a` to EQUAL it, and requires the reconstruction to move when any one leg
 ## is left calm, so the mitigation named here is now the mitigation that runs. Nothing else was
 ## needed for check 3: fixing check 5 restores it.
-const FT_CALM := 4.57051874348803278
-const FT_3 := 4.00312954089769768
-const FT_7 := 3.35449307132423025
-const FT_12 := 2.67310517826952188
+## Re-measured 2026-09-27 — see GOLDEN_AVG_CURRENT's note (the ceiling bounds the bisection).
+const FT_CALM := 4.57051874348698295
+const FT_3 := 4.00312954088890205
+const FT_7 := 3.35449307131979202
+const FT_12 := 2.67310517827104155
 
 ## MUTATION THIS CATCHES: the wind term applied to one segment only. With only one of five legs
 ## seeing the wind, the weighted average moves far less per m/s of wind than the pinned literals
@@ -283,10 +290,11 @@ static func _flight_time_falls() -> Array:
 # Check 4 — hover current in wind: the MEASURED, non-monotonic shape (Ruling 57)
 # ---------------------------------------------------------------------------
 
-const HOVER_0 := 11.19957425581442045
-const HOVER_3 := 10.94871863159863956
-const HOVER_7 := 10.13878938879419778
-const HOVER_12 := 11.26892665010527850
+## Re-measured 2026-09-27 — see GOLDEN_AVG_CURRENT's note (the ceiling bounds the bisection).
+const HOVER_0 := 11.19957425582619059
+const HOVER_3 := 10.94871863159634806
+const HOVER_7 := 10.13878938882512770
+const HOVER_12 := 11.26892665012122308
 
 ## MUTATION THIS CATCHES: `hover_current_in_wind_a` ignoring its argument. With the argument
 ## ignored, every one of the four pinned values below collapses to HOVER_0 (or whatever constant

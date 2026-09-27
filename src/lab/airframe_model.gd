@@ -660,7 +660,11 @@ func camera_view_warnings() -> Array[BuildWarning]:
 			worse.size() - 1, " does" if worse.size() == 2 else "s do"]
 	message += " No lens angle is published for any camera in the catalog, so this is geometry rather than a verdict."
 
-	out.append(BuildWarning.characteristic(&"camera_obstruction", message, {
+	# LIMITING, not characteristic: the builder's ruling was "amber if relevant", and this check only
+	# speaks when a fitted part is further into the picture than the airframe itself — relevant by
+	# its own threshold. Anything less intrusive raises nothing, and the Camera row stays green with
+	# the nearest-object note as its number.
+	out.append(BuildWarning.limiting(&"camera_obstruction", message, {
 		"closest_name": closest["name"],
 		"closest_deg": closest["deg"],
 		"frame_deg": frame_deg,

@@ -60,7 +60,7 @@ static func run() -> Array:
 	results.append(_a_moulded_frame_publishes_no_outline(catalog))
 	results.append(_each_guard_ring_sits_on_its_own_motor(catalog))
 	results.append(_the_warning_names_the_closest_part(catalog))
-	results.append(_the_warning_is_characteristic_not_a_fault(catalog))
+	results.append(_the_warning_is_limiting_not_a_fault(catalog))
 	results.append(_a_build_that_is_only_itself_says_nothing(catalog))
 	results.append(_a_moulded_frame_has_no_silhouette_to_hide_behind(catalog))
 	results.append(_the_two_five_inch_guards_are_not_separated(catalog))
@@ -363,7 +363,8 @@ static func _the_warning_names_the_closest_part(catalog: PartsCatalog) -> TestRe
 			and closest_deg > 19.0 and closest_deg < 21.0 \
 			and frame_deg > 50.0 and frame_deg < 60.0 \
 			and int(values["worse_count"]) == 2 \
-			and warning.message.contains("geometry rather than a verdict")
+			and warning.message.contains("geometry rather than a verdict") \
+			and warning.severity == BuildWarning.Severity.LIMITING
 		detail = "%s at %.2f deg against the frame's %.2f, %d worse — \"%s\"" % [
 			values["closest_name"], closest_deg, frame_deg, values["worse_count"], warning.message]
 
@@ -374,12 +375,13 @@ static func _the_warning_names_the_closest_part(catalog: PartsCatalog) -> TestRe
 	)
 
 
-## Severity, and it is the point rather than a detail. Ducts in the corners of the picture are what
-## a cinewhoop is FOR. `BuildWarning`'s header names this exact failure — a cinelifter builder told
-## they had made a mistake for correctly building a cinelifter — and the rule is that a warning is
-## only LIMITING or IMPOSSIBLE where there is a boundary in the physics to point at. There is none
-## here: no lens angle is published, so nothing has been exceeded.
-static func _the_warning_is_characteristic_not_a_fault(catalog: PartsCatalog) -> TestResult:
+## Severity. This test used to pin CHARACTERISTIC, on the argument that ducts in the corners of
+## the picture are what a cinewhoop is for and no lens angle is published. The builder ruled it
+## (2026-09-27): amber IF RELEVANT — and the check's own boundary is the relevance test: it speaks
+## only when a fitted part is further into the picture than the airframe itself. So a part in view
+## is LIMITING (amber, a limit to know about), still never IMPOSSIBLE, and the message still says
+## "geometry rather than a verdict", because no lens angle is claimed.
+static func _the_warning_is_limiting_not_a_fault(catalog: PartsCatalog) -> TestResult:
 	var airframe := AirframeModel.new()
 	airframe.rebuild(_build(catalog, "frame_5in_cinewhoop", "guard_duct_5in_cinewhoop"))
 	var warnings := airframe.camera_view_warnings()
@@ -388,10 +390,10 @@ static func _the_warning_is_characteristic_not_a_fault(catalog: PartsCatalog) ->
 	airframe.free()
 
 	return TestResult.new(
-		"a part in view is CHARACTERISTIC — a description of the build, never a fault",
-		found and severity == BuildWarning.Severity.CHARACTERISTIC,
-		"%d warning(s), severity %d (CHARACTERISTIC is %d)" % [
-			warnings.size(), severity, BuildWarning.Severity.CHARACTERISTIC]
+		"a part further into view than the frame is LIMITING (amber) — relevant, but never impossible",
+		found and severity == BuildWarning.Severity.LIMITING,
+		"%d warning(s), severity %d (LIMITING is %d)" % [
+			warnings.size(), severity, BuildWarning.Severity.LIMITING]
 	)
 
 
@@ -484,7 +486,7 @@ static func _the_two_five_inch_guards_are_not_separated(catalog: PartsCatalog) -
 
 
 ## At the builder-facing 25 deg default the two 5" guards come apart by several degrees — and each
-## build still carries exactly one CHARACTERISTIC warning naming its guard. The angle moved; the
+## build still carries exactly one LIMITING warning naming its guard. The angle moved; the
 ## verdict did not, because there is still no field of view to put a threshold at.
 ##
 ## MUTATION (V4): AirframeModel passing 0.0 instead of the tweak to ComponentMesh.rebuild puts the
@@ -499,7 +501,7 @@ static func _tilt_separates_the_two_guards_and_changes_no_verdict(catalog: Parts
 		var airframe := AirframeModel.new()
 		airframe.rebuild(_build(catalog, pair[0], pair[1]), tweaks)
 		var warnings := airframe.camera_view_warnings()
-		if warnings.size() != 1 or warnings[0].severity != BuildWarning.Severity.CHARACTERISTIC \
+		if warnings.size() != 1 or warnings[0].severity != BuildWarning.Severity.LIMITING \
 				or not str(warnings[0].values["closest_name"]).begins_with("guard "):
 			verdicts_ok = false
 		angles[pair[0]] = float(warnings[0].values["closest_deg"]) if warnings.size() == 1 else NAN
@@ -508,7 +510,7 @@ static func _tilt_separates_the_two_guards_and_changes_no_verdict(catalog: Parts
 	var cinewhoop: float = angles["frame_5in_cinewhoop"]
 	var freestyle: float = angles["frame_5in_freestyle"]
 	return TestResult.new(
-		"at 25 deg uptilt the two 5\" guards separate by degrees, and each still reads one CHARACTERISTIC warning",
+		"at 25 deg uptilt the two 5\" guards separate by degrees, and each still reads one LIMITING warning",
 		verdicts_ok and absf(cinewhoop - freestyle) > 5.0 and cinewhoop < 45.0 and freestyle < 45.0,
 		"cinewhoop duct %.2f deg, freestyle bumper %.2f deg, verdicts ok: %s" % [
 			cinewhoop, freestyle, verdicts_ok])
