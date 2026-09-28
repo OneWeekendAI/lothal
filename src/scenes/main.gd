@@ -273,6 +273,15 @@ func _rebuild_ground() -> void:
 	var extent := terrain.extent() if terrain != null else Vector2(Terrain.DEFAULT_WIDTH_M, Terrain.DEFAULT_LENGTH_M)
 	var ground_size := maxf(absf(extent.x), absf(extent.y))
 	ground_mesh.material_override = GroundGrid.build_material(ground_size)
+	# Scenery around the field: drawn only, never part of the collider above.
+	var hills := get_node_or_null("BackdropHills") as MeshInstance3D
+	if hills == null:
+		hills = MeshInstance3D.new()
+		hills.name = "BackdropHills"
+		hills.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(hills)
+	hills.mesh = BackdropHills.build_mesh(terrain)
+	hills.material_override = GroundGrid.build_backdrop_material()
 
 ## Whether the aircraft has hit the ground. STILL AN ALTITUDE COMPARISON and deliberately not a
 ## physics query: the recorded decision above was that a shape cast costs more than it tells us,
