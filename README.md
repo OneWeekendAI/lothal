@@ -3,6 +3,7 @@
 Build an FPV drone from real parts. Fly it. Feel the difference.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/Docs-lothal.meetdev.in-2ea44f.svg)](https://lothal.meetdev.in)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink.svg)](https://github.com/sponsors/datasciritwik)
 
 ![Lothal: the garage turning the build, the Motors and Battery pages, then a run through the first gate](preview.gif)
@@ -14,7 +15,8 @@ the difference.
 
 ## What it does
 
-- **Lab (the garage):** pick a frame, motors, props, battery and electronics from a catalog of
+- **Lab (the garage):** nine sections (Airframe, Propulsion, Power, Control, Video, Printed,
+  Config, Ground kit and Field) take you from a frame to a flyable build, using a catalog of
   real parts. The airframe is drawn from their real dimensions, so it doubles as a fit check:
   put 7" props on a 3" frame and you see them collide.
 - **Sim (the field):** fly exactly what you built through an eight-gate circuit. Your best lap
@@ -25,6 +27,12 @@ the difference.
 
 A gamepad is strongly recommended. The keyboard works (arrows, W/S/A/D, Space for
 angle/acro, Tab to hide the build panel) but only as a fallback.
+
+## Documentation
+
+The user manual lives at **[lothal.meetdev.in](https://lothal.meetdev.in)**. It covers
+installing, a first flight, every section of the app, the concepts behind the physics, and a
+reference for parts data, file formats and controls.
 
 ## Download
 
