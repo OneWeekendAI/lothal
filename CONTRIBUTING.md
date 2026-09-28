@@ -3,6 +3,10 @@
 Thanks for helping. Lothal is a one-person project, so replies may be slow, but every issue
 and pull request gets read.
 
+The roadmap, what is in progress and what is done, is public on
+[Kriya](https://kriya.meetdev.in/p/683ae810575172a0f270cd0b970d091e). Check it
+before starting something big, in case it is already planned or under way.
+
 ## Reporting a bug
 
 Open a [GitHub issue](https://github.com/OneWeekendAI/lothal/issues) and include:

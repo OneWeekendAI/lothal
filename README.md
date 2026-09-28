@@ -4,6 +4,7 @@ Build an FPV drone from real parts. Fly it. Feel the difference.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/Docs-lothal.meetdev.in-2ea44f.svg)](https://lothal.meetdev.in)
+[![Roadmap](https://img.shields.io/badge/Roadmap-Kriya-7c3aed.svg)](https://kriya.meetdev.in/p/683ae810575172a0f270cd0b970d091e)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink.svg)](https://github.com/sponsors/datasciritwik)
 
 ![Lothal: the garage turning the build, the Motors and Battery pages, then a run through the first gate](preview.gif)
@@ -75,6 +76,9 @@ tools/run_tests_safe.ps1     # Windows
 
 Bug reports, fixes and new real-world parts are welcome. See
 [CONTRIBUTING.md](CONTRIBUTING.md). Lothal is a one-person project, so replies may be slow.
+
+What is planned, in progress and done is tracked publicly on
+[Kriya](https://kriya.meetdev.in/p/683ae810575172a0f270cd0b970d091e).
 
 ## Support the project
 
