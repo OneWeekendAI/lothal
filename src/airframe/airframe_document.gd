@@ -68,7 +68,7 @@ const ROLE_MID := "mid"
 const KNOWN_KEYS := [
 	"schema", "id", "name", "author", "revision", "material_id",
 	"plates", "arms", "motors", "hardware", "straps", "pads", "payload_mounts",
-	"published_mass_g",
+	"published_mass_g", "cutting_bit_mm",
 ]
 
 ## The plate keys whose VALUE SHAPE this version rewrites on load (mm-doubles ⇄ PackedFloat64Array).
@@ -90,6 +90,11 @@ const CONSTRUCTION_MOULDED := "moulded"
 ## VALUE, labelled as such wherever it is shown — a shop with a 1/8" bit is just as real, which is why
 ## it is a document setting rather than a constant the checks read.
 const DEFAULT_CUTTING_BIT_MM := 1.5875
+
+## Plate key: indices into that plate's `holes` of the holes to countersink after cutting (G3). Kept as
+## indices because a hole is a bare polygon with nowhere to hang a flag, and holes are only ever
+## appended or replaced in place, never removed, so an index stays pointing at its hole.
+const PLATE_COUNTERSUNK_HOLES := "countersunk_holes"
 
 var id := ""
 var name := ""
@@ -135,6 +140,12 @@ var payload_mounts: Array = []
 ## number; a frame you drew has no vendor, so the comparison is not shown at all rather than being
 ## shown against zero.
 var published_mass_g := 0.0
+
+## The diameter of the round end mill the plates will be routed with, mm (airframe gaps G3). A SETTING
+## FOR THE CUT, not a property of the frame: it decides which inside corners the cutter can follow
+## (`ReadyToCut`) and is printed on every exported plate's notes so the shop knows what the file
+## assumed. Defaults to 1/16" — `DEFAULT_CUTTING_BIT_MM`, a typical shop value, not a measured one.
+var cutting_bit_mm := DEFAULT_CUTTING_BIT_MM
 
 ## Fields from a file this version does not understand, kept for the save path. See class docs.
 var _unknown_top: Dictionary = {}
@@ -226,6 +237,16 @@ static func plate_holes(plate: Dictionary) -> Array:
 	return out
 
 
+## Whether hole `hole_index` of this plate is to be countersunk (G3). Off unless set: nothing in a
+## generated preset is countersunk, because whether a bottom plate takes flat heads is the builder's
+## choice of screw, not something the frame's published specs say.
+static func hole_is_countersunk(plate: Dictionary, hole_index: int) -> bool:
+	for entry in plate.get(PLATE_COUNTERSUNK_HOLES, []):
+		if int(entry) == hole_index:
+			return true
+	return false
+
+
 static func plate_thickness_mm(plate: Dictionary) -> float:
 	return float(plate.get("thickness_mm", 0.0))
 
@@ -267,6 +288,8 @@ static func from_dictionary(document: Dictionary) -> AirframeDocument:
 	if document.has("material_id"):
 		doc.material_id = str(document["material_id"])
 	doc.published_mass_g = float(document.get("published_mass_g", 0.0))
+	var bit := float(document.get("cutting_bit_mm", DEFAULT_CUTTING_BIT_MM))
+	doc.cutting_bit_mm = bit if bit > 0.0 else DEFAULT_CUTTING_BIT_MM
 
 	for entry in document.get("plates", []):
 		if entry is Dictionary:
@@ -297,6 +320,7 @@ func to_dictionary() -> Dictionary:
 	out["revision"] = revision
 	out["material_id"] = material_id
 	out["published_mass_g"] = published_mass_g
+	out["cutting_bit_mm"] = cutting_bit_mm
 
 	var plate_json: Array = []
 	for plate in plates:

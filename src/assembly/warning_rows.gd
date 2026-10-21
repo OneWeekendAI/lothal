@@ -70,8 +70,12 @@ const TABLE := {
 	&"screw_bottoms_out": [HARDWARE, "a screw bottoms out"],
 	&"thread_engagement": [HARDWARE, "too little thread engaged"],
 	&"hole_to_edge": [HARDWARE, "hole too close to the edge"],
+	# Ready to cut (airframe gaps G3): ReadyToCut, against the document's cutting bit. On Frame, whose
+	# page is the designer where a corner is rounded or a slot widened.
+	&"cut_corner_tighter_than_bit": [FRAME, "{tight_corners}"],
 	# G4: ArmStrength's characteristic note — the arm breaks under less tip load than its class.
 	&"arm_weaker_than_class": [ARMS, "{arm_weaker_than_class}"],
+	&"cut_gap_narrower_than_bit": [FRAME, "a gap narrower than the cutting bit"],
 	# Straps & pads (airframe.md §6): StrapSlots' geometry and PadMount's spring, via StrapsPads.
 	&"no_strap_slots": [STRAPS, "no strap slots in the plate"],
 	&"strap_slot_narrow": [STRAPS, "{strap_slot_narrow}"],
@@ -211,6 +215,9 @@ static func _format(template: String, v: Dictionary) -> String:
 			var size := str(v.get("size_class", ""))
 			return "arm weaker than every %s frame" % size if bool(v.get("class_clean", false)) \
 				and size != "" else "arm weaker than every catalog frame"
+		"{tight_corners}":
+			var count := (v.get("corners", []) as Array).size()
+			return "%d corner%s sharper than the bit" % [count, "" if count == 1 else "s"]
 		"{pad_too_soft}":
 			return "pad resonance ~%d Hz, in the loop" % roundi(float(v.get("f_n_hz", 0.0)))
 		"{current_limit}":

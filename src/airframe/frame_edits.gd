@@ -150,6 +150,182 @@ static func add_hole(
 
 
 # ---------------------------------------------------------------------------
+# Ready to cut (airframe gaps G3)
+# ---------------------------------------------------------------------------
+
+## Marks hole `hole_index` of a plate as countersunk, or clears it. Geometry is untouched: a
+## countersink is a second operation on a through hole, so the hole still cuts and still weighs the
+## same; the flag only puts it on its own DXF layer and in the sheet's legend.
+static func set_hole_countersunk(
+	document: AirframeDocument, plate_index: int, hole_index: int, countersunk: bool
+) -> bool:
+	if not _has_plate(document, plate_index):
+		return false
+	var plate: Dictionary = document.plates[plate_index]
+	if hole_index < 0 or hole_index >= (plate.get("holes", []) as Array).size():
+		return false
+	var marked: Array = []
+	for entry in plate.get(AirframeDocument.PLATE_COUNTERSUNK_HOLES, []):
+		if int(entry) != hole_index:
+			marked.append(int(entry))
+	if countersunk:
+		marked.append(hole_index)
+		marked.sort()
+	if marked.is_empty():
+		plate.erase(AirframeDocument.PLATE_COUNTERSUNK_HOLES)
+	else:
+		plate[AirframeDocument.PLATE_COUNTERSUNK_HOLES] = marked
+	return true
+
+
+## The largest round hole `set_plate_screw_holes_countersunk` treats as a screw hole, mm: an M3
+## clearance hole (3.2) with room for a tessellation's rounding, and nothing a strap or wire passes.
+const COUNTERSINK_MAX_HOLE_MM := 3.6
+
+
+## Marks (or clears) every round screw hole of one plate as countersunk — the workbench's one-click
+## form, since the canvas picks plates, not holes. A slot or a lightening hole is never a screw hole.
+## Returns how many holes were changed.
+static func set_plate_screw_holes_countersunk(
+	document: AirframeDocument, plate_index: int, countersunk: bool
+) -> int:
+	if not _has_plate(document, plate_index):
+		return 0
+	var plate: Dictionary = document.plates[plate_index]
+	var holes := AirframeDocument.plate_holes(plate)
+	var changed := 0
+	for index in holes.size():
+		var shape := StrapSlots.measure(holes[index])
+		var across := float(shape["length_mm"])
+		if across <= 0.0 or across > COUNTERSINK_MAX_HOLE_MM \
+				or float(shape["width_mm"]) < across * 0.8:
+			continue
+		if AirframeDocument.hole_is_countersunk(plate, index) != countersunk:
+			set_hole_countersunk(document, plate_index, index, countersunk)
+			changed += 1
+	return changed
+
+
+## The cutting bit the ready-to-cut check and the export notes assume, mm.
+static func set_cutting_bit(document: AirframeDocument, diameter_mm: float) -> bool:
+	if document == null or diameter_mm <= 0.0:
+		return false
+	document.cutting_bit_mm = diameter_mm
+	return true
+
+
+## Rounds the inside corner containing `vertex_index` of one contour (`ReadyToCut.OUTLINE` or a hole
+## index) to `radius_mm` — by default the document's bit radius, i.e. the fillet the router leaves
+## anyway. The corner's whole run is replaced (a too-small drawn fillet is redrawn, not stacked on):
+## its entry and exit edges are extended to where they meet, and an arc tangent to both is cut in.
+##
+## ADDS material, for an inside corner of an outline and for a hole's corner alike, which is what the
+## cutter does: mass, CG and inertia follow from the new polygon on the next compute, like any edit.
+##
+## Refused (false, nothing changed) when the vertex is not an inside corner, when the run turns
+## through 180° or more (a slot end — no corner to round), or when the arc would run off the end of
+## an adjoining edge.
+static func round_inside_corner(
+	document: AirframeDocument,
+	plate_index: int,
+	contour_index: int,
+	vertex_index: int,
+	radius_mm: float = -1.0
+) -> bool:
+	if not _has_plate(document, plate_index):
+		return false
+	var plate: Dictionary = document.plates[plate_index]
+	var points := ReadyToCut.contour_points(plate, contour_index)
+	var n := points.size()
+	if n < 3 or vertex_index < 0 or vertex_index >= n:
+		return false
+	var radius := radius_mm if radius_mm > 0.0 else ReadyToCut.bit_diameter_mm(document) * 0.5
+	var orient := ReadyToCut.orientation(plate)
+	var corner := ReadyToCut.corner_at(points, orient, vertex_index)
+	if corner.is_empty() or int(corner["count"]) >= n - 1:
+		return false
+	var first: int = corner["first"]
+	var last: int = corner["last"]
+	var before := points[(first - 1 + n) % n]
+	var after := points[(last + 1) % n]
+	var d_in := (points[first] - before).normalized()
+	var d_out := (after - points[last]).normalized()
+	var turn := absf(d_in.angle_to(d_out))
+	if turn >= PI - 0.05 or turn < 1e-6:
+		return false
+	var meet: Variant = Geometry2D.line_intersects_line(before, d_in, points[last], d_out)
+	if meet == null:
+		return false
+	var corner_point: Vector2 = meet
+	var tangent := radius * tan(turn * 0.5)
+	if (corner_point - before).dot(d_in) < tangent or (after - corner_point).dot(d_out) < tangent:
+		return false
+	var t_in := corner_point - d_in * tangent
+	var t_out := corner_point + d_out * tangent
+	# The centre is on the cut side of the entry edge — its right in the normal winding.
+	var centre := t_in + Vector2(d_in.y, -d_in.x) * orient * radius
+	var start := (t_in - centre).angle()
+	var arc := PolygonProps.tessellate_arc(centre, radius, start, -turn * orient,
+		HOLE_CHORD_TOLERANCE_MM)
+	if arc.size() < 2:
+		return false
+	arc[0] = t_in
+	arc[arc.size() - 1] = t_out
+
+	var out := PackedVector2Array()
+	if first <= last:
+		for i in first:
+			out.append(points[i])
+		out.append_array(arc)
+		for i in range(last + 1, n):
+			out.append(points[i])
+	else:
+		out.append_array(arc)
+		for i in range(last + 1, first):
+			out.append(points[i])
+	var flat := AirframeDocument.flatten(out)
+	if contour_index == ReadyToCut.OUTLINE:
+		plate["outline"] = flat
+	else:
+		var holes: Array = plate.get("holes", [])
+		holes[contour_index] = flat
+		plate["holes"] = holes
+	return true
+
+
+## Rounds every inside corner of one plate that the document's bit cannot follow. Returns how many
+## were rounded; a corner the fix refuses (see `round_inside_corner`) is left and still warns.
+static func round_tight_corners(document: AirframeDocument, plate_index: int) -> int:
+	if not _has_plate(document, plate_index):
+		return 0
+	var rounded := 0
+	var bit := ReadyToCut.bit_diameter_mm(document)
+	var plate: Dictionary = document.plates[plate_index]
+	var orient := ReadyToCut.orientation(plate)
+	for contour in ReadyToCut.contours(plate):
+		var index: int = contour["index"]
+		var refused: Dictionary = {}
+		# Rounding renumbers the vertices after it, so the contour is re-read after each fix. Each
+		# pass fixes or refuses one distinct corner, so the bound is never what ends a sane loop.
+		var passes := 0
+		while passes < 1000:
+			passes += 1
+			var points := ReadyToCut.contour_points(plate, index)
+			var target := -1
+			for corner in ReadyToCut.tight_corners(points, orient, bit):
+				var key := "%.4f,%.4f" % [(corner["point"] as Vector2).x, (corner["point"] as Vector2).y]
+				if not refused.has(key):
+					target = int(corner["first"])
+					refused[key] = true
+					break
+			if target < 0:
+				break
+			if round_inside_corner(document, plate_index, index, target, bit * 0.5):
+				rounded += 1
+	return rounded
+
+
+# ---------------------------------------------------------------------------
 # Hardware, and the joints it makes
 # ---------------------------------------------------------------------------
 

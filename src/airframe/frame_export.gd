@@ -54,6 +54,20 @@ const CUT_STROKE_MM := 0.2
 const LAYOUT_ASSEMBLY := "assembly"
 const LAYOUT_NEST := "nest"
 
+## G3 — the ready-to-cut extras. A DXF layer a cutter reads as "not a cut": the per-plate notes and
+## the sheet header. Holes flagged countersunk go on `<ROLE>_COUNTERSINK` instead of `<ROLE>_HOLES`,
+## so they are still cut (every layer is) and the shop can see which ones take a second operation.
+const DXF_NOTES_LAYER := "NOTES"
+const DXF_COUNTERSINK_SUFFIX := "_COUNTERSINK"
+const DXF_NOTE_HEIGHT_MM := 2.5
+## SVG notes: line pitch of the notes block, and the colour of the countersink marker — not black,
+## because black on this sheet means "cut here" and a countersink ring is not a cut.
+const SVG_NOTE_LINE_MM := 5.0
+const COUNTERSINK_COLOUR := "#1f5fbf"
+## A 90° countersink for a flat-head screw is about twice the clearance hole across; the marker ring
+## is drawn there so it reads as the cone's rim on a 1:1 print. A drawing convention, not a spec.
+const COUNTERSINK_MARK_RATIO := 2.0
+
 
 # ---------------------------------------------------------------------------
 # SVG
@@ -75,6 +89,11 @@ static func to_svg(
 	var span: Vector2 = (bounds[1] - bounds[0]) + Vector2.ONE * SHEET_MARGIN_MM * 2.0
 	if span.x <= 0.0 or span.y <= 0.0:
 		span = Vector2(100.0, 100.0)
+
+	var notes := plate_notes(document)
+	var base_span := span
+	var note_lines := _svg_note_lines(document, notes)
+	span.y += SVG_NOTE_LINE_MM * float(note_lines.size() + 1)
 
 	var out := PackedStringArray()
 	out.append('<?xml version="1.0" encoding="UTF-8"?>')
@@ -98,8 +117,11 @@ static func to_svg(
 			out.append('<path d="%s"/>' % _path_of(hole, offset))
 
 	out.append('</g>')
+	out.append(_countersink_marks(placed))
+	out.append(_plate_numbers(placed, notes))
 	if include_dimensions:
-		out.append(_dimension_block(document, origin, span, bounds))
+		out.append(_dimension_block(document, origin, base_span, bounds))
+	out.append(_notes_block(note_lines, origin, base_span))
 	out.append('</svg>')
 	return "\n".join(out)
 
@@ -111,6 +133,7 @@ static func plate_to_svg(document: AirframeDocument, plate_index: int) -> String
 	var single := AirframeDocument.new()
 	single.name = "%s — plate %d" % [document.name, plate_index + 1]
 	single.material_id = document.material_id
+	single.cutting_bit_mm = document.cutting_bit_mm
 	single.plates = [document.plates[plate_index]]
 	return to_svg(single, LAYOUT_NEST, true)
 
@@ -170,13 +193,33 @@ static func _path_of(points: PackedVector2Array, offset: Vector2) -> String:
 static func to_dxf(document: AirframeDocument, layout: String = LAYOUT_NEST) -> String:
 	var out := PackedStringArray()
 	out.append("0\nSECTION\n2\nENTITIES")
-	for entry in _placed_plates(document, layout):
+	var notes := plate_notes(document)
+	var placed := _placed_plates(document, layout)
+	var any_countersunk := false
+	for entry in placed:
 		var plate: Dictionary = entry["plate"]
 		var offset: Vector2 = entry["offset"]
 		var layer := str(plate.get("role", "plate")).to_upper()
 		out.append(_dxf_polyline(AirframeDocument.plate_outline(plate), offset, layer))
-		for hole in AirframeDocument.plate_holes(plate):
-			out.append(_dxf_polyline(hole, offset, "%s_HOLES" % layer))
+		var holes := AirframeDocument.plate_holes(plate)
+		for hole_index in holes.size():
+			var countersunk := AirframeDocument.hole_is_countersunk(plate, hole_index)
+			any_countersunk = any_countersunk or countersunk
+			out.append(_dxf_polyline(holes[hole_index], offset,
+				layer + (DXF_COUNTERSINK_SUFFIX if countersunk else "_HOLES")))
+	# Notes last, on their own layer: one line under each plate, then the sheet header under all.
+	var bounds := _bounds_of(placed)
+	for entry in placed:
+		var note := _note_for(notes, entry["plate"])
+		if note.is_empty():
+			continue
+		var box := _points_bounds(AirframeDocument.plate_outline(entry["plate"]))
+		var at: Vector2 = box[0] + (entry["offset"] as Vector2) - Vector2(0.0, DXF_NOTE_HEIGHT_MM * 1.6)
+		out.append(_dxf_text(str(note["text"]), at, DXF_NOTE_HEIGHT_MM))
+	var header_at: Vector2 = bounds[0] - Vector2(0.0, DXF_NOTE_HEIGHT_MM * 4.0)
+	for line in _sheet_header_lines(document, notes, any_countersunk):
+		out.append(_dxf_text(line, header_at, DXF_NOTE_HEIGHT_MM))
+		header_at.y -= DXF_NOTE_HEIGHT_MM * 1.6
 	out.append("0\nENDSEC\n0\nEOF")
 	return "\n".join(out) + "\n"
 
@@ -194,6 +237,175 @@ static func _dxf_polyline(points: PackedVector2Array, offset: Vector2, layer: St
 		out.append("0\nVERTEX\n8\n%s\n10\n%.5f\n20\n%.5f\n30\n0.0" % [layer, moved.x, moved.y])
 	out.append("0\nSEQEND\n8\n%s" % layer)
 	return "\n".join(out)
+
+
+## R12 TEXT on the notes layer. ASCII only: an R12 file is read in the machine's ANSI code page, and a
+## UTF-8 dash comes out as three characters of noise on a shop's controller.
+static func _dxf_text(text: String, at: Vector2, height_mm: float) -> String:
+	return "0\nTEXT\n8\n%s\n10\n%.5f\n20\n%.5f\n30\n0.0\n40\n%.3f\n1\n%s" % [
+		DXF_NOTES_LAYER, at.x, at.y, height_mm, _ascii(text)]
+
+
+static func _ascii(text: String) -> String:
+	var out := ""
+	for index in text.length():
+		var code := text.unicode_at(index)
+		out += text[index] if code >= 32 and code < 127 else "-"
+	return out
+
+
+# ---------------------------------------------------------------------------
+# Plate notes (G3) — what the shop needs to know beside the geometry
+# ---------------------------------------------------------------------------
+
+## One note per plate: {"index", "label", "role", "thickness_mm", "material", "quantity", "bit_mm",
+## "countersunk", "text"}. `quantity` is how many plates in this document are the same part — same
+## role, stock, thickness, area, perimeter and hole count — so four radially replicated arms say
+## "1 of 4 identical" and the shop can cut them as a batch. The sheet still draws every one of them.
+static func plate_notes(document: AirframeDocument) -> Array:
+	var out: Array = []
+	if document == null:
+		return out
+	var materials := FrameMaterials.load_default()
+	var bit := ReadyToCut.bit_diameter_mm(document)
+	var signatures: Array = []
+	var counts: Dictionary = {}
+	for plate in document.plates:
+		var signature := _part_signature(document, plate)
+		signatures.append(signature)
+		counts[signature] = int(counts.get(signature, 0)) + 1
+	for index in document.plates.size():
+		var plate: Dictionary = document.plates[index]
+		var material_id := document.plate_material_id(plate)
+		var record: Dictionary = materials.get_material(material_id)
+		var material := str(record.get("name", material_id)) if record != null else material_id
+		var quantity: int = counts[signatures[index]]
+		var countersunk := 0
+		for hole_index in (plate.get("holes", []) as Array).size():
+			if AirframeDocument.hole_is_countersunk(plate, hole_index):
+				countersunk += 1
+		var label := ReadyToCut.plate_label(document, index)
+		var text := "%s - %.1f mm %s - qty 1 of %d identical - %.2f mm bit" % [
+			label, AirframeDocument.plate_thickness_mm(plate), material, quantity, bit]
+		if countersunk > 0:
+			text += " - %d countersunk hole%s" % [countersunk, "" if countersunk == 1 else "s"]
+		out.append({
+			"index": index, "label": label, "role": str(plate.get("role", "")),
+			"thickness_mm": AirframeDocument.plate_thickness_mm(plate), "material": material,
+			"quantity": quantity, "bit_mm": bit, "countersunk": countersunk, "text": text,
+			"plate": plate,
+		})
+	return out
+
+
+static func _part_signature(document: AirframeDocument, plate: Dictionary) -> String:
+	var outline := AirframeDocument.plate_outline(plate)
+	var perimeter := 0.0
+	for i in outline.size():
+		perimeter += outline[i].distance_to(outline[(i + 1) % outline.size()])
+	var region := PolygonProps.region_properties(outline, AirframeDocument.plate_holes(plate))
+	return "%s|%s|%.2f|%.0f|%.0f|%d" % [str(plate.get("role", "")), document.plate_material_id(plate),
+		AirframeDocument.plate_thickness_mm(plate), absf(float(region.get("area", 0.0))),
+		perimeter, (plate.get("holes", []) as Array).size()]
+
+
+static func _note_for(notes: Array, plate: Dictionary) -> Dictionary:
+	for note in notes:
+		if is_same(note["plate"], plate):
+			return note
+	return {}
+
+
+static func _sheet_header_lines(document: AirframeDocument, notes: Array,
+		any_countersunk: bool) -> PackedStringArray:
+	var lines := PackedStringArray()
+	var bit := ReadyToCut.bit_diameter_mm(document)
+	lines.append("%s - %d parts - millimetres, 1:1 - cut with a %.4f mm (%s) end mill" % [
+		document.name, notes.size(), bit, _bit_label(bit)])
+	lines.append("Layer NOTES is text, not a cut.")
+	if any_countersunk:
+		lines.append("Holes on *%s layers: cut through, then countersink 90 deg for flat-head screws."
+			% DXF_COUNTERSINK_SUFFIX)
+	return lines
+
+
+## "1/16 in, typical shop value" for the default; the inch fraction for the other common bits.
+static func _bit_label(diameter_mm: float) -> String:
+	if absf(diameter_mm - AirframeDocument.DEFAULT_CUTTING_BIT_MM) < 1e-4:
+		return "1/16 in, a typical shop value"
+	if absf(diameter_mm - 3.175) < 1e-4:
+		return "1/8 in"
+	if absf(diameter_mm - 0.79375) < 1e-4:
+		return "1/32 in"
+	return "set by the builder"
+
+
+static func _svg_note_lines(document: AirframeDocument, notes: Array) -> PackedStringArray:
+	var lines := PackedStringArray()
+	if document == null or notes.is_empty():
+		return lines
+	var any_countersunk := false
+	for note in notes:
+		any_countersunk = any_countersunk or int(note["countersunk"]) > 0
+	lines.append_array(_sheet_header_lines(document, notes, false))
+	lines.remove_at(1)  # The DXF layer line means nothing on paper.
+	for note in notes:
+		lines.append(str(note["text"]))
+	lines.append("Legend: black hairline = cut." + (
+		" Dashed blue ring = countersink this hole 90 deg after cutting." if any_countersunk else ""))
+	return lines
+
+
+static func _notes_block(lines: PackedStringArray, origin: Vector2, base_span: Vector2) -> String:
+	if lines.is_empty():
+		return ""
+	var out := PackedStringArray()
+	out.append('<g id="notes" font-family="sans-serif" font-size="3.2" fill="#000000" stroke="none">')
+	var y := origin.y + base_span.y + SVG_NOTE_LINE_MM * 0.6
+	for line in lines:
+		out.append('<text x="%.3f" y="%.3f">%s</text>' % [origin.x + 3.0, y, _escaped(line)])
+		y += SVG_NOTE_LINE_MM
+	out.append('</g>')
+	return "\n".join(out)
+
+
+## Each plate's number at its bounding-box centre, so the notes block's "Plate 3" is findable.
+static func _plate_numbers(placed: Array, notes: Array) -> String:
+	var out := PackedStringArray()
+	out.append('<g id="plate-numbers" font-family="sans-serif" font-size="4" fill="#777777" ' +
+		'stroke="none" text-anchor="middle">')
+	for entry in placed:
+		var note := _note_for(notes, entry["plate"])
+		if note.is_empty():
+			continue
+		var box := _points_bounds(AirframeDocument.plate_outline(entry["plate"]))
+		var centre: Vector2 = (box[0] + box[1]) * 0.5 + (entry["offset"] as Vector2)
+		out.append('<text x="%.3f" y="%.3f">%d</text>' % [centre.x, centre.y,
+			int(note["index"]) + 1])
+	out.append('</g>')
+	return "\n".join(out)
+
+
+## A dashed ring round every countersunk hole — `<circle>`, never `<path>`, so it is not a contour.
+static func _countersink_marks(placed: Array) -> String:
+	var out := PackedStringArray()
+	out.append('<g id="countersinks" fill="none" stroke="%s" stroke-width="0.25" ' % COUNTERSINK_COLOUR
+		+ 'stroke-dasharray="0.8 0.6">')
+	var count := 0
+	for entry in placed:
+		var plate: Dictionary = entry["plate"]
+		var holes := AirframeDocument.plate_holes(plate)
+		for hole_index in holes.size():
+			if not AirframeDocument.hole_is_countersunk(plate, hole_index):
+				continue
+			var hole: PackedVector2Array = holes[hole_index]
+			var centre := PolygonProps.centroid(hole) + (entry["offset"] as Vector2)
+			var radius := sqrt(absf(PolygonProps.area(hole)) / PI)
+			out.append('<circle cx="%.3f" cy="%.3f" r="%.3f"/>' % [centre.x, centre.y,
+				radius * COUNTERSINK_MARK_RATIO])
+			count += 1
+	out.append('</g>')
+	return "\n".join(out) if count > 0 else ""
 
 
 # ---------------------------------------------------------------------------

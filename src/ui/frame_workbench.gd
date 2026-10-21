@@ -58,6 +58,17 @@ const EXPORTS := [
 	{"label": "Assembly (STL)", "extension": "stl", "layout": FrameExport.LAYOUT_ASSEMBLY},
 ]
 
+## The cutting bits the Export menu offers (G3), as menu ids from `BIT_MENU_ID`. 1/16" first and
+## marked as what it is: the typical shop value, not something measured off this builder's cutter.
+const BITS := [
+	{"label": "Cutting bit 1/16\" (1.59 mm, typical shop value)", "mm": 1.5875},
+	{"label": "Cutting bit 1/8\" (3.18 mm)", "mm": 3.175},
+	{"label": "Cutting bit 1/32\" (0.79 mm)", "mm": 0.79375},
+]
+const BIT_MENU_ID := 100
+const ROUND_CORNERS_MENU_ID := 110
+const COUNTERSINK_MENU_ID := 111
+
 var editor: FramePlanEditor
 ## The same document, extruded. Airframe is a STACK, and a top view cannot show a stack — plate
 ## roles, standoff height and which plate an arm is sandwiched between are numbers in the plan view
@@ -190,6 +201,16 @@ func _build_toolbar() -> Control:
 	_export_button.text = "Export"
 	for spec in EXPORTS:
 		_export_button.get_popup().add_item(str(spec["label"]))
+	# G3, ready to cut: the bit the check and the notes assume, and the two optional fixes.
+	_export_button.get_popup().add_separator()
+	for index in BITS.size():
+		_export_button.get_popup().add_radio_check_item(str(BITS[index]["label"]),
+			BIT_MENU_ID + index)
+	_export_button.get_popup().add_separator()
+	_export_button.get_popup().add_item("Round inside corners to the bit", ROUND_CORNERS_MENU_ID)
+	_export_button.get_popup().add_item("Countersink selected plate's screw holes (toggle)",
+		COUNTERSINK_MENU_ID)
+	_export_button.about_to_popup.connect(_refresh_bit_checks)
 	_export_button.get_popup().id_pressed.connect(_on_export_chosen)
 	row.add_child(_export_button)
 	row.add_child(_button("Import", _on_import,
@@ -460,6 +481,15 @@ func _on_duplicate() -> void:
 ## been exported. On a headless run `OS.shell_open` does nothing and the status line still names
 ## the path, which is why the path is in the message as well.
 func _on_export_chosen(id: int) -> void:
+	if id >= BIT_MENU_ID and id < BIT_MENU_ID + BITS.size():
+		set_cutting_bit(float(BITS[id - BIT_MENU_ID]["mm"]))
+		return
+	if id == ROUND_CORNERS_MENU_ID:
+		round_tight_corners()
+		return
+	if id == COUNTERSINK_MENU_ID:
+		toggle_countersinks()
+		return
 	if editor.document == null or id < 0 or id >= EXPORTS.size():
 		return
 	var spec: Dictionary = EXPORTS[id]
@@ -473,6 +503,69 @@ func _on_export_chosen(id: int) -> void:
 		return
 	_set_status("Wrote %s — %s" % [ProjectSettings.globalize_path(path), str(spec["label"])])
 	OS.shell_open(ProjectSettings.globalize_path(EXPORT_DIRECTORY))
+
+
+## Sets the cutting bit the ready-to-cut check and the export notes assume (G3). One undo step.
+func set_cutting_bit(diameter_mm: float) -> bool:
+	if editor.document == null or diameter_mm <= 0.0:
+		return false
+	editor.history.record(editor.document)
+	FrameEdits.set_cutting_bit(editor.document, diameter_mm)
+	_on_document_edited(editor.document)
+	_set_status("Cutting bit set to %.2f mm — the corner and gap checks now assume it." % diameter_mm)
+	return true
+
+
+## Rounds every inside corner the bit cannot follow, on every plate, to the bit's radius — the fillet
+## the router leaves anyway, drawn so the mass and the export describe the part that comes back. One
+## undo step, and none if there was nothing to round. Returns how many corners were rounded.
+func round_tight_corners() -> int:
+	if editor.document == null:
+		return 0
+	var probe := AirframeDocument.from_dictionary(editor.document.to_dictionary())
+	var would := 0
+	for index in probe.plates.size():
+		would += FrameEdits.round_tight_corners(probe, index)
+	if would == 0:
+		_set_status("No inside corner is tighter than the %.2f mm bit." % editor.document.cutting_bit_mm)
+		return 0
+	editor.history.record(editor.document)
+	var rounded := 0
+	for index in editor.document.plates.size():
+		rounded += FrameEdits.round_tight_corners(editor.document, index)
+	mark_hand_edited()
+	_on_document_edited(editor.document)
+	_set_status("Rounded %d inside corner%s to %.2f mm." % [rounded, "" if rounded == 1 else "s",
+		editor.document.cutting_bit_mm * 0.5])
+	return rounded
+
+
+## Countersinks the selected plate's round screw holes, or clears them if any already are. Returns how
+## many holes changed.
+func toggle_countersinks() -> int:
+	if editor.document == null or _selected_plate < 0 \
+			or _selected_plate >= editor.document.plates.size():
+		_set_status("Select the plate whose screw holes are countersunk first.")
+		return 0
+	var plate: Dictionary = editor.document.plates[_selected_plate]
+	var any := not (plate.get(AirframeDocument.PLATE_COUNTERSUNK_HOLES, []) as Array).is_empty()
+	editor.history.record(editor.document)
+	var changed := FrameEdits.set_plate_screw_holes_countersunk(editor.document, _selected_plate,
+		not any)
+	_on_document_edited(editor.document)
+	_set_status("%s %d screw hole%s on this plate — marked on the DXF's _COUNTERSINK layer." % [
+		"Cleared the countersink on" if any else "Countersunk", changed, "" if changed == 1 else "s"])
+	return changed
+
+
+func _refresh_bit_checks() -> void:
+	var popup := _export_button.get_popup()
+	var bit := editor.document.cutting_bit_mm if editor.document != null \
+		else AirframeDocument.DEFAULT_CUTTING_BIT_MM
+	for index in BITS.size():
+		var item := popup.get_item_index(BIT_MENU_ID + index)
+		if item >= 0:
+			popup.set_item_checked(item, absf(float(BITS[index]["mm"]) - bit) < 1e-4)
 
 
 ## A frame name as a file name. Same rule as `FrameLibrary._safe`: anything that is not a letter, a
