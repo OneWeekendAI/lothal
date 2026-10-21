@@ -53,6 +53,11 @@ const CUT_STROKE_MM := 0.2
 ##     overlapping means two parts a cutter cannot tell apart.
 const LAYOUT_ASSEMBLY := "assembly"
 const LAYOUT_NEST := "nest"
+## Not a sheet layout: the Export menu's "one STL per printable part" (`write_parts`).
+const LAYOUT_PARTS := "parts"
+## A vertex closer than this to the line through its neighbours is on a straight edge, for a printed
+## part (`_simplified`). A micron: far below any nozzle, far above float rounding in a union.
+const COLLINEAR_MM := 1.0e-3
 
 ## G3 — the ready-to-cut extras. A DXF layer a cutter reads as "not a cut": the per-plate notes and
 ## the sheet header. Holes flagged countersunk go on `<ROLE>_COUNTERSINK` instead of `<ROLE>_HOLES`,
@@ -446,52 +451,507 @@ static func _countersink_marks(placed: Array) -> String:
 ## Z IS UP IN THE FILE, not in Godot's world. Every tool that opens an STL of a flat part expects
 ## the part to lie in XY, so the document's `(u, v, z)` goes out unrotated — which is the natural
 ## form and also the one where a plate's thickness is the Z extent.
+##
+## One solid PER PLATE, holes cut through, at its assembly height: the drawing of the aircraft, where
+## arms that share a layer with the bottom plate still overlap it. `PrintedParts` reads this per plate
+## and relies on the per-plate count. What goes to a printer is `write_parts`, which merges a layer.
 static func to_stl(document: AirframeDocument) -> String:
 	var out := PackedStringArray()
 	out.append("solid %s" % document.name.replace(" ", "_"))
-	for plate in document.plates:
-		if not AirframeDocument.is_upright(plate):
-			_append_plate_solid(out, plate)
-	for pad in document.pads:
-		_append_plate_solid(out, pad)
-	# Upright plates (G5) lie flat at z = 0, set out beside the frame — see `_upright_laid_flat`.
-	for entry in _upright_laid_flat(document):
-		_append_plate_solid(out, entry["plate"], entry["offset"], 0.0)
+	for part in printable_parts(document, false):
+		for triangle in part_triangles(part, float(part["z_mm"])):
+			_facet(out, triangle[0], triangle[1], triangle[2])
 	out.append("endsolid")
 	return "\n".join(out) + "\n"
 
 
-static func _append_plate_solid(out: PackedStringArray, plate: Dictionary,
-		offset: Vector2 = Vector2.ZERO, z_override: float = NAN) -> void:
-	var outline := PackedVector2Array()
-	for point in AirframeDocument.plate_outline(plate):
-		outline.append(point + offset)
-	var thickness := AirframeDocument.plate_thickness_mm(plate)
-	if outline.size() < 3 or thickness <= 0.0:
-		return
-	var z0 := AirframeDocument.plate_z_mm(plate) if is_nan(z_override) else z_override
-	var z1 := z0 + thickness
+# ---------------------------------------------------------------------------
+# Printable parts — what comes off a printer bed, one closed solid each
+# ---------------------------------------------------------------------------
 
-	# The caps come from the same triangulator `PlateMesh` uses, so the exported solid and the
-	# on-screen one are the same tessellation rather than two that can disagree.
-	var indices := Geometry2D.triangulate_polygon(outline)
-	var index := 0
-	while index + 2 < indices.size():
-		var a := outline[indices[index]]
-		var b := outline[indices[index + 1]]
-		var c := outline[indices[index + 2]]
-		_facet(out, Vector3(a.x, a.y, z1), Vector3(b.x, b.y, z1), Vector3(c.x, c.y, z1))
-		# The bottom face is the same triangle wound the other way, which is what makes its normal
-		# point down. A cap emitted with both faces the same way round is a solid every slicer
-		# reports as non-manifold.
-		_facet(out, Vector3(c.x, c.y, z0), Vector3(b.x, b.y, z0), Vector3(a.x, a.y, z0))
-		index += 3
+## The parts a printer makes, one closed solid each, holes cut through.
+##
+## ## Why a plate is not always a part
+##
+## The document's arms start at the centre and the bottom plate sits at the same height and
+## thickness as them, because "on a bolted frame the arm and the bottom plate ARE the same layer of
+## the sandwich, and on a unibody the arms are that plate" (AirframeDocument). For a cutter that is
+## harmless — each outline is its own contour. For a printer it is not: four arms that each reach
+## the centre, emitted as four solids, are four bodies occupying the same space, and opposite arms
+## share their root corners, which a slicer reads as edges with four faces. Printed as drawn they
+## cannot even be assembled. So FLAT PLATES OF ONE LAYER — same height, same thickness, same
+## material — THAT OVERLAP are merged into one part (the unibody), and every hole of every member is
+## cut through it: a stack hole lies under an arm's root, and a hole only one member carries is
+## still a hole in the part that gets printed.
+##
+## Upright plates (G5) are one part each, laid flat where `_upright_laid_flat` puts them; pads are
+## one part each. Each entry: `{"name", "plates" (indices into document.plates, empty for a pad),
+## "outlines" (Array of counter-clockwise PackedVector2Array), "holes" (Array of clockwise
+## PackedVector2Array), "thickness_mm", "z_mm" (assembly height; 0 for an upright), "upright"}`.
+##
+## `merge_layers` false keeps every flat plate its own part — the assembly drawing's form (`to_stl`).
+static func printable_parts(document: AirframeDocument, merge_layers: bool = true) -> Array:
+	var parts: Array = []
+	if document == null:
+		return parts
+	var flat: Array[int] = []
+	for index in document.plates.size():
+		var plate: Dictionary = document.plates[index]
+		if not AirframeDocument.is_upright(plate) and _solid_plate(plate):
+			flat.append(index)
 
-	for vertex in outline.size():
-		var p0 := outline[vertex]
-		var p1 := outline[(vertex + 1) % outline.size()]
-		_facet(out, Vector3(p0.x, p0.y, z0), Vector3(p1.x, p1.y, z0), Vector3(p1.x, p1.y, z1))
-		_facet(out, Vector3(p0.x, p0.y, z0), Vector3(p1.x, p1.y, z1), Vector3(p0.x, p0.y, z1))
+	# Union-find over overlapping same-layer plates.
+	var group := {}
+	for index in flat:
+		group[index] = index
+	for a in flat.size():
+		for b in range(a + 1, flat.size()):
+			var pa: Dictionary = document.plates[flat[a]]
+			var pb: Dictionary = document.plates[flat[b]]
+			if not merge_layers or not _same_layer(document, pa, pb):
+				continue
+			if Geometry2D.intersect_polygons(_ccw(AirframeDocument.plate_outline(pa)),
+					_ccw(AirframeDocument.plate_outline(pb))).is_empty():
+				continue
+			group[_root_of(group, flat[a])] = _root_of(group, flat[b])
+	var members := {}
+	for index in flat:
+		var root := _root_of(group, index)
+		if not members.has(root):
+			members[root] = []
+		(members[root] as Array).append(index)
+
+	# In document order of each part's first plate, so part numbers follow the plate list.
+	for index in flat:
+		var list: Array = members[_root_of(group, index)]
+		if int(list[0]) != index:
+			continue
+		var plates: Array = []
+		for member in list:
+			plates.append(document.plates[member])
+		var region := _region_of(plates)
+		var first: Dictionary = document.plates[index]
+		parts.append({
+			"name": _part_name(plates),
+			"plates": list.duplicate(),
+			"outlines": region["outlines"],
+			"holes": region["holes"],
+			"thickness_mm": AirframeDocument.plate_thickness_mm(first),
+			"z_mm": AirframeDocument.plate_z_mm(first),
+			"upright": false,
+		})
+
+	for pad in document.pads:
+		if not _solid_plate(pad):
+			continue
+		var region := _region_of([pad])
+		parts.append({"name": "pad", "plates": [], "outlines": region["outlines"],
+			"holes": region["holes"], "thickness_mm": AirframeDocument.plate_thickness_mm(pad),
+			"z_mm": AirframeDocument.plate_z_mm(pad), "upright": false})
+
+	for entry in _upright_laid_flat(document):
+		var plate: Dictionary = entry["plate"]
+		if not _solid_plate(plate):
+			continue
+		var offset: Vector2 = entry["offset"]
+		var moved := plate.duplicate()
+		moved["outline"] = AirframeDocument.flatten(_shifted(AirframeDocument.plate_outline(plate),
+			offset))
+		var holes: Array = []
+		for hole in AirframeDocument.plate_holes(plate):
+			holes.append(AirframeDocument.flatten(_shifted(hole, offset)))
+		moved["holes"] = holes
+		var region := _region_of([moved])
+		parts.append({"name": "side", "plates": [document.plates.find(plate)],
+			"outlines": region["outlines"], "holes": region["holes"],
+			"thickness_mm": AirframeDocument.plate_thickness_mm(plate), "z_mm": 0.0,
+			"upright": true})
+	return parts
+
+
+## One part as triangles (`StlWriter`'s form: an Array of 3-point PackedVector3Array), its
+## underside at `z0_mm`. Outward-wound: caps by an explicit orientation test, walls by the outline
+## being counter-clockwise and every hole clockwise, which `printable_parts` guarantees. Empty when
+## a cap cannot be triangulated — `StlWriter.write` then refuses the part rather than writing it.
+static func part_triangles(part: Dictionary, z0_mm: float = 0.0) -> Array:
+	var out: Array = []
+	var thickness := float(part.get("thickness_mm", 0.0))
+	if thickness <= 0.0:
+		return out
+	var z1 := z0_mm + thickness
+	var holes: Array = part.get("holes", [])
+	for outline in part.get("outlines", []):
+		var mine: Array = []
+		for hole in holes:
+			if Geometry2D.is_point_in_polygon((hole as PackedVector2Array)[0], outline):
+				mine.append(hole)
+		var cap := cap_triangles(outline, mine)
+		if cap.is_empty():
+			return []
+		var index := 0
+		while index + 2 < cap.size():
+			var a := cap[index]
+			var b := cap[index + 1]
+			var c := cap[index + 2]
+			out.append(PackedVector3Array([Vector3(a.x, a.y, z1), Vector3(b.x, b.y, z1),
+				Vector3(c.x, c.y, z1)]))
+			out.append(PackedVector3Array([Vector3(c.x, c.y, z0_mm), Vector3(b.x, b.y, z0_mm),
+				Vector3(a.x, a.y, z0_mm)]))
+			index += 3
+		for loop in [outline] + mine:
+			var points: PackedVector2Array = loop
+			for vertex in points.size():
+				var p0 := points[vertex]
+				var p1 := points[(vertex + 1) % points.size()]
+				out.append(PackedVector3Array([Vector3(p0.x, p0.y, z0_mm), Vector3(p1.x, p1.y, z0_mm),
+					Vector3(p1.x, p1.y, z1)]))
+				out.append(PackedVector3Array([Vector3(p0.x, p0.y, z0_mm), Vector3(p1.x, p1.y, z1),
+					Vector3(p0.x, p0.y, z1)]))
+	return out
+
+
+## One part as an ASCII STL, LAID ON THE BED: underside at z = 0, which is how it is printed.
+static func part_to_stl(part: Dictionary, solid_name: String) -> String:
+	return StlWriter.to_ascii(solid_name, part_triangles(part, 0.0))
+
+
+## Every printable part to its own STL in `directory`, `<base>-part-NN-<name>.stl`, each through
+## `StlWriter.write` — so a part that is not a closed, outward-wound solid is REFUSED with a reason
+## instead of written. Returns `[{path, name, ok, reason, volume_mm3}]`.
+static func write_parts(document: AirframeDocument, directory: String, base_name: String) -> Array:
+	var results: Array = []
+	DirAccess.make_dir_recursive_absolute(directory)
+	var number := 0
+	for part in printable_parts(document):
+		number += 1
+		var label := "%s-part-%02d-%s" % [base_name, number, str(part["name"])]
+		var path := directory.path_join(label + ".stl")
+		var written := StlWriter.write(label, part_triangles(part, 0.0), path)
+		results.append({"path": path, "name": str(part["name"]), "ok": bool(written["ok"]),
+			"reason": str(written["reason"]), "volume_mm3": float(written["volume_mm3"])})
+	return results
+
+
+## A cap — the face of a plate with holes — as a flat list of counter-clockwise triangles, three
+## points each. Holes are joined to the outline by a zero-width bridge (a "keyhole") so the
+## outline-only triangulator `PlateMesh` uses can cut them; the bridge's two copies of each edge
+## land in two triangles wound opposite ways, so they are interior edges and the solid stays
+## closed. Checked by AREA, which is the property that matters: the triangles must cover exactly the
+## outline minus its holes, and empty is returned when they do not.
+static func cap_triangles(outline: PackedVector2Array, holes: Array) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var polygon := keyhole(outline, holes)
+	if polygon.is_empty():
+		return out
+	var indices := Geometry2D.triangulate_polygon(polygon)
+	var triangles: Array = []
+	var tri := 0
+	while tri + 2 < indices.size():
+		var a := polygon[indices[tri]]
+		var b := polygon[indices[tri + 1]]
+		var c := polygon[indices[tri + 2]]
+		if (b - a).cross(c - a) < -2.0 * StlWriter.MIN_TRIANGLE_AREA_MM2:
+			triangles.append([a, c, b])
+		else:
+			triangles.append([a, b, c])
+		tri += 3
+	if not _split_slivers(triangles):
+		return out
+	var covered := 0.0
+	for triangle in triangles:
+		var a: Vector2 = triangle[0]
+		var b: Vector2 = triangle[1]
+		var c: Vector2 = triangle[2]
+		out.append(a)
+		out.append(b)
+		out.append(c)
+		covered += (b - a).cross(c - a) * 0.5
+	var expected := absf(PolygonProps.area(outline))
+	for hole in holes:
+		expected -= absf(PolygonProps.area(hole))
+	if out.is_empty() or absf(covered - expected) > maxf(1.0e-6, expected * 1.0e-6):
+		return PackedVector2Array()
+	return out
+
+
+## The outline with every hole joined to it by a zero-width bridge: one counter-clockwise loop an
+## outline-only triangulator can fill. Empty when a hole has no clear line to the outline.
+static func keyhole(outline: PackedVector2Array, holes: Array) -> PackedVector2Array:
+	var polygon := _ccw(outline)
+	var ordered: Array = []
+	for hole in holes:
+		ordered.append(_cw(hole))
+	# Rightmost hole first, so every bridge reaches outward over holes not yet joined.
+	ordered.sort_custom(func(a: PackedVector2Array, b: PackedVector2Array) -> bool:
+		return _max_x(a) > _max_x(b))
+	for index in ordered.size():
+		var remaining: Array = ordered.slice(index + 1)
+		polygon = _bridged(polygon, ordered[index], remaining, outline, ordered)
+		if polygon.is_empty():
+			return polygon
+	return polygon
+
+
+## Removes zero-area triangles without opening the surface. The triangulator can return a "triangle"
+## whose three corners lie on one line — collinear points of two different holes, joined through a
+## bridge, do it — and dropping it would leave its two short edges with no cap on that side. Instead
+## the sliver (u, w, b), with b between u and w, is folded into the triangle across its long edge
+## (w, u, d): that one is split at b into (w, b, d) and (b, u, d), which covers the same area and
+## meets every neighbour the two old triangles met. False when a sliver has no neighbour to fold
+## into, or the folding does not finish — the caller then refuses the cap.
+static func _split_slivers(triangles: Array) -> bool:
+	var guard := triangles.size() * 4 + 8
+	while guard > 0:
+		guard -= 1
+		var sliver := -1
+		for index in triangles.size():
+			var candidate: Array = triangles[index]
+			var p0: Vector2 = candidate[0]
+			if absf(((candidate[1] as Vector2) - p0).cross((candidate[2] as Vector2) - p0)) * 0.5 \
+					< StlWriter.MIN_TRIANGLE_AREA_MM2:
+				sliver = index
+				break
+		if sliver < 0:
+			return true
+		var t: Array = triangles[sliver]
+		# The long edge u→w, in the sliver's own order; b is the corner between its ends.
+		var longest := 0
+		for k in 3:
+			if (t[(k + 1) % 3] as Vector2).distance_squared_to(t[k]) \
+					> (t[(longest + 1) % 3] as Vector2).distance_squared_to(t[longest]):
+				longest = k
+		var u: Vector2 = t[longest]
+		var w: Vector2 = t[(longest + 1) % 3]
+		var b: Vector2 = t[(longest + 2) % 3]
+		var across := -1
+		var d := Vector2.ZERO
+		for index in triangles.size():
+			if index == sliver:
+				continue
+			var n: Array = triangles[index]
+			for k in 3:
+				if n[k] == w and n[(k + 1) % 3] == u:
+					across = index
+					d = n[(k + 2) % 3]
+			if across >= 0:
+				break
+		if across < 0:
+			return false
+		var keep: Array = []
+		for index in triangles.size():
+			if index != sliver and index != across:
+				keep.append(triangles[index])
+		keep.append([w, b, d])
+		keep.append([b, u, d])
+		triangles.assign(keep)
+	return false
+
+
+static func _bridged(polygon: PackedVector2Array, hole: PackedVector2Array, remaining: Array,
+		outline: PackedVector2Array, all_holes: Array) -> PackedVector2Array:
+	var start := 0
+	for index in hole.size():
+		if hole[index].x > hole[start].x:
+			start = index
+	var from := hole[start]
+	var order: Array = []
+	for index in polygon.size():
+		order.append(index)
+	order.sort_custom(func(a: int, b: int) -> bool:
+		return polygon[a].distance_squared_to(from) < polygon[b].distance_squared_to(from))
+	for index in order:
+		var to := polygon[index]
+		# A vertex already used by an earlier bridge appears twice; which copy the new bridge
+		# belongs to depends on the wedge, so such vertices are simply not candidates.
+		if polygon.count(to) > 1:
+			continue
+		if not _bridge_clear(from, to, [polygon, hole] + remaining):
+			continue
+		var middle := (from + to) * 0.5
+		if not Geometry2D.is_point_in_polygon(middle, outline):
+			continue
+		var inside_hole := false
+		for other in all_holes:
+			if Geometry2D.is_point_in_polygon(middle, other):
+				inside_hole = true
+				break
+		if inside_hole:
+			continue
+		var out := PackedVector2Array()
+		for i in index + 1:
+			out.append(polygon[i])
+		for step in hole.size() + 1:
+			out.append(hole[(start + step) % hole.size()])
+		out.append(to)
+		for i in range(index + 1, polygon.size()):
+			out.append(polygon[i])
+		return out
+	return PackedVector2Array()
+
+
+static func _bridge_clear(from: Vector2, to: Vector2, loops: Array) -> bool:
+	for loop in loops:
+		var points: PackedVector2Array = loop
+		for index in points.size():
+			var a := points[index]
+			var b := points[(index + 1) % points.size()]
+			if a == from or a == to or b == from or b == to:
+				continue
+			if Geometry2D.segment_intersects_segment(from, to, a, b) != null:
+				return false
+	return true
+
+
+## The union of plates' outlines and every hole that falls in it. Holes that overlap merge; a hole
+## that crosses the edge becomes a notch in the outline.
+static func _region_of(plates: Array) -> Dictionary:
+	var outlines: Array = []
+	var holes: Array = []
+	for plate in plates:
+		var merged := _ccw(AirframeDocument.plate_outline(plate))
+		var keep: Array = []
+		for existing in outlines:
+			if Geometry2D.intersect_polygons(existing, merged).is_empty():
+				keep.append(existing)
+				continue
+			var best := PackedVector2Array()
+			for piece in Geometry2D.merge_polygons(existing, merged):
+				if PolygonProps.area(piece) < 0.0:
+					holes.append(_ccw(piece))
+				elif PolygonProps.area(piece) > PolygonProps.area(best):
+					best = piece
+			merged = best
+		keep.append(merged)
+		outlines = keep
+	for plate in plates:
+		for hole in AirframeDocument.plate_holes(plate):
+			holes.append(_ccw(hole))
+
+	var interior: Array = []
+	for hole in holes:
+		for index in outlines.size():
+			var outline: PackedVector2Array = outlines[index]
+			var overlap := Geometry2D.intersect_polygons(outline, hole)
+			if overlap.is_empty():
+				continue
+			var inside := true
+			for point in hole:
+				if not Geometry2D.is_point_in_polygon(point, outline):
+					inside = false
+					break
+			if inside:
+				interior.append(hole)
+			else:
+				var pieces: Array = []
+				for piece in Geometry2D.clip_polygons(outline, hole):
+					if PolygonProps.area(piece) > 0.0:
+						pieces.append(piece)
+				outlines.remove_at(index)
+				outlines.append_array(pieces)
+			break
+	# Overlapping holes become one.
+	var joined: Array = []
+	for hole in interior:
+		var merged: PackedVector2Array = hole
+		var keep: Array = []
+		for existing in joined:
+			if Geometry2D.intersect_polygons(existing, merged).is_empty():
+				keep.append(existing)
+				continue
+			for piece in Geometry2D.merge_polygons(existing, merged):
+				if PolygonProps.area(piece) > 0.0:
+					merged = piece
+		keep.append(merged)
+		joined = keep
+	var cw_holes: Array = []
+	for hole in joined:
+		cw_holes.append(_cw(_simplified(hole)))
+	var ccw_outlines: Array = []
+	for outline in outlines:
+		ccw_outlines.append(_ccw(_simplified(outline)))
+	return {"outlines": ccw_outlines, "holes": cw_holes}
+
+
+## A loop without repeated points or points on a straight run. A union leaves a vertex wherever two
+## outlines crossed, and one that lands on a straight edge makes a cap triangle of zero area: dropped,
+## it leaves the wall edges beside it with no cap to meet; kept, it is a facet a slicer rejects. Taking
+## the vertex out of the loop removes the choice — the wall and the cap both skip it.
+static func _simplified(points: PackedVector2Array) -> PackedVector2Array:
+	var out := points
+	var changed := true
+	while changed and out.size() > 3:
+		changed = false
+		for index in out.size():
+			var before := out[(index - 1 + out.size()) % out.size()]
+			var here := out[index]
+			var after := out[(index + 1) % out.size()]
+			var span := after - before
+			var off_line := absf(span.cross(here - before)) / maxf(span.length(), 1.0e-12)
+			if here.distance_to(before) < COLLINEAR_MM or off_line < COLLINEAR_MM:
+				out = out.duplicate()
+				out.remove_at(index)
+				changed = true
+				break
+	return out
+
+
+static func _solid_plate(plate: Dictionary) -> bool:
+	return AirframeDocument.plate_outline(plate).size() >= 3 \
+		and AirframeDocument.plate_thickness_mm(plate) > 0.0
+
+
+static func _same_layer(document: AirframeDocument, a: Dictionary, b: Dictionary) -> bool:
+	return absf(AirframeDocument.plate_z_mm(a) - AirframeDocument.plate_z_mm(b)) < 1.0e-6 \
+		and absf(AirframeDocument.plate_thickness_mm(a) - AirframeDocument.plate_thickness_mm(b)) \
+			< 1.0e-6 \
+		and document.plate_material_id(a) == document.plate_material_id(b)
+
+
+static func _root_of(group: Dictionary, index: int) -> int:
+	var at := index
+	while int(group[at]) != at:
+		at = int(group[at])
+	return at
+
+
+## "bottom", "top", or for a merged layer its roles in order: "bottom+4arm".
+static func _part_name(plates: Array) -> String:
+	var counts := {}
+	for plate in plates:
+		var role := str(plate.get("role", "plate"))
+		counts[role] = int(counts.get(role, 0)) + 1
+	var names := PackedStringArray()
+	for role in [AirframeDocument.ROLE_BOTTOM, AirframeDocument.ROLE_MID, AirframeDocument.ROLE_TOP,
+			AirframeDocument.ROLE_ARM]:
+		if counts.has(role):
+			var count := int(counts[role])
+			names.append(role if count == 1 else "%d%s" % [count, role])
+			counts.erase(role)
+	for role in counts:
+		names.append(str(role))
+	return "+".join(names)
+
+
+static func _ccw(points: PackedVector2Array) -> PackedVector2Array:
+	return PolygonProps.reversed(points) if PolygonProps.area(points) < 0.0 else points
+
+
+static func _cw(points: PackedVector2Array) -> PackedVector2Array:
+	return PolygonProps.reversed(points) if PolygonProps.area(points) > 0.0 else points
+
+
+static func _max_x(points: PackedVector2Array) -> float:
+	var best := -INF
+	for point in points:
+		best = maxf(best, point.x)
+	return best
+
+
+static func _shifted(points: PackedVector2Array, offset: Vector2) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for point in points:
+		out.append(point + offset)
+	return out
 
 
 static func _facet(out: PackedStringArray, a: Vector3, b: Vector3, c: Vector3) -> void:

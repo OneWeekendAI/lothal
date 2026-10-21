@@ -56,6 +56,9 @@ const EXPORTS := [
 	{"label": "Cut sheet (SVG, nested)", "extension": "svg", "layout": FrameExport.LAYOUT_NEST},
 	{"label": "Cut file (DXF)", "extension": "dxf", "layout": FrameExport.LAYOUT_NEST},
 	{"label": "Assembly (STL)", "extension": "stl", "layout": FrameExport.LAYOUT_ASSEMBLY},
+	# What a printer takes: one closed STL per part, each on the bed, a one-layer unibody merged.
+	{"label": "Printable parts (STL, one file per part)", "extension": "stl",
+		"layout": FrameExport.LAYOUT_PARTS},
 	# G6: the parts list, hardware counts, assembly order and a rough cutting cost, as one page.
 	{"label": "Build sheet (HTML: parts, hardware, cost)", "extension": "html",
 		"layout": FrameExport.LAYOUT_NEST},
@@ -510,6 +513,9 @@ func _on_export_chosen(id: int) -> void:
 		return
 	var spec: Dictionary = EXPORTS[id]
 	DirAccess.make_dir_recursive_absolute(EXPORT_DIRECTORY)
+	if str(spec["layout"]) == FrameExport.LAYOUT_PARTS:
+		_export_parts()
+		return
 	var path := "%s/%s.%s" % [EXPORT_DIRECTORY,
 		_safe_file_name(editor.document.name), str(spec["extension"])]
 	if str(spec["layout"]) == FrameExport.LAYOUT_NEST and str(spec["extension"]) == "svg":
@@ -521,6 +527,25 @@ func _on_export_chosen(id: int) -> void:
 		return
 	_set_status("Wrote %s — %s" % [ProjectSettings.globalize_path(path), str(spec["label"])])
 	OS.shell_open(ProjectSettings.globalize_path(EXPORT_DIRECTORY))
+
+
+## "Printable parts": one STL per part into its own folder. A part that is not a closed solid is
+## refused by `StlWriter` and NAMED in the status line rather than written.
+func _export_parts() -> void:
+	var base := _safe_file_name(editor.document.name)
+	var directory := "%s/%s-parts" % [EXPORT_DIRECTORY, base]
+	var results := FrameExport.write_parts(editor.document, directory, base)
+	var refused := PackedStringArray()
+	for entry in results:
+		if not bool(entry["ok"]):
+			refused.append(str(entry["reason"]))
+	if not refused.is_empty():
+		_set_status("REFUSED %d of %d parts: %s" % [refused.size(), results.size(),
+			"; ".join(refused)])
+	else:
+		_set_status("Wrote %d printable parts to %s" % [results.size(),
+			ProjectSettings.globalize_path(directory)])
+	OS.shell_open(ProjectSettings.globalize_path(directory))
 
 
 ## Sets the cutting bit the ready-to-cut check and the export notes assume (G3). One undo step.
