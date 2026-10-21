@@ -27,8 +27,73 @@ extends RefCounted
 ##   - `_test_regenerating_replaces_rather_than_accumulates` fails if `apply_layout` appends instead
 ##     of clearing: dragging the arm-length slider once would then double the frame's mass, and the
 ##     picture would still look right because the new arms land on top of the old ones.
+##   - `_test_every_motor_hole_sits_on_its_arm_with_margin` fails if the arm stops at the motor centre
+##     (`add_arm`'s outline, which the generator used as-is): the outer two holes of every motor are
+##     then off the plate, and on a 5" default the side two as well.
+##   - `_test_a_motor_hole_off_the_plate_warns` and `_test_a_stack_hole_off_the_plate_warns` fail if
+##     the edge distance goes back to unsigned: a hole hanging in the air then reads as a hole with
+##     material all round it, and the tear-out check passes it.
 
 const EPS := 1.0e-6
+
+
+## Every motor hole of every template, at a 5" default and a 3" on a 12×12 pattern, has its centre on
+## its own arm with 1.5×d of material behind it — the rule the tear-out check applies.
+static func _test_every_motor_hole_sits_on_its_arm_with_margin() -> TestResult:
+	var bad: Array = []
+	var holes_seen := 0
+	for overrides in [{}, {"arm_length_mm": 75.0, "arm_tip_width_mm": 12.0, "motor_pitch_mm": 12.0}]:
+		for layout_id in FrameLayouts.ids():
+			var document := FrameLayouts.build(layout_id, overrides)
+			for plate in document.plates:
+				if str(plate.get("role", "")) != AirframeDocument.ROLE_ARM:
+					continue
+				var outline := AirframeDocument.plate_outline(plate)
+				for hole in AirframeDocument.plate_holes(plate):
+					holes_seen += 1
+					var diameter := sqrt(absf(PolygonProps.area(hole)) * 4.0 / PI)
+					var margin := FrameHardware.signed_edge_distance_mm(outline,
+						PolygonProps.centroid(hole))
+					if margin < HardwareMass.EDGE_DISTANCE_RATIO * diameter - 0.05:
+						bad.append("%s %.1f mm" % [layout_id, margin])
+	return TestResult.new(
+		"every generated motor hole is on its arm, 1.5×d from the edge",
+		holes_seen > 100 and bad.is_empty(),
+		"%d holes, %d short: %s" % [holes_seen, bad.size(), str(bad.slice(0, 4))])
+
+
+## A motor hole drilled past the end of an arm warns. Built by hand — `add_arm` stops at the motor —
+## so the test does not depend on the generator having been fixed.
+static func _test_a_motor_hole_off_the_plate_warns() -> TestResult:
+	var document := AirframeDocument.new()
+	var arm := FrameEdits.add_arm(document, 0.0, 70.0, 20.0, 20.0, 5.0)
+	FrameEdits.add_hole(document, arm, Vector2(62.0, 0.0), 2.2)
+	FrameEdits.add_hole(document, arm, Vector2(78.0, 0.0), 2.2)
+	document.hardware.append({"kind": "screw", "material_id": "steel_fastener", "thread_d_mm": 2.0,
+		"shank_len_mm": 8.0, "head_d_mm": 3.8, "head_h_mm": 1.2, "position_mm": [70.0, 0.0],
+		"z_mm": 5.0})
+	var ids: Array = []
+	for warning in FrameHardware.joint_warnings(document):
+		ids.append(String(warning.id))
+	return TestResult.new(
+		"a motor hole whose centre is off the end of the arm is a hole-to-edge warning",
+		ids.has("hole_to_edge") and FrameHardware.motor_hole_edge_distance_mm(document) < 0.0,
+		"warnings %s, worst distance %.2f mm" % [ids, FrameHardware.motor_hole_edge_distance_mm(document)])
+
+
+## The same for a stack hole cut outside a centre plate.
+static func _test_a_stack_hole_off_the_plate_warns() -> TestResult:
+	var document := AirframeDocument.new()
+	var plate := FrameEdits.add_rectangle(document, Vector2.ZERO, 30.0, 30.0, 2.0, 0.0,
+		AirframeDocument.ROLE_BOTTOM)
+	FrameEdits.add_hole(document, plate, Vector2(10.0, 10.0), 3.2)
+	FrameEdits.add_hole(document, plate, Vector2(25.0, 0.0), 3.2)
+	var ids: Array = []
+	for warning in FrameHardware.mount_hole_warnings(document):
+		ids.append(String(warning.id))
+	return TestResult.new(
+		"a stack hole whose centre is off the plate is a hole-to-edge warning",
+		ids.has("hole_to_edge"), "warnings %s" % [ids])
 
 
 static func run() -> Array:
@@ -41,6 +106,9 @@ static func run() -> Array:
 	results.append(_test_regenerating_replaces_rather_than_accumulates())
 	results.append(_test_a_generated_frame_knows_its_layout_across_a_save())
 	results.append(_test_a_generated_frame_has_no_vendor_mass())
+	results.append(_test_every_motor_hole_sits_on_its_arm_with_margin())
+	results.append(_test_a_motor_hole_off_the_plate_warns())
+	results.append(_test_a_stack_hole_off_the_plate_warns())
 	return results
 
 

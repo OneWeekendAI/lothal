@@ -143,11 +143,11 @@ static func _the_designer_opens_on_the_fitted_frame(shell: GlassShell) -> TestRe
 			document.id if document != null else "", fitted])
 
 
-## The default build shows no hole-to-edge amber — and the Quad X the designer used to open on DOES
-## trip it, so this is not green because the check never runs.
+## The default build shows no hole-to-edge amber — and a Quad X with an arm cut back to a square end
+## at the motor DOES trip it, so this is not green because the check never runs.
 static func _the_default_build_has_no_false_hole_amber(shell: GlassShell) -> TestResult:
 	var row := _row(shell, &"hardware")
-	var quad_x_trips := not FrameHardware.joint_warnings(FrameLayouts.build("quad_x")).is_empty()
+	var quad_x_trips := not FrameHardware.joint_warnings(TestAirframeTabs.flagged_quad_x()).is_empty()
 	return TestResult.new("airframe dock: the default build's Screws & standoffs row is green (Quad X would be amber)",
 		quad_x_trips and row.get("status") == SectionRows.OK, _show(row) + " quad_x trips=%s" % quad_x_trips)
 

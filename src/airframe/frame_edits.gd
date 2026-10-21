@@ -826,15 +826,12 @@ static func set_arm_geometry(
 	var old_tip := AirframeDocument.point_of(plate.get("tip_point", [0.0, 0.0]))
 	var angle := deg_to_rad(angle_deg)
 	var along := Vector2(cos(angle), sin(angle))
-	var across := Vector2(-along.y, along.x)
 	var tip := along * length_mm
 
-	plate["outline"] = AirframeDocument.flatten(PackedVector2Array([
-		-across * absf(root_width_mm) * 0.5,
-		tip - across * absf(tip_width_mm) * 0.5,
-		tip + across * absf(tip_width_mm) * 0.5,
-		across * absf(root_width_mm) * 0.5,
-	]))
+	# A round end on the motor, tip-width across, as the generator cuts it (`FrameLayouts`): a square
+	# end at the motor centre leaves the motor's outer holes off the plate.
+	plate["outline"] = AirframeDocument.flatten(FrameLayouts.arm_outline_with_pad(
+		root_width_mm, tip, absf(tip_width_mm) * 0.5))
 	plate["root_point"] = [0.0, 0.0]
 	plate["tip_point"] = [tip.x, tip.y]
 
@@ -1050,6 +1047,28 @@ static func _scaled(
 ## for it: this measures the whole plate's spread perpendicular to the axis, which for a straight
 ## tapered arm is its width at that station and for a bent one is an over-estimate.
 static func _extent_across(points: PackedVector2Array, through: Vector2, across: Vector2) -> float:
+	# The exact section first: where the outline's edges cross the line through `through`. A round
+	# motor end has no vertex near that line (its tessellation steps over it), so the vertex band
+	# below under-reads it; the section does not.
+	var axis := Vector2(-across.y, across.x)
+	var low := INF
+	var high := -INF
+	for index in points.size():
+		var a := points[index]
+		var b := points[(index + 1) % points.size()]
+		var da := (a - through).dot(axis)
+		var db := (b - through).dot(axis)
+		if absf(da) < 1.0e-9:
+			var on := (a - through).dot(across)
+			low = minf(low, on)
+			high = maxf(high, on)
+		elif da * db < 0.0:
+			var hit := a + (b - a) * (da / (da - db))
+			var at := (hit - through).dot(across)
+			low = minf(low, at)
+			high = maxf(high, at)
+	if is_finite(low) and high > low:
+		return high - low
 	var lowest := INF
 	var highest := -INF
 	for point in points:

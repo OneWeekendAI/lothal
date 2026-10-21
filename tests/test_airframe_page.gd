@@ -69,10 +69,10 @@ static func _the_diagram_knows_its_mode() -> TestResult:
 	return TestResult.new("airframe page: the diagram holds its document and mode", ok, "")
 
 
-## The Quad X preset's motor-pad hole sits 1.9 mm from its edge (the Fasteners page flags it); the
-## Screws & standoffs drawing rings exactly that hole.
+## A Quad X with one arm cut back to a square end at the motor has motor holes off the plate (the
+## Fasteners page flags it); the Screws & standoffs drawing rings exactly that hole.
 static func _hardware_mode_marks_a_flagged_hole() -> TestResult:
-	var document := FrameLayouts.build("quad_x")
+	var document := TestAirframeTabs.flagged_quad_x()
 	var diagram := FramePlanDiagram.new()
 	diagram.show_plan(document, FramePlanDiagram.MODE_HARDWARE)
 	var marked := diagram.flagged_hole

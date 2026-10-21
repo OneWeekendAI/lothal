@@ -97,9 +97,11 @@ static func joint_warnings(document: AirframeDocument) -> Array[BuildWarning]:
 	var arm_t := arm_thickness_mm(document)
 	if screws.is_empty() or arm_t <= 0.0:
 		return empty
-	var edge_distance := motor_hole_edge_distance_mm(document)
-	if edge_distance <= 0.0:
+	var worst := worst_edge_hole(document)
+	if worst.is_empty():
 		return empty
+	# Signed: NEGATIVE for a hole whose centre is off the plate, which must warn, not vanish.
+	var edge_distance := float(worst["distance_mm"])
 	var screw: Dictionary = screws[0]
 	return HardwareMass.joint_warnings(
 		float(screw.get("shank_len_mm", 0.0)),
@@ -132,7 +134,17 @@ static func motor_hole_edge_distance_mm(document: AirframeDocument) -> float:
 	return float(hole.get("distance_mm", 0.0))
 
 
+## Hole centre to plate edge, mm, NEGATIVE when the centre is outside the outline. The unsigned
+## distance read a hole hanging off the end of an arm as one with plenty of material behind it — a
+## generated arm that stopped at the motor centre passed the tear-out check with half its motor holes
+## in the air.
+static func signed_edge_distance_mm(outline: PackedVector2Array, point: Vector2) -> float:
+	var distance := PolygonProps.distance_to_boundary(outline, point)
+	return distance if Geometry2D.is_point_in_polygon(point, outline) else -distance
+
+
 ## `{centre_mm: Vector2, distance_mm}` of the first arm's hole nearest its plate edge, or `{}`.
+## `distance_mm` is signed (`signed_edge_distance_mm`).
 ## The centre is what the Screws & standoffs page marks on its drawing.
 static func worst_edge_hole(document: AirframeDocument) -> Dictionary:
 	var plates := arm_plates(document)
@@ -147,7 +159,7 @@ static func worst_edge_hole(document: AirframeDocument) -> Dictionary:
 	var at := Vector2.ZERO
 	for hole in holes:
 		var centre := PolygonProps.centroid(hole)
-		var distance := PolygonProps.distance_to_boundary(outline, centre)
+		var distance := signed_edge_distance_mm(outline, centre)
 		if distance < worst:
 			worst = distance
 			at = centre
@@ -221,7 +233,7 @@ static func worst_mount_hole(document: AirframeDocument) -> Dictionary:
 			if thread <= 0.0:
 				continue
 			var centre := PolygonProps.centroid(hole)
-			var distance := PolygonProps.distance_to_boundary(outline, centre)
+			var distance := signed_edge_distance_mm(outline, centre)
 			var ratio := distance / (HardwareMass.EDGE_DISTANCE_RATIO * thread)
 			if ratio < worst_ratio:
 				worst_ratio = ratio

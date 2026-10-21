@@ -226,7 +226,8 @@ func _draw_hardware() -> void:
 	if not flagged_hole.is_empty():
 		var at := _xf.to_pixels(flagged_hole["centre_mm"])
 		draw_arc(at, 14.0, 0.0, TAU, 32, LothalTheme.WARNING, 2.0)
-		_label(at + Vector2(18, 4), "%.1f mm to edge" % float(flagged_hole["distance_mm"]),
+		var gap := float(flagged_hole["distance_mm"])
+		_label(at + Vector2(18, 4), ("%.1f mm to edge" % gap) if gap >= 0.0 else "off the plate",
 			LothalTheme.WARNING)
 
 

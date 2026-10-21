@@ -440,7 +440,7 @@ static func _leading_number(text: String) -> float:
 ## The Fasteners "Assembly checks" row is a spec line, not a paragraph: the count and the worst
 ## check's SHORT form. The sentence is the page's "Why?". Breaks if the row goes back to `message`.
 static func _test_a_flagged_joint_reads_as_a_short_line() -> TestResult:
-	var document := FrameLayouts.build("quad_x")
+	var document := flagged_quad_x()
 	var panel := FastenersDetails.new()
 	panel.render(document)
 	var text := panel.row_text("checks")
@@ -470,3 +470,21 @@ static func _test_the_designer_drawer_carries_the_catalogue_sheet(catalog: Parts
 	drawer.free()
 	return TestResult.new("designer drawer: a Catalogue tab shows the fitted frame's published sheet",
 		ok, got)
+
+
+## A Quad X whose first arm is cut back to the shape generated arms had before the motor pad: a
+## 12 mm square end AT the motor centre, so its outer motor holes hang off the plate. The fixture for
+## "a joint the check flags" — the preset itself no longer trips it.
+static func flagged_quad_x() -> AirframeDocument:
+	var document := FrameLayouts.build("quad_x")
+	for index in document.plates.size():
+		if str(document.plates[index].get("role", "")) != AirframeDocument.ROLE_ARM:
+			continue
+		var plate: Dictionary = document.plates[index]
+		var tip := AirframeDocument.point_of(plate["tip_point"])
+		var along := tip.normalized()
+		var across := Vector2(-along.y, along.x)
+		plate["outline"] = AirframeDocument.flatten(PackedVector2Array([
+			-across * 8.0, tip - across * 6.0, tip + across * 6.0, across * 8.0]))
+		break
+	return document

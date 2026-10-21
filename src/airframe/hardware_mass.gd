@@ -161,6 +161,11 @@ static func hole_to_edge_warning(edge_distance_mm: float, hole_d_mm: float) -> B
 	var required := EDGE_DISTANCE_RATIO * hole_d_mm
 	if edge_distance_mm >= required:
 		return null
+	if edge_distance_mm < 0.0:
+		return BuildWarning.limiting(&"hole_to_edge",
+			"A %.1f mm hole's centre is %.1f mm OUTSIDE the plate edge: there is no material behind it at all, so the screw it is for has nothing to hold. Take the outline out round the hole (%.1f mm of material behind its centre), or move the hole in." % [
+				hole_d_mm, -edge_distance_mm, required],
+			{"edge_distance_mm": edge_distance_mm, "required_mm": required, "hole_d_mm": hole_d_mm})
 	return BuildWarning.limiting(&"hole_to_edge",
 		"A %.1f mm hole sits %.1f mm from the plate edge, inside the %.1f mm (1.5x diameter) of material a bolt needs behind it. What binds here is the edge margin, not the plate: move the hole in, or take the outline out, and the same bolt is fine. Left as it is, carbon tears out of the edge in a crash rather than bending." % [
 			hole_d_mm, edge_distance_mm, required],
