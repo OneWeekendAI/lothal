@@ -34,6 +34,8 @@ static func run() -> Array:
 	results.append(_test_parallel_axis_computed_two_ways(materials))
 	results.append(_test_the_tensor_does_not_care_where_the_origin_is(materials))
 	results.append(_test_cg_rises_with_a_raised_plate(materials))
+	results.append(_test_overlapping_plates_on_one_layer_weigh_once(materials))
+	results.append(_test_a_unibody_weighs_what_it_prints(materials))
 	results.append(_test_preset_masses_land_within_ten_percent(catalog, materials))
 	results.append(_test_against_the_existing_mass_model(catalog, materials))
 	results.append_array(_test_prop_guard_enters_via_extra_parts(materials))
@@ -567,26 +569,64 @@ static func _test_the_tensor_does_not_care_where_the_origin_is(materials: FrameM
 			offset.x, lift, offset.y, worst, absf(b.i_xz - a.i_xz) / absf(a.i_xz)] if problems.is_empty() else "; ".join(problems))
 
 
+## Two 40 mm squares on one layer, overlapping by half: ONE piece of material 60 × 40 mm, centred
+## between them. Summed plate by plate (the old model) it is 3200 mm² — the overlap twice.
+## MUTATION: weighing each plate on its own outline fails this at 4/3 of the mass.
+static func _test_overlapping_plates_on_one_layer_weigh_once(materials: FrameMaterials) -> TestResult:
+	var doc := _document_of([
+		AirframeDocument.make_plate(_rectangle(40.0, 40.0, Vector2(-10.0, 0.0)), [], 2.0, 0.0,
+			AirframeDocument.ROLE_BOTTOM),
+		AirframeDocument.make_plate(_rectangle(40.0, 40.0, Vector2(10.0, 0.0)), [], 2.0, 0.0,
+			AirframeDocument.ROLE_ARM),
+	])
+	var props := AirframeProperties.compute(doc, materials)
+	var expected := materials.density(CARBON) * 60.0 * 40.0 * 2.0 * 1.0e-9
+	return TestResult.new(
+		"overlapping plates on one layer weigh as their union, the overlap once",
+		_relative(props.total_mass_kg, expected) < 1e-6 and absf(props.cg_m.x) < 1e-9,
+		"%.4f g against %.4f g (60 × 40 × 2 mm)" % [props.total_mass_g(), expected * 1000.0])
+
+
+## A generated Quad X whose arms and bottom plate share a layer weighs exactly what its printable
+## parts hold — the mass and the STL are the same material. On the old sum it was ~20% heavy here.
+static func _test_a_unibody_weighs_what_it_prints(materials: FrameMaterials) -> TestResult:
+	var doc := FrameLayouts.build("quad_x", {"arm_length_mm": 75.0, "arm_thickness_mm": 4.0,
+		"plate_thickness_mm": 4.0, "material_id": "pa12_sls"})
+	doc.hardware = []
+	var printed_mm3 := 0.0
+	for part in FrameExport.printable_parts(doc):
+		printed_mm3 += float(StlWriter.check_manifold(FrameExport.part_triangles(part))["volume_mm3"])
+	var props := AirframeProperties.compute(doc, materials)
+	var expected := materials.density("pa12_sls") * printed_mm3 * 1.0e-9
+	return TestResult.new(
+		"a one-layer unibody weighs its printed volume times its density",
+		_relative(props.total_mass_kg, expected) < 1e-4,
+		"%.3f g computed, %.3f g printed (%.0f mm³)" % [props.total_mass_g(), expected * 1000.0,
+			printed_mm3])
+
+
 static func _test_cg_rises_with_a_raised_plate(materials: FrameMaterials) -> TestResult:
 	# §3.3's point, in miniature: a mass at a height has a height. The existing model cannot express
 	# this at all — every frame mass in it sits at the origin — and it is the term that becomes
 	# §4.6's CG-above-thrust-plane.
+	# STACKED, not superposed: two plates in one place on one layer are one piece of material and are
+	# weighed once (PlateLayers), so the low pair sits the top plate on the bottom one.
 	var low := _document_of([
 		AirframeDocument.make_plate(_rectangle(80.0, 80.0), [], 2.0, 0.0, AirframeDocument.ROLE_BOTTOM),
-		AirframeDocument.make_plate(_rectangle(80.0, 80.0), [], 2.0, 0.0, AirframeDocument.ROLE_TOP),
+		AirframeDocument.make_plate(_rectangle(80.0, 80.0), [], 2.0, 2.0, AirframeDocument.ROLE_TOP),
 	])
 	var tall := _document_of([
 		AirframeDocument.make_plate(_rectangle(80.0, 80.0), [], 2.0, 0.0, AirframeDocument.ROLE_BOTTOM),
-		AirframeDocument.make_plate(_rectangle(80.0, 80.0), [], 2.0, 30.0, AirframeDocument.ROLE_TOP),
+		AirframeDocument.make_plate(_rectangle(80.0, 80.0), [], 2.0, 32.0, AirframeDocument.ROLE_TOP),
 	])
 
 	var a := AirframeProperties.compute(low, materials)
 	var b := AirframeProperties.compute(tall, materials)
 
-	# Two identical plates, one lifted 30 mm: the CG is at half of that, and both plates gain
-	# m·(15 mm)² of roll and pitch. Exact, and neither term is a fitted one.
-	var half := 0.015
-	var expected_gain := a.total_mass_kg * half * half
+	# Two identical plates, one lifted a further 30 mm: the CG rises from 1 mm to 16 mm, and both
+	# plates' parallel-axis term grows from m·(1 mm)² to m·(16 mm)². Exact, and neither is fitted.
+	var half := 0.016
+	var expected_gain := a.total_mass_kg * (half * half - 0.001 * 0.001)
 	var problems: Array = []
 	if _relative(b.cg_m.y, half) > 1e-6:   # single-precision Vector3 floor
 		problems.append("CG height %.6f m, expected %.6f" % [b.cg_m.y, half])
@@ -765,7 +805,13 @@ static func _test_against_the_existing_mass_model(
 	# EVERY mass-bearing item reached the sum. A whole category quietly dropped — the hardware, say —
 	# leaves the mass identity above intact (it is an identity about the swap, not about the total)
 	# and the symmetry intact, and would otherwise pass unseen. Counting is the cheap witness.
-	var expected_items := doc.plates.size() + doc.hardware.size() + doc.pads.size() + doc.straps.size()
+	# Plates count by piece of material: a layer's overlapping plates are ONE element (PlateLayers).
+	var uprights := 0
+	for plate in doc.plates:
+		if AirframeDocument.is_upright(plate):
+			uprights += 1
+	var expected_items := PlateLayers.flat_groups(doc).size() + uprights + doc.hardware.size() \
+		+ doc.pads.size() + doc.straps.size()
 	if frame_only.contributions.size() != expected_items:
 		problems.append("%d of %d document items reached the mass sum" % [
 			frame_only.contributions.size(), expected_items])

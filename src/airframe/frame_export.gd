@@ -55,9 +55,6 @@ const LAYOUT_ASSEMBLY := "assembly"
 const LAYOUT_NEST := "nest"
 ## Not a sheet layout: the Export menu's "one STL per printable part" (`write_parts`).
 const LAYOUT_PARTS := "parts"
-## A vertex closer than this to the line through its neighbours is on a straight edge, for a printed
-## part (`_simplified`). A micron: far below any nozzle, far above float rounding in a union.
-const COLLINEAR_MM := 1.0e-3
 
 ## G3 — the ready-to-cut extras. A DXF layer a cutter reads as "not a cut": the per-plate notes and
 ## the sheet header. Holes flagged countersunk go on `<ROLE>_COUNTERSINK` instead of `<ROLE>_HOLES`,
@@ -494,45 +491,17 @@ static func printable_parts(document: AirframeDocument, merge_layers: bool = tru
 	var parts: Array = []
 	if document == null:
 		return parts
-	var flat: Array[int] = []
-	for index in document.plates.size():
-		var plate: Dictionary = document.plates[index]
-		if not AirframeDocument.is_upright(plate) and _solid_plate(plate):
-			flat.append(index)
-
-	# Union-find over overlapping same-layer plates.
-	var group := {}
-	for index in flat:
-		group[index] = index
-	for a in flat.size():
-		for b in range(a + 1, flat.size()):
-			var pa: Dictionary = document.plates[flat[a]]
-			var pb: Dictionary = document.plates[flat[b]]
-			if not merge_layers or not _same_layer(document, pa, pb):
-				continue
-			if Geometry2D.intersect_polygons(_ccw(AirframeDocument.plate_outline(pa)),
-					_ccw(AirframeDocument.plate_outline(pb))).is_empty():
-				continue
-			group[_root_of(group, flat[a])] = _root_of(group, flat[b])
-	var members := {}
-	for index in flat:
-		var root := _root_of(group, index)
-		if not members.has(root):
-			members[root] = []
-		(members[root] as Array).append(index)
-
-	# In document order of each part's first plate, so part numbers follow the plate list.
-	for index in flat:
-		var list: Array = members[_root_of(group, index)]
-		if int(list[0]) != index:
+	for list in PlateLayers.flat_groups(document, merge_layers):
+		var index := int(list[0])
+		if not PlateLayers.solid_plate(document.plates[index]):
 			continue
 		var plates: Array = []
 		for member in list:
 			plates.append(document.plates[member])
-		var region := _region_of(plates)
+		var region := PlateLayers.region_of(plates)
 		var first: Dictionary = document.plates[index]
 		parts.append({
-			"name": _part_name(plates),
+			"name": PlateLayers.name_of(plates),
 			"plates": list.duplicate(),
 			"outlines": region["outlines"],
 			"holes": region["holes"],
@@ -542,16 +511,16 @@ static func printable_parts(document: AirframeDocument, merge_layers: bool = tru
 		})
 
 	for pad in document.pads:
-		if not _solid_plate(pad):
+		if not PlateLayers.solid_plate(pad):
 			continue
-		var region := _region_of([pad])
+		var region := PlateLayers.region_of([pad])
 		parts.append({"name": "pad", "plates": [], "outlines": region["outlines"],
 			"holes": region["holes"], "thickness_mm": AirframeDocument.plate_thickness_mm(pad),
 			"z_mm": AirframeDocument.plate_z_mm(pad), "upright": false})
 
 	for entry in _upright_laid_flat(document):
 		var plate: Dictionary = entry["plate"]
-		if not _solid_plate(plate):
+		if not PlateLayers.solid_plate(plate):
 			continue
 		var offset: Vector2 = entry["offset"]
 		var moved := plate.duplicate()
@@ -561,7 +530,7 @@ static func printable_parts(document: AirframeDocument, merge_layers: bool = tru
 		for hole in AirframeDocument.plate_holes(plate):
 			holes.append(AirframeDocument.flatten(_shifted(hole, offset)))
 		moved["holes"] = holes
-		var region := _region_of([moved])
+		var region := PlateLayers.region_of([moved])
 		parts.append({"name": "side", "plates": [document.plates.find(plate)],
 			"outlines": region["outlines"], "holes": region["holes"],
 			"thickness_mm": AirframeDocument.plate_thickness_mm(plate), "z_mm": 0.0,
@@ -802,142 +771,12 @@ static func _bridge_clear(from: Vector2, to: Vector2, loops: Array) -> bool:
 	return true
 
 
-## The union of plates' outlines and every hole that falls in it. Holes that overlap merge; a hole
-## that crosses the edge becomes a notch in the outline.
-static func _region_of(plates: Array) -> Dictionary:
-	var outlines: Array = []
-	var holes: Array = []
-	for plate in plates:
-		var merged := _ccw(AirframeDocument.plate_outline(plate))
-		var keep: Array = []
-		for existing in outlines:
-			if Geometry2D.intersect_polygons(existing, merged).is_empty():
-				keep.append(existing)
-				continue
-			var best := PackedVector2Array()
-			for piece in Geometry2D.merge_polygons(existing, merged):
-				if PolygonProps.area(piece) < 0.0:
-					holes.append(_ccw(piece))
-				elif PolygonProps.area(piece) > PolygonProps.area(best):
-					best = piece
-			merged = best
-		keep.append(merged)
-		outlines = keep
-	for plate in plates:
-		for hole in AirframeDocument.plate_holes(plate):
-			holes.append(_ccw(hole))
-
-	var interior: Array = []
-	for hole in holes:
-		for index in outlines.size():
-			var outline: PackedVector2Array = outlines[index]
-			var overlap := Geometry2D.intersect_polygons(outline, hole)
-			if overlap.is_empty():
-				continue
-			var inside := true
-			for point in hole:
-				if not Geometry2D.is_point_in_polygon(point, outline):
-					inside = false
-					break
-			if inside:
-				interior.append(hole)
-			else:
-				var pieces: Array = []
-				for piece in Geometry2D.clip_polygons(outline, hole):
-					if PolygonProps.area(piece) > 0.0:
-						pieces.append(piece)
-				outlines.remove_at(index)
-				outlines.append_array(pieces)
-			break
-	# Overlapping holes become one.
-	var joined: Array = []
-	for hole in interior:
-		var merged: PackedVector2Array = hole
-		var keep: Array = []
-		for existing in joined:
-			if Geometry2D.intersect_polygons(existing, merged).is_empty():
-				keep.append(existing)
-				continue
-			for piece in Geometry2D.merge_polygons(existing, merged):
-				if PolygonProps.area(piece) > 0.0:
-					merged = piece
-		keep.append(merged)
-		joined = keep
-	var cw_holes: Array = []
-	for hole in joined:
-		cw_holes.append(_cw(_simplified(hole)))
-	var ccw_outlines: Array = []
-	for outline in outlines:
-		ccw_outlines.append(_ccw(_simplified(outline)))
-	return {"outlines": ccw_outlines, "holes": cw_holes}
-
-
-## A loop without repeated points or points on a straight run. A union leaves a vertex wherever two
-## outlines crossed, and one that lands on a straight edge makes a cap triangle of zero area: dropped,
-## it leaves the wall edges beside it with no cap to meet; kept, it is a facet a slicer rejects. Taking
-## the vertex out of the loop removes the choice — the wall and the cap both skip it.
-static func _simplified(points: PackedVector2Array) -> PackedVector2Array:
-	var out := points
-	var changed := true
-	while changed and out.size() > 3:
-		changed = false
-		for index in out.size():
-			var before := out[(index - 1 + out.size()) % out.size()]
-			var here := out[index]
-			var after := out[(index + 1) % out.size()]
-			var span := after - before
-			var off_line := absf(span.cross(here - before)) / maxf(span.length(), 1.0e-12)
-			if here.distance_to(before) < COLLINEAR_MM or off_line < COLLINEAR_MM:
-				out = out.duplicate()
-				out.remove_at(index)
-				changed = true
-				break
-	return out
-
-
-static func _solid_plate(plate: Dictionary) -> bool:
-	return AirframeDocument.plate_outline(plate).size() >= 3 \
-		and AirframeDocument.plate_thickness_mm(plate) > 0.0
-
-
-static func _same_layer(document: AirframeDocument, a: Dictionary, b: Dictionary) -> bool:
-	return absf(AirframeDocument.plate_z_mm(a) - AirframeDocument.plate_z_mm(b)) < 1.0e-6 \
-		and absf(AirframeDocument.plate_thickness_mm(a) - AirframeDocument.plate_thickness_mm(b)) \
-			< 1.0e-6 \
-		and document.plate_material_id(a) == document.plate_material_id(b)
-
-
-static func _root_of(group: Dictionary, index: int) -> int:
-	var at := index
-	while int(group[at]) != at:
-		at = int(group[at])
-	return at
-
-
-## "bottom", "top", or for a merged layer its roles in order: "bottom+4arm".
-static func _part_name(plates: Array) -> String:
-	var counts := {}
-	for plate in plates:
-		var role := str(plate.get("role", "plate"))
-		counts[role] = int(counts.get(role, 0)) + 1
-	var names := PackedStringArray()
-	for role in [AirframeDocument.ROLE_BOTTOM, AirframeDocument.ROLE_MID, AirframeDocument.ROLE_TOP,
-			AirframeDocument.ROLE_ARM]:
-		if counts.has(role):
-			var count := int(counts[role])
-			names.append(role if count == 1 else "%d%s" % [count, role])
-			counts.erase(role)
-	for role in counts:
-		names.append(str(role))
-	return "+".join(names)
-
-
 static func _ccw(points: PackedVector2Array) -> PackedVector2Array:
-	return PolygonProps.reversed(points) if PolygonProps.area(points) < 0.0 else points
+	return PlateLayers.ccw(points)
 
 
 static func _cw(points: PackedVector2Array) -> PackedVector2Array:
-	return PolygonProps.reversed(points) if PolygonProps.area(points) > 0.0 else points
+	return PlateLayers.cw(points)
 
 
 static func _max_x(points: PackedVector2Array) -> float:

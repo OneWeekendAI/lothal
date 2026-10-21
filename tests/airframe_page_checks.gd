@@ -215,8 +215,9 @@ static func _the_frame_page_says_what_flies_beside_what_is_drawn(shell: GlassShe
 	var summary := shell.workbench().numbers.summary_text()
 	# 107 g, not 108, since airframe gaps G1: the preset top plate now has its two 22 × 3.5 mm strap
 	# slots cut out of it (StrapSlots.preset_slots), and the drawn mass integrates the plate it draws.
-	return TestResult.new("airframe dock: the Frame page shows drawn 107 g beside 'Flies as 110 g, as weighed'",
-		summary.begins_with("107 g · Flies as 110 g, as weighed"), summary)
+	# 106 g, not 107, since the four arms' overlap at the centre is weighed once (PlateLayers).
+	return TestResult.new("airframe dock: the Frame page shows drawn 106 g beside 'Flies as 110 g, as weighed'",
+		summary.begins_with("106 g · Flies as 110 g, as weighed"), summary)
 
 
 static func _the_frame_page_carries_the_fitted_catalogue_sheet(shell: GlassShell) -> TestResult:

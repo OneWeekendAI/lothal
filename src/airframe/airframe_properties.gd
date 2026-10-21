@@ -131,7 +131,37 @@ static func compute(
 	# the composite CG needs every mass — and doing them as two explicit passes over one list is
 	# what stops the second pass from disagreeing with the first about what was in the first.
 	var elements: Array = []
+	# Plates that are one piece of material — a layer's overlapping plates, the arms reaching the
+	# centre over the bottom plate — are weighed as their UNION (`PlateLayers`). Summed plate by plate,
+	# the overlap counted twice: a third heavy on a printed 3" unibody. A plate alone is weighed off its
+	# own outline exactly as before.
+	for list in PlateLayers.flat_groups(document):
+		var first: Dictionary = document.plates[int(list[0])]
+		if list.size() == 1:
+			var element: Variant = _plate_element(first, document.plate_material_id(first), materials,
+				str(first.get("role", "plate")))
+			if element != null:
+				elements.append(element)
+			continue
+		var members: Array = []
+		for index in list:
+			members.append(document.plates[index])
+		var region := PlateLayers.region_of(members)
+		for outline in region["outlines"]:
+			var inside: Array = []
+			for hole in region["holes"]:
+				if Geometry2D.is_point_in_polygon((hole as PackedVector2Array)[0], outline):
+					inside.append(hole)
+			var merged := AirframeDocument.make_plate(outline, inside,
+				AirframeDocument.plate_thickness_mm(first), AirframeDocument.plate_z_mm(first),
+				str(first.get("role", "plate")))
+			var element: Variant = _plate_element(merged, document.plate_material_id(first), materials,
+				PlateLayers.name_of(members))
+			if element != null:
+				elements.append(element)
 	for plate in document.plates:
+		if not AirframeDocument.is_upright(plate):
+			continue
 		var element: Variant = _plate_element(plate, document.plate_material_id(plate), materials,
 			str(plate.get("role", "plate")))
 		if element != null:
