@@ -256,6 +256,54 @@ static func add_motor_mount(
 	return document.motors.size() - 1
 
 
+## Whether a stack pattern by name fits the plate at `centre`: every hole centre inside the outline.
+## Pure, so a caller can ask before it records an undo step for an add that would be refused.
+static func stack_mount_fits(
+	document: AirframeDocument,
+	plate_index: int,
+	centre: Vector2,
+	pattern: String
+) -> bool:
+	if not _has_plate(document, plate_index):
+		return false
+	var corners := AirframeDocument.stack_mount_centres(centre, pattern)
+	if corners.is_empty():
+		return false
+	var outline := AirframeDocument.plate_outline(document.plates[plate_index])
+	for corner in corners:
+		if not Geometry2D.is_point_in_polygon(corner, outline):
+			return false
+	return true
+
+
+## A flight-stack mount by name — "20x20" (M2), "25.5x25.5" (M2, or "25.5x25.5 M3"), "30.5x30.5"
+## (M3) — cut into one plate as four holes centred on `centre` (airframe gaps G2, §10 q5).
+##
+## THE HOLES COME FROM `AirframeDocument.stack_mount_holes`, the parser the catalog presets cut their
+## stack holes with, so a drawn frame and a preset on the same pattern are cut identically. Nothing
+## else is added: the stack's own mass belongs to the parts in Lab, and a standoff is "+ Hardware".
+## Placed this way the holes are real geometry, so `FrameWarnings` runs the §5.3 hole-to-edge check
+## on them like any other bolt hole.
+##
+## Square to the plate, not rotated: a stack is bolted square to the frame's axes on every frame
+## anybody sells. Refused WHOLE — false and nothing written — when the plate does not exist, the name
+## has no pitch, or a hole centre falls outside the plate, for the reason `add_motor_mount` gives.
+static func add_stack_mount(
+	document: AirframeDocument,
+	plate_index: int,
+	centre: Vector2,
+	pattern: String
+) -> bool:
+	if not stack_mount_fits(document, plate_index, centre, pattern):
+		return false
+	var plate: Dictionary = document.plates[plate_index]
+	var holes: Array = plate.get("holes", [])
+	for hole in AirframeDocument.stack_mount_holes(centre, pattern):
+		holes.append(AirframeDocument.flatten(hole))
+	plate["holes"] = holes
+	return true
+
+
 # ---------------------------------------------------------------------------
 # Editing an outline
 # ---------------------------------------------------------------------------

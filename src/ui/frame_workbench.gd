@@ -79,6 +79,8 @@ var _open_button: MenuButton
 var _export_button: MenuButton
 var _import_dialog: FileDialog
 var _symmetry_button: CheckButton
+## The pattern "+ Stack mount" cuts: one entry per `AirframeDocument.STACK_MOUNT_PATTERNS`.
+var stack_picker: OptionButton
 var _status: Label
 var _selected_plate := -1
 ## True while a document is being opened. `FramePlanEditor.open` emits `document_changed` like any
@@ -206,6 +208,17 @@ func _build_toolbar() -> Control:
 		"An M3 standoff and its two screws, on the selected plate"))
 	row.add_child(_button("+ Motor mount", _on_add_motor_mount,
 		"A motor and its four bolt holes, cut into the selected plate"))
+	# "+ Stack mount" and the pattern it cuts, side by side: the picker is the button's argument, so
+	# it sits where the builder's eye already is rather than in the controls column (G2).
+	row.add_child(_button("+ Stack mount", func() -> void: add_stack_mount(stack_pattern()),
+		"The flight stack's four bolt holes, on the pattern beside this, cut into the selected plate"))
+	stack_picker = OptionButton.new()
+	for pattern in AirframeDocument.STACK_MOUNT_PATTERNS:
+		stack_picker.add_item(stack_pattern_label(str(pattern)))
+	stack_picker.select(AirframeDocument.STACK_MOUNT_PATTERNS.find("30.5x30.5"))
+	stack_picker.tooltip_text = "Stack pattern for \"+ Stack mount\""
+	_compact(stack_picker)
+	row.add_child(stack_picker)
 	row.add_child(_button("Copy", _on_duplicate_plate, "Copy the selected plate"))
 	row.add_child(_button("Mirror", _on_replicate,
 		"Repeat the selected arm around the origin, once per arm the layout has"))
@@ -649,6 +662,55 @@ func _on_add_motor_mount() -> void:
 	_set_status("Added a motor on a %.0f×%.0f pattern. %s" % [pitch, pitch,
 		"Spins balance." if is_zero_approx(balance) else
 		"Spins are off by %.0f — the count cannot balance until it is even." % absf(balance)])
+
+
+## The stack pattern the picker beside "+ Stack mount" has chosen, by name.
+func stack_pattern() -> String:
+	var index := stack_picker.selected if stack_picker != null else -1
+	if index < 0 or index >= AirframeDocument.STACK_MOUNT_PATTERNS.size():
+		return "30.5x30.5"
+	return str(AirframeDocument.STACK_MOUNT_PATTERNS[index])
+
+
+## "30.5×30.5 M3": a pattern as the picker shows it, the thread spelled out — the bare "25.5x25.5"
+## is an M2 stack, and a builder holding M3 screws needs to see that before they cut.
+static func stack_pattern_label(pattern: String) -> String:
+	var spec := AirframeDocument.stack_mount_spec(pattern)
+	if spec.is_empty():
+		return pattern
+	var pitch := "%s" % _trim_mm(float(spec["pitch_mm"]))
+	return "%s×%s M%s" % [pitch, pitch, _trim_mm(float(spec["thread_d_mm"]))]
+
+
+static func _trim_mm(value: float) -> String:
+	return ("%.1f" % value).trim_suffix(".0")
+
+
+## Cuts a stack mount by name into the selected plate, centred on it — one undo step, or nothing.
+##
+## THE FIT IS ASKED BEFORE THE HISTORY IS RECORDED. `_on_add_motor_mount` records first and then
+## finds the pattern does not fit, which leaves an undo step that undoes nothing; here a refused add
+## changes neither the frame nor the undo stack. Returns whether the holes were cut.
+func add_stack_mount(pattern: String) -> bool:
+	if editor.document == null:
+		return false
+	var label := stack_pattern_label(pattern)
+	if _selected_plate < 0 or _selected_plate >= editor.document.plates.size():
+		_set_status("Select the plate the stack bolts to first.")
+		return false
+	var plate: Dictionary = editor.document.plates[_selected_plate]
+	var centre := PolygonProps.centroid(AirframeDocument.plate_outline(plate))
+	if not FrameEdits.stack_mount_fits(editor.document, _selected_plate, centre, pattern):
+		_set_status("A %s stack pattern does not fit inside that plate." % label)
+		return false
+	editor.history.record(editor.document)
+	FrameEdits.add_stack_mount(editor.document, _selected_plate, centre, pattern)
+	mark_hand_edited()
+	_on_document_edited(editor.document)
+	var spec := AirframeDocument.stack_mount_spec(pattern)
+	_set_status("Cut a %s stack mount: four %s mm holes, checked for edge distance." % [
+		label, _trim_mm(float(spec["hole_d_mm"]))])
+	return true
 
 
 ## Copies the selected plate on top of itself, offset enough to grab.

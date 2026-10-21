@@ -480,7 +480,13 @@ static func from_catalog_frame(frame: Dictionary) -> AirframeDocument:
 	var specs: Dictionary = frame.get("specs", {})
 	var arm_mm := float(specs.get("arm_mm", 0.0))
 	var motor_pitch := _pattern_pitch_mm(str(specs.get("motor_mount", "16x16")))
-	var stack_pitch := _pattern_pitch_mm(str(specs.get("stack_mount", "30.5x30.5")))
+	# THE STACK BY NAME, through the same parser "+ Stack mount" uses (airframe gaps G2), so a preset
+	# and a drawn frame on the same pattern get the same four holes to the hundredth of a millimetre.
+	var stack_spec := stack_mount_spec(str(specs.get("stack_mount", "30.5x30.5")))
+	if stack_spec.is_empty():
+		stack_spec = stack_mount_spec("30.5x30.5")
+	var stack_pitch := float(stack_spec["pitch_mm"])
+	var stack_thread := float(stack_spec["thread_d_mm"])
 
 	doc.id = str(frame.get("part_id", ""))
 	doc.name = str(frame.get("name", ""))
@@ -578,10 +584,7 @@ static func from_catalog_frame(frame: Dictionary) -> AirframeDocument:
 	# Bottom and top centre plates. The arms are sandwiched between them, which is why the bottom
 	# plate sits at the same z as the arms rather than under them: on a bolted 5" frame the arm and
 	# the bottom plate ARE the same layer of the sandwich, and on a unibody the arms are that plate.
-	var stack_holes: Array = []
-	for corner in _bolt_pattern(Vector2.ZERO, stack_pitch, 0.0):
-		stack_holes.append(PolygonProps.tessellate_circle(corner, 1.6,
-			PolygonProps.DEFAULT_CHORD_TOLERANCE_MM, true))
+	var stack_holes := stack_mount_holes(Vector2.ZERO, stack_spec)
 	doc.plates.append(make_plate(_square(plate_side), stack_holes, t_plate, 0.0, ROLE_BOTTOM))
 	# The top plate carries the pack, so it carries the two strap slots a pack is strapped through
 	# (airframe.md §6.4). GUESSED, as the arm width is: the catalog publishes no slot, so these are
@@ -602,7 +605,9 @@ static func from_catalog_frame(frame: Dictionary) -> AirframeDocument:
 		var corner: Vector2 = _bolt_pattern(Vector2.ZERO, stack_pitch, 0.0)[i % 4]
 		doc.hardware.append({
 			"kind": "screw", "material_id": "steel_fastener",
-			"thread_d_mm": 3.0, "shank_len_mm": 8.0, "head_d_mm": 5.7, "head_h_mm": 1.8,
+			# The screw the stack holes were drilled for: an M2 stack is not held with M3 screws.
+			"thread_d_mm": stack_thread, "shank_len_mm": 8.0,
+			"head_d_mm": stack_thread * 1.9, "head_h_mm": stack_thread * 0.6,
 			"position_mm": [corner.x, corner.y],
 			"z_mm": 0.0 if i < 4 else top_z,
 		})
@@ -658,12 +663,76 @@ static func snap_to_stock(thickness_mm: float) -> float:
 	return best
 
 
-## "30.5x30.5" → 30.5. A pattern with one number is square; the first number is the pitch.
+## "30.5x30.5" → 30.5. A pattern with one number is square; the first number is the pitch. Anything
+## after whitespace ("25.5x25.5 M3") is the thread, read by `stack_mount_spec`, not here.
 static func _pattern_pitch_mm(pattern: String) -> float:
-	var parts := pattern.to_lower().split("x")
+	var head := pattern.strip_edges().to_lower().split(" ", false)
+	if head.is_empty():
+		return 0.0
+	var parts := head[0].split("x")
 	if parts.is_empty():
 		return 0.0
 	return float(parts[0])
+
+
+# ---------------------------------------------------------------------------
+# Standard stack mounts, by name (airframe gaps G2; airframe.md §5.3, §10 q5)
+# ---------------------------------------------------------------------------
+
+## The stack patterns a builder can ask for by name, in the order the workbench's picker lists them.
+## 25.5 comes twice because both screws are sold on it: whoop AIO boards bolt with M2, and some
+## 25.5 stacks take M3. The bare name is the M2 one (see `stack_mount_spec`).
+const STACK_MOUNT_PATTERNS := ["20x20", "25.5x25.5", "25.5x25.5 M3", "30.5x30.5"]
+
+## What a clearance hole is drilled over its screw: 3.2 for an M3, 2.2 for an M2 — the figures the
+## generators have always drilled motor holes at, now named once.
+const BOLT_CLEARANCE_MM := 0.2
+
+## Below this pitch a stack is an M2 stack unless its name says otherwise. 20×20 and 25.5×25.5 boards
+## bolt with M2; 30.5×30.5 is the M3 pattern.
+const STACK_M3_FROM_PITCH_MM := 30.0
+
+
+## `{pattern, pitch_mm, thread_d_mm, hole_d_mm}` for a stack pattern by name — "20x20", "25.5x25.5",
+## "30.5x30.5", optionally followed by a thread ("25.5x25.5 M3"). `{}` for a name with no pitch.
+##
+## THE ONE PARSER. The catalog presets (`from_catalog_frame`) and "+ Stack mount"
+## (`FrameEdits.add_stack_mount`) both read their holes through this and `stack_mount_holes`, so a
+## preset and a drawn frame on the same pattern cut identical holes — which is what lets a drawn
+## frame be compared against a preset at all.
+static func stack_mount_spec(pattern: String) -> Dictionary:
+	var pitch := _pattern_pitch_mm(pattern)
+	if pitch <= 0.0:
+		return {}
+	var thread := 3.0 if pitch >= STACK_M3_FROM_PITCH_MM else 2.0
+	var tokens := pattern.strip_edges().to_lower().split(" ", false)
+	if tokens.size() > 1 and tokens[1].begins_with("m"):
+		var stated := float(tokens[1].substr(1))
+		if stated > 0.0:
+			thread = stated
+	return {"pattern": pattern.strip_edges(), "pitch_mm": pitch, "thread_d_mm": thread,
+		"hole_d_mm": thread + BOLT_CLEARANCE_MM}
+
+
+## The four holes of a stack pattern centred on `centre`, as clockwise polygons ready for a plate's
+## `holes` (so they subtract, §3.1). Takes a spec from `stack_mount_spec` or a pattern name.
+static func stack_mount_holes(centre: Vector2, pattern: Variant) -> Array:
+	var spec: Dictionary = pattern if pattern is Dictionary else stack_mount_spec(str(pattern))
+	var out: Array = []
+	if spec.is_empty():
+		return out
+	for corner in _bolt_pattern(centre, float(spec["pitch_mm"]), 0.0):
+		out.append(PolygonProps.tessellate_circle(corner, float(spec["hole_d_mm"]) * 0.5,
+			PolygonProps.DEFAULT_CHORD_TOLERANCE_MM, true))
+	return out
+
+
+## The four hole CENTRES of a stack pattern on `centre` — what a fit check tests against an outline.
+static func stack_mount_centres(centre: Vector2, pattern: String) -> Array:
+	var spec := stack_mount_spec(pattern)
+	if spec.is_empty():
+		return []
+	return _bolt_pattern(centre, float(spec["pitch_mm"]), 0.0)
 
 
 ## Unit vector from the origin to a motor, in the plate plane. MotorLayout's positions, converted

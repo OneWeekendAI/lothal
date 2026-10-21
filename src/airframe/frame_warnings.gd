@@ -60,6 +60,9 @@ static func of(document: AirframeDocument, props: AirframeProperties) -> Array[B
 	_check_arms_measure(document, out)
 	_check_layout(document, out)
 	_check_balance(props, out)
+	# §5.3's tear-out rule on the bolt holes off the arms — the stack mount's above all (G2). The arm's
+	# motor holes are `FrameHardware.joint_warnings`', which reads them against the real motor screws.
+	out.append_array(FrameHardware.mount_hole_warnings(document))
 
 	out.sort_custom(func(a: BuildWarning, b: BuildWarning) -> bool:
 		return a.severity < b.severity)
