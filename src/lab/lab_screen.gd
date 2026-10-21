@@ -137,6 +137,12 @@ var _frame_document_id := ""
 ## What `frame_document` weighed and measured when it was generated (`FittedFrame.baseline`) —
 ## the "as fitted" an edit is measured from. Computed once per fitted frame, not per build.
 var _frame_baseline: Dictionary = {}
+## `frame_document` as generated from the catalogue, as a dictionary — what `drawn_frame` compares
+## against to tell "the fitted frame, untouched" (nothing to save) from a drawing.
+var _generated_frame: Dictionary = {}
+## A saved drawing waiting for `_refresh_frame_document` to adopt it in place of the generated
+## document (`set_drawn_frame`). Consumed on the next regeneration.
+var _pending_drawn: Dictionary = {}
 ## The document was regenerated because the FITTED frame changed. The shell reopens the designer
 ## on it, so the Frame page is always the frame that is fitted.
 signal frame_document_replaced(document: AirframeDocument)
@@ -852,7 +858,40 @@ func _refresh_frame_document(frame: Dictionary) -> void:
 	var published: Dictionary = catalog.get_part(id) if catalog != null and id != "" else frame
 	frame_document = AirframeDocument.from_catalog_frame(published)
 	_frame_baseline = FittedFrame.drawn(frame_document)
+	_generated_frame = frame_document.to_dictionary()
+	# A saved build's drawing replaces the generated document; the baseline stays the generated
+	# one, because an edit of the fitted frame is still measured from the frame as published.
+	if not _pending_drawn.is_empty():
+		frame_document = AirframeDocument.from_dictionary(_pending_drawn)
+		_pending_drawn = {}
 	frame_document_replaced.emit(frame_document)
+
+
+## Takes on a saved build's drawn frame (`Project.airframe`), or `{}` for none — which puts the
+## fitted catalogue frame's own document back. ALWAYS regenerates: two drones on the same catalogue
+## frame must not share one drawing, and the guard in `_refresh_frame_document` would otherwise keep
+## the previous drone's.
+##
+## Regenerated BEFORE the rebuild, not by it: `_on_selection_changed` makes its Build before it
+## refreshes the document, so a rebuild alone would weigh the first aircraft without the drawing.
+func set_drawn_frame(document: Dictionary) -> void:
+	_pending_drawn = document.duplicate(true)
+	frame_document = null
+	_frame_document_id = ""
+	if picker != null:
+		_refresh_frame_document(picker.selected_part())
+	_on_selection_changed()
+
+
+## What a save keeps of the Airframe room: the document as a dictionary, or `{}` when it is the
+## fitted frame exactly as generated (nothing was drawn, so the catalogue keeps flying it).
+func drawn_frame() -> Dictionary:
+	if frame_document == null:
+		return {}
+	var now := frame_document.to_dictionary()
+	if now == _generated_frame:
+		return {}
+	return now
 
 
 ## The single path from a selection to everything that shows it. Geometry, all three panels'

@@ -3263,6 +3263,8 @@ func _sync_project() -> void:
 	# And the config block the same way (Config C1/C3): the motor map is per drone, so it follows
 	# the lab's working copy into the document rather than living anywhere global.
 	container.project.config = lab.config.duplicate(true)
+	# And the drawn frame (Airframe room), `{}` while the fitted frame is untouched.
+	container.project.airframe = lab.drawn_frame()
 
 
 ## Rename is ProjectChip's own; everything else lands here.
@@ -3369,7 +3371,11 @@ func apply_project(project: Project) -> Array:
 	# And the name, for the sheet's header and its file name (C9). Set here with the rest of the
 	# per-drone state, so a sheet cannot go out carrying the previously-opened drone's name.
 	lab.drone_name = project.name
-	return lab.apply_selection(project.parts)
+	var missing := lab.apply_selection(project.parts)
+	# After the selection, so the drawing lands on THIS drone's fitted frame — and always, so a drone
+	# with no drawing does not inherit the previous drone's on the same catalogue frame.
+	lab.set_drawn_frame(project.airframe)
+	return missing
 
 
 func _remember(path: String) -> void:
