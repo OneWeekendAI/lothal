@@ -165,6 +165,9 @@ func geometry() -> Dictionary:
 	var elevation_bounds := Rect2()
 	var started := false
 	for plate in _frame.plates:
+		# Upright plates (G5) are not part of the stack this picture is about.
+		if AirframeDocument.is_upright(plate):
+			continue
 		var outline := AirframeDocument.plate_outline(plate)
 		if outline.size() < 3:
 			continue

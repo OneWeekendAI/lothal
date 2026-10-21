@@ -138,6 +138,8 @@ const TABLE := {
 	# Video
 	&"camera_tilt_into_top_plate": [CAMERA, "{camera_tilt}"],
 	&"camera_obstruction": [CAMERA, "{camera_obstruction}"],
+	# G5: CameraCage — the fitted camera is wider than the side plates drawn for it.
+	&"camera_wider_than_cage": [CAMERA, "camera wider than its side plates"],
 	&"vtx_without_antenna": [VTX, "VTX has no antenna"],
 	# Printed — one row per generated part, so the item is "printed:<part>" (`item_of`).
 	&"printed_refused": [PRINTED, "cannot be generated"],

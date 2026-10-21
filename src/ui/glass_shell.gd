@@ -2325,6 +2325,9 @@ func _refresh_list() -> void:
 		warnings.append_array(FrameHardware.joint_warnings(lab.frame_document))
 		# Straps & pads: the slot geometry and the pad's spring, off the same document (§6).
 		warnings.append_array(StrapsPads.warnings(build, lab.frame_document))
+		# G5: a camera cage drawn narrower than the camera fitted to the aircraft.
+		warnings.append_array(CameraCage.warnings(build.components.get("camera", {}),
+			lab.frame_document))
 		warnings.append_array(FrameWarnings.of(lab.frame_document,
 			AirframeProperties.compute(lab.frame_document, AirframePanel.materials())))
 		var unflown := FittedFrame.unflown_warning(lab.frame_document)

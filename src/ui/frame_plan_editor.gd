@@ -314,6 +314,10 @@ func _vertex_at(position_px: Vector2) -> Array:
 	if document == null:
 		return [-1, -1]
 	for index in range(document.plates.size() - 1, -1, -1):
+		# An upright plate's corners are in its own standing plane, not in plan: it has no handles
+		# here, and is moved as a whole (G5).
+		if AirframeDocument.is_upright(document.plates[index]):
+			continue
 		var points := AirframeDocument.plate_outline(document.plates[index])
 		for vertex in points.size():
 			if transform.to_pixels(points[vertex]).distance_to(position_px) <= GRAB_RADIUS_PX:
@@ -327,7 +331,7 @@ func _plate_at(position_px: Vector2) -> int:
 		return -1
 	var point_mm := transform.to_mm(position_px)
 	for index in range(document.plates.size() - 1, -1, -1):
-		var points := AirframeDocument.plate_outline(document.plates[index])
+		var points := AirframeDocument.plate_plan_outline(document.plates[index])
 		if points.size() >= 3 and Geometry2D.is_point_in_polygon(point_mm, points):
 			return index
 	return -1
@@ -356,7 +360,7 @@ func _bounds_mm() -> Array:
 	var max_mm := Vector2(-INF, -INF)
 	if document != null:
 		for plate in document.plates:
-			for point in AirframeDocument.plate_outline(plate):
+			for point in AirframeDocument.plate_plan_outline(plate):
 				min_mm = min_mm.min(point)
 				max_mm = max_mm.max(point)
 	if not is_finite(min_mm.x) or not is_finite(max_mm.x):
@@ -417,7 +421,9 @@ func _draw_axes() -> void:
 
 func _draw_plate(index: int) -> void:
 	var plate: Dictionary = document.plates[index]
-	var points := AirframeDocument.plate_outline(plate)
+	# An upright plate is drawn as what it covers from above — its thickness along its length.
+	var upright := AirframeDocument.is_upright(plate)
+	var points := AirframeDocument.plate_plan_outline(plate)
 	if points.size() < 3:
 		return
 
@@ -434,7 +440,7 @@ func _draw_plate(index: int) -> void:
 	draw_colored_polygon(screen, Color(fill, 0.16 if not selected else 0.28))
 	draw_polyline(_closed(screen), Color(fill, 0.9 if selected else 0.6), 2.0 if selected else 1.0)
 
-	for hole in AirframeDocument.plate_holes(plate):
+	for hole in ([] if upright else AirframeDocument.plate_holes(plate)):
 		var hole_screen := PackedVector2Array()
 		for point in hole:
 			hole_screen.append(transform.to_pixels(point))
@@ -451,7 +457,7 @@ func _draw_plate(index: int) -> void:
 		# the line the width is measured perpendicular to, and drawing it solid would read as a cut.
 		draw_dashed_line(root, tip, Color(LothalTheme.WARNING, 0.8), 1.5, 6.0)
 
-	if selected or index == hovered_plate:
+	if (selected or index == hovered_plate) and not upright:
 		for vertex in screen.size():
 			var hot := index == hovered_plate and vertex == hovered_vertex
 			draw_circle(screen[vertex], VERTEX_RADIUS_PX + (2.0 if hot else 0.0),

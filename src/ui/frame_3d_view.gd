@@ -230,6 +230,16 @@ func pick(position_px: Vector2) -> int:
 	var nearest := INF
 	for index in _pending_document.plates.size():
 		var plate: Dictionary = _pending_document.plates[index]
+		if AirframeDocument.is_upright(plate):
+			# An upright plate (G5) is hit on its own standing plane, against its own outline.
+			var side_hit: Variant = _side_hit_m(position_px, plate)
+			if side_hit != null:
+				var side_distance: float = (side_hit as Vector3).distance_to(
+					_camera.global_transform.origin)
+				if side_distance < nearest:
+					nearest = side_distance
+					best = index
+			continue
 		var z_mm := AirframeDocument.plate_z_mm(plate)
 		var hit := _plan_point_at(position_px, z_mm, true)
 		if not is_finite(hit.x):
@@ -243,6 +253,29 @@ func pick(position_px: Vector2) -> int:
 			nearest = distance
 			best = index
 	return best
+
+
+## Where the cursor's ray hits an upright plate, in metres, or null: the ray crossed with the plate's
+## plane x = x_mm, inverted through `AirframeDocument.side_world_m` and tested against its outline.
+## Drawn here at the plate's DOCUMENT height, which is what this view draws (no standoff stretch).
+func _side_hit_m(position_px: Vector2, plate: Dictionary) -> Variant:
+	var scaled := position_px
+	if size.x > 0.0 and size.y > 0.0:
+		scaled = position_px / size * Vector2(_viewport.size)
+	var origin := _camera.project_ray_origin(scaled)
+	var direction := _camera.project_ray_normal(scaled)
+	var plane_x := AirframeDocument.plate_x_mm(plate) / 1000.0
+	if absf(direction.x) < 1.0e-6:
+		return null
+	var travel := (plane_x - origin.x) / direction.x
+	if travel <= 0.0:
+		return null
+	var point := origin + direction * travel
+	var sh := Vector2(point.z * 1000.0, point.y * 1000.0 - AirframeDocument.plate_z_mm(plate))
+	var outline := AirframeDocument.plate_outline(plate)
+	if outline.size() < 3 or not Geometry2D.is_point_in_polygon(sh, outline):
+		return null
+	return point
 
 
 ## Where the cursor's ray crosses the horizontal plane at a stated height, in plan millimetres.
@@ -368,7 +401,7 @@ func _span_m() -> float:
 	var half_mm := 0.0
 	if _pending_document != null:
 		for plate in _pending_document.plates:
-			for point in AirframeDocument.plate_outline(plate):
+			for point in AirframeDocument.plate_plan_outline(plate):
 				half_mm = maxf(half_mm, point.length())
 	if half_mm <= 0.0:
 		# An empty document. A 200 mm box, matching the plan editor's empty framing, so switching

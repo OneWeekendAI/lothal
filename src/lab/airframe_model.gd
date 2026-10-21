@@ -84,14 +84,22 @@ func _init() -> void:
 ## null for the geometry the parts imply on their own. It is resolved to plain metres HERE, once,
 ## and handed to the mesh generators as numbers — a generator that could reach into settings for
 ## itself would be a second source for a dimension the assembler already knows.
-func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
+##
+## `document` is the frame as drawn in the designer, when the caller holds one for THIS frame (Lab
+## passes its fitted `frame_document`). Drawn through the same `FrameModel.rebuild_document` the
+## designer's 3D view uses, so an upright camera cage (G5) cut in the designer stands on the assembled
+## aircraft too. Null draws the frame generated from its catalogue specs, as before.
+func rebuild(build: Build, tweaks: AssemblyTweaks = null, document: AirframeDocument = null) -> void:
 	# The parts-implied defaults are Build's, not a second list here: the mass model falls back to
 	# the same ones, and two lists of defaults is two things to get out of step.
 	var tweak_m := Build.DEFAULT_ASSEMBLY.duplicate()
 	if tweaks != null:
 		tweak_m = tweaks.resolved_m(build)
 
-	frame_model.rebuild(build.frame, tweak_m["plate_gap_m"])
+	if document != null and str(document.id) == str(build.frame.get("part_id", "")):
+		frame_model.rebuild_document(document, build.frame, tweak_m["plate_gap_m"])
+	else:
+		frame_model.rebuild(build.frame, tweak_m["plate_gap_m"])
 	motor_meshes.clear()
 	propeller_meshes.clear()
 	guard_meshes.clear()
@@ -433,6 +441,12 @@ func camera_obstruction_points_m() -> Dictionary:
 			points.append(AirframeDocument.world_m(plan_mm, 0.0) + Vector3(0.0, y, 0.0))
 		if not points.is_empty():
 			out[str(record["name"])] = points
+
+	# Upright plates (a camera cage, G5): their outline is in their own standing plane, so their
+	# points come from the frame model already in the airframe's frame rather than through world_m.
+	var sides := frame_model.side_plate_points_m()
+	for side_name in sides:
+		out[str(side_name)] = sides[side_name]
 
 	var rings := guard_ring_polygons_m()
 	for motor_name in rings:

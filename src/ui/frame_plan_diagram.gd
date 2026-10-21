@@ -113,7 +113,7 @@ func _bounds_mm() -> Rect2:
 	var first := true
 	if document != null:
 		for plate in document.plates:
-			for point in AirframeDocument.plate_outline(plate):
+			for point in AirframeDocument.plate_plan_outline(plate):
 				box = Rect2(point, Vector2.ZERO) if first else box.expand(point)
 				first = false
 	for disc in discs:
@@ -181,7 +181,7 @@ func _screen(points: PackedVector2Array) -> PackedVector2Array:
 
 
 func _draw_plate(plate: Dictionary) -> void:
-	var outline := _screen(AirframeDocument.plate_outline(plate))
+	var outline := _screen(AirframeDocument.plate_plan_outline(plate))
 	if outline.size() < 3:
 		return
 	var is_arm := str(plate.get("role", "")) == AirframeDocument.ROLE_ARM
@@ -190,7 +190,7 @@ func _draw_plate(plate: Dictionary) -> void:
 	var base := LothalTheme.ACCENT if lit else LothalTheme.TEXT_MUTED
 	draw_colored_polygon(outline, Color(base, 0.30 if lit else 0.10))
 	draw_polyline(_closed(outline), Color(base, 0.95 if lit else 0.45), 1.5 if lit else 1.0)
-	for hole in AirframeDocument.plate_holes(plate):
+	for hole in ([] if AirframeDocument.is_upright(plate) else AirframeDocument.plate_holes(plate)):
 		var ring := _screen(hole)
 		if ring.size() >= 3:
 			draw_colored_polygon(ring, LothalTheme.SURFACE_BASE)

@@ -289,7 +289,14 @@ static func plate_notes(document: AirframeDocument) -> Array:
 			label, AirframeDocument.plate_thickness_mm(plate), material, quantity, bit]
 		if countersunk > 0:
 			text += " - %d countersunk hole%s" % [countersunk, "" if countersunk == 1 else "s"]
+		var upright := AirframeDocument.is_upright(plate)
+		if upright:
+			# G5: the shop cuts it flat like any plate; the note says it is not one, and where it goes.
+			text += " - upright side plate, cut flat, stands %.1f mm %s of centre" % [
+				absf(AirframeDocument.plate_x_mm(plate)),
+				"right" if AirframeDocument.plate_x_mm(plate) >= 0.0 else "left"]
 		out.append({
+			"upright": upright,
 			"index": index, "label": label, "role": str(plate.get("role", "")),
 			"thickness_mm": AirframeDocument.plate_thickness_mm(plate), "material": material,
 			"quantity": quantity, "bit_mm": bit, "countersunk": countersunk, "text": text,
@@ -425,19 +432,26 @@ static func to_stl(document: AirframeDocument) -> String:
 	var out := PackedStringArray()
 	out.append("solid %s" % document.name.replace(" ", "_"))
 	for plate in document.plates:
-		_append_plate_solid(out, plate)
+		if not AirframeDocument.is_upright(plate):
+			_append_plate_solid(out, plate)
 	for pad in document.pads:
 		_append_plate_solid(out, pad)
+	# Upright plates (G5) lie flat at z = 0, set out beside the frame — see `_upright_laid_flat`.
+	for entry in _upright_laid_flat(document):
+		_append_plate_solid(out, entry["plate"], entry["offset"], 0.0)
 	out.append("endsolid")
 	return "\n".join(out) + "\n"
 
 
-static func _append_plate_solid(out: PackedStringArray, plate: Dictionary) -> void:
-	var outline := AirframeDocument.plate_outline(plate)
+static func _append_plate_solid(out: PackedStringArray, plate: Dictionary,
+		offset: Vector2 = Vector2.ZERO, z_override: float = NAN) -> void:
+	var outline := PackedVector2Array()
+	for point in AirframeDocument.plate_outline(plate):
+		outline.append(point + offset)
 	var thickness := AirframeDocument.plate_thickness_mm(plate)
 	if outline.size() < 3 or thickness <= 0.0:
 		return
-	var z0 := AirframeDocument.plate_z_mm(plate)
+	var z0 := AirframeDocument.plate_z_mm(plate) if is_nan(z_override) else z_override
 	var z1 := z0 + thickness
 
 	# The caps come from the same triangulator `PlateMesh` uses, so the exported solid and the
@@ -512,7 +526,9 @@ static func _placed_plates(document: AirframeDocument, layout: String) -> Array:
 		return out
 	if layout != LAYOUT_NEST:
 		for plate in document.plates:
-			out.append({"plate": plate, "offset": Vector2.ZERO})
+			if not AirframeDocument.is_upright(plate):
+				out.append({"plate": plate, "offset": Vector2.ZERO})
+		out.append_array(_upright_laid_flat(document))
 		return out
 
 	var cursor := Vector2.ZERO
@@ -534,6 +550,39 @@ static func _placed_plates(document: AirframeDocument, layout: String) -> Array:
 		out.append({"plate": plate, "offset": cursor - box[0]})
 		cursor.x += extent.x + NEST_GAP_MM
 		row_height = maxf(row_height, extent.y)
+	return out
+
+
+## Upright plates (G5), LAID FLAT beside the rest: a side plate's outline is already its cut shape in
+## its own plane, so on a sheet it goes down as drawn — but in an assembly drawing its own (s, h)
+## coordinates would land on top of the plan view, so it is set out in a row to the right of the flat
+## plates, `NEST_GAP_MM` apart. The STL uses the same places, at z = 0, so a slicer or CAM import sees
+## every part flat and none inside another.
+static func _upright_laid_flat(document: AirframeDocument) -> Array:
+	var out: Array = []
+	var flat_high := -INF
+	var flat_low_y := INF
+	for plate in document.plates:
+		if AirframeDocument.is_upright(plate):
+			continue
+		for point in AirframeDocument.plate_outline(plate):
+			flat_high = maxf(flat_high, point.x)
+			flat_low_y = minf(flat_low_y, point.y)
+	for pad in document.pads:
+		for point in AirframeDocument.plate_outline(pad):
+			flat_high = maxf(flat_high, point.x)
+			flat_low_y = minf(flat_low_y, point.y)
+	var cursor := Vector2(flat_high + NEST_GAP_MM if is_finite(flat_high) else 0.0,
+		flat_low_y if is_finite(flat_low_y) else 0.0)
+	for plate in document.plates:
+		if not AirframeDocument.is_upright(plate):
+			continue
+		var points := AirframeDocument.plate_outline(plate)
+		if points.size() < 3:
+			continue
+		var box := _points_bounds(points)
+		out.append({"plate": plate, "offset": cursor - (box[0] as Vector2)})
+		cursor.x += ((box[1] as Vector2) - (box[0] as Vector2)).x + NEST_GAP_MM
 	return out
 
 

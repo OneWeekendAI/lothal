@@ -869,7 +869,10 @@ func _on_selection_changed() -> void:
 	# every panel below reads mass properties off this object. Resolved once, here, and handed to
 	# both — the same dictionary, so the aircraft that is weighed is the aircraft that is drawn.
 	build.set_assembly(tweaks.resolved_m(build))
-	airframe.rebuild(build, tweaks)
+	# The designer's document for this frame, so what was drawn there (a camera cage, G5) is what is
+	# assembled here. Refreshed first: it only regenerates when the fitted frame changed.
+	_refresh_frame_document(build.frame)
+	airframe.rebuild(build, tweaks, frame_document)
 	# A rebuild is new propellers, and they have to be turning: the hand spin is a property of the
 	# room, not of the props that happen to be fitted.
 	airframe.set_all_rates_rpm(HAND_SPIN_RPM)

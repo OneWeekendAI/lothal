@@ -27,7 +27,8 @@ extends RefCounted
 ##
 ## A plate therefore lies FLAT and its normal is world Y. That single sentence is where the
 ## coordinate trap in §3.4 is defused; AirframeProperties restates it at the point of use because
-## restating it there is cheaper than the bug.
+## restating it there is cheaper than the bug. THE ONE EXCEPTION is a `side` plate, which stands up
+## (airframe gaps G5) — see "Upright plates" below for its own mapping.
 ##
 ## ## Why plates are Dictionaries and not a PlateResource
 ##
@@ -253,6 +254,72 @@ static func plate_thickness_mm(plate: Dictionary) -> float:
 
 static func plate_z_mm(plate: Dictionary) -> float:
 	return float(plate.get("z_mm", 0.0))
+
+
+# ---------------------------------------------------------------------------
+# Upright plates (airframe gaps G5) — a side plate stands, every other plate lies flat
+# ---------------------------------------------------------------------------
+#
+# A plate of role `side` is UPRIGHT: its outline is drawn in its own plane `(s, h)`, where `s` is
+# fore/aft exactly as plan `v` is (world Z, aft +) and `h` is height above the plate's base (world Y).
+# The plane stands parallel to the centreline at `x_mm` (world X), its base at `z_mm`, and its
+# thickness is centred on `x_mm`. So:
+#
+#     side s  →  world Z      side h  →  world Y (above z_mm)      normal  →  world X
+#
+# That is a proper rotation of the flat mapping (u→X, v→Z, normal→Y), which is why the extruder,
+# the integrals and the exporter can all treat the polygon as an ordinary plate and only the
+# PLACEMENT differs. `side_world_m` is the one place that placement is written as code.
+
+## Side-plate key: the lateral position of the plate's mid-plane, mm (world X).
+const PLATE_X_MM := "x_mm"
+
+
+## Whether a plate stands up rather than lying flat.
+static func is_upright(plate: Dictionary) -> bool:
+	return str(plate.get("role", "")) == ROLE_SIDE
+
+
+static func plate_x_mm(plate: Dictionary) -> float:
+	return float(plate.get(PLATE_X_MM, 0.0))
+
+
+## An upright plate: `outline` and `holes` in its own (s, h) plane, standing at `x_mm` on a base at
+## `base_z_mm`.
+static func make_side_plate(
+	outline: PackedVector2Array,
+	holes: Array,
+	thickness_mm: float,
+	x_mm: float,
+	base_z_mm: float
+) -> Dictionary:
+	var plate := make_plate(outline, holes, thickness_mm, base_z_mm, ROLE_SIDE)
+	plate[PLATE_X_MM] = x_mm
+	return plate
+
+
+## A point of an upright plate's own plane, in the airframe's world frame, metres. The side-plate
+## counterpart of `world_m`, and the only place the (s, h) → world mapping is written.
+static func side_world_m(plate: Dictionary, point_sh: Vector2) -> Vector3:
+	return Vector3(plate_x_mm(plate), plate_z_mm(plate) + point_sh.y, point_sh.x) / 1000.0
+
+
+## What a plate covers seen from above, in plan mm. A flat plate's outline; for an upright plate, the
+## thin rectangle its thickness makes along its fore/aft extent — what the plan view draws and picks,
+## because its own outline is not a plan shape at all.
+static func plate_plan_outline(plate: Dictionary) -> PackedVector2Array:
+	var outline := plate_outline(plate)
+	if not is_upright(plate) or outline.size() < 3:
+		return outline
+	var front := INF
+	var rear := -INF
+	for point in outline:
+		front = minf(front, point.x)
+		rear = maxf(rear, point.x)
+	var x := plate_x_mm(plate)
+	var half_t := plate_thickness_mm(plate) * 0.5
+	return PackedVector2Array([Vector2(x - half_t, front), Vector2(x + half_t, front),
+		Vector2(x + half_t, rear), Vector2(x - half_t, rear)])
 
 
 ## The material a plate is cut from: its own override, else the document's. Two levels and no more —

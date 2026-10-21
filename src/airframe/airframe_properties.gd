@@ -236,32 +236,58 @@ static func _plate_element(
 	var ixy_c := float(region["ixy_c"]) * MM4_TO_M4
 	var rho_t := density * thickness_m
 
-	# THE MAPPING. Read the class docs before touching these three lines.
-	#   polygon ixx = ∫v² dA, v is world Z  →  world X moment (pitch)
-	#   polygon iyy = ∫u² dA, u is world X  →  world Z moment (roll)
-	#   their sum                            →  world Y moment (yaw), perpendicular-axis theorem
+	# THE PLATE'S OWN TENSOR, in its own axes (a, b, n): `a` and `b` the polygon's two coordinates,
+	# `n` its normal. polygon ixx = ∫b² dA, iyy = ∫a² dA, ixy = ∫ab dA.
+	#   I_aa = ρt∫b² + m t²/12     I_bb = ρt∫a² + m t²/12     I_nn = ρt(∫a² + ∫b²)
+	#   I_ab = −ρt∫ab              (the tensor convention's sign, opposite to PolygonProps' +∫xy dA)
 	# The m·t²/12 terms are the through-thickness contribution of §3.4. Negligible on a 2 mm plate
-	# and not on a 6 mm one, and they cost one multiply, so they are always carried. The yaw term
-	# gets none of it: the perpendicular-axis sum already contains both in-plane extents, and the
-	# thickness lies ALONG the yaw axis, where it contributes nothing.
+	# and not on a 6 mm one, and they cost one multiply, so they are always carried. I_nn gets none of
+	# it: the perpendicular-axis sum already contains both in-plane extents, and the thickness lies
+	# ALONG the normal, where it contributes nothing.
 	var through_thickness := mass * thickness_m * thickness_m / 12.0
+	var local := [
+		[rho_t * ixx_c + through_thickness, -rho_t * ixy_c, 0.0],
+		[-rho_t * ixy_c, rho_t * iyy_c + through_thickness, 0.0],
+		[0.0, 0.0, rho_t * (ixx_c + iyy_c)],
+	]
+	# THE MAPPING, then rotated into the world as R·I·Rᵀ, R's columns being where a, b and n point.
+	# Read the class docs before touching these lines.
+	#   flat:    a = u → world X, b = v → world Z, n → world Y   (so ∫v² is PITCH, ∫u² ROLL, sum YAW)
+	#   upright: a = s → world Z, b = h → world Y, n → world X   (airframe gaps G5)
+	# Both are proper rotations (the upright one is a cyclic permutation of the flat one), so the
+	# tensor is rotated, not re-derived: one formula, two placements.
 	var centroid: Vector2 = region["centroid"]
-	var position := AirframeDocument.world_m(centroid, AirframeDocument.plate_z_mm(plate))
+	var position: Vector3
+	var axes: Array
+	if AirframeDocument.is_upright(plate):
+		position = AirframeDocument.side_world_m(plate, centroid)
+		axes = [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]
+	else:
+		position = AirframeDocument.world_m(centroid, AirframeDocument.plate_z_mm(plate))
+		axes = [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]]
+	var world := _rotated_tensor(local, axes)
 
 	return {
 		"label": label,
 		"mass_kg": mass,
 		"x": float(position.x), "y": float(position.y), "z": float(position.z),
-		"i_xx": rho_t * ixx_c + through_thickness,
-		"i_yy": rho_t * (ixx_c + iyy_c),
-		"i_zz": rho_t * iyy_c + through_thickness,
-		# I_xz = −∫xz dm = −ρ·t·∫uv dA. The sign is the tensor convention's, and it is the opposite
-		# of PolygonProps' `+∫xy dA` — §3.1's own note says having the formula in one place and its
-		# sign in another is a trap, so both live on this line.
-		"i_xy": 0.0,
-		"i_xz": -rho_t * ixy_c,
-		"i_yz": 0.0,
+		"i_xx": world[0][0], "i_yy": world[1][1], "i_zz": world[2][2],
+		"i_xy": world[0][1], "i_xz": world[0][2], "i_yz": world[1][2],
 	}
+
+
+## R·L·Rᵀ for a local tensor `local` (3×3 rows) and `axes` — the world direction of each local axis,
+## as [x, y, z] doubles (so R[i][k] = axes[k][i]). Doubles throughout; see the class docs.
+static func _rotated_tensor(local: Array, axes: Array) -> Array:
+	var out := [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+	for i in 3:
+		for j in 3:
+			var sum := 0.0
+			for k in 3:
+				for l in 3:
+					sum += float(axes[k][i]) * float(local[k][l]) * float(axes[l][j])
+			out[i][j] = sum
+	return out
 
 
 ## A screw or a standoff: its mass from HardwareMass' own geometry formulas (§5.1), at a point.

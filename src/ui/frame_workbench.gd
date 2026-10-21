@@ -92,6 +92,8 @@ var _import_dialog: FileDialog
 var _symmetry_button: CheckButton
 ## The pattern "+ Stack mount" cuts: one entry per `AirframeDocument.STACK_MOUNT_PATTERNS`.
 var stack_picker: OptionButton
+## The camera class "+ Camera cage" spaces its side plates for: one entry per `CameraCage.SIZES` (G5).
+var cage_picker: OptionButton
 var _status: Label
 var _selected_plate := -1
 ## True while a document is being opened. `FramePlanEditor.open` emits `document_changed` like any
@@ -240,6 +242,17 @@ func _build_toolbar() -> Control:
 	stack_picker.tooltip_text = "Stack pattern for \"+ Stack mount\""
 	_compact(stack_picker)
 	row.add_child(stack_picker)
+	# "+ Camera cage" and the camera class it is spaced for (G5), the same button-and-picker pair.
+	row.add_child(_button("+ Camera cage", func() -> void: add_camera_cage(cage_size()),
+		"Two upright side plates spaced for the camera beside this, with a pivot hole and a 0–50° tilt slot"))
+	cage_picker = OptionButton.new()
+	for cage in CameraCage.SIZES:
+		cage_picker.add_item("%s %s mm" % [cage["label"],
+			_trim_mm(CameraCage.size_width_mm(str(cage["id"]), catalog))])
+	cage_picker.select(1)
+	cage_picker.tooltip_text = "Camera width for \"+ Camera cage\""
+	_compact(cage_picker)
+	row.add_child(cage_picker)
 	row.add_child(_button("Copy", _on_duplicate_plate, "Copy the selected plate"))
 	row.add_child(_button("Mirror", _on_replicate,
 		"Repeat the selected arm around the origin, once per arm the layout has"))
@@ -792,6 +805,9 @@ func add_stack_mount(pattern: String) -> bool:
 		_set_status("Select the plate the stack bolts to first.")
 		return false
 	var plate: Dictionary = editor.document.plates[_selected_plate]
+	if AirframeDocument.is_upright(plate):
+		_set_status("A stack bolts to a flat plate, not to an upright side plate.")
+		return false
 	var centre := PolygonProps.centroid(AirframeDocument.plate_outline(plate))
 	if not FrameEdits.stack_mount_fits(editor.document, _selected_plate, centre, pattern):
 		_set_status("A %s stack pattern does not fit inside that plate." % label)
@@ -803,6 +819,36 @@ func add_stack_mount(pattern: String) -> bool:
 	var spec := AirframeDocument.stack_mount_spec(pattern)
 	_set_status("Cut a %s stack mount: four %s mm holes, checked for edge distance." % [
 		label, _trim_mm(float(spec["hole_d_mm"]))])
+	return true
+
+
+## The camera class the picker beside "+ Camera cage" has chosen, by `CameraCage.SIZES` id.
+func cage_size() -> String:
+	var index := cage_picker.selected if cage_picker != null else -1
+	if index < 0 or index >= CameraCage.SIZES.size():
+		return "micro"
+	return str(CameraCage.SIZES[index]["id"])
+
+
+## Cuts a camera cage for one camera class — two upright side plates on the camera bay — as ONE undo
+## step. Needs no selection: the cage seats itself on the bottom plate's front edge. Returns whether
+## the plates were added.
+func add_camera_cage(size_id: String) -> bool:
+	if editor.document == null:
+		return false
+	var width := CameraCage.size_width_mm(size_id, catalog)
+	if width <= 0.0:
+		_set_status("No camera class called %s." % size_id)
+		return false
+	editor.history.record(editor.document)
+	var added := FrameEdits.add_camera_cage(editor.document, width)
+	if added.is_empty():
+		return false
+	mark_hand_edited()
+	_select(int(added[0]))
+	_on_document_edited(editor.document)
+	_set_status("Added a camera cage for a %s mm camera: two upright side plates %s mm apart, M2 pivot and a %d–%d° tilt slot." % [
+		_trim_mm(width), _trim_mm(width), int(CameraCage.TILT_MIN_DEG), int(CameraCage.TILT_MAX_DEG)])
 	return true
 
 

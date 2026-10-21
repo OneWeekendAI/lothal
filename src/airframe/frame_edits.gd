@@ -480,6 +480,46 @@ static func add_stack_mount(
 	return true
 
 
+## A camera cage (airframe gaps G5): two mirrored UPRIGHT side plates whose inner faces are exactly
+## `camera_width_mm` apart, each with the camera's M2 pivot hole and a curved slot covering
+## `CameraCage.TILT_MIN_DEG`–`TILT_MAX_DEG` of uptilt. Seated where MountLayout puts the camera bay — the
+## pivot over the front edge of the bottom plate, standing on its upper face (`CameraCage.seat`).
+##
+## Every contour is cut-ready by construction: outer corners rounded, the slot's ends and its outer
+## arc radii at least the screw's half-clearance (1.1 mm), above the default bit's 0.79 mm radius.
+## Returns the two new plate indices (right, then left), or [] for a width that is not positive.
+static func add_camera_cage(
+	document: AirframeDocument,
+	camera_width_mm: float,
+	thickness_mm: float = CameraCage.DEFAULT_THICKNESS_MM
+) -> Array:
+	if document == null or camera_width_mm <= 0.0 or thickness_mm <= 0.0:
+		return []
+	var seat := CameraCage.seat(document)
+	var profile := CameraCage.plate_profile(camera_width_mm)
+	var shift := Vector2(float(seat["pivot_s"]), 0.0)
+	var outline := _shifted_points(profile["outline"], shift)
+	var holes: Array = []
+	for hole in profile["holes"]:
+		holes.append(_shifted_points(hole, shift))
+	var out: Array = []
+	var x := camera_width_mm * 0.5 + thickness_mm * 0.5
+	for side in [1.0, -1.0]:
+		var plate := AirframeDocument.make_side_plate(outline, holes, thickness_mm, side * x,
+			float(seat["base_z_mm"]))
+		plate[CameraCage.PLATE_CAGE_WIDTH] = camera_width_mm
+		document.plates.append(plate)
+		out.append(document.plates.size() - 1)
+	return out
+
+
+static func _shifted_points(points: PackedVector2Array, delta: Vector2) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for point in points:
+		out.append(point + delta)
+	return out
+
+
 # ---------------------------------------------------------------------------
 # Editing an outline
 # ---------------------------------------------------------------------------
@@ -553,6 +593,11 @@ static func move_plate(document: AirframeDocument, plate_index: int, delta: Vect
 	if not _has_plate(document, plate_index):
 		return false
 	var plate: Dictionary = document.plates[plate_index]
+	if AirframeDocument.is_upright(plate):
+		# An upright plate moves in PLAN like any other: across is its plane's x, fore/aft is its own
+		# s axis. Its own h axis is height, which `set_plate_z` owns.
+		plate[AirframeDocument.PLATE_X_MM] = AirframeDocument.plate_x_mm(plate) + delta.x
+		delta = Vector2(delta.y, 0.0)
 	plate["outline"] = _translated(plate.get("outline", PackedFloat64Array()), delta)
 	var holes: Array = []
 	for hole in plate.get("holes", []):
@@ -583,6 +628,11 @@ static func set_role(document: AirframeDocument, plate_index: int, role: String)
 		return false
 	var plate: Dictionary = document.plates[plate_index]
 	plate["role"] = role
+	# A plate made upright stands at the plan centre of what it was, so it does not jump across the
+	# frame; its outline is then read in its own plane (AirframeDocument, "Upright plates").
+	if role == AirframeDocument.ROLE_SIDE and not plate.has(AirframeDocument.PLATE_X_MM):
+		plate[AirframeDocument.PLATE_X_MM] = PolygonProps.centroid(
+			AirframeDocument.plate_outline(plate)).x
 	if role != AirframeDocument.ROLE_ARM:
 		plate.erase("root_point")
 		plate.erase("tip_point")
@@ -612,6 +662,9 @@ static func replicate_radially(document: AirframeDocument, plate_index: int, cou
 	if not _has_plate(document, plate_index) or count < 2:
 		return false
 	var source: Dictionary = document.plates[plate_index]
+	# An upright plate's outline is not in plan, so rotating it about the plan origin means nothing.
+	if AirframeDocument.is_upright(source):
+		return false
 	var source_motor := _motor_at(document, AirframeDocument.point_of(
 		source.get("tip_point", [INF, INF])))
 
@@ -860,6 +913,8 @@ static func rotate_plate(document: AirframeDocument, plate_index: int, degrees: 
 	if not _has_plate(document, plate_index):
 		return false
 	var plate: Dictionary = document.plates[plate_index]
+	if AirframeDocument.is_upright(plate):
+		return false
 	var old_tip := AirframeDocument.point_of(plate.get("tip_point", [INF, INF]))
 	document.plates[plate_index] = _rotated_plate(plate, deg_to_rad(degrees))
 	var motor := _motor_at(document, old_tip)
