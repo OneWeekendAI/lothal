@@ -305,6 +305,24 @@ static func plate_notes(document: AirframeDocument) -> Array:
 	return out
 
 
+## The bounding rectangle of `plates` laid out as the cut sheet lays them (`LAYOUT_NEST`), mm — the
+## stock a shop has to put on the bed for them (airframe gaps G6 prices it). The same arrangement the
+## exported cut sheet draws, so the estimate and the file describe one sheet.
+static func nest_rect_mm(plates: Array) -> Rect2:
+	var temp := AirframeDocument.new()
+	temp.plates = plates
+	var placed := _placed_plates(temp, LAYOUT_NEST)
+	if placed.is_empty():
+		return Rect2()
+	var bounds := _bounds_of(placed)
+	return Rect2(bounds[0], (bounds[1] as Vector2) - (bounds[0] as Vector2))
+
+
+## "Same part" for counting quantities: role, stock, thickness, area, perimeter and hole count.
+static func part_signature(document: AirframeDocument, plate: Dictionary) -> String:
+	return _part_signature(document, plate)
+
+
 static func _part_signature(document: AirframeDocument, plate: Dictionary) -> String:
 	var outline := AirframeDocument.plate_outline(plate)
 	var perimeter := 0.0
@@ -498,6 +516,7 @@ static func write(document: AirframeDocument, path: String, layout: String = LAY
 		"svg": text = to_svg(document, layout)
 		"dxf": text = to_dxf(document, layout)
 		"stl": text = to_stl(document)
+		"html": text = BuildSheet.to_html(document)
 		_: return false
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:

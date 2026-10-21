@@ -22,7 +22,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config motor map", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
-	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage"]
+	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet"]
 
 func _init() -> void:
 	var total := 0
@@ -221,6 +221,8 @@ func _run_suite(suite_name: String) -> Array:
 		# PR16-PR18: fitted printed parts drawn from their exported triangles, where they are weighed or held.
 		"printed drawn": return TestPrintedDrawn.run()
 		"camera cage": return TestCameraCage.run()
+		# Airframe gaps G6: the build sheet (parts, hardware, assembly order) and the cutting-cost range.
+		"build sheet": return TestBuildSheet.run()
 		"authored blade": return TestAuthoredBlade.run()
 		"thrust overlay": return TestThrustOverlay.run()
 		"campbell overlay": return TestCampbellOverlay.run()

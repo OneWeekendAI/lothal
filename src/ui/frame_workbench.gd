@@ -56,6 +56,9 @@ const EXPORTS := [
 	{"label": "Cut sheet (SVG, nested)", "extension": "svg", "layout": FrameExport.LAYOUT_NEST},
 	{"label": "Cut file (DXF)", "extension": "dxf", "layout": FrameExport.LAYOUT_NEST},
 	{"label": "Assembly (STL)", "extension": "stl", "layout": FrameExport.LAYOUT_ASSEMBLY},
+	# G6: the parts list, hardware counts, assembly order and a rough cutting cost, as one page.
+	{"label": "Build sheet (HTML: parts, hardware, cost)", "extension": "html",
+		"layout": FrameExport.LAYOUT_NEST},
 ]
 
 ## The cutting bits the Export menu offers (G3), as menu ids from `BIT_MENU_ID`. 1/16" first and
@@ -488,7 +491,7 @@ func _on_duplicate() -> void:
 # Export
 # ---------------------------------------------------------------------------
 
-## Writes one of the four formats and shows the builder where it went.
+## Writes one of the five exports and shows the builder where it went.
 ##
 ## The folder is opened rather than a path being printed, because a file you cannot find has not
 ## been exported. On a headless run `OS.shell_open` does nothing and the status line still names
@@ -511,6 +514,8 @@ func _on_export_chosen(id: int) -> void:
 		_safe_file_name(editor.document.name), str(spec["extension"])]
 	if str(spec["layout"]) == FrameExport.LAYOUT_NEST and str(spec["extension"]) == "svg":
 		path = "%s/%s-cut.svg" % [EXPORT_DIRECTORY, _safe_file_name(editor.document.name)]
+	if str(spec["extension"]) == "html":
+		path = "%s/%s-build-sheet.html" % [EXPORT_DIRECTORY, _safe_file_name(editor.document.name)]
 	if not FrameExport.write(editor.document, path, str(spec["layout"])):
 		_set_status("COULD NOT WRITE %s." % path)
 		return

@@ -1,0 +1,18 @@
+{
+  "_schema": "PLACEHOLDER CUTTING RATES — rough figures for a builder to REPLACE with their own shop's quote. Nothing here was quoted by a real shop for this frame; the numbers are round guesses at the order of magnitude a small-batch carbon-plate cutting service charges, so the build sheet can say 'tens, not hundreds'. Read by CutCost (airframe gaps G6), which prices a frame as: for each stock (material + thickness), the bounding area of that stock's nest (FrameExport's cut-sheet layout, parts at the rotation they were drawn) times `sheet_price_per_cm2` for that thickness, plus the length of every cut (each outline and each hole's perimeter) times `cut_price_per_m`. Every figure is a LOW/HIGH pair and the estimate is always shown as a range with `tier_label` beside it — never one number. Thickness rows are interpolated linearly between the listed stock and scaled in proportion to thickness outside it. The sheet rates are for carbon plate; another material is priced at the same rate and the build sheet says so. Change `currency` and `currency_symbol` along with the figures.",
+  "tier": "placeholder",
+  "tier_label": "placeholder rates — replace with your shop's quote",
+  "currency": "USD",
+  "currency_symbol": "$",
+  "priced_as": "carbon plate",
+  "sheet_price_per_cm2": [
+    {"thickness_mm": 1.5, "low": 0.04, "high": 0.08},
+    {"thickness_mm": 2.0, "low": 0.05, "high": 0.10},
+    {"thickness_mm": 2.5, "low": 0.06, "high": 0.12},
+    {"thickness_mm": 3.0, "low": 0.07, "high": 0.14},
+    {"thickness_mm": 4.0, "low": 0.09, "high": 0.18},
+    {"thickness_mm": 5.0, "low": 0.11, "high": 0.22},
+    {"thickness_mm": 6.0, "low": 0.13, "high": 0.26}
+  ],
+  "cut_price_per_m": {"low": 1.0, "high": 3.0}
+}
