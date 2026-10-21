@@ -57,11 +57,47 @@ const SPEC_ROWS := [
 	# ---- STRENGTH AND SLOP (§4.4, §4.5) ----
 	{"key": "stress_root", "label": "Root stress per newton"},
 	{"key": "torsion", "label": "Twist per N·m"},
+	# ---- CRASH STRENGTH, AS A RANKING (airframe gaps G4, ArmStrength) ----
+	{"key": "break_load", "label": "Breaking load at motor"},
+	{"key": "strength_like", "label": "Strength vs catalog"},
+	{"key": "strength_rank", "label": "Rank among catalog"},
 ]
+
+## What the strength rows may and may not claim, said under them on every page — the Lab dock hides
+## the shared footer (`set_footer_visible`), and this sentence must not go with it.
+const STRENGTH_NOTE := "Strength ranks arms under one steady load at the motor. Impact energy " \
+	+ "is not modelled, so this gives no fall height and does not say an arm survives a crash. " \
+	+ "Catalog arms are Lothal's generated presets of the plate frames (widths assumed where " \
+	+ "unpublished); a moulded frame has no plate arm to rank."
+
+var _strength_note: Label
 
 
 func _init() -> void:
 	super(SPEC_ROWS)
+
+
+func _build_footer(root: VBoxContainer) -> void:
+	_strength_note = Label.new()
+	_strength_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_strength_note.custom_minimum_size = Vector2(280, 0)
+	_strength_note.theme_type_variation = &"MutedLabel"
+	_strength_note.text = STRENGTH_NOTE
+	root.add_child(_strength_note)
+	super(root)
+
+
+## The footnote under the strength rows, as shown. A test seam beside `rendered_text()`.
+func strength_note_text() -> String:
+	return _strength_note.text if _strength_note != null and _strength_note.visible else ""
+
+
+## The arm's strength rating against the shipped catalog (ArmStrength.rate), or {} with no arm.
+func strength_rating() -> Dictionary:
+	var beam := arm_beam()
+	if beam == null:
+		return {}
+	return ArmStrength.rate(beam, materials(), ArmStrength.default_references(materials()))
 
 
 ## True when this frame's arm width is a generated assumption rather than something authored or
@@ -213,5 +249,41 @@ func row_text(key: String) -> String:
 			# a sample of it. §4.4 claims ranking only, and the tier says so.
 			var twist: Dictionary = beam.torsion_deg(1.0)
 			return with_tier("%.2f°/N·m" % float(twist["twist_deg"]), _beam_tier(str(twist["tier"])))
+
+		"break_load":
+			if arm_beam() == null:
+				return no_beam_reason()
+			var rating := strength_rating()
+			if not bool(rating["known"]):
+				return with_tier("—", "no strength figure for this material")
+			# The steady load AT THE MOTOR that brings the arm's weakest section to the material's
+			# strength (the allowable on the stress row) — in newtons, and as the weight that would
+			# do it, because a builder can picture a weight and cannot picture a newton. A static
+			# load, not an impact; the tier is the STRENGTH figure's, from materials.json.
+			var newtons := float(rating["break_load_n"])
+			var where := "at root" if float(rating["weakest_s_m"]) <= 0.0 \
+				else "%.0f mm out" % (float(rating["weakest_s_m"]) * 1000.0)
+			return with_tier("%.0f N ≈ %.0f kg, %s" % [newtons, newtons / 9.80665, where],
+				_beam_tier(str(rating["strength_tier"])))
+
+		"strength_like":
+			if arm_beam() == null:
+				return no_beam_reason()
+			var rating := strength_rating()
+			if not bool(rating["known"]) or int(rating["total"]) == 0:
+				return "—"
+			# The comparison a builder can use: against frames they know, computed the same way.
+			return str(rating["phrase"])
+
+		"strength_rank":
+			if arm_beam() == null:
+				return no_beam_reason()
+			var rating := strength_rating()
+			if not bool(rating["known"]) or int(rating["total"]) == 0:
+				return "—"
+			# §8: a ranking may carry no error bar, and the strength figure under it is
+			# characteristic for carbon — so the tier on this row is the strength's own.
+			return with_tier("stronger than %d of %d frames" % [int(rating["stronger_than"]),
+				int(rating["total"])], str(rating["strength_tier"]))
 
 	return super(key)

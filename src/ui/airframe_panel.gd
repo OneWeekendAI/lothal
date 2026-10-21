@@ -160,21 +160,9 @@ func arm_plates() -> Array:
 ## Tip mass is deliberately absent from the signature. §4.3's loaded mode is a real and important
 ## number, and it belongs to the room that knows what motor is fitted.
 func arm_beam() -> ArmBeam:
-	var plates := arm_plates()
-	if plates.is_empty() or _document == null:
-		return null
-	var plate: Dictionary = plates[0]
-	if not plate.has("root_point") or not plate.has("tip_point"):
-		return null
-	var root := AirframeDocument.point_of(plate["root_point"])
-	var tip := AirframeDocument.point_of(plate["tip_point"])
-	var outline: PackedFloat64Array = plate.get("outline", PackedFloat64Array())
-	return ArmProfile.beam_flat(
-		outline,
-		root.x, root.y, tip.x, tip.y,
-		AirframeDocument.plate_thickness_mm(plate),
-		_document.plate_material_id(plate),
-		materials())
+	# ONE definition of "the first arm, as a beam": ArmStrength.beam_of, which the strength rating's
+	# reference table also measures every catalog frame through (airframe gaps G4).
+	return ArmStrength.beam_of(_document, materials())
 
 
 ## Why a frame has no analysable arm, in the builder's terms.

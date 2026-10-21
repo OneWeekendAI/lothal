@@ -70,6 +70,8 @@ const TABLE := {
 	&"screw_bottoms_out": [HARDWARE, "a screw bottoms out"],
 	&"thread_engagement": [HARDWARE, "too little thread engaged"],
 	&"hole_to_edge": [HARDWARE, "hole too close to the edge"],
+	# G4: ArmStrength's characteristic note — the arm breaks under less tip load than its class.
+	&"arm_weaker_than_class": [ARMS, "{arm_weaker_than_class}"],
 	# Straps & pads (airframe.md §6): StrapSlots' geometry and PadMount's spring, via StrapsPads.
 	&"no_strap_slots": [STRAPS, "no strap slots in the plate"],
 	&"strap_slot_narrow": [STRAPS, "{strap_slot_narrow}"],
@@ -205,6 +207,10 @@ static func _format(template: String, v: Dictionary) -> String:
 		"{strap_slot_narrow}":
 			return "slot %.0f mm, strap needs %.0f mm" % [float(v.get("slot_mm", 0.0)),
 				float(v.get("needed_mm", 0.0))]
+		"{arm_weaker_than_class}":
+			var size := str(v.get("size_class", ""))
+			return "arm weaker than every %s frame" % size if bool(v.get("class_clean", false)) \
+				and size != "" else "arm weaker than every catalog frame"
 		"{pad_too_soft}":
 			return "pad resonance ~%d Hz, in the loop" % roundi(float(v.get("f_n_hz", 0.0)))
 		"{current_limit}":
