@@ -118,7 +118,7 @@ const SYSTEMS := [
 		# DRONE IS MERGED INTO AIRFRAME (lab dock design §1.5, §4). "Pick a frame" and "edit it" were
 		# two entries in the dock for one subject; they are one section now, whose list names the
 		# five things Airframe contains — Frame, Arms, Screws & standoffs, Layout & fit, and Straps &
-		# pads (soon). The Frame rail comes with it: the Frame row's choice line opens its finder.
+		# pads. The Frame rail comes with it: the Frame row's choice line opens its finder.
 		#
 		# `rails` and `panels` are still TAB TITLES in LabScreen, matched by name. Which of them a
 		# row opens is `SectionRows.DEFINITIONS`' business; this list is what the section OWNS, so
@@ -127,7 +127,7 @@ const SYSTEMS := [
 		"name": "Airframe",
 		"rails": ["Frame"],
 		# In LabScreen's tab order, so a routed set reads the way the container lists it.
-		"panels": ["Frame", "Structure", "Arms", "Fasteners", "Layout", "Fit"],
+		"panels": ["Frame", "Structure", "Arms", "Fasteners", "Layout", "Straps", "Fit"],
 		"decided_by": ["frame"],
 	},
 	{
@@ -547,7 +547,7 @@ func _ready() -> void:
 	# A DOCK PAGE SHOWS ONLY ITS ROW'S WARNINGS (§3), in the item view's short + "Why?" list — so
 	# the Airframe sheets drop their whole-frame warning footers and Fit its mixed warning block.
 	for panel in [lab.structure_details, lab.arms_details, lab.fasteners_details,
-			lab.layout_details]:
+			lab.layout_details, lab.straps_details]:
 		(panel as AirframePanel).set_footer_visible(false)
 	lab.assembly_panel.set_warnings_visible(false)
 	# And the Propulsion sheets drop the whole build's warning list (the pack's current limit, the
@@ -2155,6 +2155,8 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 		numbers_context["pack_side_mm"] = float(lab.airframe.battery_overhang_m()["lateral"]) * 1000.0
 		if mode == FramePlanDiagram.MODE_LAYOUT:
 			extras = {"discs": lab.airframe.prop_discs_mm(), "parts": lab.airframe.plan_parts_mm()}
+	if mode == FramePlanDiagram.MODE_STRAPS:
+		extras = FramePlanDiagram.straps_extras(StrapsPads.figures(build, lab.frame_document))
 	_item_view.show_item(row, SectionRows.page_numbers(id, build, numbers_context))
 	if mode in [PropulsionDiagram.MODE_THRUST, PropulsionDiagram.MODE_PROP,
 			PropulsionDiagram.MODE_GUARD]:
@@ -2321,6 +2323,8 @@ func _refresh_list() -> void:
 	# page runs and the drawn frame's own checks, off the same document those pages render.
 	if lab.frame_document != null and _focused_name() == "Airframe":
 		warnings.append_array(FrameHardware.joint_warnings(lab.frame_document))
+		# Straps & pads: the slot geometry and the pad's spring, off the same document (§6).
+		warnings.append_array(StrapsPads.warnings(build, lab.frame_document))
 		warnings.append_array(FrameWarnings.of(lab.frame_document,
 			AirframeProperties.compute(lab.frame_document, AirframePanel.materials())))
 		var unflown := FittedFrame.unflown_warning(lab.frame_document)

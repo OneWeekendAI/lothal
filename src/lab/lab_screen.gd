@@ -122,6 +122,8 @@ var structure_details: StructureDetails
 var arms_details: ArmsDetails
 var fasteners_details: FastenersDetails
 var layout_details: LayoutDetails
+## Straps & pads (airframe.md §6): the pad as a spring and the strap slots, off StrapsPads.
+var straps_details: StrapsDetails
 
 ## The frame the Airframe tabs are describing, as geometry.
 ##
@@ -314,6 +316,10 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	layout_details = LayoutDetails.new()
 	layout_details.name = "Layout"
 	panels.add_child(layout_details)
+
+	straps_details = StrapsDetails.new()
+	straps_details.name = "Straps"
+	panels.add_child(straps_details)
 
 	motor_details = MotorDetails.new(catalog)
 	motor_details.name = "Motor"
@@ -875,6 +881,8 @@ func _on_selection_changed() -> void:
 	arms_details.render(frame_document)
 	fasteners_details.render(frame_document)
 	layout_details.render(frame_document)
+	# The pad needs the pack on it, so this one is handed the build's figures as data (StrapsDetails).
+	straps_details.render_straps(frame_document, StrapsPads.figures(build, frame_document))
 	motor_details.render(build.motor, build)
 	propeller_details.render(build.propeller, build)
 	battery_details.render(build.battery, build)

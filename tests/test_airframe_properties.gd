@@ -741,9 +741,24 @@ static func _test_against_the_existing_mass_model(
 	# one arm, or the front PAIR, leaves roll and pitch equal, since a 45° arm feeds both axes
 	# alike. Only an asymmetry between the u and v directions is one this assertion can see, which
 	# is exactly why the stretched fixture above and not this check is the transposition test.
-	if _relative(frame_only.roll_inertia_kg_m2(), frame_only.pitch_inertia_kg_m2()) > 1e-6:
+	# THE STRAP SLOTS ARE THE ONE DELIBERATE u/v ASYMMETRY (airframe gaps G1). Two 22 × 3.5 mm slots
+	# run ACROSS the top plate, so they take more from one axis than the other — measured 1.3e-4
+	# relative, a real asymmetry this check correctly saw. The symmetry claim is about the X layout,
+	# so it is asked of the same preset with only its slots filled back in; the slotted preset is
+	# held to having them by TestStrapsPads.
+	var unslotted := AirframeDocument.from_dictionary(doc.to_dictionary())
+	for plate in unslotted.plates:
+		var kept: Array = []
+		for hole in plate.get("holes", []):
+			if not bool(StrapSlots.measure(AirframeDocument.points_of(hole))["is_slot"]):
+				kept.append(hole)
+		plate["holes"] = kept
+	var symmetric := AirframeProperties.compute(unslotted, materials)
+	if _relative(symmetric.roll_inertia_kg_m2(), symmetric.pitch_inertia_kg_m2()) > 1e-6:
 		problems.append("the symmetric-X preset is not symmetric: roll %s pitch %s" % [
-			frame_only.roll_inertia_kg_m2(), frame_only.pitch_inertia_kg_m2()])
+			symmetric.roll_inertia_kg_m2(), symmetric.pitch_inertia_kg_m2()])
+	if _relative(frame_only.total_mass_kg, symmetric.total_mass_kg) <= 0.0:
+		problems.append("filling the slots changed nothing — the preset has no slots to fill")
 	# And it must not be symmetric by being empty, which is the way this check goes vacuous.
 	if frame_only.roll_inertia_kg_m2() <= 0.0:
 		problems.append("the preset has no roll inertia at all")

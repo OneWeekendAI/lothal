@@ -24,6 +24,7 @@ const FRAME := &"frame"
 const ARMS := &"arms"
 const HARDWARE := &"hardware"
 const LAYOUT := &"layout"
+const STRAPS := &"straps"
 const MOTORS := &"motors"
 const PROPELLERS := &"propellers"
 const GUARDS := &"guards"
@@ -69,6 +70,12 @@ const TABLE := {
 	&"screw_bottoms_out": [HARDWARE, "a screw bottoms out"],
 	&"thread_engagement": [HARDWARE, "too little thread engaged"],
 	&"hole_to_edge": [HARDWARE, "hole too close to the edge"],
+	# Straps & pads (airframe.md §6): StrapSlots' geometry and PadMount's spring, via StrapsPads.
+	&"no_strap_slots": [STRAPS, "no strap slots in the plate"],
+	&"strap_slot_narrow": [STRAPS, "{strap_slot_narrow}"],
+	&"strap_slot_off_pack": [STRAPS, "a strap slot is not under the pack"],
+	&"pad_too_soft": [STRAPS, "{pad_too_soft}"],
+	&"pad_passes_frame_mode": [STRAPS, "pad passes the frame's ring"],
 	&"mount_attachment": [LAYOUT, "a part has nothing to mount to"],
 	&"mount_pattern": [LAYOUT, "mount pattern does not match"],
 	&"mount_overhang": [LAYOUT, "a part overhangs its mount"],
@@ -195,6 +202,11 @@ static func _pct(fraction: Variant) -> int:
 
 static func _format(template: String, v: Dictionary) -> String:
 	match template:
+		"{strap_slot_narrow}":
+			return "slot %.0f mm, strap needs %.0f mm" % [float(v.get("slot_mm", 0.0)),
+				float(v.get("needed_mm", 0.0))]
+		"{pad_too_soft}":
+			return "pad resonance ~%d Hz, in the loop" % roundi(float(v.get("f_n_hz", 0.0)))
 		"{current_limit}":
 			var who: String = {"battery": "pack", "esc": "ESC"}.get(str(v.get("limited_by", "")), "motor")
 			return "%s limits you to %d%% throttle" % [who, _pct(v.get("throttle_cap", 1.0))]

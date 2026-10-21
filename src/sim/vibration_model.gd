@@ -208,6 +208,11 @@ const BLADE_PASS_EQUIVALENT_KG := 0.00003
 ## thickness enters through `k = E·A/t` where it always belonged, and the frequency is a
 ## computation with a citable formula rather than a guess.
 ##
+## THE BATTERY PAD IS DELIBERATELY NOT IN THIS PATH (airframe gaps G1, `PadMount`). It isolates the
+## pack, not the sensor, so its transmissibility does not multiply what the gyro reads. The seam for a
+## soft-mounted STACK — the pad that would — is described at the top of pad_mount.gd: a second
+## (f_n, ζ) pair into `FlightLaw.vibration_rate`'s params, which needs the Rust side to take it.
+##
 ## Damping is still a guess and still lives in the isolator's own file: `SoftMount` owns the
 ## default. This file reads it through `SoftMount.damping_ratio_for()` so there is one
 ## source of truth for the number, not two that can disagree.

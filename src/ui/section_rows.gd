@@ -49,8 +49,10 @@ const DEFINITIONS := {
 			"page": {"panels": ["Fasteners"], "diagram": "hardware"}},
 		{"id": &"layout", "name": "Layout & fit",
 			"page": {"panels": ["Fit", "Layout"], "diagram": "layout"}},
-		# §6 of the airframe design models a pad as a spring and nothing of that is built.
-		{"id": &"straps", "name": "Straps & pads", "soon": true},
+		# airframe.md §6: the pad as a spring (PadMount) and the strap slots as holes (StrapSlots),
+		# both read through StrapsPads. `diagram`: the seat plate's slots against the pack.
+		{"id": &"straps", "name": "Straps & pads",
+			"page": {"panels": ["Straps"], "diagram": "straps"}},
 	],
 	"Propulsion": [
 		# `diagram`: PropulsionDiagram's modes. `sheet`: which half of the Prop panel the page shows
@@ -284,6 +286,8 @@ static func choice_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			return str((build.frame.get("catalog", {}) as Dictionary).get("material", ""))
 		&"hardware":
 			return FrameHardware.choice(context.get("frame_document") as AirframeDocument)
+		&"straps":
+			return StrapsPads.choice_text(StrapsPads.figures(build, straps_document(build, context)))
 		&"layout":
 			var stack := str((build.frame.get("specs", {}) as Dictionary).get("stack_mount", ""))
 			return "stack %s" % stack if stack != "" else ""
@@ -410,6 +414,9 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			var grams := FrameHardware.mass_g(document, AirframePanel.materials()) \
 				if document != null else 0.0
 			return "~%d g hardware" % roundi(grams) if grams > 0.0 else ""
+		&"straps":
+			# Where the pad starts isolating (`~`: characteristic, §8), else the slots under the pack.
+			return StrapsPads.number_text(StrapsPads.figures(build, straps_document(build, context)))
 		&"layout":
 			# The part closest to a prop disc, measured off the assembled airframe
 			# (`AirframeModel.closest_to_prop`). Inside a disc, the impossible warning says it.
@@ -535,6 +542,8 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 			var screws := FrameHardware.screw_summary(document)
 			return [["Hardware", "~%d g" % roundi(grams) if grams > 0.0 else "—"],
 				["Screws", screws if screws != "" else "—"]]
+		&"straps":
+			return StrapsPads.page_numbers(StrapsPads.figures(build, straps_document(build, context)))
 		&"layout":
 			var closest: Dictionary = context.get("prop_clearance", {})
 			var side := "—"
@@ -652,6 +661,15 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 				["Loop τ roll · pitch · yaw", "%d · %d · %d ms" % [roundi(tau.x), roundi(tau.y),
 					roundi(tau.z)]]]
 	return []
+
+
+## The document the Straps & pads row reads: the shell's (`context.frame_document`), else the fitted
+## frame's preset — a row is a function of data, and the slots are on a plate either way.
+static func straps_document(build: Build, context: Dictionary) -> AirframeDocument:
+	var document := context.get("frame_document") as AirframeDocument
+	if document == null and build != null:
+		document = AirframeDocument.from_catalog_frame(build.frame)
+	return document
 
 
 static func _trim(value: float) -> String:

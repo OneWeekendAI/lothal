@@ -235,8 +235,10 @@ static func apply_layout(document: AirframeDocument, entry: Dictionary, p: Dicti
 			PolygonProps.DEFAULT_CHORD_TOLERANCE_MM, true))
 	document.plates.append(AirframeDocument.make_plate(
 		square(plate_side), stack_holes, t_plate, 0.0, AirframeDocument.ROLE_BOTTOM))
+	# Strap slots in the top plate, as AirframeDocument.from_catalog_frame cuts them (§6.4).
 	document.plates.append(AirframeDocument.make_plate(
-		square(plate_side), stack_holes, t_plate, top_z, AirframeDocument.ROLE_TOP))
+		square(plate_side), stack_holes + StrapSlots.preset_slots(plate_side, stack_pitch), t_plate,
+		top_z, AirframeDocument.ROLE_TOP))
 
 	for corner in bolt_pattern(Vector2.ZERO, stack_pitch, 0.0):
 		document.hardware.append({

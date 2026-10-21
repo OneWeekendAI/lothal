@@ -338,7 +338,7 @@ static func _test_leaving_a_system_takes_its_panels() -> Array:
 		"Video": ["Camera", "Electronics"],
 		"Control": ["FC", "Link", "Tune"],
 		# Drone folded into Airframe (lab dock design §4): its Frame and Fit tabs came with it.
-		"Airframe": ["Frame", "Structure", "Arms", "Fasteners", "Layout", "Fit"],
+		"Airframe": ["Frame", "Structure", "Arms", "Fasteners", "Layout", "Straps", "Fit"],
 	}
 	var seen := {}
 	for system_name in walk:

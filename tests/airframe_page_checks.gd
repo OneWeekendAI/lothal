@@ -50,6 +50,16 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 	out.append(_no_paragraph_under_the_sheet(shell, "Layout & fit", shell.lab.layout_details))
 	out.append(TestResult.new("airframe dock: the dock's Fit sheet is told to carry no warning block",
 		not shell.lab.assembly_panel.warnings_shown(), ""))
+	# Straps & pads (airframe gaps G1): live, drawn, and its sheet is the Straps panel.
+	shell.open_row(&"straps")
+	await _settle(tree)
+	out.append(_the_page_is_a_drawing_beside_its_sheet(shell, "Straps & pads", "straps"))
+	out.append(_the_page_lists_only_its_own_warnings(shell, &"straps"))
+	out.append(_no_paragraph_under_the_sheet(shell, "Straps & pads", shell.lab.straps_details))
+	out.append(TestResult.new("airframe dock: the Straps & pads page draws the preset's two slots",
+		shell.item_diagram().slots.size() == 2 and shell.item_diagram().flagged_slots.is_empty()
+			and shell.lab.straps_details.is_visible_in_tree(),
+		"%d slots" % shell.item_diagram().slots.size()))
 	shell.back_to_drone()
 	await _settle(tree)
 	out.append(TestResult.new("airframe dock: Back takes the drawing down with the page",
@@ -203,8 +213,10 @@ static func _a_designer_edit_flies(shell: GlassShell, tree: SceneTree) -> Array:
 ## difference explained on screen").
 static func _the_frame_page_says_what_flies_beside_what_is_drawn(shell: GlassShell) -> TestResult:
 	var summary := shell.workbench().numbers.summary_text()
-	return TestResult.new("airframe dock: the Frame page shows drawn 108 g beside 'Flies as 110 g, as weighed'",
-		summary.begins_with("108 g · Flies as 110 g, as weighed"), summary)
+	# 107 g, not 108, since airframe gaps G1: the preset top plate now has its two 22 × 3.5 mm strap
+	# slots cut out of it (StrapSlots.preset_slots), and the drawn mass integrates the plate it draws.
+	return TestResult.new("airframe dock: the Frame page shows drawn 107 g beside 'Flies as 110 g, as weighed'",
+		summary.begins_with("107 g · Flies as 110 g, as weighed"), summary)
 
 
 static func _the_frame_page_carries_the_fitted_catalogue_sheet(shell: GlassShell) -> TestResult:

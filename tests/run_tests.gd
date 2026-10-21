@@ -22,7 +22,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config motor map", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
-	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "stl bodies", "printed infill", "printed drawn"]
+	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stl bodies", "printed infill", "printed drawn"]
 
 func _init() -> void:
 	var total := 0
@@ -207,6 +207,8 @@ func _run_suite(suite_name: String) -> Array:
 		"gps mast": return TestGpsMast.run()
 		# PR11: the battery pad — bands and rails with open strap slots; opt-in mass under Build's own pack seat.
 		"battery pad": return TestBatteryPad.run()
+		# Airframe gaps G1: Straps & pads — the pad as a spring, strap slots as holes, the row and page.
+		"straps pads": return TestStrapsPads.run()
 		# PR13: StlWriter checks each body; touching plates are legal, a mis-wound face inside one is not.
 		"stl bodies": return TestStlBodies.run()
 		# PR15: one infill convention — every weighted printed part reads PrintSettings, and its row says so.

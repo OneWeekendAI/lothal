@@ -86,6 +86,11 @@ const PLATE_WIDTH_ASSUMED := "width_is_assumed"
 const CONSTRUCTION_PLATE := "plate"
 const CONSTRUCTION_MOULDED := "moulded"
 
+## 1/16" (1.5875 mm): the end mill most carbon-cutting services quote for frame plates. A TYPICAL SHOP
+## VALUE, labelled as such wherever it is shown — a shop with a 1/8" bit is just as real, which is why
+## it is a document setting rather than a constant the checks read.
+const DEFAULT_CUTTING_BIT_MM := 1.5875
+
 var id := ""
 var name := ""
 var author := ""
@@ -578,7 +583,12 @@ static func from_catalog_frame(frame: Dictionary) -> AirframeDocument:
 		stack_holes.append(PolygonProps.tessellate_circle(corner, 1.6,
 			PolygonProps.DEFAULT_CHORD_TOLERANCE_MM, true))
 	doc.plates.append(make_plate(_square(plate_side), stack_holes, t_plate, 0.0, ROLE_BOTTOM))
-	doc.plates.append(make_plate(_square(plate_side), stack_holes, t_plate, top_z, ROLE_TOP))
+	# The top plate carries the pack, so it carries the two strap slots a pack is strapped through
+	# (airframe.md §6.4). GUESSED, as the arm width is: the catalog publishes no slot, so these are
+	# StrapSlots' preset 20 mm-strap slots, inside the stack pattern — and without them every preset
+	# would be told it has nowhere to pass a strap, which is true of no frame anyone sells.
+	doc.plates.append(make_plate(_square(plate_side),
+		stack_holes + StrapSlots.preset_slots(plate_side, stack_pitch), t_plate, top_z, ROLE_TOP))
 
 	for corner in _bolt_pattern(Vector2.ZERO, stack_pitch, 0.0):
 		doc.hardware.append({

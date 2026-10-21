@@ -66,7 +66,7 @@ const RAIL_TITLES := ["Frame", "Motor", "Prop", "Pack", "ESC", "FC", "Electronic
 ## what happens when the link drops and the three checks predictable from the build.
 ## "Rates" sits immediately after "Failsafe", where LabScreen puts it — Config's fourth panel (C8),
 ## the pilot's max rate and expo and the sim-versus-real statement over them.
-const PANEL_TITLES := ["Frame", "Structure", "Arms", "Fasteners", "Layout",
+const PANEL_TITLES := ["Frame", "Structure", "Arms", "Fasteners", "Layout", "Straps",
 	"Motor", "Prop", "Pack", "ESC", "Harness", "FC", "Camera", "Electronics", "Link", "Fit", "Tune",
 	"Motors", "Ports", "Failsafe", "Rates", "Sheet", "Print"]
 
