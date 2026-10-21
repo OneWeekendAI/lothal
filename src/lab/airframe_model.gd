@@ -77,6 +77,17 @@ func _init() -> void:
 	add_child(motor_map)
 
 
+## Whether `document` is the frame `frame` flies: generated from it (same id), or the drawing a
+## REPLACEMENT edit flies in its place (`FittedFrame._replacement_edit`'s `drawn_id`). Matching on
+## the part id alone drew a saved 3" drawing as a generic plate on the 5" rail's specs.
+static func draws(document: AirframeDocument, frame: Dictionary) -> bool:
+	var id := str(document.id)
+	if id == str(frame.get("part_id", "")):
+		return true
+	var edit: Dictionary = frame.get("drawn_edit", {})
+	return id != "" and id == str(edit.get("drawn_id", ""))
+
+
 ## Regenerates the whole airframe from `build`. Safe to call on every part change; the frame
 ## rebuild clears the pads and everything hanging off them, so nothing from the previous
 ## build can survive into this one.
@@ -96,7 +107,7 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null, document: AirframeDocu
 	if tweaks != null:
 		tweak_m = tweaks.resolved_m(build)
 
-	if document != null and str(document.id) == str(build.frame.get("part_id", "")):
+	if document != null and draws(document, build.frame):
 		frame_model.rebuild_document(document, build.frame, tweak_m["plate_gap_m"])
 	else:
 		frame_model.rebuild(build.frame, tweak_m["plate_gap_m"])

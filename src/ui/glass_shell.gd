@@ -3363,6 +3363,13 @@ func _report_printed_divergence() -> void:
 func apply_project(project: Project) -> Array:
 	if lab == null:
 		return []
+	# The drawing is read NOW, before anything below moves a rail. `container` is already this
+	# project, and every rail the selection moves fires `_refresh_status`, whose `_sync_project`
+	# writes `lab.drawn_frame()` — still the PREVIOUS drone's frame, `{}` for a catalogue one — into
+	# `project.airframe`. Read after the selection, the drawing was gone before it was applied: the
+	# Lab opened on the catalogue frame and the next autosave wrote `{}` over the file. (Printing
+	# and config escape this only because they reach the lab before the first rail moves.)
+	var drawn := project.airframe.duplicate(true)
 	# Printing first, so the rebuild the selection triggers already describes this drone's parts.
 	lab.set_printing(project.printing)
 	# Before the selection too, for the same reason printing is: the rebuild the selection triggers
@@ -3374,7 +3381,8 @@ func apply_project(project: Project) -> Array:
 	var missing := lab.apply_selection(project.parts)
 	# After the selection, so the drawing lands on THIS drone's fitted frame — and always, so a drone
 	# with no drawing does not inherit the previous drone's on the same catalogue frame.
-	lab.set_drawn_frame(project.airframe)
+	lab.set_drawn_frame(drawn)
+	project.airframe = lab.drawn_frame()
 	return missing
 
 

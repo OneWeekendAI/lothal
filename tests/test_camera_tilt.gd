@@ -506,7 +506,8 @@ static func _sim_builds_its_airframe_from_the_saved_tweaks() -> TestResult:
 	var path := "res://src/scenes/main.gd"
 	var source := FileAccess.get_file_as_string(path)
 	var reads := source.contains("AssemblyTweaks.load_from()")
-	var rebuilds := source.contains("airframe.rebuild(build, tweaks)")
+	# The drawn frame's document rides as a third argument (TestDrawnBuildOpens); the tweaks stay second.
+	var rebuilds := source.contains("airframe.rebuild(build, tweaks, initial_frame_document)")
 	var attaches := source.contains("fpv_view.attach(airframe.camera_eye())")
 	return TestResult.new(
 		"Sim reads the saved tweaks and rebuilds the airframe it flies FPV from with them",

@@ -85,6 +85,21 @@ func _init() -> void:
 		total += 1
 		print("[%s] %s (%s)" % [status, result.name, result.detail])
 
+	# The drawn-build open path, for the same reason and under the same Ruling-71 containment: it
+	# needs a shell whose `_ready` has wired the rails, which takes a tree and frames.
+	var drawn_returned: Variant = await _call_drawn_open_run()
+	var drawn_results: Array = drawn_returned if drawn_returned is Array else []
+	if drawn_results.is_empty():
+		fail_count += 1
+		total += 1
+		print("[FAIL] suite \"drawn build opens\" produced no results (crashed, or class not registered)")
+	for result in drawn_results:
+		var status: String = "PASS" if result.passed else "FAIL"
+		if not result.passed:
+			fail_count += 1
+		total += 1
+		print("[%s] %s (%s)" % [status, result.name, result.detail])
+
 	print("")
 	if fail_count == 0:
 		print("ALL %d TESTS PASSED" % total)
@@ -112,6 +127,11 @@ func _init() -> void:
 ## Do not inline this call back into `_init()`.
 func _call_layout_run() -> Variant:
 	return await TestShellLayout.run(self)
+
+
+## `TestDrawnBuildOpens.run()`, from a helper for the reason `_call_layout_run` gives.
+func _call_drawn_open_run() -> Variant:
+	return await TestDrawnBuildOpens.run(self)
 
 
 ## EVERY SUITE IS DISPATCHED FROM HERE, AND THAT IS STRUCTURAL — NOT TIDINESS. Ruling 71.

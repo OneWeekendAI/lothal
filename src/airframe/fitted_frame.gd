@@ -113,6 +113,8 @@ static func apply(frame: Dictionary, edit: Dictionary) -> Dictionary:
 		out["name"] = str(edit["name"])
 	for key in (edit.get("specs", {}) as Dictionary):
 		(out["specs"] as Dictionary)[key] = (edit["specs"] as Dictionary)[key]
+	if edit.get("catalog") is Dictionary:
+		out["catalog"] = (edit["catalog"] as Dictionary).duplicate(true)
 	out["drawn_edit"] = edit.duplicate(true)
 	return out
 
@@ -194,7 +196,22 @@ static func _replacement_edit(frame: Dictionary, document: AirframeDocument,
 			"motor_mount": motor_mount_of(document),
 			"stack_mount": stack_mount_of(document),
 		},
+		# And its own browsing block. Left as the fitted frame's, a 3" PA12 drawing was described as
+		# "5\"" and "carbon fibre 3K" by the Frame and Arms rows and drawn in carbon. The material is
+		# the drawing's; the size class is a published label nobody published for a drawing, so it is
+		# "" and the Frame row names the frame instead of guessing a class off its clearance.
+		"catalog": {
+			"material": material_name_of(document),
+			"size_class": "",
+			"frame_type": "",
+		},
 	}
+
+
+## The drawing's material by name ("PA12 (SLS nylon)"), or its id when the library does not know it.
+static func material_name_of(document: AirframeDocument) -> String:
+	var record := AirframePanel.materials().get_material(document.material_id)
+	return str(record.get("name", document.material_id))
 
 
 ## The largest prop whose discs do not touch: the closest pair of motors, centre to centre, in
