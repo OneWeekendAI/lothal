@@ -1234,6 +1234,13 @@ func _build_blade_room() -> void:
 	# where a Build that outlives the reload can honour it.
 	_blade_room.parts_published.connect(func(_record: Dictionary) -> void: lab.reload_catalog())
 
+	# THE PAD IS NOT THIS ROOM'S TO WRITE (SM4). It is the "Motor soft mount" assembly tweak, shown
+	# and edited on the Fit panel, and `AssemblyPanel.set_tweak_mm` is the single path a tweak takes —
+	# the Power room's pack offset, one room over, is routed the same way and for the same reason.
+	# Before SM4 the room's slider wrote a thickness of its own that nothing else read.
+	_blade_room.soft_mount_edited.connect(func(millimetres: float) -> void:
+		lab.assembly_panel.set_tweak_mm(AssemblyTweaks.SOFT_MOUNT, millimetres))
+
 	# The way out is built with the way in, in `_build_top_cluster` — see `_build_close_door` for
 	# why it lives in the top bar and not over the room.
 
@@ -1983,6 +1990,10 @@ func _show_page(row: Dictionary) -> void:
 				_field.set_dock_page(str(page.get("sheet", "")))
 				_field.refresh()
 			"blade":
+				# The aircraft as it stands NOW, on every open — `set_power_room_open`'s posture. A
+				# room handed the build once would draw the pad and motor of whatever was fitted the
+				# first time it was opened (SM4).
+				_blade_room.set_build(lab.current_build(), lab.tweaks)
 				_blade_room.visible = true
 			"power":
 				_power_room.set_build(lab.build_with_open_harness(), lab.tweaks, lab.frame_document)

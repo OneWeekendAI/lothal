@@ -49,7 +49,134 @@ static func run() -> Array:
 	results.append(_test_a_refused_edit_leaves_nothing_to_undo())
 	results.append(_test_undo_cannot_reach_across_an_open())
 	results.append(_test_undoing_back_to_the_published_shape_says_so())
+	results.append(_test_the_room_opens_at_the_aircrafts_pad())
+	results.append(_test_the_rooms_pad_slider_moves_the_lab_value())
+	results.append(_test_the_rooms_mount_frequency_is_the_vibration_models())
+	results.append(_test_the_rooms_mount_frequency_carries_the_blades_mass())
 	return results
+
+
+# ---------------------------------------------------------------------------
+# SM4 — one pad value, one tip mass
+# ---------------------------------------------------------------------------
+
+## The reference build with `pad_mm` of soft mount set on a fresh configuration, and the build
+## re-resolved against it — the posture `LabScreen.build_with_open_harness` takes, so the
+## `VibrationModel` built from it reads the same pad the room is handed.
+static func _build_with_pad(pad_mm: float) -> Array:
+	var tweaks := AssemblyTweaks.new()
+	var build := ReferenceBuild.build()
+	tweaks.set_mm(AssemblyTweaks.SOFT_MOUNT, pad_mm)
+	build.set_assembly(tweaks.resolved_m(build))
+	return [build, tweaks]
+
+
+## THE ROOM OPENS AT THE AIRCRAFT'S PAD. Driven through the shell, because the open is the shell's:
+## a pad set on the Fit panel before the door is opened must be what the room's slider and drawing
+## show. Until SM4 the room started every visit at zero, so this read 0.0 mm against a 2.0 mm build.
+##
+## MUTATION CONFIRMED RED: drop the `_blade_room.set_build(...)` line from `GlassShell._show_page`'s
+## "blade" branch (the room stays cold: slider 0.0 mm, drawn pad 0.0 mm).
+static func _test_the_room_opens_at_the_aircrafts_pad() -> TestResult:
+	var shell := GlassShell.new()
+	shell.lab.assembly_panel.set_tweak_mm(AssemblyTweaks.SOFT_MOUNT, 2.0)
+	shell.set_blade_room_open(true)
+	var room := shell.blade_room()
+	var slider_mm := room._pad_slider.value * 1000.0
+	var drawn_mm := room.profile.soft_mount_m * 1000.0
+	_free_shell(shell)
+
+	return TestResult.new(
+		"[SM4] the blade room opens at the aircraft's pad, not at a pad of its own",
+		absf(slider_mm - 2.0) < 1.0e-9 and absf(drawn_mm - 2.0) < 1.0e-9,
+		"Fit panel 2.0 mm; the room's slider reads %.4f mm and its profile draws %.4f mm" % [
+			slider_mm, drawn_mm])
+
+
+## AND ITS SLIDER IS PLUGGED INTO THE LAB. The slider's own handler is driven, the way this suite's
+## P10d pad checks drive it — measured: assigning `_pad_slider.value` on a room outside the tree moves
+## the value and emits no `value_changed`, so a check written that way exercises nothing. The Lab's
+## configuration and Fit panel are then asked what they hold. A room that wrote a copy of its own would draw the new pad and leave the aircraft on
+## the old one, which is exactly the pre-SM4 room.
+##
+## MUTATION CONFIRMED RED: drop the `soft_mount_edited` connection in `GlassShell._build_blade_room`
+## (the configuration stays at 0.0 mm and the slider snaps back to it).
+static func _test_the_rooms_pad_slider_moves_the_lab_value() -> TestResult:
+	var shell := GlassShell.new()
+	shell.lab.assembly_panel.set_tweak_mm(AssemblyTweaks.SOFT_MOUNT, 0.0)
+	shell.set_blade_room_open(true)
+	var room := shell.blade_room()
+	room._on_pad_changed(0.0015)
+	var stored := shell.lab.tweaks.value_mm(AssemblyTweaks.SOFT_MOUNT, shell.lab.current_build())
+	var on_the_panel := shell.lab.assembly_panel.tweak_row_text(AssemblyTweaks.SOFT_MOUNT)
+	var room_mm := room.soft_mount_m() * 1000.0
+	_free_shell(shell)
+
+	return TestResult.new(
+		"[SM4] the room's pad slider reaches the Lab's soft-mount tweak, through the path that owns it",
+		absf(stored - 1.5) < 1.0e-9 and on_the_panel.begins_with("1.5") \
+			and absf(room_mm - 1.5) < 1.0e-9,
+		"the configuration reads %.4f mm, the Fit panel says \"%s\", the room %.4f mm" % [
+			stored, on_the_panel, room_mm])
+
+
+## The shell saves the configuration to `user://` on every tweak (`LabScreen._on_tweaks_changed`),
+## so a pad set here would be the next shell's starting pad — in this suite and the next. Put back to
+## the as-built zero before the shell goes.
+static func _free_shell(shell: GlassShell) -> void:
+	shell.lab.tweaks.clear(AssemblyTweaks.SOFT_MOUNT)
+	shell.lab.tweaks.save()
+	shell.free()
+
+
+## ROOM f_n == `VibrationModel.mount_hz()` FOR THE SAME BUILD, exactly — not within a tolerance,
+## because both are now one call of `SoftMount.f_n_hz` on one pad, one tip-mass function and one
+## spec, and anything less than bit equality would mean a second copy of one of them.
+##
+## MUTATIONS CONFIRMED RED (2 of 2): `mount_hz` reading `_cold_soft_mount_m` instead of
+## `soft_mount_m()` (room INF against the model's finite f_n); `VibrationModel.tip_mass_kg` called
+## with `0.0` for the blade's grams (room f_n above the model's).
+static func _test_the_rooms_mount_frequency_is_the_vibration_models() -> TestResult:
+	var pair := _build_with_pad(2.0)
+	var build: Build = pair[0]
+	var room := _room()
+	room.set_build(build, pair[1])
+	room.open_preset(str(build.propeller["part_id"]))
+	var room_hz := room.profile.mount_f_n_hz
+	var model_hz := VibrationModel.for_build(build).mount_hz()
+	room.free()
+
+	return TestResult.new(
+		"[SM4] the room's mount frequency is the vibration model's for the same build",
+		is_finite(model_hz) and room_hz == model_hz,
+		"room %.6f Hz, VibrationModel.mount_hz() %.6f Hz" % [room_hz, model_hz])
+
+
+## The tip mass the room hands `SoftMount` is the motor PLUS the blade on screen: a heavier
+## propeller on the same pad must lower f_n. Guards the shared function's second argument, which the
+## equality check above cannot see on its own if both callers dropped the prop together.
+##
+## MUTATION CONFIRMED RED: `VibrationModel.tip_mass_kg` ignoring `prop_mass_g` (the two blades give
+## the same frequency).
+static func _test_the_rooms_mount_frequency_carries_the_blades_mass() -> TestResult:
+	var pair := _build_with_pad(2.0)
+	var room := _room()
+	room.set_build(pair[0], pair[1])
+	room.open_preset(str((pair[0] as Build).propeller["part_id"]))
+	var light_hz := room.profile.mount_f_n_hz
+	var light_g := room.document.published_mass_g
+	room.document.published_mass_g = light_g + 10.0
+	room._refresh()
+	var heavy_hz := room.profile.mount_f_n_hz
+	room.free()
+
+	var expected := SoftMount.f_n_hz(0.002,
+		(float((pair[0] as Build).motor["mass_g"]) + light_g + 10.0) / 1000.0)
+	return TestResult.new(
+		"[SM4] ten more grams of blade on the same pad lowers the room's mount frequency",
+		heavy_hz < light_hz and absf(heavy_hz - expected) < 1.0e-9,
+		"%.1f g blade: %.3f Hz -> %.1f g: %.3f Hz (SoftMount directly: %.3f Hz)" % [
+			light_g, light_hz, light_g + 10.0, heavy_hz, expected])
 
 
 # ---------------------------------------------------------------------------

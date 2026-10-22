@@ -270,6 +270,7 @@ static func for_build(build: Build) -> VibrationModel:
 	model.blades = geometry.blades
 	model.prop_radius_m = geometry.diameter_m * 0.5
 	model.soft_mount_m = float(build.assembly_value("soft_mount_m"))
+	model.soft_mount_spec = soft_mount_spec_for(build)
 	model.tip_load_kg = tip_mass_kg_for(build)
 	# P8: the pad's own mass lands at the arm tip and lowers the mode. Zero when no mount is
 	# fitted, so the reference build's resonance is bit-identical to pre-P8.
@@ -284,7 +285,33 @@ static func for_build(build: Build) -> VibrationModel:
 ## own mass (P8) is added by `for_build` on top of this — kept separate so a bench that sweeps
 ## motor mass at fixed mount hardware still gets the answer it asked for.
 static func tip_mass_kg_for(build: Build) -> float:
-	return (float(build.motor.get("mass_g", 0.0)) + float(build.propeller.get("mass_g", 0.0))) / 1000.0
+	return tip_mass_kg(build.motor, float(build.propeller.get("mass_g", 0.0)))
+
+
+## THE ONE TIP-MASS FUNCTION (slice SM4): a motor record and the grams of propeller on its shaft, in
+## kilograms. `tip_mass_kg_for` is a call of it and so is the Propulsion room's `mount_hz`, which is
+## what makes the room's mount frequency and this model's the same number for the same build rather
+## than two expressions that happen to agree today.
+##
+## The propeller is taken as GRAMS and not as a record because the room's blade is a
+## `PropellerDocument`, whose mass is `published_mass_g`, and a record assembled only to be read back
+## here would be a second place a prop's mass lives. The sum is the pre-SM4 expression verbatim, in
+## the same order, so every pinned resonance stays bit-identical.
+##
+## The pad's own mass is deliberately NOT in here, and the SM4 audit's "two tip masses" was a
+## misreading worth stating: both callers hand this to `SoftMount`, which adds the grommet stack's
+## share inside `compute` for the MOUNT mode, and `for_build` adds it separately for the FRAME mode.
+## The room and the model never disagreed about the grommet; they disagreed about which pad (the
+## room kept its own, started at zero) and would have about which spec.
+static func tip_mass_kg(motor: Dictionary, prop_mass_g: float) -> float:
+	return (float(motor.get("mass_g", 0.0)) + prop_mass_g) / 1000.0
+
+
+## The grommet spec this build's pad is made of, for `SoftMount`. Empty means the class-typical
+## defaults soft_mount.gd owns — which is every build until a mount part is chosen. One function so
+## the Propulsion room and `for_build` cannot hand `SoftMount` two different pads.
+static func soft_mount_spec_for(_build: Build) -> Dictionary:
+	return {}
 
 
 ## The frame's first arm-bending mode — the scaling law at the top of this file, anchored on
