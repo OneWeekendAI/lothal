@@ -30,6 +30,11 @@ const CATEGORY_FILES := {
 	# lets parallel-axis supply the R² bite exactly once — P9's row spells out the double-count
 	# trap that would otherwise result.
 	"guard": "res://data/parts/guards.json",
+	# SM1: soft mounts enter on the guards' shape — a build may fit none, and until SM2 nothing reads
+	# a mount id, so every pinned number is untouched by this line. The physics is
+	# src/propulsion/soft_mount.gd; `SoftMount.spec_from_part` is the one reader of an entry, and it
+	# refuses a missing field rather than filling it from the class-typical default.
+	"mount": "res://data/parts/mounts.json",
 	# PW1 (plans/2026-09-10-power-room-design.md §4.1). The two halves of the current path that are
 	# products you buy; the third — wire — is deliberately NOT here, because wire is a gauge and a
 	# length rather than a part, and a row per gauge could not answer "what if I shorten these

@@ -1,0 +1,62 @@
+{
+  "_schema": "Motor soft mounts as parts — slice SM1 (track.md, Wave P follow-on). One entry is ONE MOTOR'S set of grommets: the pads under the four screws that hold one motor to its arm. Every field under `specs` is what SoftMount.spec_from_part() reads and nothing here duplicates the physics in src/propulsion/soft_mount.gd (Gent's Shore A → E, k = E·A/t per grommet, f_n = sqrt(k_total / m_supported) / 2π). The five REQUIRED fields are SoftMount.PART_SPEC_FIELDS: `shore_a` (durometer, Shore A), `contact_area_mm2` (the crushed contact patch of ONE grommet, mm²), `grommets_per_motor`, `thickness_mm` (the pad's nominal compressed thickness — what its mass is computed at; the Lab's \"Motor soft mount\" tweak is still the thickness an aircraft is built with) and `density_kg_m3`. An entry that leaves one out is refused with insufficient_data:missing_<field>, never filled from the class-typical default. `damping_ratio` is optional and absent from every entry: no vendor publishes one, and SoftMount's own 0.10 is a guess that says so. `assumed` lists every spec field whose value is a CLASS-TYPICAL GUESS rather than a reading of a real product, and an entry with any assumed field says \"class-typical\" in its `source`; tests/test_soft_mount.gd holds both to that. `mass_g` at the top level is DERIVED — SoftMount.mount_mass_kg() at the entry's own thickness, ×1000 — and is carried for the browsing rail and the loader only; the same test asserts the two agree. Colour, price and vendor links are banned by name from both tiers.",
+  "parts": [
+    {
+      "part_id": "mount_grommet_60a",
+      "name": "60A silicone grommets (class default)",
+      "category": "mount",
+      "mass_g": 0.0192,
+      "specs": {
+        "shore_a": 60.0,
+        "contact_area_mm2": 4.0,
+        "grommets_per_motor": 4,
+        "thickness_mm": 1.0,
+        "density_kg_m3": 1200.0
+      },
+      "assumed": ["contact_area_mm2", "thickness_mm", "density_kg_m3"],
+      "catalog": {
+        "shore_class": "60A",
+        "material": "silicone"
+      },
+      "source": "the class-typical default SoftMount has carried since P8, made a part rather than a hidden constant. 60A is what the two commodity FPV grommet products in this project's spare bin read on a Shore A gauge; four per motor is the four-M3 motor plate every quad frame in the catalog uses. The contact area (4 mm², the crushed patch of a 6 mm OD grommet), the 1.0 mm compressed thickness (pre-P8's MOUNT_REFERENCE_THICKNESS_M) and the silicone density are class-typical guesses, not readings."
+    },
+    {
+      "part_id": "mount_grommet_50a_soft",
+      "name": "50A soft silicone grommets",
+      "category": "mount",
+      "mass_g": 0.0192,
+      "specs": {
+        "shore_a": 50.0,
+        "contact_area_mm2": 4.0,
+        "grommets_per_motor": 4,
+        "thickness_mm": 1.0,
+        "density_kg_m3": 1200.0
+      },
+      "assumed": ["shore_a", "contact_area_mm2", "thickness_mm", "density_kg_m3"],
+      "catalog": {
+        "shore_class": "50A",
+        "material": "silicone"
+      },
+      "source": "class-typical softer grommet: the 60A default's geometry with a 50A durometer, the softer end of what is sold as motor soft-mount rubber. No product was measured; every field is a class-typical guess, which is what `assumed` says."
+    },
+    {
+      "part_id": "mount_grommet_70a_firm",
+      "name": "70A firm silicone grommets",
+      "category": "mount",
+      "mass_g": 0.0192,
+      "specs": {
+        "shore_a": 70.0,
+        "contact_area_mm2": 4.0,
+        "grommets_per_motor": 4,
+        "thickness_mm": 1.0,
+        "density_kg_m3": 1200.0
+      },
+      "assumed": ["shore_a", "contact_area_mm2", "thickness_mm", "density_kg_m3"],
+      "catalog": {
+        "shore_class": "70A",
+        "material": "silicone"
+      },
+      "source": "class-typical firmer grommet: the 60A default's geometry with a 70A durometer, the firm end of what is sold as motor soft-mount rubber. No product was measured; every field is a class-typical guess, which is what `assumed` says."
+    }
+  ]
+}

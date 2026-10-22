@@ -130,6 +130,12 @@ static func compute(thickness_m: float, tip_mass_kg: float,
 		spec: Dictionary = {}) -> Dictionary:
 	if thickness_m <= 0.0:
 		return _no_mount()
+	# A spec read off a catalog entry names what the entry did NOT say (`spec_from_part`), and a
+	# field the entry left out is refused rather than filled from the class-typical defaults below.
+	# Filling it would hand a 70A part a 60A default's contact area and call the answer "computed".
+	var missing: Array = spec.get("missing", [])
+	if not missing.is_empty():
+		return _insufficient("missing_" + String(missing[0]))
 	if tip_mass_kg <= 0.0:
 		return _insufficient("tip_mass_non_positive")
 
@@ -199,7 +205,7 @@ static func f_n_hz(thickness_m: float, tip_mass_kg: float,
 ## when no mount is fitted — the reference build's frame mode is untouched by P8, which is
 ## §5.3's "small but present" claim made concrete.
 static func mount_mass_kg(thickness_m: float, spec: Dictionary = {}) -> float:
-	if thickness_m <= 0.0:
+	if thickness_m <= 0.0 or not (spec.get("missing", []) as Array).is_empty():
 		return 0.0
 	var contact_area_m2 := float(spec.get("contact_area_m2", _DEFAULT_CONTACT_AREA_M2))
 	var grommets := int(spec.get("grommets_per_motor", _DEFAULT_GROMMETS_PER_MOTOR))
@@ -220,6 +226,70 @@ static func mount_mass_kg(thickness_m: float, spec: Dictionary = {}) -> float:
 static func damping_ratio_for(spec: Dictionary = {}) -> float:
 	var zeta := float(spec.get("damping_ratio", DEFAULT_DAMPING_RATIO))
 	return zeta if zeta > 0.0 and zeta < 1.0 else DEFAULT_DAMPING_RATIO
+
+
+# ---------------------------------------------------------------------------
+# Mounts as parts — slice SM1
+# ---------------------------------------------------------------------------
+
+## The five fields a `data/parts/mounts.json` entry must carry under `specs` for this file to compute
+## anything from it, in the units the JSON states them in. `damping_ratio` is deliberately NOT one of
+## them: no grommet vendor publishes a damping ratio, the default above is a guess and says so, and a
+## catalog that required one would get it by every entry copying the guess.
+##
+## `thickness_mm` is the pad's own nominal compressed thickness — what the product is, and what its
+## catalog `mass_g` is computed at. It is not the Lab's "Motor soft mount" tweak, which stays the
+## thickness the aircraft is BUILT with; see `spec_from_part` for which of the two reaches the physics.
+const PART_SPEC_FIELDS := ["shore_a", "contact_area_mm2", "grommets_per_motor", "thickness_mm",
+	"density_kg_m3"]
+
+
+## A mounts.json entry as the `spec` dictionary `compute` reads: millimetres to metres at this one
+## boundary, the keys renamed to the ones above, and — the point of the function — a `missing` list
+## naming every `PART_SPEC_FIELDS` entry the part did not carry.
+##
+## THE `missing` LIST IS WHY THIS IS NOT `specs` HANDED STRAIGHT THROUGH. `compute` falls back to the
+## class-typical defaults for any key a spec leaves out, which is right for the spec-less call every
+## build made before SM1 and wrong for a catalog part: a mount entry that forgot its contact area
+## would be computed with the 60A default's 4 mm² and reported as "computed", a number about a part
+## nobody described. With `missing` present `compute` refuses with `insufficient_data:missing_<field>`
+## and `mount_mass_kg` answers zero — the refusing answer `f_n_hz`'s header already argues for.
+##
+## `thickness_m` rides along for the catalog's own use (`compute_part`, the entry's `mass_g`). A
+## build hands `compute` the Lab tweak's thickness instead; the other four are the material.
+static func spec_from_part(part: Dictionary) -> Dictionary:
+	var specs: Dictionary = part.get("specs", {})
+	var missing: Array[String] = []
+	for field in PART_SPEC_FIELDS:
+		if not specs.has(field):
+			missing.append(field)
+	var out := {"missing": missing}
+	if specs.has("shore_a"):
+		out["shore_a"] = float(specs["shore_a"])
+	if specs.has("contact_area_mm2"):
+		out["contact_area_m2"] = float(specs["contact_area_mm2"]) * 1.0e-6
+	if specs.has("grommets_per_motor"):
+		out["grommets_per_motor"] = int(specs["grommets_per_motor"])
+	if specs.has("density_kg_m3"):
+		out["density_kg_m3"] = float(specs["density_kg_m3"])
+	if specs.has("thickness_mm"):
+		out["thickness_m"] = float(specs["thickness_mm"]) / 1000.0
+	if specs.has("damping_ratio"):
+		out["damping_ratio"] = float(specs["damping_ratio"])
+	return out
+
+
+## `compute` for a catalog entry at its OWN nominal thickness, carrying `tip_mass_kg`. The tier is
+## the one the entry's fields earn: "computed" for a complete, in-band entry, and
+## `insufficient_data:missing_<field>` for one that left a field out — checked BEFORE the thickness,
+## because a missing `thickness_mm` would otherwise read as zero and report "no_mount", which is a
+## claim about the aircraft rather than about the entry.
+static func compute_part(part: Dictionary, tip_mass_kg: float) -> Dictionary:
+	var spec := spec_from_part(part)
+	var missing: Array = spec["missing"]
+	if not missing.is_empty():
+		return _insufficient("missing_" + String(missing[0]))
+	return compute(float(spec.get("thickness_m", 0.0)), tip_mass_kg, spec)
 
 
 static func _no_mount() -> Dictionary:

@@ -308,4 +308,119 @@ static func run() -> Array:
 		"bare %.3f Hz  padded %.3f Hz  ratio %.6f against sqrt(m_bare/m_tip+mount) = %.6f"
 			% [bare_res, padded_res, padded_res / bare_res, predicted]))
 
+	# -----------------------------------------------------------------------
+	# SM1 — mounts as parts. One result per entry and one per required field, so the failure count
+	# says how many entries or fields are wrong rather than "the loop failed".
+	# -----------------------------------------------------------------------
+	var catalog := PartsCatalog.load_default()
+	results.append(_test_the_mount_category_loads(catalog))
+	for part in catalog.list_category("mount"):
+		results.append(_test_a_mount_entry_computes(part))
+		results.append(_test_a_mount_entrys_mass_is_derived(part))
+		results.append(_test_a_mount_entry_says_what_it_guessed(part))
+	for field in SoftMount.PART_SPEC_FIELDS:
+		results.append(_test_a_missing_field_is_refused_not_defaulted(catalog, field))
+
 	return results
+
+
+# ---------------------------------------------------------------------------
+# SM1 — data/parts/mounts.json
+# ---------------------------------------------------------------------------
+
+## The reference motor and prop: what a mount entry is computed carrying. Any positive tip mass would
+## do for a tier check; this one is the aircraft the rest of the suite is pinned to.
+static func _reference_tip_kg() -> float:
+	return VibrationModel.tip_mass_kg_for(ReferenceBuild.build())
+
+
+## The category is registered and the loader read it. Three entries is the floor because the slice
+## asks for a softer and a firmer pad beside the default, and SM2's 50A-vs-70A check needs both.
+##
+## MUTATION CONFIRMED RED: delete the "mount" line from `PartsCatalog.CATEGORY_FILES` (0 entries).
+static func _test_the_mount_category_loads(catalog: PartsCatalog) -> TestResult:
+	var mounts := catalog.list_category("mount")
+	return TestResult.new(
+		"[SM1] the mounts category loads with no errors and at least three entries",
+		mounts.size() >= 3 and catalog.load_errors.is_empty(),
+		"%d mounts, load errors %s" % [mounts.size(), catalog.load_errors])
+
+
+## Each shipped entry earns "computed": every field present and in band. A finite, positive f_n is
+## required alongside the tier, because a tier string alone would pass a compute that labelled a
+## NaN.
+##
+## MUTATION CONFIRMED RED: `"shore_a": 100.0` on mount_grommet_60a (insufficient_data:
+## shore_a_out_of_band, for that entry's result only).
+static func _test_a_mount_entry_computes(part: Dictionary) -> TestResult:
+	var result := SoftMount.compute_part(part, _reference_tip_kg())
+	var f_n := float(result["f_n_hz"])
+	return TestResult.new(
+		"[SM1] %s computes from its own fields" % part["part_id"],
+		result["tier"] == "computed" and is_finite(f_n) and f_n > 0.0,
+		"tier %s, f_n %.1f Hz" % [result["tier"], f_n])
+
+
+## `mass_g` is carried, not authored: it must be `SoftMount.mount_mass_kg` at the entry's own
+## thickness. guards.json's rule, for guards.json's reason — no mass may be written here that the
+## physics would not also produce.
+##
+## MUTATION CONFIRMED RED: `"mass_g": 0.02` on mount_grommet_70a_firm.
+static func _test_a_mount_entrys_mass_is_derived(part: Dictionary) -> TestResult:
+	var spec := SoftMount.spec_from_part(part)
+	var computed_g := SoftMount.mount_mass_kg(float(spec.get("thickness_m", 0.0)), spec) * 1000.0
+	var authored_g := float(part.get("mass_g", -1.0))
+	return TestResult.new(
+		"[SM1] %s carries the mass its own fields give" % part["part_id"],
+		computed_g > 0.0 and absf(authored_g - computed_g) < 1.0e-6,
+		"mass_g %.6f g, SoftMount %.6f g" % [authored_g, computed_g])
+
+
+## An entry that guessed says so. `assumed` must exist, name only real spec fields, and — when it is
+## not empty — the entry's `source` must call the values class-typical. A product somebody actually
+## measured would carry an empty list and no such word; nothing in the catalog is that yet, and the
+## check is what stops a guessed 50A from reading like a measured one.
+##
+## MUTATION CONFIRMED RED: drop "class-typical" from mount_grommet_50a_soft's source.
+static func _test_a_mount_entry_says_what_it_guessed(part: Dictionary) -> TestResult:
+	var problems: Array[String] = []
+	if not (part.get("assumed") is Array):
+		problems.append("no `assumed` list")
+	else:
+		for field in part["assumed"]:
+			if not SoftMount.PART_SPEC_FIELDS.has(String(field)):
+				problems.append("assumed names %s, which is not a spec field" % field)
+		if not (part["assumed"] as Array).is_empty() \
+				and not String(part.get("source", "")).contains("class-typical"):
+			problems.append("assumes %s but its source never says class-typical" % [part["assumed"]])
+	return TestResult.new(
+		"[SM1] %s says which of its fields are class-typical guesses" % part["part_id"],
+		problems.is_empty(),
+		"assumed %s%s" % [part.get("assumed"), "" if problems.is_empty() else ": " + str(problems)])
+
+
+## A field the entry left out is refused, NOT filled from the class-typical default. The default
+## entry itself is the subject because it is the one case where defaulting would be invisible: its
+## values ARE the defaults, so a reader that filled the gap would compute the same frequency it
+## computes with the field present. Only the tier can tell — and f_n must be INF and the pad's mass
+## zero, the refusing answers.
+##
+## MUTATIONS CONFIRMED RED (3 of 3): the `missing` check in `SoftMount.compute` made `if false and …`
+## (all 5 fields: compute reads "computed"); the guard in `SoftMount.mount_mass_kg` dropped (all 5:
+## the pad weighs something); the check in `SoftMount.compute_part` made `if false and …` (thickness
+## only: "no_mount" — for the other four `compute`'s own check still refuses, so that line is
+## load-bearing for exactly the field that would otherwise read as no pad at all).
+static func _test_a_missing_field_is_refused_not_defaulted(catalog: PartsCatalog,
+		field: String) -> TestResult:
+	var part: Dictionary = catalog.get_part("mount_grommet_60a").duplicate(true)
+	(part["specs"] as Dictionary).erase(field)
+	var result := SoftMount.compute_part(part, _reference_tip_kg())
+	var spec := SoftMount.spec_from_part(part)
+	var mass := SoftMount.mount_mass_kg(0.001, spec)
+	var via_compute := SoftMount.compute(0.001, _reference_tip_kg(), spec)
+	return TestResult.new(
+		"[SM1] a mount entry without %s is insufficient_data, not the default" % field,
+		result["tier"] == "insufficient_data:missing_" + field \
+			and via_compute["tier"] == "insufficient_data:missing_" + field \
+			and not is_finite(float(result["f_n_hz"])) and mass == 0.0,
+		"compute_part %s, compute %s, mass %.6f kg" % [result["tier"], via_compute["tier"], mass])

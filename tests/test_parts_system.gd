@@ -146,6 +146,9 @@ static func _every_part_has_the_specs_the_physics_reads(catalog: PartsCatalog) -
 		# less than it should.
 		"guard": ["kind", "outer_radius_mm", "wall_mm", "height_mm", "density_kg_m3",
 			"mount_radius_mm"],
+		# SM1: the five fields SoftMount.spec_from_part requires. Read from the physics' own list
+		# rather than re-typed, so the two cannot name different fields.
+		"mount": SoftMount.PART_SPEC_FIELDS,
 	}
 	var missing: Array[String] = []
 	var count := 0
@@ -278,6 +281,7 @@ static func _every_part_carries_browsing_metadata(catalog: PartsCatalog) -> Test
 		"motor": ["stator_class", "kv_class", "intended_use"],
 		"propeller": ["blade_count", "diameter_class", "intended_use", "material"],
 		"guard": ["prop_class", "intended_use", "material"],
+		"mount": ["shore_class", "material"],
 	}
 	# Substrings, not exact keys, so "vendor_url", "price_usd" and "colour" are all caught.
 	var banned := ["colour", "color", "price", "cost", "vendor", "url", "link", "buy", "shop", "sku"]
