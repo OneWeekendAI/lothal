@@ -88,7 +88,9 @@ static func solid_for(build: Build, part_id: String) -> Dictionary:
 			out["solid_name"] = String(build.guard.get("part_id", part_id))
 			out["generator"] = "%s@%d" % [part_id, PROP_GUARD_GENERATOR_VERSION]
 			out["quantity"] = MotorLayout.MOTOR_NAMES.size()
-			out["triangles"] = PropulsionExport.guard_triangles_mm(build.guard)
+			# PG1: sized to the build's own prop, the radius Propulsion's export door passes too.
+			out["triangles"] = PropulsionExport.guard_triangles_mm(build.guard,
+				float(build.prop_geometry()["diameter_m"]) * 0.5)
 			dims = {"ok": not (out["triangles"] as Array).is_empty(),
 				"reason": "%s: %s has no ring to print" % [part_id, out["solid_name"]]}
 		FRAME:

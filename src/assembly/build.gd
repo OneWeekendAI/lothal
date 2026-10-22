@@ -699,6 +699,15 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 ## `from_ids` is this function's first caller, so there is one resolution path rather than two: the
 ## constructor records the ids and then refits, and a category added to one is added to both by
 ## construction.
+## The fitted prop's tip radius in mm, from the catalogue diameter — the radius `prop_geometry`
+## and the drawn PropellerMesh both use. 0 with no prop, which `PropGuard.fitted_spec` reads as
+## "no disc to wrap" and leaves the ring as sold.
+func _prop_tip_radius_mm() -> float:
+	if propeller.is_empty():
+		return 0.0
+	return float(propeller.get("specs", {}).get("diameter_inches", 0.0)) * INCH_M * 500.0
+
+
 func refit_from(p_catalog: PartsCatalog) -> void:
 	catalog = p_catalog
 	# The designer's edit to the fitted frame, if any (FittedFrame): its mass and arm replace the
@@ -734,7 +743,10 @@ func refit_from(p_catalog: PartsCatalog) -> void:
 	if fitted_guard_id != "":
 		var guard_part: Dictionary = p_catalog.get_part(fitted_guard_id)
 		if not guard_part.is_empty():
-			guard = guard_part
+			# PG1: the ring is fitted to THIS build's prop, on a copy, so every reader of
+			# `guard.specs` (mass, the R² bite, closure, the drawing, the exports, the camera
+			# check) sees the ring that wraps the disc rather than the one sold for its class.
+			guard = PropGuard.fitted_guard(guard_part, _prop_tip_radius_mm())
 	# The soft mount, the guard's treatment exactly: an id that resolves to nothing leaves the slot
 	# empty — the class-typical default — rather than fitting a part with no fields to read.
 	mount = {}

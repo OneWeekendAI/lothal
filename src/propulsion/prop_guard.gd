@@ -33,7 +33,9 @@ extends RefCounted
 ##
 ##     clearance = (outer_radius - wall) - prop_tip_radius
 ##
-## and §8 files it under **Exact** for that reason. A NEGATIVE clearance is not an error to
+## and §8 files it under **Exact** for that reason. On an aircraft the spec it reads is the one
+## `fitted_spec` sized to the fitted prop (PG1), so there the clearance is the guard's own tip gap;
+## on a catalog entry as sold it is measured against whatever tip the caller names. A NEGATIVE clearance is not an error to
 ## refuse: it is the answer, and it means the ring passes through the disc. `clearance_check`
 ## reports it rather than clamping it, because a builder who has entered an interfering guard
 ## needs to be told, not protected from the arithmetic.
@@ -116,6 +118,14 @@ extends RefCounted
 const KIND_BUMPER := "bumper"
 const KIND_DUCT := "duct"
 
+## The gap left between blade tip and inner wall when a guard's spec does not state one — a
+## LABELLED DEFAULT, not a sourced value (the house rule: existence before precision). No vendor
+## publishes a bumper's tip gap, and the shipped bumper never had one either: its 5.5 mm was what
+## its class-typical 72 mm outer radius left around a 5" tip. That gap is kept as the default so
+## the shipped bumper fitted to its own 5" prop is the ring it always was. A spec that carries
+## `tip_gap_mm` uses its own; `clearance_is_assumed` says which one a ring was built with.
+const DEFAULT_TIP_GAP_MM := 5.5
+
 
 ## The full computation. Returns
 ##
@@ -185,6 +195,60 @@ static func compute(spec: Dictionary) -> Dictionary:
 		"r_guard_m": r_guard_m,
 		"tier": "computed",
 	}
+
+
+## The guard's spec FITTED to the prop it wraps — PG1, the PR12/PR14 deferral (track.md).
+##
+## A guard is sold for a prop class, but on an aircraft it wraps whatever prop is fitted, and before
+## PG1 a 5" ring on a 3" prop was drawn, weighed and exported at 5" size: the ring's inner wall was
+## the spec's `outer_radius - wall` whatever the disc inside it. Here the ring is derived instead:
+##
+##     inner wall    = prop_tip_radius + tip gap        the gap is the spec's, or DEFAULT_TIP_GAP_MM
+##     outer_radius  = inner wall + wall
+##
+## and only `outer_radius_mm` is rewritten, on a deep copy. Wall, height and density are the part's
+## own, so the material and section a builder picked survive the refit and only the ring's size
+## follows the prop. Mass and the R² roll-inertia bite then come out of `compute()` unchanged,
+## because `compute()` reads the outer radius and nothing else changed.
+##
+## The gap comes from `tip_gap_mm` and never from the spec's outer radius, which is what makes
+## the fit IDEMPOTENT: fitting a fitted spec to the same prop gives the same numbers, so a Build
+## that fits once and a GuardMesh that fits again on the way to the screen cannot disagree.
+##
+## A non-positive tip returns the spec unchanged (as sold): there is no disc to wrap. The default
+## gap shapes the RING only. It is never written into `tip_gap_mm`, so a duct with no stated gap
+## still earns no tip-loss closure (`tip_loss_closure` refuses it, §6.3's no-spec-no-claim rule).
+static func fitted_spec(spec: Dictionary, prop_tip_radius_mm: float) -> Dictionary:
+	var out := spec.duplicate(true)
+	if prop_tip_radius_mm <= 0.0:
+		return out
+	var wall_mm := float(spec.get("wall_mm", 0.0))
+	out["outer_radius_mm"] = prop_tip_radius_mm + ring_tip_gap_mm(spec) + wall_mm
+	return out
+
+
+## The whole catalog record with its `specs` fitted — the shape `Build.guard`, `GuardMesh.rebuild`
+## and `PropulsionExport` hold. Empty in, empty out.
+static func fitted_guard(guard: Dictionary, prop_tip_radius_mm: float) -> Dictionary:
+	if guard.is_empty():
+		return {}
+	var out := guard.duplicate(true)
+	out["specs"] = fitted_spec(guard.get("specs", {}), prop_tip_radius_mm)
+	return out
+
+
+## The tip gap a fitted ring is built with: the spec's own non-negative `tip_gap_mm`, else
+## DEFAULT_TIP_GAP_MM.
+static func ring_tip_gap_mm(spec: Dictionary) -> float:
+	if clearance_is_assumed(spec):
+		return DEFAULT_TIP_GAP_MM
+	return float(spec["tip_gap_mm"])
+
+
+## Whether a fitted ring's gap is the labelled default rather than a value the spec states. What a
+## panel reads to mark the gap "(assumed)".
+static func clearance_is_assumed(spec: Dictionary) -> bool:
+	return not spec.has("tip_gap_mm") or float(spec.get("tip_gap_mm", -1.0)) < 0.0
 
 
 ## Just the mass, for a callers that only need the number the build sheet prints. Returns

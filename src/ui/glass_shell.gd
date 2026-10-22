@@ -1547,10 +1547,13 @@ func _on_guard_stl_requested(guard_id: String) -> void:
 	if guard_id == "":
 		return
 	var guard := lab.catalog.get_part(guard_id)
+	# PG1: the ring is sized to the open drone's prop, the radius the Printed room's dispatcher
+	# passes, so the two doors to this export still write the same bytes.
+	var tip_m := float(lab.current_build().prop_geometry()["diameter_m"]) * 0.5
 	var solid_name := _safe_export_name(guard_id)
 	var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
 	DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
-	_report_export(PropulsionExport.write_guard(guard, path), path)
+	_report_export(PropulsionExport.write_guard(guard, tip_m, path), path)
 
 
 ## The Printed room's Export buttons. Each id routes into the export that already exists for that

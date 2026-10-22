@@ -61,8 +61,9 @@ const RADIAL_SEGMENTS := 32
 
 ## The visible inner wall of the ring, in metres. Derived from PropGuard.tip_clearance_mm as
 ## `(prop_tip_radius + clearance) * 0.001`, so a mutation from `clearance` to
-## `outer_radius - prop_tip_radius` is caught by inner_radius_m alone. The tip cancels: the wall
-## lands at the spec's `outer_radius - wall` for any prop, so the ring does not follow the prop.
+## `outer_radius - prop_tip_radius` is caught by inner_radius_m alone. Since PG1 the spec is first
+## fitted to this prop (`PropGuard.fitted_spec`), so the wall lands at tip + the guard's tip gap
+## and the ring FOLLOWS the prop: a 5" bumper drawn round a 3" disc is a 3" ring.
 var inner_radius_m := 0.0
 ## The outer wall — inner + wall_mm. Not read directly from the spec, so a drift between the two
 ## definitions of the ring cannot happen.
@@ -99,8 +100,11 @@ func rebuild(guard: Dictionary, prop_tip_radius_m: float) -> void:
 	if guard.is_empty() or prop_tip_radius_m <= 0.0:
 		return
 
-	var spec: Dictionary = guard.get("specs", {})
 	var prop_tip_radius_mm := prop_tip_radius_m * 1000.0
+	# PG1: the ring is fitted to the prop it is drawn around. Idempotent, so a record `Build`
+	# already fitted to this prop comes back the same, and a record as sold (an inspector's pick)
+	# is sized to the disc rather than to its prop class.
+	var spec: Dictionary = PropGuard.fitted_spec(guard.get("specs", {}), prop_tip_radius_mm)
 
 	# The load-bearing read — see this file's header. Not a second geometry copy.
 	var clearance_mm := PropGuard.tip_clearance_mm(spec, prop_tip_radius_mm)

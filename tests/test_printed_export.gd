@@ -222,7 +222,7 @@ static func _a_fitted_prop_guard_goes_through_the_room_export(catalog: PartsCata
 
 	var own_path := DIR.path_join("_propulsion_own_guard.stl")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(own_path))
-	var own := PropulsionExport.write_guard(guard, own_path)
+	var own := PropulsionExport.write_guard(guard, float(build.prop_geometry()["diameter_m"]) * 0.5, own_path)
 	# Propulsion names its solid by part id, which is also the room export's solid name for a guard.
 	var own_sha := FileAccess.get_file_as_string(own_path).sha256_text() if FileAccess.file_exists(own_path) else ""
 	var member := container.member_bytes(String(record.get("file", ""))).get_string_from_utf8()
