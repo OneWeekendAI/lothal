@@ -26,6 +26,16 @@ static func run() -> Array:
 	results.append(_a_file_from_before_the_mount_reopens_with_none(catalog))
 	results.append(_a_mount_that_left_the_catalog_is_reported_not_substituted())
 	results.append(_opening_a_saved_drone_puts_the_mount_back())
+	# --- SM3: the sheet, the row, the dock halves
+	results.append(_an_assumed_hardness_says_so(catalog))
+	results.append(_a_read_hardness_carries_no_caveat(catalog))
+	results.append(_the_damping_band_is_labelled_assumed(catalog))
+	results.append(_the_sheets_frequency_is_the_vibration_models(catalog))
+	results.append(_no_mount_reads_no_pad(catalog))
+	results.append(_the_row_is_modelled_and_counted(catalog))
+	results.append(_the_row_names_the_durometer(catalog))
+	results.append(_the_mount_sheet_is_the_mount_alone(catalog))
+	results.append(_the_motor_sheet_has_no_mount(catalog))
 	return results
 
 
@@ -118,3 +128,96 @@ static func _opening_a_saved_drone_puts_the_mount_back() -> TestResult:
 		"apply_selection fits a saved mount on the Lab's row and its build",
 		failed.is_empty() and row == SOFT and on_build == SOFT,
 		"failed %s, row \"%s\", build \"%s\"" % [failed, row, on_build])
+
+
+# ---------------------------------------------------------------------------
+# SM3 — the sheet, the row and the dock halves
+# ---------------------------------------------------------------------------
+
+## The reference build with a mount fitted and the Lab's tweaks resolved on it, as the Lab builds it:
+## the pad defaults to the part's own thickness (SM2), so the mount is a pad that exists.
+static func _fitted(catalog: PartsCatalog, mount_id: String) -> Build:
+	var build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID, {}, null, "", {}, mount_id)
+	build.set_assembly(AssemblyTweaks.new().resolved_m(build))
+	return build
+
+
+static func _an_assumed_hardness_says_so(catalog: PartsCatalog) -> TestResult:
+	var text := MotorDetails.mount_row_text("hardness", catalog.get_part(FIRM), null)
+	return TestResult.new("mount sheet: a guessed Shore value carries (assumed) on the number",
+		text == "Shore 70A (assumed)", text)
+
+
+## The 60A entry's durometer is the one field it READ (its `assumed` list omits shore_a).
+static func _a_read_hardness_carries_no_caveat(catalog: PartsCatalog) -> TestResult:
+	var text := MotorDetails.mount_row_text("hardness", catalog.get_part("mount_grommet_60a"), null)
+	return TestResult.new("mount sheet: a Shore value the entry read is shown bare",
+		text == "Shore 60A", text)
+
+
+static func _the_damping_band_is_labelled_assumed(catalog: PartsCatalog) -> TestResult:
+	var text := MotorDetails.mount_row_text("damping", catalog.get_part(FIRM), null)
+	return TestResult.new("mount sheet: the damping is the overlay's band, labelled assumed",
+		text == "ζ 0.05–0.15 (assumed)", text)
+
+
+static func _the_sheets_frequency_is_the_vibration_models(catalog: PartsCatalog) -> TestResult:
+	var build := _fitted(catalog, SOFT)
+	var want := "~%d Hz" % roundi(VibrationModel.for_build(build).mount_hz())
+	var text := MotorDetails.mount_row_text("f_n", catalog.get_part(SOFT), build)
+	return TestResult.new("mount sheet: f_n is VibrationModel's for the same build, with its ~",
+		text == want and is_finite(VibrationModel.for_build(build).mount_hz()), "%s vs %s" % [text, want])
+
+
+static func _no_mount_reads_no_pad(catalog: PartsCatalog) -> TestResult:
+	var build := _fitted(catalog, "")
+	var text := MotorDetails.mount_row_text("f_n", {}, build)
+	var hardness := MotorDetails.mount_row_text("hardness", {}, build)
+	return TestResult.new("mount sheet: with nothing fitted the pad reads 'no pad' and no Shore value",
+		text == "no pad" and hardness == "—", "%s / %s" % [text, hardness])
+
+
+static func _the_row_is_modelled_and_counted(catalog: PartsCatalog) -> TestResult:
+	var rows := SectionRows.rows("Propulsion", _fitted(catalog, FIRM))
+	var row: Dictionary = {}
+	for candidate in rows:
+		if candidate["id"] == &"soft_mounts":
+			row = candidate
+	var counted := SectionRows.count(rows)
+	return TestResult.new("propulsion rows: Soft mounts has a page and a status dot, and counts in N of M",
+		str(row.get("status", "")) == SectionRows.OK and counted.y == 4
+			and str((row.get("page", {}) as Dictionary).get("diagram", "")) == "mount",
+		"status %s, count %s, page %s" % [row.get("status"), counted, row.get("page")])
+
+
+static func _the_row_names_the_durometer(catalog: PartsCatalog) -> TestResult:
+	var build := _fitted(catalog, FIRM)
+	var choice := SectionRows.choice_of(&"soft_mounts", build, {})
+	var number := SectionRows.number_of(&"soft_mounts", build, {})
+	var want := "~%d Hz mount" % roundi(VibrationModel.for_build(build).mount_hz())
+	return TestResult.new("propulsion rows: Soft mounts says the durometer and the mount frequency",
+		choice == "70A silicone" and number == want, "%s / %s want %s" % [choice, number, want])
+
+
+static func _the_mount_sheet_is_the_mount_alone(catalog: PartsCatalog) -> TestResult:
+	var panel := MotorDetails.new(catalog)
+	panel.render(catalog.get_part(ReferenceBuild.MOTOR_ID), ReferenceBuild.build())
+	panel.set_dock_sheet("mount")
+	var parts := panel.sheet_parts()
+	var title := panel.shown_title()
+	panel.free()
+	return TestResult.new("motor sheet: the Soft mounts page shows the mount and not the motor's rows",
+		parts["mount"] and not parts["rows"] and not parts["bench"] and title == "SOFT MOUNT",
+		"%s, title %s" % [parts, title])
+
+
+static func _the_motor_sheet_has_no_mount(catalog: PartsCatalog) -> TestResult:
+	var panel := MotorDetails.new(catalog)
+	panel.render(catalog.get_part(ReferenceBuild.MOTOR_ID), ReferenceBuild.build())
+	panel.set_dock_sheet("motor")
+	var parts := panel.sheet_parts()
+	panel.free()
+	return TestResult.new("motor sheet: the Motors page keeps its rows and doors, without the mount",
+		parts["rows"] and parts["bench"] and not parts["mount"], str(parts))

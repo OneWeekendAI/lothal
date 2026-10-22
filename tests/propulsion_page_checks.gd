@@ -60,8 +60,46 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 	details._on_guard_selected(0)
 	await _settle(tree)
 
+	# SM3 — Soft mounts: the stack in side elevation beside the Motor panel's mount half.
+	shell.open_row(&"soft_mounts")
+	await _settle(tree)
+	var motor := shell.lab.motor_details
+	var profile := shell.mount_profile()
+	out.append(TestResult.new("propulsion dock: the Soft mounts page draws the motor stack beside its sheet",
+		shell.item_page_view().body == profile and profile.is_visible_in_tree()
+			and not profile.parts().is_empty() and profile.size.x >= 200.0
+			and shell._inspector.is_visible_in_tree(),
+		"body %s, parts %d, size %s" % [shell.item_page_view().body, profile.parts().size(), profile.size]))
+	out.append(TestResult.new("propulsion dock: the Soft mounts sheet is the mount half, no motor rows",
+		motor.sheet_parts()["mount"] and not motor.sheet_parts()["rows"], str(motor.sheet_parts())))
+	# The overlays are hidden while a page covers the stage, so the refill every visible-tray path
+	# ends in is driven directly: what is under test is WHICH build it reads (the assembled one).
+	var vibration: VibrationOverlay = shell._overlays["vibration"]
+	shell._refill_thrust_overlay()
+	var tier_before := vibration.tier
+	# PICK A MOUNT, the way the builder does: the selector's own handler.
+	var m_index := motor._mount_ids.find("mount_grommet_70a_firm")
+	motor._mount_selector.select(m_index)
+	motor._on_mount_selected(m_index)
+	await _settle(tree)
+	shell._refill_thrust_overlay()
+	out.append(TestResult.new("propulsion dock: a picked mount reaches the row's line 2",
+		str(_row(shell, &"soft_mounts").get("choice", "")) == "70A silicone", _row(shell, &"soft_mounts").get("choice", "")))
+	out.append(TestResult.new("propulsion dock: a picked mount moves the vibration caption's tier",
+		tier_before == "no_mount" and vibration.tier == "computed",
+		"%s -> %s" % [tier_before, vibration.tier]))
+	out.append(TestResult.new("propulsion dock: a picked mount is drawn as a pad in the stack",
+		profile.soft_mount_m > 0.0 and is_finite(profile.mount_f_n_hz),
+		"pad %.4f m, f_n %s" % [profile.soft_mount_m, profile.mount_f_n_hz]))
+	out.append(_the_page_shows_the_rows_numbers(shell, &"soft_mounts"))
+	motor._mount_selector.select(0)
+	motor._on_mount_selected(0)
+	await _settle(tree)
+
 	shell.back_to_drone()
 	await _settle(tree)
+	out.append(TestResult.new("propulsion dock: Back puts the whole Motor panel back",
+		motor.sheet_parts()["mount"] and motor.sheet_parts()["rows"], str(motor.sheet_parts())))
 	out.append(TestResult.new("propulsion dock: Back puts the whole Prop panel back",
 		details.sheet_parts()["guard"] == true and details.sheet_parts()["rows"] == true, ""))
 	return out

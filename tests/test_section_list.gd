@@ -38,7 +38,7 @@ static func run() -> Array:
 	results.append(_motors_row(rows["Propulsion"]))
 	results.append(_propellers_row(build, rows["Propulsion"]))
 	results.append(_guards_row(rows["Propulsion"]))
-	results.append(_soft_mounts_row_is_soon(rows["Propulsion"]))
+	results.append(_soft_mounts_row_unfitted(rows["Propulsion"]))
 	# --- Power
 	results.append(_battery_row(rows["Power"]))
 	results.append(_esc_row(rows["Power"]))
@@ -278,9 +278,12 @@ static func _guards_row(rows: Array) -> TestResult:
 		row.get("choice") == "none" and row.get("number") == "", _show(row))
 
 
-static func _soft_mounts_row_is_soon(rows: Array) -> TestResult:
+## Was "Soft mounts is 'soon'" until SM3 gave the row a page. Unfitted it is the guard row's shape:
+## "none" on line 2, no number, and a green dot — no mount is a decided answer, not a missing one.
+static func _soft_mounts_row_unfitted(rows: Array) -> TestResult:
 	var row := _row(rows, &"soft_mounts")
-	return TestResult.new("section rows: Soft mounts is 'soon'", row.get("status") == SectionRows.SOON,
+	return TestResult.new("section rows: Soft mounts reads 'none' and no frequency when none is fitted",
+		row.get("status") == SectionRows.OK and row.get("choice") == "none" and row.get("number") == "",
 		_show(row))
 
 

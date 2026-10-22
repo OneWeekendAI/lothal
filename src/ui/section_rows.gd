@@ -57,13 +57,16 @@ const DEFINITIONS := {
 	"Propulsion": [
 		# `diagram`: PropulsionDiagram's modes. `sheet`: which half of the Prop panel the page shows
 		# (PropellerDetails.set_dock_sheet) — the blade's rows, or the guard's selector alone.
-		{"id": &"motors", "name": "Motors", "page": {"panels": ["Motor"], "diagram": "thrust"},
-			"pick": "Motor"},
+		{"id": &"motors", "name": "Motors",
+			"page": {"panels": ["Motor"], "diagram": "thrust", "sheet": "motor"}, "pick": "Motor"},
 		{"id": &"propellers", "name": "Propellers",
 			"page": {"panels": ["Prop"], "diagram": "prop", "sheet": "prop"}, "pick": "Prop"},
 		{"id": &"guards", "name": "Prop guards",
 			"page": {"panels": ["Prop"], "diagram": "guard", "sheet": "guard"}},
-		{"id": &"soft_mounts", "name": "Soft mounts", "soon": true},
+		# SM3: the Motor panel cut to its mount half (MotorDetails.set_dock_sheet) beside the stack in
+		# side elevation (PropellerMountProfile) — the pad under the motor, drawn off the model's mesh.
+		{"id": &"soft_mounts", "name": "Soft mounts",
+			"page": {"panels": ["Motor"], "diagram": "mount", "sheet": "mount"}},
 	],
 	"Power": [
 		# `diagram`: PowerDiagram's modes (the pack's sag chart, one ESC channel), and "harness" —
@@ -297,6 +300,8 @@ static func choice_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			return _prop_choice(build.propeller)
 		&"guards":
 			return str(build.guard.get("name", "none")) if not build.guard.is_empty() else "none"
+		&"soft_mounts":
+			return _mount_choice(build.mount)
 		&"battery":
 			return _battery_choice(build.battery)
 		&"esc":
@@ -441,6 +446,11 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			if not build.can_hover():
 				return ""
 			return "hover %d%%" % roundi(build.hover_throttle() * 100.0)
+		&"soft_mounts":
+			# The mount frequency the vibration model runs (SoftMount through VibrationModel), with its
+			# `~`: every catalog mount guesses at least one field. Empty with no pad — "none" says it.
+			var f_n := VibrationModel.for_build(build).mount_hz()
+			return "~%d Hz mount" % roundi(f_n) if is_finite(f_n) else ""
 		&"guards":
 			# Computed (four PropGuard rings; the tensor with and without them), not the catalogue's
 			# browsing mass. Empty with none fitted: "none" on line 2 already says it.
@@ -563,6 +573,10 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 				return [["Hover throttle", "won't hover"], ["Hover rpm", "—"]]
 			return [["Hover throttle", "%d%%" % roundi(build.hover_throttle() * 100.0)],
 				["Hover rpm", "%d rpm" % roundi(PropulsionFigures.hover_rpm(build))]]
+		&"soft_mounts":
+			var f_n := VibrationModel.for_build(build).mount_hz()
+			return [["Mount frequency", "~%d Hz" % roundi(f_n) if is_finite(f_n) else "no pad"],
+				["Pad", "%.1f mm" % (float(build.assembly_value("soft_mount_m")) * 1000.0)]]
 		&"guards":
 			var grams := PropulsionFigures.guard_added_g(build)
 			if grams <= 0.0:
@@ -675,3 +689,12 @@ static func straps_document(build: Build, context: Dictionary) -> AirframeDocume
 static func _trim(value: float) -> String:
 	var text := "%.1f" % value
 	return text.trim_suffix(".0")
+
+
+## Line 2 of Soft mounts: the durometer class and material ("70A silicone"), "none" unfitted.
+static func _mount_choice(mount: Dictionary) -> String:
+	if mount.is_empty():
+		return "none"
+	var catalog: Dictionary = mount.get("catalog", {})
+	var text := ("%s %s" % [str(catalog.get("shore_class", "")), str(catalog.get("material", ""))]).strip_edges()
+	return text if text != "" else str(mount.get("name", "fitted"))

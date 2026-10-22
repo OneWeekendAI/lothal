@@ -70,6 +70,25 @@ var _mount_selector: OptionButton
 ## Selector index -> mount part id, "" first — an index into THIS and never into
 ## `catalog.list_category("mount")`, which lacks the "Not fitted" row (the guard row's off-by-one).
 var _mount_ids: Array = [""]
+## The mount's sheet (SM3): hardness, area, count, f_n and the damping band, one label each.
+var _mount_grid: GridContainer
+var _mount_values: Dictionary = {}
+var _bench_button: Button
+var _stl_button: Button
+## The build the panel last rendered against, for the f_n row — the pad's thickness is the Lab's
+## tweak on THAT build, not a property of the part.
+var _mount_build: Build
+var _dock_sheet := ""
+
+## The mount sheet's rows. Every one is read through `mount_row_text`, a pure function, so the sheet
+## and its test share one answer.
+const MOUNT_ROWS := [
+	{"key": "hardness", "label": "Hardness"},
+	{"key": "area", "label": "Contact area"},
+	{"key": "count", "label": "Grommets"},
+	{"key": "f_n", "label": "Mount frequency"},
+	{"key": "damping", "label": "Damping"},
+]
 
 ## What the mount row's empty selection reads as, on `PropellerDetails.NOT_FITTED`'s argument.
 const NOT_FITTED := "Not fitted"
@@ -85,6 +104,7 @@ func _init(p_catalog: PartsCatalog) -> void:
 ## sits directly under the rows that motivate pressing it.
 func _build_footer(root: VBoxContainer) -> void:
 	var bench_button := Button.new()
+	_bench_button = bench_button
 	bench_button.text = "Open thrust bench…"
 	bench_button.tooltip_text = ("Run this motor and propeller up under load: thrust, current and "
 		+ "the RPM they actually reach, against the pairing the row above was measured on.")
@@ -92,6 +112,7 @@ func _build_footer(root: VBoxContainer) -> void:
 	root.add_child(bench_button)
 
 	var stl_button := Button.new()
+	_stl_button = stl_button
 	stl_button.text = "Export mount stack (STL)…"
 	stl_button.tooltip_text = ("The motor, its soft-mount pad, the adapter and the shaft as a "
 		+ "solid, in millimetres — for checking fit in someone else's CAD, not for printing.")
@@ -120,6 +141,12 @@ func _build_mount_row(root: VBoxContainer) -> void:
 	_mount_selector.item_selected.connect(_on_mount_selected)
 	root.add_child(_mount_selector)
 
+	_mount_grid = GridContainer.new()
+	_mount_grid.columns = 2
+	root.add_child(_mount_grid)
+	for row in MOUNT_ROWS:
+		_mount_values[row["key"]] = _add_row(_mount_grid, row["label"])
+
 
 func _on_mount_selected(index: int) -> void:
 	mount_changed.emit(String(_mount_ids[index]))
@@ -143,6 +170,118 @@ func select_mount(p_mount_id: String) -> bool:
 		return false
 	_mount_selector.select(index)
 	return true
+
+
+func render(part: Dictionary, build: Build) -> void:
+	super(part, build)
+	_mount_build = build
+	_render_mount()
+	_apply_dock_sheet()
+
+
+## The fitted mount's catalog record, `{}` for none.
+func fitted_mount() -> Dictionary:
+	return _catalog.get_part(mount_id()) if mount_id() != "" else {}
+
+
+func _render_mount() -> void:
+	if _mount_grid == null:
+		return
+	var mount := fitted_mount()
+	for row in MOUNT_ROWS:
+		(_mount_values[row["key"]] as Label).text = mount_row_text(row["key"], mount, _mount_build)
+
+
+## One mount-sheet row, from the part and the build. Static and pure so the test reads the rule.
+##
+## **A FIELD THE CATALOG GUESSED SAYS SO, ON THE NUMBER** (the blade rows' rule, `PropellerDetails`):
+## every value whose field is in the entry's `assumed` list carries "(assumed)", and the frequency
+## built from any assumed field carries its `~`. The damping band is ALWAYS assumed: no grommet
+## vendor publishes a damping ratio, and `SoftMount.DAMPING_RATIO_LOW`/`HIGH` are the range the
+## vibration overlay draws, not a reading. With nothing fitted the material rows are a dash — the
+## class-typical default is not a part the builder chose, and naming its Shore value here would
+## read as one.
+static func mount_row_text(key: String, mount: Dictionary, build: Build) -> String:
+	var specs: Dictionary = mount.get("specs", {})
+	var assumed: Array = mount.get("assumed", [])
+	match key:
+		"hardness":
+			if not specs.has("shore_a"):
+				return "—"
+			return _assumed("Shore %dA" % roundi(float(specs["shore_a"])), assumed, "shore_a")
+		"area":
+			if not specs.has("contact_area_mm2"):
+				return "—"
+			return _assumed("%.1f mm² each" % float(specs["contact_area_mm2"]), assumed,
+				"contact_area_mm2")
+		"count":
+			if not specs.has("grommets_per_motor"):
+				return "—"
+			return _assumed("%d per motor" % int(specs["grommets_per_motor"]), assumed,
+				"grommets_per_motor")
+		"f_n":
+			if build == null:
+				return "—"
+			var model := VibrationModel.for_build(build)
+			var tier := model.mount_tier()
+			if tier == "no_mount":
+				return "no pad"
+			if tier.begins_with("insufficient_data:"):
+				return "not read (%s)" % tier.trim_prefix("insufficient_data:")
+			# Any guessed input makes the frequency a guess: the `~` the house uses for one.
+			var guessed := mount.is_empty() or not assumed.is_empty()
+			return "%s%d Hz" % ["~" if guessed else "", roundi(model.mount_hz())]
+		"damping":
+			if mount.is_empty():
+				return "—"
+			if specs.has("damping_ratio"):
+				return "ζ %.2f" % float(specs["damping_ratio"])
+			return "ζ %.2f–%.2f (assumed)" % [SoftMount.DAMPING_RATIO_LOW, SoftMount.DAMPING_RATIO_HIGH]
+	return "—"
+
+
+static func _assumed(text: String, assumed: Array, field: String) -> String:
+	return text + " (assumed)" if assumed.has(field) else text
+
+
+## Rendered mount rows, label and value, for tests.
+func mount_rendered_text() -> String:
+	var lines: Array[String] = []
+	for row in MOUNT_ROWS:
+		lines.append("%s: %s" % [row["label"], (_mount_values[row["key"]] as Label).text])
+	return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Half a panel on a Lab dock page — PropellerDetails.set_dock_sheet's pattern
+# ---------------------------------------------------------------------------
+
+## "motor" (the Motors page: the spec rows and the two doors, no mount), "mount" (the Soft mounts
+## page: the selector and its sheet alone), or "" for the whole panel, as the old shell and Sim's
+## build panel show it. Calm by subtraction: each page shows only its own item.
+func set_dock_sheet(sheet: String) -> void:
+	_dock_sheet = sheet
+	_apply_dock_sheet()
+
+
+func _apply_dock_sheet() -> void:
+	if _mount_grid == null:
+		return
+	var motor := _dock_sheet != "mount"
+	var mount := _dock_sheet != "motor"
+	_specs_grid.visible = motor
+	_bench_button.visible = motor
+	_stl_button.visible = motor
+	_mount_selector.visible = mount
+	_mount_grid.visible = mount
+	if _dock_sheet == "mount":
+		_title.text = "SOFT MOUNT"
+
+
+## Which blocks are showing, for tests: `{rows, bench, mount}`.
+func sheet_parts() -> Dictionary:
+	return {"rows": _specs_grid.visible, "bench": _bench_button.visible,
+		"mount": _mount_selector.visible and _mount_grid.visible}
 
 
 func _read(motor: Dictionary, key: String) -> String:

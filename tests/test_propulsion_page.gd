@@ -313,10 +313,12 @@ static func _definition(id: StringName) -> Dictionary:
 
 ## Each page is its own item's drawing beside its own sheet.
 static func _page_definitions_name_their_drawings() -> TestResult:
-	var got := [_definition(&"motors"), _definition(&"propellers"), _definition(&"guards")]
-	var want := [{"panels": ["Motor"], "diagram": "thrust"},
+	var got := [_definition(&"motors"), _definition(&"propellers"), _definition(&"guards"),
+		_definition(&"soft_mounts")]
+	var want := [{"panels": ["Motor"], "diagram": "thrust", "sheet": "motor"},
 		{"panels": ["Prop"], "diagram": "prop", "sheet": "prop"},
-		{"panels": ["Prop"], "diagram": "guard", "sheet": "guard"}]
+		{"panels": ["Prop"], "diagram": "guard", "sheet": "guard"},
+		{"panels": ["Motor"], "diagram": "mount", "sheet": "mount"}]
 	return TestResult.new("propulsion rows: each page names its drawing and which part of the sheet",
 		got == want, str(got))
 

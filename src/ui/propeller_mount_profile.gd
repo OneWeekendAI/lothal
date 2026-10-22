@@ -54,6 +54,38 @@ func _init(p_motor_mesh: MotorMesh = null) -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
+## The stack of a whole BUILD, for the Lab's Soft mounts page (SM3) — the room hands `set_stack` its
+## own mesh; a dock page has none, so this view builds one the way `AirframeModel` builds the
+## aircraft's: the propeller first (it reports how tall it sits on the shaft), then the motor with
+## the build's spacer and pad. The frequency is `VibrationModel.for_build(build).mount_hz()`, the
+## number the vibration overlay and the row read, so the caption cannot be a third answer.
+var _own_motor: MotorMesh
+var _own_prop: PropellerMesh
+
+
+func show_build(build: Build) -> void:
+	if build == null:
+		set_stack(null, 0.0, INF)
+		return
+	if _own_prop == null:
+		_own_prop = PropellerMesh.new()
+	_own_prop.rebuild(build.propeller)
+	if _own_motor == null:
+		_own_motor = MotorMesh.new()
+	var pad_m := float(build.assembly_value("soft_mount_m"))
+	_own_motor.rebuild(build.motor, _own_prop.stack_height_m,
+		float(build.assembly_value("prop_spacer_m")), pad_m)
+	set_stack(_own_motor, pad_m, VibrationModel.for_build(build).mount_hz())
+
+
+## The two meshes this view built are never in a tree, so nothing else would free them.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		for node in [_own_motor, _own_prop]:
+			if node != null and is_instance_valid(node) and not node.is_inside_tree():
+				node.free()
+
+
 func set_stack(p_motor_mesh: MotorMesh, p_soft_mount_m: float, p_f_n_hz: float) -> void:
 	motor_mesh = p_motor_mesh
 	soft_mount_m = p_soft_mount_m

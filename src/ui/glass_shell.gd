@@ -330,6 +330,8 @@ var _video_diagram: VideoDiagram
 var _config_diagram: ConfigDiagram
 ## A Printed part's page drawing: its plan and side off the exported triangles, and its key fit.
 var _printed_diagram: PrintedDiagram
+## The Soft mounts page's drawing (SM3): the motor stack in side elevation, pad included.
+var _mount_profile: PropellerMountProfile
 ## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
 var _list_refresh_queued := false
 var _frame_rebuild_queued := false
@@ -646,6 +648,9 @@ func _ready() -> void:
 	# Prop guards row, its page and the top bar's AUW stayed on the unguarded aircraft until some
 	# other change refreshed them. LabScreen connected first, so the build is rebuilt by now.
 	lab.propeller_details.guard_changed.connect(func(_guard_id: String) -> void: _refresh_status())
+	# The soft mount, for the guard's reason (SM3): its selector is the Motor panel's, and without
+	# this the Soft mounts row, its drawing and the vibration card stayed on the unmounted aircraft.
+	lab.motor_details.mount_changed.connect(func(_mount_id: String) -> void: _refresh_status())
 	# A gain edit moves the Tune row, its page and the FC page's D noise; nothing else changes.
 	lab.tune_panel.tune_changed.connect(_queue_list_refresh)
 
@@ -1452,7 +1457,10 @@ func _refill_thrust_overlay() -> void:
 	# `container == null` is the empty state — no drone, so no propeller, so no distribution. The
 	# overlays say so in words rather than drawing a flat line, which would be a claim about a
 	# blade that is not fitted.
-	var build: Build = null if container == null or lab == null else lab.current_build()
+	# WITH the assembly on it (SM3): `current_build()` carries no tweaks, so every overlay read the
+	# pad as 0 mm — the vibration card said "No soft mount fitted" whatever the Lab's pad was, and a
+	# picked mount could never change its caption. `build_with_open_harness` is the assembled one.
+	var build: Build = null if container == null or lab == null else lab.build_with_open_harness()
 	for entry in OverlayTray.ENTRIES:
 		_overlays[str(entry["id"])].adopt(build)
 
@@ -1854,6 +1862,7 @@ func _build_inspector() -> void:
 	_video_diagram = VideoDiagram.new()
 	_config_diagram = ConfigDiagram.new()
 	_printed_diagram = PrintedDiagram.new()
+	_mount_profile = PropellerMountProfile.new()
 
 
 ## "← Back to drone" and the breadcrumb (§2), across the top of the stage while a page is open.
@@ -2014,6 +2023,8 @@ func _show_page(row: Dictionary) -> void:
 		# Which half of the Prop panel this page is: the blade, or the guard (SectionRows `sheet`).
 		var panels: Array = page.get("panels", [])
 		lab.propeller_details.set_dock_sheet(str(page.get("sheet", "")) if panels.has("Prop") else "")
+		# And which half of the Motor panel: the motor and its doors, or the soft mount (SM3).
+		lab.motor_details.set_dock_sheet(str(page.get("sheet", "")) if panels.has("Motor") else "")
 		# And which printed part the Print sheet is cut to (a Printed row's page), or the whole room.
 		lab.print_panel.set_dock_part(str(page.get("sheet", "")) if panels.has("Print") else "")
 		# And which cut of the Electronics sheet: the VTX page's two parts, or all of it.
@@ -2077,6 +2088,8 @@ func _hide_pages() -> void:
 		_item_page.visible = false
 	if lab != null and lab.propeller_details != null:
 		lab.propeller_details.set_dock_sheet("")
+	if lab != null and lab.motor_details != null:
+		lab.motor_details.set_dock_sheet("")
 	if _rail_glass != null:
 		_rail_glass.visible = false
 	if lab != null:
@@ -2195,6 +2208,11 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 			_item_view.set_body(_config_diagram)
 		_config_diagram.show_build(build, mode)
 		return
+	if mode == "mount":
+		if _item_view.body != _mount_profile:
+			_item_view.set_body(_mount_profile)
+		_mount_profile.show_build(build)
+		return
 	if mode == "printed":
 		if _item_view.body != _printed_diagram:
 			_item_view.set_body(_printed_diagram)
@@ -2242,6 +2260,10 @@ func item_diagram() -> FramePlanDiagram:
 
 func propulsion_diagram() -> PropulsionDiagram:
 	return _prop_diagram
+
+
+func mount_profile() -> PropellerMountProfile:
+	return _mount_profile
 
 
 func control_diagram() -> ControlDiagram:
