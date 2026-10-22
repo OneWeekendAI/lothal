@@ -91,7 +91,11 @@ extends RefCounted
 ## file that carries one keeps the block intact (rule 3) and flies the aircraft with none of it
 ## applied — which is the correct outcome for a version with no config model at all, and is the
 ## same argument `guard` made at minor 1.
-const SCHEMA_MINOR := 2
+##
+## 3 (2026-10-21): the `airframe` decision block — the frame drawn in the Airframe room. An older
+## Lothal carries it untouched (rule 3) and flies the fitted catalogue frame, which is what that
+## version could fly anyway.
+const SCHEMA_MINOR := 3
 ## Bumped when a field CHANGES MEANING. Old Lothals refuse the file.
 const SCHEMA_MAJOR := 1
 
@@ -116,7 +120,11 @@ const REQUIRED_CATEGORIES := ["frame", "motor", "propeller", "battery", "esc", "
 ## and that assertion is red for both of them until this list names them — so the slice that makes
 ## the claim is the slice that has to make it true. C5 still owns the persistence BEHAVIOUR: the
 ## round trip, the pre-existence fixture, and "" versus absent.
-const OPTIONAL_CATEGORIES := ["camera", "vtx", "antenna", "receiver", "guard", "gps", "buzzer"]
+## `mount` (SM3's persistence slice) is the guard's twin: a trailing `Build.from_ids` argument rather
+## than an `OPTIONAL_COMPONENTS` payload, pulled out of the components block by `Project.to_build`.
+## Every file written before it reopens with "" — no mount, the class-typical default it always ran.
+const OPTIONAL_CATEGORIES := ["camera", "vtx", "antenna", "receiver", "guard", "gps", "buzzer",
+	"mount"]
 
 ## Sparse blocks under `decisions`. Named here rather than in Project so that adding a block is a
 ## data change in one place — the unknown-field carry, the round trip and the defaults all read
@@ -125,7 +133,7 @@ const OPTIONAL_CATEGORIES := ["camera", "vtx", "antenna", "receiver", "guard", "
 ## app's default", so a builder who never opened the Config room gets today's behaviour, and a
 ## default that later changes follows rather than freezing at the value some build happened to
 ## have. It has no key whitelist — C2..C9 each add keys to it without this list changing.
-const DECISION_BLOCKS := ["parts", "assembly", "tune", "air", "printing", "config"]
+const DECISION_BLOCKS := ["parts", "assembly", "tune", "air", "printing", "config", "airframe"]
 
 const TOP_KEYS := ["schema", "project_id", "name", "created_at", "updated_at", "lothal_version",
 	"decisions", "versions", "prints", "notes"]

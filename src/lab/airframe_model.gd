@@ -53,6 +53,9 @@ var battery_offset_m := 0.0
 ## for the same reason the motors hang off the arm-tip pads: the mount's height is FrameModel's, the
 ## standoff tweak moves it, and a frame rebuild frees it rather than leaving a stale board behind.
 var stack_mesh: StackMesh
+## The bolt pattern of the ESC in the build drawn, so the stack is drawn and checked as the board
+## actually fitted rather than as the 30.5 default.
+var stack_pattern := Build.STACK_MOUNT_PATTERN
 ## The optional components that are FITTED, by category — camera, VTX, antenna, receiver. A category
 ## absent from this dictionary is a component not fitted, which is exactly what it means in
 ## Build.components: there is no placeholder and nothing greyed out, because a whoop on an AIO
@@ -77,6 +80,17 @@ func _init() -> void:
 	add_child(motor_map)
 
 
+## Whether `document` is the frame `frame` flies: generated from it (same id), or the drawing a
+## REPLACEMENT edit flies in its place (`FittedFrame._replacement_edit`'s `drawn_id`). Matching on
+## the part id alone drew a saved 3" drawing as a generic plate on the 5" rail's specs.
+static func draws(document: AirframeDocument, frame: Dictionary) -> bool:
+	var id := str(document.id)
+	if id == str(frame.get("part_id", "")):
+		return true
+	var edit: Dictionary = frame.get("drawn_edit", {})
+	return id != "" and id == str(edit.get("drawn_id", ""))
+
+
 ## Regenerates the whole airframe from `build`. Safe to call on every part change; the frame
 ## rebuild clears the pads and everything hanging off them, so nothing from the previous
 ## build can survive into this one.
@@ -84,14 +98,22 @@ func _init() -> void:
 ## null for the geometry the parts imply on their own. It is resolved to plain metres HERE, once,
 ## and handed to the mesh generators as numbers — a generator that could reach into settings for
 ## itself would be a second source for a dimension the assembler already knows.
-func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
+##
+## `document` is the frame as drawn in the designer, when the caller holds one for THIS frame (Lab
+## passes its fitted `frame_document`). Drawn through the same `FrameModel.rebuild_document` the
+## designer's 3D view uses, so an upright camera cage (G5) cut in the designer stands on the assembled
+## aircraft too. Null draws the frame generated from its catalogue specs, as before.
+func rebuild(build: Build, tweaks: AssemblyTweaks = null, document: AirframeDocument = null) -> void:
 	# The parts-implied defaults are Build's, not a second list here: the mass model falls back to
 	# the same ones, and two lists of defaults is two things to get out of step.
 	var tweak_m := Build.DEFAULT_ASSEMBLY.duplicate()
 	if tweaks != null:
 		tweak_m = tweaks.resolved_m(build)
 
-	frame_model.rebuild(build.frame, tweak_m["plate_gap_m"])
+	if document != null and draws(document, build.frame):
+		frame_model.rebuild_document(document, build.frame, tweak_m["plate_gap_m"])
+	else:
+		frame_model.rebuild(build.frame, tweak_m["plate_gap_m"])
 	motor_meshes.clear()
 	propeller_meshes.clear()
 	guard_meshes.clear()
@@ -131,7 +153,8 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null) -> void:
 	# about (mount_warnings) and still mounted, because Lothal never blocks.
 	stack_mesh = StackMesh.new()
 	stack_mesh.name = "Stack"
-	stack_mesh.rebuild(Build.STACK_MOUNT_PATTERN)
+	stack_pattern = build.esc_mount_pattern()
+	stack_mesh.rebuild(stack_pattern)
 	var stack_mount := mount_point("stack")
 	if stack_mount != null:
 		stack_mesh.position = stack_mount.position
@@ -434,6 +457,12 @@ func camera_obstruction_points_m() -> Dictionary:
 		if not points.is_empty():
 			out[str(record["name"])] = points
 
+	# Upright plates (a camera cage, G5): their outline is in their own standing plane, so their
+	# points come from the frame model already in the airframe's frame rather than through world_m.
+	var sides := frame_model.side_plate_points_m()
+	for side_name in sides:
+		out[str(side_name)] = sides[side_name]
+
 	var rings := guard_ring_polygons_m()
 	for motor_name in rings:
 		var guard: GuardMesh = guard_meshes[motor_name]
@@ -468,8 +497,8 @@ func mount_warnings() -> Array[BuildWarning]:
 	var stack_mount := mount_point("stack")
 	if stack_mount != null:
 		out.append_array(stack_mount.fit_warnings(
-			"The FC/ESC stack", Build.stack_mounting(),
-			StackMesh.size_m(Build.STACK_MOUNT_PATTERN)))
+			"The FC/ESC stack", Build.stack_mounting(stack_pattern),
+			StackMesh.size_m(stack_pattern)))
 	if battery_mount != null and battery_mesh != null:
 		out.append_array(battery_mount.fit_warnings(
 			"The pack", {"attachment": MountPoint.STRAP, "pattern": ""}, battery_mesh.size_m))

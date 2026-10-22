@@ -24,6 +24,7 @@ const FRAME := &"frame"
 const ARMS := &"arms"
 const HARDWARE := &"hardware"
 const LAYOUT := &"layout"
+const STRAPS := &"straps"
 const MOTORS := &"motors"
 const PROPELLERS := &"propellers"
 const GUARDS := &"guards"
@@ -69,6 +70,18 @@ const TABLE := {
 	&"screw_bottoms_out": [HARDWARE, "a screw bottoms out"],
 	&"thread_engagement": [HARDWARE, "too little thread engaged"],
 	&"hole_to_edge": [HARDWARE, "hole too close to the edge"],
+	# Ready to cut (airframe gaps G3): ReadyToCut, against the document's cutting bit. On Frame, whose
+	# page is the designer where a corner is rounded or a slot widened.
+	&"cut_corner_tighter_than_bit": [FRAME, "{tight_corners}"],
+	# G4: ArmStrength's characteristic note — the arm breaks under less tip load than its class.
+	&"arm_weaker_than_class": [ARMS, "{arm_weaker_than_class}"],
+	&"cut_gap_narrower_than_bit": [FRAME, "a gap narrower than the cutting bit"],
+	# Straps & pads (airframe.md §6): StrapSlots' geometry and PadMount's spring, via StrapsPads.
+	&"no_strap_slots": [STRAPS, "no strap slots in the plate"],
+	&"strap_slot_narrow": [STRAPS, "{strap_slot_narrow}"],
+	&"strap_slot_off_pack": [STRAPS, "a strap slot is not under the pack"],
+	&"pad_too_soft": [STRAPS, "{pad_too_soft}"],
+	&"pad_passes_frame_mode": [STRAPS, "pad passes the frame's ring"],
 	&"mount_attachment": [LAYOUT, "a part has nothing to mount to"],
 	&"mount_pattern": [LAYOUT, "mount pattern does not match"],
 	&"mount_overhang": [LAYOUT, "a part overhangs its mount"],
@@ -125,6 +138,8 @@ const TABLE := {
 	# Video
 	&"camera_tilt_into_top_plate": [CAMERA, "{camera_tilt}"],
 	&"camera_obstruction": [CAMERA, "{camera_obstruction}"],
+	# G5: CameraCage — the fitted camera is wider than the side plates drawn for it.
+	&"camera_wider_than_cage": [CAMERA, "camera wider than its side plates"],
 	&"vtx_without_antenna": [VTX, "VTX has no antenna"],
 	# Printed — one row per generated part, so the item is "printed:<part>" (`item_of`).
 	&"printed_refused": [PRINTED, "cannot be generated"],
@@ -195,6 +210,18 @@ static func _pct(fraction: Variant) -> int:
 
 static func _format(template: String, v: Dictionary) -> String:
 	match template:
+		"{strap_slot_narrow}":
+			return "slot %.0f mm, strap needs %.0f mm" % [float(v.get("slot_mm", 0.0)),
+				float(v.get("needed_mm", 0.0))]
+		"{arm_weaker_than_class}":
+			var size := str(v.get("size_class", ""))
+			return "arm weaker than every %s frame" % size if bool(v.get("class_clean", false)) \
+				and size != "" else "arm weaker than every catalog frame"
+		"{tight_corners}":
+			var count := (v.get("corners", []) as Array).size()
+			return "%d corner%s sharper than the bit" % [count, "" if count == 1 else "s"]
+		"{pad_too_soft}":
+			return "pad resonance ~%d Hz, in the loop" % roundi(float(v.get("f_n_hz", 0.0)))
 		"{current_limit}":
 			var who: String = {"battery": "pack", "esc": "ESC"}.get(str(v.get("limited_by", "")), "motor")
 			return "%s limits you to %d%% throttle" % [who, _pct(v.get("throttle_cap", 1.0))]

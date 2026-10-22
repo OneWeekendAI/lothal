@@ -60,6 +60,16 @@ static func of(document: AirframeDocument, props: AirframeProperties) -> Array[B
 	_check_arms_measure(document, out)
 	_check_layout(document, out)
 	_check_balance(props, out)
+	# §5.3's tear-out rule on the bolt holes off the arms — the stack mount's above all (G2). The arm's
+	# motor holes are `FrameHardware.joint_warnings`', which reads them against the real motor screws.
+	out.append_array(FrameHardware.mount_hole_warnings(document))
+	# G3: can a round end mill cut these plates as drawn — inside corners and gaps against the bit.
+	out.append_array(ReadyToCut.warnings(document))
+	# G4: an arm that breaks under a lower tip load than every catalog frame of its size class.
+	# CHARACTERISTIC — a ranking against the presets, never a crash prediction.
+	var weak := ArmStrength.warning(document, ArmStrength.shared_materials())
+	if weak != null:
+		out.append(weak)
 
 	out.sort_custom(func(a: BuildWarning, b: BuildWarning) -> bool:
 		return a.severity < b.severity)

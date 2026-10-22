@@ -25,7 +25,7 @@ const BATTERY_PAD := BatteryPad.PART_ID
 ## Bumped BY HAND whenever the frame's exported triangles change for the same frame (persistence §7.4).
 const FRAME_GENERATOR_VERSION := 1
 ## Bumped BY HAND whenever the prop guard ring's triangles change for the same guard (persistence §7.4).
-const PROP_GUARD_GENERATOR_VERSION := 1
+const PROP_GUARD_GENERATOR_VERSION := 2
 
 
 ## The one door from a row id to printable triangles (printed-room PR4). The per-part Export buttons
@@ -88,7 +88,9 @@ static func solid_for(build: Build, part_id: String) -> Dictionary:
 			out["solid_name"] = String(build.guard.get("part_id", part_id))
 			out["generator"] = "%s@%d" % [part_id, PROP_GUARD_GENERATOR_VERSION]
 			out["quantity"] = MotorLayout.MOTOR_NAMES.size()
-			out["triangles"] = PropulsionExport.guard_triangles_mm(build.guard)
+			# PG1: sized to the build's own prop, the radius Propulsion's export door passes too.
+			out["triangles"] = PropulsionExport.guard_triangles_mm(build.guard,
+				float(build.prop_geometry()["diameter_m"]) * 0.5)
 			dims = {"ok": not (out["triangles"] as Array).is_empty(),
 				"reason": "%s: %s has no ring to print" % [part_id, out["solid_name"]]}
 		FRAME:

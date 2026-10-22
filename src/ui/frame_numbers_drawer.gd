@@ -87,6 +87,19 @@ func _init() -> void:
 	_values["flies"] = _flies
 	add_child(_flies)
 
+	# G6: what cutting this frame might cost — a range at placeholder rates, labelled as such. Its own
+	# clipped line for the same width reason as `_flies`: a long label must not widen the room.
+	var cost := Label.new()
+	cost.theme_type_variation = &"SmallLabel"
+	cost.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
+	cost.clip_text = true
+	cost.mouse_filter = Control.MOUSE_FILTER_PASS
+	cost.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	cost.tooltip_text = "From the nested sheet area per thickness plus every cut's length, at the " + \
+		"rates in data/cut_rates.json — placeholder figures; replace them with your shop's quote."
+	_values["cost"] = cost
+	add_child(cost)
+
 	_tabs = TabContainer.new()
 	_tabs.visible = false
 	_tabs.custom_minimum_size = Vector2(0, 260)
@@ -137,9 +150,18 @@ func show_document(document: AirframeDocument) -> void:
 	checks.add_theme_color_override("font_color",
 		LothalTheme.TEXT_MAIN if warnings.is_empty() else LothalTheme.WARNING)
 
+	var estimate := CutCost.estimate(document)
+	_set_stat("cost", ("Cutting ~%s" % CutCost.labelled_text(estimate)) if bool(estimate["ok"])
+		else "")
+
 	_stale = true
 	if _tabs.visible:
 		_render_tabs()
+
+
+## The cutting-cost line (G6), for tests: "Cutting ~$41–$83 (placeholder rates — …)".
+func cost_text() -> String:
+	return (_values["cost"] as Label).text
 
 
 ## What the aircraft flies for this frame (`FittedFrame.flown_text`): the weighed mass, or the

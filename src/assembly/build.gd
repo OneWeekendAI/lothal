@@ -385,8 +385,8 @@ const BATTERY_DEFAULT_CHEMISTRY := "LiPo"
 ## part. Here rather than in the catalog because the stack is not a catalog part yet — and stating
 ## it in the one place the mesh and the mass both read keeps it from becoming two opinions the day
 ## it becomes one.
-static func stack_mounting() -> Dictionary:
-	return {"attachment": MountPoint.BOLT, "pattern": STACK_MOUNT_PATTERN}
+static func stack_mounting(pattern: String = STACK_MOUNT_PATTERN) -> Dictionary:
+	return {"attachment": MountPoint.BOLT, "pattern": pattern}
 
 ## The frame's centre plate, as a box, derived from arm length rather than authored — a
 ## body dimension is not in parts.md's spec-field table, so it does not belong in the JSON.
@@ -486,6 +486,18 @@ var components: Dictionary = {}
 ## field the closure the BEMT solve reads through `forward_ratios()` would have nothing to close
 ## against — a duct fitted on paper and forgotten in flight.
 var guard: Dictionary = {}
+## The motor soft mount, one grommet set per motor (slice SM2): a `data/parts/mounts.json` record, or
+## empty when no mount id is fitted — every build written before SM2, and the reference build. Empty
+## is the CURRENT DEFAULT, not a different answer: `VibrationModel.soft_mount_spec_for` hands
+## `SoftMount` an empty spec for it, which is the class-typical 60A grommet every build has run
+## since P8, so an unfitted mount is bit-identical to the aircraft before this field existed.
+##
+## The mount is the MATERIAL — hardness, contact area, count, density. How thick the pad is stays the
+## Lab's "Motor soft mount" tweak; a fitted mount only moves that tweak's as-built DEFAULT to the
+## part's own nominal thickness (`AssemblyTweaks.limits`), because a mount picked and then modelled
+## at zero thickness would be a part that is fitted and absent at once. Its mass is not in
+## `mass_parts()` yet — that is SM5.
+var mount: Dictionary = {}
 ## THE CURRENT PATH, as data — plans/2026-09-10-power-room-design.md §4.2, slice PW2. Connector,
 ## capacitor, and a gauge and length for each of the two wire runs, every one of them a default
 ## DERIVED from this build with an authored override on top.
@@ -639,7 +651,7 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 		battery_id: String, esc_id: String = DEFAULT_ESC_ID,
 		fc_id: String = DEFAULT_FC_ID, component_ids: Dictionary = {},
 		p_air: AirDensity = null, guard_id: String = "",
-		harness_overrides: Dictionary = {}) -> Build:
+		harness_overrides: Dictionary = {}, mount_id: String = "") -> Build:
 	var b := Build.new()
 	# `null` rather than AirDensity.standard() as the default value, because a GDScript default
 	# argument is evaluated once and shared: a literal object default would hand every Build in the
@@ -654,6 +666,8 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 		"esc": esc_id,
 		"fc": fc_id,
 		"guard": guard_id,
+		# SM2, on P10b's guard pattern: one more trailing argument, "" meaning not fitted.
+		"mount": mount_id,
 	}
 	# The harness grows here the way the guard did in P10b — one more trailing argument, defaulting
 	# to what the parts imply, so every call site written before Power existed builds exactly the
@@ -685,6 +699,15 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 ## `from_ids` is this function's first caller, so there is one resolution path rather than two: the
 ## constructor records the ids and then refits, and a category added to one is added to both by
 ## construction.
+## The fitted prop's tip radius in mm, from the catalogue diameter — the radius `prop_geometry`
+## and the drawn PropellerMesh both use. 0 with no prop, which `PropGuard.fitted_spec` reads as
+## "no disc to wrap" and leaves the ring as sold.
+func _prop_tip_radius_mm() -> float:
+	if propeller.is_empty():
+		return 0.0
+	return float(propeller.get("specs", {}).get("diameter_inches", 0.0)) * INCH_M * 500.0
+
+
 func refit_from(p_catalog: PartsCatalog) -> void:
 	catalog = p_catalog
 	# The designer's edit to the fitted frame, if any (FittedFrame): its mass and arm replace the
@@ -720,7 +743,18 @@ func refit_from(p_catalog: PartsCatalog) -> void:
 	if fitted_guard_id != "":
 		var guard_part: Dictionary = p_catalog.get_part(fitted_guard_id)
 		if not guard_part.is_empty():
-			guard = guard_part
+			# PG1: the ring is fitted to THIS build's prop, on a copy, so every reader of
+			# `guard.specs` (mass, the R² bite, closure, the drawing, the exports, the camera
+			# check) sees the ring that wraps the disc rather than the one sold for its class.
+			guard = PropGuard.fitted_guard(guard_part, _prop_tip_radius_mm())
+	# The soft mount, the guard's treatment exactly: an id that resolves to nothing leaves the slot
+	# empty — the class-typical default — rather than fitting a part with no fields to read.
+	mount = {}
+	var fitted_mount_id := String(_part_ids.get("mount", ""))
+	if fitted_mount_id != "":
+		var mount_part: Dictionary = p_catalog.get_part(fitted_mount_id)
+		if not mount_part.is_empty():
+			mount = mount_part
 	_recompute()
 
 ## The same aircraft, at a different field.
@@ -747,9 +781,11 @@ func at_air(p_air: AirDensity) -> Build:
 	# copying the old scalar (the closure IS density-invariant, but stating that here would
 	# duplicate the property BemtRatios asserts and drift is exactly the failure mode).
 	var g_id := str(guard.get("part_id", "")) if not guard.is_empty() else ""
+	# And the mount, for the guard's reason: the same pad under the same motors.
+	var m_id := str(mount.get("part_id", "")) if not mount.is_empty() else ""
 	var twin := Build.from_ids(catalog, str(frame["part_id"]), str(motor["part_id"]),
 		str(propeller["part_id"]), str(battery["part_id"]), str(esc["part_id"]),
-		str(fc["part_id"]), ids, p_air, g_id)
+		str(fc["part_id"]), ids, p_air, g_id, {}, m_id)
 	# The harness comes with it, for the assembly's reason: a twin that forgot the builder's lead
 	# lengths would answer a question about a different aircraft. The OVERRIDES travel, not the
 	# resolved values — the twin re-derives its defaults from its own parts, which is the whole
@@ -1261,6 +1297,25 @@ func mass_parts() -> Array:
 				MotorLayout.motor_position(motor_name, arm_m))
 			if pm != null:
 				parts.append(pm)
+
+	# THE SOFT MOUNT'S OWN MASS (slice SM5), one grommet set per motor at that motor's plan position,
+	# with `Vector3.ZERO` local diagonal — the guard's P10a rule above, for the guard's reason: the
+	# parallel-axis shift in `AirframeProperties.compute` adds its m·d² exactly once, and a local
+	# tensor on top would count a body the size of a fingernail as if it spun about itself.
+	#
+	# Only a FITTED mount weighs anything. With none fitted `VibrationModel` still runs the class-
+	# typical grommet for the mode (so a Lab pad without a part keeps isolating, as before SM2), but
+	# no part was chosen and none is weighed: the reference build's 507.48 g stays bit-identical. A
+	# fitted mount at zero thickness is no pad, and `SoftMount.mount_mass_kg` answers exactly 0.0 —
+	# appended as nothing, not as a zero-mass part, so the part list is the list before SM5. The mass
+	# is the same `mount_mass_kg` the frame mode adds at the arm tip, so mass and mode cannot disagree.
+	if not mount.is_empty():
+		var mount_kg := SoftMount.mount_mass_kg(float(assembly_value("soft_mount_m")),
+			SoftMount.spec_from_part(mount))
+		if mount_kg > 0.0:
+			for motor_name in MotorLayout.MOTOR_NAMES:
+				parts.append(PartMass.new(mount_kg, MotorLayout.motor_position(motor_name, arm_m),
+					Vector3.ZERO, "Soft mount %s" % motor_name))
 
 	# Printed parts the builder FITTED in this drone's Printed room (printed-room PR1). Added on top,
 	# not carved from a budget — nothing ever budgeted for them — and absent unless fitted, which is

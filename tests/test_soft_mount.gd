@@ -308,4 +308,218 @@ static func run() -> Array:
 		"bare %.3f Hz  padded %.3f Hz  ratio %.6f against sqrt(m_bare/m_tip+mount) = %.6f"
 			% [bare_res, padded_res, padded_res / bare_res, predicted]))
 
+	# -----------------------------------------------------------------------
+	# SM1 — mounts as parts. One result per entry and one per required field, so the failure count
+	# says how many entries or fields are wrong rather than "the loop failed".
+	# -----------------------------------------------------------------------
+	var catalog := PartsCatalog.load_default()
+	results.append(_test_the_mount_category_loads(catalog))
+	for part in catalog.list_category("mount"):
+		results.append(_test_a_mount_entry_computes(part))
+		results.append(_test_a_mount_entrys_mass_is_derived(part))
+		results.append(_test_a_mount_entry_says_what_it_guessed(part))
+	for field in SoftMount.PART_SPEC_FIELDS:
+		results.append(_test_a_missing_field_is_refused_not_defaulted(catalog, field))
+
+	# SM2 — Build.mount_id reaches VibrationModel.soft_mount_spec.
+	results.append(_test_a_50a_and_a_70a_mount_give_different_mount_frequencies())
+	results.append(_test_an_empty_mount_id_is_the_build_it_always_was())
+	results.append(_test_a_fitted_mount_is_a_pad_by_default())
+	results.append(_test_a_twin_at_another_field_keeps_its_mount())
+
 	return results
+
+
+# ---------------------------------------------------------------------------
+# SM1 — data/parts/mounts.json
+# ---------------------------------------------------------------------------
+
+## The reference motor and prop: what a mount entry is computed carrying. Any positive tip mass would
+## do for a tier check; this one is the aircraft the rest of the suite is pinned to.
+static func _reference_tip_kg() -> float:
+	return VibrationModel.tip_mass_kg_for(ReferenceBuild.build())
+
+
+## The category is registered and the loader read it. Three entries is the floor because the slice
+## asks for a softer and a firmer pad beside the default, and SM2's 50A-vs-70A check needs both.
+##
+## MUTATION CONFIRMED RED: delete the "mount" line from `PartsCatalog.CATEGORY_FILES` (0 entries).
+static func _test_the_mount_category_loads(catalog: PartsCatalog) -> TestResult:
+	var mounts := catalog.list_category("mount")
+	return TestResult.new(
+		"[SM1] the mounts category loads with no errors and at least three entries",
+		mounts.size() >= 3 and catalog.load_errors.is_empty(),
+		"%d mounts, load errors %s" % [mounts.size(), catalog.load_errors])
+
+
+## Each shipped entry earns "computed": every field present and in band. A finite, positive f_n is
+## required alongside the tier, because a tier string alone would pass a compute that labelled a
+## NaN.
+##
+## MUTATION CONFIRMED RED: `"shore_a": 100.0` on mount_grommet_60a (insufficient_data:
+## shore_a_out_of_band, for that entry's result only).
+static func _test_a_mount_entry_computes(part: Dictionary) -> TestResult:
+	var result := SoftMount.compute_part(part, _reference_tip_kg())
+	var f_n := float(result["f_n_hz"])
+	return TestResult.new(
+		"[SM1] %s computes from its own fields" % part["part_id"],
+		result["tier"] == "computed" and is_finite(f_n) and f_n > 0.0,
+		"tier %s, f_n %.1f Hz" % [result["tier"], f_n])
+
+
+## `mass_g` is carried, not authored: it must be `SoftMount.mount_mass_kg` at the entry's own
+## thickness. guards.json's rule, for guards.json's reason — no mass may be written here that the
+## physics would not also produce.
+##
+## MUTATION CONFIRMED RED: `"mass_g": 0.02` on mount_grommet_70a_firm.
+static func _test_a_mount_entrys_mass_is_derived(part: Dictionary) -> TestResult:
+	var spec := SoftMount.spec_from_part(part)
+	var computed_g := SoftMount.mount_mass_kg(float(spec.get("thickness_m", 0.0)), spec) * 1000.0
+	var authored_g := float(part.get("mass_g", -1.0))
+	return TestResult.new(
+		"[SM1] %s carries the mass its own fields give" % part["part_id"],
+		computed_g > 0.0 and absf(authored_g - computed_g) < 1.0e-6,
+		"mass_g %.6f g, SoftMount %.6f g" % [authored_g, computed_g])
+
+
+## An entry that guessed says so. `assumed` must exist, name only real spec fields, and — when it is
+## not empty — the entry's `source` must call the values class-typical. A product somebody actually
+## measured would carry an empty list and no such word; nothing in the catalog is that yet, and the
+## check is what stops a guessed 50A from reading like a measured one.
+##
+## MUTATION CONFIRMED RED: drop "class-typical" from mount_grommet_50a_soft's source.
+static func _test_a_mount_entry_says_what_it_guessed(part: Dictionary) -> TestResult:
+	var problems: Array[String] = []
+	if not (part.get("assumed") is Array):
+		problems.append("no `assumed` list")
+	else:
+		for field in part["assumed"]:
+			if not SoftMount.PART_SPEC_FIELDS.has(String(field)):
+				problems.append("assumed names %s, which is not a spec field" % field)
+		if not (part["assumed"] as Array).is_empty() \
+				and not String(part.get("source", "")).contains("class-typical"):
+			problems.append("assumes %s but its source never says class-typical" % [part["assumed"]])
+	return TestResult.new(
+		"[SM1] %s says which of its fields are class-typical guesses" % part["part_id"],
+		problems.is_empty(),
+		"assumed %s%s" % [part.get("assumed"), "" if problems.is_empty() else ": " + str(problems)])
+
+
+## A field the entry left out is refused, NOT filled from the class-typical default. The default
+## entry itself is the subject because it is the one case where defaulting would be invisible: its
+## values ARE the defaults, so a reader that filled the gap would compute the same frequency it
+## computes with the field present. Only the tier can tell — and f_n must be INF and the pad's mass
+## zero, the refusing answers.
+##
+## MUTATIONS CONFIRMED RED (3 of 3): the `missing` check in `SoftMount.compute` made `if false and …`
+## (all 5 fields: compute reads "computed"); the guard in `SoftMount.mount_mass_kg` dropped (all 5:
+## the pad weighs something); the check in `SoftMount.compute_part` made `if false and …` (thickness
+## only: "no_mount" — for the other four `compute`'s own check still refuses, so that line is
+## load-bearing for exactly the field that would otherwise read as no pad at all).
+static func _test_a_missing_field_is_refused_not_defaulted(catalog: PartsCatalog,
+		field: String) -> TestResult:
+	var part: Dictionary = catalog.get_part("mount_grommet_60a").duplicate(true)
+	(part["specs"] as Dictionary).erase(field)
+	var result := SoftMount.compute_part(part, _reference_tip_kg())
+	var spec := SoftMount.spec_from_part(part)
+	var mass := SoftMount.mount_mass_kg(0.001, spec)
+	var via_compute := SoftMount.compute(0.001, _reference_tip_kg(), spec)
+	return TestResult.new(
+		"[SM1] a mount entry without %s is insufficient_data, not the default" % field,
+		result["tier"] == "insufficient_data:missing_" + field \
+			and via_compute["tier"] == "insufficient_data:missing_" + field \
+			and not is_finite(float(result["f_n_hz"])) and mass == 0.0,
+		"compute_part %s, compute %s, mass %.6f kg" % [result["tier"], via_compute["tier"], mass])
+
+
+# ---------------------------------------------------------------------------
+# SM2 — Build.mount_id
+# ---------------------------------------------------------------------------
+
+## The reference build's parts with `mount_id` fitted, and its assembly resolved from a fresh
+## configuration — so the pad is the tweak's as-built default, the posture Lab builds with.
+static func _reference_with_mount(mount_id: String) -> Build:
+	var build := Build.from_ids(PartsCatalog.load_default(), ReferenceBuild.FRAME_ID,
+		ReferenceBuild.MOTOR_ID, ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID,
+		ReferenceBuild.ESC_ID, ReferenceBuild.FC_ID, {}, null, "", {}, mount_id)
+	build.set_assembly(AssemblyTweaks.new().resolved_m(build))
+	return build
+
+
+## The slice's own proof: picking a 50A vs a 70A mount moves `mount_hz()`, in the direction the
+## physics says (harder rubber, stiffer spring, higher f_n), and each lands on exactly what
+## `SoftMount` computes from that part's own fields at the pad the build carries.
+##
+## MUTATION CONFIRMED RED: `VibrationModel.soft_mount_spec_for` returning `{}` for every build (both
+## mounts read the 60A default: 200.0 Hz twice).
+static func _test_a_50a_and_a_70a_mount_give_different_mount_frequencies() -> TestResult:
+	var soft := _reference_with_mount("mount_grommet_50a_soft")
+	var firm := _reference_with_mount("mount_grommet_70a_firm")
+	var soft_hz := VibrationModel.for_build(soft).mount_hz()
+	var firm_hz := VibrationModel.for_build(firm).mount_hz()
+	var expected_soft := SoftMount.f_n_hz(float(soft.assembly_value("soft_mount_m")),
+		VibrationModel.tip_mass_kg_for(soft), SoftMount.spec_from_part(soft.mount))
+	var expected_firm := SoftMount.f_n_hz(float(firm.assembly_value("soft_mount_m")),
+		VibrationModel.tip_mass_kg_for(firm), SoftMount.spec_from_part(firm.mount))
+	return TestResult.new(
+		"[SM2] a 70A mount puts the mount mode above a 50A one, each at its own part's f_n",
+		is_finite(soft_hz) and firm_hz > soft_hz and soft_hz == expected_soft \
+			and firm_hz == expected_firm,
+		"50A %.3f Hz (SoftMount %.3f), 70A %.3f Hz (SoftMount %.3f)" % [
+			soft_hz, expected_soft, firm_hz, expected_firm])
+
+
+## `mount_id = ""` is the build it always was: no mount part, the empty spec, no pad by default, and
+## the same vibration numbers as the reference build made the pre-SM2 way — compared with `==`,
+## because bit-identical is the claim.
+##
+## MUTATION CONFIRMED RED: `refit_from` falling back to `mount_grommet_60a` for an empty id (spec no
+## longer empty, the pad defaults to 1.0 mm, and mount_hz goes from INF to 200 Hz).
+static func _test_an_empty_mount_id_is_the_build_it_always_was() -> TestResult:
+	var before := ReferenceBuild.build()
+	before.set_assembly(AssemblyTweaks.new().resolved_m(before))
+	var after := _reference_with_mount("")
+	var a := VibrationModel.for_build(before)
+	var b := VibrationModel.for_build(after)
+	return TestResult.new(
+		"[SM2] an empty mount id leaves the reference build bit-identical",
+		after.mount.is_empty() and b.soft_mount_spec.is_empty() \
+			and a.mount_hz() == b.mount_hz() and a.resonance_hz == b.resonance_hz \
+			and a.soft_mount_m == b.soft_mount_m \
+			and before.mass_properties.total_mass_kg == after.mass_properties.total_mass_kg,
+		"mount %s, spec %s, f_n %s vs %s, frame mode %.9f vs %.9f Hz, %.6f vs %.6f g" % [
+			after.mount.get("part_id", "none"), b.soft_mount_spec, a.mount_hz(), b.mount_hz(),
+			a.resonance_hz, b.resonance_hz, before.mass_properties.total_mass_kg * 1000.0,
+			after.mass_properties.total_mass_kg * 1000.0])
+
+
+## A mount that is fitted is a pad that is there: the "Motor soft mount" tweak's as-built default is
+## the part's own nominal thickness, and zero with none fitted. Without it a picked mount would be
+## modelled at zero thickness — no_mount — and the 50A/70A choice would move nothing until the
+## builder also found the tweak.
+##
+## MUTATION CONFIRMED RED: `AssemblyTweaks.limits` SOFT_MOUNT "default" back to `0.0` (the fitted
+## build reads 0.0 mm).
+static func _test_a_fitted_mount_is_a_pad_by_default() -> TestResult:
+	var tweaks := AssemblyTweaks.new()
+	var fitted := _reference_with_mount("mount_grommet_70a_firm")
+	var bare := _reference_with_mount("")
+	var fitted_mm := tweaks.value_mm(AssemblyTweaks.SOFT_MOUNT, fitted)
+	var bare_mm := tweaks.value_mm(AssemblyTweaks.SOFT_MOUNT, bare)
+	var part_mm := float(fitted.mount["specs"]["thickness_mm"])
+	return TestResult.new(
+		"[SM2] a fitted mount defaults the pad to the part's own thickness, and no mount to none",
+		fitted_mm == part_mm and bare_mm == 0.0,
+		"fitted %.3f mm (part %.3f mm), bare %.3f mm" % [fitted_mm, part_mm, bare_mm])
+
+
+## The same aircraft at another field carries the same mount — `at_air`'s rule for the guard.
+##
+## MUTATION CONFIRMED RED: `at_air` computing `m_id` as `""` (twin mount none).
+static func _test_a_twin_at_another_field_keeps_its_mount() -> TestResult:
+	var build := _reference_with_mount("mount_grommet_50a_soft")
+	var twin := build.at_air(AirDensity.standard())
+	return TestResult.new(
+		"[SM2] a build's twin at another field keeps its soft mount",
+		str(twin.mount.get("part_id", "")) == "mount_grommet_50a_soft",
+		"twin mount %s" % twin.mount.get("part_id", "none"))

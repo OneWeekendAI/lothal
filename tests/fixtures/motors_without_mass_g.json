@@ -1,0 +1,60 @@
+{
+  "_schema": "Fixture for test_parts_system.gd (PL1). Not a catalog file — two copies of the first shipped motor, one with its mass_g removed. A motor is a weighed part, so _load_category must refuse the one without and keep its neighbour.",
+  "parts": [
+    {
+      "part_id": "motor_fixture_ordinary",
+      "name": "0802 19000KV",
+      "category": "motor",
+      "mass_g": 3.2,
+      "mount_pattern": "6x6",
+      "specs": {
+        "kv": 19000,
+        "stator_diameter_mm": 8,
+        "stator_height_mm": 2,
+        "max_thrust_g": 28.0,
+        "max_amps": 3.5,
+        "poles": 12,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
+      },
+      "thrust_test": {
+        "prop_id": "prop_16x12x4",
+        "voltage_v": 3.7
+      },
+      "catalog": {
+        "stator_class": "08xx",
+        "kv_class": "8000KV+",
+        "intended_use": "tinywhoop"
+      },
+      "source": "representative 0802 whoop motor thrust table, 40mm quad-blade on 1S"
+    },
+    {
+      "part_id": "motor_fixture_no_mass",
+      "name": "0802 19000KV",
+      "category": "motor",
+      "mount_pattern": "6x6",
+      "specs": {
+        "kv": 19000,
+        "stator_diameter_mm": 8,
+        "stator_height_mm": 2,
+        "max_thrust_g": 28.0,
+        "max_amps": 3.5,
+        "poles": 12,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4
+      },
+      "thrust_test": {
+        "prop_id": "prop_16x12x4",
+        "voltage_v": 3.7
+      },
+      "catalog": {
+        "stator_class": "08xx",
+        "kv_class": "8000KV+",
+        "intended_use": "tinywhoop"
+      },
+      "source": "representative 0802 whoop motor thrust table, 40mm quad-blade on 1S"
+    }
+  ]
+}

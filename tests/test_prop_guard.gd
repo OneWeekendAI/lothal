@@ -533,6 +533,16 @@ static func run() -> Array:
 	results.append_array(_changing_the_guard_invalidates_the_cached_surface())
 	results.append_array(_the_air_twin_carries_the_guard())
 	results.append_array(_an_unreadable_guard_fits_nothing())
+	# PG1: the ring is derived from the prop it wraps.
+	results.append(_pg1_a_guard_on_its_own_prop_is_the_ring_it_was_sold_as(BUMPER_ID, ReferenceBuild.PROPELLER_ID, 72.0))
+	results.append(_pg1_a_guard_on_its_own_prop_is_the_ring_it_was_sold_as(DUCT_ID, ReferenceBuild.PROPELLER_ID, 68.0))
+	results.append(_pg1_a_guard_on_its_own_prop_is_the_ring_it_was_sold_as("guard_duct_3in_tpu", PROP_3IN_ID, 41.0))
+	results.append_array(_pg1_a_5in_bumper_on_a_3in_prop_is_a_3in_ring())
+	results.append(_pg1_fitting_twice_is_fitting_once())
+	results.append(_pg1_a_duct_with_no_gap_gets_the_default_ring_and_no_closure())
+	results.append_array(_pg1_the_cinewhoop_finding_re_derived())
+	results.append(_pg1_the_guard_sheet_marks_an_assumed_gap(BUMPER_ID, true))
+	results.append(_pg1_the_guard_sheet_marks_an_assumed_gap(DUCT_ID, false))
 
 	return results
 
@@ -553,6 +563,17 @@ static func run() -> Array:
 const DUCT_ID := "guard_duct_5in_cinewhoop"
 ## And the freestyle ring, which is a bumper and must therefore move mass and NOTHING else.
 const BUMPER_ID := "guard_bumper_5in_abs"
+
+
+## PG1's small prop: the 3" tri-blade, tip radius 38.1 mm.
+const PROP_3IN_ID := "prop_3x3x3"
+
+
+## The reference aircraft with only its prop (and guard) changed — so a moved number is the ring.
+static func _build_with_prop_and_guard(prop_id: String, guard_id: String) -> Build:
+	return Build.from_ids(PartsCatalog.load_default(), ReferenceBuild.FRAME_ID,
+		ReferenceBuild.MOTOR_ID, prop_id, ReferenceBuild.BATTERY_ID,
+		ReferenceBuild.ESC_ID, ReferenceBuild.FC_ID, {}, null, guard_id)
 
 
 static func _build_with_guard(guard_id: String) -> Build:
@@ -872,3 +893,132 @@ static func _an_unreadable_guard_fits_nothing() -> Array:
 			build.guard_closure == 0.0 and build.k_t == plain.k_t and build.k_q == plain.k_q,
 			"closure %.1f, k_t %.17f / %.17f" % [build.guard_closure, build.k_t, plain.k_t]),
 	]
+
+
+# ---------------------------------------------------------------------------
+# PG1 — the ring derived from the prop it wraps (track.md, Wave P follow-on)
+# ---------------------------------------------------------------------------
+
+## Fitted to the prop it was sold for, each catalog guard is the ring it always was: tip + its gap
+## + its wall lands on the authored outer radius. This is what keeps every P9/P10 pin on a matched
+## build where it was — the bumper's 16.74 g, the shroud's 15.79 g, the reference + bumper tensor.
+##
+## MUTATION CONFIRMED RED: `DEFAULT_TIP_GAP_MM` moved off 5.5 (the bumper case), and the fit
+## adding the gap twice (all three).
+static func _pg1_a_guard_on_its_own_prop_is_the_ring_it_was_sold_as(guard_id: String, prop_id: String,
+		sold_outer_mm: float) -> TestResult:
+	var build := _build_with_prop_and_guard(prop_id, guard_id)
+	var outer_mm := float(build.guard.get("specs", {}).get("outer_radius_mm", 0.0))
+	return TestResult.new(
+		"[PG1] %s fitted to %s is the %.1f mm ring it is sold as" % [guard_id, prop_id, sold_outer_mm],
+		absf(outer_mm - sold_outer_mm) < 1.0e-9,
+		"fitted outer %.12f mm" % outer_mm)
+
+
+## THE acceptance: the 5" freestyle bumper on a 3" prop is a 3" ring, and its mass and its R² bite
+## are that ring's. Old → new on this build: outer 72.0 → 46.6 mm (38.1 tip + 5.5 gap + 3 wall),
+## ring 16.74 → 10.71 g, four rings 66.98 → 42.85 g.
+##
+## MUTATION CONFIRMED RED: `Build.refit_from` fitting the record as sold (`guard = guard_part`),
+## both results.
+static func _pg1_a_5in_bumper_on_a_3in_prop_is_a_3in_ring() -> Array:
+	var catalog := PartsCatalog.load_default()
+	var sold: Dictionary = catalog.get_part(BUMPER_ID)["specs"]
+	var plain := _build_with_prop_and_guard(PROP_3IN_ID, "")
+	var guarded := _build_with_prop_and_guard(PROP_3IN_ID, BUMPER_ID)
+	var fitted: Dictionary = guarded.guard["specs"]
+	var ring_kg := PropGuard.mass_kg(fitted)
+	var mass_delta := guarded.mass_properties.total_mass_kg - plain.mass_properties.total_mass_kg
+	var roll_delta := guarded.mass_properties.inertia.z.z - plain.mass_properties.inertia.z.z
+	# The floor is the 3" RING's, computed from the sold spec fitted here, not from what the build
+	# holds, so a build that kept the 5" ring lands at 1.56x it and goes red.
+	var floor_kg_m2 := 2.0 * PropGuard.mass_kg(PropGuard.fitted_spec(sold, 38.1)) * guarded.arm_m * guarded.arm_m
+	return [
+		TestResult.new(
+			"[PG1] the 5\" bumper on a 3\" prop is a 46.6 mm ring, weighed as one",
+			absf(float(fitted["outer_radius_mm"]) - 46.6) < 1.0e-9
+				and absf(mass_delta - 4.0 * ring_kg) < 1.0e-12
+				and ring_kg < PropGuard.mass_kg(sold) - 0.005,
+			"outer %.3f mm, ring %.3f g (as sold %.3f g), four rings %.3f g" % [
+				float(fitted["outer_radius_mm"]), ring_kg * 1000.0, PropGuard.mass_kg(sold) * 1000.0,
+				mass_delta * 1000.0]),
+		TestResult.new(
+			"[PG1] and its roll-inertia bite is the smaller ring's, on the same point-mass floor",
+			roll_delta > floor_kg_m2 and roll_delta < 1.05 * floor_kg_m2,
+			"roll delta %.9f kg·m² against 2·m·arm² %.9f (ratio %.4f)" % [
+				roll_delta, floor_kg_m2, roll_delta / floor_kg_m2]),
+	]
+
+
+## The fit reads the gap from `tip_gap_mm` (or the default) and never from the outer radius, so a
+## Build that fits once and a GuardMesh that fits again cannot disagree.
+##
+## MUTATION CONFIRMED RED: the gap read back as `outer_radius - wall - tip` of the spec in hand
+## (the pre-PG1 reading), and the default gap moved off 5.5.
+static func _pg1_fitting_twice_is_fitting_once() -> TestResult:
+	var spec: Dictionary = PartsCatalog.load_default().get_part(BUMPER_ID)["specs"]
+	var once := PropGuard.fitted_spec(spec, 38.1)
+	var twice := PropGuard.fitted_spec(once, 38.1)
+	return TestResult.new(
+		"[PG1] fitting a fitted ring to the same prop changes nothing",
+		float(once["outer_radius_mm"]) == float(twice["outer_radius_mm"]) and absf(float(once["outer_radius_mm"]) - 46.6) < 1.0e-9,
+		"once %.12f mm, twice %.12f mm" % [float(once["outer_radius_mm"]), float(twice["outer_radius_mm"])])
+
+
+## A duct with no stated gap: the RING gets the labelled default, and the THRUST gets nothing —
+## the default is never written into `tip_gap_mm`, so §6.3's no-spec-no-claim rule still holds.
+##
+## MUTATION CONFIRMED RED: `fitted_spec` writing the default gap into `tip_gap_mm`.
+static func _pg1_a_duct_with_no_gap_gets_the_default_ring_and_no_closure() -> TestResult:
+	var spec: Dictionary = (PartsCatalog.load_default().get_part(DUCT_ID)["specs"] as Dictionary).duplicate()
+	spec.erase("tip_gap_mm")
+	var fitted := PropGuard.fitted_spec(spec, 63.5)
+	var closure := PropGuard.tip_loss_closure(fitted, 8.0)
+	return TestResult.new(
+		"[PG1] a duct with no tip gap is ringed at the labelled default and claims no closure",
+		absf(float(fitted["outer_radius_mm"]) - (63.5 + PropGuard.DEFAULT_TIP_GAP_MM + 3.0)) < 1.0e-9
+			and closure == 0.0 and PropGuard.clearance_is_assumed(fitted),
+		"outer %.3f mm, closure %.3f, assumed %s" % [float(fitted["outer_radius_mm"]), closure,
+			PropGuard.clearance_is_assumed(fitted)])
+
+
+## P9's finding, now derived instead of authored. On its own 5" prop at the cinewhoop's 96 mm arm the
+## catalog shroud is still the 68 mm ring, 15.79 g at R_guard 164 mm against a 32 g motor at 96 mm:
+## ratio 1.44, unchanged. The SAME shroud round a 3" prop on that arm, which before PG1 was also
+## drawn and weighed at 68 mm (so 1.44), is now 42.6 mm, 9.76 g at R_guard 138.6 mm: ratio 0.64.
+## The guard stops out-weighing the motor in roll — the finding holds for a ring that fits its prop,
+## and was overstated by the 5" ring a 3" prop never had.
+##
+## MUTATION CONFIRMED RED: `fitted_spec` returning the spec unchanged (the 3" case reads 1.44), and
+## the fit adding the gap twice (both).
+static func _pg1_the_cinewhoop_finding_re_derived() -> Array:
+	var spec: Dictionary = PartsCatalog.load_default().get_part(DUCT_ID)["specs"]
+	var motor_inertia := 0.032 * 0.096 * 0.096
+	var on_5in := PropGuard.roll_inertia_contribution_kg_m2(PropGuard.fitted_spec(spec, 63.5)) / motor_inertia
+	var on_3in := PropGuard.roll_inertia_contribution_kg_m2(PropGuard.fitted_spec(spec, 38.1)) / motor_inertia
+	return [
+		TestResult.new(
+			"[PG1] the cinewhoop finding on its own 5\" prop: the shroud still out-weighs a 32 g motor in roll, 1.44",
+			absf(on_5in - 1.439) < 0.005,
+			"ratio %.4f" % on_5in),
+		TestResult.new(
+			"[PG1] and round a 3\" prop the same shroud is a 42.6 mm ring that no longer does, 0.64",
+			absf(on_3in - 0.636) < 0.005,
+			"ratio %.4f" % on_3in),
+	]
+
+
+## The guard sheet says when the gap it draws is the labelled default. The bumper states no gap, the
+## shroud states 1.5 mm.
+##
+## MUTATION CONFIRMED RED: `gap_assumed` never set (the bumper case), and set true for every guard
+## (the shroud case).
+static func _pg1_the_guard_sheet_marks_an_assumed_gap(guard_id: String, expected: bool) -> TestResult:
+	var diagram := PropulsionDiagram.new()
+	diagram.show_build(_build_with_guard(guard_id), PropulsionDiagram.MODE_GUARD)
+	var assumed := diagram.gap_assumed
+	diagram.free()
+	return TestResult.new(
+		"[PG1] the guard sheet marks %s's tip gap assumed: %s" % [guard_id, expected],
+		assumed == expected,
+		"gap_assumed %s" % assumed)

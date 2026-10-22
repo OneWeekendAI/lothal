@@ -194,13 +194,21 @@ static func apply_layout(document: AirframeDocument, entry: Dictionary, p: Dicti
 		var arm_plate: Dictionary = document.plates[index]
 		var direction := Vector2(cos(deg_to_rad(angle_deg)), sin(deg_to_rad(angle_deg)))
 		var tip := direction * arm_len
+		var hole_d := 3.2 if motor_pitch >= 16.0 else 2.2
+		# The motor PAD: `add_arm` stops the arm at the motor centre, which left the outer two of the
+		# four motor holes off the plate (and, on a narrow tip, the side two as well). The arm is
+		# re-cut as the hull of its root and a round pad on the motor that covers the whole pattern
+		# with the 1.5×d edge margin `HardwareMass` asks for behind every hole.
+		arm_plate["outline"] = AirframeDocument.flatten(arm_outline_with_pad(
+			float(p["arm_root_width_mm"]), tip,
+			motor_pad_radius_mm(motor_pitch, hole_d, float(p["arm_tip_width_mm"]))))
 		# The motor's own bolt pattern, cut out of the arm's tip. Four holes is what a motor takes,
 		# and they are real geometry rather than decoration: they remove mass exactly where the
 		# beam is thinnest, which is a thing `ArmBeam` reads off the outline.
 		var holes: Array = arm_plate.get("holes", [])
 		for corner in bolt_pattern(tip, motor_pitch, deg_to_rad(angle_deg)):
 			holes.append(AirframeDocument.flatten(PolygonProps.tessellate_circle(
-				corner, (3.2 if motor_pitch >= 16.0 else 2.2) * 0.5,
+				corner, hole_d * 0.5,
 				PolygonProps.DEFAULT_CHORD_TOLERANCE_MM, true)))
 		arm_plate["holes"] = holes
 		# The width was authored by whoever moved the slider, so no `width_is_assumed` flag: the
@@ -235,8 +243,10 @@ static func apply_layout(document: AirframeDocument, entry: Dictionary, p: Dicti
 			PolygonProps.DEFAULT_CHORD_TOLERANCE_MM, true))
 	document.plates.append(AirframeDocument.make_plate(
 		square(plate_side), stack_holes, t_plate, 0.0, AirframeDocument.ROLE_BOTTOM))
+	# Strap slots in the top plate, as AirframeDocument.from_catalog_frame cuts them (§6.4).
 	document.plates.append(AirframeDocument.make_plate(
-		square(plate_side), stack_holes, t_plate, top_z, AirframeDocument.ROLE_TOP))
+		square(plate_side), stack_holes + StrapSlots.preset_slots(plate_side, stack_pitch), t_plate,
+		top_z, AirframeDocument.ROLE_TOP))
 
 	for corner in bolt_pattern(Vector2.ZERO, stack_pitch, 0.0):
 		document.hardware.append({
@@ -366,6 +376,31 @@ static func bolt_pattern(centre: Vector2, pitch_mm: float, angle_rad: float) -> 
 			Vector2(-half, -half), Vector2(-half, half)]:
 		out.append(centre + corner.rotated(angle_rad))
 	return out
+
+
+## The radius of the round motor pad at an arm's tip: the square bolt pattern's corner radius
+## (pitch/√2) plus `HardwareMass.EDGE_DISTANCE_RATIO` hole diameters of material behind each hole —
+## or half the authored tip width, when that is wider.
+static func motor_pad_radius_mm(pitch_mm: float, hole_d_mm: float, tip_width_mm: float) -> float:
+	return maxf(tip_width_mm * 0.5,
+		pitch_mm / sqrt(2.0) + HardwareMass.EDGE_DISTANCE_RATIO * hole_d_mm)
+
+
+## An arm from the centre to a round pad on `tip`: the convex hull of the root edge (`root_width_mm`
+## across the arm at the origin) and a circle of `pad_radius_mm` on the tip. Convex, so it has no
+## inside corner a cutting bit cannot follow; counter-clockwise, so it adds mass.
+static func arm_outline_with_pad(root_width_mm: float, tip: Vector2, pad_radius_mm: float) \
+		-> PackedVector2Array:
+	var along := tip.normalized()
+	var across := Vector2(-along.y, along.x) * absf(root_width_mm) * 0.5
+	var points := PolygonProps.tessellate_circle(tip, pad_radius_mm,
+		PolygonProps.DEFAULT_CHORD_TOLERANCE_MM, false)
+	points.append(across)
+	points.append(-across)
+	var hull := Geometry2D.convex_hull(points)
+	if hull.size() > 1 and hull[0] == hull[hull.size() - 1]:
+		hull.remove_at(hull.size() - 1)
+	return PolygonProps.reversed(hull) if PolygonProps.area(hull) < 0.0 else hull
 
 
 ## A counter-clockwise square of side `side_mm` centred on the origin.

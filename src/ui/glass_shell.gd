@@ -118,7 +118,7 @@ const SYSTEMS := [
 		# DRONE IS MERGED INTO AIRFRAME (lab dock design §1.5, §4). "Pick a frame" and "edit it" were
 		# two entries in the dock for one subject; they are one section now, whose list names the
 		# five things Airframe contains — Frame, Arms, Screws & standoffs, Layout & fit, and Straps &
-		# pads (soon). The Frame rail comes with it: the Frame row's choice line opens its finder.
+		# pads. The Frame rail comes with it: the Frame row's choice line opens its finder.
 		#
 		# `rails` and `panels` are still TAB TITLES in LabScreen, matched by name. Which of them a
 		# row opens is `SectionRows.DEFINITIONS`' business; this list is what the section OWNS, so
@@ -127,7 +127,7 @@ const SYSTEMS := [
 		"name": "Airframe",
 		"rails": ["Frame"],
 		# In LabScreen's tab order, so a routed set reads the way the container lists it.
-		"panels": ["Frame", "Structure", "Arms", "Fasteners", "Layout", "Fit"],
+		"panels": ["Frame", "Structure", "Arms", "Fasteners", "Layout", "Straps", "Fit"],
 		"decided_by": ["frame"],
 	},
 	{
@@ -330,6 +330,8 @@ var _video_diagram: VideoDiagram
 var _config_diagram: ConfigDiagram
 ## A Printed part's page drawing: its plan and side off the exported triangles, and its key fit.
 var _printed_diagram: PrintedDiagram
+## The Soft mounts page's drawing (SM3): the motor stack in side elevation, pad included.
+var _mount_profile: PropellerMountProfile
 ## True while a `_refresh_list` is queued for the end of the frame (`_queue_list_refresh`).
 var _list_refresh_queued := false
 var _frame_rebuild_queued := false
@@ -547,7 +549,7 @@ func _ready() -> void:
 	# A DOCK PAGE SHOWS ONLY ITS ROW'S WARNINGS (§3), in the item view's short + "Why?" list — so
 	# the Airframe sheets drop their whole-frame warning footers and Fit its mixed warning block.
 	for panel in [lab.structure_details, lab.arms_details, lab.fasteners_details,
-			lab.layout_details]:
+			lab.layout_details, lab.straps_details]:
 		(panel as AirframePanel).set_footer_visible(false)
 	lab.assembly_panel.set_warnings_visible(false)
 	# And the Propulsion sheets drop the whole build's warning list (the pack's current limit, the
@@ -646,6 +648,9 @@ func _ready() -> void:
 	# Prop guards row, its page and the top bar's AUW stayed on the unguarded aircraft until some
 	# other change refreshed them. LabScreen connected first, so the build is rebuilt by now.
 	lab.propeller_details.guard_changed.connect(func(_guard_id: String) -> void: _refresh_status())
+	# The soft mount, for the guard's reason (SM3): its selector is the Motor panel's, and without
+	# this the Soft mounts row, its drawing and the vibration card stayed on the unmounted aircraft.
+	lab.motor_details.mount_changed.connect(func(_mount_id: String) -> void: _refresh_status())
 	# A gain edit moves the Tune row, its page and the FC page's D noise; nothing else changes.
 	lab.tune_panel.tune_changed.connect(_queue_list_refresh)
 
@@ -1234,6 +1239,13 @@ func _build_blade_room() -> void:
 	# where a Build that outlives the reload can honour it.
 	_blade_room.parts_published.connect(func(_record: Dictionary) -> void: lab.reload_catalog())
 
+	# THE PAD IS NOT THIS ROOM'S TO WRITE (SM4). It is the "Motor soft mount" assembly tweak, shown
+	# and edited on the Fit panel, and `AssemblyPanel.set_tweak_mm` is the single path a tweak takes —
+	# the Power room's pack offset, one room over, is routed the same way and for the same reason.
+	# Before SM4 the room's slider wrote a thickness of its own that nothing else read.
+	_blade_room.soft_mount_edited.connect(func(millimetres: float) -> void:
+		lab.assembly_panel.set_tweak_mm(AssemblyTweaks.SOFT_MOUNT, millimetres))
+
 	# The way out is built with the way in, in `_build_top_cluster` — see `_build_close_door` for
 	# why it lives in the top bar and not over the room.
 
@@ -1445,7 +1457,10 @@ func _refill_thrust_overlay() -> void:
 	# `container == null` is the empty state — no drone, so no propeller, so no distribution. The
 	# overlays say so in words rather than drawing a flat line, which would be a claim about a
 	# blade that is not fitted.
-	var build: Build = null if container == null or lab == null else lab.current_build()
+	# WITH the assembly on it (SM3): `current_build()` carries no tweaks, so every overlay read the
+	# pad as 0 mm — the vibration card said "No soft mount fitted" whatever the Lab's pad was, and a
+	# picked mount could never change its caption. `build_with_open_harness` is the assembled one.
+	var build: Build = null if container == null or lab == null else lab.build_with_open_harness()
 	for entry in OverlayTray.ENTRIES:
 		_overlays[str(entry["id"])].adopt(build)
 
@@ -1532,10 +1547,13 @@ func _on_guard_stl_requested(guard_id: String) -> void:
 	if guard_id == "":
 		return
 	var guard := lab.catalog.get_part(guard_id)
+	# PG1: the ring is sized to the open drone's prop, the radius the Printed room's dispatcher
+	# passes, so the two doors to this export still write the same bytes.
+	var tip_m := float(lab.current_build().prop_geometry()["diameter_m"]) * 0.5
 	var solid_name := _safe_export_name(guard_id)
 	var path := "%s/%s.stl" % [FrameWorkbench.EXPORT_DIRECTORY, solid_name]
 	DirAccess.make_dir_recursive_absolute(FrameWorkbench.EXPORT_DIRECTORY)
-	_report_export(PropulsionExport.write_guard(guard, path), path)
+	_report_export(PropulsionExport.write_guard(guard, tip_m, path), path)
 
 
 ## The Printed room's Export buttons. Each id routes into the export that already exists for that
@@ -1569,7 +1587,7 @@ func export_printed_parts() -> Dictionary:
 	var result := PrintedExport.export_all(lab.build_with_open_harness(),
 		printed_export_dir, container)
 	if not (result.get("written", []) as Array).is_empty() and container.path != "":
-		container.write()
+		_save_container(true)
 	last_printed_export_summary = String(result.get("summary", ""))
 	if _status_label != null:
 		_status_label.text = last_printed_export_summary
@@ -1847,6 +1865,7 @@ func _build_inspector() -> void:
 	_video_diagram = VideoDiagram.new()
 	_config_diagram = ConfigDiagram.new()
 	_printed_diagram = PrintedDiagram.new()
+	_mount_profile = PropellerMountProfile.new()
 
 
 ## "← Back to drone" and the breadcrumb (§2), across the top of the stage while a page is open.
@@ -1983,6 +2002,10 @@ func _show_page(row: Dictionary) -> void:
 				_field.set_dock_page(str(page.get("sheet", "")))
 				_field.refresh()
 			"blade":
+				# The aircraft as it stands NOW, on every open — `set_power_room_open`'s posture. A
+				# room handed the build once would draw the pad and motor of whatever was fitted the
+				# first time it was opened (SM4).
+				_blade_room.set_build(lab.current_build(), lab.tweaks)
 				_blade_room.visible = true
 			"power":
 				_power_room.set_build(lab.build_with_open_harness(), lab.tweaks, lab.frame_document)
@@ -2003,6 +2026,8 @@ func _show_page(row: Dictionary) -> void:
 		# Which half of the Prop panel this page is: the blade, or the guard (SectionRows `sheet`).
 		var panels: Array = page.get("panels", [])
 		lab.propeller_details.set_dock_sheet(str(page.get("sheet", "")) if panels.has("Prop") else "")
+		# And which half of the Motor panel: the motor and its doors, or the soft mount (SM3).
+		lab.motor_details.set_dock_sheet(str(page.get("sheet", "")) if panels.has("Motor") else "")
 		# And which printed part the Print sheet is cut to (a Printed row's page), or the whole room.
 		lab.print_panel.set_dock_part(str(page.get("sheet", "")) if panels.has("Print") else "")
 		# And which cut of the Electronics sheet: the VTX page's two parts, or all of it.
@@ -2066,6 +2091,8 @@ func _hide_pages() -> void:
 		_item_page.visible = false
 	if lab != null and lab.propeller_details != null:
 		lab.propeller_details.set_dock_sheet("")
+	if lab != null and lab.motor_details != null:
+		lab.motor_details.set_dock_sheet("")
 	if _rail_glass != null:
 		_rail_glass.visible = false
 	if lab != null:
@@ -2155,6 +2182,8 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 		numbers_context["pack_side_mm"] = float(lab.airframe.battery_overhang_m()["lateral"]) * 1000.0
 		if mode == FramePlanDiagram.MODE_LAYOUT:
 			extras = {"discs": lab.airframe.prop_discs_mm(), "parts": lab.airframe.plan_parts_mm()}
+	if mode == FramePlanDiagram.MODE_STRAPS:
+		extras = FramePlanDiagram.straps_extras(StrapsPads.figures(build, lab.frame_document))
 	_item_view.show_item(row, SectionRows.page_numbers(id, build, numbers_context))
 	if mode in [PropulsionDiagram.MODE_THRUST, PropulsionDiagram.MODE_PROP,
 			PropulsionDiagram.MODE_GUARD]:
@@ -2181,6 +2210,11 @@ func _fill_item_page(build: Build, context: Dictionary) -> void:
 		if _item_view.body != _config_diagram:
 			_item_view.set_body(_config_diagram)
 		_config_diagram.show_build(build, mode)
+		return
+	if mode == "mount":
+		if _item_view.body != _mount_profile:
+			_item_view.set_body(_mount_profile)
+		_mount_profile.show_build(build)
 		return
 	if mode == "printed":
 		if _item_view.body != _printed_diagram:
@@ -2229,6 +2263,10 @@ func item_diagram() -> FramePlanDiagram:
 
 func propulsion_diagram() -> PropulsionDiagram:
 	return _prop_diagram
+
+
+func mount_profile() -> PropellerMountProfile:
+	return _mount_profile
 
 
 func control_diagram() -> ControlDiagram:
@@ -2321,6 +2359,11 @@ func _refresh_list() -> void:
 	# page runs and the drawn frame's own checks, off the same document those pages render.
 	if lab.frame_document != null and _focused_name() == "Airframe":
 		warnings.append_array(FrameHardware.joint_warnings(lab.frame_document))
+		# Straps & pads: the slot geometry and the pad's spring, off the same document (§6).
+		warnings.append_array(StrapsPads.warnings(build, lab.frame_document))
+		# G5: a camera cage drawn narrower than the camera fitted to the aircraft.
+		warnings.append_array(CameraCage.warnings(build.components.get("camera", {}),
+			lab.frame_document))
 		warnings.append_array(FrameWarnings.of(lab.frame_document,
 			AirframeProperties.compute(lab.frame_document, AirframePanel.materials())))
 		var unflown := FittedFrame.unflown_warning(lab.frame_document)
@@ -3173,7 +3216,7 @@ func keep_divergence(part_id: String) -> void:
 			PrintedDivergence.acknowledge(lab.printing, finding)
 	_sync_project()
 	if container != null and container.path != "":
-		container.write()
+		_save_container(true)
 	_report_printed_divergence()
 
 
@@ -3186,7 +3229,7 @@ func reprint_part(part_id: String) -> void:
 	var result := PrintedExport.export_part(lab.build_with_open_harness(), part_id,
 		printed_export_dir, container)
 	if bool(result["ok"]) and container.path != "":
-		container.write()
+		_save_container(true)
 	_report_printed_divergence()
 	if not bool(result["ok"]) and _status_label != null:
 		_status_label.text = "NOT REPRINTED — %s" % String(result["reason"])
@@ -3256,6 +3299,8 @@ func _sync_project() -> void:
 	# And the config block the same way (Config C1/C3): the motor map is per drone, so it follows
 	# the lab's working copy into the document rather than living anywhere global.
 	container.project.config = lab.config.duplicate(true)
+	# And the drawn frame (Airframe room), `{}` while the fitted frame is untouched.
+	container.project.airframe = lab.drawn_frame()
 
 
 ## Rename is ProjectChip's own; everything else lands here.
@@ -3354,6 +3399,19 @@ func _report_printed_divergence() -> void:
 func apply_project(project: Project) -> Array:
 	if lab == null:
 		return []
+	# The drawing is read NOW, before anything below moves a rail. `container` is already this
+	# project, and every rail the selection moves fires `_refresh_status`, whose `_sync_project`
+	# writes `lab.drawn_frame()` — still the PREVIOUS drone's frame, `{}` for a catalogue one — into
+	# `project.airframe`. Read after the selection, the drawing was gone before it was applied: the
+	# Lab opened on the catalogue frame and the next autosave wrote `{}` over the file. (Printing
+	# and config escape this only because they reach the lab before the first rail moves.)
+	var drawn := project.airframe.duplicate(true)
+	# AND THE PARTS, for the same reason. `apply_selection` walks the dictionary it is handed while
+	# each rail it moves fires `_sync_project` into `project.parts` — the very dictionary — so handed
+	# `project.parts` itself it read back the PREVIOUS drone's ids for every category after the first
+	# one that moved. Invisible while every drone opened onto the same rails; a reload of a file whose
+	# battery had been changed outside (TestDiskChanges) kept the old battery on screen.
+	var parts := project.parts.duplicate(true)
 	# Printing first, so the rebuild the selection triggers already describes this drone's parts.
 	lab.set_printing(project.printing)
 	# Before the selection too, for the same reason printing is: the rebuild the selection triggers
@@ -3362,7 +3420,12 @@ func apply_project(project: Project) -> Array:
 	# And the name, for the sheet's header and its file name (C9). Set here with the rest of the
 	# per-drone state, so a sheet cannot go out carrying the previously-opened drone's name.
 	lab.drone_name = project.name
-	return lab.apply_selection(project.parts)
+	var missing := lab.apply_selection(parts)
+	# After the selection, so the drawing lands on THIS drone's fitted frame — and always, so a drone
+	# with no drawing does not inherit the previous drone's on the same catalogue frame.
+	lab.set_drawn_frame(drawn)
+	project.airframe = lab.drawn_frame()
+	return missing
 
 
 func _remember(path: String) -> void:
@@ -3439,14 +3502,81 @@ func _show_project() -> void:
 	_select_system(_focused_index)
 
 
-## The autosave tick. Asks, rather than writes: an unchanged project costs one JSON stringify.
+## The autosave tick. Asks, rather than writes: an unchanged project costs one JSON stringify and
+## one hash of the file — the hash because a file changed from outside is taken on whether or not
+## anything here is unsaved (`_save_container`).
 func _on_autosave_tick() -> void:
 	if container == null or container.path == "":
 		return
 	_sync_project()
-	if container.has_unsaved_changes():
+	_save_container()
+	if chip != null:
+		chip.refresh()
+
+
+## Coming back to the window is when an outside edit is most likely to be waiting — the builder was
+## in the other app making it. Taken only when nothing here is unsaved; with unsaved edits the next
+## tick keeps both sides, and doing that on focus as well would only do it a second earlier.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_APPLICATION_FOCUS_IN:
+		return
+	if container == null or container.path == "" or lab == null:
+		return
+	_sync_project()
+	if container.changed_on_disk() and not container.has_unsaved_changes():
+		_take_disk_version()
+
+
+## The one way the shell writes its drone (ProjectContainer, "THE FILE IS NOT ONLY OURS").
+##
+## A file that changed from outside is never written over. With nothing unsaved here the outside
+## version simply wins: it is reloaded and the Lab rebuilt from it. With unsaved edits here NEITHER
+## side is lost — the outside version stays the file, this app's goes to a conflict copy beside it,
+## and the Lab shows the file. The other way round (keep ours, copy theirs) would put the newer,
+## deliberate edit in a file nobody opens.
+##
+## `always` is for the writers that changed a member rather than the document — an export puts STL
+## bytes in `printed/`, which `has_unsaved_changes` does not see — and wrote unconditionally before.
+func _save_container(always: bool = false) -> void:
+	if container.changed_on_disk():
+		_take_disk_version(always)
+	elif always or container.has_unsaved_changes():
 		container.write()
-	chip.refresh()
+
+
+## Reloads the drone from its file, keeping this app's unsaved edits in a conflict copy first.
+##
+## Read BEFORE the copy is written: a file caught half-written by whatever is changing it will not
+## open, and then nothing happens at all — the file is not written over, no copy is made, and the
+## next tick asks again. A copy per tick of a file mid-write would be a folder full of them.
+##
+## The notice goes on the status line, where the printed-divergence findings already go: the
+## calmest place that is still read, and it gives way to the ordinary readout on the next change.
+##
+## `keep_ours` copies even when the document has nothing unsaved — `_save_container`'s `always`
+## writers, whose change may be member bytes the dirty check cannot see.
+func _take_disk_version(keep_ours: bool = false) -> void:
+	var opened := ProjectContainer.open(container.path)
+	if opened == null:
+		if _status_label != null:
+			_status_label.text = "This drone's file changed outside Lothal and will not open yet."
+		return
+	var copy := ""
+	if keep_ours or container.has_unsaved_changes():
+		copy = container.write_conflict_copy()
+		if copy == "":
+			# Our side could not be kept, so the file stays as it is and so does the Lab.
+			push_warning("could not write a conflict copy beside %s" % container.path)
+			return
+	container = opened
+	apply_project(opened.project)
+	if chip != null:
+		chip.set_project(opened.project, opened.path)
+	_refresh_status()
+	_report_printed_divergence()
+	if _status_label != null:
+		_status_label.text = ("Changed outside Lothal — reloaded. Your edits are kept in a copy, %s" % copy.get_file()
+			if copy != "" else "Changed outside Lothal — reloaded.")
 
 
 func _decided_count() -> int:

@@ -46,6 +46,8 @@ static func run() -> Array:
 	results.append(_a_fitted_build_hangs_a_ring_on_every_motor(catalog))
 	results.append(_an_unfitted_build_hangs_none_and_a_rebuild_clears_them(catalog))
 	results.append(_the_airframe_polygons_sit_on_their_own_motors(catalog))
+	results.append(_pg1_a_5in_ring_drawn_round_a_3in_disc_is_a_3in_ring(catalog))
+	results.append(_pg1_the_drone_on_screen_rings_its_own_prop(catalog))
 
 	return results
 
@@ -455,3 +457,38 @@ static func _the_airframe_polygons_sit_on_their_own_motors(catalog: PartsCatalog
 		"%d polygons, closest two centroids %.4f m apart, %s" % [
 			polygons.size(), min_separation, "all placed" if problems.is_empty() else str(problems)]
 	)
+
+
+## PG1 at the mesh: the 5" bumper handed a 3" disc draws its bore at that tip plus its gap, 38.1 +
+## 5.5 mm, not at the 69 mm its class would put it — "no longer drawn at 5"".
+##
+## MUTATION CONFIRMED RED: `GuardMesh.rebuild` reading the spec as sold instead of fitting it.
+static func _pg1_a_5in_ring_drawn_round_a_3in_disc_is_a_3in_ring(catalog: PartsCatalog) -> TestResult:
+	var mesh := GuardMesh.new()
+	mesh.rebuild(catalog.get_part("guard_bumper_5in_abs"), 3.0 * INCH_M * 0.5)
+	var inner_mm := mesh.inner_radius_m * 1000.0
+	var outer_mm := mesh.outer_radius_m * 1000.0
+	mesh.free()
+	return TestResult.new(
+		"[PG1] the 5\" bumper drawn round a 3\" disc has its bore at 43.6 mm, not 69",
+		absf(inner_mm - 43.6) < 1.0e-6 and absf(outer_mm - 46.6) < 1.0e-6,
+		"inner %.4f mm, outer %.4f mm" % [inner_mm, outer_mm])
+
+
+## And through the aircraft: a 3" build fitting the 5" bumper hangs rings sized to the props it
+## draws, which is the radius the camera check's polygons are built from.
+##
+## MUTATION CONFIRMED RED: `PropGuard.fitted_spec` a no-op. Either half alone left unfitted stays
+## green here by design (the mesh refits a record as sold, and the Build test covers the mass).
+static func _pg1_the_drone_on_screen_rings_its_own_prop(catalog: PartsCatalog) -> TestResult:
+	var build := Build.from_ids(catalog, "frame_5in_freestyle", "motor_2207_1960kv", "prop_3x3x3",
+		ReferenceBuild.BATTERY_ID, Build.DEFAULT_ESC_ID, Build.DEFAULT_FC_ID, {}, null, "guard_bumper_5in_abs")
+	var airframe := AirframeModel.new()
+	airframe.rebuild(build)
+	var guard: GuardMesh = airframe.guard_meshes.get(MotorLayout.MOTOR_NAMES[0])
+	var outer_mm := guard.outer_radius_m * 1000.0 if guard != null else 0.0
+	airframe.free()
+	return TestResult.new(
+		"[PG1] a 3\" drone fitting the 5\" bumper draws 46.6 mm rings on its props",
+		absf(outer_mm - 46.6) < 1.0e-4,
+		"outer %.4f mm" % outer_mm)

@@ -37,6 +37,8 @@ var tip_radius_mm := 0.0
 var ring_inner_mm := 0.0
 var ring_outer_mm := 0.0
 var gap_mm := NAN
+## PG1: the ring was fitted with `PropGuard.DEFAULT_TIP_GAP_MM`, not a gap its spec states.
+var gap_assumed := false
 var guard_kind := ""
 
 
@@ -55,6 +57,7 @@ func show_build(build: Build, p_mode: String) -> void:
 	ring_inner_mm = 0.0
 	ring_outer_mm = 0.0
 	gap_mm = NAN
+	gap_assumed = false
 	guard_kind = ""
 	if build == null:
 		queue_redraw()
@@ -76,6 +79,7 @@ func show_build(build: Build, p_mode: String) -> void:
 				ring_outer_mm = float(specs.get("outer_radius_mm", 0.0))
 				ring_inner_mm = ring_outer_mm - float(specs.get("wall_mm", 0.0))
 				gap_mm = PropulsionFigures.guard_tip_gap_mm(build)
+				gap_assumed = PropGuard.clearance_is_assumed(specs)
 				guard_kind = str(specs.get("kind", ""))
 	queue_redraw()
 
@@ -317,7 +321,8 @@ func _draw_guard() -> void:
 	draw_circle(from, 3.0, gap_colour)
 	draw_circle(to, 3.0, gap_colour)
 	# Inside the disc, right-aligned to the tip, where the ring does not cross it.
-	_text(from + Vector2(-8.0, -8.0), "%s mm tip gap" % _trim(gap_mm), gap_colour, true)
+	_text(from + Vector2(-8.0, -8.0), "%s mm tip gap%s" % [_trim(gap_mm), " (assumed)" if gap_assumed else ""],
+		gap_colour, true)
 	_text(Vector2(12.0, size.y - 12.0),
 		"Top view · one motor · %s ring, Ø %d mm outside" % [guard_kind, roundi(ring_outer_mm * 2.0)],
 		LothalTheme.TEXT_MUTED)

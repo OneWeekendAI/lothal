@@ -76,6 +76,8 @@ static func edit_of(frame: Dictionary, document: AirframeDocument, p_baseline: D
 	var now := drawn(document)
 	if int(now["motors"]) != QUAD_MOTORS:
 		return {}
+	if is_replacement(frame, document):
+		return _replacement_edit(frame, document, now)
 	var delta_g := float(now["mass_g"]) - float(p_baseline["mass_g"])
 	var delta_arm := float(now["arm_mm"]) - float(p_baseline["arm_mm"])
 	if absf(delta_g) < MASS_EPSILON_G and absf(delta_arm) < ARM_EPSILON_MM:
@@ -101,8 +103,19 @@ static func apply(frame: Dictionary, edit: Dictionary) -> Dictionary:
 		return frame
 	var out := frame.duplicate(true)
 	out["mass_g"] = float(edit["mass_g"])
+	if not (out.get("specs") is Dictionary):
+		out["specs"] = {}
 	(out["specs"] as Dictionary)["arm_mm"] = float(edit["arm_mm"])
-	out["drawn_edit"] = edit.duplicate()
+	# A REPLACEMENT (another frame drawn in the designer) also carries the specs it can measure and
+	# its own name, so no warning quotes the fitted catalogue frame's clearance or drilling about a
+	# frame that is not on the bench. See `_replacement_edit`.
+	if edit.has("name"):
+		out["name"] = str(edit["name"])
+	for key in (edit.get("specs", {}) as Dictionary):
+		(out["specs"] as Dictionary)[key] = (edit["specs"] as Dictionary)[key]
+	if edit.get("catalog") is Dictionary:
+		out["catalog"] = (edit["catalog"] as Dictionary).duplicate(true)
+	out["drawn_edit"] = edit.duplicate(true)
 	return out
 
 
@@ -143,3 +156,164 @@ static func unflown_warning(document: AirframeDocument) -> BuildWarning:
 		"The frame in the designer has %d motors, and the sim flies four-motor frames only, so the aircraft is still flying the fitted frame as published. Save the drawing to keep it; fit a quad to fly your changes."
 			% document.motors.size(), {"motors": document.motors.size()})
 	return w
+
+
+# ---------------------------------------------------------------------------
+# A different frame drawn in the designer (a REPLACEMENT, not an edit)
+# ---------------------------------------------------------------------------
+##
+## The delta rule above is right for an EDIT: a document generated from the fitted frame and then
+## changed, where the scale's reading of the real part is still the best number and the drawing
+## only says what moved. It is wrong for a frame drawn from scratch or opened off the shelf (a
+## 3" printed quad on a build whose rail says 5" freestyle): "110 g weighed + (drawn − 5" generated)"
+## is the catalogue frame's mass wearing the drawing's clothes. A saved build is where that stops
+## being a session's curiosity — the projects list would weigh one frame and the room draw another.
+##
+## So a document whose id is not the fitted frame's flies AS DRAWN: its own mass, its own arm, and
+## every spec the geometry states (prop clearance from the motor spacing, the motor and stack
+## drilling from the holes). A spec the drawing does not state comes out "" rather than the
+## catalogue's, and `Build.warnings` already reads an empty stack pattern as "nothing to compare".
+
+## Whether `document` is a different frame from `frame` (drawn or opened, not generated from it).
+static func is_replacement(frame: Dictionary, document: AirframeDocument) -> bool:
+	return document != null and document.id != str(frame.get("part_id", ""))
+
+
+static func _replacement_edit(frame: Dictionary, document: AirframeDocument,
+		now: Dictionary) -> Dictionary:
+	var mass := float(now["mass_g"])
+	return {
+		"part_id": str(frame.get("part_id", "")),
+		"mass_g": maxf(mass, MIN_FLOWN_MASS_G),
+		"arm_mm": float(now["arm_mm"]),
+		# Nobody weighed it: `flown_text` says "as drawn", and the delta is the whole drawing.
+		"published_mass_g": 0.0,
+		"drawn_delta_g": mass,
+		"drawn_id": document.id,
+		"name": document.name if document.name != "" else "Drawn frame",
+		"specs": {
+			"max_prop_inches": max_prop_inches(document),
+			"motor_mount": motor_mount_of(document),
+			"stack_mount": stack_mount_of(document),
+		},
+		# And its own browsing block. Left as the fitted frame's, a 3" PA12 drawing was described as
+		# "5\"" and "carbon fibre 3K" by the Frame and Arms rows and drawn in carbon. The material is
+		# the drawing's; the size class is a published label nobody published for a drawing, so it is
+		# "" and the Frame row names the frame instead of guessing a class off its clearance.
+		"catalog": {
+			"material": material_name_of(document),
+			"size_class": "",
+			"frame_type": "",
+		},
+	}
+
+
+## The drawing's material by name ("PA12 (SLS nylon)"), or its id when the library does not know it.
+static func material_name_of(document: AirframeDocument) -> String:
+	var record := AirframePanel.materials().get_material(document.material_id)
+	return str(record.get("name", document.material_id))
+
+
+## The largest prop whose discs do not touch: the closest pair of motors, centre to centre, in
+## inches. Tip-to-tip touching, with no margin and no plate in the way — the optimistic bound, so a
+## prop over it certainly strikes; one under it may still clip a plate corner (FrameWarnings').
+static func max_prop_inches(document: AirframeDocument) -> float:
+	var closest := INF
+	for i in document.motors.size():
+		var a := AirframeDocument.point_of((document.motors[i] as Dictionary).get("position_mm", [0.0, 0.0]))
+		for j in range(i + 1, document.motors.size()):
+			var b := AirframeDocument.point_of((document.motors[j] as Dictionary).get("position_mm", [0.0, 0.0]))
+			closest = minf(closest, a.distance_to(b))
+	return closest / 25.4 if closest < INF else 0.0
+
+
+## Hole centres on every flat plate (an upright plate's holes are not in plan), one per place —
+## a unibody drawn as arms over a bottom plate cuts the same hole twice.
+const HOLE_MATCH_MM := 0.2
+
+
+static func _hole_centres(document: AirframeDocument) -> Array:
+	var out: Array = []
+	for plate in document.plates:
+		if AirframeDocument.is_upright(plate):
+			continue
+		for hole in AirframeDocument.plate_holes(plate):
+			var points := hole as PackedVector2Array
+			if points.is_empty():
+				continue
+			var sum := Vector2.ZERO
+			for point in points:
+				sum += point
+			var centre := sum / points.size()
+			var seen := false
+			for other in out:
+				if (other as Vector2).distance_to(centre) < HOLE_MATCH_MM:
+					seen = true
+					break
+			if not seen:
+				out.append(centre)
+	return out
+
+
+## The motor bolt pattern as the catalogue names it ("12x12"): the four holes nearest each motor,
+## on one circle and centred on it. "" when any motor's four disagree with the others' or do not
+## form a pattern — a drawing that does not state its drilling plainly is not guessed at.
+static func motor_mount_of(document: AirframeDocument) -> String:
+	var holes := _hole_centres(document)
+	var found := ""
+	for motor in document.motors:
+		var at := AirframeDocument.point_of((motor as Dictionary).get("position_mm", [0.0, 0.0]))
+		var near: Array = []
+		for centre in holes:
+			var r := (centre as Vector2).distance_to(at)
+			if r > 1.5 and r < 20.0:
+				near.append(centre)
+		if near.size() < 4:
+			return ""
+		near.sort_custom(func(a, b) -> bool: return (a as Vector2).distance_to(at) < (b as Vector2).distance_to(at))
+		var four := near.slice(0, 4)
+		var radius := (four[0] as Vector2).distance_to(at)
+		var middle := Vector2.ZERO
+		for centre in four:
+			if absf((centre as Vector2).distance_to(at) - radius) > HOLE_MATCH_MM:
+				return ""
+			middle += centre
+		if (middle / 4.0).distance_to(at) > HOLE_MATCH_MM:
+			return ""
+		var name := _pattern_name(radius * sqrt(2.0))
+		if found != "" and name != found:
+			return ""
+		found = name
+	return found
+
+
+## The stack pattern on the stack mount's centre (the origin when the drawing marks none): the
+## smallest square of four holes centred there. "" when there is none.
+static func stack_mount_of(document: AirframeDocument) -> String:
+	var at := Vector2.ZERO
+	for mount in document.payload_mounts:
+		if str((mount as Dictionary).get("id", "")) == "stack":
+			at = AirframeDocument.point_of((mount as Dictionary).get("position_mm", [0.0, 0.0]))
+	var holes := _hole_centres(document)
+	var best := INF
+	for centre in holes:
+		var d := (centre as Vector2) - at
+		var h := absf(d.x)
+		if h < 1.0 or absf(absf(d.y) - h) > HOLE_MATCH_MM or 2.0 * h >= best:
+			continue
+		var corners := 0
+		for corner in [Vector2(h, h), Vector2(-h, h), Vector2(h, -h), Vector2(-h, -h)]:
+			for other in holes:
+				if (other as Vector2).distance_to(at + (corner as Vector2)) < HOLE_MATCH_MM:
+					corners += 1
+					break
+		if corners == 4:
+			best = 2.0 * h
+	return _pattern_name(best) if best < INF else ""
+
+
+## 12.0 -> "12x12", 30.5 -> "30.5x30.5": the catalogue's spelling, to the tenth.
+static func _pattern_name(pitch_mm: float) -> String:
+	var tenths := roundi(pitch_mm * 10.0)
+	var text := "%d" % roundi(tenths / 10.0) if tenths % 10 == 0 else "%.1f" % (tenths / 10.0)
+	return "%sx%s" % [text, text]

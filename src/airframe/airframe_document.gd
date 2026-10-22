@@ -27,7 +27,8 @@ extends RefCounted
 ##
 ## A plate therefore lies FLAT and its normal is world Y. That single sentence is where the
 ## coordinate trap in §3.4 is defused; AirframeProperties restates it at the point of use because
-## restating it there is cheaper than the bug.
+## restating it there is cheaper than the bug. THE ONE EXCEPTION is a `side` plate, which stands up
+## (airframe gaps G5) — see "Upright plates" below for its own mapping.
 ##
 ## ## Why plates are Dictionaries and not a PlateResource
 ##
@@ -68,7 +69,7 @@ const ROLE_MID := "mid"
 const KNOWN_KEYS := [
 	"schema", "id", "name", "author", "revision", "material_id",
 	"plates", "arms", "motors", "hardware", "straps", "pads", "payload_mounts",
-	"published_mass_g",
+	"published_mass_g", "cutting_bit_mm",
 ]
 
 ## The plate keys whose VALUE SHAPE this version rewrites on load (mm-doubles ⇄ PackedFloat64Array).
@@ -85,6 +86,16 @@ const PLATE_WIDTH_ASSUMED := "width_is_assumed"
 ## `specs.construction` in `frames.json`. Absence means `plate` — see `from_catalog_frame`.
 const CONSTRUCTION_PLATE := "plate"
 const CONSTRUCTION_MOULDED := "moulded"
+
+## 1/16" (1.5875 mm): the end mill most carbon-cutting services quote for frame plates. A TYPICAL SHOP
+## VALUE, labelled as such wherever it is shown — a shop with a 1/8" bit is just as real, which is why
+## it is a document setting rather than a constant the checks read.
+const DEFAULT_CUTTING_BIT_MM := 1.5875
+
+## Plate key: indices into that plate's `holes` of the holes to countersink after cutting (G3). Kept as
+## indices because a hole is a bare polygon with nowhere to hang a flag, and holes are only ever
+## appended or replaced in place, never removed, so an index stays pointing at its hole.
+const PLATE_COUNTERSUNK_HOLES := "countersunk_holes"
 
 var id := ""
 var name := ""
@@ -130,6 +141,12 @@ var payload_mounts: Array = []
 ## number; a frame you drew has no vendor, so the comparison is not shown at all rather than being
 ## shown against zero.
 var published_mass_g := 0.0
+
+## The diameter of the round end mill the plates will be routed with, mm (airframe gaps G3). A SETTING
+## FOR THE CUT, not a property of the frame: it decides which inside corners the cutter can follow
+## (`ReadyToCut`) and is printed on every exported plate's notes so the shop knows what the file
+## assumed. Defaults to 1/16" — `DEFAULT_CUTTING_BIT_MM`, a typical shop value, not a measured one.
+var cutting_bit_mm := DEFAULT_CUTTING_BIT_MM
 
 ## Fields from a file this version does not understand, kept for the save path. See class docs.
 var _unknown_top: Dictionary = {}
@@ -221,12 +238,88 @@ static func plate_holes(plate: Dictionary) -> Array:
 	return out
 
 
+## Whether hole `hole_index` of this plate is to be countersunk (G3). Off unless set: nothing in a
+## generated preset is countersunk, because whether a bottom plate takes flat heads is the builder's
+## choice of screw, not something the frame's published specs say.
+static func hole_is_countersunk(plate: Dictionary, hole_index: int) -> bool:
+	for entry in plate.get(PLATE_COUNTERSUNK_HOLES, []):
+		if int(entry) == hole_index:
+			return true
+	return false
+
+
 static func plate_thickness_mm(plate: Dictionary) -> float:
 	return float(plate.get("thickness_mm", 0.0))
 
 
 static func plate_z_mm(plate: Dictionary) -> float:
 	return float(plate.get("z_mm", 0.0))
+
+
+# ---------------------------------------------------------------------------
+# Upright plates (airframe gaps G5) — a side plate stands, every other plate lies flat
+# ---------------------------------------------------------------------------
+#
+# A plate of role `side` is UPRIGHT: its outline is drawn in its own plane `(s, h)`, where `s` is
+# fore/aft exactly as plan `v` is (world Z, aft +) and `h` is height above the plate's base (world Y).
+# The plane stands parallel to the centreline at `x_mm` (world X), its base at `z_mm`, and its
+# thickness is centred on `x_mm`. So:
+#
+#     side s  →  world Z      side h  →  world Y (above z_mm)      normal  →  world X
+#
+# That is a proper rotation of the flat mapping (u→X, v→Z, normal→Y), which is why the extruder,
+# the integrals and the exporter can all treat the polygon as an ordinary plate and only the
+# PLACEMENT differs. `side_world_m` is the one place that placement is written as code.
+
+## Side-plate key: the lateral position of the plate's mid-plane, mm (world X).
+const PLATE_X_MM := "x_mm"
+
+
+## Whether a plate stands up rather than lying flat.
+static func is_upright(plate: Dictionary) -> bool:
+	return str(plate.get("role", "")) == ROLE_SIDE
+
+
+static func plate_x_mm(plate: Dictionary) -> float:
+	return float(plate.get(PLATE_X_MM, 0.0))
+
+
+## An upright plate: `outline` and `holes` in its own (s, h) plane, standing at `x_mm` on a base at
+## `base_z_mm`.
+static func make_side_plate(
+	outline: PackedVector2Array,
+	holes: Array,
+	thickness_mm: float,
+	x_mm: float,
+	base_z_mm: float
+) -> Dictionary:
+	var plate := make_plate(outline, holes, thickness_mm, base_z_mm, ROLE_SIDE)
+	plate[PLATE_X_MM] = x_mm
+	return plate
+
+
+## A point of an upright plate's own plane, in the airframe's world frame, metres. The side-plate
+## counterpart of `world_m`, and the only place the (s, h) → world mapping is written.
+static func side_world_m(plate: Dictionary, point_sh: Vector2) -> Vector3:
+	return Vector3(plate_x_mm(plate), plate_z_mm(plate) + point_sh.y, point_sh.x) / 1000.0
+
+
+## What a plate covers seen from above, in plan mm. A flat plate's outline; for an upright plate, the
+## thin rectangle its thickness makes along its fore/aft extent — what the plan view draws and picks,
+## because its own outline is not a plan shape at all.
+static func plate_plan_outline(plate: Dictionary) -> PackedVector2Array:
+	var outline := plate_outline(plate)
+	if not is_upright(plate) or outline.size() < 3:
+		return outline
+	var front := INF
+	var rear := -INF
+	for point in outline:
+		front = minf(front, point.x)
+		rear = maxf(rear, point.x)
+	var x := plate_x_mm(plate)
+	var half_t := plate_thickness_mm(plate) * 0.5
+	return PackedVector2Array([Vector2(x - half_t, front), Vector2(x + half_t, front),
+		Vector2(x + half_t, rear), Vector2(x - half_t, rear)])
 
 
 ## The material a plate is cut from: its own override, else the document's. Two levels and no more —
@@ -262,6 +355,8 @@ static func from_dictionary(document: Dictionary) -> AirframeDocument:
 	if document.has("material_id"):
 		doc.material_id = str(document["material_id"])
 	doc.published_mass_g = float(document.get("published_mass_g", 0.0))
+	var bit := float(document.get("cutting_bit_mm", DEFAULT_CUTTING_BIT_MM))
+	doc.cutting_bit_mm = bit if bit > 0.0 else DEFAULT_CUTTING_BIT_MM
 
 	for entry in document.get("plates", []):
 		if entry is Dictionary:
@@ -292,6 +387,7 @@ func to_dictionary() -> Dictionary:
 	out["revision"] = revision
 	out["material_id"] = material_id
 	out["published_mass_g"] = published_mass_g
+	out["cutting_bit_mm"] = cutting_bit_mm
 
 	var plate_json: Array = []
 	for plate in plates:
@@ -475,7 +571,13 @@ static func from_catalog_frame(frame: Dictionary) -> AirframeDocument:
 	var specs: Dictionary = frame.get("specs", {})
 	var arm_mm := float(specs.get("arm_mm", 0.0))
 	var motor_pitch := _pattern_pitch_mm(str(specs.get("motor_mount", "16x16")))
-	var stack_pitch := _pattern_pitch_mm(str(specs.get("stack_mount", "30.5x30.5")))
+	# THE STACK BY NAME, through the same parser "+ Stack mount" uses (airframe gaps G2), so a preset
+	# and a drawn frame on the same pattern get the same four holes to the hundredth of a millimetre.
+	var stack_spec := stack_mount_spec(str(specs.get("stack_mount", "30.5x30.5")))
+	if stack_spec.is_empty():
+		stack_spec = stack_mount_spec("30.5x30.5")
+	var stack_pitch := float(stack_spec["pitch_mm"])
+	var stack_thread := float(stack_spec["thread_d_mm"])
 
 	doc.id = str(frame.get("part_id", ""))
 	doc.name = str(frame.get("name", ""))
@@ -573,12 +675,14 @@ static func from_catalog_frame(frame: Dictionary) -> AirframeDocument:
 	# Bottom and top centre plates. The arms are sandwiched between them, which is why the bottom
 	# plate sits at the same z as the arms rather than under them: on a bolted 5" frame the arm and
 	# the bottom plate ARE the same layer of the sandwich, and on a unibody the arms are that plate.
-	var stack_holes: Array = []
-	for corner in _bolt_pattern(Vector2.ZERO, stack_pitch, 0.0):
-		stack_holes.append(PolygonProps.tessellate_circle(corner, 1.6,
-			PolygonProps.DEFAULT_CHORD_TOLERANCE_MM, true))
+	var stack_holes := stack_mount_holes(Vector2.ZERO, stack_spec)
 	doc.plates.append(make_plate(_square(plate_side), stack_holes, t_plate, 0.0, ROLE_BOTTOM))
-	doc.plates.append(make_plate(_square(plate_side), stack_holes, t_plate, top_z, ROLE_TOP))
+	# The top plate carries the pack, so it carries the two strap slots a pack is strapped through
+	# (airframe.md §6.4). GUESSED, as the arm width is: the catalog publishes no slot, so these are
+	# StrapSlots' preset 20 mm-strap slots, inside the stack pattern — and without them every preset
+	# would be told it has nowhere to pass a strap, which is true of no frame anyone sells.
+	doc.plates.append(make_plate(_square(plate_side),
+		stack_holes + StrapSlots.preset_slots(plate_side, stack_pitch), t_plate, top_z, ROLE_TOP))
 
 	for corner in _bolt_pattern(Vector2.ZERO, stack_pitch, 0.0):
 		doc.hardware.append({
@@ -592,7 +696,9 @@ static func from_catalog_frame(frame: Dictionary) -> AirframeDocument:
 		var corner: Vector2 = _bolt_pattern(Vector2.ZERO, stack_pitch, 0.0)[i % 4]
 		doc.hardware.append({
 			"kind": "screw", "material_id": "steel_fastener",
-			"thread_d_mm": 3.0, "shank_len_mm": 8.0, "head_d_mm": 5.7, "head_h_mm": 1.8,
+			# The screw the stack holes were drilled for: an M2 stack is not held with M3 screws.
+			"thread_d_mm": stack_thread, "shank_len_mm": 8.0,
+			"head_d_mm": stack_thread * 1.9, "head_h_mm": stack_thread * 0.6,
 			"position_mm": [corner.x, corner.y],
 			"z_mm": 0.0 if i < 4 else top_z,
 		})
@@ -648,12 +754,76 @@ static func snap_to_stock(thickness_mm: float) -> float:
 	return best
 
 
-## "30.5x30.5" → 30.5. A pattern with one number is square; the first number is the pitch.
+## "30.5x30.5" → 30.5. A pattern with one number is square; the first number is the pitch. Anything
+## after whitespace ("25.5x25.5 M3") is the thread, read by `stack_mount_spec`, not here.
 static func _pattern_pitch_mm(pattern: String) -> float:
-	var parts := pattern.to_lower().split("x")
+	var head := pattern.strip_edges().to_lower().split(" ", false)
+	if head.is_empty():
+		return 0.0
+	var parts := head[0].split("x")
 	if parts.is_empty():
 		return 0.0
 	return float(parts[0])
+
+
+# ---------------------------------------------------------------------------
+# Standard stack mounts, by name (airframe gaps G2; airframe.md §5.3, §10 q5)
+# ---------------------------------------------------------------------------
+
+## The stack patterns a builder can ask for by name, in the order the workbench's picker lists them.
+## 25.5 comes twice because both screws are sold on it: whoop AIO boards bolt with M2, and some
+## 25.5 stacks take M3. The bare name is the M2 one (see `stack_mount_spec`).
+const STACK_MOUNT_PATTERNS := ["20x20", "25.5x25.5", "25.5x25.5 M3", "30.5x30.5"]
+
+## What a clearance hole is drilled over its screw: 3.2 for an M3, 2.2 for an M2 — the figures the
+## generators have always drilled motor holes at, now named once.
+const BOLT_CLEARANCE_MM := 0.2
+
+## Below this pitch a stack is an M2 stack unless its name says otherwise. 20×20 and 25.5×25.5 boards
+## bolt with M2; 30.5×30.5 is the M3 pattern.
+const STACK_M3_FROM_PITCH_MM := 30.0
+
+
+## `{pattern, pitch_mm, thread_d_mm, hole_d_mm}` for a stack pattern by name — "20x20", "25.5x25.5",
+## "30.5x30.5", optionally followed by a thread ("25.5x25.5 M3"). `{}` for a name with no pitch.
+##
+## THE ONE PARSER. The catalog presets (`from_catalog_frame`) and "+ Stack mount"
+## (`FrameEdits.add_stack_mount`) both read their holes through this and `stack_mount_holes`, so a
+## preset and a drawn frame on the same pattern cut identical holes — which is what lets a drawn
+## frame be compared against a preset at all.
+static func stack_mount_spec(pattern: String) -> Dictionary:
+	var pitch := _pattern_pitch_mm(pattern)
+	if pitch <= 0.0:
+		return {}
+	var thread := 3.0 if pitch >= STACK_M3_FROM_PITCH_MM else 2.0
+	var tokens := pattern.strip_edges().to_lower().split(" ", false)
+	if tokens.size() > 1 and tokens[1].begins_with("m"):
+		var stated := float(tokens[1].substr(1))
+		if stated > 0.0:
+			thread = stated
+	return {"pattern": pattern.strip_edges(), "pitch_mm": pitch, "thread_d_mm": thread,
+		"hole_d_mm": thread + BOLT_CLEARANCE_MM}
+
+
+## The four holes of a stack pattern centred on `centre`, as clockwise polygons ready for a plate's
+## `holes` (so they subtract, §3.1). Takes a spec from `stack_mount_spec` or a pattern name.
+static func stack_mount_holes(centre: Vector2, pattern: Variant) -> Array:
+	var spec: Dictionary = pattern if pattern is Dictionary else stack_mount_spec(str(pattern))
+	var out: Array = []
+	if spec.is_empty():
+		return out
+	for corner in _bolt_pattern(centre, float(spec["pitch_mm"]), 0.0):
+		out.append(PolygonProps.tessellate_circle(corner, float(spec["hole_d_mm"]) * 0.5,
+			PolygonProps.DEFAULT_CHORD_TOLERANCE_MM, true))
+	return out
+
+
+## The four hole CENTRES of a stack pattern on `centre` — what a fit check tests against an outline.
+static func stack_mount_centres(centre: Vector2, pattern: String) -> Array:
+	var spec := stack_mount_spec(pattern)
+	if spec.is_empty():
+		return []
+	return _bolt_pattern(centre, float(spec["pitch_mm"]), 0.0)
 
 
 ## Unit vector from the origin to a motor, in the plate plane. MotorLayout's positions, converted

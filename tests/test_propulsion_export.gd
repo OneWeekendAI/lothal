@@ -9,7 +9,7 @@ extends RefCounted
 ## The three entries in `data/parts/guards.json` are not three of the same thing. Two are ducts and
 ## one is a bumper; one is a 3" TPU shroud with a 2 mm wall and one is a 5" ABS ring with a 3 mm
 ## one; and each ring's inner wall is its own spec's `outer_radius - wall`, so the annulus is a
-## different shape for each. (Not derived from the prop: see PropulsionExport.guard_triangles_mm.) A single fixture would
+## different shape for each. (Each is fitted to the prop it wraps since PG1: see PropGuard.fitted_spec.) A single fixture would
 ## prove the writer works on the geometry somebody happened to test it with. The loop is written
 ## with an explicit `checked == 3` so that a renamed catalog category cannot empty it and pass
 ## silently — the vacuity guard `test_parts_system.gd`'s own guard checks already carry.
@@ -33,8 +33,12 @@ static func run() -> Array:
 	var catalog := PartsCatalog.load_default()
 
 	results.append_array(_every_catalog_guard_is_printable(catalog))
-	results.append_array(_the_export_is_the_drawn_ring_whatever_the_prop(catalog))
+	results.append_array(_the_export_is_the_drawn_ring_for_the_same_prop(catalog))
+	results.append(_a_smaller_prop_exports_a_smaller_ring(catalog.get_part("guard_bumper_5in_abs")))
+	results.append(_a_smaller_prop_exports_a_smaller_ring(catalog.get_part("guard_duct_5in_cinewhoop")))
+	results.append(_a_smaller_prop_exports_a_smaller_ring(catalog.get_part("guard_duct_3in_tpu")))
 	results.append(_the_ring_encloses_the_annulus_it_draws(catalog))
+	results.append_array(_every_guard_ring_sits_on_the_bed(catalog))
 	results.append(_a_ring_wound_the_other_way_is_refused(catalog))
 	results.append(_no_guard_exports_nothing_rather_than_an_empty_solid())
 	results.append(_a_refused_spec_exports_nothing(catalog))
@@ -56,6 +60,27 @@ static func _tip_radius_m(guard: Dictionary) -> float:
 	return inches * INCH_M * 0.5
 
 
+static func _z_range(triangles: Array) -> Vector2:
+	var low := INF
+	var high := -INF
+	for triangle in triangles:
+		for point in triangle:
+			low = minf(low, point.z)
+			high = maxf(high, point.z)
+	return Vector2(low, high)
+
+
+static func _lifted_to_bed(triangles: Array) -> Array:
+	var lift := -_z_range(triangles).x
+	var out: Array = []
+	for triangle in triangles:
+		var moved := PackedVector3Array()
+		for point in triangle:
+			moved.append(point + Vector3(0, 0, lift))
+		out.append(moved)
+	return out
+
+
 static func _reversed(triangles: Array) -> Array:
 	var out: Array = []
 	for triangle in triangles:
@@ -74,7 +99,7 @@ static func _every_catalog_guard_is_printable(catalog: PartsCatalog) -> Array:
 	var checked := 0
 	for guard in catalog.list_category("guard"):
 		checked += 1
-		var triangles := PropulsionExport.guard_triangles_mm(guard)
+		var triangles := PropulsionExport.guard_triangles_mm(guard, _tip_radius_m(guard))
 		var report := StlWriter.check_manifold(triangles)
 		results.append(TestResult.new(
 			"%s exports a closed, outward-wound solid" % guard["part_id"],
@@ -89,26 +114,70 @@ static func _every_catalog_guard_is_printable(catalog: PartsCatalog) -> Array:
 	return results
 
 
-## Printed-room PR14 removed the tip radius from the export. That is only honest if the ring the Lab DRAWS
-## around the real prop is the ring exported, and if a different prop draws the same ring too — the
-## second is the fact that made the parameter dead, pinned so a later derivation has to change this test.
-static func _the_export_is_the_drawn_ring_whatever_the_prop(catalog: PartsCatalog) -> Array:
+## The ring the Lab DRAWS around a prop is the ring exported for that prop — the bytes, not a
+## resemblance. Since PG1 that includes a prop half the guard's class: both sides are fitted to the
+## same smaller disc, so they must still agree, and the next check says they agree on a smaller ring.
+##
+## MUTATION CONFIRMED RED: the export sizing the ring by the spec's own outer radius (the PR14 hack).
+static func _the_export_is_the_drawn_ring_for_the_same_prop(catalog: PartsCatalog) -> Array:
 	var results: Array = []
 	for guard in catalog.list_category("guard"):
-		var exported := PropulsionExport.guard_triangles_mm(guard)
-		var drawn := {}
+		var agree := true
+		var shas: Array = []
 		for tip_m in [_tip_radius_m(guard), _tip_radius_m(guard) * 0.5]:
 			var mesh := GuardMesh.new()
 			mesh.rebuild(guard, tip_m)
-			drawn[tip_m] = StlWriter.to_ascii("ring", mesh.ring_triangles_mm()).sha256_text()
+			# The drawn ring is centred on the disc; the export is the same ring LAID ON THE BED, so
+			# the comparison lifts the drawing by its own lowest point — measured here, not by the
+			# export's code, so a broken lift in the export cannot also bless itself.
+			var drawn := StlWriter.to_ascii("ring", _lifted_to_bed(mesh.ring_triangles_mm())).sha256_text()
 			mesh.free()
-		var own := StlWriter.to_ascii("ring", exported).sha256_text()
-		var shas: Array = drawn.values()
+			var own := StlWriter.to_ascii("ring", PropulsionExport.guard_triangles_mm(guard, tip_m)).sha256_text()
+			agree = agree and own == drawn
+			shas.append(own.substr(0, 12))
 		results.append(TestResult.new(
 			"%s: the export is the ring drawn around its own prop, and around a prop half that size" % guard["part_id"],
-			not exported.is_empty() and shas.size() == 2 and own == shas[0] and own == shas[1],
-			"export %s…, drawn %s" % [own.substr(0, 12), shas]))
+			agree, "exports %s" % [shas]))
 	return results
+
+
+## PG1's acceptance, one case per catalog guard: the ring exported for a prop half its class is
+## NOT the ring sold for the class. Its inner wall sits at the half-size tip plus the guard's own
+## tip gap, so the outer radius drops by exactly the tip it lost.
+##
+## MUTATION CONFIRMED RED: `PropGuard.fitted_spec` returning the spec unchanged (the pre-PG1 ring),
+## and `GuardMesh.rebuild` skipping the fit.
+## A printed ring is printed lying on its face: underside at z = 0 and the top at its own height,
+## the convention FrameExport's parts already keep. The ring is drawn centred on the prop disc, and
+## exported unshifted half of it sat BELOW the bed — a slicer without auto-drop slices air, one with
+## it hides the defect. Checked at the class prop and at Frame 01's 3" prop (the build that found it).
+static func _every_guard_ring_sits_on_the_bed(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	for guard in catalog.list_category("guard"):
+		var height_mm := float(guard["specs"]["height_mm"])
+		for tip_m in [_tip_radius_m(guard), 3.0 * INCH_M * 0.5]:
+			var span := _z_range(PropulsionExport.guard_triangles_mm(guard, tip_m))
+			results.append(TestResult.new(
+				"%s around a %.1f\" prop lies on the bed: underside at z = 0, top at its %.1f mm height" % [
+					guard["part_id"], tip_m * 2.0 / INCH_M, height_mm],
+				absf(span.x) < 1.0e-4 and absf(span.y - height_mm) < 1.0e-4,
+				"z from %.4f to %.4f mm" % [span.x, span.y]))
+	return results
+
+
+static func _a_smaller_prop_exports_a_smaller_ring(guard: Dictionary) -> TestResult:
+	var tip_m := _tip_radius_m(guard)
+	var specs: Dictionary = guard["specs"]
+	var expected_outer_mm := tip_m * 500.0 + PropGuard.ring_tip_gap_mm(specs) + float(specs["wall_mm"])
+	var outer_mm := 0.0
+	for triangle in PropulsionExport.guard_triangles_mm(guard, tip_m * 0.5):
+		for point in triangle:
+			outer_mm = maxf(outer_mm, Vector2(point.x, point.y).length())
+	return TestResult.new(
+		"[PG1] %s exported for a prop half its class is a ring of that prop, not of its class" % guard["part_id"],
+		absf(outer_mm - expected_outer_mm) < 1.0e-3 and outer_mm < float(specs["outer_radius_mm"]) - 1.0,
+		"outer %.3f mm against tip/2 + gap + wall = %.3f mm (as sold %.1f mm)" % [
+			outer_mm, expected_outer_mm, float(specs["outer_radius_mm"])])
 
 
 ## The volume against the annulus's own closed form. `ok` alone would pass on a cube.
@@ -142,7 +211,7 @@ static func _the_ring_encloses_the_annulus_it_draws(catalog: PartsCatalog) -> Te
 ## check that says the export is a claim about winding rather than about triangles existing.
 static func _a_ring_wound_the_other_way_is_refused(catalog: PartsCatalog) -> TestResult:
 	var guard := catalog.get_part("guard_bumper_5in_abs")
-	var triangles := PropulsionExport.guard_triangles_mm(guard)
+	var triangles := PropulsionExport.guard_triangles_mm(guard, _tip_radius_m(guard))
 	var report := StlWriter.check_manifold(_reversed(triangles))
 	var named := false
 	for reason in report["reasons"]:
@@ -155,7 +224,7 @@ static func _a_ring_wound_the_other_way_is_refused(catalog: PartsCatalog) -> Tes
 
 
 static func _no_guard_exports_nothing_rather_than_an_empty_solid() -> TestResult:
-	var triangles := PropulsionExport.guard_triangles_mm({})
+	var triangles := PropulsionExport.guard_triangles_mm({}, 0.0635)
 	var result := StlWriter.write("nothing", triangles, "user://test_no_guard.stl")
 	var wrote := FileAccess.file_exists("user://test_no_guard.stl")
 	if wrote:
@@ -172,7 +241,7 @@ static func _a_refused_spec_exports_nothing(catalog: PartsCatalog) -> TestResult
 	var broken := catalog.get_part("guard_duct_5in_cinewhoop").duplicate(true)
 	var specs: Dictionary = broken["specs"]
 	specs.erase("kind")
-	var triangles := PropulsionExport.guard_triangles_mm(broken)
+	var triangles := PropulsionExport.guard_triangles_mm(broken, _tip_radius_m(broken))
 	return TestResult.new(
 		"a guard whose spec PropGuard refuses exports nothing rather than a default ring",
 		triangles.is_empty(),

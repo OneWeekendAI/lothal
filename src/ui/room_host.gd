@@ -338,6 +338,9 @@ func show_sim() -> void:
 		sim = load(SIM_SCENE).instantiate()
 		sim.initial_selection = lab.selection()
 		sim.initial_frame_edit = lab.frame_edit()
+		# And the drawing itself, so the field draws the plates the garage drew. Without it a saved
+		# 3" drawing flew its own mass and arm but stood on screen as a generic plate from specs.
+		sim.initial_frame_document = lab.frame_document
 		_unplug_for(sim.initial_selection)
 		# Handed over rather than loaded by Sim, so both rooms are looking at ONE set of packs
 		# within a session. Sim drains it and writes back on landing; it authors nothing else.

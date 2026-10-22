@@ -46,16 +46,27 @@ const STACK_SEGMENTS := 32
 ## (the 3D view), and asking the inspector to reach into the scene for it would make the export
 ## depend on the guard being on screen.
 ##
-## No prop tip radius is taken (printed-room PR14). The ring's inner wall is `outer_radius - wall`, a
-## fact of the guard's own spec: `GuardMesh` reaches it as `tip + clearance`, and the tip cancels. So
-## every prop gives the same ring, and a parameter for it changed nothing. The mesh still needs a
-## positive tip to build, so it is handed the spec's own outer radius — a number the guard already
-## carries, not a second definition of any propeller's radius. Deriving the ring FROM the prop is a
-## deferred Propulsion item (track.md), because it would move P9's inertia numbers.
-static func guard_triangles_mm(guard: Dictionary) -> Array:
+## `prop_tip_radius_m` is the radius of the prop the ring wraps (PG1). Printed-room PR14 had dropped
+## it, because the ring was then the spec's own `outer_radius - wall` and the tip cancelled. Since
+## PG1 `GuardMesh` fits the ring to the prop (`PropGuard.fitted_spec`), so the tip is what sizes the
+## ring and a 5" bumper exported for a 3" build is a 3" ring. It is the build's own prop radius in
+## both doors to this export (Propulsion's button and the Printed room), which is what keeps their
+## bytes identical.
+##
+## LAID ON THE BED: underside at z = 0, top at the ring's height — how it is printed, and the
+## convention `FrameExport` already keeps. The drawn ring is centred on the prop disc, so taken
+## unshifted half of every exported guard sat below the bed (found exporting Frame 01's 3" ring).
+## The lift is the drawn ring's own half height, so the shape is still exactly the drawn one.
+static func guard_triangles_mm(guard: Dictionary, prop_tip_radius_m: float) -> Array:
 	var mesh := GuardMesh.new()
-	mesh.rebuild(guard, float(guard.get("specs", {}).get("outer_radius_mm", 0.0)) * 0.001)
-	var triangles := mesh.ring_triangles_mm()
+	mesh.rebuild(guard, prop_tip_radius_m)
+	var lift := Vector3(0, 0, mesh.height_m * StlWriter.MM_PER_M * 0.5)
+	var triangles: Array = []
+	for triangle in mesh.ring_triangles_mm():
+		var moved := PackedVector3Array()
+		for point in triangle:
+			moved.append(point + lift)
+		triangles.append(moved)
 	mesh.free()
 	return triangles
 
@@ -65,9 +76,9 @@ static func guard_triangles_mm(guard: Dictionary) -> Array:
 ## The solid is named for the part id rather than for the file, so a folder of exports opened in a
 ## slicer shows which catalog entry each one is — an STL's solid name is the only identity that
 ## survives being renamed on the way to somebody else's machine.
-static func write_guard(guard: Dictionary, path: String) -> Dictionary:
+static func write_guard(guard: Dictionary, prop_tip_radius_m: float, path: String) -> Dictionary:
 	var part_id := String(guard.get("part_id", "guard"))
-	return StlWriter.write(part_id, guard_triangles_mm(guard), path)
+	return StlWriter.write(part_id, guard_triangles_mm(guard, prop_tip_radius_m), path)
 
 
 ## The motor's mount stack as printable triangles, in millimetres, read off the cylinders

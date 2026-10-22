@@ -56,7 +56,24 @@ const EXPORTS := [
 	{"label": "Cut sheet (SVG, nested)", "extension": "svg", "layout": FrameExport.LAYOUT_NEST},
 	{"label": "Cut file (DXF)", "extension": "dxf", "layout": FrameExport.LAYOUT_NEST},
 	{"label": "Assembly (STL)", "extension": "stl", "layout": FrameExport.LAYOUT_ASSEMBLY},
+	# What a printer takes: one closed STL per part, each on the bed, a one-layer unibody merged.
+	{"label": "Printable parts (STL, one file per part)", "extension": "stl",
+		"layout": FrameExport.LAYOUT_PARTS},
+	# G6: the parts list, hardware counts, assembly order and a rough cutting cost, as one page.
+	{"label": "Build sheet (HTML: parts, hardware, cost)", "extension": "html",
+		"layout": FrameExport.LAYOUT_NEST},
 ]
+
+## The cutting bits the Export menu offers (G3), as menu ids from `BIT_MENU_ID`. 1/16" first and
+## marked as what it is: the typical shop value, not something measured off this builder's cutter.
+const BITS := [
+	{"label": "Cutting bit 1/16\" (1.59 mm, typical shop value)", "mm": 1.5875},
+	{"label": "Cutting bit 1/8\" (3.18 mm)", "mm": 3.175},
+	{"label": "Cutting bit 1/32\" (0.79 mm)", "mm": 0.79375},
+]
+const BIT_MENU_ID := 100
+const ROUND_CORNERS_MENU_ID := 110
+const COUNTERSINK_MENU_ID := 111
 
 var editor: FramePlanEditor
 ## The same document, extruded. Airframe is a STACK, and a top view cannot show a stack — plate
@@ -79,6 +96,10 @@ var _open_button: MenuButton
 var _export_button: MenuButton
 var _import_dialog: FileDialog
 var _symmetry_button: CheckButton
+## The pattern "+ Stack mount" cuts: one entry per `AirframeDocument.STACK_MOUNT_PATTERNS`.
+var stack_picker: OptionButton
+## The camera class "+ Camera cage" spaces its side plates for: one entry per `CameraCage.SIZES` (G5).
+var cage_picker: OptionButton
 var _status: Label
 var _selected_plate := -1
 ## True while a document is being opened. `FramePlanEditor.open` emits `document_changed` like any
@@ -188,6 +209,16 @@ func _build_toolbar() -> Control:
 	_export_button.text = "Export"
 	for spec in EXPORTS:
 		_export_button.get_popup().add_item(str(spec["label"]))
+	# G3, ready to cut: the bit the check and the notes assume, and the two optional fixes.
+	_export_button.get_popup().add_separator()
+	for index in BITS.size():
+		_export_button.get_popup().add_radio_check_item(str(BITS[index]["label"]),
+			BIT_MENU_ID + index)
+	_export_button.get_popup().add_separator()
+	_export_button.get_popup().add_item("Round inside corners to the bit", ROUND_CORNERS_MENU_ID)
+	_export_button.get_popup().add_item("Countersink selected plate's screw holes (toggle)",
+		COUNTERSINK_MENU_ID)
+	_export_button.about_to_popup.connect(_refresh_bit_checks)
 	_export_button.get_popup().id_pressed.connect(_on_export_chosen)
 	row.add_child(_export_button)
 	row.add_child(_button("Import", _on_import,
@@ -206,6 +237,28 @@ func _build_toolbar() -> Control:
 		"An M3 standoff and its two screws, on the selected plate"))
 	row.add_child(_button("+ Motor mount", _on_add_motor_mount,
 		"A motor and its four bolt holes, cut into the selected plate"))
+	# "+ Stack mount" and the pattern it cuts, side by side: the picker is the button's argument, so
+	# it sits where the builder's eye already is rather than in the controls column (G2).
+	row.add_child(_button("+ Stack mount", func() -> void: add_stack_mount(stack_pattern()),
+		"The flight stack's four bolt holes, on the pattern beside this, cut into the selected plate"))
+	stack_picker = OptionButton.new()
+	for pattern in AirframeDocument.STACK_MOUNT_PATTERNS:
+		stack_picker.add_item(stack_pattern_label(str(pattern)))
+	stack_picker.select(AirframeDocument.STACK_MOUNT_PATTERNS.find("30.5x30.5"))
+	stack_picker.tooltip_text = "Stack pattern for \"+ Stack mount\""
+	_compact(stack_picker)
+	row.add_child(stack_picker)
+	# "+ Camera cage" and the camera class it is spaced for (G5), the same button-and-picker pair.
+	row.add_child(_button("+ Camera cage", func() -> void: add_camera_cage(cage_size()),
+		"Two upright side plates spaced for the camera beside this, with a pivot hole and a 0–50° tilt slot"))
+	cage_picker = OptionButton.new()
+	for cage in CameraCage.SIZES:
+		cage_picker.add_item("%s %s mm" % [cage["label"],
+			_trim_mm(CameraCage.size_width_mm(str(cage["id"]), catalog))])
+	cage_picker.select(1)
+	cage_picker.tooltip_text = "Camera width for \"+ Camera cage\""
+	_compact(cage_picker)
+	row.add_child(cage_picker)
 	row.add_child(_button("Copy", _on_duplicate_plate, "Copy the selected plate"))
 	row.add_child(_button("Mirror", _on_replicate,
 		"Repeat the selected arm around the origin, once per arm the layout has"))
@@ -441,25 +494,121 @@ func _on_duplicate() -> void:
 # Export
 # ---------------------------------------------------------------------------
 
-## Writes one of the four formats and shows the builder where it went.
+## Writes one of the five exports and shows the builder where it went.
 ##
 ## The folder is opened rather than a path being printed, because a file you cannot find has not
 ## been exported. On a headless run `OS.shell_open` does nothing and the status line still names
 ## the path, which is why the path is in the message as well.
 func _on_export_chosen(id: int) -> void:
+	if id >= BIT_MENU_ID and id < BIT_MENU_ID + BITS.size():
+		set_cutting_bit(float(BITS[id - BIT_MENU_ID]["mm"]))
+		return
+	if id == ROUND_CORNERS_MENU_ID:
+		round_tight_corners()
+		return
+	if id == COUNTERSINK_MENU_ID:
+		toggle_countersinks()
+		return
 	if editor.document == null or id < 0 or id >= EXPORTS.size():
 		return
 	var spec: Dictionary = EXPORTS[id]
 	DirAccess.make_dir_recursive_absolute(EXPORT_DIRECTORY)
+	if str(spec["layout"]) == FrameExport.LAYOUT_PARTS:
+		_export_parts()
+		return
 	var path := "%s/%s.%s" % [EXPORT_DIRECTORY,
 		_safe_file_name(editor.document.name), str(spec["extension"])]
 	if str(spec["layout"]) == FrameExport.LAYOUT_NEST and str(spec["extension"]) == "svg":
 		path = "%s/%s-cut.svg" % [EXPORT_DIRECTORY, _safe_file_name(editor.document.name)]
+	if str(spec["extension"]) == "html":
+		path = "%s/%s-build-sheet.html" % [EXPORT_DIRECTORY, _safe_file_name(editor.document.name)]
 	if not FrameExport.write(editor.document, path, str(spec["layout"])):
 		_set_status("COULD NOT WRITE %s." % path)
 		return
 	_set_status("Wrote %s — %s" % [ProjectSettings.globalize_path(path), str(spec["label"])])
 	OS.shell_open(ProjectSettings.globalize_path(EXPORT_DIRECTORY))
+
+
+## "Printable parts": one STL per part into its own folder. A part that is not a closed solid is
+## refused by `StlWriter` and NAMED in the status line rather than written.
+func _export_parts() -> void:
+	var base := _safe_file_name(editor.document.name)
+	var directory := "%s/%s-parts" % [EXPORT_DIRECTORY, base]
+	var results := FrameExport.write_parts(editor.document, directory, base)
+	var refused := PackedStringArray()
+	for entry in results:
+		if not bool(entry["ok"]):
+			refused.append(str(entry["reason"]))
+	if not refused.is_empty():
+		_set_status("REFUSED %d of %d parts: %s" % [refused.size(), results.size(),
+			"; ".join(refused)])
+	else:
+		_set_status("Wrote %d printable parts to %s" % [results.size(),
+			ProjectSettings.globalize_path(directory)])
+	OS.shell_open(ProjectSettings.globalize_path(directory))
+
+
+## Sets the cutting bit the ready-to-cut check and the export notes assume (G3). One undo step.
+func set_cutting_bit(diameter_mm: float) -> bool:
+	if editor.document == null or diameter_mm <= 0.0:
+		return false
+	editor.history.record(editor.document)
+	FrameEdits.set_cutting_bit(editor.document, diameter_mm)
+	_on_document_edited(editor.document)
+	_set_status("Cutting bit set to %.2f mm — the corner and gap checks now assume it." % diameter_mm)
+	return true
+
+
+## Rounds every inside corner the bit cannot follow, on every plate, to the bit's radius — the fillet
+## the router leaves anyway, drawn so the mass and the export describe the part that comes back. One
+## undo step, and none if there was nothing to round. Returns how many corners were rounded.
+func round_tight_corners() -> int:
+	if editor.document == null:
+		return 0
+	var probe := AirframeDocument.from_dictionary(editor.document.to_dictionary())
+	var would := 0
+	for index in probe.plates.size():
+		would += FrameEdits.round_tight_corners(probe, index)
+	if would == 0:
+		_set_status("No inside corner is tighter than the %.2f mm bit." % editor.document.cutting_bit_mm)
+		return 0
+	editor.history.record(editor.document)
+	var rounded := 0
+	for index in editor.document.plates.size():
+		rounded += FrameEdits.round_tight_corners(editor.document, index)
+	mark_hand_edited()
+	_on_document_edited(editor.document)
+	_set_status("Rounded %d inside corner%s to %.2f mm." % [rounded, "" if rounded == 1 else "s",
+		editor.document.cutting_bit_mm * 0.5])
+	return rounded
+
+
+## Countersinks the selected plate's round screw holes, or clears them if any already are. Returns how
+## many holes changed.
+func toggle_countersinks() -> int:
+	if editor.document == null or _selected_plate < 0 \
+			or _selected_plate >= editor.document.plates.size():
+		_set_status("Select the plate whose screw holes are countersunk first.")
+		return 0
+	var plate: Dictionary = editor.document.plates[_selected_plate]
+	var any := not (plate.get(AirframeDocument.PLATE_COUNTERSUNK_HOLES, []) as Array).is_empty()
+	editor.history.record(editor.document)
+	var changed := FrameEdits.set_plate_screw_holes_countersunk(editor.document, _selected_plate,
+		not any)
+	_on_document_edited(editor.document)
+	_set_status("%s %d screw hole%s on this plate — marked on the DXF's _COUNTERSINK layer." % [
+		"Cleared the countersink on" if any else "Countersunk", changed, "" if changed == 1 else "s"])
+	return changed
+
+
+func _refresh_bit_checks() -> void:
+	var popup := _export_button.get_popup()
+	var bit := editor.document.cutting_bit_mm if editor.document != null \
+		else AirframeDocument.DEFAULT_CUTTING_BIT_MM
+	for index in BITS.size():
+		var item := popup.get_item_index(BIT_MENU_ID + index)
+		if item >= 0:
+			popup.set_item_checked(item, absf(float(BITS[index]["mm"]) - bit) < 1e-4)
 
 
 ## A frame name as a file name. Same rule as `FrameLibrary._safe`: anything that is not a letter, a
@@ -649,6 +798,88 @@ func _on_add_motor_mount() -> void:
 	_set_status("Added a motor on a %.0f×%.0f pattern. %s" % [pitch, pitch,
 		"Spins balance." if is_zero_approx(balance) else
 		"Spins are off by %.0f — the count cannot balance until it is even." % absf(balance)])
+
+
+## The stack pattern the picker beside "+ Stack mount" has chosen, by name.
+func stack_pattern() -> String:
+	var index := stack_picker.selected if stack_picker != null else -1
+	if index < 0 or index >= AirframeDocument.STACK_MOUNT_PATTERNS.size():
+		return "30.5x30.5"
+	return str(AirframeDocument.STACK_MOUNT_PATTERNS[index])
+
+
+## "30.5×30.5 M3": a pattern as the picker shows it, the thread spelled out — the bare "25.5x25.5"
+## is an M2 stack, and a builder holding M3 screws needs to see that before they cut.
+static func stack_pattern_label(pattern: String) -> String:
+	var spec := AirframeDocument.stack_mount_spec(pattern)
+	if spec.is_empty():
+		return pattern
+	var pitch := "%s" % _trim_mm(float(spec["pitch_mm"]))
+	return "%s×%s M%s" % [pitch, pitch, _trim_mm(float(spec["thread_d_mm"]))]
+
+
+static func _trim_mm(value: float) -> String:
+	return ("%.1f" % value).trim_suffix(".0")
+
+
+## Cuts a stack mount by name into the selected plate, centred on it — one undo step, or nothing.
+##
+## THE FIT IS ASKED BEFORE THE HISTORY IS RECORDED. `_on_add_motor_mount` records first and then
+## finds the pattern does not fit, which leaves an undo step that undoes nothing; here a refused add
+## changes neither the frame nor the undo stack. Returns whether the holes were cut.
+func add_stack_mount(pattern: String) -> bool:
+	if editor.document == null:
+		return false
+	var label := stack_pattern_label(pattern)
+	if _selected_plate < 0 or _selected_plate >= editor.document.plates.size():
+		_set_status("Select the plate the stack bolts to first.")
+		return false
+	var plate: Dictionary = editor.document.plates[_selected_plate]
+	if AirframeDocument.is_upright(plate):
+		_set_status("A stack bolts to a flat plate, not to an upright side plate.")
+		return false
+	var centre := PolygonProps.centroid(AirframeDocument.plate_outline(plate))
+	if not FrameEdits.stack_mount_fits(editor.document, _selected_plate, centre, pattern):
+		_set_status("A %s stack pattern does not fit inside that plate." % label)
+		return false
+	editor.history.record(editor.document)
+	FrameEdits.add_stack_mount(editor.document, _selected_plate, centre, pattern)
+	mark_hand_edited()
+	_on_document_edited(editor.document)
+	var spec := AirframeDocument.stack_mount_spec(pattern)
+	_set_status("Cut a %s stack mount: four %s mm holes, checked for edge distance." % [
+		label, _trim_mm(float(spec["hole_d_mm"]))])
+	return true
+
+
+## The camera class the picker beside "+ Camera cage" has chosen, by `CameraCage.SIZES` id.
+func cage_size() -> String:
+	var index := cage_picker.selected if cage_picker != null else -1
+	if index < 0 or index >= CameraCage.SIZES.size():
+		return "micro"
+	return str(CameraCage.SIZES[index]["id"])
+
+
+## Cuts a camera cage for one camera class — two upright side plates on the camera bay — as ONE undo
+## step. Needs no selection: the cage seats itself on the bottom plate's front edge. Returns whether
+## the plates were added.
+func add_camera_cage(size_id: String) -> bool:
+	if editor.document == null:
+		return false
+	var width := CameraCage.size_width_mm(size_id, catalog)
+	if width <= 0.0:
+		_set_status("No camera class called %s." % size_id)
+		return false
+	editor.history.record(editor.document)
+	var added := FrameEdits.add_camera_cage(editor.document, width)
+	if added.is_empty():
+		return false
+	mark_hand_edited()
+	_select(int(added[0]))
+	_on_document_edited(editor.document)
+	_set_status("Added a camera cage for a %s mm camera: two upright side plates %s mm apart, M2 pivot and a %d–%d° tilt slot." % [
+		_trim_mm(width), _trim_mm(width), int(CameraCage.TILT_MIN_DEG), int(CameraCage.TILT_MAX_DEG)])
+	return true
 
 
 ## Copies the selected plate on top of itself, offset enough to grab.

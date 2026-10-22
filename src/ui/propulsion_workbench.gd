@@ -49,6 +49,12 @@ extends Control
 ## Emitted after any edit to the open document, so an inspector can repaint against it.
 signal document_changed(document: PropellerDocument)
 
+## Emitted when the pad slider is moved while the room is on an aircraft, carrying millimetres. NOT a
+## write: the room announces the intent and the shell hands it to `AssemblyPanel.set_tweak_mm` —
+## `PowerWorkbench.pack_offset_edited`'s shape, for the reason `build` below states. Never emitted on
+## a cold room, which has no configuration to route it to.
+signal soft_mount_edited(millimetres: float)
+
 ## Emitted when a blade is published as a propeller. Carries the record, so a listener does not have
 ## to re-read the parts file to know what appeared — and the shell needs to know, because a catalog
 ## it loaded at startup does not contain a part that was made five minutes ago.
@@ -94,10 +100,34 @@ var profile: PropellerMountProfile
 var aero: BladeAeroPanel
 var blade_view: BladeView3D
 
-## The motor whose stack the profile draws, and the pad on it. Held as a record and a thickness
-## rather than as a built mesh, because the mesh is rebuilt from them on every change.
+## The motor whose stack the profile draws. Held as a record rather than as a built mesh, because the
+## mesh is rebuilt from it on every change. The aircraft's own motor once `set_build` has run, the
+## reference build's before that.
 var motor: Dictionary = {}
-var soft_mount_m := 0.0
+
+## The aircraft on the bench, and the assembly configuration its pad lives in — Lab's own object, not
+## a copy (slice SM4). Both null while the room is opened cold, outside any build.
+##
+## ## THE PAD LIVES IN `AssemblyTweaks`, AND THIS ROOM DOES NOT KEEP A COPY OF IT
+##
+## Until SM4 this room held `var soft_mount_m := 0.0` of its own, started it at zero and never read
+## or wrote the build's "Motor soft mount" tweak. So a builder with a 2 mm pad on the aircraft opened
+## the blade designer onto a bare motor, dragged the room's slider to 3 mm, closed the room, and flew
+## the 2 mm the Lab still held — two answers to "what pad is under this motor", on two screens, that
+## agreed only by accident. `PowerWorkbench` had already stated the cure for the battery offset and
+## this is the same cure: the slider READS `tweaks.value_mm` on every refresh, and its edits go OUT
+## through `soft_mount_edited` to the one path a tweak already takes (`AssemblyPanel.set_tweak_mm`,
+## which snaps to the step, clamps to the range the motor allows, and is what Lab rebuilds and saves
+## on). What comes back is whatever that path stored, which is why the slider is re-read afterwards
+## rather than trusted.
+##
+## A room opened with no build still has a pad to draw — it is a stack of SOMETHING, the
+## `DEFAULT_MOTOR` posture — and outside an aircraft there is nothing for it to disagree with, so
+## that pad is held here in `_cold_soft_mount_m` and nowhere else. It is never read once a build is
+## on the bench.
+var build: Build = null
+var tweaks: AssemblyTweaks = null
+var _cold_soft_mount_m := 0.0
 
 var _motor_mesh: MotorMesh
 var _prop_mesh: PropellerMesh
@@ -110,6 +140,9 @@ var _status: Label
 ## document is edited in place, and a reference would always equal itself.
 var _published: Dictionary = {}
 var _pad_slider: HSlider
+## True while the room itself is setting the pad slider, so the slider's `value_changed` is not
+## mistaken for the builder dragging it — which on an aircraft would write the tweak back to itself.
+var _updating_pad := false
 var _pitch_spin: SpinBox
 var _rpm_slider: HSlider
 var _rpm_label: Label
@@ -611,9 +644,75 @@ func _on_rpm_changed(value: float) -> void:
 	_refresh_aero()
 
 
+## The pad slider moved, in metres. On an aircraft the room announces and re-reads — see `build` for
+## why the value does not live here; on a cold room it is the room's own and is simply held.
 func _on_pad_changed(value: float) -> void:
-	soft_mount_m = value
+	if _updating_pad:
+		return
+	if build != null and tweaks != null:
+		soft_mount_edited.emit(value * 1000.0)
+		_sync_pad_control()
+	else:
+		_cold_soft_mount_m = value
 	_refresh()
+
+
+## Puts an aircraft on the bench (SM4). THE ONE PATH the shell takes on every open of this room, so
+## the pad, the motor and the mount spec the frequency is computed with are all the aircraft's as
+## it stands now, not as it stood the last time the room was up.
+##
+## Required arguments, not defaulted: W0.7's finding as `PowerWorkbench.set_build` applies it. A
+## build without its tweaks would leave the slider reading a pad from nowhere.
+##
+## The open blade is NOT replaced. The document is the room's subject and the builder may be half
+## way through drawing one; the aircraft supplies the stack it bolts to.
+func set_build(p_build: Build, p_tweaks: AssemblyTweaks) -> void:
+	build = p_build
+	tweaks = p_tweaks
+	motor = build.motor
+	# The two ceilings that are the motor's own answers follow the motor: the boss height a pad has
+	# to give up, and the rated speed the design-RPM slider tops out at.
+	_updating_pad = true
+	_pad_slider.max_value = MotorMesh.max_soft_mount_m(motor)
+	_updating_pad = false
+	_rpm_slider.max_value = Fitting.rated_rpm(
+		float(motor["specs"]["kv"]), float(motor["thrust_test"]["voltage_v"]))
+	_sync_pad_control()
+	_refresh()
+
+
+## The pad in force, in metres: the aircraft's tweak when the room is on one, the cold room's own
+## otherwise. EVERY reader in this file goes through here — the mesh, the frequency and the slider —
+## so none of them can be reading a different pad from the other two.
+func soft_mount_m() -> float:
+	if build != null and tweaks != null:
+		return tweaks.value_mm(AssemblyTweaks.SOFT_MOUNT, build) / 1000.0
+	return _cold_soft_mount_m
+
+
+## The mount's natural frequency for the blade on screen, from the same three inputs
+## `VibrationModel.for_build` hands `SoftMount`: the pad above, ONE tip-mass function
+## (`VibrationModel.tip_mass_kg`, which `tip_mass_kg_for` is also a call of) and the build's mount
+## spec. So for the aircraft's own propeller this IS `VibrationModel.mount_hz()`, and
+## `tests/test_propulsion_room.gd` asserts the equality rather than trusting it.
+##
+## The blade's mass is the document's `published_mass_g` — the catalog's `mass_g` for a catalog
+## blade, which is the number the build reads, and zero for one somebody drew (that field's own
+## posture: a drawn blade has no published weight). The room's subject is the blade on screen, so it
+## is that blade's mass the pad carries here, not the aircraft's.
+func mount_hz() -> float:
+	if document == null:
+		return INF
+	var spec: Dictionary = VibrationModel.soft_mount_spec_for(build) if build != null else {}
+	return SoftMount.f_n_hz(soft_mount_m(),
+		VibrationModel.tip_mass_kg(motor, document.published_mass_g), spec)
+
+
+## The slider against the pad in force, without re-entering `_on_pad_changed`.
+func _sync_pad_control() -> void:
+	_updating_pad = true
+	_pad_slider.value = soft_mount_m()
+	_updating_pad = false
 
 
 func _on_save() -> void:
@@ -736,14 +835,12 @@ func _refresh() -> void:
 
 	if _motor_mesh == null:
 		_motor_mesh = MotorMesh.new()
-	_motor_mesh.rebuild(motor, _prop_mesh.stack_height_m, 0.0, soft_mount_m)
+	var pad_m := soft_mount_m()
+	_motor_mesh.rebuild(motor, _prop_mesh.stack_height_m, 0.0, pad_m)
 
-	# The tip mass the pad carries: the motor and the propeller it is holding up. `SoftMount` owns
-	# the frequency; this room owns neither the formula nor a second copy of it.
-	var tip_mass_kg := float(motor.get("mass_g", 0.0)) * 0.001 \
-		+ document.published_mass_g * 0.001
-	profile.set_stack(_motor_mesh, soft_mount_m,
-		SoftMount.f_n_hz(soft_mount_m, tip_mass_kg))
+	# `SoftMount` owns the frequency and `VibrationModel` the tip mass; this room owns neither the
+	# formula nor a second copy of it — see `mount_hz`.
+	profile.set_stack(_motor_mesh, pad_m, mount_hz())
 
 	section.queue_redraw()
 	editor.queue_redraw()

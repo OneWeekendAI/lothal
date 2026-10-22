@@ -49,19 +49,24 @@ const DEFINITIONS := {
 			"page": {"panels": ["Fasteners"], "diagram": "hardware"}},
 		{"id": &"layout", "name": "Layout & fit",
 			"page": {"panels": ["Fit", "Layout"], "diagram": "layout"}},
-		# §6 of the airframe design models a pad as a spring and nothing of that is built.
-		{"id": &"straps", "name": "Straps & pads", "soon": true},
+		# airframe.md §6: the pad as a spring (PadMount) and the strap slots as holes (StrapSlots),
+		# both read through StrapsPads. `diagram`: the seat plate's slots against the pack.
+		{"id": &"straps", "name": "Straps & pads",
+			"page": {"panels": ["Straps"], "diagram": "straps"}},
 	],
 	"Propulsion": [
 		# `diagram`: PropulsionDiagram's modes. `sheet`: which half of the Prop panel the page shows
 		# (PropellerDetails.set_dock_sheet) — the blade's rows, or the guard's selector alone.
-		{"id": &"motors", "name": "Motors", "page": {"panels": ["Motor"], "diagram": "thrust"},
-			"pick": "Motor"},
+		{"id": &"motors", "name": "Motors",
+			"page": {"panels": ["Motor"], "diagram": "thrust", "sheet": "motor"}, "pick": "Motor"},
 		{"id": &"propellers", "name": "Propellers",
 			"page": {"panels": ["Prop"], "diagram": "prop", "sheet": "prop"}, "pick": "Prop"},
 		{"id": &"guards", "name": "Prop guards",
 			"page": {"panels": ["Prop"], "diagram": "guard", "sheet": "guard"}},
-		{"id": &"soft_mounts", "name": "Soft mounts", "soon": true},
+		# SM3: the Motor panel cut to its mount half (MotorDetails.set_dock_sheet) beside the stack in
+		# side elevation (PropellerMountProfile) — the pad under the motor, drawn off the model's mesh.
+		{"id": &"soft_mounts", "name": "Soft mounts",
+			"page": {"panels": ["Motor"], "diagram": "mount", "sheet": "mount"}},
 	],
 	"Power": [
 		# `diagram`: PowerDiagram's modes (the pack's sag chart, one ESC channel), and "harness" —
@@ -284,6 +289,8 @@ static func choice_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			return str((build.frame.get("catalog", {}) as Dictionary).get("material", ""))
 		&"hardware":
 			return FrameHardware.choice(context.get("frame_document") as AirframeDocument)
+		&"straps":
+			return StrapsPads.choice_text(StrapsPads.figures(build, straps_document(build, context)))
 		&"layout":
 			var stack := str((build.frame.get("specs", {}) as Dictionary).get("stack_mount", ""))
 			return "stack %s" % stack if stack != "" else ""
@@ -293,6 +300,8 @@ static func choice_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			return _prop_choice(build.propeller)
 		&"guards":
 			return str(build.guard.get("name", "none")) if not build.guard.is_empty() else "none"
+		&"soft_mounts":
+			return _mount_choice(build.mount)
 		&"battery":
 			return _battery_choice(build.battery)
 		&"esc":
@@ -410,6 +419,9 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			var grams := FrameHardware.mass_g(document, AirframePanel.materials()) \
 				if document != null else 0.0
 			return "~%d g hardware" % roundi(grams) if grams > 0.0 else ""
+		&"straps":
+			# Where the pad starts isolating (`~`: characteristic, §8), else the slots under the pack.
+			return StrapsPads.number_text(StrapsPads.figures(build, straps_document(build, context)))
 		&"layout":
 			# The part closest to a prop disc, measured off the assembled airframe
 			# (`AirframeModel.closest_to_prop`). Inside a disc, the impossible warning says it.
@@ -434,6 +446,11 @@ static func number_of(id: StringName, build: Build, context: Dictionary = {}) ->
 			if not build.can_hover():
 				return ""
 			return "hover %d%%" % roundi(build.hover_throttle() * 100.0)
+		&"soft_mounts":
+			# The mount frequency the vibration model runs (SoftMount through VibrationModel), with its
+			# `~`: every catalog mount guesses at least one field. Empty with no pad — "none" says it.
+			var f_n := VibrationModel.for_build(build).mount_hz()
+			return "~%d Hz mount" % roundi(f_n) if is_finite(f_n) else ""
 		&"guards":
 			# Computed (four PropGuard rings; the tensor with and without them), not the catalogue's
 			# browsing mass. Empty with none fitted: "none" on line 2 already says it.
@@ -535,6 +552,8 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 			var screws := FrameHardware.screw_summary(document)
 			return [["Hardware", "~%d g" % roundi(grams) if grams > 0.0 else "—"],
 				["Screws", screws if screws != "" else "—"]]
+		&"straps":
+			return StrapsPads.page_numbers(StrapsPads.figures(build, straps_document(build, context)))
 		&"layout":
 			var closest: Dictionary = context.get("prop_clearance", {})
 			var side := "—"
@@ -554,6 +573,10 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 				return [["Hover throttle", "won't hover"], ["Hover rpm", "—"]]
 			return [["Hover throttle", "%d%%" % roundi(build.hover_throttle() * 100.0)],
 				["Hover rpm", "%d rpm" % roundi(PropulsionFigures.hover_rpm(build))]]
+		&"soft_mounts":
+			var f_n := VibrationModel.for_build(build).mount_hz()
+			return [["Mount frequency", "~%d Hz" % roundi(f_n) if is_finite(f_n) else "no pad"],
+				["Pad", "%.1f mm" % (float(build.assembly_value("soft_mount_m")) * 1000.0)]]
 		&"guards":
 			var grams := PropulsionFigures.guard_added_g(build)
 			if grams <= 0.0:
@@ -654,6 +677,24 @@ static func page_numbers(id: StringName, build: Build, context: Dictionary = {})
 	return []
 
 
+## The document the Straps & pads row reads: the shell's (`context.frame_document`), else the fitted
+## frame's preset — a row is a function of data, and the slots are on a plate either way.
+static func straps_document(build: Build, context: Dictionary) -> AirframeDocument:
+	var document := context.get("frame_document") as AirframeDocument
+	if document == null and build != null:
+		document = AirframeDocument.from_catalog_frame(build.frame)
+	return document
+
+
 static func _trim(value: float) -> String:
 	var text := "%.1f" % value
 	return text.trim_suffix(".0")
+
+
+## Line 2 of Soft mounts: the durometer class and material ("70A silicone"), "none" unfitted.
+static func _mount_choice(mount: Dictionary) -> String:
+	if mount.is_empty():
+		return "none"
+	var catalog: Dictionary = mount.get("catalog", {})
+	var text := ("%s %s" % [str(catalog.get("shore_class", "")), str(catalog.get("material", ""))]).strip_edges()
+	return text if text != "" else str(mount.get("name", "fitted"))

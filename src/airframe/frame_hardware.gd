@@ -97,9 +97,11 @@ static func joint_warnings(document: AirframeDocument) -> Array[BuildWarning]:
 	var arm_t := arm_thickness_mm(document)
 	if screws.is_empty() or arm_t <= 0.0:
 		return empty
-	var edge_distance := motor_hole_edge_distance_mm(document)
-	if edge_distance <= 0.0:
+	var worst := worst_edge_hole(document)
+	if worst.is_empty():
 		return empty
+	# Signed: NEGATIVE for a hole whose centre is off the plate, which must warn, not vanish.
+	var edge_distance := float(worst["distance_mm"])
 	var screw: Dictionary = screws[0]
 	return HardwareMass.joint_warnings(
 		float(screw.get("shank_len_mm", 0.0)),
@@ -132,7 +134,17 @@ static func motor_hole_edge_distance_mm(document: AirframeDocument) -> float:
 	return float(hole.get("distance_mm", 0.0))
 
 
+## Hole centre to plate edge, mm, NEGATIVE when the centre is outside the outline. The unsigned
+## distance read a hole hanging off the end of an arm as one with plenty of material behind it — a
+## generated arm that stopped at the motor centre passed the tear-out check with half its motor holes
+## in the air.
+static func signed_edge_distance_mm(outline: PackedVector2Array, point: Vector2) -> float:
+	var distance := PolygonProps.distance_to_boundary(outline, point)
+	return distance if Geometry2D.is_point_in_polygon(point, outline) else -distance
+
+
 ## `{centre_mm: Vector2, distance_mm}` of the first arm's hole nearest its plate edge, or `{}`.
+## `distance_mm` is signed (`signed_edge_distance_mm`).
 ## The centre is what the Screws & standoffs page marks on its drawing.
 static func worst_edge_hole(document: AirframeDocument) -> Dictionary:
 	var plates := arm_plates(document)
@@ -147,13 +159,102 @@ static func worst_edge_hole(document: AirframeDocument) -> Dictionary:
 	var at := Vector2.ZERO
 	for hole in holes:
 		var centre := PolygonProps.centroid(hole)
-		var distance := PolygonProps.distance_to_boundary(outline, centre)
+		var distance := signed_edge_distance_mm(outline, centre)
 		if distance < worst:
 			worst = distance
 			at = centre
 	if worst == INF:
 		return {}
 	return {"centre_mm": at, "distance_mm": worst}
+
+
+# ---------------------------------------------------------------------------
+# Bolt holes off the arms: stack mounts and any other drilled hole (airframe gaps G2)
+# ---------------------------------------------------------------------------
+
+## Standard metric threads a frame is bolted with, smallest first. A round hole is read as a bolt
+## hole for the largest of these whose clearance it matches.
+const BOLT_THREADS_MM := [2.0, 2.5, 3.0, 4.0]
+## How much looser than a close clearance (`AirframeDocument.BOLT_CLEARANCE_MM`) a hole may be drilled
+## and still be read as that screw's hole. Half a millimetre covers a "normal" fit; past it a round
+## hole is a lightening hole and nobody bolts through it.
+const BOLT_HOLE_LOOSE_MM := 0.5
+## A hole is round when its two principal extents agree to this fraction. A tessellated circle
+## reads above 0.98; a strap slot reads below 0.5.
+const ROUND_HOLE_MIN_RATIO := 0.9
+
+
+## The screw a hole was drilled for, read off its shape: the thread diameter when the hole is round
+## and its diameter is that screw's clearance (close to `BOLT_HOLE_LOOSE_MM` over), else 0.
+##
+## FOUND BY SHAPE, as `StrapSlots` finds a slot: there is no "bolt hole" record in the document, so a
+## stack hole cut by "+ Stack mount", one a preset cut and one a builder drilled by hand are all found
+## by one rule. The SCREW's diameter comes back, not the hole's — `HardwareMass.hole_to_edge_warning`
+## is written on the bolt, and reading it off the clearance hole would loosen it by the clearance.
+static func bolt_hole_thread_mm(hole: PackedVector2Array) -> float:
+	var shape := StrapSlots.measure(hole)
+	var length := float(shape["length_mm"])
+	if length <= 0.0 or float(shape["width_mm"]) / length < ROUND_HOLE_MIN_RATIO:
+		return 0.0
+	var centre: Vector2 = shape["centre"]
+	var radius := 0.0
+	for p in hole:
+		radius = maxf(radius, p.distance_to(centre))
+	var diameter := radius * 2.0
+	var best := 0.0
+	for thread in BOLT_THREADS_MM:
+		var close := float(thread) + AirframeDocument.BOLT_CLEARANCE_MM
+		if diameter >= close - 0.05 and diameter <= close + BOLT_HOLE_LOOSE_MM:
+			best = float(thread)
+	return best
+
+
+## `{plate_index, centre_mm, distance_mm, thread_d_mm}` of the bolt hole on a NON-ARM plate whose
+## edge margin is smallest against the 1.5×d it needs, or `{}` when there is none.
+##
+## Arm plates are left to `joint_warnings`, which checks them against the motor screws the document
+## carries; reading them here too would say the same tear-out twice. Everything else — the centre
+## plates' stack holes above all — had no edge check until this, which is why a stack mount placed
+## near a plate edge on a drawn frame said nothing.
+static func worst_mount_hole(document: AirframeDocument) -> Dictionary:
+	var worst: Dictionary = {}
+	if document == null:
+		return worst
+	var worst_ratio := INF
+	for index in document.plates.size():
+		var plate: Dictionary = document.plates[index]
+		if str(plate.get("role", "")) == AirframeDocument.ROLE_ARM:
+			continue
+		var outline := AirframeDocument.plate_outline(plate)
+		if outline.size() < 3:
+			continue
+		for hole in AirframeDocument.plate_holes(plate):
+			var thread := bolt_hole_thread_mm(hole)
+			if thread <= 0.0:
+				continue
+			var centre := PolygonProps.centroid(hole)
+			var distance := signed_edge_distance_mm(outline, centre)
+			var ratio := distance / (HardwareMass.EDGE_DISTANCE_RATIO * thread)
+			if ratio < worst_ratio:
+				worst_ratio = ratio
+				worst = {"plate_index": index, "centre_mm": centre, "distance_mm": distance,
+					"thread_d_mm": thread}
+	return worst
+
+
+## The §5.3 hole-to-edge check on every bolt hole off the arms — at most one warning, the worst hole,
+## so four stack holes on one tight plate are one thing to fix and not four lines. Empty when every
+## margin holds.
+static func mount_hole_warnings(document: AirframeDocument) -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	var worst := worst_mount_hole(document)
+	if worst.is_empty():
+		return out
+	var warning := HardwareMass.hole_to_edge_warning(
+		float(worst["distance_mm"]), float(worst["thread_d_mm"]))
+	if warning != null:
+		out.append(warning)
+	return out
 
 
 static func _trim(value: float) -> String:

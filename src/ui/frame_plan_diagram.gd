@@ -14,6 +14,9 @@ extends Control
 ##     the prop discs they are measured against, and the closest gap marked in mm. That gap is
 ##     `closest_gap`, which is `AirframeModel.footprint_prop_clearance_m`'s arithmetic on the same
 ##     shapes: the picture and the row's number are one measurement (labs-and-sim.md §2.2).
+##   - `straps`: the plate the pack straps to, its strap slots lit (each one that fails a check
+##     ringed), and the pack's footprint as the rectangle the under-the-pack check measures against
+##     (StrapsPads.figures — the check's own numbers, so the drawing and the warning agree).
 ##
 ## Plates are painted from `AirframeDocument.plate_outline`, the polygons the mass is integrated
 ## over — no display-only shape (FramePlanEditor's rule).
@@ -21,6 +24,7 @@ extends Control
 const MODE_ARMS := "arms"
 const MODE_HARDWARE := "hardware"
 const MODE_LAYOUT := "layout"
+const MODE_STRAPS := "straps"
 
 const MARGIN_PX := 36.0
 
@@ -32,6 +36,11 @@ var discs: Array = []
 var parts: Array = []
 ## Hardware mode: `{centre_mm, distance_mm}` of the hole the edge check flags, or `{}`.
 var flagged_hole: Dictionary = {}
+## Straps mode: the pack's footprint (Rect2, mm), the seat plate's slots (StrapSlots.measure dicts)
+## and which of them fail (`flagged_slots`, the same dicts) — see `straps_extras`.
+var pack_rect := Rect2()
+var slots: Array = []
+var flagged_slots: Array = []
 
 var _xf := PlanTransform.new()
 
@@ -50,6 +59,9 @@ func show_plan(p_document: AirframeDocument, p_mode: String, extras: Dictionary 
 	mode = p_mode
 	discs = extras.get("discs", [])
 	parts = extras.get("parts", [])
+	pack_rect = extras.get("pack_rect", Rect2())
+	slots = extras.get("slots", [])
+	flagged_slots = extras.get("flagged_slots", [])
 	flagged_hole = {}
 	if mode == MODE_HARDWARE and document != null:
 		var worst := FrameHardware.worst_edge_hole(document)
@@ -59,6 +71,21 @@ func show_plan(p_document: AirframeDocument, p_mode: String, extras: Dictionary 
 			if float(worst["distance_mm"]) < HardwareMass.EDGE_DISTANCE_RATIO * thread:
 				flagged_hole = worst
 	queue_redraw()
+
+
+## Straps mode's extras from `StrapsPads.figures`: the pack rectangle, the slots, and the ones a
+## check flags — too short or too narrow for the strap, or not under the pack. The thresholds are
+## StrapSlots', so a ringed slot is exactly a slot the page's warning is about.
+static func straps_extras(figures: Dictionary) -> Dictionary:
+	var rect: Rect2 = figures.get("pack_rect_mm", Rect2())
+	var need_l := StrapSlots.needed_length_mm(float(figures.get("strap_width_mm", 0.0)))
+	var need_w := StrapSlots.needed_width_mm(float(figures.get("strap_thickness_mm", 0.0)))
+	var flagged: Array = []
+	for shape in figures.get("slots", []):
+		if float(shape["length_mm"]) < need_l or float(shape["width_mm"]) < need_w \
+				or (rect.get_area() > 0.0 and not rect.has_point(shape["centre"])):
+			flagged.append(shape)
+	return {"pack_rect": rect, "slots": figures.get("slots", []), "flagged_slots": flagged}
 
 
 ## The smallest gap between any part rectangle and any disc, `{label, mm, from, to}` in mm: `from`
@@ -86,7 +113,7 @@ func _bounds_mm() -> Rect2:
 	var first := true
 	if document != null:
 		for plate in document.plates:
-			for point in AirframeDocument.plate_outline(plate):
+			for point in AirframeDocument.plate_plan_outline(plate):
 				box = Rect2(point, Vector2.ZERO) if first else box.expand(point)
 				first = false
 	for disc in discs:
@@ -98,6 +125,9 @@ func _bounds_mm() -> Rect2:
 	for part in parts:
 		var rect: Rect2 = part["rect"]
 		box = rect if first else box.merge(rect)
+		first = false
+	if pack_rect.get_area() > 0.0:
+		box = pack_rect if first else box.merge(pack_rect)
 		first = false
 	if first:
 		return Rect2(Vector2(-100, -100), Vector2(200, 200))
@@ -121,6 +151,8 @@ func _draw() -> void:
 			_draw_hardware()
 		MODE_LAYOUT:
 			_draw_layout()
+		MODE_STRAPS:
+			_draw_straps()
 	_draw_scale()
 
 
@@ -149,7 +181,7 @@ func _screen(points: PackedVector2Array) -> PackedVector2Array:
 
 
 func _draw_plate(plate: Dictionary) -> void:
-	var outline := _screen(AirframeDocument.plate_outline(plate))
+	var outline := _screen(AirframeDocument.plate_plan_outline(plate))
 	if outline.size() < 3:
 		return
 	var is_arm := str(plate.get("role", "")) == AirframeDocument.ROLE_ARM
@@ -158,7 +190,7 @@ func _draw_plate(plate: Dictionary) -> void:
 	var base := LothalTheme.ACCENT if lit else LothalTheme.TEXT_MUTED
 	draw_colored_polygon(outline, Color(base, 0.30 if lit else 0.10))
 	draw_polyline(_closed(outline), Color(base, 0.95 if lit else 0.45), 1.5 if lit else 1.0)
-	for hole in AirframeDocument.plate_holes(plate):
+	for hole in ([] if AirframeDocument.is_upright(plate) else AirframeDocument.plate_holes(plate)):
 		var ring := _screen(hole)
 		if ring.size() >= 3:
 			draw_colored_polygon(ring, LothalTheme.SURFACE_BASE)
@@ -194,7 +226,8 @@ func _draw_hardware() -> void:
 	if not flagged_hole.is_empty():
 		var at := _xf.to_pixels(flagged_hole["centre_mm"])
 		draw_arc(at, 14.0, 0.0, TAU, 32, LothalTheme.WARNING, 2.0)
-		_label(at + Vector2(18, 4), "%.1f mm to edge" % float(flagged_hole["distance_mm"]),
+		var gap := float(flagged_hole["distance_mm"])
+		_label(at + Vector2(18, 4), ("%.1f mm to edge" % gap) if gap >= 0.0 else "off the plate",
 			LothalTheme.WARNING)
 
 
@@ -224,6 +257,34 @@ func _draw_layout() -> void:
 		draw_circle(from, 3.0, colour)
 		draw_circle(to, 3.0, colour)
 		_label((from + to) * 0.5 + Vector2(8, -8), "%d mm" % roundi(float(gap["mm"])), colour)
+
+
+## The pack's footprint, then every slot outlined along its own axes — accent when it passes,
+## warning-ringed when a check flags it.
+func _draw_straps() -> void:
+	if pack_rect.get_area() > 0.0:
+		var a := _xf.to_pixels(pack_rect.position)
+		var b := _xf.to_pixels(pack_rect.end)
+		var screen := Rect2(a, b - a).abs()
+		draw_rect(screen, Color(LothalTheme.ACCENT, 0.10))
+		draw_rect(screen, Color(LothalTheme.ACCENT, 0.7), false, 1.0)
+		_label(screen.position + Vector2(4, 14), "pack", LothalTheme.ACCENT)
+	for shape in slots:
+		var centre: Vector2 = shape["centre"]
+		var axis: Vector2 = shape["axis"]
+		var normal := Vector2(-axis.y, axis.x)
+		var half_l := float(shape["length_mm"]) * 0.5
+		var half_w := float(shape["width_mm"]) * 0.5
+		var corners := PackedVector2Array([
+			centre - axis * half_l - normal * half_w, centre + axis * half_l - normal * half_w,
+			centre + axis * half_l + normal * half_w, centre - axis * half_l + normal * half_w])
+		var flagged := flagged_slots.has(shape)
+		var colour := LothalTheme.WARNING if flagged else LothalTheme.ACCENT
+		var ring := _screen(corners)
+		draw_colored_polygon(ring, Color(colour, 0.45))
+		draw_polyline(_closed(ring), colour, 1.5)
+		if flagged:
+			draw_arc(_xf.to_pixels(centre), 14.0, 0.0, TAU, 32, LothalTheme.WARNING, 2.0)
 
 
 static func _gap_colour(mm: float) -> Color:

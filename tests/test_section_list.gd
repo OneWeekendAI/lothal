@@ -32,13 +32,13 @@ static func run() -> Array:
 	results.append(_a_row_carries_its_own_warnings_most_severe_first(build))
 	results.append_array(_airframe_page_numbers(build))
 	results.append(_layout_row(build, rows["Airframe"]))
-	results.append(_straps_row_is_soon(rows["Airframe"]))
+	results.append(_straps_row_is_live(rows["Airframe"]))
 	results.append(_airframe_has_no_drone_row())
 	# --- Propulsion
 	results.append(_motors_row(rows["Propulsion"]))
 	results.append(_propellers_row(build, rows["Propulsion"]))
 	results.append(_guards_row(rows["Propulsion"]))
-	results.append(_soft_mounts_row_is_soon(rows["Propulsion"]))
+	results.append(_soft_mounts_row_unfitted(rows["Propulsion"]))
 	# --- Power
 	results.append(_battery_row(rows["Power"]))
 	results.append(_esc_row(rows["Power"]))
@@ -239,10 +239,14 @@ static func _layout_row(build: Build, rows: Array) -> TestResult:
 		row.get("choice") == "stack %s" % build.frame["specs"]["stack_mount"], _show(row))
 
 
-static func _straps_row_is_soon(rows: Array) -> TestResult:
+## Live since airframe gaps G1 (PadMount, StrapSlots): the reference build fits no pad, so line 3 is the
+## preset top plate's two strap slots under the pack. TestStrapsPads covers the fitted-pad number.
+static func _straps_row_is_live(rows: Array) -> TestResult:
 	var row := _row(rows, &"straps")
-	return TestResult.new("section rows: Straps & pads is 'soon' (no pad model yet)",
-		row.get("status") == SectionRows.SOON and row.get("line3") == "", _show(row))
+	return TestResult.new("section rows: Straps & pads is live — the strap, and the slots under the pack",
+		row.get("status") == SectionRows.OK and not bool(row.get("soon", false))
+			and row.get("choice") == "no pad · 20 mm strap (guess)"
+			and row.get("line3") == "2 strap slots under the pack", _show(row))
 
 
 static func _airframe_has_no_drone_row() -> TestResult:
@@ -274,9 +278,12 @@ static func _guards_row(rows: Array) -> TestResult:
 		row.get("choice") == "none" and row.get("number") == "", _show(row))
 
 
-static func _soft_mounts_row_is_soon(rows: Array) -> TestResult:
+## Was "Soft mounts is 'soon'" until SM3 gave the row a page. Unfitted it is the guard row's shape:
+## "none" on line 2, no number, and a green dot — no mount is a decided answer, not a missing one.
+static func _soft_mounts_row_unfitted(rows: Array) -> TestResult:
 	var row := _row(rows, &"soft_mounts")
-	return TestResult.new("section rows: Soft mounts is 'soon'", row.get("status") == SectionRows.SOON,
+	return TestResult.new("section rows: Soft mounts reads 'none' and no frequency when none is fitted",
+		row.get("status") == SectionRows.OK and row.get("choice") == "none" and row.get("number") == "",
 		_show(row))
 
 
@@ -442,7 +449,7 @@ static func _every_row_has_a_page_or_is_soon() -> TestResult:
 				covered[title] = true
 	# Frame (the catalogue sheet) and Structure are the Frame page's, inside the designer's own
 	# Details drawer — asserted on the drawer by TestAirframeTabs, not here.
-	for title in ["Fit", "Arms", "Fasteners", "Layout", "Motor", "Prop", "Pack",
+	for title in ["Fit", "Arms", "Fasteners", "Layout", "Straps", "Motor", "Prop", "Pack",
 			"ESC", "Harness", "FC", "Link", "Tune", "Camera", "Electronics", "Print", "Motors", "Ports",
 			"Failsafe", "Rates", "Sheet"]:
 		if not covered.has(title):

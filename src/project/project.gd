@@ -65,6 +65,13 @@ var printing: Dictionary = {}
 ## Sparse. The Config room's decisions — motor map, ports, failsafe, rates (C1). Absent means the
 ## app's defaults, which is what lets a default follow the app rather than freeze in the file.
 var config: Dictionary = {}
+## The frame drawn in the Airframe room, as `AirframeDocument.to_dictionary()`. EMPTY means none was
+## drawn: the fitted catalogue frame flies as published, which is every build saved before this
+## block existed. A decision rather than a derivation — a drawing is what somebody chose, and the
+## catalogue cannot regenerate it. When it is present it is the ONE frame: `to_build` flies it
+## (FittedFrame.edit_of) and the Airframe room reopens on it, so nothing reads the catalogue frame's
+## numbers in its place.
+var airframe: Dictionary = {}
 
 ## Named versions (⌘S), newest last. Each is {version_id, label, saved_at, decisions}.
 var versions: Array = []
@@ -142,6 +149,7 @@ static func from_dict(document: Dictionary, ladder: Array = ProjectSchema.MIGRAT
 	project.air = project._read_block(decisions as Dictionary, "air")
 	project.printing = project._read_block(decisions as Dictionary, "printing")
 	project.config = project._read_block(decisions as Dictionary, "config")
+	project.airframe = project._read_block(decisions as Dictionary, "airframe")
 
 	project.versions = _array_or(doc, "versions")
 	project.print_records = _array_or(doc, "prints")
@@ -204,6 +212,7 @@ func to_dict() -> Dictionary:
 	decisions["air"] = air.duplicate(true)
 	decisions["printing"] = printing.duplicate(true)
 	decisions["config"] = config.duplicate(true)
+	decisions["airframe"] = airframe.duplicate(true)
 
 	var out: Dictionary = (_unknown.get("", {}) as Dictionary).duplicate(true)
 	out["schema"] = ProjectSchema.current_version()
@@ -267,6 +276,7 @@ func restore_version(version_id: String) -> bool:
 		air = _read_block(decisions as Dictionary, "air")
 		printing = _read_block(decisions as Dictionary, "printing")
 		config = _read_block(decisions as Dictionary, "config")
+		airframe = _read_block(decisions as Dictionary, "airframe")
 		touch()
 		return true
 	return false
@@ -306,16 +316,32 @@ func to_build(catalog: PartsCatalog, missing: Array = []) -> Build:
 	# on its own parameter. Erased rather than left in place, so the two paths cannot both claim it.
 	var guard_id := String(components.get("guard", ""))
 	components.erase("guard")
+	# The soft mount, the guard's treatment: its own trailing argument, erased from the components.
+	var mount_id := String(components.get("mount", ""))
+	components.erase("mount")
 
 	var build := Build.from_ids(catalog,
 		String(parts["frame"]), String(parts["motor"]), String(parts["propeller"]),
 		String(parts["battery"]), String(parts["esc"]), String(parts["flight_controller"]),
-		components, to_air(), guard_id)
+		components, to_air(), guard_id, {}, mount_id)
 	# The configuration decisions travel with the aircraft (C2). Set rather than passed to
 	# `from_ids`, because nothing in this block is a part and none of it moves a mass.
 	if build != null:
 		build.set_config(config.duplicate(true))
+		# The drawn frame flies, through the same `FittedFrame.edit_of` Lab's own aircraft takes, so
+		# the projects list and the open drone cannot weigh two different frames.
+		var drawn := airframe_document()
+		if drawn != null:
+			var frame := catalog.get_part(String(parts["frame"]))
+			build.set_frame_edit(FittedFrame.edit_of(frame, drawn, FittedFrame.baseline(frame)))
 	return build
+
+
+## The drawn frame as a document, or null when none was drawn.
+func airframe_document() -> AirframeDocument:
+	if airframe.is_empty():
+		return null
+	return AirframeDocument.from_dictionary(airframe)
 
 
 ## Sea-level standard when the block is absent — Build's own default, so a project written before

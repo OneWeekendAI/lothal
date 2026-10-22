@@ -122,6 +122,8 @@ var structure_details: StructureDetails
 var arms_details: ArmsDetails
 var fasteners_details: FastenersDetails
 var layout_details: LayoutDetails
+## Straps & pads (airframe.md §6): the pad as a spring and the strap slots, off StrapsPads.
+var straps_details: StrapsDetails
 
 ## The frame the Airframe tabs are describing, as geometry.
 ##
@@ -135,6 +137,12 @@ var _frame_document_id := ""
 ## What `frame_document` weighed and measured when it was generated (`FittedFrame.baseline`) —
 ## the "as fitted" an edit is measured from. Computed once per fitted frame, not per build.
 var _frame_baseline: Dictionary = {}
+## `frame_document` as generated from the catalogue, as a dictionary — what `drawn_frame` compares
+## against to tell "the fitted frame, untouched" (nothing to save) from a drawing.
+var _generated_frame: Dictionary = {}
+## A saved drawing waiting for `_refresh_frame_document` to adopt it in place of the generated
+## document (`set_drawn_frame`). Consumed on the next regeneration.
+var _pending_drawn: Dictionary = {}
 ## The document was regenerated because the FITTED frame changed. The shell reopens the designer
 ## on it, so the Frame page is always the frame that is fitted.
 signal frame_document_replaced(document: AirframeDocument)
@@ -315,9 +323,17 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	layout_details.name = "Layout"
 	panels.add_child(layout_details)
 
+	straps_details = StrapsDetails.new()
+	straps_details.name = "Straps"
+	panels.add_child(straps_details)
+
 	motor_details = MotorDetails.new(catalog)
 	motor_details.name = "Motor"
 	panels.add_child(motor_details)
+	# Fitting a soft mount is a selection change, through the same handler as the guard (below)
+	# and for its reason: it moves the mount frequency, the frame mode and — from SM5 — the mass.
+	motor_details.mount_changed.connect(func(_mount_id: String) -> void:
+		_on_selection_changed())
 
 	propeller_details = PropellerDetails.new(catalog)
 	propeller_details.name = "Prop"
@@ -846,7 +862,40 @@ func _refresh_frame_document(frame: Dictionary) -> void:
 	var published: Dictionary = catalog.get_part(id) if catalog != null and id != "" else frame
 	frame_document = AirframeDocument.from_catalog_frame(published)
 	_frame_baseline = FittedFrame.drawn(frame_document)
+	_generated_frame = frame_document.to_dictionary()
+	# A saved build's drawing replaces the generated document; the baseline stays the generated
+	# one, because an edit of the fitted frame is still measured from the frame as published.
+	if not _pending_drawn.is_empty():
+		frame_document = AirframeDocument.from_dictionary(_pending_drawn)
+		_pending_drawn = {}
 	frame_document_replaced.emit(frame_document)
+
+
+## Takes on a saved build's drawn frame (`Project.airframe`), or `{}` for none — which puts the
+## fitted catalogue frame's own document back. ALWAYS regenerates: two drones on the same catalogue
+## frame must not share one drawing, and the guard in `_refresh_frame_document` would otherwise keep
+## the previous drone's.
+##
+## Regenerated BEFORE the rebuild, not by it: `_on_selection_changed` makes its Build before it
+## refreshes the document, so a rebuild alone would weigh the first aircraft without the drawing.
+func set_drawn_frame(document: Dictionary) -> void:
+	_pending_drawn = document.duplicate(true)
+	frame_document = null
+	_frame_document_id = ""
+	if picker != null:
+		_refresh_frame_document(picker.selected_part())
+	_on_selection_changed()
+
+
+## What a save keeps of the Airframe room: the document as a dictionary, or `{}` when it is the
+## fitted frame exactly as generated (nothing was drawn, so the catalogue keeps flying it).
+func drawn_frame() -> Dictionary:
+	if frame_document == null:
+		return {}
+	var now := frame_document.to_dictionary()
+	if now == _generated_frame:
+		return {}
+	return now
 
 
 ## The single path from a selection to everything that shows it. Geometry, all three panels'
@@ -863,7 +912,10 @@ func _on_selection_changed() -> void:
 	# every panel below reads mass properties off this object. Resolved once, here, and handed to
 	# both — the same dictionary, so the aircraft that is weighed is the aircraft that is drawn.
 	build.set_assembly(tweaks.resolved_m(build))
-	airframe.rebuild(build, tweaks)
+	# The designer's document for this frame, so what was drawn there (a camera cage, G5) is what is
+	# assembled here. Refreshed first: it only regenerates when the fitted frame changed.
+	_refresh_frame_document(build.frame)
+	airframe.rebuild(build, tweaks, frame_document)
 	# A rebuild is new propellers, and they have to be turning: the hand spin is a property of the
 	# room, not of the props that happen to be fitted.
 	airframe.set_all_rates_rpm(HAND_SPIN_RPM)
@@ -875,6 +927,8 @@ func _on_selection_changed() -> void:
 	arms_details.render(frame_document)
 	fasteners_details.render(frame_document)
 	layout_details.render(frame_document)
+	# The pad needs the pack on it, so this one is handed the build's figures as data (StrapsDetails).
+	straps_details.render_straps(frame_document, StrapsPads.figures(build, frame_document))
 	motor_details.render(build.motor, build)
 	propeller_details.render(build.propeller, build)
 	battery_details.render(build.battery, build)
@@ -1135,7 +1189,8 @@ func _build_from_rails() -> Build:
 		component_ids(),
 		air,
 		propeller_details.guard_id(),
-		harness.overrides()
+		harness.overrides(),
+		motor_details.mount_id()
 	)
 
 
@@ -1185,6 +1240,12 @@ func apply_selection(selection_by_category: Dictionary) -> Array:
 		var guard_id := String(selection_by_category["guard"])
 		if not propeller_details.select_guard(guard_id):
 			failed.append({"category": "guard", "part_id": guard_id})
+	# The soft mount, by the guard's rule: reported, never substituted. A mount silently dropped
+	# would reopen the drone with its mount mode gone and the gyro shaken by the bare frame.
+	if selection_by_category.has("mount"):
+		var mount_id := String(selection_by_category["mount"])
+		if not motor_details.select_mount(mount_id):
+			failed.append({"category": "mount", "part_id": mount_id})
 	return failed
 
 
@@ -1208,6 +1269,8 @@ func selection() -> Dictionary:
 	# project file, the bench door and the field door all carry it without any of them knowing
 	# that it comes from an inspector row rather than from a rail.
 	out["guard"] = propeller_details.guard_id()
+	# And the soft mount, for the guard's reason: one dictionary every door already carries.
+	out["mount"] = motor_details.mount_id()
 	return out
 
 

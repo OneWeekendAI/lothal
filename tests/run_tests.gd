@@ -17,12 +17,12 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio", "spectrum",
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
-	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "fitted frame", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "airframe page", "propulsion page", "power page", "control page", "video page", "config page", "printed page", "field page",
-	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "dock", "camera view", "part finder",
+	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "fitted frame", "drawn frame persists", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "airframe page", "propulsion page", "power page", "control page", "video page", "config page", "printed page", "field page",
+	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "mount row", "overlay tray", "dock", "camera view", "part finder",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config motor map", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
-	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "stl bodies", "printed infill", "printed drawn"]
+	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet"]
 
 func _init() -> void:
 	var total := 0
@@ -85,6 +85,36 @@ func _init() -> void:
 		total += 1
 		print("[%s] %s (%s)" % [status, result.name, result.detail])
 
+	# The drawn-build open path, for the same reason and under the same Ruling-71 containment: it
+	# needs a shell whose `_ready` has wired the rails, which takes a tree and frames.
+	var drawn_returned: Variant = await _call_drawn_open_run()
+	var drawn_results: Array = drawn_returned if drawn_returned is Array else []
+	if drawn_results.is_empty():
+		fail_count += 1
+		total += 1
+		print("[FAIL] suite \"drawn build opens\" produced no results (crashed, or class not registered)")
+	for result in drawn_results:
+		var status: String = "PASS" if result.passed else "FAIL"
+		if not result.passed:
+			fail_count += 1
+		total += 1
+		print("[%s] %s (%s)" % [status, result.name, result.detail])
+
+	# A drone's file changed from outside while the shell has it open: needs the same wired, laid-out
+	# shell as the drawn-build suite, for the same reason and under the same containment.
+	var disk_returned: Variant = await _call_disk_changes_run()
+	var disk_results: Array = disk_returned if disk_returned is Array else []
+	if disk_results.is_empty():
+		fail_count += 1
+		total += 1
+		print("[FAIL] suite \"disk changes\" produced no results (crashed, or class not registered)")
+	for result in disk_results:
+		var status: String = "PASS" if result.passed else "FAIL"
+		if not result.passed:
+			fail_count += 1
+		total += 1
+		print("[%s] %s (%s)" % [status, result.name, result.detail])
+
 	print("")
 	if fail_count == 0:
 		print("ALL %d TESTS PASSED" % total)
@@ -112,6 +142,15 @@ func _init() -> void:
 ## Do not inline this call back into `_init()`.
 func _call_layout_run() -> Variant:
 	return await TestShellLayout.run(self)
+
+
+## `TestDrawnBuildOpens.run()`, from a helper for the reason `_call_layout_run` gives.
+func _call_drawn_open_run() -> Variant:
+	return await TestDrawnBuildOpens.run(self)
+
+
+func _call_disk_changes_run() -> Variant:
+	return await TestDiskChanges.run(self)
 
 
 ## EVERY SUITE IS DISPATCHED FROM HERE, AND THAT IS STRUCTURAL — NOT TIDINESS. Ruling 71.
@@ -207,12 +246,22 @@ func _run_suite(suite_name: String) -> Array:
 		"gps mast": return TestGpsMast.run()
 		# PR11: the battery pad — bands and rails with open strap slots; opt-in mass under Build's own pack seat.
 		"battery pad": return TestBatteryPad.run()
+		# Airframe gaps G1: Straps & pads — the pad as a spring, strap slots as holes, the row and page.
+		"straps pads": return TestStrapsPads.run()
+		# Airframe gaps G2: standard stack mounts by name, one parser with the presets, edge check on them.
+		"stack mount": return TestStackMount.run()
+		# Airframe gaps G3: inside corners and gaps against the cutting bit, the fix, countersinks, notes.
+		"ready to cut": return TestReadyToCut.run()
+		"arm strength": return TestArmStrength.run()
 		# PR13: StlWriter checks each body; touching plates are legal, a mis-wound face inside one is not.
 		"stl bodies": return TestStlBodies.run()
 		# PR15: one infill convention — every weighted printed part reads PrintSettings, and its row says so.
 		"printed infill": return TestPrintedInfill.run()
 		# PR16-PR18: fitted printed parts drawn from their exported triangles, where they are weighed or held.
 		"printed drawn": return TestPrintedDrawn.run()
+		"camera cage": return TestCameraCage.run()
+		# Airframe gaps G6: the build sheet (parts, hardware, assembly order) and the cutting-cost range.
+		"build sheet": return TestBuildSheet.run()
 		"authored blade": return TestAuthoredBlade.run()
 		"thrust overlay": return TestThrustOverlay.run()
 		"campbell overlay": return TestCampbellOverlay.run()
@@ -233,6 +282,7 @@ func _run_suite(suite_name: String) -> Array:
 		"stl writer": return TestStlWriter.run()
 		"propulsion export": return TestPropulsionExport.run()
 		"guard row": return TestGuardRow.run()
+		"mount row": return TestMountRow.run()
 		"overlay tray": return TestOverlayTray.run()
 		# QC1/QC2 (plans/2026-09-19-quiet-canvas-design.md §6): the summoned finder — browse mode
 		# with nothing typed, and preview-and-restore across any number of previews.
@@ -258,6 +308,7 @@ func _run_suite(suite_name: String) -> Array:
 		"frame materials": return TestFrameMaterials.run()
 		"hardware mass": return TestHardwareMass.run()
 		"fitted frame": return TestFittedFrame.run()
+		"drawn frame persists": return TestDrawnFramePersists.run()
 		"mass properties": return TestMassProperties.run()
 		"mass positions": return TestMassPositions.run()
 		"hover": return TestHover.run()

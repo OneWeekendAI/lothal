@@ -78,6 +78,10 @@ var initial_selection: Dictionary = {}
 ## The designer's edit to the fitted frame, set by RoomHost beside `initial_selection` — the frame
 ## drawn in the garage is the frame flown in the field. `{}` flies the catalogue frame.
 var initial_frame_edit: Dictionary = {}
+## The designer's document beside it, so the aircraft on screen is the frame drawn rather than one
+## generated from specs. `AirframeModel.draws` decides whether it is THIS build's frame — a frame
+## swapped in the field's own panel is not, and draws from its catalogue specs.
+var initial_frame_document: AirframeDocument = null
 ## How much of the top of the screen is already covered when this scene is reached through
 ## AppShell, which draws its tab bar on a CanvasLayer above the flight scene. Set the same way
 ## and for the same reason as `initial_selection`: zero when main.tscn runs on its own.
@@ -415,7 +419,7 @@ func _on_build_changed(new_build: Build) -> void:
 	# props, all from this same Build. There is no second description of the aircraft to keep
 	# in step, which is what the old _fit_drone_mesh_to_arm was: a scale factor applied to a
 	# box, correcting a 110 mm arm that had been baked into the scene file.
-	airframe.rebuild(build, tweaks)
+	airframe.rebuild(build, tweaks, initial_frame_document)
 	# Re-pointed on every rebuild, and it has to be: a rebuild frees the old ComponentMesh, so a
 	# lens held across one is a freed node. Handed the airframe's own answer to where its camera is
 	# rather than looking one up here.

@@ -30,6 +30,11 @@ const CATEGORY_FILES := {
 	# lets parallel-axis supply the R² bite exactly once — P9's row spells out the double-count
 	# trap that would otherwise result.
 	"guard": "res://data/parts/guards.json",
+	# SM1: soft mounts enter on the guards' shape — a build may fit none, and until SM2 nothing reads
+	# a mount id, so every pinned number is untouched by this line. The physics is
+	# src/propulsion/soft_mount.gd; `SoftMount.spec_from_part` is the one reader of an entry, and it
+	# refuses a missing field rather than filling it from the class-typical default.
+	"mount": "res://data/parts/mounts.json",
 	# PW1 (plans/2026-09-10-power-room-design.md §4.1). The two halves of the current path that are
 	# products you buy; the third — wire — is deliberately NOT here, because wire is a gauge and a
 	# length rather than a part, and a row per gauge could not answer "what if I shorten these
@@ -57,6 +62,19 @@ const CATEGORY_FILES := {
 	"gps": "res://data/parts/gps.json",
 	"buzzer": "res://data/parts/buzzers.json",
 }
+
+## The categories whose mass is COMPUTED from their own specs, so the loader does not require a
+## pinned `mass_g` on them (PL1, track.md Wave P follow-on). A guard is a ring whose mass is
+## `PropGuard.mass_kg` of its geometry, and after PG1 that geometry follows the prop the ring wraps,
+## so no single number authored at the top of the entry can be the guard's mass on every build. A
+## mount is `SoftMount.mount_mass_kg` at the pad in force, which is the Lab's thickness, not the
+## catalog's. Both files may still carry a `mass_g` for the browsing rail, and where they do, the
+## tests that hold it to the physics still run.
+##
+## Every OTHER category is a part somebody weighed, and its `mass_g` is the only mass it has: a
+## motor with none would enter the build at 0 g and nothing downstream would say so. So the
+## requirement stays for them, and an entry that leaves it out is refused by name.
+const COMPUTED_MASS_CATEGORIES := ["guard", "mount"]
 
 ## The id prefix a builder-entered part MUST carry, and which a SHIPPED part may never carry.
 ##
@@ -166,8 +184,12 @@ func _load_category(category: String, path: String) -> void:
 		return
 
 	for entry in parsed["parts"]:
-		if not entry is Dictionary or not entry.has("part_id") or not entry.has("mass_g"):
-			load_errors.append("%s: entry missing part_id or mass_g" % path)
+		if not entry is Dictionary or not entry.has("part_id"):
+			load_errors.append("%s: entry missing part_id" % path)
+			continue
+		if not entry.has("mass_g") and not COMPUTED_MASS_CATEGORIES.has(category):
+			load_errors.append("%s: %s is missing mass_g, which a %s cannot compute" % [
+				path, entry["part_id"], category])
 			continue
 		if is_custom(str(entry["part_id"])):
 			load_errors.append("%s: %s claims the reserved \"%s\" prefix, which only a builder's own parts may use" % [

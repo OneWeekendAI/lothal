@@ -222,14 +222,14 @@ static func _a_fitted_prop_guard_goes_through_the_room_export(catalog: PartsCata
 
 	var own_path := DIR.path_join("_propulsion_own_guard.stl")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(own_path))
-	var own := PropulsionExport.write_guard(guard, own_path)
+	var own := PropulsionExport.write_guard(guard, float(build.prop_geometry()["diameter_m"]) * 0.5, own_path)
 	# Propulsion names its solid by part id, which is also the room export's solid name for a guard.
 	var own_sha := FileAccess.get_file_as_string(own_path).sha256_text() if FileAccess.file_exists(own_path) else ""
 	var member := container.member_bytes(String(record.get("file", ""))).get_string_from_utf8()
 	return [
 		TestResult.new("a drone fitting the 5\" bumper exports its prop guard through the room export: one ring, print four",
 			not record.is_empty() and int(record.get("quantity", 0)) == 4
-				and String(record.get("generator", "")) == "prop_guard@1" and int(record.get("triangles", 0)) > 0,
+				and String(record.get("generator", "")) == "prop_guard@%d" % PrintedParts.PROP_GUARD_GENERATOR_VERSION and int(record.get("triangles", 0)) > 0,
 			"record %s" % [record]),
 		TestResult.new("and the bytes kept in the drone are exactly the ones Propulsion's own guard export writes",
 			bool(own.get("ok", false)) and own_sha != "" and member.sha256_text() == own_sha

@@ -76,6 +76,27 @@ var mount_points: Array[MountPoint] = []
 ## outline to publish and the check says so instead of inventing one.
 var plate_polygons: Array[Dictionary] = []
 
+## Every UPRIGHT plate that was drawn (airframe gaps G5): `{name, node, outline_mm, seat, offset_m}`.
+## Kept apart from `plate_polygons` because those are read as flat outlines at a height, and an
+## upright plate's outline is in its own standing plane — `side_plate_points_m` gives its corners in
+## the airframe's frame instead.
+var side_plates: Array[Dictionary] = []
+
+
+## Each upright plate's outline as world points in this node's frame, metres: `{name: PackedVector3Array}`.
+## Read through the node's own transform, so it is where the plate is drawn, after the seating.
+func side_plate_points_m() -> Dictionary:
+	var out := {}
+	for record in side_plates:
+		var node: Node3D = record["node"]
+		if not is_instance_valid(node):
+			continue
+		var points := PackedVector3Array()
+		for point in record["outline_mm"]:
+			points.append(node.transform * AirframeDocument.world_m(point, 0.0))
+		out[str(record["name"])] = points
+	return out
+
 
 ## Each drawn plate as `{name, outline_mm, y_m}`, the height read off the node as it now stands.
 func plate_polygons_m() -> Array[Dictionary]:
@@ -126,6 +147,7 @@ func rebuild_document(
 		child.queue_free()
 	arm_tips.clear()
 	plate_polygons.clear()
+	side_plates.clear()
 	plate_top = null
 	plate_side_m = 0.0
 	_plate_top_face_m = 0.0
@@ -144,6 +166,7 @@ func rebuild_document(
 	_build_pads(arm_m, frame, material)
 	mount_points = mount_points_for(frame, plate_gap_m)
 	_seat_top_plate_on_its_mount()
+	_stand_side_plates()
 
 
 ## Standoff height when nobody has chosen one. Forwards to MountLayout, which decides it — asking
@@ -210,18 +233,21 @@ func _build_plates(
 	#
 	# So the drawing is mapped onto the mount table's convention here, and only here: centre the
 	# stack on the origin, and rescale it to whatever standoff the builder has chosen.
+	# Upright plates (G5) are not layers of the stack and take no part in where its middle is; they
+	# are stood on whichever layer they rest on, after the seating (`_stand_side_plates`).
 	var centres := PackedFloat64Array()
+	var lowest := INF
+	var highest := -INF
 	for plate in document.plates:
-		centres.append(AirframeDocument.plate_z_mm(plate)
-			+ AirframeDocument.plate_thickness_mm(plate) * 0.5)
-	var lowest := 0.0
-	var highest := 0.0
-	if not centres.is_empty():
-		lowest = centres[0]
-		highest = centres[0]
-		for value in centres:
-			lowest = minf(lowest, value)
-			highest = maxf(highest, value)
+		var value := AirframeDocument.plate_z_mm(plate) + AirframeDocument.plate_thickness_mm(plate) * 0.5
+		centres.append(value)
+		if AirframeDocument.is_upright(plate):
+			continue
+		lowest = minf(lowest, value)
+		highest = maxf(highest, value)
+	if not is_finite(lowest):
+		lowest = 0.0
+		highest = 0.0
 	var authored_gap := highest - lowest
 	var middle := (lowest + highest) * 0.5
 	# Centre-to-centre, matching MountLayout's meaning of "gap" exactly — see its `for_frame`, where
@@ -243,6 +269,10 @@ func _build_plates(
 		if mesh == null:
 			# A self-intersecting or degenerate outline. Skipped rather than drawn wrong, and it is
 			# not silent: FrameWarnings has already told the builder in the room where they drew it.
+			continue
+
+		if AirframeDocument.is_upright(plate):
+			_add_side_plate(document, plate, index, mesh, material, middle, stretch)
 			continue
 
 		var node := MeshInstance3D.new()
@@ -272,6 +302,57 @@ func _build_plates(
 				plate_top = node
 				_plate_top_face_m = face
 				plate_side_m = _outline_side_m(outline)
+
+
+## One upright plate (G5). The extruded mesh lies in its local XZ with its thickness along local Y;
+## the basis turns local X (the plate's s) to world Z, local Z (its h) to world Y and local Y (its
+## normal) to world X — a cyclic permutation, so a proper rotation and the faces stay outward.
+##
+## WHERE IT STANDS is decided after the seating moves the structural plates: it rests on the flat
+## plate whose upper face is nearest below its base, at the same offset above that face the document
+## gives it, so a cage drawn on the bottom plate stays on the bottom plate whatever the standoff.
+func _add_side_plate(document: AirframeDocument, plate: Dictionary, index: int, mesh: ArrayMesh,
+		material: StandardMaterial3D, middle: float, stretch: float) -> void:
+	var node := MeshInstance3D.new()
+	node.name = "SidePlate_%d" % index
+	node.mesh = mesh
+	node.material_override = material
+	var base := AirframeDocument.plate_z_mm(plate)
+	node.transform = Transform3D(
+		Basis(Vector3(0.0, 0.0, 1.0), Vector3(1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0)),
+		Vector3(AirframeDocument.plate_x_mm(plate) / 1000.0, (base - middle) * stretch / 1000.0, 0.0))
+	add_child(node)
+	# The flat plate it rests on: the highest upper face at or below its base.
+	var seat_index := -1
+	var seat_face := -INF
+	for other_index in document.plates.size():
+		var other: Dictionary = document.plates[other_index]
+		if AirframeDocument.is_upright(other):
+			continue
+		var face := AirframeDocument.plate_z_mm(other) + AirframeDocument.plate_thickness_mm(other)
+		if face <= base + 1.0e-6 and face > seat_face:
+			seat_face = face
+			seat_index = other_index
+	side_plates.append({
+		"name": node.name, "node": node, "outline_mm": AirframeDocument.plate_outline(plate),
+		"seat": _node_name_for(str((document.plates[seat_index] as Dictionary).get("role", "plate")),
+			seat_index) if seat_index >= 0 else "",
+		"seat_thickness_m": AirframeDocument.plate_thickness_mm(document.plates[seat_index]) / 1000.0
+			if seat_index >= 0 else 0.0,
+		"offset_m": (base - seat_face) / 1000.0 if seat_index >= 0 else 0.0,
+	})
+
+
+## Stands each upright plate on the plate it rests on, as that plate now sits.
+func _stand_side_plates() -> void:
+	for record in side_plates:
+		var seat := get_node_or_null(NodePath(str(record["seat"]))) as Node3D \
+			if str(record["seat"]) != "" else null
+		if seat == null:
+			continue
+		var node: Node3D = record["node"]
+		node.position.y = seat.position.y + float(record["seat_thickness_m"]) * 0.5 \
+			+ float(record["offset_m"])
 
 
 ## Puts the top plate exactly where the mount table says its face is.

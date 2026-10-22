@@ -23,6 +23,7 @@ config/windows_native_icon="res://icon.ico"
 [autoload]
 
 BenchLauncher="*res://src/bench/bench_launcher.gd"
+TooltipWrap="*res://src/ui/tooltip_wrap.gd"
 
 [debug]
 
