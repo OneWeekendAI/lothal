@@ -52,10 +52,21 @@ const STACK_SEGMENTS := 32
 ## ring and a 5" bumper exported for a 3" build is a 3" ring. It is the build's own prop radius in
 ## both doors to this export (Propulsion's button and the Printed room), which is what keeps their
 ## bytes identical.
+##
+## LAID ON THE BED: underside at z = 0, top at the ring's height — how it is printed, and the
+## convention `FrameExport` already keeps. The drawn ring is centred on the prop disc, so taken
+## unshifted half of every exported guard sat below the bed (found exporting Frame 01's 3" ring).
+## The lift is the drawn ring's own half height, so the shape is still exactly the drawn one.
 static func guard_triangles_mm(guard: Dictionary, prop_tip_radius_m: float) -> Array:
 	var mesh := GuardMesh.new()
 	mesh.rebuild(guard, prop_tip_radius_m)
-	var triangles := mesh.ring_triangles_mm()
+	var lift := Vector3(0, 0, mesh.height_m * StlWriter.MM_PER_M * 0.5)
+	var triangles: Array = []
+	for triangle in mesh.ring_triangles_mm():
+		var moved := PackedVector3Array()
+		for point in triangle:
+			moved.append(point + lift)
+		triangles.append(moved)
 	mesh.free()
 	return triangles
 

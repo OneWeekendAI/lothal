@@ -38,6 +38,7 @@ static func run() -> Array:
 	results.append(_a_smaller_prop_exports_a_smaller_ring(catalog.get_part("guard_duct_5in_cinewhoop")))
 	results.append(_a_smaller_prop_exports_a_smaller_ring(catalog.get_part("guard_duct_3in_tpu")))
 	results.append(_the_ring_encloses_the_annulus_it_draws(catalog))
+	results.append_array(_every_guard_ring_sits_on_the_bed(catalog))
 	results.append(_a_ring_wound_the_other_way_is_refused(catalog))
 	results.append(_no_guard_exports_nothing_rather_than_an_empty_solid())
 	results.append(_a_refused_spec_exports_nothing(catalog))
@@ -57,6 +58,27 @@ static func _tip_radius_m(guard: Dictionary) -> float:
 	var prop_class := String(guard.get("catalog", {}).get("prop_class", ""))
 	var inches := prop_class.replace("\"", "").strip_edges().to_float()
 	return inches * INCH_M * 0.5
+
+
+static func _z_range(triangles: Array) -> Vector2:
+	var low := INF
+	var high := -INF
+	for triangle in triangles:
+		for point in triangle:
+			low = minf(low, point.z)
+			high = maxf(high, point.z)
+	return Vector2(low, high)
+
+
+static func _lifted_to_bed(triangles: Array) -> Array:
+	var lift := -_z_range(triangles).x
+	var out: Array = []
+	for triangle in triangles:
+		var moved := PackedVector3Array()
+		for point in triangle:
+			moved.append(point + Vector3(0, 0, lift))
+		out.append(moved)
+	return out
 
 
 static func _reversed(triangles: Array) -> Array:
@@ -105,7 +127,10 @@ static func _the_export_is_the_drawn_ring_for_the_same_prop(catalog: PartsCatalo
 		for tip_m in [_tip_radius_m(guard), _tip_radius_m(guard) * 0.5]:
 			var mesh := GuardMesh.new()
 			mesh.rebuild(guard, tip_m)
-			var drawn := StlWriter.to_ascii("ring", mesh.ring_triangles_mm()).sha256_text()
+			# The drawn ring is centred on the disc; the export is the same ring LAID ON THE BED, so
+			# the comparison lifts the drawing by its own lowest point — measured here, not by the
+			# export's code, so a broken lift in the export cannot also bless itself.
+			var drawn := StlWriter.to_ascii("ring", _lifted_to_bed(mesh.ring_triangles_mm())).sha256_text()
 			mesh.free()
 			var own := StlWriter.to_ascii("ring", PropulsionExport.guard_triangles_mm(guard, tip_m)).sha256_text()
 			agree = agree and own == drawn
@@ -122,6 +147,24 @@ static func _the_export_is_the_drawn_ring_for_the_same_prop(catalog: PartsCatalo
 ##
 ## MUTATION CONFIRMED RED: `PropGuard.fitted_spec` returning the spec unchanged (the pre-PG1 ring),
 ## and `GuardMesh.rebuild` skipping the fit.
+## A printed ring is printed lying on its face: underside at z = 0 and the top at its own height,
+## the convention FrameExport's parts already keep. The ring is drawn centred on the prop disc, and
+## exported unshifted half of it sat BELOW the bed — a slicer without auto-drop slices air, one with
+## it hides the defect. Checked at the class prop and at Frame 01's 3" prop (the build that found it).
+static func _every_guard_ring_sits_on_the_bed(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	for guard in catalog.list_category("guard"):
+		var height_mm := float(guard["specs"]["height_mm"])
+		for tip_m in [_tip_radius_m(guard), 3.0 * INCH_M * 0.5]:
+			var span := _z_range(PropulsionExport.guard_triangles_mm(guard, tip_m))
+			results.append(TestResult.new(
+				"%s around a %.1f\" prop lies on the bed: underside at z = 0, top at its %.1f mm height" % [
+					guard["part_id"], tip_m * 2.0 / INCH_M, height_mm],
+				absf(span.x) < 1.0e-4 and absf(span.y - height_mm) < 1.0e-4,
+				"z from %.4f to %.4f mm" % [span.x, span.y]))
+	return results
+
+
 static func _a_smaller_prop_exports_a_smaller_ring(guard: Dictionary) -> TestResult:
 	var tip_m := _tip_radius_m(guard)
 	var specs: Dictionary = guard["specs"]

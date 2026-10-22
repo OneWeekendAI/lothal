@@ -25,7 +25,7 @@ const BATTERY_PAD := BatteryPad.PART_ID
 ## Bumped BY HAND whenever the frame's exported triangles change for the same frame (persistence §7.4).
 const FRAME_GENERATOR_VERSION := 1
 ## Bumped BY HAND whenever the prop guard ring's triangles change for the same guard (persistence §7.4).
-const PROP_GUARD_GENERATOR_VERSION := 1
+const PROP_GUARD_GENERATOR_VERSION := 2
 
 
 ## The one door from a row id to printable triangles (printed-room PR4). The per-part Export buttons

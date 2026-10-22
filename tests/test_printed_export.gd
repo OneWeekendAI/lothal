@@ -229,7 +229,7 @@ static func _a_fitted_prop_guard_goes_through_the_room_export(catalog: PartsCata
 	return [
 		TestResult.new("a drone fitting the 5\" bumper exports its prop guard through the room export: one ring, print four",
 			not record.is_empty() and int(record.get("quantity", 0)) == 4
-				and String(record.get("generator", "")) == "prop_guard@1" and int(record.get("triangles", 0)) > 0,
+				and String(record.get("generator", "")) == "prop_guard@%d" % PrintedParts.PROP_GUARD_GENERATOR_VERSION and int(record.get("triangles", 0)) > 0,
 			"record %s" % [record]),
 		TestResult.new("and the bytes kept in the drone are exactly the ones Propulsion's own guard export writes",
 			bool(own.get("ok", false)) and own_sha != "" and member.sha256_text() == own_sha
