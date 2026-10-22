@@ -330,6 +330,10 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	motor_details = MotorDetails.new(catalog)
 	motor_details.name = "Motor"
 	panels.add_child(motor_details)
+	# Fitting a soft mount is a selection change, through the same handler as the guard (below)
+	# and for its reason: it moves the mount frequency, the frame mode and — from SM5 — the mass.
+	motor_details.mount_changed.connect(func(_mount_id: String) -> void:
+		_on_selection_changed())
 
 	propeller_details = PropellerDetails.new(catalog)
 	propeller_details.name = "Prop"
@@ -1185,7 +1189,8 @@ func _build_from_rails() -> Build:
 		component_ids(),
 		air,
 		propeller_details.guard_id(),
-		harness.overrides()
+		harness.overrides(),
+		motor_details.mount_id()
 	)
 
 
@@ -1235,6 +1240,12 @@ func apply_selection(selection_by_category: Dictionary) -> Array:
 		var guard_id := String(selection_by_category["guard"])
 		if not propeller_details.select_guard(guard_id):
 			failed.append({"category": "guard", "part_id": guard_id})
+	# The soft mount, by the guard's rule: reported, never substituted. A mount silently dropped
+	# would reopen the drone with its mount mode gone and the gyro shaken by the bare frame.
+	if selection_by_category.has("mount"):
+		var mount_id := String(selection_by_category["mount"])
+		if not motor_details.select_mount(mount_id):
+			failed.append({"category": "mount", "part_id": mount_id})
 	return failed
 
 
@@ -1258,6 +1269,8 @@ func selection() -> Dictionary:
 	# project file, the bench door and the field door all carry it without any of them knowing
 	# that it comes from an inspector row rather than from a rail.
 	out["guard"] = propeller_details.guard_id()
+	# And the soft mount, for the guard's reason: one dictionary every door already carries.
+	out["mount"] = motor_details.mount_id()
 	return out
 
 

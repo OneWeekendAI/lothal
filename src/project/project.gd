@@ -316,11 +316,14 @@ func to_build(catalog: PartsCatalog, missing: Array = []) -> Build:
 	# on its own parameter. Erased rather than left in place, so the two paths cannot both claim it.
 	var guard_id := String(components.get("guard", ""))
 	components.erase("guard")
+	# The soft mount, the guard's treatment: its own trailing argument, erased from the components.
+	var mount_id := String(components.get("mount", ""))
+	components.erase("mount")
 
 	var build := Build.from_ids(catalog,
 		String(parts["frame"]), String(parts["motor"]), String(parts["propeller"]),
 		String(parts["battery"]), String(parts["esc"]), String(parts["flight_controller"]),
-		components, to_air(), guard_id)
+		components, to_air(), guard_id, {}, mount_id)
 	# The configuration decisions travel with the aircraft (C2). Set rather than passed to
 	# `from_ids`, because nothing in this block is a part and none of it moves a mass.
 	if build != null:

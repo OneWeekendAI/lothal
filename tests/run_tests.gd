@@ -18,7 +18,7 @@ const SUITES := ["mass properties", "mass positions", "hover", "torque signs", "
 	"custom frames", "custom motors", "custom propellers", "custom batteries", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "fitted frame", "drawn frame persists", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "airframe page", "propulsion page", "power page", "control page", "video page", "config page", "printed page", "field page",
-	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "overlay tray", "dock", "camera view", "part finder",
+	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "mount row", "overlay tray", "dock", "camera view", "part finder",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config motor map", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
@@ -263,6 +263,7 @@ func _run_suite(suite_name: String) -> Array:
 		"stl writer": return TestStlWriter.run()
 		"propulsion export": return TestPropulsionExport.run()
 		"guard row": return TestGuardRow.run()
+		"mount row": return TestMountRow.run()
 		"overlay tray": return TestOverlayTray.run()
 		# QC1/QC2 (plans/2026-09-19-quiet-canvas-design.md §6): the summoned finder — browse mode
 		# with nothing typed, and preview-and-restore across any number of previews.

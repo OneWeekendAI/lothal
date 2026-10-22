@@ -39,6 +39,18 @@ signal thrust_bench_requested()
 ## dialog would be a panel that knows where this app puts files.
 signal mount_stl_requested(motor: Dictionary)
 
+## THE SOFT MOUNT'S PICKER — slice SM3's persistence half, on the guard's pattern exactly
+## (`PropellerDetails.guard_changed`). The selector lives on THIS panel rather than the Prop's for
+## the geometric reason the guard lives on the Prop's: the grommets sit under the motor, between
+## its boss and the arm, and every number they produce (`SoftMount`'s f_n) hangs off the mass this
+## panel's rows describe.
+##
+## `Build.mount_id` has been reachable from `Build.from_ids` since SM2 and from nowhere else — the
+## state P10b's guard was in before P10f gave it a dropdown. "Not fitted" is the first row and the
+## default, so the reference build's oracles stay bit-identical while nothing is picked, and an
+## old project file (which has never heard of a mount) reopens as the aircraft it was saved as.
+signal mount_changed(mount_id: String)
+
 const SPEC_ROWS := [
 	{"key": "stator_class", "label": "Stator class"},
 	{"key": "kv_class", "label": "KV class"},
@@ -54,6 +66,13 @@ const SPEC_ROWS := [
 ]
 
 var _catalog: PartsCatalog
+var _mount_selector: OptionButton
+## Selector index -> mount part id, "" first — an index into THIS and never into
+## `catalog.list_category("mount")`, which lacks the "Not fitted" row (the guard row's off-by-one).
+var _mount_ids: Array = [""]
+
+## What the mount row's empty selection reads as, on `PropellerDetails.NOT_FITTED`'s argument.
+const NOT_FITTED := "Not fitted"
 
 ## The catalog is held so the thrust_test row can name the propeller rather than its part_id —
 ## "5x4.3x3 at 14.8 V" is provenance a builder can read; "prop_5x43x3" is a database key.
@@ -79,7 +98,51 @@ func _build_footer(root: VBoxContainer) -> void:
 	stl_button.pressed.connect(func() -> void: mount_stl_requested.emit(_rendered_part))
 	root.add_child(stl_button)
 
+	_build_mount_row(root)
+
 	super(root)
+
+
+## The mount selector. Clipped and not sized to its longest entry, for the guard selector's reason:
+## a long part name would otherwise set the sheet column's width.
+func _build_mount_row(root: VBoxContainer) -> void:
+	_mount_selector = OptionButton.new()
+	_mount_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_mount_selector.clip_text = true
+	_mount_selector.fit_to_longest_item = false
+	_mount_selector.custom_minimum_size = Vector2(280, 0)
+	_mount_selector.add_item(NOT_FITTED)
+	_mount_ids = [""]
+	for mount in _catalog.list_category("mount"):
+		_mount_selector.add_item(PartPicker.display_name(mount))
+		_mount_ids.append(str(mount["part_id"]))
+	_mount_selector.select(0)
+	_mount_selector.item_selected.connect(_on_mount_selected)
+	root.add_child(_mount_selector)
+
+
+func _on_mount_selected(index: int) -> void:
+	mount_changed.emit(String(_mount_ids[index]))
+
+
+## The fitted mount, "" for none. What LabScreen reads to assemble a Build and what the project
+## file records.
+func mount_id() -> String:
+	if _mount_selector == null:
+		return ""
+	return String(_mount_ids[_mount_selector.selected])
+
+
+## Fits a mount by id, as opening a saved drone does. Returns whether the id was one this catalog
+## knows; an unknown one leaves the row where it was, to be reported (`LabScreen.apply_selection`).
+func select_mount(p_mount_id: String) -> bool:
+	if _mount_selector == null:
+		return p_mount_id == ""
+	var index := _mount_ids.find(p_mount_id)
+	if index < 0:
+		return false
+	_mount_selector.select(index)
+	return true
 
 
 func _read(motor: Dictionary, key: String) -> String:

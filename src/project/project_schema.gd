@@ -120,7 +120,11 @@ const REQUIRED_CATEGORIES := ["frame", "motor", "propeller", "battery", "esc", "
 ## and that assertion is red for both of them until this list names them — so the slice that makes
 ## the claim is the slice that has to make it true. C5 still owns the persistence BEHAVIOUR: the
 ## round trip, the pre-existence fixture, and "" versus absent.
-const OPTIONAL_CATEGORIES := ["camera", "vtx", "antenna", "receiver", "guard", "gps", "buzzer"]
+## `mount` (SM3's persistence slice) is the guard's twin: a trailing `Build.from_ids` argument rather
+## than an `OPTIONAL_COMPONENTS` payload, pulled out of the components block by `Project.to_build`.
+## Every file written before it reopens with "" — no mount, the class-typical default it always ran.
+const OPTIONAL_CATEGORIES := ["camera", "vtx", "antenna", "receiver", "guard", "gps", "buzzer",
+	"mount"]
 
 ## Sparse blocks under `decisions`. Named here rather than in Project so that adding a block is a
 ## data change in one place — the unknown-field carry, the round trip and the defaults all read
