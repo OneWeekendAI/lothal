@@ -1,0 +1,25 @@
+{
+  "_schema": "Fixture for test_parts_system.gd (PL1). Not a catalog file — one guard with no top-level mass_g, the cinewhoop shroud's specs unchanged. A guard is a computed-mass category, so _load_category must load it rather than refuse it.",
+  "parts": [
+    {
+      "part_id": "guard_fixture_no_mass",
+      "name": "5\" cinewhoop shroud (ABS, 1.5 mm gap)",
+      "category": "guard",
+      "specs": {
+        "kind": "duct",
+        "outer_radius_mm": 68.0,
+        "wall_mm": 3.0,
+        "height_mm": 12.0,
+        "density_kg_m3": 1050.0,
+        "mount_radius_mm": 96.0,
+        "tip_gap_mm": 1.5
+      },
+      "catalog": {
+        "prop_class": "5\"",
+        "intended_use": "cinewhoop",
+        "material": "ABS"
+      },
+      "source": "the reference cinewhoop shroud from P9's showcase test: inner wall at outer − wall = 65 mm against a 63.5 mm 5\" tip radius = 1.5 mm gap, a fifth of a tip chord (propulsion.md §9 P9 row)."
+    }
+  ]
+}

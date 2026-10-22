@@ -63,6 +63,19 @@ const CATEGORY_FILES := {
 	"buzzer": "res://data/parts/buzzers.json",
 }
 
+## The categories whose mass is COMPUTED from their own specs, so the loader does not require a
+## pinned `mass_g` on them (PL1, track.md Wave P follow-on). A guard is a ring whose mass is
+## `PropGuard.mass_kg` of its geometry, and after PG1 that geometry follows the prop the ring wraps,
+## so no single number authored at the top of the entry can be the guard's mass on every build. A
+## mount is `SoftMount.mount_mass_kg` at the pad in force, which is the Lab's thickness, not the
+## catalog's. Both files may still carry a `mass_g` for the browsing rail, and where they do, the
+## tests that hold it to the physics still run.
+##
+## Every OTHER category is a part somebody weighed, and its `mass_g` is the only mass it has: a
+## motor with none would enter the build at 0 g and nothing downstream would say so. So the
+## requirement stays for them, and an entry that leaves it out is refused by name.
+const COMPUTED_MASS_CATEGORIES := ["guard", "mount"]
+
 ## The id prefix a builder-entered part MUST carry, and which a SHIPPED part may never carry.
 ##
 ## This is the whole of the collision defence, and it is deliberately structural rather than a
@@ -171,8 +184,12 @@ func _load_category(category: String, path: String) -> void:
 		return
 
 	for entry in parsed["parts"]:
-		if not entry is Dictionary or not entry.has("part_id") or not entry.has("mass_g"):
-			load_errors.append("%s: entry missing part_id or mass_g" % path)
+		if not entry is Dictionary or not entry.has("part_id"):
+			load_errors.append("%s: entry missing part_id" % path)
+			continue
+		if not entry.has("mass_g") and not COMPUTED_MASS_CATEGORIES.has(category):
+			load_errors.append("%s: %s is missing mass_g, which a %s cannot compute" % [
+				path, entry["part_id"], category])
 			continue
 		if is_custom(str(entry["part_id"])):
 			load_errors.append("%s: %s claims the reserved \"%s\" prefix, which only a builder's own parts may use" % [

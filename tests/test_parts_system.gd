@@ -33,7 +33,57 @@ static func run() -> Array:
 	results.append_array(_liion_tradeoff(catalog))
 	results.append(_guard_mass_matches_the_physics(catalog))
 	results.append(_guard_kind_agrees_with_its_geometry(catalog))
+	results.append(_a_guard_loads_without_a_pinned_mass())
+	results.append(_a_mount_loads_without_a_pinned_mass())
+	results.append(_a_motor_without_a_mass_is_refused())
 	return results
+
+
+## PL1: a guard's mass is computed from its ring, so the loader takes one with no `mass_g` at all.
+## The entry must also still WEIGH something through PropGuard, or "it loaded" would be a ring the
+## build then drops at 0 g, which is the failure the old requirement was standing in for.
+##
+## MUTATION CONFIRMED RED: the loader requiring `mass_g` of every category again.
+static func _a_guard_loads_without_a_pinned_mass() -> TestResult:
+	var catalog := PartsCatalog.new()
+	catalog._load_category("guard", "res://tests/fixtures/guards_without_mass_g.json")
+	var part := catalog.get_part("guard_fixture_no_mass")
+	var grams := PropGuard.mass_kg(part.get("specs", {})) * 1000.0
+	return TestResult.new(
+		"PL1: a guard with no pinned mass_g loads and still weighs its ring",
+		not part.is_empty() and not part.has("mass_g") and catalog.load_errors.is_empty() and grams > 0.0,
+		"loaded: %s, ring %.3f g, errors %s" % [not part.is_empty(), grams, catalog.load_errors])
+
+
+## PL1: the same for a soft mount, whose mass is `SoftMount.mount_mass_kg` at the pad in force.
+##
+## MUTATION CONFIRMED RED: "mount" left out of `COMPUTED_MASS_CATEGORIES`.
+static func _a_mount_loads_without_a_pinned_mass() -> TestResult:
+	var catalog := PartsCatalog.new()
+	catalog._load_category("mount", "res://tests/fixtures/mounts_without_mass_g.json")
+	var part := catalog.get_part("mount_fixture_no_mass")
+	return TestResult.new(
+		"PL1: a soft mount with no pinned mass_g loads",
+		not part.is_empty() and not part.has("mass_g") and catalog.load_errors.is_empty(),
+		"loaded: %s, errors %s" % [not part.is_empty(), catalog.load_errors])
+
+
+## PL1's other half: a weighed part still may not leave its mass out. The motor without one is
+## refused BY NAME and its neighbour still loads, so the refusal is surgical, not a file abort.
+##
+## MUTATION CONFIRMED RED: the loader requiring `mass_g` of no category.
+static func _a_motor_without_a_mass_is_refused() -> TestResult:
+	var catalog := PartsCatalog.new()
+	catalog._load_category("motor", "res://tests/fixtures/motors_without_mass_g.json")
+	var named := false
+	for error in catalog.load_errors:
+		if error.contains("motor_fixture_no_mass") and error.contains("mass_g"):
+			named = true
+	return TestResult.new(
+		"PL1: a motor with no mass_g is refused by name, and its neighbour loads",
+		not catalog.by_id.has("motor_fixture_no_mass") and catalog.by_id.has("motor_fixture_ordinary") and named,
+		"refused: %s, neighbour: %s, named: %s (%s)" % [not catalog.by_id.has("motor_fixture_no_mass"),
+			catalog.by_id.has("motor_fixture_ordinary"), named, catalog.load_errors])
 
 
 ## P10a: `mass_g` at the top of every guards.json entry is DERIVED from `specs` — it exists so

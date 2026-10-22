@@ -1,0 +1,27 @@
+{
+  "_schema": "Fixture for test_parts_system.gd (PL1). Not a catalog file — one soft mount with no top-level mass_g, the 60A default's specs unchanged. A mount is a computed-mass category, so _load_category must load it rather than refuse it.",
+  "parts": [
+    {
+      "part_id": "mount_fixture_no_mass",
+      "name": "60A silicone grommets (class default)",
+      "category": "mount",
+      "specs": {
+        "shore_a": 60.0,
+        "contact_area_mm2": 4.0,
+        "grommets_per_motor": 4,
+        "thickness_mm": 1.0,
+        "density_kg_m3": 1200.0
+      },
+      "assumed": [
+        "contact_area_mm2",
+        "thickness_mm",
+        "density_kg_m3"
+      ],
+      "catalog": {
+        "shore_class": "60A",
+        "material": "silicone"
+      },
+      "source": "the class-typical default SoftMount has carried since P8, made a part rather than a hidden constant. 60A is what the two commodity FPV grommet products in this project's spare bin read on a Shore A gauge; four per motor is the four-M3 motor plate every quad frame in the catalog uses. The contact area (4 mm², the crushed patch of a 6 mm OD grommet), the 1.0 mm compressed thickness (pre-P8's MOUNT_REFERENCE_THICKNESS_M) and the silicone density are class-typical guesses, not readings."
+    }
+  ]
+}
