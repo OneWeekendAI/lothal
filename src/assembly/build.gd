@@ -1286,6 +1286,25 @@ func mass_parts() -> Array:
 			if pm != null:
 				parts.append(pm)
 
+	# THE SOFT MOUNT'S OWN MASS (slice SM5), one grommet set per motor at that motor's plan position,
+	# with `Vector3.ZERO` local diagonal — the guard's P10a rule above, for the guard's reason: the
+	# parallel-axis shift in `AirframeProperties.compute` adds its m·d² exactly once, and a local
+	# tensor on top would count a body the size of a fingernail as if it spun about itself.
+	#
+	# Only a FITTED mount weighs anything. With none fitted `VibrationModel` still runs the class-
+	# typical grommet for the mode (so a Lab pad without a part keeps isolating, as before SM2), but
+	# no part was chosen and none is weighed: the reference build's 507.48 g stays bit-identical. A
+	# fitted mount at zero thickness is no pad, and `SoftMount.mount_mass_kg` answers exactly 0.0 —
+	# appended as nothing, not as a zero-mass part, so the part list is the list before SM5. The mass
+	# is the same `mount_mass_kg` the frame mode adds at the arm tip, so mass and mode cannot disagree.
+	if not mount.is_empty():
+		var mount_kg := SoftMount.mount_mass_kg(float(assembly_value("soft_mount_m")),
+			SoftMount.spec_from_part(mount))
+		if mount_kg > 0.0:
+			for motor_name in MotorLayout.MOTOR_NAMES:
+				parts.append(PartMass.new(mount_kg, MotorLayout.motor_position(motor_name, arm_m),
+					Vector3.ZERO, "Soft mount %s" % motor_name))
+
 	# Printed parts the builder FITTED in this drone's Printed room (printed-room PR1). Added on top,
 	# not carved from a budget — nothing ever budgeted for them — and absent unless fitted, which is
 	# what keeps the reference build at 507.48 g. The seats are ArmGuard's, the same ones ArmGuardMesh

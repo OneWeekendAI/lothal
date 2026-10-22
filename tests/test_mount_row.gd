@@ -36,6 +36,12 @@ static func run() -> Array:
 	results.append(_the_row_names_the_durometer(catalog))
 	results.append(_the_mount_sheet_is_the_mount_alone(catalog))
 	results.append(_the_motor_sheet_has_no_mount(catalog))
+	# --- SM5: the mount's mass
+	results.append(_a_fitted_mount_weighs_four_grommet_sets(catalog))
+	results.append(_the_mount_sits_at_the_motors_with_no_local_tensor(catalog))
+	results.append(_a_zero_thickness_mount_adds_exactly_nothing(catalog))
+	results.append(_a_pad_with_no_mount_part_adds_exactly_nothing(catalog))
+	results.append(_a_mount_does_not_leak_into_the_guards_mass(catalog))
 	return results
 
 
@@ -221,3 +227,79 @@ static func _the_motor_sheet_has_no_mount(catalog: PartsCatalog) -> TestResult:
 	panel.free()
 	return TestResult.new("motor sheet: the Motors page keeps its rows and doors, without the mount",
 		parts["rows"] and parts["bench"] and not parts["mount"], str(parts))
+
+
+# ---------------------------------------------------------------------------
+# SM5 — the mount's own mass in Build.mass_parts()
+# ---------------------------------------------------------------------------
+
+## `_fitted` with the pad forced to `pad_m`, so a test can name the thickness it is about.
+static func _at_pad(catalog: PartsCatalog, mount_id: String, pad_m: float, guard_id := "") -> Build:
+	var build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID, {}, null, guard_id, {}, mount_id)
+	var resolved := AssemblyTweaks.new().resolved_m(build)
+	resolved["soft_mount_m"] = pad_m
+	build.set_assembly(resolved)
+	return build
+
+
+static func _mount_parts(build: Build) -> Array:
+	var out: Array = []
+	for part in build.mass_parts():
+		if (part as PartMass).label.begins_with("Soft mount"):
+			out.append(part)
+	return out
+
+
+## Four sets, each `SoftMount.mount_mass_kg` at the pad in force — the same mass the frame mode adds.
+static func _a_fitted_mount_weighs_four_grommet_sets(catalog: PartsCatalog) -> TestResult:
+	var bare := _at_pad(catalog, "", 0.001)
+	var mounted := _at_pad(catalog, FIRM, 0.001)
+	var each_g := SoftMount.mount_mass_kg(0.001, SoftMount.spec_from_part(catalog.get_part(FIRM))) * 1000.0
+	var added := mounted.all_up_weight_g() - bare.all_up_weight_g()
+	return TestResult.new("SM5: a fitted 1.0 mm mount adds four grommet sets to the all-up weight",
+		each_g > 0.0 and absf(added - 4.0 * each_g) < 1e-9,
+		"added %.6f g, want 4 × %.6f g" % [added, each_g])
+
+
+static func _the_mount_sits_at_the_motors_with_no_local_tensor(catalog: PartsCatalog) -> TestResult:
+	var build := _at_pad(catalog, FIRM, 0.001)
+	var parts := _mount_parts(build)
+	var ok := parts.size() == MotorLayout.MOTOR_NAMES.size()
+	for i in parts.size():
+		var part := parts[i] as PartMass
+		ok = ok and part.local_inertia_diag == Vector3.ZERO \
+			and part.position_m == MotorLayout.motor_position(MotorLayout.MOTOR_NAMES[i], build.arm_m)
+	return TestResult.new("SM5: one mount part per motor, at the motor, with Vector3.ZERO local inertia",
+		ok, "%d parts" % parts.size())
+
+
+static func _a_zero_thickness_mount_adds_exactly_nothing(catalog: PartsCatalog) -> TestResult:
+	var bare := _at_pad(catalog, "", 0.0)
+	var mounted := _at_pad(catalog, FIRM, 0.0)
+	return TestResult.new("SM5: a fitted mount at zero thickness adds exactly 0 g and no part",
+		mounted.all_up_weight_g() == bare.all_up_weight_g() and _mount_parts(mounted).is_empty(),
+		"%.9f vs %.9f g" % [mounted.all_up_weight_g(), bare.all_up_weight_g()])
+
+
+## The Lab's pad with no part picked: the vibration model still runs the class-typical grommet, but
+## nothing was chosen, so nothing is weighed.
+static func _a_pad_with_no_mount_part_adds_exactly_nothing(catalog: PartsCatalog) -> TestResult:
+	var padded := _at_pad(catalog, "", 0.002)
+	var flat := _at_pad(catalog, "", 0.0)
+	return TestResult.new("SM5: an unfitted pad adds exactly 0 g, whatever its thickness",
+		padded.all_up_weight_g() == flat.all_up_weight_g() and _mount_parts(padded).is_empty(),
+		"%.9f vs %.9f g" % [padded.all_up_weight_g(), flat.all_up_weight_g()])
+
+
+## `PropulsionFigures.guard_roll_inertia_fraction` is a twin difference (`without_guard`); a twin
+## that dropped the mount would hand the mount's m·d² to the guard's roll-inertia bite.
+static func _a_mount_does_not_leak_into_the_guards_mass(catalog: PartsCatalog) -> TestResult:
+	var both := _at_pad(catalog, FIRM, 0.001, "guard_bumper_5in_abs")
+	var mount_only := _at_pad(catalog, FIRM, 0.001)
+	var bare := mount_only.mass_properties.inertia.z.z
+	var want := (both.mass_properties.inertia.z.z - bare) / bare
+	var got := PropulsionFigures.guard_roll_inertia_fraction(both)
+	return TestResult.new("SM5: the guard's roll-inertia share is measured against a twin that keeps the mount",
+		got == want and got > 0.0, "%.12f vs %.12f" % [got, want])

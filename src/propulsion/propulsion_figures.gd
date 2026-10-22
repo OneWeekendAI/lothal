@@ -99,7 +99,10 @@ static func without_guard(build: Build) -> Build:
 	var twin := Build.from_ids(build.catalog, str(build.frame["part_id"]),
 		str(build.motor["part_id"]), str(build.propeller["part_id"]), str(build.battery["part_id"]),
 		str(build.esc["part_id"]), str(build.fc["part_id"]), ids, build.air, "",
-		build.harness.overrides())
+		build.harness.overrides(),
+		# The mount stays fitted (SM5): it weighs something now, and a twin that dropped it would
+		# hand its grams to the guard's "added mass".
+		str(build.mount.get("part_id", "")) if not build.mount.is_empty() else "")
 	twin.set_frame_edit(build.frame_edit())
 	twin.set_assembly(build.assembly)
 	twin.set_printing(build.printing)
