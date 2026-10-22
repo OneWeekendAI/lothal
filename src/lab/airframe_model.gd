@@ -53,6 +53,9 @@ var battery_offset_m := 0.0
 ## for the same reason the motors hang off the arm-tip pads: the mount's height is FrameModel's, the
 ## standoff tweak moves it, and a frame rebuild frees it rather than leaving a stale board behind.
 var stack_mesh: StackMesh
+## The bolt pattern of the ESC in the build drawn, so the stack is drawn and checked as the board
+## actually fitted rather than as the 30.5 default.
+var stack_pattern := Build.STACK_MOUNT_PATTERN
 ## The optional components that are FITTED, by category — camera, VTX, antenna, receiver. A category
 ## absent from this dictionary is a component not fitted, which is exactly what it means in
 ## Build.components: there is no placeholder and nothing greyed out, because a whoop on an AIO
@@ -150,7 +153,8 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null, document: AirframeDocu
 	# about (mount_warnings) and still mounted, because Lothal never blocks.
 	stack_mesh = StackMesh.new()
 	stack_mesh.name = "Stack"
-	stack_mesh.rebuild(Build.STACK_MOUNT_PATTERN)
+	stack_pattern = build.esc_mount_pattern()
+	stack_mesh.rebuild(stack_pattern)
 	var stack_mount := mount_point("stack")
 	if stack_mount != null:
 		stack_mesh.position = stack_mount.position
@@ -493,8 +497,8 @@ func mount_warnings() -> Array[BuildWarning]:
 	var stack_mount := mount_point("stack")
 	if stack_mount != null:
 		out.append_array(stack_mount.fit_warnings(
-			"The FC/ESC stack", Build.stack_mounting(),
-			StackMesh.size_m(Build.STACK_MOUNT_PATTERN)))
+			"The FC/ESC stack", Build.stack_mounting(stack_pattern),
+			StackMesh.size_m(stack_pattern)))
 	if battery_mount != null and battery_mesh != null:
 		out.append_array(battery_mount.fit_warnings(
 			"The pack", {"attachment": MountPoint.STRAP, "pattern": ""}, battery_mesh.size_m))

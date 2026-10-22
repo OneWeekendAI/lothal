@@ -385,8 +385,8 @@ const BATTERY_DEFAULT_CHEMISTRY := "LiPo"
 ## part. Here rather than in the catalog because the stack is not a catalog part yet — and stating
 ## it in the one place the mesh and the mass both read keeps it from becoming two opinions the day
 ## it becomes one.
-static func stack_mounting() -> Dictionary:
-	return {"attachment": MountPoint.BOLT, "pattern": STACK_MOUNT_PATTERN}
+static func stack_mounting(pattern: String = STACK_MOUNT_PATTERN) -> Dictionary:
+	return {"attachment": MountPoint.BOLT, "pattern": pattern}
 
 ## The frame's centre plate, as a box, derived from arm length rather than authored — a
 ## body dimension is not in parts.md's spec-field table, so it does not belong in the JSON.

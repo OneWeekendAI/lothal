@@ -25,6 +25,7 @@ static func run() -> Array:
 
 	results.append(_test_a_matching_bolt_pattern_does_not_warn(catalog))
 	results.append(_test_a_mismatched_bolt_pattern_warns(catalog))
+	results.append_array(_test_the_drawn_stack_is_the_fitted_esc(catalog))
 	results.append(_test_a_strapped_part_on_a_bolt_mount_warns(catalog))
 	results.append(_test_a_board_wider_than_its_plate_warns(catalog))
 	results.append(_test_every_pack_declares_that_it_straps(catalog))
@@ -301,3 +302,25 @@ static func _ids(mounts: Array) -> Array:
 	for mount in mounts:
 		out.append((mount as MountPoint).id)
 	return out
+
+
+## The stack checked against the frame is the ESC actually fitted, not the 30.5 default. A 20x20
+## ESC on a 20x20-drilled frame must pass and a 30.5 one must not; the old constant made the
+## first warn (Frame 01's "mount pattern does not match" with a 20x20 board fitted).
+static func _test_the_drawn_stack_is_the_fitted_esc(catalog: PartsCatalog) -> Array:
+	var ids := {}
+	for esc_id in ["esc_4in1_35a_20x20", "esc_4in1_45a_30x30"]:
+		var airframe := AirframeModel.new()
+		airframe.rebuild(Build.from_ids(catalog, "frame_35in_freestyle", "motor_1404_3800kv",
+			"prop_3x3x3", "battery_4s_650", esc_id))
+		var found: Array = []
+		for w in airframe.mount_warnings():
+			found.append(String(w.id))
+		ids[esc_id] = found
+		airframe.free()
+	return [
+		TestResult.new("a 20x20 ESC on a 20x20-drilled frame is not a mount_pattern mismatch",
+			not ids["esc_4in1_35a_20x20"].has("mount_pattern"), str(ids)),
+		TestResult.new("a 30.5 ESC on a 20x20-drilled frame is still a mount_pattern mismatch",
+			ids["esc_4in1_45a_30x30"].has("mount_pattern"), str(ids)),
+	]
