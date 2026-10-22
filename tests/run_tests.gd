@@ -100,6 +100,21 @@ func _init() -> void:
 		total += 1
 		print("[%s] %s (%s)" % [status, result.name, result.detail])
 
+	# A drone's file changed from outside while the shell has it open: needs the same wired, laid-out
+	# shell as the drawn-build suite, for the same reason and under the same containment.
+	var disk_returned: Variant = await _call_disk_changes_run()
+	var disk_results: Array = disk_returned if disk_returned is Array else []
+	if disk_results.is_empty():
+		fail_count += 1
+		total += 1
+		print("[FAIL] suite \"disk changes\" produced no results (crashed, or class not registered)")
+	for result in disk_results:
+		var status: String = "PASS" if result.passed else "FAIL"
+		if not result.passed:
+			fail_count += 1
+		total += 1
+		print("[%s] %s (%s)" % [status, result.name, result.detail])
+
 	print("")
 	if fail_count == 0:
 		print("ALL %d TESTS PASSED" % total)
@@ -132,6 +147,10 @@ func _call_layout_run() -> Variant:
 ## `TestDrawnBuildOpens.run()`, from a helper for the reason `_call_layout_run` gives.
 func _call_drawn_open_run() -> Variant:
 	return await TestDrawnBuildOpens.run(self)
+
+
+func _call_disk_changes_run() -> Variant:
+	return await TestDiskChanges.run(self)
 
 
 ## EVERY SUITE IS DISPATCHED FROM HERE, AND THAT IS STRUCTURAL — NOT TIDINESS. Ruling 71.

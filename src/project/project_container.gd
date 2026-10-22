@@ -88,6 +88,9 @@ var _members: Dictionary = {}
 var _custom_parts: Dictionary = {}
 ## What was last written, so an unchanged project writes nothing.
 var _written_document: String = ""
+## The file at `path` as this app last read or wrote it: a SHA-256 of its bytes, or empty when this
+## container has never touched a file. See "THE FILE IS NOT ONLY OURS" below.
+var _disk_fingerprint: String = ""
 
 
 static func make(p_project: Project) -> ProjectContainer:
@@ -106,6 +109,55 @@ func has_unsaved_changes() -> bool:
 	return JSON.stringify(project.to_dict()) != _written_document
 
 
+## ---------------------------------------------------------------------------
+## THE FILE IS NOT ONLY OURS
+## ---------------------------------------------------------------------------
+##
+## Autosave used to write the in-memory project over the file without looking at what was there.
+## A `.lothal` is a file in a folder, and other things write it: a second Lothal on the same drone,
+## a script, an agent, a sync tool. Twice on 2026-10-22 the parts block was changed from outside
+## while the app was open, and the next autosave put the old parts back without a word.
+##
+## So the container remembers the file as it last read or wrote it, and `write` refuses to replace
+## a file that no longer matches. What to do instead — reload, or keep both — is the shell's call,
+## because only the shell can rebuild the Lab; this class only refuses to destroy.
+##
+## A HASH, NOT MODIFIED-TIME-PLUS-SIZE. Godot's modified time is whole seconds, and an outside
+## writer that swaps one part id for another of the same length inside the second this app last
+## wrote is exactly the edit a time-and-size check calls unchanged. The hash is read once per
+## autosave tick; a project is a few kilobytes today, and with printed STLs in it a few hundred —
+## measure it again when meshes arrive (open question 5).
+##
+## A MISSING FILE IS NOT A CHANGE. A file deleted from under the app is written again on the next
+## save, as a first save always has been: refusing it would leave the drone with no file at all.
+
+## Whether the file at `path` is no longer what this app last read or wrote.
+func changed_on_disk() -> bool:
+	if path == "" or not FileAccess.file_exists(path):
+		return false
+	return FileAccess.get_sha256(path) != _disk_fingerprint
+
+
+## Writes this container's document — with whatever it carries — beside the file as a conflict
+## copy, and returns the copy's path, or empty if it could not be written. The file itself is not
+## touched. The copy is named after the file and the moment, and its drone after this one with
+## "(conflict copy)" on the end, so the projects list shows two drones a builder can tell apart.
+func write_conflict_copy(custom_parts_path: String = CustomParts.SAVE_PATH) -> String:
+	if path == "":
+		return ""
+	var copy := ProjectContainer.make(Project.from_dict(project.to_dict()))
+	copy.project.name = "%s (conflict copy)" % project.name
+	copy._members = _members.duplicate()
+	var stem := "%s/%s.conflict-%s" % [path.get_base_dir(), path.get_file().get_basename(),
+		Time.get_datetime_string_from_system().replace(":", "")]
+	var target := "%s.%s" % [stem, EXTENSION]
+	var n := 2
+	while FileAccess.file_exists(target):
+		target = "%s-%d.%s" % [stem, n, EXTENSION]
+		n += 1
+	return target if copy.write(target, custom_parts_path) else ""
+
+
 ## Writes the container to `to_path`, atomically.
 ##
 ## Beside, then rename — the same rule and the same reasoning as JsonStore.write_document_atomic,
@@ -115,6 +167,12 @@ func write(to_path: String = "", custom_parts_path: String = CustomParts.SAVE_PA
 	var target := to_path if to_path != "" else path
 	if target == "":
 		push_warning("a container cannot be written without a path")
+		return false
+	# The guard is here and not only in the shell: every writer — autosave, export, Keep, Reprint —
+	# reaches the file through this function, and one that skipped the shell's check would be the
+	# defect again.
+	if target == path and changed_on_disk():
+		push_warning("%s changed outside Lothal; not writing over it" % target)
 		return false
 
 	project.touch()
@@ -154,6 +212,7 @@ func write(to_path: String = "", custom_parts_path: String = CustomParts.SAVE_PA
 
 	path = target
 	_written_document = JSON.stringify(document)
+	_disk_fingerprint = FileAccess.get_sha256(target)
 	return true
 
 
@@ -235,6 +294,7 @@ static func open(from_path: String) -> ProjectContainer:
 	container.load_warnings = container.project.load_warnings.duplicate()
 	container._written_document = JSON.stringify(container.project.to_dict())
 	reader.close()
+	container._disk_fingerprint = FileAccess.get_sha256(from_path)
 	return container
 
 

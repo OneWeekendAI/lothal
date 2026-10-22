@@ -1587,7 +1587,7 @@ func export_printed_parts() -> Dictionary:
 	var result := PrintedExport.export_all(lab.build_with_open_harness(),
 		printed_export_dir, container)
 	if not (result.get("written", []) as Array).is_empty() and container.path != "":
-		container.write()
+		_save_container(true)
 	last_printed_export_summary = String(result.get("summary", ""))
 	if _status_label != null:
 		_status_label.text = last_printed_export_summary
@@ -3216,7 +3216,7 @@ func keep_divergence(part_id: String) -> void:
 			PrintedDivergence.acknowledge(lab.printing, finding)
 	_sync_project()
 	if container != null and container.path != "":
-		container.write()
+		_save_container(true)
 	_report_printed_divergence()
 
 
@@ -3229,7 +3229,7 @@ func reprint_part(part_id: String) -> void:
 	var result := PrintedExport.export_part(lab.build_with_open_harness(), part_id,
 		printed_export_dir, container)
 	if bool(result["ok"]) and container.path != "":
-		container.write()
+		_save_container(true)
 	_report_printed_divergence()
 	if not bool(result["ok"]) and _status_label != null:
 		_status_label.text = "NOT REPRINTED — %s" % String(result["reason"])
@@ -3406,6 +3406,12 @@ func apply_project(project: Project) -> Array:
 	# Lab opened on the catalogue frame and the next autosave wrote `{}` over the file. (Printing
 	# and config escape this only because they reach the lab before the first rail moves.)
 	var drawn := project.airframe.duplicate(true)
+	# AND THE PARTS, for the same reason. `apply_selection` walks the dictionary it is handed while
+	# each rail it moves fires `_sync_project` into `project.parts` — the very dictionary — so handed
+	# `project.parts` itself it read back the PREVIOUS drone's ids for every category after the first
+	# one that moved. Invisible while every drone opened onto the same rails; a reload of a file whose
+	# battery had been changed outside (TestDiskChanges) kept the old battery on screen.
+	var parts := project.parts.duplicate(true)
 	# Printing first, so the rebuild the selection triggers already describes this drone's parts.
 	lab.set_printing(project.printing)
 	# Before the selection too, for the same reason printing is: the rebuild the selection triggers
@@ -3414,7 +3420,7 @@ func apply_project(project: Project) -> Array:
 	# And the name, for the sheet's header and its file name (C9). Set here with the rest of the
 	# per-drone state, so a sheet cannot go out carrying the previously-opened drone's name.
 	lab.drone_name = project.name
-	var missing := lab.apply_selection(project.parts)
+	var missing := lab.apply_selection(parts)
 	# After the selection, so the drawing lands on THIS drone's fitted frame — and always, so a drone
 	# with no drawing does not inherit the previous drone's on the same catalogue frame.
 	lab.set_drawn_frame(drawn)
@@ -3496,14 +3502,81 @@ func _show_project() -> void:
 	_select_system(_focused_index)
 
 
-## The autosave tick. Asks, rather than writes: an unchanged project costs one JSON stringify.
+## The autosave tick. Asks, rather than writes: an unchanged project costs one JSON stringify and
+## one hash of the file — the hash because a file changed from outside is taken on whether or not
+## anything here is unsaved (`_save_container`).
 func _on_autosave_tick() -> void:
 	if container == null or container.path == "":
 		return
 	_sync_project()
-	if container.has_unsaved_changes():
+	_save_container()
+	if chip != null:
+		chip.refresh()
+
+
+## Coming back to the window is when an outside edit is most likely to be waiting — the builder was
+## in the other app making it. Taken only when nothing here is unsaved; with unsaved edits the next
+## tick keeps both sides, and doing that on focus as well would only do it a second earlier.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_APPLICATION_FOCUS_IN:
+		return
+	if container == null or container.path == "" or lab == null:
+		return
+	_sync_project()
+	if container.changed_on_disk() and not container.has_unsaved_changes():
+		_take_disk_version()
+
+
+## The one way the shell writes its drone (ProjectContainer, "THE FILE IS NOT ONLY OURS").
+##
+## A file that changed from outside is never written over. With nothing unsaved here the outside
+## version simply wins: it is reloaded and the Lab rebuilt from it. With unsaved edits here NEITHER
+## side is lost — the outside version stays the file, this app's goes to a conflict copy beside it,
+## and the Lab shows the file. The other way round (keep ours, copy theirs) would put the newer,
+## deliberate edit in a file nobody opens.
+##
+## `always` is for the writers that changed a member rather than the document — an export puts STL
+## bytes in `printed/`, which `has_unsaved_changes` does not see — and wrote unconditionally before.
+func _save_container(always: bool = false) -> void:
+	if container.changed_on_disk():
+		_take_disk_version(always)
+	elif always or container.has_unsaved_changes():
 		container.write()
-	chip.refresh()
+
+
+## Reloads the drone from its file, keeping this app's unsaved edits in a conflict copy first.
+##
+## Read BEFORE the copy is written: a file caught half-written by whatever is changing it will not
+## open, and then nothing happens at all — the file is not written over, no copy is made, and the
+## next tick asks again. A copy per tick of a file mid-write would be a folder full of them.
+##
+## The notice goes on the status line, where the printed-divergence findings already go: the
+## calmest place that is still read, and it gives way to the ordinary readout on the next change.
+##
+## `keep_ours` copies even when the document has nothing unsaved — `_save_container`'s `always`
+## writers, whose change may be member bytes the dirty check cannot see.
+func _take_disk_version(keep_ours: bool = false) -> void:
+	var opened := ProjectContainer.open(container.path)
+	if opened == null:
+		if _status_label != null:
+			_status_label.text = "This drone's file changed outside Lothal and will not open yet."
+		return
+	var copy := ""
+	if keep_ours or container.has_unsaved_changes():
+		copy = container.write_conflict_copy()
+		if copy == "":
+			# Our side could not be kept, so the file stays as it is and so does the Lab.
+			push_warning("could not write a conflict copy beside %s" % container.path)
+			return
+	container = opened
+	apply_project(opened.project)
+	if chip != null:
+		chip.set_project(opened.project, opened.path)
+	_refresh_status()
+	_report_printed_divergence()
+	if _status_label != null:
+		_status_label.text = ("Changed outside Lothal — reloaded. Your edits are kept in a copy, %s" % copy.get_file()
+			if copy != "" else "Changed outside Lothal — reloaded.")
 
 
 func _decided_count() -> int:
