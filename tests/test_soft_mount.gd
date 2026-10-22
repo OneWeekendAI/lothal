@@ -321,6 +321,12 @@ static func run() -> Array:
 	for field in SoftMount.PART_SPEC_FIELDS:
 		results.append(_test_a_missing_field_is_refused_not_defaulted(catalog, field))
 
+	# SM2 — Build.mount_id reaches VibrationModel.soft_mount_spec.
+	results.append(_test_a_50a_and_a_70a_mount_give_different_mount_frequencies())
+	results.append(_test_an_empty_mount_id_is_the_build_it_always_was())
+	results.append(_test_a_fitted_mount_is_a_pad_by_default())
+	results.append(_test_a_twin_at_another_field_keeps_its_mount())
+
 	return results
 
 
@@ -424,3 +430,96 @@ static func _test_a_missing_field_is_refused_not_defaulted(catalog: PartsCatalog
 			and via_compute["tier"] == "insufficient_data:missing_" + field \
 			and not is_finite(float(result["f_n_hz"])) and mass == 0.0,
 		"compute_part %s, compute %s, mass %.6f kg" % [result["tier"], via_compute["tier"], mass])
+
+
+# ---------------------------------------------------------------------------
+# SM2 — Build.mount_id
+# ---------------------------------------------------------------------------
+
+## The reference build's parts with `mount_id` fitted, and its assembly resolved from a fresh
+## configuration — so the pad is the tweak's as-built default, the posture Lab builds with.
+static func _reference_with_mount(mount_id: String) -> Build:
+	var build := Build.from_ids(PartsCatalog.load_default(), ReferenceBuild.FRAME_ID,
+		ReferenceBuild.MOTOR_ID, ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID,
+		ReferenceBuild.ESC_ID, ReferenceBuild.FC_ID, {}, null, "", {}, mount_id)
+	build.set_assembly(AssemblyTweaks.new().resolved_m(build))
+	return build
+
+
+## The slice's own proof: picking a 50A vs a 70A mount moves `mount_hz()`, in the direction the
+## physics says (harder rubber, stiffer spring, higher f_n), and each lands on exactly what
+## `SoftMount` computes from that part's own fields at the pad the build carries.
+##
+## MUTATION CONFIRMED RED: `VibrationModel.soft_mount_spec_for` returning `{}` for every build (both
+## mounts read the 60A default: 200.0 Hz twice).
+static func _test_a_50a_and_a_70a_mount_give_different_mount_frequencies() -> TestResult:
+	var soft := _reference_with_mount("mount_grommet_50a_soft")
+	var firm := _reference_with_mount("mount_grommet_70a_firm")
+	var soft_hz := VibrationModel.for_build(soft).mount_hz()
+	var firm_hz := VibrationModel.for_build(firm).mount_hz()
+	var expected_soft := SoftMount.f_n_hz(float(soft.assembly_value("soft_mount_m")),
+		VibrationModel.tip_mass_kg_for(soft), SoftMount.spec_from_part(soft.mount))
+	var expected_firm := SoftMount.f_n_hz(float(firm.assembly_value("soft_mount_m")),
+		VibrationModel.tip_mass_kg_for(firm), SoftMount.spec_from_part(firm.mount))
+	return TestResult.new(
+		"[SM2] a 70A mount puts the mount mode above a 50A one, each at its own part's f_n",
+		is_finite(soft_hz) and firm_hz > soft_hz and soft_hz == expected_soft \
+			and firm_hz == expected_firm,
+		"50A %.3f Hz (SoftMount %.3f), 70A %.3f Hz (SoftMount %.3f)" % [
+			soft_hz, expected_soft, firm_hz, expected_firm])
+
+
+## `mount_id = ""` is the build it always was: no mount part, the empty spec, no pad by default, and
+## the same vibration numbers as the reference build made the pre-SM2 way — compared with `==`,
+## because bit-identical is the claim.
+##
+## MUTATION CONFIRMED RED: `refit_from` falling back to `mount_grommet_60a` for an empty id (spec no
+## longer empty, the pad defaults to 1.0 mm, and mount_hz goes from INF to 200 Hz).
+static func _test_an_empty_mount_id_is_the_build_it_always_was() -> TestResult:
+	var before := ReferenceBuild.build()
+	before.set_assembly(AssemblyTweaks.new().resolved_m(before))
+	var after := _reference_with_mount("")
+	var a := VibrationModel.for_build(before)
+	var b := VibrationModel.for_build(after)
+	return TestResult.new(
+		"[SM2] an empty mount id leaves the reference build bit-identical",
+		after.mount.is_empty() and b.soft_mount_spec.is_empty() \
+			and a.mount_hz() == b.mount_hz() and a.resonance_hz == b.resonance_hz \
+			and a.soft_mount_m == b.soft_mount_m \
+			and before.mass_properties.total_mass_kg == after.mass_properties.total_mass_kg,
+		"mount %s, spec %s, f_n %s vs %s, frame mode %.9f vs %.9f Hz, %.6f vs %.6f g" % [
+			after.mount.get("part_id", "none"), b.soft_mount_spec, a.mount_hz(), b.mount_hz(),
+			a.resonance_hz, b.resonance_hz, before.mass_properties.total_mass_kg * 1000.0,
+			after.mass_properties.total_mass_kg * 1000.0])
+
+
+## A mount that is fitted is a pad that is there: the "Motor soft mount" tweak's as-built default is
+## the part's own nominal thickness, and zero with none fitted. Without it a picked mount would be
+## modelled at zero thickness — no_mount — and the 50A/70A choice would move nothing until the
+## builder also found the tweak.
+##
+## MUTATION CONFIRMED RED: `AssemblyTweaks.limits` SOFT_MOUNT "default" back to `0.0` (the fitted
+## build reads 0.0 mm).
+static func _test_a_fitted_mount_is_a_pad_by_default() -> TestResult:
+	var tweaks := AssemblyTweaks.new()
+	var fitted := _reference_with_mount("mount_grommet_70a_firm")
+	var bare := _reference_with_mount("")
+	var fitted_mm := tweaks.value_mm(AssemblyTweaks.SOFT_MOUNT, fitted)
+	var bare_mm := tweaks.value_mm(AssemblyTweaks.SOFT_MOUNT, bare)
+	var part_mm := float(fitted.mount["specs"]["thickness_mm"])
+	return TestResult.new(
+		"[SM2] a fitted mount defaults the pad to the part's own thickness, and no mount to none",
+		fitted_mm == part_mm and bare_mm == 0.0,
+		"fitted %.3f mm (part %.3f mm), bare %.3f mm" % [fitted_mm, part_mm, bare_mm])
+
+
+## The same aircraft at another field carries the same mount — `at_air`'s rule for the guard.
+##
+## MUTATION CONFIRMED RED: `at_air` computing `m_id` as `""` (twin mount none).
+static func _test_a_twin_at_another_field_keeps_its_mount() -> TestResult:
+	var build := _reference_with_mount("mount_grommet_50a_soft")
+	var twin := build.at_air(AirDensity.standard())
+	return TestResult.new(
+		"[SM2] a build's twin at another field keeps its soft mount",
+		str(twin.mount.get("part_id", "")) == "mount_grommet_50a_soft",
+		"twin mount %s" % twin.mount.get("part_id", "none"))

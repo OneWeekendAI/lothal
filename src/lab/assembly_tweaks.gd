@@ -218,7 +218,12 @@ static func limits(build: Build) -> Dictionary:
 		SOFT_MOUNT: {
 			"min": 0.0,
 			"max": MotorMesh.max_soft_mount_m(build.motor) * 1000.0,
-			"default": 0.0,
+			# SM2: a fitted mount's own nominal thickness, so a mount that is picked is a pad that is
+			# there; zero (no pad) with none fitted, which is every build before SM2. Clamped to the
+			# boss height like any value, because a part thicker than the thread is still a part
+			# this motor cannot take at full thickness.
+			"default": minf(float(build.mount.get("specs", {}).get("thickness_mm", 0.0)),
+				MotorMesh.max_soft_mount_m(build.motor) * 1000.0),
 		},
 		PLATE_GAP: {
 			"min": FrameModel.min_plate_gap_m() * 1000.0,

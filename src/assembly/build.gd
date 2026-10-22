@@ -486,6 +486,18 @@ var components: Dictionary = {}
 ## field the closure the BEMT solve reads through `forward_ratios()` would have nothing to close
 ## against — a duct fitted on paper and forgotten in flight.
 var guard: Dictionary = {}
+## The motor soft mount, one grommet set per motor (slice SM2): a `data/parts/mounts.json` record, or
+## empty when no mount id is fitted — every build written before SM2, and the reference build. Empty
+## is the CURRENT DEFAULT, not a different answer: `VibrationModel.soft_mount_spec_for` hands
+## `SoftMount` an empty spec for it, which is the class-typical 60A grommet every build has run
+## since P8, so an unfitted mount is bit-identical to the aircraft before this field existed.
+##
+## The mount is the MATERIAL — hardness, contact area, count, density. How thick the pad is stays the
+## Lab's "Motor soft mount" tweak; a fitted mount only moves that tweak's as-built DEFAULT to the
+## part's own nominal thickness (`AssemblyTweaks.limits`), because a mount picked and then modelled
+## at zero thickness would be a part that is fitted and absent at once. Its mass is not in
+## `mass_parts()` yet — that is SM5.
+var mount: Dictionary = {}
 ## THE CURRENT PATH, as data — plans/2026-09-10-power-room-design.md §4.2, slice PW2. Connector,
 ## capacitor, and a gauge and length for each of the two wire runs, every one of them a default
 ## DERIVED from this build with an authored override on top.
@@ -639,7 +651,7 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 		battery_id: String, esc_id: String = DEFAULT_ESC_ID,
 		fc_id: String = DEFAULT_FC_ID, component_ids: Dictionary = {},
 		p_air: AirDensity = null, guard_id: String = "",
-		harness_overrides: Dictionary = {}) -> Build:
+		harness_overrides: Dictionary = {}, mount_id: String = "") -> Build:
 	var b := Build.new()
 	# `null` rather than AirDensity.standard() as the default value, because a GDScript default
 	# argument is evaluated once and shared: a literal object default would hand every Build in the
@@ -654,6 +666,8 @@ static func from_ids(p_catalog: PartsCatalog, frame_id: String, motor_id: String
 		"esc": esc_id,
 		"fc": fc_id,
 		"guard": guard_id,
+		# SM2, on P10b's guard pattern: one more trailing argument, "" meaning not fitted.
+		"mount": mount_id,
 	}
 	# The harness grows here the way the guard did in P10b — one more trailing argument, defaulting
 	# to what the parts imply, so every call site written before Power existed builds exactly the
@@ -721,6 +735,14 @@ func refit_from(p_catalog: PartsCatalog) -> void:
 		var guard_part: Dictionary = p_catalog.get_part(fitted_guard_id)
 		if not guard_part.is_empty():
 			guard = guard_part
+	# The soft mount, the guard's treatment exactly: an id that resolves to nothing leaves the slot
+	# empty — the class-typical default — rather than fitting a part with no fields to read.
+	mount = {}
+	var fitted_mount_id := String(_part_ids.get("mount", ""))
+	if fitted_mount_id != "":
+		var mount_part: Dictionary = p_catalog.get_part(fitted_mount_id)
+		if not mount_part.is_empty():
+			mount = mount_part
 	_recompute()
 
 ## The same aircraft, at a different field.
@@ -747,9 +769,11 @@ func at_air(p_air: AirDensity) -> Build:
 	# copying the old scalar (the closure IS density-invariant, but stating that here would
 	# duplicate the property BemtRatios asserts and drift is exactly the failure mode).
 	var g_id := str(guard.get("part_id", "")) if not guard.is_empty() else ""
+	# And the mount, for the guard's reason: the same pad under the same motors.
+	var m_id := str(mount.get("part_id", "")) if not mount.is_empty() else ""
 	var twin := Build.from_ids(catalog, str(frame["part_id"]), str(motor["part_id"]),
 		str(propeller["part_id"]), str(battery["part_id"]), str(esc["part_id"]),
-		str(fc["part_id"]), ids, p_air, g_id)
+		str(fc["part_id"]), ids, p_air, g_id, {}, m_id)
 	# The harness comes with it, for the assembly's reason: a twin that forgot the builder's lead
 	# lengths would answer a question about a different aircraft. The OVERRIDES travel, not the
 	# resolved values — the twin re-derives its defaults from its own parts, which is the whole

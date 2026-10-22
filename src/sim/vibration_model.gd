@@ -307,11 +307,17 @@ static func tip_mass_kg(motor: Dictionary, prop_mass_g: float) -> float:
 	return (float(motor.get("mass_g", 0.0)) + prop_mass_g) / 1000.0
 
 
-## The grommet spec this build's pad is made of, for `SoftMount`. Empty means the class-typical
-## defaults soft_mount.gd owns — which is every build until a mount part is chosen. One function so
-## the Propulsion room and `for_build` cannot hand `SoftMount` two different pads.
-static func soft_mount_spec_for(_build: Build) -> Dictionary:
-	return {}
+## The grommet spec this build's pad is made of, for `SoftMount`. One function so the Propulsion room
+## and `for_build` cannot hand `SoftMount` two different pads.
+##
+## SM2: the fitted `Build.mount`, read through `SoftMount.spec_from_part` — which names any field the
+## part left out, so an incomplete mount is REFUSED (f_n INF, `insufficient_data:missing_*`) rather
+## than quietly completed from the defaults. No mount fitted is the empty spec, the class-typical
+## 60A grommet every build has run since P8, so `mount_id = ""` is bit-identical to before SM2.
+static func soft_mount_spec_for(build: Build) -> Dictionary:
+	if build == null or build.mount.is_empty():
+		return {}
+	return SoftMount.spec_from_part(build.mount)
 
 
 ## The frame's first arm-bending mode — the scaling law at the top of this file, anchored on

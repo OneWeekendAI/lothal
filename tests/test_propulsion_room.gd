@@ -53,6 +53,7 @@ static func run() -> Array:
 	results.append(_test_the_rooms_pad_slider_moves_the_lab_value())
 	results.append(_test_the_rooms_mount_frequency_is_the_vibration_models())
 	results.append(_test_the_rooms_mount_frequency_carries_the_blades_mass())
+	results.append(_test_the_rooms_mount_frequency_follows_the_fitted_mount())
 	return results
 
 
@@ -938,3 +939,30 @@ static func _test_the_prop_panel_carries_the_door_and_opens_nothing_itself() -> 
 		"%d button(s), %d emission(s), carried %s while the build fits %s" % [
 			buttons.size(), emitted.size(), emitted_id, ReferenceBuild.PROPELLER_ID])
 
+
+
+## SM2 reaching the room: with a 70A mount fitted, the room's f_n is still `VibrationModel`'s, so it
+## is reading the fitted part's spec and not the class-typical default.
+##
+## MUTATION CONFIRMED RED: `PropulsionWorkbench.mount_hz` passing `{}` for the spec (room 200.0 Hz
+## against the model's 70A figure).
+static func _test_the_rooms_mount_frequency_follows_the_fitted_mount() -> TestResult:
+	var catalog := PartsCatalog.load_default()
+	var build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID, {}, null, "", {}, "mount_grommet_70a_firm")
+	var tweaks := AssemblyTweaks.new()
+	build.set_assembly(tweaks.resolved_m(build))
+	var room := _room()
+	room.set_build(build, tweaks)
+	room.open_preset(ReferenceBuild.PROPELLER_ID)
+	var room_hz := room.profile.mount_f_n_hz
+	var model_hz := VibrationModel.for_build(build).mount_hz()
+	var default_hz := SoftMount.f_n_hz(float(build.assembly_value("soft_mount_m")),
+		VibrationModel.tip_mass_kg_for(build))
+	room.free()
+	return TestResult.new(
+		"[SM2] with a 70A mount fitted, the room's mount frequency is still the vibration model's",
+		is_finite(model_hz) and room_hz == model_hz and model_hz != default_hz,
+		"room %.6f Hz, model %.6f Hz, class default would be %.6f Hz" % [
+			room_hz, model_hz, default_hz])
