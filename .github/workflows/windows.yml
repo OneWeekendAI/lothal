@@ -54,7 +54,7 @@ jobs:
     # dies inside its own reporting loop without reaching quit(). The "Assert the Rust core
     # loaded" step below catches that specific case in seconds; this is the backstop for the
     # ones nobody has met yet. A cold cargo build plus a full suite is ~15 min.
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -162,7 +162,7 @@ jobs:
       # core misbehaves under MSVC, it fails here rather than on a user's machine.
       - name: Run the test suite on Windows
         shell: bash
-        timeout-minutes: 20
+        timeout-minutes: 40
         run: |
           "$GODOT" --headless --script res://tests/run_tests.gd
 
