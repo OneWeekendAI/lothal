@@ -33,6 +33,74 @@ static func run() -> Array:
 	results.append_array(_test_design_space_default_matches_the_class(catalog))
 	results.append_array(_test_sizes_are_true_and_monotonic(catalog))
 	results.append_array(_test_packs_match_the_catalogue(catalog))
+	results.append_array(_test_seed_label_and_model_agree(catalog))
+	return results
+
+
+## The shipped GLB's motor meshes (top-level nodes named motor_*), counted.
+static func model_motor_count(id: String) -> int:
+	var scene := load("res://assets/models/classes/%s.glb" % id) as PackedScene
+	if scene == null:
+		return 0
+	var root := scene.instantiate() as Node3D
+	var re := RegEx.create_from_string("^motor_(FL|FR|BL|BR)(_lo)?$")
+	var names := {}
+	for child in root.find_children("motor_*", "", true, false):
+		if re.search(String(child.name)) != null:
+			names[String(child.name)] = true
+	root.free()
+	return names.size()
+
+
+## Classes whose seed pack is knowingly outside the typical cell range, and why.
+const KNOWN_CELL_GAPS := {"x_class": "the catalog has no 8S+ pack; the seed is the 6S 4000 Li-ion placeholder"}
+
+
+## Low and high cell counts of a typical-battery string like "6–8S" or "1S".
+static func typical_cells(text: String) -> Vector2i:
+	var t := text.replace("S", "").replace("–", "-")
+	var parts := t.split("-")
+	return Vector2i(int(parts[0]), int(parts[parts.size() - 1]))
+
+
+## 2026-10-31: the Cinelifter seeded a 6S Li-ion while its model printed "6S 10C" (read as 5S) on a
+## pack its typical line called 6–8S LiPo, weighed 1233 g against a typical 2–4 kg, and flew four
+## motors on a coaxial X8 model. Every class: the model's pack names the SAME catalogue part the class
+## seeds and the seed's cells sit inside the class's typical range; every model's motor meshes number
+## what Build flies. Cinelifter: a 6S LiPo, eight motors, AUW inside the typical 2–4 kg.
+static func _test_seed_label_and_model_agree(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	var script := FileAccess.get_file_as_string("res://tools/blender/build_drone.py")
+	for id in SIZE_ORDER:
+		var seed_id := String(DroneClass.parts_for(id).get("battery", ""))
+		var cfg_start := script.find('    "%s": dict(' % id)
+		var cfg := script.substr(cfg_start, script.find("zmin=", cfg_start) - cfg_start)
+		results.append(TestResult.new("%s: the model's pack is the seed's own catalogue part (%s)" % [id, seed_id],
+			cfg.contains('seed="%s"' % seed_id), cfg.get_slice("seed=", 1).get_slice(",", 0)))
+		var cells := int(catalog.get_part(seed_id)["specs"]["cells"])
+		var band := typical_cells(String(DroneClass.by_id(id)["battery"]))
+		var inside := cells >= band.x and cells <= band.y
+		if KNOWN_CELL_GAPS.has(id):
+			# A known, labelled gap: the check asserts it is STILL a gap, so closing it fails here
+			# and the entry has to be deleted rather than silently outliving the fix.
+			results.append(TestResult.new("%s: the seed's %dS is still outside the typical %s (known gap: %s)" % [
+				id, cells, DroneClass.by_id(id)["battery"], KNOWN_CELL_GAPS[id]], not inside, ""))
+		else:
+			results.append(TestResult.new("%s: the seed's %dS sits inside the typical %s" % [id, cells, DroneClass.by_id(id)["battery"]],
+				inside, ""))
+		var b := DesignSession.default_for_class(id).build(catalog)
+		var drawn := model_motor_count(id)
+		results.append(TestResult.new("%s: the model draws as many motors as Build flies (%d)" % [id, b.motor_count()],
+			drawn == b.motor_count(), "model %d, build %d" % [drawn, b.motor_count()]))
+	var lifter := DesignSession.default_for_class("cinelifter").build(catalog)
+	var sp: Dictionary = lifter.battery["specs"]
+	results.append(TestResult.new("the Cinelifter seeds a 6S LiPo (not a Li-ion)",
+		int(sp["cells"]) == 6 and String(sp["chemistry"]) == "LiPo", "%s" % lifter.battery["name"]))
+	results.append(TestResult.new("the Cinelifter flies eight motors (coaxial X8)",
+		lifter.motor_count() == 8, "%d" % lifter.motor_count()))
+	results.append(TestResult.new("the Cinelifter weighs inside its typical 2–4 kg",
+		lifter.all_up_weight_g() >= 2000.0 and lifter.all_up_weight_g() <= 4000.0,
+		"%.0f g" % lifter.all_up_weight_g()))
 	return results
 
 

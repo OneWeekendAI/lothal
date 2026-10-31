@@ -158,6 +158,10 @@ static func _test_the_catalog_spans_what_the_frames_need(catalog: PartsCatalog) 
 		for peer in packs:
 			if int(peer["specs"]["cells"]) != cells or str(peer["specs"]["chemistry"]) == "Li-ion":
 				continue
+			# Peers are LiPos no heavier than the Li-ion: the trade is capacity AT THE SAME WEIGHT. The
+			# 892 g 6S 5600 cinelifter LiPo out-capacities the 590 g Li-ion by being half again heavier.
+			if float(peer["mass_g"]) > float(pack["mass_g"]):
+				continue
 			worst_peer_r = maxf(worst_peer_r, float(peer["specs"]["internal_r_ohm"]))
 			biggest_peer_mah = maxf(biggest_peer_mah, float(peer["specs"]["mah"]))
 
@@ -169,7 +173,7 @@ static func _test_the_catalog_spans_what_the_frames_need(catalog: PartsCatalog) 
 			pack["name"], r * 1000.0, worst_peer_r * 1000.0, mah, biggest_peer_mah, cells])
 
 	results.append(TestResult.new(
-		"each Li-ion trades internal resistance for capacity against the LiPos of its own cell count",
+		"each Li-ion trades internal resistance for capacity against the LiPos of its own cell count and no more weight",
 		liion_count >= 2 and trade_holds,
 		"; ".join(comparisons)
 	))

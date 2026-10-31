@@ -50,6 +50,18 @@ extends RefCounted
 ## is reported in propulsion.md §9's P7 row and the fixed-gains guard below still fires, so the
 ## widening did not turn this into a test that cannot fail.
 ##
+## THE OVERSHOOT BOUND MOVED FROM 22% TO 28% WITH THE COAXIAL X8 (2026-11-01), for the P7 reason
+## again and only that reason. frame_8in_cinelifter carries eight of the reference 2207s on a 940 g
+## frame, so the fixture hovers it at 11,140 rpm against the reference's 8,490. The per-motor spin-up
+## tau is linearised at that operating point and comes out 0.0280 s against 0.0299 s: faster motors,
+## less lag inside a loop whose time constant RateTune holds fixed, a SHALLOWER first swing (pitch
+## 2.68% vs 3.67%, 27% away; roll 25%, yaw 24%). The opposite sign of the P7 10", same mechanism.
+## It is not left as an assertion: `_x8_distance_is_its_motor_tau` flies the same build with the
+## reference's tau substituted and requires all three axes back inside the OLD 22% band (roll and
+## pitch land within 2%; yaw 15%, the yaw-plant residual the 10" already shows). So anything else that pushes the X8 out, such as the coaxial pair's yaw torque lumped
+## wrong (it was: 4.95% vs 11.91% before Build.lumped_k_q), still fails, and the widening is 28%
+## and no further: the worst real case, 27.0%, plus a point.
+##
 ## A band wide enough to admit the CURRENT behaviour would be a test that cannot fail, which this
 ## project has been caught by before — so `_the_band_is_real` runs the whole comparison again on
 ## the fixed gains and requires it to FAIL. If someone widens the band far enough to be comfortable,
@@ -62,7 +74,10 @@ const DURATION_S := 0.6
 const STEP_DEG_S := 50.0
 const SETTLE_BAND_FRACTION := 0.05
 
-const OVERSHOOT_TOLERANCE := 0.22
+const OVERSHOOT_TOLERANCE := 0.28
+## The band before the X8 widened it. See the note above.
+const PRE_X8_OVERSHOOT_TOLERANCE := 0.22
+const COAXIAL_FRAME := "frame_8in_cinelifter"
 const SETTLE_TOLERANCE := 0.10
 ## The outer loop is not scaled at all — see angle_mode_controller.gd. This is that claim's band.
 const OUTER_LOOP_TOLERANCE := 0.08
@@ -104,8 +119,20 @@ static func _frame_builds() -> Array:
 ##
 ## The trace is ground TRUTH rather than the gyro reading, for test_rate_step_response.gd's reason:
 ## grading a loop with the signal it is closing on would hide any sensor error completely.
-static func _step_response(build: Build, axis: int, tune: RateTune) -> Dictionary:
+##
+## `tau_override_s` > 0 swaps in a powertrain identical to the build's own except for the motor's
+## spin-up tau, for the X8 attribution check. Unguarded frames only (no guard closure is passed).
+static func _step_response(build: Build, axis: int, tune: RateTune,
+		tau_override_s: float = 0.0) -> Dictionary:
 	var core := build.build_drone_core()
+	if tau_override_s > 0.0:
+		var geometry := build.prop_geometry()
+		core.powertrain = Powertrain.create(
+			MotorModel.create_with_tau(float(build.motor["specs"]["kv"]),
+				build.max_throttle_fraction(), tau_override_s),
+			build.lumped_k_t(), build.lumped_k_q(), build.battery_model(),
+			build.lumped_max_amps(), build.rated_rpm(), build.pole_pairs(), geometry.blades,
+			geometry.diameter_m * 0.5, geometry.pitch_m, build.air.kgm3(), build.blade_chord())
 	core.powertrain.battery.set_to_nominal_datum()
 	var controller := RateModeController.new()
 	controller.adopt_tune(tune)
@@ -166,6 +193,35 @@ static func _worst_deviation(derived: bool) -> Array:
 	return [worst_over, worst_settle, label]
 
 
+## The coaxial X8 is the reason the overshoot band is 28% rather than 22%. This proves that the
+## whole of its extra distance is the motor's faster spin-up at its higher hover rpm: flown with the
+## reference build's tau, every axis must land back inside the pre-X8 band.
+static func _x8_distance_is_its_motor_tau() -> TestResult:
+	var ref := ReferenceBuild.fore_aft_symmetric()
+	var ref_tune := RateTune.derive(ref)
+	var catalog := PartsCatalog.load_default()
+	var x8 := Build.from_ids(catalog, COAXIAL_FRAME, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID, Build.no_components())
+	var tune := RateTune.derive(x8)
+	var worst := 0.0
+	var detail := ""
+	for axis in 3:
+		var want := _step_response(ref, axis, ref_tune)
+		var got := _step_response(x8, axis, tune, ref._tau_s())
+		var dev: float = absf(got.overshoot_pct - want.overshoot_pct) / want.overshoot_pct
+		worst = maxf(worst, dev)
+		detail += "%s %.2f%% vs %.2f%%; " % [RateTune.AXIS_NAMES[axis], got.overshoot_pct,
+			want.overshoot_pct]
+	return TestResult.new(
+		"the X8's extra distance is its motor tau: at the reference's tau it is back inside %.0f%%"
+			% (PRE_X8_OVERSHOOT_TOLERANCE * 100.0),
+		x8.motors_per_arm() == 2 and x8._tau_s() < ref._tau_s()
+			and worst < PRE_X8_OVERSHOOT_TOLERANCE,
+		"tau %.4f s vs %.4f s; %s worst %.1f%% away" % [x8._tau_s(), ref._tau_s(), detail,
+			worst * 100.0])
+
+
 ## Full stick, then hands off — the end-to-end claim rather than the numbers.
 ##
 ## Angle mode, through FlightController, so the outer loop is in the path too: a scaling law applied
@@ -216,6 +272,8 @@ static func run() -> Array:
 		"every frame in the catalog responds like the reference build: settling within %.0f%%" % (SETTLE_TOLERANCE * 100.0),
 		after[1] < SETTLE_TOLERANCE,
 		"worst %.1f%% away — %s" % [after[1] * 100.0, after[2]]))
+
+	results.append(_x8_distance_is_its_motor_tau())
 
 	# THE CHECK THAT KEEPS THE TWO ABOVE HONEST. The same comparison on the fixed gains has to come
 	# out FAILING, or the band is wide enough to admit the behaviour this slice exists to replace

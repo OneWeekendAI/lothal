@@ -104,10 +104,10 @@
       },
       "catalog": {
         "family": "XT90",
-        "shipped_on_packs": false,
+        "shipped_on_packs": true,
         "typical_use": "6S cinelifter and high-capacity packs"
       },
-      "source": "AMASS XT90, published 90 A continuous; pair mass ~20 g is the commonly listed figure. Burst 120 A is ROUGH. shipped_on_packs is false: the largest pack in batteries.json today terminates in XT60, so XT90 exists here as a lead-side choice a builder can make ahead of a pack that needs it. Contact resistance is a ROUGH class-typical guess."
+      "source": "AMASS XT90, published 90 A continuous; pair mass ~20 g is the commonly listed figure. Burst 120 A is ROUGH. shipped_on_packs is true: the 6S 5600mAh 95C cinelifter pack (battery_6s_5600, iFlight Fullsend) terminates in XT90. Contact resistance is a ROUGH class-typical guess."
     },
     {
       "part_id": "connector_xt90s",

@@ -299,7 +299,7 @@ func capacitor_mass_g(build: Build) -> float:
 ## which is what makes the "mass equals the sum of its parts" check able to fail.
 func total_mass_g(build: Build) -> float:
 	return connector_mass_g(build) + main_lead_mass_g(build) \
-		+ MotorLayout.MOTOR_NAMES.size() * motor_lead_mass_g(build) \
+		+ build.motor_count() * motor_lead_mass_g(build) \
 		+ capacitor_mass_g(build) + REMAINDER_MASS_G
 
 

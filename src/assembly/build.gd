@@ -9,6 +9,14 @@ extends RefCounted
 ##   all-up weight · thrust-to-weight · hover throttle % · est. flight time · top speed
 
 const INCH_M := 0.0254
+## Thrust of a coaxial pair's LOWER rotor relative to an isolated rotor at the same RPM, because it
+## works in the upper rotor's accelerated wake. Roughly a 20% coaxial loss is reported in the
+## literature (e.g. Theys et al. 2016, ICUAS, "Influence of propeller configuration on propulsion
+## system efficiency of multi-rotor UAVs"); this is an APPROXIMATE figure, not measured for any
+## motor in the catalog. Applies only where a frame's `motors_per_arm` exceeds 1.
+const COAXIAL_LOWER_ROTOR_THRUST := 0.8
+## Gap between the upper and lower rotor of a coaxial pair beyond the stator height (m).
+const COAXIAL_EXTRA_GAP_M := 0.010
 const GRAVITY_MPS2 := 9.81
 ## Standard sea-level air, and no longer "the air". It is the DEFAULT and the ORACLE's value —
 ## what a Build is flown in when nobody says where they fly, which is what keeps ReferenceBuild
@@ -1072,6 +1080,14 @@ func mass_parts() -> Array:
 	for name in MotorLayout.MOTOR_NAMES:
 		parts.append(PartMass.new(motor_prop_mass_kg, MotorLayout.motor_position(name, arm_m),
 			motor_inertia, "Motor + prop %s" % name))
+		# Coaxial: each extra motor sits at the same plan position, lower by its stator height plus
+		# COAXIAL_EXTRA_GAP_M (an approximation of the real mounting stack).
+		for level in range(1, motors_per_arm()):
+			var drop := Vector3(0.0, -float(level) * (
+				float(motor["specs"]["stator_height_mm"]) / 1000.0 + COAXIAL_EXTRA_GAP_M), 0.0)
+			parts.append(PartMass.new(motor_prop_mass_kg,
+				MotorLayout.motor_position(name, arm_m) + drop,
+				motor_inertia, "Motor + prop %s lower" % name))
 
 	# THE FRAME STAYS ONE LUMPED BOX AT THE ORIGIN, and that is a decision rather than the
 	# leftover it looks like next to the four entries below that just gained positions.
@@ -1261,6 +1277,11 @@ func mass_parts() -> Array:
 				Harness.rod_diag_kg_m2(harness_motor_lead_kg, motor_lead_length_m,
 					lead_position),
 				"Motor lead %s" % motor_name))
+			for level in range(1, motors_per_arm()):
+				parts.append(PartMass.new(harness_motor_lead_kg, lead_position,
+					Harness.rod_diag_kg_m2(harness_motor_lead_kg, motor_lead_length_m,
+						lead_position),
+					"Motor lead %s lower" % motor_name))
 
 	# The capacitor, standing on the ESC's pads — the same seat and the same height StackMesh draws
 	# the board at, so the can is where the picture puts it. A real object with published body
@@ -1486,7 +1507,7 @@ func max_throttle_fraction() -> float:
 ## this ceiling draws at most its rated max_amps. Priced at the test voltage without sag it let a
 ## 6S pack (25.2 V fresh) drive 1404s rated 12 A to 29.5 A each at a "100%" motor ceiling.
 func motor_throttle_limit() -> float:
-	return supply_limit_for(4.0 * float(motor["specs"]["max_amps"]))
+	return supply_limit_for(float(motor_count()) * float(motor["specs"]["max_amps"]))
 
 
 ## The motors' limit as their SPEC SHEET means it: max_amps at the motor's own test voltage, no sag
@@ -1494,7 +1515,7 @@ func motor_throttle_limit() -> float:
 ## the per-channel demand the ESC bench sweeps to — which describe the motor-and-prop pairing, not
 ## the pack it happens to be flown on. Flight uses `motor_throttle_limit`.
 func motor_bench_limit() -> float:
-	return throttle_limit_for(4.0 * float(motor["specs"]["max_amps"]))
+	return throttle_limit_for(float(motor_count()) * float(motor["specs"]["max_amps"]))
 
 
 ## The pack's maximum continuous discharge: capacity in amp-hours times its C-rating. The number
@@ -1512,7 +1533,7 @@ func pack_throttle_limit() -> float:
 	return supply_limit_for(pack_max_amps())
 
 
-## The throttle at which the four motors together draw `total_amps`. Current tracks shaft torque
+## The throttle at which every motor together draw `total_amps`. Current tracks shaft torque
 ## and torque goes as RPM^2, so the current at a throttle is quadratic in it — which is why this
 ## is a square root and not a ratio, and why an oversized prop or an undersized pack bites much
 ## harder than the headline numbers suggest.
@@ -1524,7 +1545,7 @@ func throttle_limit_for(total_amps: float) -> float:
 	# copy in the codebase, and the part of the fitting pipeline the compiled core exists for.
 	# The BENCH form only (`motor_bench_limit`): a motor's max_amps at its own test voltage, which
 	# the spec-sheet T:W is quoted at on purpose. Every flight ceiling uses `supply_limit_for`.
-	return Fitting.throttle_limit_for(total_amps, 4.0 * effective_max_amps)
+	return Fitting.throttle_limit_for(total_amps, float(motor_count()) * effective_max_amps)
 
 
 ## The throttle a SUPPLY-side rating (the pack's, the ESC's) allows: the highest throttle at which
@@ -1575,13 +1596,13 @@ func fresh_draw_at_a(throttle: float) -> float:
 	var kv := float(motor["specs"]["kv"])
 	var t := clampf(throttle, 0.0, 1.0)
 	var low := 0.0
-	var high := rest_v / r if r > 0.0 else 4.0 * Fitting.current_at_rpm(t * kv * rest_v,
+	var high := rest_v / r if r > 0.0 else float(motor_count()) * Fitting.current_at_rpm(t * kv * rest_v,
 		effective_max_amps, rated)
 	if r <= 0.0:
 		return high
 	for _i in 60:
 		var amps := (low + high) * 0.5
-		var demand := 4.0 * Fitting.current_at_rpm(t * kv * maxf(rest_v - amps * r, 0.0),
+		var demand := float(motor_count()) * Fitting.current_at_rpm(t * kv * maxf(rest_v - amps * r, 0.0),
 			effective_max_amps, rated)
 		if demand > amps:
 			low = amps
@@ -1608,7 +1629,7 @@ func limiting_component() -> Dictionary:
 		{
 			"name": "motors",
 			"label": str(motor["name"]),
-			"amps": 4.0 * float(motor["specs"]["max_amps"]),
+			"amps": float(motor_count()) * float(motor["specs"]["max_amps"]),
 			"throttle": motor_throttle_limit(),
 		},
 		{
@@ -1757,10 +1778,30 @@ func battery_model() -> BatteryModel:
 		str(battery["specs"].get("chemistry", BATTERY_DEFAULT_CHEMISTRY))
 	)
 
+## The three powertrain constants of ONE plan-position thruster, with a coaxial pair lumped into
+## it: thrust is the pair's rotor-equivalents, reaction torque and current are each rotor's, summed
+## (motors_per_arm times one). The lower rotor's reduced thrust does not reduce its torque or
+## current (it still turns the same RPM). For a quad all three are exactly the single motor's.
+func lumped_k_t() -> float:
+	return k_t * (thrust_rotor_equivalents() / 4.0)
+
+
+func lumped_k_q() -> float:
+	return k_q * float(motors_per_arm())
+
+
+func lumped_max_amps() -> float:
+	return effective_max_amps * float(motors_per_arm())
+
+
 func build_drone_core() -> DroneCore:
 	var geometry := _prop_geometry(propeller)
-	var core := DroneCore.new(mass_properties, motor_model(), arm_m, k_t, k_q, battery_model(),
-		effective_max_amps, rated_rpm(), drag_coefficient,
+	# A coaxial pair is flown as ONE thruster at its plan position (the sim has four): see
+	# lumped_k_t / lumped_k_q / lumped_max_amps. FrameBench and RateTune's plant read the SAME
+	# three, so the gains are derived for the aircraft the sim flies. All exactly the single-motor
+	# values for a quad.
+	var core := DroneCore.new(mass_properties, motor_model(), arm_m, lumped_k_t(), lumped_k_q(),
+		battery_model(), lumped_max_amps(), rated_rpm(), drag_coefficient,
 		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m,
 		air.kgm3(), blade_chord(), guard_closure)
 	# The aircraft the sim flies is the aircraft the builder configured, including a spin map
@@ -1785,6 +1826,25 @@ func all_up_weight_g() -> float:
 func weight_n() -> float:
 	return mass_properties.total_mass_kg * GRAVITY_MPS2
 
+## Motors on each arm position: 2 for a coaxial pair (frame specs `motors_per_arm`), 1 for every
+## other frame. Clamped to at least 1 so a malformed catalog entry cannot zero the thrust.
+func motors_per_arm() -> int:
+	return maxi(int(frame.get("specs", {}).get("motors_per_arm", 1)), 1)
+
+
+## Every motor on the aircraft: the plan positions times the motors on each.
+func motor_count() -> int:
+	return MotorLayout.MOTOR_NAMES.size() * motors_per_arm()
+
+
+## Thrust of the whole aircraft in units of one motor's thrust. A quad is exactly 4.0. In a coaxial
+## pair the lower rotor works in the upper rotor's wake and gives only COAXIAL_LOWER_ROTOR_THRUST of
+## an isolated rotor's thrust at the same RPM. Current is NOT scaled the same way: both motors draw
+## their full share (see motor_count), which is what makes coaxial inefficient.
+func thrust_rotor_equivalents() -> float:
+	return 4.0 * (1.0 + COAXIAL_LOWER_ROTOR_THRUST * float(motors_per_arm() - 1))
+
+
 ## Quoted at NOMINAL pack voltage, deliberately. This is the bench figure — the same
 ## convention every manufacturer thrust table and every spec sheet uses, and the one
 ## physics.md §8 and parts.md's reference build state as the 11.7:1 oracle. Evaluating it
@@ -1804,7 +1864,7 @@ func weight_n() -> float:
 ## builder finds out that the bench figure is not the flying figure. Naming the gap is worth more
 ## than hiding it inside a single number that then explains nothing.
 func max_total_thrust_n() -> float:
-	return 4.0 * PropellerModel.thrust_n(k_t, max_rpm_at_nominal())
+	return thrust_rotor_equivalents() * PropellerModel.thrust_n(k_t, max_rpm_at_nominal())
 
 
 ## The RPM behind the bench figure above: KV at nominal volts, capped by what the motors' own
@@ -1823,7 +1883,7 @@ func thrust_to_weight() -> float:
 ## it is why hover is solved by bracketing rather than by iterating a fixed point — the
 ## fixed point diverges on exactly the packs the catalog includes to be interesting.
 func thrust_at_throttle_n(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
-	return 4.0 * PropellerModel.thrust_n(k_t, rpm_at_throttle(throttle, open_circuit_v))
+	return thrust_rotor_equivalents() * PropellerModel.thrust_n(k_t, rpm_at_throttle(throttle, open_circuit_v))
 
 ## Steady-state RPM at a throttle command. RPM and pack sag depend on each other, but the
 ## loop converges quickly: more sag means less RPM means less current means less sag.
@@ -2018,7 +2078,7 @@ func esc_has_channel_headroom() -> bool:
 
 ## Total pack current at a throttle command, via the RPM that throttle actually reaches.
 func hover_current_a(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
-	return 4.0 * current_at_rpm(rpm_at_throttle(throttle, open_circuit_v))
+	return float(motor_count()) * current_at_rpm(rpm_at_throttle(throttle, open_circuit_v))
 
 
 ## The hover throttle for a pack in the state it is ACTUALLY in, rather than at the nominal datum.
@@ -2064,7 +2124,7 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 	for _i in 40:
 		var mid := (low + high) * 0.5
 		var mid_rpm := rpm_at_throttle(mid, open_circuit_v)
-		var thrust_n := 4.0 * PropellerModel.thrust_n(k_t, mid_rpm) \
+		var thrust_n := thrust_rotor_equivalents() * PropellerModel.thrust_n(k_t, mid_rpm) \
 			* ratios.thrust_ratio(mid_rpm, v_axial, v_edge)
 		if thrust_n < target_n:
 			low = mid
@@ -2075,7 +2135,7 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 	# still not holding it" — the same convention hover_throttle() uses for a build that cannot
 	# hold itself up, rather than a number quietly clamped into looking achievable.
 	var rpm := rpm_at_throttle(high, open_circuit_v)
-	return 4.0 * current_at_rpm(rpm) * ratios.power_ratio(rpm, v_axial, v_edge)
+	return float(motor_count()) * current_at_rpm(rpm) * ratios.power_ratio(rpm, v_axial, v_edge)
 
 
 ## The current a pack actually sees over a flight: the model's answer at each row of
@@ -2199,7 +2259,7 @@ func top_speed_kmh() -> float:
 	var low := 0.0
 	for _i in 40:
 		var mid := (low + high) * 0.5
-		var available_n := 4.0 * PropellerModel.thrust_n(k_t, max_rpm) \
+		var available_n := thrust_rotor_equivalents() * PropellerModel.thrust_n(k_t, max_rpm) \
 			* ratios.thrust_ratio(max_rpm, mid * sin(TOP_SPEED_LEAN_RAD),
 				mid * cos(TOP_SPEED_LEAN_RAD))
 		var horizontal_n := minf(lean_horizontal_n, available_n * sin(TOP_SPEED_LEAN_RAD))
@@ -2254,8 +2314,8 @@ func warnings() -> Array[BuildWarning]:
 					limit_values))
 			"esc":
 				out.append(BuildWarning.limiting(&"current_limit",
-					"The %s runs out of current first — %.0f A across four channels caps this build at %.0f%% throttle, where the %s would take %.0f%% and the %s would pass %.0f A." % [
-						limit["label"], limit["amps"], throttle_cap * 100.0,
+					"The %s runs out of current first — %.0f A across %d channels caps this build at %.0f%% throttle, where the %s would take %.0f%% and the %s would pass %.0f A." % [
+						limit["label"], limit["amps"], esc_channels(), throttle_cap * 100.0,
 						motor["name"], motor_throttle_limit() * 100.0,
 						battery["name"], pack_max_amps()],
 					limit_values))

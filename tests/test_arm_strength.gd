@@ -224,7 +224,13 @@ static func _references() -> Array:
 		var ref: Dictionary = refs[i]
 		var document := AirframeDocument.from_catalog_frame(catalog.get_part(str(ref["part_id"])))
 		var rating := ArmStrength.rate(ArmStrength.beam_of(document, materials), materials, refs)
-		if int(rating["stronger_than"]) != i or not (rating["nearest"] as Array).has(ref["name"]) \
+		# Two frames with the SAME published arm (the 7" and 8" cinelifters are both the Taurus X8
+		# V3's 8 mm tube-clamp arm) tie: each is stronger than the frames strictly below the pair.
+		var below := 0
+		for other in refs:
+			if float(other["break_load_n"]) < float(ref["break_load_n"]) * (1.0 - ArmStrength.TIE_FRACTION):
+				below += 1
+		if int(rating["stronger_than"]) != below or not (rating["nearest"] as Array).has(ref["name"]) \
 				or not str(rating["phrase"]).begins_with("about as strong as"):
 			broken.append("%s: %s (index %d)" % [ref["name"], _show(rating), i])
 	out.append(TestResult.new(

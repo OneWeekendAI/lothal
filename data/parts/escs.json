@@ -126,6 +126,27 @@
         "protocol": "DShot600"
       },
       "source": "representative cinelifter / X-class 4-in-1; class-typical, not a specific product. Ratings follow the HGLRC Thor 80A BLHeli_32 4-in-1's published 80A continuous / 100A burst per channel, and its ~18 g board mass"
+    },
+    {
+      "part_id": "esc_x8_2x80a",
+      "name": "2x 80A 4-in-1 (X8, 8 channels)",
+      "category": "esc",
+      "mass_g": 36.0,
+      "mounting": {
+        "attachment": "bolt",
+        "pattern": "30.5x30.5"
+      },
+      "specs": {
+        "continuous_a": 80.0,
+        "burst_a": 100.0,
+        "channels": 8
+      },
+      "catalog": {
+        "board_class": "4-in-1",
+        "cell_range": "3-8S",
+        "protocol": "DShot600"
+      },
+      "source": "an X8 needs eight ESC channels: two of the catalog's 80 A 4-in-1 boards (esc_4in1_80a_30x30, after the HGLRC Thor 80A's published 80 A continuous / 100 A burst per channel, ~18 g each) stacked on one 30.5 mm pattern. The Taurus X8 V3 that the cinelifter seed follows lists an iFlight BLITZ E80 80 A stack"
     }
   ]
 }

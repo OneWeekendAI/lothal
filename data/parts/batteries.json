@@ -325,6 +325,31 @@
         "connector": "XT60"
       },
       "source": "representative 6S 21700 Li-ion long-range pack spec sheet; the whole point is capacity at the cost of internal resistance. Dimensions are the GNB Li-Ion 21700 6S1P 4000mAh's published 78 x 64 x 43 mm — a 3x2 brick, and the widest pack in this catalog by some margin"
+    },
+    {
+      "part_id": "battery_6s_5600",
+      "name": "6S 5600mAh 95C",
+      "category": "battery",
+      "mass_g": 892.0,
+      "mounting": {
+        "attachment": "strap"
+      },
+      "specs": {
+        "cells": 6,
+        "nominal_v": 22.2,
+        "mah": 5600.0,
+        "internal_r_ohm": 0.0065,
+        "chemistry": "LiPo",
+        "c_rating": 95.0,
+        "length_mm": 160.0,
+        "width_mm": 50.0,
+        "height_mm": 50.0
+      },
+      "catalog": {
+        "cell_class": "6S",
+        "connector": "XT90"
+      },
+      "source": "iFlight Fullsend 6S 5600mAh 95C (XT90), the pack iFlight ships with the Taurus X8 V3 cinelifter. Dimensions 160 x 50 x 50 mm as published by RobotShop (uk.robotshop.com/products/iflight-fullsend-fpv-5600mah-95c-6s-xt90); mass 892 g as published by Unmanned Tech Shop (unmannedtechshop.co.uk/products/iflight-fullsend-6s-5600mah-battery-xt90). internal_r_ohm is NOT published: 6.5 mOhm (~1.1 mOhm per cell) is a class-typical figure for a 5000-6000 mAh high-C LiPo, inside the catalog K-constant band (derived 3.8 mOhm, band 1.8x)"
     }
   ]
 }

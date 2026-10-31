@@ -127,14 +127,20 @@ const CLASSES: Array[Dictionary] = [
 		"id": "cinelifter", "name": "Cinelifter", "use": "Cinema cameras",
 		"props": "8–10\"", "wheelbase": "350–450 mm", "battery": "6–8S", "auw": "2–4 kg",
 		"wheelbase_mm": 400.0,
-		# New class-typical 8" cinelifter frame (sourced from the 7" one). The 2808 1300KV is the
-		# catalog's cinelifter motor, thrust-tested by its table on exactly this 8x4.5x3 on 6S; the
-		# 6S 4000 Li-ion is the catalog's long-endurance pack.
+		# SOURCED to one real aircraft: the iFlight Taurus X8 V3 (O4, 6S), a COAXIAL X8 like the
+		# Blender model — 400 mm wheelbase, eight XING2 3110 1250KV on HQ 8043 (8x4.3x3) props, a
+		# BLITZ E80 80 A stack, DJI O4 Pro, the iFlight Fullsend 6S 5600mAh 95C pack, takeoff weight
+		# ~2492 g with that pack and no cinema camera (iflight-rc.eu/en/products/
+		# taurus-x8-v3-o4-6s-hd-cinelifter; rcdrone.top lists the same figures). Catalog stand-ins
+		# where the exact part is not stocked: the 2808 1300KV (thrust-tested on exactly this 8x4.5x3
+		# on 6S) for the 3110 1250KV, the 8x4.5x3 for the HQ 8043, and two 80 A 4-in-1 boards
+		# (esc_x8_2x80a, 8 channels) for the E80 stack. The pack IS the Fullsend (battery_6s_5600).
+		# The frame says motors_per_arm 2, so Build weighs and drives eight motors.
 		"seed": {
 			"frame": "frame_8in_cinelifter", "motor": "motor_2808_1300kv",
-			"propeller": "prop_8x45x3", "battery": "battery_6s_4000_liion",
-			"esc": "esc_4in1_60a_30x30", "flight_controller": "fc_f405_30x30",
-			"camera": "cam_digital_hd", "vtx": "vtx_digital_hd",
+			"propeller": "prop_8x45x3", "battery": "battery_6s_5600",
+			"esc": "esc_x8_2x80a", "flight_controller": "fc_f405_30x30",
+			"camera": "cam_dji_o4_pro", "vtx": "vtx_dji_o4_pro",
 		},
 	},
 	{

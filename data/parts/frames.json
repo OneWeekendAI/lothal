@@ -341,12 +341,13 @@
       "part_id": "frame_8in_cinelifter",
       "name": "8\" Cinelifter",
       "category": "frame",
-      "mass_g": 260.0,
+      "mass_g": 940.0,
       "specs": {
         "arm_mm": 200.0,
         "plate_thickness_mm": 3.0,
-        "arm_thickness_mm": 9.0,
+        "arm_thickness_mm": 8.0,
         "max_prop_inches": 8.0,
+        "motors_per_arm": 2,
         "motor_mount": "19x19",
         "stack_mount": "30.5x30.5"
       },
@@ -355,7 +356,7 @@
         "material": "carbon fibre 4K high-modulus",
         "size_class": "8\""
       },
-      "source": "representative 8\" cinelifter frame; class-typical, not a specific product. Arm length 200 mm gives a ~400 mm wheelbase, the middle of the class's 350-450 mm; plate thickness is the 7\" cinelifter frame's 3 mm and the arm is 9 mm, one millimetre thicker than its 8 mm (that frame is sourced to iFlight Taurus X8 V3 and Shendrones Thicc 2.1; the extra millimetre is a size extrapolation, not a product reading); mass 260 g scales the 7\" cinelifter's 210 g by the arm-length ratio (200/158) discounted for the shared plates. No arm width, so arm_width_mm is absent."
+      "source": "representative 8\" cinelifter frame; class-typical, not a specific product. COAXIAL X8 (motors_per_arm 2: a motor above and below each of four arm tips), as the iFlight Taurus X8 V3 it follows (400 mm wheelbase, 8x XING2 3110 1250KV, HQ 8043 props, 6S 5600mAh, takeoff ~2492 g with battery, per iFlight-RC Europe iflight-rc.eu/en/products/taurus-x8-v3-o4-6s-hd-cinelifter). Arm length 200 mm gives the Taurus's 400 mm wheelbase; arm 8 mm and plate 3 mm are the Taurus X8 V3 frame kit's published thicknesses. Mass 940 g is the Taurus X8 V3 frame kit as iFlight lists it (shop.iflight.com/Taurus-X8-V3-8-inch-Cinelifter-Frame-Kit-Pro1785, '940 g, excluding TPU parts'; a second iFlight listing says 1130 g, so this is the lower published figure). It was 260 g, scaled from the 7\" frame, which left the seeded cinelifter at 1.85 kg against the Taurus's published ~2.49 kg takeoff weight. No arm width, so arm_width_mm is absent."
     },
     {
       "part_id": "frame_65mm_whoop_lite",

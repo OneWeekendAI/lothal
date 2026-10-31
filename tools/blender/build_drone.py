@@ -85,11 +85,14 @@ CFGS = {
                      arm_k=1.2, arm_t=0.0060, cam=1.05, gps=True,
                      batt=dict(seed="battery_6s_1300", cells="6S", mah="1300", col=(0.12, 0.30, 0.65)),
                      zmin=0.0),
-    "cinelifter": dict(wb=0.400, prop_d=0.2286, blades=2, motor=(0.0480, 0.0300), frame="tube", kb=1.25, layout="x8",
+    # The cinelifter is the iFlight Taurus X8 V3 the class seeds (src/design/drone_class.gd): coaxial X8,
+    # 400 mm wheelbase, 8" tri-blades (HQ 8043; the seed's 8x4.5x3), the Fullsend 6S 5600mAh 95C pack.
+    "cinelifter": dict(wb=0.400, prop_d=0.2032, blades=3, motor=(0.0360, 0.0260), frame="tube", kb=1.25, layout="x8",
                        arm_k=1.0, arm_t=0.0060, tube_r=0.0095, cam=1.4, cine=3.0, gear=True,
-                       batt=dict(seed="battery_6s_4000_liion", cells="6S", mah="LI-ION", col=(0.80, 0.10, 0.10), kind="liion"),
-                       zmin=-0.15),
-    "x_class": dict(wb=0.700, prop_d=0.3302, blades=2, motor=(0.0680, 0.0420), frame="tube", kb=2.0, layout="x8",
+                       batt=dict(seed="battery_6s_5600", cells="6S", mah="5600", col=(0.80, 0.10, 0.10)),
+                       zmin=-0.15, batt_dy=-0.030),
+    # X-Class is a QUAD racing class (and its seed is a quad), so the model is x4, not the cinelifter's x8.
+    "x_class": dict(wb=0.700, prop_d=0.3302, blades=2, motor=(0.0680, 0.0420), frame="tube", kb=2.0,
                     arm_k=1.0, arm_t=0.0090, tube_r=0.0165, cam=2.0, cine=4.2, gear=True,
                     batt=dict(seed="battery_6s_4000_liion", cells="6S", mah="LI-ION", col=(0.95, 0.75, 0.10), kind="liion"),
                     zmin=-0.23),
@@ -276,57 +279,69 @@ BC_CAT = None
 
 
 def label_across(bc):
-    """Short fat packs carry the label ACROSS the top (text runs left-right as seen from behind); long thin
-    ones (whoop, toothpick) carry it lengthwise."""
-    return bc["L"] / bc["W"] < 3.5
+    """Retired 2026-10-31: every pack now carries its label LENGTHWISE (baseline along the pack), on the
+    top face and both long sides. Kept so the UV code reads the same; always False."""
+    return False
+
+
+def strap_width():
+    """Strap width: scales with the body, capped at 20 mm (real battery straps are 15-20 mm; the
+    uncapped X-Class strap was 32 mm and covered 41% of its 78 mm pack)."""
+    return min(0.016 * KB, 0.020)
+
+
+def label_lines(bc, cells, mah_txt, liion):
+    """The printed text as blocks of (centre along the pack 0..1, [text, ...]) plus the fraction of the
+    length one block may use. A strapped pack splits it either side of the strap; the strapless whoop
+    pack gets one centred line."""
+    last = "LI-ION" if liion else "MAH"
+    if CFG["frame"] == "whoop":
+        return [(0.5, ["%s %s%s %s" % (cells, mah_txt, last, bc["c_label"])])], 0.86
+    free = (1.0 - strap_width() / bc["L"]) / 2          # clear length either side of the strap
+    span = 0.84 * free
+    one = [(free / 2, ["%s %s" % (cells, bc["c_label"])]), (1 - free / 2, ["%s %s" % (mah_txt, last)])]
+    two = [(free / 2, [cells, bc["c_label"]]), (1 - free / 2, [mah_txt, last])]
+    # one line per block when it still prints at a useful size; a short fat pack stacks two lines
+    return (one if 1024 * span / (6 * 8) >= 6 else two), span
 
 
 def lipo_material(bc, cells, mah, kind="lipo", side=False):
-    """Printed pack wrap for the TOP face (the only face that carries text; sides get a plain stripe).
-    The image has the top face's own aspect, so glyphs are not stretched. across: 1024 wide (pack width)
-    x taller (pack length); lengthwise: 1024 wide (pack length) x shorter (pack width)."""
+    """Printed pack wrap. The image has the face's own aspect (1024 along the pack x the face's width or
+    height across it), so glyphs are not stretched, and the text runs LENGTHWISE. Glyphs are kept small
+    (a third of the face across, at most) except on the whoop, whose 9.5 mm top would otherwise print
+    unreadable dots, so there the single line may take just over half the width."""
     BCc = BC_CAT
     col = BCc["col"]
-    across = label_across(BCc) and not side
     ratio = BCc["L"] / (BCc["H"] if side else BCc["W"])
-    if across:
-        W, H = 1024, int(1024 * ratio)
-    else:
-        W, H = 1024, int(1024 / ratio)
-    base = np.array(col, dtype=np.float32)
-    img = np.zeros((H, W, 3), dtype=np.float32)
-    img[:] = base * 0.55
-    yy, xx = np.mgrid[0:H, 0:W]
-    img[((xx * 0.5 + yy) % 220) < 26] = base * 0.75               # diagonal livery stripes
+    W, H = 1024, max(64, int(1024 / ratio))
     sp = BCc["cat"]
     liion = kind == "liion"
-    c_txt = BCc["c_label"]
     mah_txt = str(int(sp["mah"]))
     assert cells == "%dS" % int(sp["cells"]) and (liion or mah == mah_txt), "pack label != seed battery"
+    base = np.array(col, dtype=np.float32)
     white = np.array([0.95, 0.95, 0.93], dtype=np.float32)
-    # The strap loop (and its buckle on top) hides the middle fifth of the pack, so the label is split in
-    # two blocks that sit either side of it and never under it.
-    img[:] = 0.045
-    img[:8] = base
-    img[-8:] = base
-    last = "LI-ION" if liion else "MAH"
-    if across:
-        line1, line2 = "%s %s" % (cells, c_txt), "%s %s" % (mah_txt, last)
-        px = int(W * 0.86 / (6 * max(len(line1), len(line2))))
-        gh = 7 * px
-        x0 = int(W * 0.07)
-        draw_text(img, line1, x0, int(H * 0.25) - gh // 2, px, white)      # rear of the strap
-        draw_text(img, line2, x0, int(H * 0.75) - gh // 2, px, white * 0.85)  # front of the strap
-    else:
-        blocks = [(0.05, [cells, c_txt]), (0.64, [mah_txt, last])]
-        blen = int(max(len(t) for _, ts in blocks for t in ts))
-        px = int(W * 0.31 / (6 * blen))
-        px = min(px, int(H * 0.40 / 7))
-        gh = 7 * px
-        for fx, lines in blocks:
-            for k, t in enumerate(lines):
-                yy0 = int(H * (0.72 - 0.44 * k)) - gh // 2
-                draw_text(img, t, int(W * fx), yy0, px, white if k == 0 else white * 0.85)
+    # Wrap is a mid-dark grey (not near-black) so a pack reads as a pack against black carbon.
+    img = np.zeros((H, W, 3), dtype=np.float32)
+    img[:] = 0.16
+    yy, xx = np.mgrid[0:H, 0:W]
+    img[((xx * 0.5 + yy) % 220) < 26] = 0.21                      # faint diagonal livery stripes
+    band = max(4, H // 14)
+    img[:band] = base
+    img[-band:] = base
+    whoop = CFG["frame"] == "whoop"
+    blocks, span = label_lines(BCc, cells, mah_txt, liion)
+    nmax = max(len(t) for _, ts in blocks for t in ts)
+    nl = max(len(ts) for _, ts in blocks)
+    px = int(W * span / (6 * nmax))
+    px = max(1, min(px, int(H * (0.56 if whoop and not side else 0.34) / (7 * nl + 3 * (nl - 1)))))
+    gh = 7 * px
+    tot = nl * gh + (nl - 1) * 3 * px
+    for k, (fc, ts) in enumerate(blocks):
+        for i, t in enumerate(ts):
+            tw = 6 * px * len(t) - px
+            # draw_text rows run bottom-up in the texture, so the first line goes at the larger row
+            y0 = (H + tot) // 2 - gh - i * (gh + 3 * px)
+            draw_text(img, t, int(W * fc - tw / 2), y0, px, white if k == 0 else white * 0.88)
     rng = np.random.default_rng(3)
     img += rng.normal(0, 0.004, img.shape).astype(np.float32)
     lum = img @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)   # monochrome product look
@@ -1257,7 +1272,7 @@ def build_battery(root):
             b.tube(mt, [(xx * 0.4, ry + 0.001, z0 + H * 0.2), (xx * 0.8, ry - 0.012 * s, z0 + 0.0045), (xx, bl - 0.012 * s, z0 + 0.0030)], 0.00038 * s, seg=6, samples=6)
         b.box(MAT["wire_white"], (0.0030 * ncell + 0.004, 0.0058 * s, 0.0062 * s), T(0, bl - 0.0155 * s, z0 + 0.0026), bevel=0.0004)
         # strap loop across the pack width, through the plate slots
-        sw = 0.016 * KB
+        sw = strap_width()
         zb = Z_BOT - 0.0005
         r_in = min(0.003 * SK, H * 0.3)
         outer = rrect(-(SX_IN + STRAP_T), zb - STRAP_T, SX_IN + STRAP_T, z0 + H + STRAP_T, r_in + STRAP_T)
