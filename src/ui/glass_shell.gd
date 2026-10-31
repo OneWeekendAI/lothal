@@ -375,6 +375,10 @@ var chip: ProjectChip
 ## The Projects screen — every saved drone, New and Open. Shown at launch, after Delete, and from
 ## the drone menu's "All projects". It IS the empty state: with no drone open, this is the screen.
 var projects_screen: ProjectsScreen
+## The "Choose your drone class" screen, up while a new project's class is being chosen; null
+## otherwise. Built per use and freed on close, so its turntable viewport costs nothing after.
+var class_picker: ClassPicker
+var _class_picker_layer: CanvasLayer
 var settings: AppSettings
 var _autosave: Timer
 var _open_dialog: FileDialog
@@ -2772,7 +2776,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _build_empty_state() -> void:
 	projects_screen = ProjectsScreen.new(rooms.catalog_for_lab())
 	projects_screen.visible = false
-	projects_screen.new_requested.connect(func() -> void: adopt(ProjectLibrary.starting_project()))
+	projects_screen.new_requested.connect(new_project)
 	projects_screen.open_requested.connect(func() -> void: _open_dialog.popup_centered_ratio(0.6))
 	projects_screen.project_chosen.connect(open_project)
 	add_child(projects_screen)
@@ -3307,7 +3311,7 @@ func _sync_project() -> void:
 func _on_project_action(action_id: String) -> void:
 	match action_id:
 		"new":
-			adopt(ProjectLibrary.starting_project())
+			new_project()
 		"duplicate":
 			adopt(ProjectLibrary.duplicate_of(container.project))
 		"open":
@@ -3336,6 +3340,53 @@ func _on_project_action(action_id: String) -> void:
 			pass
 		_:
 			push_warning("project action '%s' is not built yet" % action_id)
+
+
+## New drone: the one path both New entries (the chip and the projects screen) take.
+##
+## The drone is adopted FIRST — written before it is shown, see `adopt` — as the 5" starting build,
+## and the class picker goes up over it. Choosing a class rewrites that same project's parts and
+## class; dismissing the picker leaves the 5" starting build with no class chosen. Either way there
+## is exactly one new file, and no window of time in which the new drone exists only in memory.
+func new_project() -> void:
+	adopt(ProjectLibrary.starting_project())
+	show_class_picker()
+
+
+## Puts the class picker up, over everything including the dock (its own CanvasLayer, above the
+## dock's), because nothing behind it is meant to be used until a class is chosen.
+func show_class_picker() -> ClassPicker:
+	_close_class_picker()
+	_class_picker_layer = CanvasLayer.new()
+	_class_picker_layer.name = "ClassPickerLayer"
+	_class_picker_layer.layer = TOGGLE_LAYER + 5
+	add_child(_class_picker_layer)
+	class_picker = ClassPicker.new(rooms.catalog_for_lab())
+	class_picker.class_chosen.connect(choose_class)
+	class_picker.dismissed.connect(_close_class_picker)
+	_class_picker_layer.add_child(class_picker)
+	return class_picker
+
+
+## Writes the chosen class into the open project, fits its parts on the rails and saves.
+func choose_class(class_id: String) -> bool:
+	if container == null or not DroneClass.apply_to(container.project, class_id):
+		return false
+	apply_project(container.project)
+	container.project.touch()
+	container.write(container.path)
+	chip.set_project(container.project, container.path)
+	_refresh_status()
+	_close_class_picker()
+	return true
+
+
+func _close_class_picker() -> void:
+	if _class_picker_layer != null:
+		remove_child(_class_picker_layer)
+		_class_picker_layer.queue_free()
+	_class_picker_layer = null
+	class_picker = null
 
 
 ## Takes on a new drone: gives it a home, fits it on the rails, and points the chip at it.

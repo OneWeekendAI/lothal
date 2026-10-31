@@ -59,7 +59,7 @@ static func _test_every_blade_row_renders_for_every_prop(catalog: PartsCatalog, 
 				bad.append("%s/%s='%s'" % [prop.get("part_id", "?"), key, text])
 	return TestResult.new(
 		"every blade row renders a real number for every catalog propeller",
-		bad.is_empty() and rendered == 19 * BLADE_KEYS.size(),
+		bad.is_empty() and rendered == 20 * BLADE_KEYS.size(),
 		"%d rows rendered; bad: %s" % [rendered, "none" if bad.is_empty() else ", ".join(bad)])
 
 

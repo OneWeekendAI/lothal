@@ -296,6 +296,85 @@
         "size_class": "10\""
       },
       "source": "representative 10\" long-range frame; arm and mass class-typical, not a specific product. Plate and arm thickness are CLASS-TYPICAL of surveyed 10\" frames: iFlight Nazgul XL10 V6 (shop.iflight.com, product 1967) publishes 'Arm Thickness: 7mm', 'Bottom Plate Thickness: 3mm', 'Top Plate Thickness: 3mm'; Mark4 10\" V2 7.5 mm arms / 3 mm bottom plate. No arm width published, so arm_width_mm is absent."
+    },
+    {
+      "part_id": "frame_4in_freestyle",
+      "name": "4\" Freestyle",
+      "category": "frame",
+      "mass_g": 70.0,
+      "specs": {
+        "arm_mm": 96.0,
+        "plate_thickness_mm": 2.5,
+        "arm_thickness_mm": 5.0,
+        "max_prop_inches": 4.0,
+        "motor_mount": "12x12",
+        "stack_mount": "20x20"
+      },
+      "catalog": {
+        "frame_type": "freestyle",
+        "material": "carbon fibre 3K",
+        "size_class": "4\""
+      },
+      "source": "representative 4\" freestyle frame; class-typical, not a specific product. Arm length 96 mm puts the motors on a ~169 mm diagonal, the same arm-to-wheelbase rule as the catalog's 3.5\" (88 mm arm) and 7\" cinelifter (158 mm arm, 316 mm); 70 g sits between the catalog's 3.5\" (58 g) and 5\" race (88 g) frames; 12x12 motor / 20x20 stack mounts match the catalog's 1507 motor and 4-in-1 boards. Plate thickness is interpolated between the 3.5\" (2.0 mm) and 5\" frames and the 5 mm arm is the thicker-arm end of surveyed 4\" freestyle frames, not read off a product page. No arm width, so arm_width_mm is absent."
+    },
+    {
+      "part_id": "frame_3in_cinewhoop",
+      "name": "3\" Cinewhoop",
+      "category": "frame",
+      "mass_g": 48.0,
+      "specs": {
+        "arm_mm": 70.0,
+        "plate_thickness_mm": 2.0,
+        "arm_thickness_mm": 4.0,
+        "max_prop_inches": 3.0,
+        "motor_mount": "12x12",
+        "stack_mount": "20x20"
+      },
+      "catalog": {
+        "frame_type": "cinewhoop",
+        "material": "carbon fibre 3K",
+        "size_class": "3\""
+      },
+      "source": "representative 3\" cinewhoop frame; class-typical, not a specific product. Arm length 70 mm gives the ~140 mm wheelbase of the class (130-150 mm), and a 20x20 stack is what carries a 4S 4-in-1, which the catalog's 3\" toothpick (25.5x25.5, 1-2S AIO) cannot. 12x12 motor mount matches the catalog's 3\" toothpick and the 1404 motors. Mass 48 g is the catalog's 3\" toothpick (35 g) plus the thicker 4 mm arms of the 3.5\" freestyle frame, class-typical not weighed. Ducts are the catalog's guard_duct_3in_tpu. No arm width, so arm_width_mm is absent."
+    },
+    {
+      "part_id": "frame_8in_cinelifter",
+      "name": "8\" Cinelifter",
+      "category": "frame",
+      "mass_g": 260.0,
+      "specs": {
+        "arm_mm": 200.0,
+        "plate_thickness_mm": 3.0,
+        "arm_thickness_mm": 9.0,
+        "max_prop_inches": 8.0,
+        "motor_mount": "19x19",
+        "stack_mount": "30.5x30.5"
+      },
+      "catalog": {
+        "frame_type": "cinelifter",
+        "material": "carbon fibre 4K high-modulus",
+        "size_class": "8\""
+      },
+      "source": "representative 8\" cinelifter frame; class-typical, not a specific product. Arm length 200 mm gives a ~400 mm wheelbase, the middle of the class's 350-450 mm; plate thickness is the 7\" cinelifter frame's 3 mm and the arm is 9 mm, one millimetre thicker than its 8 mm (that frame is sourced to iFlight Taurus X8 V3 and Shendrones Thicc 2.1; the extra millimetre is a size extrapolation, not a product reading); mass 260 g scales the 7\" cinelifter's 210 g by the arm-length ratio (200/158) discounted for the shared plates. No arm width, so arm_width_mm is absent."
+    },
+    {
+      "part_id": "frame_65mm_whoop_lite",
+      "name": "65mm Whoop (lite)",
+      "category": "frame",
+      "mass_g": 4.0,
+      "specs": {
+        "arm_mm": 32.0,
+        "max_prop_inches": 1.6,
+        "motor_mount": "6x6",
+        "stack_mount": "25.5x25.5",
+        "construction": "moulded"
+      },
+      "catalog": {
+        "frame_type": "tinywhoop",
+        "material": "injection-moulded nylon (PA12)",
+        "size_class": "65mm"
+      },
+      "source": "representative lightweight 65mm whoop frame; class-typical, not a specific product. Same geometry as frame_65mm_whoop; the 22 g of that entry is the heavy end (its harness-included figure), while a bare moulded 65mm whoop frame with ducts is a few grams. 4.0 g is a recalled class figure (BetaFPV Meteor65-class frames), NOT re-checked against a spec sheet. NO PLATE GEOMETRY: one-piece moulded nylon, so plate_thickness_mm, arm_width_mm and arm_thickness_mm are absent by construction."
     }
   ]
 }

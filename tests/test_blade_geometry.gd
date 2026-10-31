@@ -143,7 +143,7 @@ static func _test_catalog_planforms_sit_in_a_reported_band(catalog: PartsCatalog
 	var degenerate := max_k2 / min_k2 < 1.0 + 1e-6
 	return TestResult.new(
 		"catalog planforms share one generated shape, so their k² is one number",
-		degenerate and values.size() == 19,
+		degenerate and values.size() == 20,
 		"%d presets, k² = %.4f (relative spread %.8f)" % [
 			values.size(), min_k2, max_k2 / min_k2 - 1.0])
 

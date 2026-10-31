@@ -149,6 +149,7 @@ static func duplicate_of(source: Project) -> Project:
 	copy.printing = source.printing.duplicate(true)
 	copy.airframe = source.airframe.duplicate(true)
 	copy.notes = source.notes
+	copy.drone_class = source.drone_class
 	return copy
 
 

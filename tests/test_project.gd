@@ -401,8 +401,8 @@ static func _test_the_config_block_persists() -> Array:
 	# actually produces, because a constant nobody writes out is not a format version.
 	var schema: Dictionary = project.to_dict()["schema"]
 	results.append(TestResult.new(
-		"a saved document declares schema minor 3, major 1 (config at 2, airframe at 3)",
-		int(schema.get("minor", -1)) == 3 and int(schema.get("major", -1)) == 1,
+		"a saved document declares schema minor 4, major 1 (config at 2, airframe at 3, drone_class at 4)",
+		int(schema.get("minor", -1)) == 4 and int(schema.get("major", -1)) == 1,
 		"major %s minor %s" % [schema.get("major"), schema.get("minor")]
 	))
 

@@ -49,6 +49,11 @@ var updated_at: String = ""
 ## not pinned: a project opened after a measured thrust table lands should get the truer number.
 var lothal_version: String = ""
 var notes: String = ""
+## The drone class chosen on the class picker (DroneClass ids), "" when none was chosen — every
+## project written before the picker existed, and one created outside it. A label of intent: it
+## decides nothing by itself. The parts it seeded are in `parts`, and a builder who then swaps
+## them keeps the class they started from.
+var drone_class: String = ""
 
 ## category -> part_id. Written dense (ProjectSchema rule 2): every known category appears, and ""
 ## means the builder said no. An ABSENT category is one the writer had never heard of.
@@ -131,6 +136,7 @@ static func from_dict(document: Dictionary, ladder: Array = ProjectSchema.MIGRAT
 	project.updated_at = _string_or(doc, "updated_at", project.created_at)
 	project.lothal_version = _string_or(doc, "lothal_version", "")
 	project.notes = _string_or(doc, "notes", "")
+	project.drone_class = _string_or(doc, "drone_class", "")
 
 	if project.project_id == "":
 		project.project_id = ProjectSchema.new_id()
@@ -225,6 +231,7 @@ func to_dict() -> Dictionary:
 	out["versions"] = versions.duplicate(true)
 	out["prints"] = print_records.duplicate(true)
 	out["notes"] = notes
+	out["drone_class"] = drone_class
 	return out
 
 

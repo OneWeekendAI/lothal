@@ -342,6 +342,24 @@
         "material": "carbon-filled nylon"
       },
       "source": "representative 10\" bi-blade spec sheet; class-typical, not a specific product"
+    },
+    {
+      "part_id": "prop_4x25x3",
+      "name": "4x2.5x3",
+      "category": "propeller",
+      "mass_g": 2.6,
+      "specs": {
+        "diameter_inches": 4.0,
+        "pitch_inches": 2.5,
+        "blades": 3
+      },
+      "catalog": {
+        "blade_count": "3-blade",
+        "diameter_class": "4\"",
+        "intended_use": "freestyle",
+        "material": "polycarbonate"
+      },
+      "source": "representative 4\" tri-blade spec sheet; class-typical, not a specific product. Mass 2.6 g interpolates the catalog's 3.5x2.8x3 (2.2 g) and 5x4.5x3 (4.6 g) by diameter."
     }
   ]
 }
