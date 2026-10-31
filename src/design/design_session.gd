@@ -39,3 +39,27 @@ static func default_for_class(class_id: String) -> DesignSession:
 func build(catalog: PartsCatalog) -> Build:
 	_project.parts = selection.duplicate(true)
 	return _project.to_build(catalog)
+
+
+## Swaps one part of the selection (the session's only edit so far). False for an unknown category.
+func set_part(category: String, part_id: String) -> bool:
+	if not selection.has(category):
+		return false
+	selection[category] = part_id
+	return true
+
+
+## The vital signs, read straight off the selection's `Build`: nothing is computed here, and nothing
+## is cached, so a changed selection can never show last build's figures. Empty if it cannot build.
+## Keys: auw_g, thrust_to_weight, hover_throttle (0..1), flight_time_min, top_speed_kmh.
+func readouts(catalog: PartsCatalog) -> Dictionary:
+	var b := build(catalog)
+	if b == null:
+		return {}
+	return {
+		"auw_g": b.all_up_weight_g(),
+		"thrust_to_weight": b.thrust_to_weight(),
+		"hover_throttle": b.hover_throttle(),
+		"flight_time_min": b.flight_time_min(),
+		"top_speed_kmh": b.top_speed_kmh(),
+	}

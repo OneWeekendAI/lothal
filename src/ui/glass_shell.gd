@@ -379,6 +379,8 @@ var projects_screen: ProjectsScreen
 ## otherwise. Built per use and freed on close, so its turntable viewport costs nothing after.
 var class_picker: ClassPicker
 var _class_picker_layer: CanvasLayer
+var design_space: DesignSpace
+var _design_space_layer: CanvasLayer
 var settings: AppSettings
 var _autosave: Timer
 var _open_dialog: FileDialog
@@ -3363,9 +3365,34 @@ func show_class_picker() -> ClassPicker:
 	add_child(_class_picker_layer)
 	class_picker = ClassPicker.new(rooms.catalog_for_lab())
 	class_picker.class_chosen.connect(choose_class)
-	class_picker.dismissed.connect(_close_class_picker)
+	class_picker.dismissed.connect(_on_picker_dismissed)
 	_class_picker_layer.add_child(class_picker)
 	return class_picker
+
+
+## Esc on the picker: it closes, and a Design Space waiting behind it comes back as it was.
+func _on_picker_dismissed() -> void:
+	_close_class_picker()
+	_set_design_space_shown(true)
+
+
+func _set_design_space_shown(shown: bool) -> void:
+	if _design_space_layer != null:
+		_design_space_layer.visible = shown
+	if design_space != null:
+		design_space.visible = shown
+
+
+## Back from the Design Space: the picker goes up over it with the current class on show. The
+## Design Space is only hidden, so Esc on the picker returns to it unchanged.
+func back_to_class_picker() -> ClassPicker:
+	if design_space == null:
+		return null
+	var id := design_space.session.drone_class
+	_set_design_space_shown(false)
+	var picker := show_class_picker()
+	picker.show_class(id)
+	return picker
 
 
 ## Writes the chosen class into the open project, fits its parts on the rails and saves.
@@ -3378,7 +3405,32 @@ func choose_class(class_id: String) -> bool:
 	chip.set_project(container.project, container.path)
 	_refresh_status()
 	_close_class_picker()
+	show_design_space()
 	return true
+
+
+## The Design Space over everything, on the open project's drone (its own CanvasLayer, like the picker).
+func show_design_space() -> DesignSpace:
+	_close_design_space()
+	if container == null:
+		return null
+	_design_space_layer = CanvasLayer.new()
+	_design_space_layer.name = "DesignSpaceLayer"
+	_design_space_layer.layer = TOGGLE_LAYER + 5
+	add_child(_design_space_layer)
+	design_space = DesignSpace.new(DesignSession.from_project(container.project), rooms.catalog_for_lab())
+	design_space.dismissed.connect(_close_design_space)
+	design_space.back_requested.connect(back_to_class_picker)
+	_design_space_layer.add_child(design_space)
+	return design_space
+
+
+func _close_design_space() -> void:
+	if _design_space_layer != null:
+		remove_child(_design_space_layer)
+		_design_space_layer.queue_free()
+	_design_space_layer = null
+	design_space = null
 
 
 func _close_class_picker() -> void:

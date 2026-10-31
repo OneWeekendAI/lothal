@@ -1,0 +1,290 @@
+class_name TestDesignSpace
+extends RefCounted
+## The Design Space stage (PLAN Section 1): Choose lands on it showing the chosen class's model; the
+## side panel reads the session's Build; the free camera keeps its limits and Home restores it.
+##
+## ## The checks that could have passed while proving nothing
+##
+## - "Choose shows the chosen class's model" is run through the shell's real path (New, picker,
+##   Choose) for TWO classes, so a stage that always loads the 5" fails one of them.
+## - "Readouts equal the engine" compares the panel's TEXT with the text of values taken from a Build
+##   made independently by `Build.from_ids`, on a battery that is not the reference one, so a panel
+##   showing the 5" defaults or a cached first build fails.
+## - Limits are asserted on the goals after hundreds of inputs, not after one.
+## - Home is asserted after the eased motion has been stepped to rest, not on the goal alone.
+
+static func run() -> Array:
+	var results: Array = []
+	var catalog := PartsCatalog.load_default()
+	results.append_array(_test_choose_lands_on_the_model())
+	results.append_array(_test_readouts_equal_the_engine(catalog))
+	results.append_array(_test_build_change_updates_readouts(catalog))
+	results.append_array(_test_camera_limits())
+	results.append_array(_test_home_restores())
+	results.append_array(_test_back_to_picker())
+	results.append_array(_test_panel_fades())
+	return results
+
+
+static func _cleanup(shell: GlassShell) -> void:
+	if shell.container != null and shell.container.path != "":
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(shell.container.path))
+	shell.free()
+
+
+static func _test_choose_lands_on_the_model() -> Array:
+	var results: Array = []
+	for id in ["five_inch", "tiny_whoop"]:
+		var shell := GlassShell.new()
+		shell._on_project_action("new")
+		var before := shell.design_space
+		shell.class_picker.show_class(id)
+		shell.class_picker.choose()
+		var ds := shell.design_space
+		var meshes := ds.mesh_boxes().size() if ds != null else 0
+		results.append(TestResult.new("Choose %s lands on the Design Space" % id,
+			before == null and ds != null and shell.class_picker == null and ds.session.drone_class == id,
+			"before=%s ds=%s" % [before, ds]))
+		results.append(TestResult.new("and it draws assets/models/classes/%s.glb" % id,
+			ds != null and ds.model_path() == "res://assets/models/classes/%s.glb" % id and meshes > 10,
+			"%s meshes=%d" % [ds.model_path() if ds != null else "-", meshes]))
+		_cleanup(shell)
+	return results
+
+
+static func _expected_text(build: Build) -> Dictionary:
+	var r := {
+		"auw_g": build.all_up_weight_g(), "thrust_to_weight": build.thrust_to_weight(),
+		"hover_throttle": build.hover_throttle(), "flight_time_min": build.flight_time_min(),
+		"top_speed_kmh": build.top_speed_kmh()}
+	return {
+		"auw_g": "%.1f g" % r["auw_g"], "thrust_to_weight": "%.2f : 1" % r["thrust_to_weight"],
+		"hover_throttle": "%.1f %%" % (r["hover_throttle"] * 100.0),
+		"flight_time_min": "%.1f min" % r["flight_time_min"],
+		"top_speed_kmh": "%.0f km/h" % r["top_speed_kmh"]}
+
+
+static func _panel_matches(ds: DesignSpace, build: Build) -> String:
+	var want := _expected_text(build)
+	var bad := ""
+	for key in want:
+		var got := (ds.value_labels[key] as Label).text
+		if got != want[key]:
+			bad += " %s '%s' != '%s';" % [key, got, want[key]]
+	return bad
+
+
+static func _test_readouts_equal_the_engine(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	for id in ["five_inch", "seven_lr"]:
+		var session := DesignSession.default_for_class(id)
+		var ds := DesignSpace.new(session, catalog)
+		var parts := DroneClass.parts_for(id)
+		var direct := Build.from_ids(catalog, parts["frame"], parts["motor"], parts["propeller"], parts["battery"],
+			parts["esc"], parts["flight_controller"], {}, null, parts.get("guard", ""))
+		var bad := _panel_matches(ds, session.build(catalog))
+		results.append(TestResult.new("%s: the panel shows the session Build's five figures" % id, bad == "", bad))
+		var r := session.readouts(catalog)
+		results.append(TestResult.new("%s: session readouts are the Build's own methods, unrounded" % id,
+			absf(float(r["auw_g"]) - session.build(catalog).all_up_weight_g()) == 0.0
+				and absf(float(r["hover_throttle"]) - session.build(catalog).hover_throttle()) == 0.0
+				and direct != null and (id != "five_inch" or absf(float(r["auw_g"]) - direct.all_up_weight_g()) < 0.05
+				and absf(float(r["thrust_to_weight"]) - direct.thrust_to_weight()) < 0.005), str(r)))
+		ds.free()
+	var ref := DesignSession.default_for_class("five_inch")
+	var rr := ref.readouts(catalog)
+	results.append(TestResult.new("the 5\" seed reads the oracle: 507.5 g, 11.43:1, 29.9 %",
+		absf(float(rr["auw_g"]) - 507.5) < 0.05 and absf(float(rr["thrust_to_weight"]) - 11.43) < 0.005
+			and absf(float(rr["hover_throttle"]) * 100.0 - 29.9) < 0.05, str(rr)))
+	return results
+
+
+static func _test_build_change_updates_readouts(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	var session := DesignSession.default_for_class("five_inch")
+	var ds := DesignSpace.new(session, catalog)
+	var before: Dictionary = {}
+	for key in ds.value_labels:
+		before[key] = (ds.value_labels[key] as Label).text
+	var changed := ds.set_part("battery", "battery_6s_1300")
+	var build := session.build(catalog)
+	var bad := _panel_matches(ds, build)
+	results.append(TestResult.new("changing the battery in data moves the panel to the new Build's figures",
+		changed and bad == "" and build.battery["part_id"] == "battery_6s_1300", bad))
+	var moved := 0
+	for key in ds.value_labels:
+		if (ds.value_labels[key] as Label).text != before[key]:
+			moved += 1
+	results.append(TestResult.new("and every one of the five figures moved (4S 1500 -> 6S 1300)",
+		moved == 5, "moved=%d" % moved))
+	results.append(TestResult.new("an unknown category changes nothing",
+		not ds.set_part("flux_capacitor", "x") and _panel_matches(ds, build) == "", ""))
+	ds.free()
+	return results
+
+
+static func _test_camera_limits() -> Array:
+	var results: Array = []
+	var rig := CameraRig.new(0.15, 0.06)
+	for i in 400:
+		rig.zoom_toward(0.8, Vector2(0.3, -0.2))
+	results.append(TestResult.new("zooming in 400 times stops at the minimum distance",
+		is_equal_approx(rig.goal_distance, CameraRig.MIN_DISTANCE), str(rig.goal_distance)))
+	for i in 400:
+		rig.zoom_toward(1.25, Vector2(-0.4, 0.1))
+	results.append(TestResult.new("zooming out 400 times stops at the maximum distance",
+		is_equal_approx(rig.goal_distance, rig.max_distance()), str(rig.goal_distance)))
+	for i in 400:
+		rig.orbit(0.3, 0.2)
+	results.append(TestResult.new("orbiting down for ever stops short of straight down",
+		rig.goal_pitch <= CameraRig.MAX_PITCH + 1e-9, str(rig.goal_pitch)))
+	for i in 400:
+		rig.orbit(-0.3, -0.2)
+	results.append(TestResult.new("orbiting up for ever stops above the floor",
+		rig.goal_pitch >= CameraRig.MIN_PITCH - 1e-9, str(rig.goal_pitch)))
+	for i in 400:
+		rig.pan(0.5, 0.5)
+	var far_ok: bool = absf(rig.goal_target.x) <= rig.radius * 1.5 + 1e-9 and absf(rig.goal_target.z) <= rig.radius * 1.5 + 1e-9 \
+		and rig.goal_target.y >= 0.0
+	results.append(TestResult.new("panning for ever keeps the target near the drone and off the floor",
+		far_ok, str(rig.goal_target)))
+	# Zoom toward the cursor: the world point under the cursor stays under it.
+	var r2 := CameraRig.new(0.15, 0.06)
+	var ndc := Vector2(0.4, -0.3)
+	var ray := r2.ray(ndc)
+	var plane_hit: Variant = Plane(-r2.basis().z, r2.target).intersects_ray(ray["origin"], ray["dir"])
+	r2.zoom_toward(0.5, ndc)
+	r2.snap()
+	var after := r2.project(plane_hit as Vector3)
+	results.append(TestResult.new("zoom goes toward the cursor: the point under it stays under it",
+		plane_hit != null and after.distance_to(ndc) < 1e-4, str(after)))
+	# Double-click framing: the part ends up centred and filling the view.
+	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"))
+	var box: AABB = ds.mesh_boxes()[0]["box"]
+	ds.rig.frame(box)
+	ds.rig.snap()
+	var centre := ds.rig.project(box.get_center())
+	results.append(TestResult.new("framing a part puts its centre on screen centre",
+		centre.length() < 1e-4, str(centre)))
+	ds.free()
+	return results
+
+
+static func _test_home_restores() -> Array:
+	var results: Array = []
+	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"))
+	var rig := ds.rig
+	var home_pos := rig.position()
+	rig.orbit(1.1, 0.4)
+	rig.pan(0.2, -0.1)
+	rig.zoom_toward(0.3, Vector2(0.5, 0.5))
+	for i in 120:
+		rig.step(1.0 / 60.0)
+	results.append(TestResult.new("after orbit, pan and zoom the camera is not at home",
+		rig.position().distance_to(home_pos) > 0.01, str(rig.position())))
+	var key := InputEventKey.new()
+	key.keycode = KEY_H
+	key.pressed = true
+	ds._unhandled_key_input(key)
+	for i in 240:
+		rig.step(1.0 / 60.0)
+	results.append(TestResult.new("pressing H eases the camera back to the isometric home view",
+		rig.position().distance_to(home_pos) < 1e-4 and is_equal_approx(rig.pitch, CameraRig.HOME_PITCH)
+			and is_equal_approx(rig.yaw, CameraRig.HOME_YAW), str(rig.position())))
+	rig.orbit(0.7, 0.2)
+	ds.home_button.pressed.emit()
+	for i in 240:
+		rig.step(1.0 / 60.0)
+	results.append(TestResult.new("the Home button does the same",
+		rig.position().distance_to(home_pos) < 1e-4, str(rig.position())))
+	var eased := CameraRig.new()
+	eased.orbit(1.0, 0.0)
+	eased.step(1.0 / 60.0)
+	results.append(TestResult.new("motion is eased: one frame moves part of the way, not all of it",
+		eased.yaw != eased.goal_yaw and absf(eased.yaw - CameraRig.HOME_YAW) > 0.0, str(eased.yaw)))
+	ds.free()
+	return results
+
+
+static func _key(code: Key) -> InputEventKey:
+	var k := InputEventKey.new()
+	k.keycode = code
+	k.pressed = true
+	return k
+
+
+static func _open(id: String) -> GlassShell:
+	var shell := GlassShell.new()
+	shell._on_project_action("new")
+	shell.class_picker.show_class(id)
+	shell.class_picker.choose()
+	return shell
+
+
+static func _test_back_to_picker() -> Array:
+	var results: Array = []
+	var shell := _open("tiny_whoop")
+	shell.design_space.back_button.pressed.emit()
+	results.append(TestResult.new("Back opens the picker with the current class selected",
+		shell.class_picker != null and shell.class_picker.current_id == "tiny_whoop"
+			and not shell.design_space.visible, str(shell.class_picker)))
+	# Esc on the picker: Design Space returns, same instance, build unchanged.
+	var ds := shell.design_space
+	var frame_before: String = str(shell.container.project.parts)
+	var ids_before := DroneClass.parts_for("tiny_whoop")
+	shell.class_picker.dismissed.emit()
+	var bad := _panel_matches(ds, ds.session.build(PartsCatalog.load_default()))
+	results.append(TestResult.new("Esc on the picker restores the same Design Space, build unchanged",
+		shell.class_picker == null and shell.design_space == ds and ds.visible
+			and ds.session.drone_class == "tiny_whoop" and bad == ""
+			and ds.session.build(PartsCatalog.load_default()).frame["part_id"] == ids_before["frame"]
+			and frame_before == (str(shell.container.project.parts)),
+		bad))
+	# Backspace does the same as the button.
+	ds._unhandled_key_input(_key(KEY_BACKSPACE))
+	results.append(TestResult.new("Backspace also goes back",
+		shell.class_picker != null and shell.class_picker.current_id == "tiny_whoop", ""))
+	# Choose a different class: re-seeds build and model.
+	shell.class_picker.show_class("seven_lr")
+	shell.class_picker.choose()
+	var ds2 := shell.design_space
+	var want := DroneClass.parts_for("seven_lr")
+	results.append(TestResult.new("choosing another class re-seeds the build and the model",
+		ds2 != null and ds2 != ds and ds2.session.drone_class == "seven_lr" and shell.class_picker == null
+			and ds2.session.build(PartsCatalog.load_default()).frame["part_id"] == want["frame"]
+			and ds2.model_path() == "res://assets/models/classes/seven_lr.glb"
+			and shell.container.project.drone_class == "seven_lr" and shell.container.project.parts["frame"] == want["frame"],
+		str(ds2)))
+	_cleanup(shell)
+	return results
+
+
+static func _test_panel_fades() -> Array:
+	var results: Array = []
+	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"))
+	for i in 30:
+		ds.step_panel(1.0 / 60.0)
+	results.append(TestResult.new("the panel is visible at home",
+		is_equal_approx(ds.panel.modulate.a, 1.0), str(ds.panel.modulate.a)))
+	for i in 30:
+		ds.rig.zoom_toward(0.7, Vector2.ZERO)
+	ds.step_panel(1.0 / 60.0)
+	results.append(TestResult.new("it is mid-fade after one frame, not a cut",
+		ds.panel.modulate.a > 0.0 and ds.panel.modulate.a < 1.0, str(ds.panel.modulate.a)))
+	for i in 30:
+		ds.step_panel(1.0 / 60.0)
+	results.append(TestResult.new("the panel is hidden when zoomed in",
+		is_equal_approx(ds.panel.modulate.a, 0.0), str(ds.panel.modulate.a)))
+	ds.go_home()
+	for i in 30:
+		ds.step_panel(1.0 / 60.0)
+	results.append(TestResult.new("and back at home",
+		is_equal_approx(ds.panel.modulate.a, 1.0), str(ds.panel.modulate.a)))
+	ds.frame_at(Vector2.ZERO)
+	var framed := ds.rig.framing
+	for i in 30:
+		ds.step_panel(1.0 / 60.0)
+	results.append(TestResult.new("framing a part hides it too",
+		framed and is_equal_approx(ds.panel.modulate.a, 0.0), str(ds.panel.modulate.a)))
+	ds.free()
+	return results
