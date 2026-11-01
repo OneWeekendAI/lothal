@@ -5,7 +5,7 @@ Run all ten:    /opt/homebrew/bin/blender -b -P tools/blender/build_drone.py -- 
 Units are metres. Origin = frame centre. Blender +Y is the front (glTF -Z / Godot forward).
 Env LOTHAL_SKIP_RENDER=1 skips the Cycles render; LOTHAL_SAMPLES sets Cycles samples.
 """
-import sys, os, subprocess
+import sys, os, subprocess, json
 from math import pi, radians, sin, cos, sqrt, atan2
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -74,7 +74,7 @@ CFGS = {
                       batt=dict(seed="battery_4s_1300", cells="4S", mah="1300", col=(0.15, 0.55, 0.30)),
                       zmin=0.0),
     "five_inch": dict(wb=0.220, prop_d=0.127, blades=3, motor=(0.028, 0.0200), frame="open", kb=1.0,
-                      arm_k=1.0, arm_t=0.0050, cam=1.0,
+                      arm_k=1.0, arm_t=0.0050, cam=1.0, frame_part="frame_5in_freestyle",
                       batt=dict(seed="battery_4s_1500", cells="4S", mah="1500", col=(0.92, 0.38, 0.08)),
                       zmin=0.0),
     "six_inch": dict(wb=0.250, prop_d=0.1524, blades=3, motor=(0.0305, 0.0230), frame="open", kb=1.08,
@@ -981,6 +981,13 @@ def build_body_plates(b, C, root=None):
         sc = (KB, KB, ZK)
         pick_proxies(root, "plate_top", ct, U_TOP0, U_TOP0 + U_PLATE, scale=sc, skip=len(STAND_PTS))
         pick_proxies(root, "plate_bottom", cb_, -U_PLATE, 0.0, scale=sc, skip=len(STAND_PTS))
+        if FRAME_DOC is not None:
+            fixed = ["standoff_%d" % n for n in range(1, len(STAND_PTS) + 1)]
+            for mesh, owner, role, cuts, z0 in (("frame_plate_top", "plate_top", "top", ct, U_TOP0),
+                                                ("frame_plate_bottom", "plate_bottom", "bottom", cb_, -U_PLATE)):
+                FRAME_DOC["plates"].append(_doc_plate(mesh, owner, role, BODY_OUT, cuts,
+                                                      _proxy_names(owner, cuts, len(STAND_PTS), fixed),
+                                                      z0 * ZK, U_PLATE * ZK, scale=(KB, KB)))
     for n, (x, y) in enumerate(STAND_PTS, 1):
         bs = part("frame_standoff_%d" % n)
         bs.cyl(MAT["standoff"], 0.0030, 0.0, U_TOP0, T(x, y, 0), seg=6)
@@ -1002,8 +1009,73 @@ def build_body_plates(b, C, root=None):
     return pieces
 
 
+# --------------------------------------------------------------------------- frame document (Design Space §4)
+# The open frame as an AirframeDocument (src/airframe/airframe_document.gd, to_dictionary format), so the
+# Design Space edits the frame that is ON SCREEN rather than a generated preset. Coordinates are the GLB's
+# node space in mm, in the document's plan mapping: u = X, v = Godot Z = -Blender y (the glTF Y-up
+# export), z_mm = height of the plate's underside. The mirror flips winding, so outlines are re-wound
+# CCW and holes CW in (u, v). Every hole carries a name in the plate's parallel `hole_names` list: the
+# pick proxy's own name where one exists (pick_hole_arm_FL_2), else what occupies it (motor_bore_FL,
+# motor_bolt_FL_1, standoff_3). The TPU tail mount is left out: it is not a carbon plate.
+FRAME_DOC = None
+FRAME_DOC_CLASSES = ("five_inch",)
+
+
+def _area2(pts):
+    return sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1] for i in range(len(pts)))
+
+
+def _doc_poly(pts, xf=None, scale=(1.0, 1.0), ccw=True):
+    out = []
+    for x, y in pts:
+        if xf is not None:
+            v = xf @ Vector((x, y, 0.0))
+            x, y = v.x, v.y
+        out.append((round(x * scale[0] * 1000.0, 6), round(-y * scale[1] * 1000.0, 6)))
+    if (_area2(out) > 0) != ccw:
+        out = out[::-1]
+    return [c for p in out for c in p]
+
+
+def _doc_plate(mesh, owner, role, outline, cuts, names, z0, t, xf=None, scale=(1.0, 1.0)):
+    return {"outline": _doc_poly(outline, xf, scale, True),
+            "holes": [_doc_poly(c, xf, scale, False) for c in cuts],
+            "hole_names": names, "thickness_mm": round(t * 1000.0, 6), "z_mm": round(z0 * 1000.0, 6),
+            "role": role, "mesh": mesh, "owner": owner}
+
+
+def _proxy_names(owner, cuts, skip, fixed):
+    names, cnt = list(fixed), {"hole": 0, "pocket": 0}
+    for i, kind in enumerate(cuts.kinds):
+        if i < skip:
+            continue
+        cnt[kind] += 1
+        names.append("pick_%s_%s_%d" % (kind, owner, cnt[kind]))
+    return names
+
+
+def frame_doc_start():
+    global FRAME_DOC
+    FRAME_DOC = {"schema": 1, "id": CFG.get("frame_part", ""), "name": CLASS_ID + " open frame (as drawn in Blender)",
+                 "author": "tools/blender/build_drone.py", "revision": "five_inch.glb",
+                 "material_id": "carbon_3k_twill_0_90", "published_mass_g": 0.0,
+                 "cutting_bit_mm": 1.5875, "plates": [], "pads": [], "motors": [], "hardware": [],
+                 "straps": [], "payload_mounts": []}
+
+
+def frame_doc_write():
+    if FRAME_DOC is None or CLASS_ID not in FRAME_DOC_CLASSES:
+        return
+    path = os.path.join(ROOT, "assets", "models", "classes", CLASS_ID + "_frame.json")
+    with open(path, "w") as fh:
+        json.dump(FRAME_DOC, fh, indent=1)
+        fh.write("\n")
+    print("FRAME DOCUMENT", path, len(FRAME_DOC["plates"]), "plates")
+
+
 def build_frame_open(root):
     C = MAT["carbon"]
+    frame_doc_start()
     ka = CFG["arm_k"]
     outline, u0, sl = arm_outline()
     for key, (sx, sy, _) in MOTORS.items():
@@ -1025,6 +1097,18 @@ def build_frame_open(root):
         ba.mesh(C, me, R(rz=ang))
         ba.to_object("frame_arm_" + key, root, uv=uv_carbon)
         pick_proxies(root, "arm_" + key, cuts, 0, ARM_T, xf=R(rz=ang), skip=n_motor)
+        fixed = (["motor_bore_" + key] + ["motor_bolt_%s_%d" % (key, k) for k in range(1, n_motor)])[:n_motor]
+        plate = _doc_plate("frame_arm_" + key, "arm_" + key, "arm", outline, cuts,
+                           _proxy_names("arm_" + key, cuts, n_motor, fixed), 0.0, ARM_T, xf=R(rz=ang))
+        root_pt, tip_pt = R(rz=ang) @ Vector((u0, 0, 0)), R(rz=ang) @ Vector((ARM_R, 0, 0))
+        plate["root_point"] = [round(root_pt.x * 1000.0, 6), round(-root_pt.y * 1000.0, 6)]
+        plate["tip_point"] = [round(tip_pt.x * 1000.0, 6), round(-tip_pt.y * 1000.0, 6)]
+        FRAME_DOC["plates"].append(plate)
+        # MotorLayout's names: M1 rear-right, M2 front-right, M3 rear-left, M4 front-left; M1/M4 spin +1.
+        mname = {"BR": "M1", "FR": "M2", "BL": "M3", "FL": "M4"}[key]
+        FRAME_DOC["motors"].append({"position_mm": plate["tip_point"], "z_mm": round(MOTOR_Z * 1000.0, 6),
+                                    "spin": 1.0 if mname in ("M1", "M4") else -1.0, "tilt_deg": 0.0,
+                                    "name": mname})
     pieces = build_body_plates(None, C, root)
     for name, pb in pieces:
         pb.to_object(name, root, uv=uv_carbon, scale=(KB, KB, ZK))
@@ -1635,6 +1719,7 @@ def main():
     assert tris < 700000
     check_interpenetration(root)
     check_pack_vs_catalogue(root)
+    frame_doc_write()
     if os.environ.get("LOTHAL_CHECK_ONLY"):
         return
     bpy.ops.object.select_all(action="DESELECT")

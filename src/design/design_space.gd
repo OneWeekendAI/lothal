@@ -112,6 +112,22 @@ var _look_base: Dictionary = {}
 var _look_nodes: Dictionary = {}
 var _pack_label: Label3D
 var _plain_wrap: StandardMaterial3D
+## Frame edits (Section 4): the tool row, the active tool, and what the plates were as drawn.
+var tool_row: FrameToolRow
+## "", "drill", "pocket" or "fill".
+var frame_tool := ""
+var drill_d_mm: float = FrameTools.DRILL_SIZES["M3"]
+## "rect" or "slot".
+var pocket_shape := "rect"
+const POCKET_SLOT_WIDTH_MM := 4.0
+## The last frame op's verdict ({} before any), for tests and the refusal line.
+var last_frame_verdict: Dictionary = {}
+var _doc_root: Node3D
+var _frame_orig: AirframeDocument
+var _glb_meshes := {}
+var _glb_proxies := {}
+var _made_proxies := {}
+var _pocket_from := Vector2.ZERO
 
 
 func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
@@ -126,6 +142,7 @@ func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
 	_build_panel()
 	_build_inspector()
 	_build_picker()
+	_build_frame_tools()
 	refresh()
 	apply_look()
 
@@ -170,7 +187,11 @@ func redo() -> bool:
 func _after_change() -> void:
 	clear_preview()
 	refresh()
+	regenerate_frame()
 	apply_look()
+	if selected != "" and not picks.addresses().has(selected):
+		selected = _plate_address_of(selected)
+	_update_tool_row()
 	if picker_slot != "":
 		open_picker(picker_slot)
 	if selected != "":
@@ -340,6 +361,7 @@ func select(address: String) -> void:
 	selected = address
 	_fill_inspector()
 	_apply_marks()
+	_update_tool_row()
 	var slot := PartSwap.slot_of(address)
 	if slot != "":
 		open_picker(slot)
@@ -387,6 +409,13 @@ func _fill_inspector() -> void:
 			l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 			l.add_theme_color_override("font_color", INK if String(row[0]) in ["Mass", "Part"] else INK_MUTED)
 		inspector.add_child(l)
+	if selected.begins_with("frame/") and frame_change_text() != "":
+		var ch := Label.new()
+		ch.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ch.text = frame_change_text()
+		ch.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+		ch.add_theme_color_override("font_color", INK)
+		inspector.add_child(ch)
 
 
 ## Outlines the hovered and selected pieces: drawn meshes get an ink hull, holes and pockets (hidden
@@ -470,9 +499,12 @@ func _gui_input(event: InputEvent) -> void:
 				MOUSE_BUTTON_WHEEL_DOWN:
 					rig.zoom_toward(1.0 / WHEEL_ZOOM, _ndc_of(mb.position))
 				MOUSE_BUTTON_LEFT:
-					if mb.double_click:
+					if mb.double_click and frame_tool == "":
 						frame_at(_ndc_of(mb.position))
 					_drag = "pan" if mb.shift_pressed else "orbit"
+					if frame_tool == "pocket" and not mb.shift_pressed and plate_hit(_ndc_of(mb.position)).has("plate"):
+						_drag = "pocket"
+						_pocket_from = mb.position
 					_press_pos = mb.position
 					_press_moved = mb.double_click
 				MOUSE_BUTTON_RIGHT:
@@ -482,9 +514,16 @@ func _gui_input(event: InputEvent) -> void:
 			if is_inside_tree():
 				grab_focus()
 		else:
-			if mb.button_index == MOUSE_BUTTON_LEFT and _drag != "" and not _press_moved \
+			if mb.button_index == MOUSE_BUTTON_LEFT and _drag == "pocket":
+				pocket_between(_ndc_of(_pocket_from), _ndc_of(mb.position))
+			elif mb.button_index == MOUSE_BUTTON_LEFT and _drag != "" and not _press_moved \
 					and mb.position.distance_to(_press_pos) <= CLICK_SLOP_PX:
-				click_at(_ndc_of(mb.position))
+				if frame_tool == "drill":
+					drill_at(_ndc_of(mb.position))
+				elif frame_tool == "fill":
+					fill_at(_ndc_of(mb.position))
+				else:
+					click_at(_ndc_of(mb.position))
 			_drag = ""
 		accept_event()
 	elif event is InputEventMouseMotion and _drag == "":
@@ -494,7 +533,9 @@ func _gui_input(event: InputEvent) -> void:
 		var rel := (event as InputEventMouseMotion).relative
 		if (event as InputEventMouseMotion).position.distance_to(_press_pos) > CLICK_SLOP_PX:
 			_press_moved = true
-		if _drag == "orbit":
+		if _drag == "pocket":
+			pass
+		elif _drag == "orbit":
 			rig.orbit(rel.x * ORBIT_RAD_PER_PX, rel.y * ORBIT_RAD_PER_PX)
 		else:
 			rig.pan(rel.x / maxf(size.y, 1.0), rel.y / maxf(size.y, 1.0))
@@ -530,7 +571,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	elif key == KEY_BACKSPACE:
 		back_requested.emit()
 	elif key == KEY_ESCAPE:
-		if selected != "":
+		if frame_tool != "":
+			set_frame_tool("")
+		elif selected != "":
 			clear_selection()
 		else:
 			dismissed.emit()
@@ -741,6 +784,8 @@ func _load_model() -> void:
 			var centre := (lo + hi) * 0.5
 			(root as Node3D).position = Vector3(-centre.x, -lo.y, -centre.z)
 			rig = CameraRig.new(0.5 * Vector2(hi.x - lo.x, hi.z - lo.z).length(), hi.y - lo.y)
+		_doc_root = root as Node3D
+		_stash_frame(root)
 		_capture_look(root)
 	_stage.add_child(model)
 	rebuild_picks()
@@ -1023,6 +1068,362 @@ func _build_inspector() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Frame edits (Section 4): the tools, the click on a plate, the regenerated plates
+# ---------------------------------------------------------------------------
+
+func _build_frame_tools() -> void:
+	tool_row = FrameToolRow.new()
+	tool_row.offset_left = 32
+	tool_row.offset_top = 64
+	tool_row.offset_right = 32 + 300
+	tool_row.visible = false
+	add_child(tool_row)
+	tool_row.tool_chosen.connect(set_frame_tool)
+	tool_row.drill_size_chosen.connect(func(d: float):
+		drill_d_mm = d
+		_update_tool_row())
+	tool_row.pocket_shape_chosen.connect(func(shape: String):
+		pocket_shape = shape
+		_update_tool_row())
+	tool_row.fill_pressed.connect(fill_selected)
+	tool_row.thickness_committed.connect(set_plate_thickness)
+	tool_row.width_committed.connect(set_arm_width)
+	tool_row.undo_pressed.connect(undo)
+	tool_row.redo_pressed.connect(redo)
+	# No seam yet: the Airframe room opens on Lab's own frame document (FrameWorkbench.open_fitted),
+	# and nothing hands a Design Space document back. Labelled, not hidden.
+	tool_row.plan_button.disabled = true
+	tool_row.plan_button.text = "Plan editor (not yet)"
+	tool_row.plan_button.tooltip_text = "Opening this frame in the Airframe room is not wired yet."
+
+
+## Whether the tool row shows: a frame region of an editable frame (the 5") is the selection.
+func frame_tools_shown() -> bool:
+	return tool_row != null and tool_row.visible
+
+
+func _update_tool_row() -> void:
+	if tool_row == null:
+		return
+	var want := selected.begins_with("frame/") and session.frame_editable()
+	tool_row.visible = want
+	if not want:
+		frame_tool = ""
+		return
+	var plate := selected_plate()
+	var doc := session.frame_document()
+	var pd: Dictionary = doc.plates[plate] if plate >= 0 else {}
+	var width := FrameTools.arm_width(doc, plate) if plate >= 0 and String(pd.get("role", "")) == AirframeDocument.ROLE_ARM else 1.0
+	tool_row.show_state(frame_tool, drill_d_mm, pocket_shape, pd, width, session.can_undo(), session.can_redo())
+	tool_row.show_change(frame_change_text())
+
+
+## Arms one tool ("" for none). A click on the stage then drills or fills instead of selecting;
+## with Pocket, a drag on a plate cuts instead of orbiting.
+func set_frame_tool(tool: String) -> void:
+	frame_tool = tool if tool in ["drill", "pocket", "fill"] else ""
+	tool_row.show_reason("")
+	_update_tool_row()
+
+
+## The GLB scene's transform on the stage: what `FrameView` maps plan mm through.
+func doc_xf() -> Transform3D:
+	return PickRegistry._xform_to(_doc_root, _stage) if _doc_root != null else Transform3D.IDENTITY
+
+
+## The document plate the selection is on (an arm, its pad, a plate, or a cut in one); -1 if none.
+func selected_plate() -> int:
+	var doc := session.frame_document()
+	if doc == null:
+		return -1
+	var p := selected.split("/")
+	if p.size() < 3 or p[0] != "frame":
+		return -1
+	match p[1]:
+		"arm", "pad": return session.plate_of_mesh("frame_arm_" + p[2])
+		"plate": return session.plate_of_mesh("frame_plate_" + p[2])
+		"hole", "pocket":
+			for i in doc.plates.size():
+				if String((doc.plates[i] as Dictionary).get("owner", "")) == p[2]:
+					return i
+	return -1
+
+
+## The plate address a cut address belongs to (a filled hole's selection falls back to its plate).
+func _plate_address_of(address: String) -> String:
+	var p := address.split("/")
+	if p.size() >= 3 and p[0] == "frame" and p[1] in ["hole", "pocket"]:
+		var plate_owner := p[2]
+		if plate_owner.begins_with("arm_"):
+			return "frame/arm/" + plate_owner.substr(4)
+		if plate_owner.begins_with("plate_"):
+			return "frame/plate/" + plate_owner.substr(6)
+	return ""
+
+
+## What is under `ndc` as a frame plate: {plate, hole (-1 unless a cut's proxy), point_mm (plan),
+## address, position (stage)}; {address} for something that is not a plate; {} for nothing.
+func plate_hit(ndc: Vector2) -> Dictionary:
+	var ray := rig.ray(ndc)
+	var all := picks.hits(ray["origin"], ray["dir"])
+	if all.is_empty() or session.frame_document() == null:
+		return {}
+	# The first FRAME hit: with a frame tool in hand, a prop blade or a wire over the arm is not what
+	# the click is about. Anything frame that is not a plate (a standoff, a screw) still refuses.
+	var h: Dictionary = all[0]
+	for x in all:
+		if String(x["address"]).begins_with("frame/"):
+			h = x
+			break
+	var node_name := String((h["entry"]["node"] as Node).name)
+	var plate := session.plate_of_mesh(node_name)
+	var hole := -1
+	if plate < 0:
+		var ph := session.hole_of_proxy(node_name)
+		plate = ph.x
+		hole = ph.y
+	if plate < 0:
+		return {"address": String(h["address"])}
+	return {"plate": plate, "hole": hole, "point_mm": FrameView.plan_point(h["position"], doc_xf()),
+		"address": String(h["address"]), "position": h["position"]}
+
+
+## Drill: a `drill_d_mm` hole where `ndc` meets a plate. Returns the verdict.
+func drill_at(ndc: Vector2) -> Dictionary:
+	var hit := plate_hit(ndc)
+	if not hit.has("plate"):
+		return _frame_result(FrameTools.refuse("Drill on a plate or an arm."))
+	return _frame_result(session.drill(int(hit["plate"]), hit["point_mm"], drill_d_mm))
+
+
+## Fill: the hole or pocket under `ndc` back in.
+func fill_at(ndc: Vector2) -> Dictionary:
+	var hit := plate_hit(ndc)
+	if int(hit.get("hole", -1)) < 0:
+		return _frame_result(FrameTools.refuse("Click a hole or a pocket to fill it."))
+	return _frame_result(session.fill(int(hit["plate"]), int(hit["hole"])))
+
+
+## The Fill button: fills the selected hole or pocket at once; with anything else selected, arms the
+## Fill tool so the next click picks the cut.
+func fill_selected() -> Dictionary:
+	var p := selected.split("/")
+	if p.size() >= 4 and p[0] == "frame" and p[1] in ["hole", "pocket"]:
+		var at := session.hole_of_proxy("pick_%s_%s_%s" % [p[1], p[2], p[3]])
+		if at.x >= 0:
+			return _frame_result(session.fill(at.x, at.y))
+	set_frame_tool("fill")
+	return {}
+
+
+## Pocket: dragged from `ndc_a` (on a plate) to `ndc_b`, as a rectangle (along an arm's axis on an
+## arm) or a slot, on the plate the drag started on.
+func pocket_between(ndc_a: Vector2, ndc_b: Vector2) -> Dictionary:
+	var hit := plate_hit(ndc_a)
+	if not hit.has("plate"):
+		return _frame_result(FrameTools.refuse("Start the pocket on a plate or an arm."))
+	var doc := session.frame_document()
+	var plate: Dictionary = doc.plates[int(hit["plate"])]
+	var top := AirframeDocument.plate_z_mm(plate) + AirframeDocument.plate_thickness_mm(plate)
+	var ray := rig.ray(ndc_b)
+	var end := FrameView.ray_on_plane(ray["origin"], ray["dir"], top, doc_xf())
+	if end.is_empty():
+		return _frame_result(FrameTools.refuse("Drag across the plate to size the pocket."))
+	var a := FrameView.ray_on_plane(rig.ray(ndc_a)["origin"], rig.ray(ndc_a)["dir"], top, doc_xf())
+	var pa: Vector2 = a["point"] if not a.is_empty() else hit["point_mm"]
+	var pb: Vector2 = end["point"]
+	return pocket_from_to(int(hit["plate"]), pa, pb)
+
+
+## The pocket a drag from `a` to `b` (plan mm) on plate `plate_index` cuts. The seam both the drag
+## and the tests call.
+func pocket_from_to(plate_index: int, a: Vector2, b: Vector2) -> Dictionary:
+	var doc := session.frame_document()
+	var plate: Dictionary = doc.plates[plate_index]
+	var shape: PackedVector2Array
+	if pocket_shape == "slot":
+		if a.distance_to(b) < 0.5:
+			return _frame_result(FrameTools.refuse("Drag along the plate to draw the slot."))
+		shape = FrameTools.slot_pocket(a, b, POCKET_SLOT_WIDTH_MM)
+	else:
+		var angle := 0.0
+		if String(plate.get("role", "")) == AirframeDocument.ROLE_ARM:
+			var root := AirframeDocument.point_of(plate.get("root_point", [0, 0]))
+			var tip := AirframeDocument.point_of(plate.get("tip_point", [1, 0]))
+			angle = (tip - root).angle()
+		var d := (b - a).rotated(-angle).abs()
+		if d.x < 1.0 or d.y < 1.0:
+			return _frame_result(FrameTools.refuse("Drag across the plate to size the pocket."))
+		shape = FrameTools.rect_pocket((a + b) * 0.5, d, angle)
+	return _frame_result(session.pocket(plate_index, shape))
+
+
+func set_plate_thickness(mm: float) -> Dictionary:
+	return _frame_result(session.set_plate_thickness(selected_plate(), mm))
+
+
+func set_arm_width(width_scale: float) -> Dictionary:
+	return _frame_result(session.set_arm_width(selected_plate(), width_scale))
+
+
+## After a frame op: an applied edit moves everything (`_after_change`, which redraws the edited
+## plates); a refused one shows its reason in the warning accent and touches nothing else.
+func _frame_result(verdict: Dictionary) -> Dictionary:
+	last_frame_verdict = verdict
+	if verdict.get("ok", false):
+		_after_change()
+		tool_row.show_reason("")
+	else:
+		tool_row.show_reason(String(verdict.get("reason", "")))
+		_update_tool_row()
+	return verdict
+
+
+## The refusal line as shown ("" when hidden).
+func frame_reason_text() -> String:
+	return tool_row.reason_label.text if tool_row.reason_label.visible else ""
+
+
+## What the edits so far did, in words: "Frame: 1 hole drilled, -0.05 g". "" when unedited.
+func frame_change_text() -> String:
+	var doc := session.frame_document()
+	if doc == null or _frame_orig == null or doc.plates.size() != _frame_orig.plates.size():
+		return ""
+	var drilled := 0
+	var pocketed := 0
+	var filled := 0
+	var thick := 0
+	var wide := 0
+	for i in doc.plates.size():
+		var now := FrameTools.hole_names(doc.plates[i])
+		var was := FrameTools.hole_names(_frame_orig.plates[i])
+		for n in now:
+			if not was.has(n):
+				if String(n).begins_with("pick_pocket_"):
+					pocketed += 1
+				else:
+					drilled += 1
+		for n in was:
+			if not now.has(n):
+				filled += 1
+		if absf(AirframeDocument.plate_thickness_mm(doc.plates[i]) - AirframeDocument.plate_thickness_mm(_frame_orig.plates[i])) > 1.0e-9:
+			thick += 1
+		if String((doc.plates[i] as Dictionary).get("role", "")) == AirframeDocument.ROLE_ARM \
+				and absf(FrameTools.arm_width(doc, i) - FrameTools.arm_width(_frame_orig, i)) > 1.0e-9:
+			wide += 1
+	var parts: Array = []
+	for pair in [[drilled, "hole drilled", "holes drilled"], [pocketed, "pocket cut", "pockets cut"],
+			[filled, "cut filled", "cuts filled"], [thick, "plate thickness changed", "plate thicknesses changed"],
+			[wide, "arm width changed", "arm widths changed"]]:
+		if int(pair[0]) > 0:
+			parts.append("%d %s" % [pair[0], pair[1] if int(pair[0]) == 1 else pair[2]])
+	if parts.is_empty():
+		return ""
+	var dg := float(FittedFrame.drawn(doc)["mass_g"]) - float(FittedFrame.drawn(_frame_orig)["mass_g"])
+	return "Frame: %s, %+.2f g" % [", ".join(PackedStringArray(parts)), dg]
+
+
+## Keeps what each plate looked like in the GLB (its mesh and its cut proxies), so an unedited plate
+## (or one undone back to as drawn) shows the GLB's own mesh again.
+func _stash_frame(root: Node) -> void:
+	var doc := session.frame_document()
+	if doc == null:
+		return
+	_frame_orig = AirframeDocument.from_dictionary(doc.to_dictionary())
+	for plate in doc.plates:
+		var mesh_name := FrameTools.plate_mesh(plate)
+		var node := root.find_child(mesh_name, true, false) as MeshInstance3D
+		if node == null:
+			continue
+		_glb_meshes[mesh_name] = node.mesh
+		var plate_owner := String((plate as Dictionary).get("owner", ""))
+		var mine: Array = []
+		for kind in ["hole", "pocket"]:
+			for proxy in root.find_children("%s%s_%s_*" % [PickRegistry.PROXY_PREFIX, kind, plate_owner], "MeshInstance3D", true, false):
+				mine.append(proxy)
+		_glb_proxies[plate_owner] = mine
+
+
+static func _same_plate(a: Dictionary, b: Dictionary) -> bool:
+	return a.get("outline") == b.get("outline") and a.get("holes") == b.get("holes") \
+		and is_equal_approx(float(a.get("thickness_mm", 0.0)), float(b.get("thickness_mm", 0.0))) \
+		and is_equal_approx(float(a.get("z_mm", 0.0)), float(b.get("z_mm", 0.0)))
+
+
+## Whether plate `index` is drawn from the document (edited) rather than by the GLB.
+func plate_regenerated(index: int) -> bool:
+	var doc := session.frame_document()
+	if doc == null or _doc_root == null:
+		return false
+	var node := _doc_root.find_child(FrameTools.plate_mesh(doc.plates[index]), true, false) as MeshInstance3D
+	return node != null and node.mesh != _glb_meshes.get(String(node.name))
+
+
+## Redraws every EDITED plate from the document (FrameView: split, clip, extrude, same material) with
+## fresh pick proxies for its cuts; an unedited plate gets the GLB's mesh and proxies back. The pick
+## shapes follow in `rebuild_picks` (apply_look), so a drilled hole is pickable at once.
+func regenerate_frame() -> void:
+	var doc := session.frame_document()
+	if doc == null or _frame_orig == null or _doc_root == null:
+		return
+	for i in doc.plates.size():
+		var plate: Dictionary = doc.plates[i]
+		var mesh_name := FrameTools.plate_mesh(plate)
+		var node := _doc_root.find_child(mesh_name, true, false) as MeshInstance3D
+		if node == null or not _glb_meshes.has(mesh_name):
+			continue
+		var edited := i >= _frame_orig.plates.size() or not _same_plate(plate, _frame_orig.plates[i])
+		_draw_plate(node, plate, edited)
+
+
+func _draw_plate(node: MeshInstance3D, plate: Dictionary, edited: bool) -> void:
+	var plate_owner := String(plate.get("owner", ""))
+	var parent := node.get_parent()
+	for made in _made_proxies.get(plate_owner, []):
+		if is_instance_valid(made):
+			(made as Node).get_parent().remove_child(made)
+			(made as Node).free()
+	_made_proxies[plate_owner] = []
+	var glb: Array = _glb_proxies.get(plate_owner, [])
+	var mesh_name := String(node.name)
+	if not edited:
+		node.mesh = _glb_meshes[mesh_name]
+		for proxy in glb:
+			if (proxy as Node).get_parent() == null:
+				parent.add_child(proxy)
+		return
+	for proxy in glb:
+		if (proxy as Node).get_parent() != null:
+			(proxy as Node).get_parent().remove_child(proxy)
+	var mat := (_glb_meshes[mesh_name] as Mesh).surface_get_material(0)
+	var turn := String(plate.get("role", "")) != AirframeDocument.ROLE_ARM
+	node.mesh = FrameView.plate_mesh(plate, PickRegistry._xform_to(node, _doc_root).affine_inverse(), mat, turn)
+	var to_parent := PickRegistry._xform_to(parent, _doc_root).affine_inverse()
+	var names := FrameTools.hole_names(plate)
+	var holes := AirframeDocument.plate_holes(plate)
+	var made: Array = []
+	for k in holes.size():
+		var n := String(names[k])
+		if not n.begins_with(PickRegistry.PROXY_PREFIX):
+			continue
+		var mi := MeshInstance3D.new()
+		mi.name = n
+		mi.mesh = FrameView.cut_proxy_mesh(holes[k], plate, to_parent)
+		mi.visible = false
+		parent.add_child(mi)
+		made.append(mi)
+	_made_proxies[plate_owner] = made
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		for plate_owner in _glb_proxies:
+			for proxy in _glb_proxies[plate_owner]:
+				if is_instance_valid(proxy) and (proxy as Node).get_parent() == null:
+					(proxy as Node).free()
+
+
+# ---------------------------------------------------------------------------
 # The swap picker (Section 3)
 # ---------------------------------------------------------------------------
 
@@ -1078,14 +1479,17 @@ func open_picker(slot: String) -> void:
 			head.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 			head.add_theme_color_override("font_color", INK_FAINT)
 			_picker_list.add_child(head)
-			height += 22.0
+			height += head.get_combined_minimum_size().y + _picker_sep()
 		for opt in PartSwap.options(session, _catalog, String(cat), _verdicts):
 			height += _add_row(opt)
 	var scroll := _picker_list.get_parent() as ScrollContainer
-	scroll.custom_minimum_size.y = minf(height, PICKER_MAX_H)
+	scroll.custom_minimum_size.y = minf(maxf(height - _picker_sep(), 0.0), PICKER_MAX_H)
 	picker.reset_size()
 	picker.visible = true
+	_make_room_for_picker()
 	place_picker()
+	var fitted := _picker_rows.map(func(r): return r["fitted"]).find(true)
+	reveal_row(maxi(fitted, 0))
 
 
 func _add_row(opt: Dictionary) -> float:
@@ -1121,7 +1525,7 @@ func _add_row(opt: Dictionary) -> float:
 	b.mouse_exited.connect(clear_preview)
 	b.pressed.connect(func(): press_row(i))
 	_picker_list.add_child(b)
-	var h := 44.0
+	var h := b.get_combined_minimum_size().y + _picker_sep()
 	if not opt["ok"]:
 		var why := Label.new()
 		why.text = String(opt["reason"])
@@ -1132,7 +1536,7 @@ func _add_row(opt: Dictionary) -> float:
 		why.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_picker_list.add_child(why)
 		row["reason_label"] = why
-		h += 20.0 * ceilf(float(why.text.length()) / 46.0)
+		h += why.get_combined_minimum_size().y + _picker_sep()
 	_picker_rows.append(row)
 	return h
 
@@ -1152,6 +1556,7 @@ func picker_rows() -> Array:
 ## The pointer over a row: preview its readout deltas (nothing for a disabled row).
 func hover_row(i: int) -> Dictionary:
 	var row: Dictionary = _picker_rows[i]
+	reveal_row(i)
 	if (row["button"] as Button).disabled:
 		clear_preview()
 		return {}
@@ -1166,18 +1571,144 @@ func press_row(i: int) -> Dictionary:
 	return choose(String(row["category"]), String(row["id"]))
 
 
-## Keeps the picker beside the selected part, clear of the readouts column on the right.
+## Keeps the picker beside the drone (never over it) and near the selected part, clear of the
+## right column (readouts, inspector). Placed for the view the camera is easing to. When the picker
+## has closed, gives back any room the camera made for it (see `_make_room_for_picker`).
 func place_picker() -> void:
-	if picker == null or not picker.visible or selected == "":
+	if picker == null:
 		return
-	var box := picks.box_of(selected)
-	var ndc := rig.project(box.get_center())
-	var p := Vector2((ndc.x + 1.0) * 0.5 * size.x, (1.0 - ndc.y) * 0.5 * size.y)
-	var w := picker.size.x
+	if not picker.visible:
+		_give_back_room()
+		return
+	if selected == "":
+		return
+	_finish_reveal()
+	var view := PickerPlace.settled(rig)
+	var p := PickerPlace.to_px(view.project(picks.box_of(selected).get_center()), size)
+	var w := maxf(picker.size.x, PICKER_W)
 	var h := picker.size.y
-	var x := p.x + 48.0
-	if x + w > size.x - 320.0:
-		x = p.x - 48.0 - w
-	x = clampf(x, 24.0, maxf(size.x - w - 24.0, 24.0))
-	var y := clampf(p.y - h * 0.5, 64.0, maxf(size.y - h - 24.0, 64.0))
-	picker.position = Vector2(x, y)
+	var x := PickerPlace.side_x(PickerPlace.screen_rect(view, _mesh_aabbs(), size), w, size, p.x)
+	if is_nan(x):
+		# No side clear of the drone (zoomed in, or the user moved the camera): beside the part.
+		x = p.x + 48.0
+		if x + w > size.x - PickerPlace.COLUMN_W:
+			x = p.x - 48.0 - w
+		x = clampf(x, PickerPlace.MARGIN, maxf(size.x - PickerPlace.COLUMN_W - w, PickerPlace.MARGIN))
+	picker.position = Vector2(x, PickerPlace.near_y(p.y, h, size))
+
+
+# ---------------------------------------------------------------------------
+# Swap picker placement and scrolling helpers (Section 3 fixes)
+# ---------------------------------------------------------------------------
+
+var _room_before := {}         ## the camera goal before the picker made room; {} when it made none
+var _room_goal := {}           ## the goal it set, to tell whether the user has moved since
+var _reveal_pending := -1      ## a row to reveal again while the list is being laid out
+var _reveal_frames := 0
+
+
+## The drone on screen now: the union of every drawn mesh's box, its 8 corners projected (px).
+func drone_screen_rect() -> Rect2:
+	return PickerPlace.screen_rect(rig, _mesh_aabbs(), size)
+
+
+func _mesh_aabbs() -> Array:
+	return mesh_boxes().map(func(e): return e["box"])
+
+
+func _picker_sep() -> float:
+	return float(_picker_list.get_theme_constant("separation"))
+
+
+## The list's full height, summed from its children (the list's own cached minimum size is stale
+## until the deferred layout runs, and never refreshes headless).
+func _picker_content_h() -> float:
+	var y := 0.0
+	for c in _picker_list.get_children():
+		y += (c as Control).get_combined_minimum_size().y + _picker_sep()
+	return maxf(y - _picker_sep(), 0.0)
+
+
+func _picker_scroll() -> ScrollContainer:
+	return _picker_list.get_parent() as ScrollContainer
+
+
+## At a view where neither side of the drone has room for the picker, backs the camera off and
+## slides the drone left until the picker fits beside it. Not while zoomed in or framing a part.
+func _make_room_for_picker() -> void:
+	if rig.is_zoomed_in() or size.x <= 0.0:
+		return
+	var w := maxf(picker.size.x, PICKER_W)
+	var view := PickerPlace.settled(rig)
+	var p := PickerPlace.to_px(view.project(picks.box_of(selected).get_center()), size)
+	if not is_nan(PickerPlace.side_x(PickerPlace.screen_rect(view, _mesh_aabbs(), size), w, size, p.x)):
+		return
+	if _room_before.is_empty():
+		_room_before = {"target": rig.goal_target, "distance": rig.goal_distance}
+	var g := PickerPlace.room_goal(rig, _mesh_aabbs(), size, w)
+	rig.goal_target = g["target"]
+	rig.goal_distance = g["distance"]
+	_room_goal = g
+
+
+## The picker closed: the camera goes back, unless the user moved it since it made room.
+func _give_back_room() -> void:
+	if _room_before.is_empty():
+		return
+	if rig.goal_target.is_equal_approx(_room_goal["target"]) and is_equal_approx(rig.goal_distance, _room_goal["distance"]):
+		rig.goal_target = _room_before["target"]
+		rig.goal_distance = _room_before["distance"]
+	_room_before = {}
+	_room_goal = {}
+
+
+## Row i's span in the list (px from the list's top): its button and any reason line under it.
+## From minimum sizes: a VBox with no expanding children gives each child exactly its minimum
+## height, so this is the layout itself, and it holds before the deferred layout has run (and
+## headless, where it never runs).
+func picker_row_span(i: int) -> Vector2:
+	var row: Dictionary = _picker_rows[i]
+	var b := row["button"] as Button
+	var last: Control = row["reason_label"] if row["reason_label"] != null else b
+	var y := 0.0
+	var top := 0.0
+	for c in _picker_list.get_children():
+		var hc := (c as Control).get_combined_minimum_size().y
+		if c == b:
+			top = y
+		if c == last:
+			return Vector2(top, y + hc)
+		y += hc + _picker_sep()
+	return Vector2.ZERO
+
+
+## Scrolls the picker so row i shows whole (the least move; nothing if it already shows), and
+## again over the next few frames: a wrapped reason line only knows its height once laid out.
+func reveal_row(i: int) -> void:
+	_reveal_pending = i
+	_reveal_frames = 3
+	_apply_reveal(i)
+
+
+func _apply_reveal(i: int) -> void:
+	if i < 0 or i >= _picker_rows.size():
+		return
+	var scroll := _picker_scroll()
+	var span := picker_row_span(i)
+	var view_h := scroll.custom_minimum_size.y
+	var content := _picker_content_h()
+	var bar := scroll.get_v_scroll_bar()
+	# Before the deferred layout the bar still has the old list's range; give it this one's.
+	bar.max_value = content
+	bar.page = view_h
+	var want := PickerPlace.reveal(span.x, span.y, view_h, float(scroll.scroll_vertical))
+	scroll.scroll_vertical = int(roundf(clampf(want, 0.0, maxf(content - view_h, 0.0))))
+
+
+func _finish_reveal() -> void:
+	if _reveal_pending < 0:
+		return
+	_apply_reveal(_reveal_pending)
+	_reveal_frames -= 1
+	if _reveal_frames <= 0:
+		_reveal_pending = -1

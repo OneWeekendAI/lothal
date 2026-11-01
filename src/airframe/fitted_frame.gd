@@ -37,10 +37,12 @@ extends RefCounted
 ## `unflown_warning` says so on the Frame row rather than letting the designer and the aircraft
 ## silently disagree.
 
-## Below these the document is the frame as fitted, and the catalogue flies untouched. A tenth of
-## a gram and a hundredth of a millimetre are far under anything a builder can draw on purpose and
-## far over the float32 noise a round trip through the document leaves (~1e-6 relative).
-const MASS_EPSILON_G := 0.1
+## Below these the document is the frame as fitted, and the catalogue flies untouched. A
+## milligram and a hundredth of a millimetre are far over the float32 noise a round trip through the
+## document leaves (~1e-6 relative, ~1e-4 g on a 100 g frame) and under anything a builder can draw
+## on purpose: the smallest Design Space edit, a 3 mm hole through 5 mm carbon, is ~0.05 g (it was
+## 0.1 g until Section 4, which swallowed that hole whole).
+const MASS_EPSILON_G := 0.001
 const ARM_EPSILON_MM := 0.01
 const QUAD_MOTORS := 4
 ## Nothing flies lighter than this: an edit that deleted every plate must not produce a massless

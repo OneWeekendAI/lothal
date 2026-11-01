@@ -3,7 +3,7 @@ extends SceneTree
 ## GlassShell, New drone, pick a class, Choose.
 ##
 ##   godot --script res://tests/capture_design_space.gd -- <out.png> <class id> [WxH] [close-up mesh name]
-##       [selected address] [hovered address] [swap cat=id,...] [preview cat=id]
+##       [selected address] [hovered address] [swap cat=id,...] [preview cat=id] [frame op]
 ##
 ## Swaps go through `DesignSpace.choose` (the picker's own path) after the selection; a preview
 ## hovers that row of the open picker, so the readout deltas show.
@@ -64,6 +64,30 @@ func _init() -> void:
 			var row: Dictionary = ds.picker_rows()[i]
 			if String(row["category"]) == kv[0] and String(row["id"]) == kv[1]:
 				print("preview %s" % ds.hover_row(i))
+	# A frame op (Section 4) on arm FL, 91 mm out along its axis (tests/test_frame_edits_ui.gd's
+	# point): "drill" drills a 3 mm hole there through the tool's own click path; "refuse" drills on
+	# the arm's first lightening hole, so the refusal line shows; "select" only selects the arm.
+	var frame_op: String = args[8] if args.size() > 8 else ""
+	if frame_op != "":
+		ds.select("frame/arm/FL")
+		var doc := ds.session.frame_document()
+		var fl := ds.session.plate_of_mesh("frame_arm_FL")
+		var plate: Dictionary = doc.plates[fl]
+		var top := AirframeDocument.plate_z_mm(plate) + AirframeDocument.plate_thickness_mm(plate)
+		var aim := AirframeDocument.point_of(plate["tip_point"]).normalized() * 91.0
+		if frame_op == "refuse":
+			var k := FrameTools.hole_names(plate).find("pick_hole_arm_FL_1")
+			aim = FrameTools.centre_of(AirframeDocument.plate_holes(plate)[k])
+		if frame_op in ["drill", "refuse"]:
+			ds.set_frame_tool("drill")
+			ds.drill_d_mm = 3.0
+			print("frame op %s -> %s" % [frame_op, ds.drill_at(ds.rig.project(FrameView.space_point(aim, top, ds.doc_xf())))])
+		print("change: %s" % ds.frame_change_text())
+		# Close on the drill point (30 mm across), so a 3 mm hole is visible.
+		var c := FrameView.space_point(aim, top, ds.doc_xf())
+		ds.rig.frame(AABB(c - Vector3(0.015, 0.004, 0.015), Vector3(0.03, 0.008, 0.03)))
+		# From nearly overhead: the pack and the props stand between the home view and this arm.
+		ds.rig.goal_pitch = deg_to_rad(78.0)
 	for i in 60:
 		await process_frame
 	root.get_texture().get_image().save_png(out_path)
