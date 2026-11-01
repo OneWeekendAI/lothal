@@ -78,6 +78,15 @@ func _init() -> void:
 	free_size.suffix = "mm"
 	free_size.custom_minimum_size = Vector2(92, 0)
 	free_size.tooltip_text = "Free diameter"
+	# The theme's focus ring is the accent blue; here the one accent is the warning amber.
+	var field_focus := StyleBoxFlat.new()
+	field_focus.bg_color = Color(0, 0, 0, 0)
+	field_focus.border_color = INK_MUTED
+	field_focus.set_border_width_all(1)
+	field_focus.set_corner_radius_all(3)
+	free_size.get_line_edit().add_theme_stylebox_override("focus", field_focus)
+	free_size.get_line_edit().add_theme_color_override("caret_color", INK)
+	free_size.get_line_edit().add_theme_color_override("selection_color", Color(1, 1, 1, 0.2))
 	free_size.value_changed.connect(func(v: float): drill_size_chosen.emit(v))
 	_sizes_row.add_child(free_size)
 	_shapes_row = HBoxContainer.new()
@@ -133,7 +142,8 @@ func _init() -> void:
 	tags_box.add_theme_constant_override("v_separation", 4)
 	tags_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(tags_box)
-	var lead := _label("Not modelled:", INK_FAINT)
+	# Muted, not faint: this line says what the mass change leaves out, so it must be read.
+	var lead := _label("Not modelled:", INK_MUTED)
 	tags_box.add_child(lead)
 	for t in FrameTools.NOT_MODELLED:
 		tags_box.add_child(_tag(String(t)))
@@ -218,7 +228,21 @@ func _button(text: String, toggle: bool) -> Button:
 	b.add_theme_color_override("font_color", INK_MUTED)
 	b.add_theme_color_override("font_hover_color", INK)
 	b.add_theme_color_override("font_pressed_color", INK)
+	b.add_theme_color_override("font_hover_pressed_color", INK)
 	b.add_theme_color_override("font_disabled_color", INK_FAINT)
+	# Selected = lighter fill and an ink border, never the theme's accent blue (monochrome, with
+	# the warning amber as the only accent).
+	var on := StyleBoxFlat.new()
+	on.bg_color = Color(1, 1, 1, 0.16)
+	on.border_color = INK_MUTED
+	on.set_border_width_all(1)
+	on.set_corner_radius_all(LothalTheme.RADIUS_CONTROL)
+	on.content_margin_left = LothalTheme.SPACE_3
+	on.content_margin_right = LothalTheme.SPACE_3
+	on.content_margin_top = LothalTheme.SPACE_2
+	on.content_margin_bottom = LothalTheme.SPACE_2
+	b.add_theme_stylebox_override("pressed", on)
+	b.add_theme_stylebox_override("hover_pressed", on)
 	return b
 
 

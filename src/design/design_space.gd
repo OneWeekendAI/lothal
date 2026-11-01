@@ -129,6 +129,21 @@ var _glb_proxies := {}
 var _made_proxies := {}
 var _pocket_from := Vector2.ZERO
 
+## Section 5: the shelf, the drag, the drop.
+var shelf: PartsShelf
+var flight_label: Label
+var drop_label: Label
+## "" | "shelf" (a part from the shelf) | "off" (a mounted part being dragged off the drone).
+var drag_kind := ""
+var drag_part := ""
+var drag_address := ""
+var drag_verdict := {}
+var _mount_map := {}
+var _ghosts: Array = []
+var _ghost_mat: StandardMaterial3D
+var _lit: Array = []
+var _shelf_verdicts := {}
+
 
 func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
 	session = p_session
@@ -143,8 +158,10 @@ func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
 	_build_inspector()
 	_build_picker()
 	_build_frame_tools()
+	_build_shelf()
 	refresh()
 	apply_look()
+	refresh_shelf()
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +213,7 @@ func _after_change() -> void:
 		open_picker(picker_slot)
 	if selected != "":
 		_fill_inspector()
+	refresh_shelf()
 
 
 ## Re-reads the session's build into the panel.
@@ -209,6 +227,9 @@ func refresh() -> void:
 	for c in warnings_box.get_children():
 		warnings_box.remove_child(c)
 		c.queue_free()
+	var fs := session.flight_state(_catalog)
+	flight_label.text = String(fs["line"]) if not fs["flies"] else ""
+	flight_label.visible = not fs["flies"]
 	var b := session.build(_catalog)
 	if b != null:
 		var shown := 0
@@ -277,8 +298,9 @@ func clear_preview() -> void:
 
 ## One readout as shown. Static so the tests can name the exact string.
 static func format_readout(key: String, r: Dictionary) -> String:
-	if not r.has(key):
-		return "n/a"
+	# Absent, not zero: a drone that cannot fly (Section 5, a required part removed) has no figures.
+	if not r.has(key) or r[key] == null:
+		return "—"
 	var v := float(r[key])
 	match key:
 		"auw_g": return "%.1f g" % v
@@ -293,8 +315,13 @@ func model_path() -> String:
 	return _model_path
 
 
+## Home: the isometric view, with the drone clear of whatever is open beside it (the shelf on the
+## left, the picker on the right). With neither open it is the plain home view.
 func go_home() -> void:
 	rig.go_home()
+	_room_before = {}
+	_room_goal = {}
+	_update_room()
 
 
 ## The world-space bounds of every mesh the user sees, by mesh (pick proxies excluded).
@@ -505,6 +532,11 @@ func _gui_input(event: InputEvent) -> void:
 					if frame_tool == "pocket" and not mb.shift_pressed and plate_hit(_ndc_of(mb.position)).has("plate"):
 						_drag = "pocket"
 						_pocket_from = mb.position
+					elif frame_tool == "" and not mb.shift_pressed and not mb.double_click \
+							and PartSnap.category_at(selected) != "" \
+							and _ray_meets(_ndc_of(mb.position), selected):
+						# Pressed on the selected part: a drag carries it (off the drone removes it).
+						_drag = "part"
 					_press_pos = mb.position
 					_press_moved = mb.double_click
 				MOUSE_BUTTON_RIGHT:
@@ -535,6 +567,10 @@ func _gui_input(event: InputEvent) -> void:
 			_press_moved = true
 		if _drag == "pocket":
 			pass
+		elif _drag == "part":
+			if _press_moved and drag_kind == "":
+				begin_off_drag(selected)
+				drag_over((event as InputEventMouseMotion).position)
 		elif _drag == "orbit":
 			rig.orbit(rel.x * ORBIT_RAD_PER_PX, rel.y * ORBIT_RAD_PER_PX)
 		else:
@@ -568,10 +604,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		redo()
 	elif key == KEY_H or key == KEY_HOME:
 		go_home()
+	elif key == KEY_DELETE:
+		remove_selected()
 	elif key == KEY_BACKSPACE:
 		back_requested.emit()
 	elif key == KEY_ESCAPE:
-		if frame_tool != "":
+		if drag_kind != "":
+			cancel_drag()
+		elif frame_tool != "":
 			set_frame_tool("")
 		elif selected != "":
 			clear_selection()
@@ -785,6 +825,7 @@ func _load_model() -> void:
 			(root as Node3D).position = Vector3(-centre.x, -lo.y, -centre.z)
 			rig = CameraRig.new(0.5 * Vector2(hi.x - lo.x, hi.z - lo.z).length(), hi.y - lo.y)
 		_doc_root = root as Node3D
+		_mount_map = PartSnap.mount_map(root)
 		_stash_frame(root)
 		_capture_look(root)
 	_stage.add_child(model)
@@ -920,6 +961,13 @@ func _build_panel() -> void:
 	rule.custom_minimum_size = Vector2(0, 1)
 	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(rule)
+	flight_label = Label.new()
+	flight_label.name = "FlightState"
+	flight_label.visible = false
+	flight_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flight_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
+	flight_label.add_theme_color_override("font_color", WARN_INK)
+	panel.add_child(flight_label)
 
 	var rows := [["auw_g", "All-up weight"], ["thrust_to_weight", "Thrust to weight"],
 		["hover_throttle", "Hover throttle"], ["flight_time_min", "Flight time (est.)"],
@@ -986,6 +1034,7 @@ func _build_panel() -> void:
 	home_button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
 	home_button.add_theme_color_override("font_color", INK_MUTED)
 	home_button.add_theme_color_override("font_hover_color", INK)
+	home_button.add_theme_color_override("font_pressed_color", INK)
 	home_button.pressed.connect(go_home)
 	add_child(home_button)
 
@@ -1001,6 +1050,7 @@ func _build_panel() -> void:
 	back_button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
 	back_button.add_theme_color_override("font_color", INK_MUTED)
 	back_button.add_theme_color_override("font_hover_color", INK)
+	back_button.add_theme_color_override("font_pressed_color", INK)
 	back_button.pressed.connect(func(): back_requested.emit())
 	add_child(back_button)
 
@@ -1107,6 +1157,10 @@ func _update_tool_row() -> void:
 		return
 	var want := selected.begins_with("frame/") and session.frame_editable()
 	tool_row.visible = want
+	if shelf != null:
+		# The tool row and the shelf share the left column; frame editing has it while a plate is
+		# selected.
+		shelf.visible = not want
 	if not want:
 		frame_tool = ""
 		return
@@ -1506,6 +1560,7 @@ func _add_row(opt: Dictionary) -> float:
 	b.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	b.add_theme_color_override("font_color", INK if opt["fitted"] else INK_MUTED)
 	b.add_theme_color_override("font_hover_color", INK)
+	b.add_theme_color_override("font_pressed_color", INK)
 	b.add_theme_color_override("font_disabled_color", INK_FAINT)
 	var hover := StyleBoxFlat.new()
 	hover.bg_color = Color(1, 1, 1, 0.06)
@@ -1578,7 +1633,8 @@ func place_picker() -> void:
 	if picker == null:
 		return
 	if not picker.visible:
-		_give_back_room()
+		if shelf == null or not shelf_open():
+			_give_back_room()
 		return
 	if selected == "":
 		return
@@ -1587,13 +1643,13 @@ func place_picker() -> void:
 	var p := PickerPlace.to_px(view.project(picks.box_of(selected).get_center()), size)
 	var w := maxf(picker.size.x, PICKER_W)
 	var h := picker.size.y
-	var x := PickerPlace.side_x(PickerPlace.screen_rect(view, _mesh_aabbs(), size), w, size, p.x)
+	var x := PickerPlace.side_x(PickerPlace.screen_rect(view, _mesh_aabbs(), size), w, size, p.x, _left_edge())
 	if is_nan(x):
 		# No side clear of the drone (zoomed in, or the user moved the camera): beside the part.
 		x = p.x + 48.0
 		if x + w > size.x - PickerPlace.COLUMN_W:
 			x = p.x - 48.0 - w
-		x = clampf(x, PickerPlace.MARGIN, maxf(size.x - PickerPlace.COLUMN_W - w, PickerPlace.MARGIN))
+		x = clampf(x, _left_edge(), maxf(size.x - PickerPlace.COLUMN_W - w, _left_edge()))
 	picker.position = Vector2(x, PickerPlace.near_y(p.y, h, size))
 
 
@@ -1636,19 +1692,48 @@ func _picker_scroll() -> ScrollContainer:
 ## At a view where neither side of the drone has room for the picker, backs the camera off and
 ## slides the drone left until the picker fits beside it. Not while zoomed in or framing a part.
 func _make_room_for_picker() -> void:
+	_update_room()
+
+
+## Makes room for whatever is open beside the drone: the picker (on either side of it) and the shelf
+## (on the left). Backs the camera off and slides the drone into the space left free, when it does
+## not already fit; with nothing open, gives the room back. Not while zoomed in or framing a part.
+func _update_room() -> void:
 	if rig.is_zoomed_in() or size.x <= 0.0:
 		return
-	var w := maxf(picker.size.x, PICKER_W)
+	var want_picker := picker.visible and selected != ""
+	if not want_picker and not shelf_open():
+		_give_back_room()
+		return
 	var view := PickerPlace.settled(rig)
-	var p := PickerPlace.to_px(view.project(picks.box_of(selected).get_center()), size)
-	if not is_nan(PickerPlace.side_x(PickerPlace.screen_rect(view, _mesh_aabbs(), size), w, size, p.x)):
+	var r := PickerPlace.screen_rect(view, _mesh_aabbs(), size)
+	var left := _left_edge()
+	var w := maxf(picker.size.x, PICKER_W) if want_picker else 0.0
+	var fits := true
+	if shelf_open():
+		fits = r.position.x >= left and r.end.x <= size.x - PickerPlace.COLUMN_W
+	if want_picker:
+		var p := PickerPlace.to_px(view.project(picks.box_of(selected).get_center()), size)
+		fits = fits and not is_nan(PickerPlace.side_x(r, w, size, p.x, left))
+	if fits:
 		return
 	if _room_before.is_empty():
 		_room_before = {"target": rig.goal_target, "distance": rig.goal_distance}
-	var g := PickerPlace.room_goal(rig, _mesh_aabbs(), size, w)
+	var g := PickerPlace.room_goal(rig, _mesh_aabbs(), size, w, left)
 	rig.goal_target = g["target"]
 	rig.goal_distance = g["distance"]
 	_room_goal = g
+
+
+func shelf_open() -> bool:
+	return shelf != null and shelf.visible and shelf.open
+
+
+## Where the free space beside the drone starts on the left: past the open shelf, else the margin.
+func _left_edge() -> float:
+	if shelf_open():
+		return shelf.offset_left + PartsShelf.WIDTH + PickerPlace.GAP
+	return PickerPlace.MARGIN
 
 
 ## The picker closed: the camera goes back, unless the user moved it since it made room.
@@ -1712,3 +1797,261 @@ func _finish_reveal() -> void:
 	_reveal_frames -= 1
 	if _reveal_frames <= 0:
 		_reveal_pending = -1
+
+
+# ---------------------------------------------------------------------------
+# The shelf, the drag and the drop (Section 5)
+# ---------------------------------------------------------------------------
+
+const GHOST_INK := Color(0.96, 0.96, 0.96, 0.32)
+const DROP_LABEL_OFFSET := Vector2(18, 16)
+
+
+func _build_shelf() -> void:
+	shelf = PartsShelf.new()
+	shelf.offset_left = 32
+	shelf.offset_top = 64
+	shelf.offset_right = 32 + PartsShelf.WIDTH
+	shelf.judge = _shelf_judge
+	shelf.drag_started.connect(begin_shelf_drag)
+	shelf.toggled.connect(func(_open: bool): _update_room())
+	add_child(shelf)
+
+	_ghost_mat = StandardMaterial3D.new()
+	_ghost_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_ghost_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_ghost_mat.albedo_color = GHOST_INK
+	_ghost_mat.no_depth_test = true
+	_ghost_mat.cull_mode = BaseMaterial3D.CULL_BACK
+	_ghost_mat.render_priority = 2
+
+	drop_label = Label.new()
+	drop_label.name = "DropHint"
+	drop_label.visible = false
+	drop_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	drop_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	drop_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	drop_label.add_theme_constant_override("shadow_offset_x", 1)
+	drop_label.add_theme_constant_override("shadow_offset_y", 1)
+	var pill := StyleBoxFlat.new()
+	pill.bg_color = Color(0.04, 0.04, 0.045, 0.88)
+	pill.set_corner_radius_all(4)
+	pill.content_margin_left = 7
+	pill.content_margin_right = 7
+	pill.content_margin_top = 3
+	pill.content_margin_bottom = 3
+	drop_label.add_theme_stylebox_override("normal", pill)
+	add_child(drop_label)
+
+
+## The shelf's verdicts for one category: part id -> {ok, reason}, judged as a drop would be (an
+## empty required slot filled with the class default for judging, PartSnap.judging_session).
+func _shelf_judge(category: String) -> Dictionary:
+	var out := {}
+	var js := PartSnap.judging_session(session, _catalog)
+	# Rank: how far the part's mass is from the class's own part (log ratio), so the parts made for
+	# a drone this size come first and a 1S whoop pack, which mounts on the 5" pad, sinks.
+	var ref := float(_catalog.get_part(String(DroneClass.parts_for(session.drone_class).get(category, ""))).get("mass_g", 0.0))
+	for opt in PartSwap.options(js, _catalog, category, _shelf_verdicts):
+		var m := float(_catalog.get_part(String(opt["id"])).get("mass_g", 0.0))
+		var rank := absf(log(m / ref)) if m > 0.0 and ref > 0.0 else INF
+		out[String(opt["id"])] = {"ok": opt["ok"], "reason": opt["reason"], "rank": rank}
+	return out
+
+
+func refresh_shelf() -> void:
+	if shelf != null:
+		shelf.fill(session.shelf(_catalog))
+
+
+## A part picked up off the shelf; the drag follows the pointer until it is released.
+func begin_shelf_drag(part_id: String) -> void:
+	cancel_drag()
+	drag_kind = "shelf"
+	drag_part = part_id
+	clear_preview()
+
+
+## A mounted part (its address) carried off the drone; released out of reach, it is removed.
+func begin_off_drag(address: String) -> void:
+	cancel_drag()
+	if PartSnap.category_at(address) == "":
+		return
+	drag_kind = "off"
+	drag_address = address
+
+
+## The drop point under `screen_pos` (px), in the class GLB's root frame (PartSnap's space): where
+## the ray first meets the drone, or else its closest approach to the drone's middle, so a release
+## between the arms still counts and one well off the drone does not.
+func drop_point(screen_pos: Vector2) -> Vector3:
+	var ray := rig.ray(_ndc_of(screen_pos))
+	var hits := picks.hits(ray["origin"], ray["dir"])
+	var xf := doc_xf()
+	if not hits.is_empty():
+		return xf.affine_inverse() * (hits[0]["position"] as Vector3)
+	var b: AABB = _mount_map.get("bounds", AABB())
+	var c := xf * b.get_center()
+	var o: Vector3 = ray["origin"]
+	var d: Vector3 = (ray["dir"] as Vector3).normalized()
+	var t := maxf((c - o).dot(d), 0.0)
+	return xf.affine_inverse() * (o + d * t)
+
+
+## The pointer moved while dragging: the drop it would make, shown (ghost and lit mount for a snap,
+## the reason beside the cursor for a refusal, nothing out of reach). Returns the verdict.
+func drag_over(screen_pos: Vector2) -> Dictionary:
+	_clear_ghosts()
+	drop_label.visible = false
+	if drag_kind == "":
+		drag_verdict = {}
+		return {}
+	var point := drop_point(screen_pos)
+	if drag_kind == "off":
+		var away := not PartSnap.in_reach(_mount_map, point)
+		drag_verdict = {"kind": "remove" if away else "nothing", "mount": drag_address}
+		_show_drop_label("Remove %s" % PickRegistry.display_name(drag_address) if away
+			else "Drag off the drone to remove", INK, screen_pos)
+		return drag_verdict
+	drag_verdict = PartSnap.resolve(session, _catalog, drag_part, point, _mount_map)
+	match String(drag_verdict["kind"]):
+		"snap":
+			_show_ghosts(drag_verdict)
+			var to := PickRegistry.display_name(String(drag_verdict["mount"]))
+			if (drag_verdict["mounts"] as Array).size() > 1:
+				to = PickRegistry.PART_NAMES.get(String(drag_verdict["mount"]).split("/")[1], to) + " (all four)"
+			_show_drop_label("On %s" % to, INK, screen_pos)
+		"refused":
+			_show_drop_label(String(drag_verdict["reason"]), WARN_INK, screen_pos)
+	return drag_verdict
+
+
+## Released: a snap attaches through the session (one undo step; the old part goes back on the
+## shelf), a carried part released off the drone is removed, anything else changes nothing.
+func end_drag(screen_pos: Vector2) -> Dictionary:
+	var v := drag_over(screen_pos)
+	var kind := drag_kind
+	var part := drag_part
+	var address := drag_address
+	cancel_drag()
+	_drag = ""
+	if kind == "shelf" and String(v.get("kind", "")) == "snap":
+		var done := session.drop(_catalog, part, drop_point(screen_pos), _mount_map)
+		_after_change()
+		return done
+	if kind == "off" and String(v.get("kind", "")) == "remove":
+		return _remove(address)
+	return v
+
+
+## Whether the ray through `ndc` meets `address` anywhere along it (in front or behind).
+func _ray_meets(ndc: Vector2, address: String) -> bool:
+	var ray := rig.ray(ndc)
+	return picks.hits(ray["origin"], ray["dir"]).any(func(h): return String(h["address"]) == address)
+
+
+func cancel_drag() -> void:
+	drag_kind = ""
+	drag_part = ""
+	drag_address = ""
+	drag_verdict = {}
+	_clear_ghosts()
+	if drop_label != null:
+		drop_label.visible = false
+
+
+## Delete: takes the selected part off the drone ({ok, reason}; the frame and non-parts refuse).
+func remove_selected() -> Dictionary:
+	if selected == "":
+		return {"ok": false, "reason": "Nothing is selected."}
+	return _remove(selected)
+
+
+func _remove(address: String) -> Dictionary:
+	var r := session.remove_at(address)
+	if r["ok"]:
+		_after_change()
+		if not picks.addresses().has(selected):
+			select("")
+	return r
+
+
+## The ghost meshes now showing (for tests and captures).
+func ghost_nodes() -> Array:
+	return _ghosts.duplicate()
+
+
+## The mount addresses lit for the current drag.
+func lit_mounts() -> Array:
+	return (drag_verdict.get("mounts", []) as Array).duplicate() if String(drag_verdict.get("kind", "")) == "snap" else []
+
+
+func drop_hint_text() -> String:
+	return drop_label.text if drop_label.visible else ""
+
+
+func _show_drop_label(text: String, ink: Color, screen_pos: Vector2) -> void:
+	drop_label.text = text
+	drop_label.add_theme_color_override("font_color", ink)
+	drop_label.reset_size()
+	var at := screen_pos + DROP_LABEL_OFFSET
+	var w := drop_label.get_combined_minimum_size().x
+	# Beside the cursor, never over the readouts column: flip to the cursor's left when it would.
+	if at.x + w > size.x - PickerPlace.COLUMN_W:
+		at.x = maxf(screen_pos.x - DROP_LABEL_OFFSET.x - w, 16.0)
+	drop_label.position = at
+	drop_label.visible = text != ""
+
+
+## A translucent copy of the part at each mount it would fill, drawn at the new part's catalog size
+## (SwapLook on the trial selection), and the mount's own part outlined.
+func _show_ghosts(v: Dictionary) -> void:
+	var trial: Dictionary = session.selection.duplicate()
+	trial[String(v["category"])] = String(v["part_id"])
+	var t := SwapLook.transforms(_look_base, _drawn_selection, trial, _catalog)
+	for address in v["mounts"]:
+		var node_name := String(_mount_map["mounts"][address]["node"])
+		var src := _doc_root.find_child(node_name, true, false) as MeshInstance3D
+		if src == null:
+			continue
+		var g := MeshInstance3D.new()
+		g.name = "Ghost_" + node_name
+		g.mesh = src.mesh
+		g.material_override = _ghost_mat
+		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		g.transform = t[node_name]["xf"] if t.has(node_name) else src.transform
+		src.get_parent().add_child(g)
+		_ghosts.append(g)
+		if src.visible:
+			src.material_overlay = _select_mat
+			_lit.append(src)
+
+
+func _clear_ghosts() -> void:
+	for g in _ghosts:
+		if is_instance_valid(g):
+			(g as Node).get_parent().remove_child(g)
+			(g as Node).free()
+	_ghosts.clear()
+	for n in _lit:
+		if is_instance_valid(n) and not _marked.has(n):
+			(n as MeshInstance3D).material_overlay = null
+	_lit.clear()
+
+
+func _input(event: InputEvent) -> void:
+	if drag_kind == "" or not visible:
+		return
+	if event is InputEventMouseMotion:
+		drag_over(_local_px((event as InputEventMouseMotion).position))
+		if is_inside_tree():
+			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT \
+			and not (event as InputEventMouseButton).pressed:
+		end_drag(_local_px((event as InputEventMouseButton).position))
+		if is_inside_tree():
+			get_viewport().set_input_as_handled()
+
+
+func _local_px(viewport_pos: Vector2) -> Vector2:
+	return get_global_transform_with_canvas().affine_inverse() * viewport_pos if is_inside_tree() else viewport_pos

@@ -7,7 +7,7 @@ extends SceneTree
 ## dumped at the end, so a suite that hangs or crashes names itself instead of leaving
 ## the runner silent.
 
-const SUITES := ["class picker", "design space", "design picking", "design swap", "design picker fit", "frame edits design", "frame edits ui", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
+const SUITES := ["class picker", "design space", "design picking", "design swap", "design picker fit", "frame edits design", "frame edits ui", "design shelf", "design shelf ui", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "build panel", "details footers",
 	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "field room", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
@@ -414,6 +414,8 @@ func _run_suite(suite_name: String) -> Array:
 		"design swap": return TestDesignSwap.run()
 		"design picker fit": return TestDesignPickerFit.run()
 		"frame edits design": return TestFrameEditsDesign.run()
+		"design shelf": return TestDesignShelf.run()
+		"design shelf ui": return TestDesignShelfUi.run()
 		"frame edits ui": return TestFrameEditsUi.run()
 	push_error("unknown suite: %s" % suite_name)
 	return []

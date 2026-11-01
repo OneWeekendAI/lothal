@@ -140,6 +140,66 @@ func swap(catalog: PartsCatalog, category: String, part_id: String) -> Dictionar
 
 
 # ---------------------------------------------------------------------------
+# Shelf, drop and remove (Section 5)
+# ---------------------------------------------------------------------------
+
+## Drops `part_id` at `point` (the class GLB's root frame, metres; `map` from PartSnap.mount_map).
+## Returns PartSnap.resolve's verdict, plus `replaced` (the id taken off, now back on the shelf) on a
+## snap. Only a "snap" changes the selection, with one undo step; dropping the part already fitted
+## is a snap that changes nothing and adds no step.
+func drop(catalog: PartsCatalog, part_id: String, point: Vector3, map: Dictionary) -> Dictionary:
+	var verdict := PartSnap.resolve(self, catalog, part_id, point, map)
+	verdict["replaced"] = ""
+	if verdict["kind"] != "snap":
+		return verdict
+	var category := String(verdict["category"])
+	if String(selection.get(category, "")) == part_id:
+		return verdict
+	verdict["replaced"] = String(selection.get(category, ""))
+	_push_undo()
+	selection[category] = part_id
+	return verdict
+
+
+## Takes the part of `category` off the drone (slot empty, part back on the shelf), with one undo
+## step. A required part may be removed: the drone then does not build, `readouts` is empty (shown
+## as dashes) and `flight_state` says what is missing. The frame cannot be removed. {ok, reason}.
+func remove(category: String) -> Dictionary:
+	if category == "frame":
+		return FrameTools.refuse("The frame is the drone; swap it instead of removing it.")
+	if not selection.has(category):
+		return FrameTools.refuse("%s is not a part of this drone." % category)
+	if String(selection[category]) == "":
+		return FrameTools.refuse("Nothing is fitted there.")
+	_push_undo()
+	selection[category] = ""
+	return {"ok": true, "reason": ""}
+
+
+## Removes whatever is drawn on a mount address ("part/battery", "part/motor/FL").
+func remove_at(address: String) -> Dictionary:
+	var category := PartSnap.category_at(address)
+	if category == "":
+		return FrameTools.refuse("Nothing removable is there.")
+	return remove(category)
+
+
+## {flies: bool, missing: [required categories], line: "no battery: cannot fly" or ""}.
+func flight_state(catalog: PartsCatalog) -> Dictionary:
+	var missing := PartSnap.missing_required(self, catalog)
+	var flies := missing.is_empty() and build(catalog) != null
+	var line := PartSnap.cannot_fly_line(missing)
+	if not flies and line == "":
+		line = "does not build: cannot fly"
+	return {"flies": flies, "missing": missing, "line": line}
+
+
+## The shelf beside the drone: catalog parts by category, minus what is fitted (PartSnap.shelf).
+func shelf(catalog: PartsCatalog) -> Array:
+	return PartSnap.shelf(self, catalog)
+
+
+# ---------------------------------------------------------------------------
 # Frame edits (Section 4)
 # ---------------------------------------------------------------------------
 

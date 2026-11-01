@@ -51,11 +51,12 @@ static func settled(rig: CameraRig) -> CameraRig:
 
 ## The x of a picker `w` wide beside `drone`, clear of it and of the right column; the side nearer
 ## `part_x` wins when both fit. NAN when neither side has room.
-static func side_x(drone: Rect2, w: float, size: Vector2, part_x: float) -> float:
+## `left_edge` is where the free space starts on the left (the shelf's right edge when it is open).
+static func side_x(drone: Rect2, w: float, size: Vector2, part_x: float, left_edge: float = MARGIN) -> float:
 	var right := drone.end.x + GAP
 	var left := drone.position.x - GAP - w
 	var right_ok := right + w <= size.x - COLUMN_W
-	var left_ok := left >= MARGIN
+	var left_ok := left >= left_edge
 	if right_ok and left_ok:
 		return right if absf(right - part_x) <= absf(left + w - part_x) else left
 	if right_ok:
@@ -72,9 +73,10 @@ static func near_y(part_y: float, h: float, size: Vector2) -> float:
 
 ## The goal {target, distance} that fits the drone into the space left of a `w`-wide picker (and
 ## the picker's gap) beside the right column, keeping yaw and pitch.
-static func room_goal(rig: CameraRig, boxes: Array, size: Vector2, w: float) -> Dictionary:
-	var region := Rect2(Vector2(MARGIN, TOP),
-		Vector2(size.x - COLUMN_W - w - GAP - MARGIN * 2.0, size.y - TOP - MARGIN))
+## `left` is where the free space starts (MARGIN, or past the open shelf); `w` 0 for no picker.
+static func room_goal(rig: CameraRig, boxes: Array, size: Vector2, w: float, left: float = MARGIN) -> Dictionary:
+	var region := Rect2(Vector2(left, TOP),
+		Vector2(size.x - COLUMN_W - w - GAP - MARGIN - left, size.y - TOP - MARGIN))
 	var v := settled(rig)
 	var t := tan(deg_to_rad(CameraRig.FOV_DEG) * 0.5)
 	for i in 12:

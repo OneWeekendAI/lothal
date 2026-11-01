@@ -68,6 +68,10 @@ func rebuild(root: Node, space: Node) -> void:
 		var proxy := nm.begins_with(PROXY_PREFIX)
 		if proxy:
 			mi.visible = false
+		elif not mi.visible:
+			# A drawn part that is hidden is not on the drone (removed, or "not fitted"): nothing
+			# there to pick (Section 5: a removed battery must not stay selectable).
+			continue
 		var xf := _xform_to(mi, space)
 		var tm := TriangleMesh.new()
 		if not tm.create_from_faces(TO_PICK * mi.mesh.get_faces()):
