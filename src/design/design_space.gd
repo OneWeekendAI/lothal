@@ -127,6 +127,14 @@ var _frame_orig: AirframeDocument
 var _glb_meshes := {}
 var _glb_proxies := {}
 var _made_proxies := {}
+## Section 6: every plate is drawn by FrameGen. The catalog (unedited) mesh per plate node name, which
+## plates are edited, the cut-edge material (surface 1), and the instanced hardware holder.
+var _gen_meshes := {}
+var _plate_edited := {}
+var edge_material: Material
+## Section 6: the carbon twill on every generated plate face (FrameLook.face_material).
+var face_material: Material
+var hardware_root: Node3D
 var _pocket_from := Vector2.ZERO
 
 ## Section 5: the shelf, the drag, the drop.
@@ -679,25 +687,21 @@ func _build_stage() -> void:
 	_stage.name = "StageRoot"
 	viewport.add_child(_stage)
 
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.30, 0.31, 0.33)
-	sky_mat.sky_horizon_color = Color(0.52, 0.52, 0.54)
-	sky_mat.ground_horizon_color = Color(0.20, 0.20, 0.21)
-	sky_mat.ground_bottom_color = Color(0.05, 0.05, 0.06)
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
+	# Section 6 studio (FrameLook): the sky is a dark room with a key softbox and a rim strip, only ever
+	# reflected; no glow, no motion blur, gentle SSAO.
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = STAGE_BG
-	env.sky = sky
+	env.sky = FrameLook.studio_sky()
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 0.40
+	env.glow_enabled = false
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
 	env.tonemap_exposure = ClassPicker.EXPOSURE
 	env.tonemap_white = 6.0
 	env.ssao_enabled = true
-	env.ssao_intensity = 2.0
+	env.ssao_intensity = FrameLook.SSAO_INTENSITY
 	env.ssao_power = 1.6
 	env.ssao_detail = 0.6
 	env.ssao_radius = 0.01
@@ -709,21 +713,23 @@ func _build_stage() -> void:
 	key.name = "Key"
 	key.light_energy = ClassPicker.KEY_ENERGY
 	key.shadow_enabled = true
-	key.light_angular_distance = 0.8
-	key.shadow_blur = 1.6
+	key.light_angular_distance = FrameLook.KEY_ANGULAR_DEG
+	key.shadow_blur = 2.0
 	key.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	key.directional_shadow_max_distance = 3.0
 	key.shadow_normal_bias = 1.0
 	key.shadow_bias = 0.02
-	key.rotation = Vector3(deg_to_rad(-52.0), deg_to_rad(-35.0), 0.0)
+	key.rotation = FrameLook.KEY_ROTATION_DEG * (PI / 180.0)
 	_stage.add_child(key)
 	var fill := DirectionalLight3D.new()
+	fill.name = "Fill"
 	fill.light_energy = 0.45
 	fill.rotation = Vector3(deg_to_rad(-25.0), deg_to_rad(65.0), 0.0)
 	_stage.add_child(fill)
 	var rim := DirectionalLight3D.new()
+	rim.name = "Rim"
 	rim.light_energy = 1.6
-	rim.rotation = Vector3(deg_to_rad(-20.0), deg_to_rad(165.0), 0.0)
+	rim.rotation = FrameLook.RIM_ROTATION_DEG * (PI / 180.0)
 	_stage.add_child(rim)
 
 	_load_model()
@@ -1396,6 +1402,45 @@ func _stash_frame(root: Node) -> void:
 			for proxy in root.find_children("%s%s_%s_*" % [PickRegistry.PROXY_PREFIX, kind, plate_owner], "MeshInstance3D", true, false):
 				mine.append(proxy)
 		_glb_proxies[plate_owner] = mine
+	_generate_frame(root, doc)
+
+
+## Section 6: the 5" frame drawn by FrameGen, never by the GLB. Every plate node keeps its name (so
+## picking and the frame tools find it) but gets the generated two-surface mesh; the GLB's standoff and
+## screw nodes are hidden (PickRegistry skips hidden meshes) and replaced by one instance per document
+## hardware item, under `frame_hardware_gen`, carrying the same node names.
+func _generate_frame(root: Node, doc: AirframeDocument) -> void:
+	if face_material == null:
+		face_material = FrameLook.face_material()
+	if edge_material == null:
+		edge_material = FrameLook.edge_material()
+	for plate in doc.plates:
+		var mesh_name := FrameTools.plate_mesh(plate)
+		var node := root.find_child(mesh_name, true, false) as MeshInstance3D
+		if node == null or not _glb_meshes.has(mesh_name):
+			continue
+		_gen_meshes[mesh_name] = _plate_gen_mesh(node, plate)
+		_plate_edited[mesh_name] = false
+		node.mesh = _gen_meshes[mesh_name]
+	if doc.hardware.is_empty():
+		return
+	var mats := {"standoff": FrameLook.standoff_material(), "screw": FrameLook.screw_material()}
+	for glb in root.find_children("frame_s*", "MeshInstance3D", true, false):
+		if String(glb.name).begins_with("frame_standoff_") or String(glb.name).begins_with("frame_screw_"):
+			(glb as MeshInstance3D).visible = false
+	hardware_root = FrameGen.hardware_node(doc, mats)
+	root.add_child(hardware_root)
+
+
+func _plate_gen_mesh(node: MeshInstance3D, plate: Dictionary) -> ArrayMesh:
+	var mat := face_material
+	var turn := String(plate.get("role", "")) != AirframeDocument.ROLE_ARM
+	return FrameGen.plate_mesh(plate, PickRegistry._xform_to(node, _doc_root_of(node)).affine_inverse(),
+		mat, edge_material, turn)
+
+
+func _doc_root_of(node: Node) -> Node:
+	return _doc_root if _doc_root != null else node.owner
 
 
 static func _same_plate(a: Dictionary, b: Dictionary) -> bool:
@@ -1410,7 +1455,7 @@ func plate_regenerated(index: int) -> bool:
 	if doc == null or _doc_root == null:
 		return false
 	var node := _doc_root.find_child(FrameTools.plate_mesh(doc.plates[index]), true, false) as MeshInstance3D
-	return node != null and node.mesh != _glb_meshes.get(String(node.name))
+	return node != null and bool(_plate_edited.get(String(node.name), false))
 
 
 ## Redraws every EDITED plate from the document (FrameView: split, clip, extrude, same material) with
@@ -1440,8 +1485,9 @@ func _draw_plate(node: MeshInstance3D, plate: Dictionary, edited: bool) -> void:
 	_made_proxies[plate_owner] = []
 	var glb: Array = _glb_proxies.get(plate_owner, [])
 	var mesh_name := String(node.name)
+	_plate_edited[mesh_name] = edited
 	if not edited:
-		node.mesh = _glb_meshes[mesh_name]
+		node.mesh = _gen_meshes.get(mesh_name, _glb_meshes[mesh_name])
 		for proxy in glb:
 			if (proxy as Node).get_parent() == null:
 				parent.add_child(proxy)
@@ -1449,9 +1495,7 @@ func _draw_plate(node: MeshInstance3D, plate: Dictionary, edited: bool) -> void:
 	for proxy in glb:
 		if (proxy as Node).get_parent() != null:
 			(proxy as Node).get_parent().remove_child(proxy)
-	var mat := (_glb_meshes[mesh_name] as Mesh).surface_get_material(0)
-	var turn := String(plate.get("role", "")) != AirframeDocument.ROLE_ARM
-	node.mesh = FrameView.plate_mesh(plate, PickRegistry._xform_to(node, _doc_root).affine_inverse(), mat, turn)
+	node.mesh = _plate_gen_mesh(node, plate)
 	var to_parent := PickRegistry._xform_to(parent, _doc_root).affine_inverse()
 	var names := FrameTools.hole_names(plate)
 	var holes := AirframeDocument.plate_holes(plate)

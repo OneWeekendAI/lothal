@@ -59,6 +59,10 @@ static func _key(code: Key) -> InputEventKey:
 
 static func run(tree: SceneTree) -> Array:
 	var results: Array = []
+	# The owner's saved tweaks (a strap_bottom mount draws no slots) must not leak into the shell
+	# under test, and tweak edits here must not overwrite them: hold, clear, restore at the end.
+	var held := RealFiles.hold([AssemblyTweaks.SAVE_PATH])
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(AssemblyTweaks.SAVE_PATH))
 
 	# 1280x720 is what `project.godot` opens at, so the shell under test is the shipping window.
 	#
@@ -398,6 +402,7 @@ static func run(tree: SceneTree) -> Array:
 	# -----------------------------------------------------------------------
 	results.append_array(await _test_a_second_boot_writes_no_new_drone(tree))
 
+	held.restore()
 	return results
 
 

@@ -2895,7 +2895,544 @@
    "name": "M1"
   }
  ],
- "hardware": [],
+ "hardware": [
+  {
+   "kind": "standoff_hex",
+   "material_id": "aluminium_6061",
+   "name": "standoff_1",
+   "hole": "standoff_1",
+   "across_flats_mm": 5.196152,
+   "bore_d_mm": 3.0,
+   "length_mm": 21.5,
+   "position_mm": [
+    -15.25,
+    15.25
+   ],
+   "z_mm": 10.75,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_top_1",
+   "hole": "standoff_1",
+   "plate": "plate_top",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    -15.25,
+    15.25
+   ],
+   "z_mm": 23.5,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_bottom_1",
+   "hole": "standoff_1",
+   "plate": "plate_bottom",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    -15.25,
+    15.25
+   ],
+   "z_mm": -2.0,
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  },
+  {
+   "kind": "standoff_hex",
+   "material_id": "aluminium_6061",
+   "name": "standoff_2",
+   "hole": "standoff_2",
+   "across_flats_mm": 5.196152,
+   "bore_d_mm": 3.0,
+   "length_mm": 21.5,
+   "position_mm": [
+    -15.25,
+    -15.25
+   ],
+   "z_mm": 10.75,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_top_2",
+   "hole": "standoff_2",
+   "plate": "plate_top",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    -15.25,
+    -15.25
+   ],
+   "z_mm": 23.5,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_bottom_2",
+   "hole": "standoff_2",
+   "plate": "plate_bottom",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    -15.25,
+    -15.25
+   ],
+   "z_mm": -2.0,
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  },
+  {
+   "kind": "standoff_hex",
+   "material_id": "aluminium_6061",
+   "name": "standoff_3",
+   "hole": "standoff_3",
+   "across_flats_mm": 5.196152,
+   "bore_d_mm": 3.0,
+   "length_mm": 21.5,
+   "position_mm": [
+    15.25,
+    15.25
+   ],
+   "z_mm": 10.75,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_top_3",
+   "hole": "standoff_3",
+   "plate": "plate_top",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    15.25,
+    15.25
+   ],
+   "z_mm": 23.5,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_bottom_3",
+   "hole": "standoff_3",
+   "plate": "plate_bottom",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    15.25,
+    15.25
+   ],
+   "z_mm": -2.0,
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  },
+  {
+   "kind": "standoff_hex",
+   "material_id": "aluminium_6061",
+   "name": "standoff_4",
+   "hole": "standoff_4",
+   "across_flats_mm": 5.196152,
+   "bore_d_mm": 3.0,
+   "length_mm": 21.5,
+   "position_mm": [
+    15.25,
+    -15.25
+   ],
+   "z_mm": 10.75,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_top_4",
+   "hole": "standoff_4",
+   "plate": "plate_top",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    15.25,
+    -15.25
+   ],
+   "z_mm": 23.5,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_bottom_4",
+   "hole": "standoff_4",
+   "plate": "plate_bottom",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    15.25,
+    -15.25
+   ],
+   "z_mm": -2.0,
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  },
+  {
+   "kind": "standoff_hex",
+   "material_id": "aluminium_6061",
+   "name": "standoff_5",
+   "hole": "standoff_5",
+   "across_flats_mm": 5.196152,
+   "bore_d_mm": 3.0,
+   "length_mm": 21.5,
+   "position_mm": [
+    -16.0,
+    50.0
+   ],
+   "z_mm": 10.75,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_top_5",
+   "hole": "standoff_5",
+   "plate": "plate_top",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    -16.0,
+    50.0
+   ],
+   "z_mm": 23.5,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_bottom_5",
+   "hole": "standoff_5",
+   "plate": "plate_bottom",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    -16.0,
+    50.0
+   ],
+   "z_mm": -2.0,
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  },
+  {
+   "kind": "standoff_hex",
+   "material_id": "aluminium_6061",
+   "name": "standoff_6",
+   "hole": "standoff_6",
+   "across_flats_mm": 5.196152,
+   "bore_d_mm": 3.0,
+   "length_mm": 21.5,
+   "position_mm": [
+    -16.0,
+    -50.0
+   ],
+   "z_mm": 10.75,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_top_6",
+   "hole": "standoff_6",
+   "plate": "plate_top",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    -16.0,
+    -50.0
+   ],
+   "z_mm": 23.5,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_bottom_6",
+   "hole": "standoff_6",
+   "plate": "plate_bottom",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    -16.0,
+    -50.0
+   ],
+   "z_mm": -2.0,
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  },
+  {
+   "kind": "standoff_hex",
+   "material_id": "aluminium_6061",
+   "name": "standoff_7",
+   "hole": "standoff_7",
+   "across_flats_mm": 5.196152,
+   "bore_d_mm": 3.0,
+   "length_mm": 21.5,
+   "position_mm": [
+    16.0,
+    50.0
+   ],
+   "z_mm": 10.75,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_top_7",
+   "hole": "standoff_7",
+   "plate": "plate_top",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    16.0,
+    50.0
+   ],
+   "z_mm": 23.5,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_bottom_7",
+   "hole": "standoff_7",
+   "plate": "plate_bottom",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    16.0,
+    50.0
+   ],
+   "z_mm": -2.0,
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  },
+  {
+   "kind": "standoff_hex",
+   "material_id": "aluminium_6061",
+   "name": "standoff_8",
+   "hole": "standoff_8",
+   "across_flats_mm": 5.196152,
+   "bore_d_mm": 3.0,
+   "length_mm": 21.5,
+   "position_mm": [
+    16.0,
+    -50.0
+   ],
+   "z_mm": 10.75,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_top_8",
+   "hole": "standoff_8",
+   "plate": "plate_top",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    16.0,
+    -50.0
+   ],
+   "z_mm": 23.5,
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  {
+   "kind": "screw",
+   "material_id": "steel_fastener",
+   "name": "screw_bottom_8",
+   "hole": "standoff_8",
+   "plate": "plate_bottom",
+   "thread_d_mm": 3.0,
+   "shank_len_mm": 8.0,
+   "shank_len_is_assumed": true,
+   "head": "button",
+   "head_d_mm": 5.4,
+   "head_h_mm": 1.815,
+   "countersunk": false,
+   "position_mm": [
+    16.0,
+    -50.0
+   ],
+   "z_mm": -2.0,
+   "axis": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  }
+ ],
  "straps": [],
  "payload_mounts": []
 }

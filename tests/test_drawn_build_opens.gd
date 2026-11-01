@@ -32,6 +32,9 @@ const MATERIAL_ID := "pa12_sls"
 static func run(tree: SceneTree) -> Array:
 	var results: Array = []
 	var previous_settings: Variant = _read(AppSettings.SAVE_PATH)
+	# The owner's saved tweaks (a strap_bottom mount draws no slots) must not leak into the shell.
+	var held := RealFiles.hold([AssemblyTweaks.SAVE_PATH])
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(AssemblyTweaks.SAVE_PATH))
 	ProjectLibrary.ensure_dir()
 	var builds_before := _lothal_files()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(TEST_DIR))
@@ -94,6 +97,7 @@ static func run(tree: SceneTree) -> Array:
 		if not builds_before.has(file):
 			DirAccess.remove_absolute(absolute.path_join(file))
 	_restore(AppSettings.SAVE_PATH, previous_settings)
+	held.restore()
 	return results
 
 

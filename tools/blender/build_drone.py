@@ -997,6 +997,8 @@ def build_body_plates(b, C, root=None):
             m = T(x, y, zc) @ (R(rx=pi) if flip < 0 else Matrix.Identity(4))
             bsc.cyl(MAT["steel"], 0.0027, 0.0, 0.0006, m, r2=0.0027, seg=20)
             bsc.sphere(MAT["steel"], 0.0027, m @ T(0, 0, 0.0006), scale=(1, 1, 0.45), seg=20)
+        if root is not None and FRAME_DOC is not None:
+            _doc_hardware_stack(n, x, y)
     tail = rrect(-0.013, -0.080, 0.013, -0.066, 0.003)
     tcuts = Cuts()
     tcuts.hole(circle(-0.0065, -0.080, 0.0017, 12))
@@ -1042,6 +1044,30 @@ def _doc_plate(mesh, owner, role, outline, cuts, names, z0, t, xf=None, scale=(1
             "holes": [_doc_poly(c, xf, scale, False) for c in cuts],
             "hole_names": names, "thickness_mm": round(t * 1000.0, 6), "z_mm": round(z0 * 1000.0, 6),
             "role": role, "mesh": mesh, "owner": owner}
+
+
+def _doc_hardware_stack(n, x, y):
+    """The standoff and two screws drawn at STAND_PTS[n-1], in the AirframeDocument hardware schema
+    (FrameHardware): the hex standoff from the bottom plate's top (z 0) to the top plate's underside
+    (z_mm is its CENTRE, as from_catalog_frame writes it), a button-head screw seated on the top plate's
+    top face (head up, axis +z) and one on the bottom plate's underside (head down, axis -z). Head size
+    is the drawn one (0.6 mm cylinder + 0.45-squashed dome of r 2.7 mm). The shank length is not drawn,
+    so it is a labelled guess. Nothing on this frame is countersunk."""
+    pos = [round(x * KB * 1000.0, 6), round(-y * KB * 1000.0, 6)]
+    hole = "standoff_%d" % n
+    length = U_TOP0 * ZK * 1000.0
+    FRAME_DOC["hardware"].append({
+        "kind": "standoff_hex", "material_id": "aluminium_6061", "name": "standoff_%d" % n, "hole": hole,
+        "across_flats_mm": round(2 * 0.0030 * cos(pi / 6) * KB * 1000.0, 6), "bore_d_mm": 3.0,
+        "length_mm": round(length, 6), "position_mm": pos, "z_mm": round(length / 2, 6),
+        "axis": [0.0, 0.0, 1.0]})
+    for side, zc, sgn in (("top", (U_TOP0 + U_PLATE) * ZK, 1.0), ("bottom", -U_PLATE * ZK, -1.0)):
+        FRAME_DOC["hardware"].append({
+            "kind": "screw", "material_id": "steel_fastener", "name": "screw_%s_%d" % (side, n),
+            "hole": hole, "plate": "plate_" + side, "thread_d_mm": 3.0, "shank_len_mm": 8.0,
+            "shank_len_is_assumed": True, "head": "button", "head_d_mm": round(2 * 0.0027 * KB * 1000.0, 6),
+            "head_h_mm": round((0.0006 + 0.45 * 0.0027) * ZK * 1000.0, 6), "countersunk": False,
+            "position_mm": pos, "z_mm": round(zc * 1000.0, 6), "axis": [0.0, 0.0, sgn]})
 
 
 def _proxy_names(owner, cuts, skip, fixed):
