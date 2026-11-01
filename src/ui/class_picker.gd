@@ -402,7 +402,10 @@ func _ensure_model(class_id: String) -> void:
 		var hi := Vector3(-INF, -INF, -INF)
 		pivot.add_child(root)
 		_sharpen_materials(root)
+		PickRegistry.hide_proxies(root)
 		for mi in root.find_children("*", "MeshInstance3D", true, false):
+			if not (mi as MeshInstance3D).visible:
+				continue
 			var inst := mi as MeshInstance3D
 			var xf := _relative_transform(inst, root)
 			var box := xf * inst.get_aabb()

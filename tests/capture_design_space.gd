@@ -3,6 +3,10 @@ extends SceneTree
 ## GlassShell, New drone, pick a class, Choose.
 ##
 ##   godot --script res://tests/capture_design_space.gd -- <out.png> <class id> [WxH] [close-up mesh name]
+##       [selected address] [hovered address]
+##
+## A selected address is clicked through `click_at` at a point on its own surface (clicking again
+## until it is selected, as a builder would); a hovered one goes through `hover_at` at its box centre.
 ##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
@@ -30,7 +34,23 @@ func _init() -> void:
 			if String(entry["name"]).begins_with(closeup):
 				ds.rig.frame(entry["box"])
 				break
-	for i in 120:
+	var select_address: String = args[4] if args.size() > 4 else ""
+	var hover_address: String = args[5] if args.size() > 5 else ""
+	for i in 60:
+		await process_frame
+	if select_address != "":
+		var c := ds.picks.box_of(select_address).get_center()
+		var ndc := ds.rig.project(c)
+		for i in 8:
+			if ds.click_at(ndc) == select_address:
+				break
+		print("selected %s" % ds.selected)
+	if hover_address != "":
+		var hc := ds.picks.box_of(hover_address).get_center()
+		var hn := ds.rig.project(hc)
+		var px := Vector2((hn.x + 1.0) * 0.5 * ds.size.x, (1.0 - hn.y) * 0.5 * ds.size.y)
+		print("hovered %s" % ds.hover_at(hn, px))
+	for i in 60:
 		await process_frame
 	root.get_texture().get_image().save_png(out_path)
 	print("saved %s" % ProjectSettings.globalize_path(out_path))

@@ -228,22 +228,33 @@ static func _test_back_to_picker() -> Array:
 	results.append(TestResult.new("Back opens the picker with the current class selected",
 		shell.class_picker != null and shell.class_picker.current_id == "tiny_whoop"
 			and not shell.design_space.visible, str(shell.class_picker)))
-	# Esc on the picker: Design Space returns, same instance, build unchanged.
+	# Esc on the picker: Design Space returns, same instance, build unchanged. Every dereference is
+	# guarded, so a mutant that frees or replaces the Design Space fails THIS line, not a crash later.
 	var ds := shell.design_space
 	var frame_before: String = str(shell.container.project.parts)
 	var ids_before := DroneClass.parts_for("tiny_whoop")
-	shell.class_picker.dismissed.emit()
-	var bad := _panel_matches(ds, ds.session.build(PartsCatalog.load_default()))
+	if shell.class_picker != null:
+		shell.class_picker.dismissed.emit()
+	var alive := is_instance_valid(ds)
+	var bad := _panel_matches(ds, ds.session.build(PartsCatalog.load_default())) if alive else "freed"
 	results.append(TestResult.new("Esc on the picker restores the same Design Space, build unchanged",
-		shell.class_picker == null and shell.design_space == ds and ds.visible
+		alive and shell.class_picker == null and shell.design_space == ds and ds.visible
 			and ds.session.drone_class == "tiny_whoop" and bad == ""
 			and ds.session.build(PartsCatalog.load_default()).frame["part_id"] == ids_before["frame"]
 			and frame_before == (str(shell.container.project.parts)),
 		bad))
 	# Backspace does the same as the button.
-	ds._unhandled_key_input(_key(KEY_BACKSPACE))
-	results.append(TestResult.new("Backspace also goes back",
-		shell.class_picker != null and shell.class_picker.current_id == "tiny_whoop", ""))
+	if alive:
+		ds._unhandled_key_input(_key(KEY_BACKSPACE))
+	var back_ok := shell.class_picker != null and shell.class_picker.current_id == "tiny_whoop"
+	results.append(TestResult.new("Backspace also goes back", back_ok, str(shell.class_picker)))
+	if not back_ok:
+		shell.back_to_class_picker()
+	if shell.class_picker == null:
+		results.append(TestResult.new("choosing another class re-seeds the build and the model", false,
+			"no picker to choose from"))
+		_cleanup(shell)
+		return results
 	# Choose a different class: re-seeds build and model.
 	shell.class_picker.show_class("seven_lr")
 	shell.class_picker.choose()
@@ -280,7 +291,9 @@ static func _test_panel_fades() -> Array:
 		ds.step_panel(1.0 / 60.0)
 	results.append(TestResult.new("and back at home",
 		is_equal_approx(ds.panel.modulate.a, 1.0), str(ds.panel.modulate.a)))
-	ds.frame_at(Vector2.ZERO)
+	ds.rig.snap()
+	var pack := ds.picks.box_of("part/battery").get_center()
+	ds.frame_at(ds.rig.project(pack))
 	var framed := ds.rig.framing
 	for i in 30:
 		ds.step_panel(1.0 / 60.0)

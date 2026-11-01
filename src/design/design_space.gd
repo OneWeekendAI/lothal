@@ -6,9 +6,12 @@ extends Control
 ##
 ## Camera: drag orbits; shift+drag, right drag or middle drag pans; wheel or pinch zooms toward the
 ## cursor; trackpad two-finger scroll orbits; double-click a part frames it; H (or the Home button)
-## eases back to the isometric view; Esc leaves. Picking by double-click is a ray against each mesh's
-## bounding box (smallest box wins): good enough to frame a part, and replaced by real picking in
-## Section 2.
+## eases back to the isometric view; Esc clears the selection, or leaves when nothing is selected.
+##
+## Picking (PLAN Section 2): a ray against the drawn triangles of every part and frame region, and
+## against the export's hole and pocket proxies, through `PickRegistry`. Hover outlines the piece and
+## names it; a click (press and release without dragging) selects it and the inspector shows its
+## numbers (`PartFacts`); a click on nothing clears. Double-click frames what it hit.
 
 signal dismissed
 signal back_requested
@@ -22,6 +25,30 @@ const STAGE_BG := Color(0.035, 0.035, 0.038)
 const ORBIT_RAD_PER_PX := 0.006
 const WHEEL_ZOOM := 0.88
 const PINCH_GAIN := 1.0
+## A press that moves further than this before release is a drag, not a click.
+const CLICK_SLOP_PX := 4.0
+## A second click this close (NDC units) to the last, on the same ray, steps one deeper.
+const CLICK_AGAIN_NDC := 0.01
+const HOVER_INK := Color(0.58, 0.58, 0.58)
+const SELECT_INK := Color(0.93, 0.93, 0.93)
+const OUTLINE_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_front, shadows_disabled, fog_disabled;
+uniform vec4 ink : source_color = vec4(1.0);
+uniform float width_px = 2.0;
+void vertex() {
+	vec4 clip = PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	vec3 n = normalize((MODELVIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	vec2 off = (PROJECTION_MATRIX * vec4(n, 0.0)).xy;
+	if (length(off) > 1e-6) {
+		clip.xy += normalize(off) * width_px * 2.0 / VIEWPORT_SIZE * clip.w;
+	}
+	POSITION = clip;
+}
+void fragment() {
+	ALBEDO = ink.rgb;
+}
+"""
 
 var session: DesignSession
 var rig: CameraRig
@@ -34,12 +61,27 @@ var back_button: Button
 var panel: VBoxContainer
 var panel_alpha := 1.0
 var value_labels: Dictionary = {}
+var picks := PickRegistry.new()
+## The address under the pointer and the selected one ("" for none).
+var hovered := ""
+var selected := ""
+var hover_label: Label
+var inspector: VBoxContainer
 
 var _catalog: PartsCatalog
 var _stage: Node3D
 var _tex: TextureRect
 var _drag := ""
 var _model_path := ""
+var _press_pos := Vector2.ZERO
+var _press_moved := false
+var _hover_mat: ShaderMaterial
+var _select_mat: ShaderMaterial
+var _fill_mats := {}
+var _marked: Array = []
+var _pad_marker: MeshInstance3D
+var _last_click_ndc := Vector2(INF, INF)
+var _last_click_order: Array = []
 
 
 func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
@@ -52,6 +94,7 @@ func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
 	focus_mode = Control.FOCUS_ALL
 	_build_stage()
 	_build_panel()
+	_build_inspector()
 	refresh()
 
 
@@ -99,48 +142,163 @@ func go_home() -> void:
 	rig.go_home()
 
 
-## The world-space bounds of every mesh of the model, by mesh.
+## The world-space bounds of every mesh the user sees, by mesh (pick proxies excluded).
 func mesh_boxes() -> Array:
 	var out: Array = []
-	if model == null:
-		return out
-	for node in model.find_children("*", "MeshInstance3D", true, false):
-		var mi := node as MeshInstance3D
-		if mi.mesh == null:
-			continue
-		var xf := Transform3D.IDENTITY
-		var n: Node = mi
-		while n != null and n != model.get_parent():
-			if n is Node3D:
-				xf = (n as Node3D).transform * xf
-			n = n.get_parent()
-		out.append({"name": String(mi.name), "box": xf * mi.get_aabb()})
+	for entry in picks.entries:
+		if not entry["proxy"]:
+			out.append({"name": String((entry["node"] as Node).name), "box": entry["box"]})
 	return out
 
 
-## The part under the screen point `ndc`: {name, box} or {} (smallest hit box wins).
+## The thing under the screen point `ndc`: {address, name, position, box} or {} for nothing.
 func pick(ndc: Vector2) -> Dictionary:
 	var ray := rig.ray(ndc)
-	var best := {}
-	var best_vol := INF
-	for entry in mesh_boxes():
-		var box := entry["box"] as AABB
-		if box.intersects_ray(ray["origin"], ray["dir"]) == null:
-			continue
-		var vol := box.size.x * box.size.y * box.size.z
-		if vol < best_vol:
-			best_vol = vol
-			best = entry
-	return best
+	var h := picks.hit(ray["origin"], ray["dir"])
+	if h.is_empty():
+		return {}
+	var address := String(h["address"])
+	return {"address": address, "name": PickRegistry.display_name(address),
+		"position": h["position"], "box": picks.box_of(address)}
 
 
-## Double-click: frames the part under `ndc`. False if the click hit nothing.
+## Double-click: frames what is under `ndc`. False if the click hit nothing.
 func frame_at(ndc: Vector2) -> bool:
 	var hit := pick(ndc)
 	if hit.is_empty():
 		return false
 	rig.frame(hit["box"])
 	return true
+
+
+## A click: selects what is under `ndc`, or clears the selection on empty space. Clicking again in
+## the same place selects the next thing behind it along the same ray (a hole inside the frame
+## sandwich, the plate under the pack), wrapping back to the front. Returns the address.
+func click_at(ndc: Vector2) -> String:
+	var ray := rig.ray(ndc)
+	var all := picks.hits(ray["origin"], ray["dir"])
+	var order: Array = all.map(func(h): return String(h["address"]))
+	var again := ndc.distance_to(_last_click_ndc) < CLICK_AGAIN_NDC and order == _last_click_order
+	_last_click_ndc = ndc
+	_last_click_order = order
+	if order.is_empty():
+		select("")
+	elif again and order.has(selected):
+		select(order[(order.find(selected) + 1) % order.size()])
+	else:
+		select(order[0])
+	return selected
+
+
+## Hover: outlines and names what is under `ndc` (or nothing).
+func hover_at(ndc: Vector2, screen_pos: Vector2 = Vector2.ZERO) -> String:
+	var hit := pick(ndc)
+	hovered = String(hit.get("address", ""))
+	hover_label.text = String(hit.get("name", ""))
+	hover_label.visible = hovered != ""
+	hover_label.position = screen_pos + Vector2(16, 14)
+	_apply_marks()
+	return hovered
+
+
+## Selects `address` ("" clears) and shows its numbers in the inspector.
+func select(address: String) -> void:
+	selected = address
+	_fill_inspector()
+	_apply_marks()
+
+
+func clear_selection() -> void:
+	select("")
+
+
+## The inspector's rows as text, for tests: ["Mass: 185.0 g", ...]; empty when nothing is selected.
+func inspector_lines() -> Array:
+	var out: Array = []
+	if not inspector.visible:
+		return out
+	for row in inspector.get_children():
+		if row is Label:
+			out.append((row as Label).text)
+	return out
+
+
+func _fill_inspector() -> void:
+	for c in inspector.get_children():
+		inspector.remove_child(c)
+		c.queue_free()
+	inspector.visible = selected != ""
+	if selected == "":
+		return
+	var rows := PartFacts.rows(selected, session, _catalog, picks.measure_box(selected))
+	for i in rows.size():
+		var row: Array = rows[i]
+		var l := Label.new()
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if i == 0:
+			l.text = String(row[1])
+			l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_TITLE)
+			l.add_theme_color_override("font_color", INK)
+		elif String(row[0]) == "":
+			l.text = String(row[1])
+			l.custom_minimum_size = Vector2(0, 4)
+		else:
+			l.text = "%s: %s" % [row[0], row[1]]
+			l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+			l.add_theme_color_override("font_color", INK if String(row[0]) in ["Mass", "Part"] else INK_MUTED)
+		inspector.add_child(l)
+
+
+## Outlines the hovered and selected pieces: drawn meshes get an ink hull, holes and pockets (hidden
+## proxies) are filled, a pad gets a filled disc on its arm. Monochrome; hover grey, selection white.
+func _apply_marks() -> void:
+	for node in _marked:
+		if not is_instance_valid(node):
+			continue
+		var mi := node as MeshInstance3D
+		mi.material_overlay = null
+		if String(mi.name).begins_with(PickRegistry.PROXY_PREFIX):
+			mi.material_override = null
+			mi.visible = false
+	_marked.clear()
+	_pad_marker.visible = false
+	for pair in [[hovered, false], [selected, true]]:
+		var address := String(pair[0])
+		if address == "" or (pair[1] == false and address == selected):
+			continue
+		var sel: bool = pair[1]
+		var entry := picks.entry_for(address)
+		if entry.is_empty():
+			continue
+		if address.begins_with("frame/pad/"):
+			var box := picks.box_of(address)
+			(_pad_marker.mesh as CylinderMesh).top_radius = box.size.x * 0.5
+			(_pad_marker.mesh as CylinderMesh).bottom_radius = box.size.x * 0.5
+			(_pad_marker.mesh as CylinderMesh).height = box.size.y * 1.02
+			_pad_marker.position = box.get_center()
+			_pad_marker.material_override = _fill_mat(sel)
+			_pad_marker.visible = true
+			continue
+		var mi := entry["node"] as MeshInstance3D
+		if entry["proxy"]:
+			mi.material_override = _fill_mat(sel)
+			mi.visible = true
+		else:
+			mi.material_overlay = _select_mat if sel else _hover_mat
+		_marked.append(mi)
+
+
+func _fill_mat(sel: bool) -> StandardMaterial3D:
+	if not _fill_mats.has(sel):
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		var c := SELECT_INK if sel else HOVER_INK
+		m.albedo_color = Color(c.r, c.g, c.b, 0.75 if sel else 0.5)
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_fill_mats[sel] = m
+	return _fill_mats[sel]
 
 
 func _ndc_of(pos: Vector2) -> Vector2:
@@ -160,16 +318,27 @@ func _gui_input(event: InputEvent) -> void:
 					if mb.double_click:
 						frame_at(_ndc_of(mb.position))
 					_drag = "pan" if mb.shift_pressed else "orbit"
+					_press_pos = mb.position
+					_press_moved = mb.double_click
 				MOUSE_BUTTON_RIGHT:
 					_drag = "pan"
 				MOUSE_BUTTON_MIDDLE:
 					_drag = "pan" if mb.shift_pressed else "orbit"
-			grab_focus()
+			if is_inside_tree():
+				grab_focus()
 		else:
+			if mb.button_index == MOUSE_BUTTON_LEFT and _drag != "" and not _press_moved \
+					and mb.position.distance_to(_press_pos) <= CLICK_SLOP_PX:
+				click_at(_ndc_of(mb.position))
 			_drag = ""
 		accept_event()
+	elif event is InputEventMouseMotion and _drag == "":
+		var mm := event as InputEventMouseMotion
+		hover_at(_ndc_of(mm.position), mm.position)
 	elif event is InputEventMouseMotion and _drag != "":
 		var rel := (event as InputEventMouseMotion).relative
+		if (event as InputEventMouseMotion).position.distance_to(_press_pos) > CLICK_SLOP_PX:
+			_press_moved = true
 		if _drag == "orbit":
 			rig.orbit(rel.x * ORBIT_RAD_PER_PX, rel.y * ORBIT_RAD_PER_PX)
 		else:
@@ -197,7 +366,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	elif key == KEY_BACKSPACE:
 		back_requested.emit()
 	elif key == KEY_ESCAPE:
-		dismissed.emit()
+		if selected != "":
+			clear_selection()
+		else:
+			dismissed.emit()
 	else:
 		return
 	if is_inside_tree():
@@ -389,6 +561,8 @@ func _load_model() -> void:
 		var hi := Vector3(-INF, -INF, -INF)
 		for mi in root.find_children("*", "MeshInstance3D", true, false):
 			var inst := mi as MeshInstance3D
+			if String(inst.name).begins_with(PickRegistry.PROXY_PREFIX):
+				continue
 			var xf := Transform3D.IDENTITY
 			var n: Node = inst
 			while n != null and n != root.get_parent():
@@ -403,6 +577,12 @@ func _load_model() -> void:
 			(root as Node3D).position = Vector3(-centre.x, -lo.y, -centre.z)
 			rig = CameraRig.new(0.5 * Vector2(hi.x - lo.x, hi.z - lo.z).length(), hi.y - lo.y)
 	_stage.add_child(model)
+	rebuild_picks()
+
+
+## Regenerates every pick shape from the model's current meshes. The one call any mesh change makes.
+func rebuild_picks() -> void:
+	picks.rebuild(model, _stage)
 
 
 # ---------------------------------------------------------------------------
@@ -485,3 +665,54 @@ func _build_panel() -> void:
 	back_button.add_theme_color_override("font_hover_color", INK)
 	back_button.pressed.connect(func(): back_requested.emit())
 	add_child(back_button)
+
+
+# ---------------------------------------------------------------------------
+# Hover name and the inspector
+# ---------------------------------------------------------------------------
+
+func _build_inspector() -> void:
+	_hover_mat = ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = OUTLINE_SHADER
+	_hover_mat.shader = sh
+	_hover_mat.set_shader_parameter("ink", HOVER_INK)
+	_hover_mat.set_shader_parameter("width_px", 1.5)
+	_select_mat = ShaderMaterial.new()
+	_select_mat.shader = sh
+	_select_mat.set_shader_parameter("ink", SELECT_INK)
+	_select_mat.set_shader_parameter("width_px", 2.5)
+
+	_pad_marker = MeshInstance3D.new()
+	_pad_marker.name = "PadMarker"
+	_pad_marker.mesh = CylinderMesh.new()
+	_pad_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_pad_marker.visible = false
+	_stage.add_child(_pad_marker)
+
+	hover_label = Label.new()
+	hover_label.name = "HoverName"
+	hover_label.visible = false
+	hover_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hover_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	hover_label.add_theme_color_override("font_color", INK)
+	hover_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	hover_label.add_theme_constant_override("shadow_offset_x", 1)
+	hover_label.add_theme_constant_override("shadow_offset_y", 1)
+	add_child(hover_label)
+
+	inspector = VBoxContainer.new()
+	inspector.name = "Inspector"
+	inspector.visible = false
+	inspector.anchor_left = 1.0
+	inspector.anchor_right = 1.0
+	inspector.anchor_top = 1.0
+	inspector.anchor_bottom = 1.0
+	inspector.offset_left = -340
+	inspector.offset_right = -40
+	inspector.offset_top = -24
+	inspector.offset_bottom = -24
+	inspector.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	inspector.add_theme_constant_override("separation", 2)
+	inspector.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(inspector)

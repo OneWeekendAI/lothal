@@ -405,6 +405,7 @@ def build_materials():
     MAT["cine_body"] = make_mat("cine_camera_body", (0.10, 0.10, 0.11), 0.2, 0.4)
     MAT["gps"] = make_mat("gps_puck_ceramic", (0.70, 0.68, 0.60), 0.0, 0.35)
     MAT["gps_case"] = make_mat("gps_puck_case", (0.03, 0.03, 0.034), 0.0, 0.5)
+    MAT["pick"] = make_mat("pick_proxy", (1.0, 0.0, 1.0), 0.0, 0.5)
     MAT["sweep"] = make_mat("studio_sweep_lightgrey", (0.20, 0.20, 0.21), 0.0, 0.8)
 
 
@@ -891,67 +892,128 @@ def arm_outline():
     return pts, u0, sl
 
 
+class Cuts(list):
+    """A cut list that remembers which entries are circular holes (kind 'hole') and which are pockets."""
+    def __init__(self, *a):
+        super().__init__(*a)
+        self.kinds = ["hole"] * len(self)
+
+    def hole(self, pts):
+        self.append(pts)
+        self.kinds.append("hole")
+
+    def pocket(self, pts):
+        self.append(pts)
+        self.kinds.append("pocket")
+
+
+def pick_proxies(root, owner, cuts, z0, z1, xf=None, scale=None, skip=0):
+    """One invisible closed prism per cut (same point list, same z range, same transform as the piece)."""
+    cnt = {"hole": 0, "pocket": 0}
+    for i, (pts, kind) in enumerate(zip(cuts, cuts.kinds)):
+        if i < skip:
+            continue
+        cnt[kind] += 1
+        name = "pick_%s_%s_%d" % (kind, owner, cnt[kind])
+        pb = Bld(name)
+        pb.prism(MAT["pick"], pts, z0, z1, xf)
+        pb.to_object(name, root, scale=scale)
+
+
 def motor_mount_cuts(cx):
-    cuts = [circle(cx, 0, 0.0045 * KM, 24)]
+    cuts = Cuts([circle(cx, 0, 0.0045 * KM, 24)])
     for k in range(4):
         a = pi / 4 + k * pi / 2
-        cuts.append(circle(cx + 0.0098 * KM * cos(a), 0.0098 * KM * sin(a), max(0.0016 * KM, 0.0007), 14))
+        cuts.hole(circle(cx + 0.0098 * KM * cos(a), 0.0098 * KM * sin(a), max(0.0016 * KM, 0.0007), 14))
     return cuts
 
 
-def build_body_plates(b, C):
-    """Plates + standoffs + tail mount, built at 5in kit size and scaled by (KB,KB,ZK) at export."""
+def build_body_plates(b, C, root=None):
+    """Plates + standoffs + tail mount, built at 5in kit size and scaled by (KB,KB,ZK) at export.
+    With root given (open frame) every piece gets its own Bld, returned as [(name, Bld)], and the
+    empty cuts get pick proxies; otherwise everything goes into b."""
     bx = BC["W"] / 2 + STRAP_T * 0.5 + 0.0005
     slx = SX_MID / KB
+    pieces = []
+    def part(name):
+        if root is None:
+            return b
+        pb = Bld(name)
+        pieces.append((name, pb))
+        return pb
     def plate_cuts(top):
-        cuts = [circle(x, y, 0.0016, 14) for x, y in STAND_PTS]
+        cuts = Cuts()
+        for x, y in STAND_PTS:
+            cuts.hole(circle(x, y, 0.0016, 14))
         for sgn in (-1, 1):
-            cuts.append(stadium(sgn * slx, 0, 0.018, 0.004, pi / 2))
+            cuts.pocket(stadium(sgn * slx, 0, 0.018, 0.004, pi / 2))
         if top:
-            cuts += [stadium(0, 0.058, 0.016, 0.0075, pi / 2),
-                     stadium(-0.0105, -0.052, 0.020, 0.0055, pi / 2), stadium(0.0105, -0.052, 0.020, 0.0055, pi / 2),
-                     stadium(0, 0.0, 0.034, 0.010, pi / 2)]
+            for c in (stadium(0, 0.058, 0.016, 0.0075, pi / 2),
+                      stadium(-0.0105, -0.052, 0.020, 0.0055, pi / 2), stadium(0.0105, -0.052, 0.020, 0.0055, pi / 2),
+                      stadium(0, 0.0, 0.034, 0.010, pi / 2)):
+                cuts.pocket(c)
         else:
-            cuts += [stadium(0, 0.0, 0.040, 0.012, pi / 2), stadium(0, 0.052, 0.020, 0.008, pi / 2),
-                     stadium(0, -0.054, 0.016, 0.008, pi / 2)]
-            cuts += [circle(sx * 0.0095, sy * 0.0415, 0.002, 12) for sx in (-1, 1) for sy in (-1, 1)]
+            for c in (stadium(0, 0.0, 0.040, 0.012, pi / 2), stadium(0, 0.052, 0.020, 0.008, pi / 2),
+                      stadium(0, -0.054, 0.016, 0.008, pi / 2)):
+                cuts.pocket(c)
+            for sx in (-1, 1):
+                for sy in (-1, 1):
+                    cuts.hole(circle(sx * 0.0095, sy * 0.0415, 0.002, 12))
         return cuts
-    b.mesh(C, carve(BODY_OUT, U_TOP0, U_TOP0 + U_PLATE, plate_cuts(True)))
-    b.mesh(C, carve(BODY_OUT, -U_PLATE, 0.0, plate_cuts(False)))
-    for x, y in STAND_PTS:
-        b.cyl(MAT["standoff"], 0.0030, 0.0, U_TOP0, T(x, y, 0), seg=6)
-        b.cyl(MAT["standoff"], 0.0018, -0.0002, U_TOP0 + 0.0002, T(x, y, 0), seg=10)
-        for zc, flip in ((U_TOP0 + U_PLATE, 1), (-U_PLATE, -1)):
+    ct, cb_ = plate_cuts(True), plate_cuts(False)
+    part("frame_plate_top").mesh(C, carve(BODY_OUT, U_TOP0, U_TOP0 + U_PLATE, ct))
+    part("frame_plate_bottom").mesh(C, carve(BODY_OUT, -U_PLATE, 0.0, cb_))
+    if root is not None:
+        sc = (KB, KB, ZK)
+        pick_proxies(root, "plate_top", ct, U_TOP0, U_TOP0 + U_PLATE, scale=sc, skip=len(STAND_PTS))
+        pick_proxies(root, "plate_bottom", cb_, -U_PLATE, 0.0, scale=sc, skip=len(STAND_PTS))
+    for n, (x, y) in enumerate(STAND_PTS, 1):
+        bs = part("frame_standoff_%d" % n)
+        bs.cyl(MAT["standoff"], 0.0030, 0.0, U_TOP0, T(x, y, 0), seg=6)
+        bs.cyl(MAT["standoff"], 0.0018, -0.0002, U_TOP0 + 0.0002, T(x, y, 0), seg=10)
+        for zc, flip, side in ((U_TOP0 + U_PLATE, 1, "top"), (-U_PLATE, -1, "bottom")):
+            bsc = part("frame_screw_%s_%d" % (side, n))
             m = T(x, y, zc) @ (R(rx=pi) if flip < 0 else Matrix.Identity(4))
-            b.cyl(MAT["steel"], 0.0027, 0.0, 0.0006, m, r2=0.0027, seg=20)
-            b.sphere(MAT["steel"], 0.0027, m @ T(0, 0, 0.0006), scale=(1, 1, 0.45), seg=20)
+            bsc.cyl(MAT["steel"], 0.0027, 0.0, 0.0006, m, r2=0.0027, seg=20)
+            bsc.sphere(MAT["steel"], 0.0027, m @ T(0, 0, 0.0006), scale=(1, 1, 0.45), seg=20)
     tail = rrect(-0.013, -0.080, 0.013, -0.066, 0.003)
-    me = carve(tail, 0.0095, U_TOP0 + 0.0005, [circle(-0.0065, -0.080, 0.0017, 12), circle(0.0065, -0.080, 0.0017, 12), circle(0, -0.080, 0.0010, 10)], bevel=0.0007)
-    b.mesh(MAT["tpu"], me)
+    tcuts = Cuts()
+    tcuts.hole(circle(-0.0065, -0.080, 0.0017, 12))
+    tcuts.hole(circle(0.0065, -0.080, 0.0017, 12))
+    tcuts.hole(circle(0, -0.080, 0.0010, 10))
+    me = carve(tail, 0.0095, U_TOP0 + 0.0005, tcuts, bevel=0.0007)
+    part("frame_tail_mount").mesh(MAT["tpu"], me)
+    if root is not None:
+        pick_proxies(root, "tail_mount", tcuts, 0.0095, U_TOP0 + 0.0005, scale=(KB, KB, ZK))
+    return pieces
 
 
 def build_frame_open(root):
     C = MAT["carbon"]
     ka = CFG["arm_k"]
-    ba = Bld("frame_arms")
     outline, u0, sl = arm_outline()
     for key, (sx, sy, _) in MOTORS.items():
         ang = atan2(sy, sx)
         cuts = motor_mount_cuts(ARM_R)
+        n_motor = len(cuts)                       # bore + 4 bolt holes: occupied by the motor, no proxy
         if ka >= 0.75:
-            cuts += [stadium(u0 + 0.020 * sl, 0, 0.022 * ka, 0.0075 * ka, 0), stadium(u0 + 0.050 * sl, 0, 0.020 * ka, 0.0065 * ka, 0)]
+            cuts.pocket(stadium(u0 + 0.020 * sl, 0, 0.022 * ka, 0.0075 * ka, 0))
+            cuts.pocket(stadium(u0 + 0.050 * sl, 0, 0.020 * ka, 0.0065 * ka, 0))
             for hx in (0.008, 0.016):
                 for hy in (-0.0055 * ka, 0.0055 * ka):
-                    cuts.append(circle(u0 + hx * KB, hy, 0.0016 * ka, 14))
+                    cuts.hole(circle(u0 + hx * KB, hy, 0.0016 * ka, 14))
         if CFG.get("duct_above"):
             # the arm ends AT the duct's outer wall (the duct carries the motor); cut away the rest
-            cuts = [circle(ARM_R, 0, CFG["prop_d"] / 2 + DUCT_CLEAR + CFG["duct_wall"] - 0.0001, 48)]
+            n_motor = 0
+            cuts = Cuts([circle(ARM_R, 0, CFG["prop_d"] / 2 + DUCT_CLEAR + CFG["duct_wall"] - 0.0001, 48)])
         me = carve(outline, 0, ARM_T, cuts, bevel=max(0.00012, 0.00028 * ka))
+        ba = Bld("frame_arm_" + key)
         ba.mesh(C, me, R(rz=ang))
-    ba.to_object("frame_arms", root, uv=uv_carbon)
-    bb = Bld("frame")
-    build_body_plates(bb, C)
-    bb.to_object("frame", root, uv=uv_carbon, scale=(KB, KB, ZK))
+        ba.to_object("frame_arm_" + key, root, uv=uv_carbon)
+        pick_proxies(root, "arm_" + key, cuts, 0, ARM_T, xf=R(rz=ang), skip=n_motor)
+    pieces = build_body_plates(None, C, root)
+    for name, pb in pieces:
+        pb.to_object(name, root, uv=uv_carbon, scale=(KB, KB, ZK))
 
 
 def build_frame_tube(root):
@@ -1062,7 +1124,9 @@ def _base(name):
     for pre in ("prop", "motor"):
         if n.startswith(pre + "_"):
             return pre, n[len(pre) + 1:]
-    return {"frame_arms": "frame", "cine_camera": "camera"}.get(n, n), None
+    if n.startswith("frame_"):
+        return "frame", None
+    return {"cine_camera": "camera"}.get(n, n), None
 
 
 # Pairs of part kinds that are bolted, strapped or plugged together by design.
@@ -1086,7 +1150,7 @@ def _bb(o):
 def check_interpenetration(root):
     from mathutils.bvhtree import BVHTree
     dg = bpy.context.evaluated_depsgraph_get()
-    objs = [o for o in root.children if o.type == "MESH"]
+    objs = [o for o in root.children if o.type == "MESH" and not o.name.startswith("pick_")]
     def world_tree(o):
         me = o.evaluated_get(dg).to_mesh()
         verts = [o.matrix_world @ v.co for v in me.vertices]
@@ -1549,6 +1613,8 @@ def main():
     drone = [root] + list(root.children)
     tris = 0
     for o in root.children:
+        if o.name.startswith("pick_"):
+            continue
         o.data.calc_loop_triangles()
         tris += len(o.data.loop_triangles)
     print("DRONE TRIANGLES", CLASS_ID, tris)
@@ -1563,6 +1629,9 @@ def main():
     bpy.context.view_layer.objects.active = root
     bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format="GLB", use_selection=True, export_apply=True, export_yup=True)
     print("EXPORTED", OUT_GLB, os.path.getsize(OUT_GLB))
+    for o in root.children:
+        if o.name.startswith("pick_"):
+            o.hide_render = True                           # pick proxies never show in the studio render
     f = (CFG["wb"] + CFG["prop_d"]) / 0.347
     build_studio(f, low, min(top_z, low + (CFG["wb"]) * 0.45))
     if not os.environ.get("LOTHAL_SKIP_RENDER"):
