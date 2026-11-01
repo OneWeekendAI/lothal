@@ -3,7 +3,10 @@ extends SceneTree
 ## GlassShell, New drone, pick a class, Choose.
 ##
 ##   godot --script res://tests/capture_design_space.gd -- <out.png> <class id> [WxH] [close-up mesh name]
-##       [selected address] [hovered address]
+##       [selected address] [hovered address] [swap cat=id,...] [preview cat=id]
+##
+## Swaps go through `DesignSpace.choose` (the picker's own path) after the selection; a preview
+## hovers that row of the open picker, so the readout deltas show.
 ##
 ## A selected address is clicked through `click_at` at a point on its own surface (clicking again
 ## until it is selected, as a builder would); a hovered one goes through `hover_at` at its box centre.
@@ -50,6 +53,17 @@ func _init() -> void:
 		var hn := ds.rig.project(hc)
 		var px := Vector2((hn.x + 1.0) * 0.5 * ds.size.x, (1.0 - hn.y) * 0.5 * ds.size.y)
 		print("hovered %s" % ds.hover_at(hn, px))
+	var swaps: String = args[6] if args.size() > 6 else ""
+	for pair in swaps.split(",", false):
+		var kv := pair.split("=")
+		print("swap %s -> %s" % [pair, ds.choose(kv[0], kv[1])["ok"]])
+	var preview: String = args[7] if args.size() > 7 else ""
+	if preview != "":
+		var kv := preview.split("=")
+		for i in ds.picker_rows().size():
+			var row: Dictionary = ds.picker_rows()[i]
+			if String(row["category"]) == kv[0] and String(row["id"]) == kv[1]:
+				print("preview %s" % ds.hover_row(i))
 	for i in 60:
 		await process_frame
 	root.get_texture().get_image().save_png(out_path)

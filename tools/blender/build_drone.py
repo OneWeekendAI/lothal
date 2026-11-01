@@ -302,7 +302,21 @@ def label_lines(bc, cells, mah_txt, liion):
     one = [(free / 2, ["%s %s" % (cells, bc["c_label"])]), (1 - free / 2, ["%s %s" % (mah_txt, last)])]
     two = [(free / 2, [cells, bc["c_label"]]), (1 - free / 2, [mah_txt, last])]
     # one line per block when it still prints at a useful size; a short fat pack stacks two lines
-    return (one if 1024 * span / (6 * 8) >= 6 else two), span
+    blocks = one if 1024 * span / (6 * 8) >= 6 else two
+    # The body is shorter than the face's UV range: end caps (4.5% of L each) and the bevel eat the ends,
+    # so a block centred at 1-free/2 could run off the pack. Re-fit only when a block would leave the flat
+    # face (plus a margin), so packs whose label already fits keep their exact layout.
+    L = bc["L"]
+    lo = (max(0.0015, 0.045 * L) + 0.11 * min(bc["W"], bc["H"])) / L + 0.03
+    sh = strap_width() / L / 2 + 0.02
+    half = span / 2
+    if free / 2 - half < lo or (1 - free / 2) + half > 1 - lo:
+        a0, a1 = lo, 0.5 - sh                             # clear run on each side of the strap
+        span = min(span, a1 - a0)
+        blocks = [((a0 + a1) / 2, blocks[0][1]), (1 - (a0 + a1) / 2, blocks[1][1])]
+    print("LABEL", CLASS_ID, "L=%.1fmm" % (L * 1000), "blocks", [round(c, 3) for c, _ in blocks], "span %.3f" % span,
+          "flat face u %.3f..%.3f" % (lo - 0.03, 1 - lo + 0.03))
+    return blocks, span
 
 
 def lipo_material(bc, cells, mah, kind="lipo", side=False):

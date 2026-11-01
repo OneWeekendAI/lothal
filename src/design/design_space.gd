@@ -29,8 +29,20 @@ const PINCH_GAIN := 1.0
 const CLICK_SLOP_PX := 4.0
 ## A second click this close (NDC units) to the last, on the same ray, steps one deeper.
 const CLICK_AGAIN_NDC := 0.01
-const HOVER_INK := Color(0.58, 0.58, 0.58)
-const SELECT_INK := Color(0.93, 0.93, 0.93)
+## Hover is a clear light grey, selection white: monochrome, and both read against carbon and the
+## dark anodised bells (0.58 at 1.5 px was too faint on a motor).
+const HOVER_INK := Color(0.80, 0.80, 0.80)
+const SELECT_INK := Color(0.96, 0.96, 0.96)
+const HOVER_WIDTH_PX := 2.0
+const SELECT_WIDTH_PX := 2.5
+## The one accent: warnings and refusal reasons.
+const WARN_INK := LothalTheme.WARNING
+const PICKER_W := 360.0
+const PICKER_MAX_H := 430.0
+## Readout delta bars: a delta of this size fills half the track.
+const DELTA_SCALE := {"auw_g": 150.0, "thrust_to_weight": 4.0, "hover_throttle": 0.2,
+	"flight_time_min": 3.0, "top_speed_kmh": 40.0}
+const DELTA_TRACK_W := 120.0
 const OUTLINE_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_front, shadows_disabled, fog_disabled;
@@ -82,6 +94,24 @@ var _marked: Array = []
 var _pad_marker: MeshInstance3D
 var _last_click_ndc := Vector2(INF, INF)
 var _last_click_order: Array = []
+## Click to swap (Section 3).
+var picker: PanelContainer
+var picker_slot := ""
+var warnings_box: VBoxContainer
+var delta_labels: Dictionary = {}
+var delta_bars: Dictionary = {}
+var previewing := {}
+var _picker_list: VBoxContainer
+var _picker_title: Label
+var _picker_rows: Array = []
+var _verdicts := {}
+var _motor_hulls := {}
+## The drawn parts (the class seed the model was built for) and each swappable node as drawn.
+var _drawn_selection: Dictionary = {}
+var _look_base: Dictionary = {}
+var _look_nodes: Dictionary = {}
+var _pack_label: Label3D
+var _plain_wrap: StandardMaterial3D
 
 
 func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
@@ -95,19 +125,56 @@ func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
 	_build_stage()
 	_build_panel()
 	_build_inspector()
+	_build_picker()
 	refresh()
+	apply_look()
 
 
 # ---------------------------------------------------------------------------
 # Behaviour
 # ---------------------------------------------------------------------------
 
-## Swaps a part and refreshes the readouts. The test seam for "the build changed".
+## Sets a part with no fit check and no history, and refreshes. The test seam for "the build
+## changed"; the user's path is `choose`.
 func set_part(category: String, part_id: String) -> bool:
 	if not session.set_part(category, part_id):
 		return false
-	refresh()
+	_after_change()
 	return true
+
+
+## Click to swap: fits `part_id` as `category` through the session (refused for a hard misfit,
+## leaving everything as it was). Returns the verdict {ok, reason, ...}.
+func choose(category: String, part_id: String) -> Dictionary:
+	var verdict := session.swap(_catalog, category, part_id)
+	if verdict["ok"]:
+		_after_change()
+	return verdict
+
+
+func undo() -> bool:
+	if not session.undo():
+		return false
+	_after_change()
+	return true
+
+
+func redo() -> bool:
+	if not session.redo():
+		return false
+	_after_change()
+	return true
+
+
+## Everything a changed selection moves: readouts, the drawn parts, pick shapes, picker, inspector.
+func _after_change() -> void:
+	clear_preview()
+	refresh()
+	apply_look()
+	if picker_slot != "":
+		open_picker(picker_slot)
+	if selected != "":
+		_fill_inspector()
 
 
 ## Re-reads the session's build into the panel.
@@ -118,6 +185,73 @@ func refresh() -> void:
 	var keys := ["auw_g", "thrust_to_weight", "hover_throttle", "flight_time_min", "top_speed_kmh"]
 	for key in keys:
 		(value_labels[key] as Label).text = format_readout(key, r)
+	for c in warnings_box.get_children():
+		warnings_box.remove_child(c)
+		c.queue_free()
+	var b := session.build(_catalog)
+	if b != null:
+		var shown := 0
+		for w in BuildWarning.by_severity(b.warnings()):
+			if w.severity == BuildWarning.Severity.CHARACTERISTIC or shown >= 3:
+				continue
+			var l := Label.new()
+			l.text = PartSwap.first_sentence(w.message)
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+			l.add_theme_color_override("font_color", WARN_INK)
+			warnings_box.add_child(l)
+			shown += 1
+
+
+## The panel's warning lines as text, for tests.
+func warning_lines() -> Array:
+	return warnings_box.get_children().map(func(l): return (l as Label).text)
+
+
+## Signed readout change as shown beside a readout while a picker row is hovered.
+static func format_delta(key: String, d: float) -> String:
+	match key:
+		"auw_g": return "%+.1f g" % d
+		"thrust_to_weight": return "%+.2f" % d
+		"hover_throttle": return "%+.1f pts" % (d * 100.0)
+		"flight_time_min": return "%+.1f min" % d
+		"top_speed_kmh": return "%+.0f km/h" % d
+	return "%+f" % d
+
+
+## Shows what choosing `part_id` would do to each readout (signed number and bar). Nothing for a
+## refused part. Returns the deltas shown.
+func preview(category: String, part_id: String) -> Dictionary:
+	clear_preview()
+	var v := PartSwap.judge(session, _catalog, category, part_id)
+	var now := session.readouts(_catalog)
+	if not v["ok"] or now.is_empty() or (v["readouts"] as Dictionary).is_empty():
+		return {}
+	for key in PartSwap.READOUT_KEYS:
+		var d := float(v["readouts"][key]) - float(now[key])
+		previewing[key] = d
+		var l := delta_labels[key] as Label
+		l.text = format_delta(key, d)
+		l.visible = true
+		var bar := delta_bars[key] as ColorRect
+		var frac := clampf(absf(d) / float(DELTA_SCALE[key]), 0.0, 1.0) * 0.5
+		var w := maxf(frac * DELTA_TRACK_W, 1.0 if absf(d) > 1e-9 else 0.0)
+		bar.size = Vector2(w, 3)
+		bar.position = Vector2(DELTA_TRACK_W * 0.5 - (w if d < 0.0 else 0.0), 0)
+		(bar.get_parent() as Control).visible = true
+	# The warnings describe the fitted drone, not the hovered one, and with the deltas showing the
+	# panel grows into the inspector at 720 tall: hidden while previewing, back on clear_preview.
+	warnings_box.visible = false
+	return previewing.duplicate()
+
+
+func clear_preview() -> void:
+	previewing = {}
+	warnings_box.visible = true
+	for key in delta_labels:
+		(delta_labels[key] as Label).visible = false
+		(delta_bars[key].get_parent() as Control).visible = false
 
 
 ## One readout as shown. Static so the tests can name the exact string.
@@ -206,6 +340,11 @@ func select(address: String) -> void:
 	selected = address
 	_fill_inspector()
 	_apply_marks()
+	var slot := PartSwap.slot_of(address)
+	if slot != "":
+		open_picker(slot)
+	else:
+		close_picker()
 
 
 func clear_selection() -> void:
@@ -263,6 +402,8 @@ func _apply_marks() -> void:
 			mi.visible = false
 	_marked.clear()
 	_pad_marker.visible = false
+	for k in _motor_hulls:
+		(_motor_hulls[k] as MeshInstance3D).visible = false
 	for pair in [[hovered, false], [selected, true]]:
 		var address := String(pair[0])
 		if address == "" or (pair[1] == false and address == selected):
@@ -279,6 +420,20 @@ func _apply_marks() -> void:
 			_pad_marker.position = box.get_center()
 			_pad_marker.material_override = _fill_mat(sel)
 			_pad_marker.visible = true
+			continue
+		if address.begins_with("part/motor/"):
+			# A motor is outlined by a hull round its bell, not by its own mesh: the bell's vents
+			# and cooling slots would each get an outline of their own and the motor read as noise.
+			var mbox := picks.box_of(address)
+			var hull := _motor_hulls[sel] as MeshInstance3D
+			var cyl := hull.mesh as CylinderMesh
+			var rad := maxf(mbox.size.x, mbox.size.z) * 0.5
+			cyl.top_radius = rad
+			cyl.bottom_radius = rad
+			cyl.height = mbox.size.y
+			hull.position = mbox.get_center()
+			hull.material_override = _select_mat if sel else _hover_mat
+			hull.visible = true
 			continue
 		var mi := entry["node"] as MeshInstance3D
 		if entry["proxy"]:
@@ -360,8 +515,17 @@ func _gui_input(event: InputEvent) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not visible or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
-	var key := (event as InputEventKey).keycode
-	if key == KEY_H or key == KEY_HOME:
+	var ke := event as InputEventKey
+	var key := ke.keycode
+	var command := ke.ctrl_pressed or ke.meta_pressed
+	if command and key == KEY_Z:
+		if ke.shift_pressed:
+			redo()
+		else:
+			undo()
+	elif command and key == KEY_Y:
+		redo()
+	elif key == KEY_H or key == KEY_HOME:
 		go_home()
 	elif key == KEY_BACKSPACE:
 		back_requested.emit()
@@ -386,6 +550,7 @@ func _process(delta: float) -> void:
 	rig.step(delta)
 	apply_camera()
 	step_panel(delta)
+	place_picker()
 
 
 ## Eases the readouts panel out while zoomed in or framing a part, and back at normal distance.
@@ -576,8 +741,105 @@ func _load_model() -> void:
 			var centre := (lo + hi) * 0.5
 			(root as Node3D).position = Vector3(-centre.x, -lo.y, -centre.z)
 			rig = CameraRig.new(0.5 * Vector2(hi.x - lo.x, hi.z - lo.z).length(), hi.y - lo.y)
+		_capture_look(root)
 	_stage.add_child(model)
 	rebuild_picks()
+
+
+## Records each swappable node as drawn, with the local point it is scaled about (SwapLook).
+func _capture_look(root: Node) -> void:
+	var drawn := DesignSession.default_for_class(session.drone_class)
+	_drawn_selection = drawn.selection.duplicate() if drawn != null else session.selection.duplicate()
+	for node_name in SwapLook.NODES:
+		var mi := root.find_child(node_name, true, false) as MeshInstance3D
+		if mi == null or mi.mesh == null:
+			continue
+		var box := mi.mesh.get_aabb()
+		var pivot := Vector3.ZERO
+		match node_name:
+			"battery":
+				pivot = Vector3(0, _wrap_extent_y(mi.mesh).x, 0)
+			"stack":
+				pivot = Vector3(0, box.position.y, 0)
+			"antennas":
+				pivot = Vector3(0, box.position.y, box.position.z)
+		_look_base[node_name] = {"xf": mi.transform, "pivot": pivot}
+		_look_nodes[node_name] = mi
+
+
+## The pack's cells (wrap and end shrink), bottom and top (local y): the strap and pad excluded.
+static func _wrap_extent_y(mesh: Mesh) -> Vector2:
+	var lo := INF
+	var hi := -INF
+	for i in mesh.get_surface_count():
+		var mat := mesh.surface_get_material(i)
+		if mat == null or not String(mat.resource_name).begins_with("lipo_"):
+			continue
+		for v in mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+			lo = minf(lo, (v as Vector3).y)
+			hi = maxf(hi, (v as Vector3).y)
+	if lo == INF:
+		var box := mesh.get_aabb()
+		return Vector2(box.position.y, box.end.y)
+	return Vector2(lo, hi)
+
+
+## Redraws every swappable part at its fitted part's catalog size (SwapLook), relabels a swapped
+## pack, and regenerates the pick shapes from the moved meshes.
+func apply_look() -> void:
+	if _look_base.is_empty():
+		return
+	var t := SwapLook.transforms(_look_base, _drawn_selection, session.selection, _catalog)
+	for node_name in t:
+		var node := _look_nodes[node_name] as MeshInstance3D
+		node.transform = t[node_name]["xf"]
+		node.visible = t[node_name]["visible"]
+	_update_pack_label()
+	rebuild_picks()
+	_apply_marks()
+
+
+## The model is printed with its seed pack's label; a swapped pack loses that print (it would lie)
+## and wears its own figures on top instead.
+func _update_pack_label() -> void:
+	var node := _look_nodes.get("battery") as MeshInstance3D
+	if node == null:
+		return
+	var id := String(session.selection.get("battery", ""))
+	var swapped := id != String(_drawn_selection.get("battery", ""))
+	if _plain_wrap == null:
+		_plain_wrap = StandardMaterial3D.new()
+		_plain_wrap.albedo_color = Color(0.11, 0.11, 0.12)
+		_plain_wrap.roughness = 0.55
+	for i in node.mesh.get_surface_count():
+		var mat := node.mesh.surface_get_material(i)
+		if mat != null and String(mat.resource_name).begins_with("lipo_wrap"):
+			node.set_surface_override_material(i, _plain_wrap if swapped else null)
+	if _pack_label == null:
+		_pack_label = Label3D.new()
+		_pack_label.name = "PackLabel"
+		_pack_label.font_size = 48
+		_pack_label.pixel_size = 0.0001
+		_pack_label.outline_size = 0
+		_pack_label.modulate = Color(0.85, 0.85, 0.85)
+		_pack_label.shaded = false
+		_pack_label.double_sided = false
+		_pack_label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.get_parent().add_child(_pack_label)
+	_pack_label.visible = swapped and node.visible
+	if not _pack_label.visible:
+		return
+	_pack_label.text = SwapLook.pack_label(_catalog.get_part(id))
+	var top := _wrap_extent_y(node.mesh).y
+	var at := node.transform * Vector3(0, top, 0)
+	# Flat on the top face, reading along the pack (the way the drawn labels read).
+	_pack_label.transform = Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, -PI * 0.5),
+		at + Vector3(0, 0.0004, 0))
+
+
+## The text a swapped pack wears, or "" when it wears the drawn print.
+func pack_label_text() -> String:
+	return _pack_label.text if _pack_label != null and _pack_label.visible else ""
 
 
 ## Regenerates every pick shape from the model's current meshes. The one call any mesh change makes.
@@ -631,8 +893,39 @@ func _build_panel() -> void:
 		val.add_theme_font_size_override("font_size", 26)
 		val.add_theme_color_override("font_color", INK)
 		box.add_child(val)
+		var dl := Label.new()
+		dl.name = "delta_" + String(row[0])
+		dl.visible = false
+		dl.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+		dl.add_theme_color_override("font_color", INK_MUTED)
+		box.add_child(dl)
+		var track := Control.new()
+		track.custom_minimum_size = Vector2(DELTA_TRACK_W, 3)
+		track.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		track.visible = false
+		var tick := ColorRect.new()
+		tick.color = INK_FAINT
+		tick.position = Vector2(DELTA_TRACK_W * 0.5, -1)
+		tick.size = Vector2(1, 5)
+		tick.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		track.add_child(tick)
+		var bar := ColorRect.new()
+		bar.color = INK
+		bar.size = Vector2(0, 3)
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		track.add_child(bar)
+		box.add_child(track)
 		panel.add_child(box)
 		value_labels[row[0]] = val
+		delta_labels[row[0]] = dl
+		delta_bars[row[0]] = bar
+
+	warnings_box = VBoxContainer.new()
+	warnings_box.name = "Warnings"
+	warnings_box.add_theme_constant_override("separation", 4)
+	warnings_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(warnings_box)
 
 	home_button = Button.new()
 	home_button.name = "Home"
@@ -677,11 +970,11 @@ func _build_inspector() -> void:
 	sh.code = OUTLINE_SHADER
 	_hover_mat.shader = sh
 	_hover_mat.set_shader_parameter("ink", HOVER_INK)
-	_hover_mat.set_shader_parameter("width_px", 1.5)
+	_hover_mat.set_shader_parameter("width_px", HOVER_WIDTH_PX)
 	_select_mat = ShaderMaterial.new()
 	_select_mat.shader = sh
 	_select_mat.set_shader_parameter("ink", SELECT_INK)
-	_select_mat.set_shader_parameter("width_px", 2.5)
+	_select_mat.set_shader_parameter("width_px", SELECT_WIDTH_PX)
 
 	_pad_marker = MeshInstance3D.new()
 	_pad_marker.name = "PadMarker"
@@ -689,6 +982,17 @@ func _build_inspector() -> void:
 	_pad_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_pad_marker.visible = false
 	_stage.add_child(_pad_marker)
+	for sel in [false, true]:
+		var hull := MeshInstance3D.new()
+		hull.name = "MotorHull" + ("Selected" if sel else "Hover")
+		var cyl := CylinderMesh.new()
+		cyl.radial_segments = 48
+		cyl.rings = 1
+		hull.mesh = cyl
+		hull.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		hull.visible = false
+		_stage.add_child(hull)
+		_motor_hulls[sel] = hull
 
 	hover_label = Label.new()
 	hover_label.name = "HoverName"
@@ -716,3 +1020,164 @@ func _build_inspector() -> void:
 	inspector.add_theme_constant_override("separation", 2)
 	inspector.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(inspector)
+
+
+# ---------------------------------------------------------------------------
+# The swap picker (Section 3)
+# ---------------------------------------------------------------------------
+
+func _build_picker() -> void:
+	picker = PanelContainer.new()
+	picker.name = "SwapPicker"
+	picker.visible = false
+	picker.mouse_filter = Control.MOUSE_FILTER_STOP
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.06, 0.065, 0.96)
+	sb.border_color = INK_FAINT
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(6)
+	sb.set_content_margin_all(12)
+	picker.add_theme_stylebox_override("panel", sb)
+	add_child(picker)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
+	picker.add_child(vb)
+	_picker_title = Label.new()
+	_picker_title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
+	_picker_title.add_theme_color_override("font_color", INK)
+	vb.add_child(_picker_title)
+	var scroll := ScrollContainer.new()
+	scroll.name = "Scroll"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(PICKER_W - 24.0, 0)
+	vb.add_child(scroll)
+	_picker_list = VBoxContainer.new()
+	_picker_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_picker_list.add_theme_constant_override("separation", 2)
+	scroll.add_child(_picker_list)
+
+
+## Opens the picker for a pick slot ("battery", "motor", "stack", ...): every catalog alternative
+## with its deciding numbers, the fitted one marked, misfits disabled with their reason.
+func open_picker(slot: String) -> void:
+	if not PartSwap.SLOTS.has(slot):
+		close_picker()
+		return
+	picker_slot = slot
+	for c in _picker_list.get_children():
+		_picker_list.remove_child(c)
+		c.queue_free()
+	_picker_rows.clear()
+	_picker_title.text = "Swap  \u00b7  %s" % PickRegistry.PART_NAMES.get(slot, slot)
+	var cats: Array = PartSwap.SLOTS[slot]
+	var height := 0.0
+	for cat in cats:
+		if cats.size() > 1:
+			var head := Label.new()
+			head.text = String(PartSwap.CATEGORY_NAMES.get(cat, cat)).to_upper()
+			head.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+			head.add_theme_color_override("font_color", INK_FAINT)
+			_picker_list.add_child(head)
+			height += 22.0
+		for opt in PartSwap.options(session, _catalog, String(cat), _verdicts):
+			height += _add_row(opt)
+	var scroll := _picker_list.get_parent() as ScrollContainer
+	scroll.custom_minimum_size.y = minf(height, PICKER_MAX_H)
+	picker.reset_size()
+	picker.visible = true
+	place_picker()
+
+
+func _add_row(opt: Dictionary) -> float:
+	var b := Button.new()
+	b.flat = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.clip_text = true
+	var numbers := " · ".join(PackedStringArray(opt["numbers"]))
+	if opt["fitted"]:
+		numbers = (numbers + "  ·  fitted") if numbers != "" else "fitted"
+	b.text = String(opt["name"]) + ("\n" + numbers if numbers != "" else "")
+	b.disabled = not opt["ok"]
+	b.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	b.add_theme_color_override("font_color", INK if opt["fitted"] else INK_MUTED)
+	b.add_theme_color_override("font_hover_color", INK)
+	b.add_theme_color_override("font_disabled_color", INK_FAINT)
+	var hover := StyleBoxFlat.new()
+	hover.bg_color = Color(1, 1, 1, 0.06)
+	hover.set_corner_radius_all(4)
+	hover.set_content_margin_all(6)
+	var plain := StyleBoxEmpty.new()
+	plain.set_content_margin_all(6)
+	b.add_theme_stylebox_override("normal", (hover as StyleBox) if opt["fitted"] else (plain as StyleBox))
+	b.add_theme_stylebox_override("hover", hover)
+	b.add_theme_stylebox_override("pressed", hover)
+	b.add_theme_stylebox_override("disabled", plain)
+	var row := opt.duplicate()
+	row["button"] = b
+	row["reason_label"] = null
+	var i := _picker_rows.size()
+	b.mouse_entered.connect(func(): hover_row(i))
+	b.mouse_exited.connect(clear_preview)
+	b.pressed.connect(func(): press_row(i))
+	_picker_list.add_child(b)
+	var h := 44.0
+	if not opt["ok"]:
+		var why := Label.new()
+		why.text = String(opt["reason"])
+		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		why.custom_minimum_size = Vector2(PICKER_W - 48.0, 0)
+		why.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+		why.add_theme_color_override("font_color", WARN_INK)
+		why.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_picker_list.add_child(why)
+		row["reason_label"] = why
+		h += 20.0 * ceilf(float(why.text.length()) / 46.0)
+	_picker_rows.append(row)
+	return h
+
+
+func close_picker() -> void:
+	picker_slot = ""
+	picker.visible = false
+	clear_preview()
+
+
+## The picker's rows, for tests and the seams below: {category, id, name, ok, reason, fitted,
+## deltas, button, reason_label}.
+func picker_rows() -> Array:
+	return _picker_rows
+
+
+## The pointer over a row: preview its readout deltas (nothing for a disabled row).
+func hover_row(i: int) -> Dictionary:
+	var row: Dictionary = _picker_rows[i]
+	if (row["button"] as Button).disabled:
+		clear_preview()
+		return {}
+	return preview(String(row["category"]), String(row["id"]))
+
+
+## A row chosen. A disabled row does nothing, and `choose` judges again regardless.
+func press_row(i: int) -> Dictionary:
+	var row: Dictionary = _picker_rows[i]
+	if (row["button"] as Button).disabled:
+		return {"ok": false, "reason": row["reason"]}
+	return choose(String(row["category"]), String(row["id"]))
+
+
+## Keeps the picker beside the selected part, clear of the readouts column on the right.
+func place_picker() -> void:
+	if picker == null or not picker.visible or selected == "":
+		return
+	var box := picks.box_of(selected)
+	var ndc := rig.project(box.get_center())
+	var p := Vector2((ndc.x + 1.0) * 0.5 * size.x, (1.0 - ndc.y) * 0.5 * size.y)
+	var w := picker.size.x
+	var h := picker.size.y
+	var x := p.x + 48.0
+	if x + w > size.x - 320.0:
+		x = p.x - 48.0 - w
+	x = clampf(x, 24.0, maxf(size.x - w - 24.0, 24.0))
+	var y := clampf(p.y - h * 0.5, 64.0, maxf(size.y - h - 24.0, 64.0))
+	picker.position = Vector2(x, y)
