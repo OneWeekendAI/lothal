@@ -40,7 +40,7 @@ const WARN_INK := LothalTheme.WARNING
 ## The blocking tint's opacity over the part (the carbon weave still reads through it).
 const TINT_ALPHA := 0.2
 ## Two warning pins on one part sit this far apart (px).
-const WARN_PIN_STEP := 12.0
+const WARN_PIN_STEP := 24.0
 const PICKER_W := 360.0
 const PICKER_MAX_H := 430.0
 ## Readout delta bars: a delta of this size fills half the track.
@@ -128,6 +128,9 @@ var _pack_label: Label3D
 var _plain_wrap: StandardMaterial3D
 ## Frame edits (Section 4): the tool row, the active tool, and what the plates were as drawn.
 var tool_row: FrameToolRow
+var file_bar: DesignFileBar
+## The name this design is saved under ("" until first saved or opened).
+var design_name := ""
 ## "", "drill", "pocket" or "fill".
 var frame_tool := ""
 var drill_d_mm: float = FrameTools.DRILL_SIZES["M3"]
@@ -153,7 +156,6 @@ var _pocket_from := Vector2.ZERO
 
 ## Section 5: the shelf, the drag, the drop.
 var shelf: PartsShelf
-var flight_label: Label
 var drop_label: Label
 ## "" | "shelf" (a part from the shelf) | "off" (a mounted part being dragged off the drone).
 var drag_kind := ""
@@ -190,6 +192,7 @@ func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
 	_build_picker()
 	_build_frame_tools()
 	_build_shelf()
+	_build_file_bar()
 	refresh()
 	apply_look()
 	refresh_shelf()
@@ -257,8 +260,6 @@ func refresh() -> void:
 	for key in keys:
 		(value_labels[key] as Label).text = format_readout(key, r)
 	var fs := session.flight_state(_catalog)
-	flight_label.text = String(fs["line"]) if not fs["flies"] else ""
-	flight_label.visible = not fs["flies"]
 	var b := session.build(_catalog)
 	_refresh_warnings(b, fs)
 	_refresh_callout_numbers(b)
@@ -290,6 +291,7 @@ func _refresh_warnings(b: Build, fs: Dictionary) -> void:
 
 ## The count and the marks, shown (or hidden while a picker row previews another part).
 func _show_warning_panel(on: bool) -> void:
+	# "1 issue" is the one statement of a missing part too (the old "cannot fly" line is gone).
 	issues_label.visible = on and issues_label.text != ""
 	for key in mark_buttons:
 		var btn := mark_buttons[key] as Button
@@ -770,6 +772,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			undo()
 	elif command and key == KEY_Y:
 		redo()
+	elif command and key == KEY_S:
+		if ke.shift_pressed or design_name == "":
+			open_save_as()
+		else:
+			save_design()
+	elif command and key == KEY_O:
+		open_open_dialog()
 	elif key == KEY_H or key == KEY_HOME:
 		go_home()
 	elif key == KEY_DELETE:
@@ -777,7 +786,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	elif key == KEY_BACKSPACE:
 		back_requested.emit()
 	elif key == KEY_ESCAPE:
-		if drag_kind != "":
+		if file_bar.dialog_open():
+			file_bar.close_dialog()
+		elif drag_kind != "":
 			cancel_drag()
 		elif frame_tool != "":
 			set_frame_tool("")
@@ -1132,13 +1143,6 @@ func _build_panel() -> void:
 	rule.custom_minimum_size = Vector2(0, 1)
 	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(rule)
-	flight_label = Label.new()
-	flight_label.name = "FlightState"
-	flight_label.visible = false
-	flight_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	flight_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
-	flight_label.add_theme_color_override("font_color", WARN_INK)
-	panel.add_child(flight_label)
 	# "2 issues": the count of warning pins; the sentences are on the pins (Section 8).
 	issues_label = Label.new()
 	issues_label.name = "Issues"
@@ -1244,6 +1248,82 @@ func _build_panel() -> void:
 	back_button.add_theme_color_override("font_pressed_color", INK)
 	back_button.pressed.connect(func(): back_requested.emit())
 	add_child(back_button)
+
+
+# ---------------------------------------------------------------------------
+# Save and open (PLAN Section 9; the file format is DesignFile)
+# ---------------------------------------------------------------------------
+
+func _build_file_bar() -> void:
+	file_bar = DesignFileBar.new()
+	add_child(file_bar)
+	file_bar.save_pressed.connect(save_design)
+	file_bar.save_as_pressed.connect(open_save_as)
+	file_bar.open_pressed.connect(open_open_dialog)
+	file_bar.save_as_confirmed.connect(func(n: String): save_design(n))
+	file_bar.open_chosen.connect(func(f: String): open_design(f))
+	file_bar.show_name(design_name)
+
+
+## Save under `p_name` (or the design's own name). With no name at all the Save-as dialog opens.
+## {ok, reason}; a refusal shows its one line in amber in the dialog.
+func save_design(p_name: String = "") -> Dictionary:
+	var n := p_name.strip_edges() if p_name != "" else design_name
+	if n == "":
+		open_save_as()
+		return {"ok": false, "reason": "Give the design a name."}
+	var r := DesignFile.save(session, n)
+	if not r["ok"]:
+		if not file_bar.dialog_open():
+			open_save_as()
+		file_bar.show_reason(String(r["reason"]))
+		return r
+	design_name = n
+	file_bar.show_name(n)
+	file_bar.show_status("Saved")
+	file_bar.close_dialog()
+	return r
+
+
+func open_save_as() -> void:
+	file_bar.open_save_as(design_name)
+
+
+func open_open_dialog() -> void:
+	file_bar.open_open(recent_designs())
+
+
+## Saved design file names, most recently written first.
+func recent_designs() -> Array:
+	var files := Array(DesignFile.list())
+	var stamp := func(f: String) -> int: return FileAccess.get_modified_time(DesignFile.dir + "/" + f)
+	files.sort_custom(func(a, b): return stamp.call(a) > stamp.call(b) or (stamp.call(a) == stamp.call(b) and a < b))
+	return files
+
+
+## Opens `file_name` from the designs folder. A refusal changes nothing and shows its one line
+## in amber in the dialog; a load replaces the session (undo history starts empty). {ok, reason}.
+func open_design(file_name: String) -> Dictionary:
+	var r := DesignFile.load_file(DesignFile.dir + "/" + file_name, _catalog)
+	if r["ok"] and (r["session"] as DesignSession).drone_class != session.drone_class:
+		r = {"ok": false, "reason": "That design is a %s; open it from the class picker." % String(
+			DroneClass.by_id((r["session"] as DesignSession).drone_class).get("name", "different drone")), "session": null, "name": ""}
+	if not r["ok"]:
+		if not file_bar.dialog_open():
+			open_open_dialog()
+		file_bar.show_reason(String(r["reason"]))
+		file_bar.show_status("")
+		return r
+	session = r["session"]
+	design_name = String(r["name"]) if String(r["name"]) != "" else file_name.get_basename()
+	close_picker()
+	set_frame_tool("")
+	select("")
+	_after_change()
+	file_bar.show_name(design_name)
+	file_bar.show_status("Opened")
+	file_bar.close_dialog()
+	return {"ok": true, "reason": ""}
 
 
 # ---------------------------------------------------------------------------
@@ -2362,6 +2442,7 @@ func callout_avoid_rects() -> Array:
 		var ih := maxf(inspector.size.y, inspector.get_combined_minimum_size().y)
 		out.append(Rect2(size.x + inspector.offset_left, size.y + inspector.offset_bottom - ih,
 			inspector.offset_right - inspector.offset_left, ih))
+	out.append_array(file_bar.rects(size))
 	if tool_row.visible:
 		var tm := tool_row.get_combined_minimum_size()
 		out.append(Rect2(tool_row.offset_left, tool_row.offset_top, maxf(tool_row.offset_right - tool_row.offset_left, tm.x),
@@ -2381,7 +2462,7 @@ func callout_avoid_rects() -> Array:
 func _update_callouts_if_moved() -> void:
 	var inputs := [rig.yaw, rig.pitch, rig.distance, rig.target, size, hovered, selected, callout_focus,
 		drag_kind, _callout_version, picker.visible, picker.position, picker.size, shelf.visible,
-		shelf.open, shelf.size, tool_row.visible, tool_row.size, inspector.visible, inspector.size,
+		shelf.open, shelf.size, file_bar.dialog_open(), tool_row.visible, tool_row.size, inspector.visible, inspector.size,
 		panel.size]
 	if inputs == _callout_inputs:
 		return

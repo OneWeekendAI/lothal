@@ -270,6 +270,16 @@ func _frame_op(op: Callable) -> Dictionary:
 	return verdict
 
 
+## Puts a saved selection and frame document ({} = leave the document as drawn) into this session
+## and clears the history. DesignFile has already checked both; this does not.
+func restore_state(p_selection: Dictionary, frame_dict: Dictionary) -> void:
+	selection = p_selection.duplicate(true)
+	if not frame_dict.is_empty() and _frame_doc != null:
+		_frame_doc = AirframeDocument.from_dictionary(frame_dict)
+	_undo.clear()
+	_redo.clear()
+
+
 func _snapshot() -> Dictionary:
 	return {"selection": selection.duplicate(true),
 		"document": _frame_doc.to_dictionary() if _frame_doc != null else {}}

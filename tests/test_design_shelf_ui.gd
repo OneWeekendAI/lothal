@@ -353,10 +353,14 @@ static func _test_cannot_fly(catalog: PartsCatalog) -> Array:
 	# A swapped pack first, so its printed label is live when the pack is removed.
 	ds.choose("battery", _shelf_part(ds, "battery", true))
 	ds.select("part/battery")
+	var count_before := ds.issues_label.text
 	var r := ds.remove_selected()
-	out.append(TestResult.new("with the battery removed the panel reads \"no battery: cannot fly\" in the warning accent",
-		r["ok"] and ds.flight_label.visible and ds.flight_label.text == "no battery: cannot fly"
-		and ds.flight_label.get_theme_color("font_color") == LothalTheme.WARNING, "'%s'" % ds.flight_label.text))
+	# Owner-approved warnings design: the panel says "1 issue" (amber); the old flight line
+	# "no battery: cannot fly" duplicated it and was removed.
+	out.append(TestResult.new("with the battery removed the panel reads \"1 issue\" in the warning accent, with no flight line",
+		r["ok"] and ds.issues_label.visible and ds.issues_label.text == "1 issue"
+		and ds.issues_label.get_theme_color("font_color") == LothalTheme.WARNING and ds.panel.find_child("FlightState", true, false) == null,
+		"'%s'" % ds.issues_label.text))
 	out.append(TestResult.new("every readout shows a dash, not a zero", _labels_text(ds) == KEYS.map(func(_k): return DASH),
 		"%s" % [_labels_text(ds)]))
 	var pack := ds.model.find_child("battery", true, false) as MeshInstance3D
@@ -372,8 +376,8 @@ static func _test_cannot_fly(catalog: PartsCatalog) -> Array:
 		ds.picker.visible and ds.picker_slot == "battery" and pack_rows.size() >= 2 and pack_rows.size() == ds.picker_rows().size(),
 		"%d rows" % ds.picker_rows().size()))
 	ds.undo()
-	out.append(TestResult.new("undo puts the pack back: the cannot-fly line goes and the readouts return",
-		not ds.flight_label.visible and not _labels_text(ds).has(DASH), "%s" % [_labels_text(ds)]))
+	out.append(TestResult.new("undo puts the pack back: the count returns to the seed's and the readouts return",
+		ds.issues_label.text == count_before and not _labels_text(ds).has(DASH), "%s" % [_labels_text(ds)]))
 	_done(ds)
 	return out
 
