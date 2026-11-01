@@ -37,6 +37,10 @@ const HOVER_WIDTH_PX := 2.0
 const SELECT_WIDTH_PX := 2.5
 ## The one accent: warnings and refusal reasons.
 const WARN_INK := LothalTheme.WARNING
+## The blocking tint's opacity over the part (the carbon weave still reads through it).
+const TINT_ALPHA := 0.2
+## Two warning pins on one part sit this far apart (px).
+const WARN_PIN_STEP := 12.0
 const PICKER_W := 360.0
 const PICKER_MAX_H := 430.0
 ## Readout delta bars: a delta of this size fills half the track.
@@ -91,13 +95,23 @@ var _hover_mat: ShaderMaterial
 var _select_mat: ShaderMaterial
 var _fill_mats := {}
 var _marked: Array = []
+## The meshes wearing the blocking tint (`tinted_parts()`), and the tint materials by the outline
+## they carry as next pass (key 0 = none).
+var _tinted: Array = []
+var _tint_mats := {}
 var _pad_marker: MeshInstance3D
 var _last_click_ndc := Vector2(INF, INF)
 var _last_click_order: Array = []
 ## Click to swap (Section 3).
 var picker: PanelContainer
 var picker_slot := ""
-var warnings_box: VBoxContainer
+## Section 8 warnings on the parts (WarningPins): the pins of the drone on screen, the panel's count,
+## the readout marks, and which pins the inspector is showing.
+var warning_pins: Array = []
+var issues_label: Label
+var mark_buttons: Dictionary = {}    ## readout key -> its mark Button ("\u25b2 8.0 in air")
+var warning_open: Array = []          ## pin ids the inspector shows ([] for none)
+var _refusal := {}                    ## the last refused drop's pin, until the next change or drag
 var delta_labels: Dictionary = {}
 var delta_bars: Dictionary = {}
 var previewing := {}
@@ -151,6 +165,15 @@ var _ghosts: Array = []
 var _ghost_mat: StandardMaterial3D
 var _lit: Array = []
 var _shelf_verdicts := {}
+
+# Section 8: callouts that explain why (Callouts = table + layout; CalloutLayer draws).
+var callouts: CalloutLayer
+var callout_focus := ""          ## the callout whose label the pointer is on
+var _callout_hulls: Array = []   ## per drawn mesh, its convex hull points in stage space
+var _hull_cache := {}            ## mesh RID -> hull points in the mesh's own space
+var _callout_numbers := {}       ## callout id -> {number, confidence}; {} without a build
+var _callout_inputs: Array = []  ## everything the last layout read, to skip an unchanged frame
+var _callout_version := 0        ## bumped when the numbers or the drawn meshes change
 
 
 func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
@@ -210,6 +233,7 @@ func redo() -> bool:
 
 ## Everything a changed selection moves: readouts, the drawn parts, pick shapes, picker, inspector.
 func _after_change() -> void:
+	_refusal = {}
 	clear_preview()
 	refresh()
 	regenerate_frame()
@@ -232,31 +256,100 @@ func refresh() -> void:
 	var keys := ["auw_g", "thrust_to_weight", "hover_throttle", "flight_time_min", "top_speed_kmh"]
 	for key in keys:
 		(value_labels[key] as Label).text = format_readout(key, r)
-	for c in warnings_box.get_children():
-		warnings_box.remove_child(c)
-		c.queue_free()
 	var fs := session.flight_state(_catalog)
 	flight_label.text = String(fs["line"]) if not fs["flies"] else ""
 	flight_label.visible = not fs["flies"]
 	var b := session.build(_catalog)
-	if b != null:
-		var shown := 0
-		for w in BuildWarning.by_severity(b.warnings()):
-			if w.severity == BuildWarning.Severity.CHARACTERISTIC or shown >= 3:
-				continue
-			var l := Label.new()
-			l.text = PartSwap.first_sentence(w.message)
-			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-			l.add_theme_color_override("font_color", WARN_INK)
-			warnings_box.add_child(l)
-			shown += 1
+	_refresh_warnings(b, fs)
+	_refresh_callout_numbers(b)
 
 
-## The panel's warning lines as text, for tests.
-func warning_lines() -> Array:
-	return warnings_box.get_children().map(func(l): return (l as Label).text)
+## The warning pins of what is on screen: a missing required part, the build's IMPOSSIBLE and
+## LIMITING warnings (most severe first), and the last refused drop. The panel shows only their
+## count and a mark beside each readout they affect; the sentences open in the inspector.
+func _refresh_warnings(b: Build, fs: Dictionary) -> void:
+	var pins: Array = []
+	for cat in fs["missing"]:
+		pins.append(WarningPins.of_missing(String(cat)))
+	pins.append_array(WarningPins.of_build(b))
+	if not _refusal.is_empty():
+		pins.append(_refusal)
+	warning_pins = pins
+	_callout_version += 1
+	_apply_tint()
+	issues_label.text = WarningPins.count_text(pins.size())
+	var m := WarningPins.marks(pins)
+	for key in mark_buttons:
+		(mark_buttons[key] as Button).text = String(m[key]["text"]) if m.has(key) else ""
+	_show_warning_panel(previewing.is_empty())
+	if not warning_open.is_empty():
+		var ids: Array = pins.map(func(p): return String(p["id"]))
+		warning_open = warning_open.filter(func(id): return ids.has(id))
+		_fill_inspector()
+
+
+## The count and the marks, shown (or hidden while a picker row previews another part).
+func _show_warning_panel(on: bool) -> void:
+	issues_label.visible = on and issues_label.text != ""
+	for key in mark_buttons:
+		var btn := mark_buttons[key] as Button
+		btn.visible = on and btn.text != ""
+
+
+## The pin dicts (WarningPins) with these ids, in pin order.
+func warning_pin(id: String) -> Dictionary:
+	for p in warning_pins:
+		if String(p["id"]) == id:
+			return p
+	return {}
+
+
+## Shows these pins' full sentences in the inspector (the selection is cleared: one thing at a time).
+func open_warning(ids: Array) -> void:
+	var known: Array = ids.filter(func(id): return not warning_pin(String(id)).is_empty())
+	if known.is_empty():
+		return
+	if selected != "":
+		select("")
+	warning_open = known
+	_fill_inspector()
+
+
+## A click on a warning pin or its label (px): opens it. False when there is none there.
+func open_warning_at(px: Vector2) -> bool:
+	if callouts == null:
+		return false
+	var id := callouts.warning_at(px)
+	if id == "":
+		return false
+	open_warning([id])
+	return true
+
+
+## A readout's mark pressed: opens every pin that marks that readout.
+func open_readout_warning(key: String) -> void:
+	var m := WarningPins.marks(warning_pins)
+	if m.has(key):
+		open_warning(m[key]["ids"])
+
+
+## The address a pin is drawn on: its anchor, or the fallback when that is not drawn; "" if neither.
+func _pin_anchor(w: Dictionary, have: Array) -> String:
+	for a in [String(w["anchor"]), WarningPins.FALLBACK_ANCHOR]:
+		if have.has(a):
+			return a
+	return ""
+
+
+## The parts a blocking pin tints (their addresses), for the look to colour.
+func tinted_parts() -> Array:
+	var have := picks.addresses()
+	var out: Array = []
+	for w in warning_pins:
+		var a := _pin_anchor(w, have)
+		if bool(w["tint"]) and a != "" and not out.has(a):
+			out.append(a)
+	return out
 
 
 ## Signed readout change as shown beside a readout while a picker row is hovered.
@@ -292,13 +385,14 @@ func preview(category: String, part_id: String) -> Dictionary:
 		(bar.get_parent() as Control).visible = true
 	# The warnings describe the fitted drone, not the hovered one, and with the deltas showing the
 	# panel grows into the inspector at 720 tall: hidden while previewing, back on clear_preview.
-	warnings_box.visible = false
+	_show_warning_panel(false)
 	return previewing.duplicate()
 
 
 func clear_preview() -> void:
 	previewing = {}
-	warnings_box.visible = true
+	if issues_label != null:
+		_show_warning_panel(true)
 	for key in delta_labels:
 		(delta_labels[key] as Label).visible = false
 		(delta_bars[key].get_parent() as Control).visible = false
@@ -387,6 +481,7 @@ func hover_at(ndc: Vector2, screen_pos: Vector2 = Vector2.ZERO) -> String:
 	hover_label.text = String(hit.get("name", ""))
 	hover_label.visible = hovered != ""
 	hover_label.position = screen_pos + Vector2(16, 14)
+	callout_focus = callouts.at(screen_pos) if callouts != null else ""
 	_apply_marks()
 	return hovered
 
@@ -394,6 +489,7 @@ func hover_at(ndc: Vector2, screen_pos: Vector2 = Vector2.ZERO) -> String:
 ## Selects `address` ("" clears) and shows its numbers in the inspector.
 func select(address: String) -> void:
 	selected = address
+	warning_open = []
 	_fill_inspector()
 	_apply_marks()
 	_update_tool_row()
@@ -423,6 +519,9 @@ func _fill_inspector() -> void:
 	for c in inspector.get_children():
 		inspector.remove_child(c)
 		c.queue_free()
+	if not warning_open.is_empty():
+		_fill_warning_inspector()
+		return
 	inspector.visible = selected != ""
 	if selected == "":
 		return
@@ -453,9 +552,30 @@ func _fill_inspector() -> void:
 		inspector.add_child(ch)
 
 
+## The open warning pins: each one's tag, then its full sentence (the existing long text).
+func _fill_warning_inspector() -> void:
+	inspector.visible = true
+	for id in warning_open:
+		var w := warning_pin(String(id))
+		var tag := Label.new()
+		tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tag.text = String(w["tag"])
+		tag.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
+		tag.add_theme_color_override("font_color", WARN_INK)
+		inspector.add_child(tag)
+		var long := Label.new()
+		long.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		long.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		long.text = String(w["long"])
+		long.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+		long.add_theme_color_override("font_color", INK)
+		inspector.add_child(long)
+
+
 ## Outlines the hovered and selected pieces: drawn meshes get an ink hull, holes and pockets (hidden
 ## proxies) are filled, a pad gets a filled disc on its arm. Monochrome; hover grey, selection white.
 func _apply_marks() -> void:
+	_clear_tint()
 	for node in _marked:
 		if not is_instance_valid(node):
 			continue
@@ -506,6 +626,44 @@ func _apply_marks() -> void:
 		else:
 			mi.material_overlay = _select_mat if sel else _hover_mat
 		_marked.append(mi)
+	_apply_tint()
+
+
+## The blocking tint: a part a blocking pin names (`tinted_parts()`) wears a translucent amber
+## overlay. A hovered or selected part keeps its outline, chained as the tint's next pass, so the
+## tint never fights the selection overlay. Holes and pockets (proxies) are never tinted.
+func _apply_tint() -> void:
+	_clear_tint()
+	for a in tinted_parts():
+		var entry := picks.entry_for(String(a))
+		if entry.is_empty() or entry["proxy"] or not is_instance_valid(entry["node"]):
+			continue
+		var mi := entry["node"] as MeshInstance3D
+		if mi == null or _tinted.has(mi):
+			continue
+		mi.material_overlay = tint_material(mi.material_overlay)
+		_tinted.append(mi)
+
+
+## Takes the tint off, leaving whatever outline it carried.
+func _clear_tint() -> void:
+	for mi in _tinted:
+		if is_instance_valid(mi) and _tint_mats.values().has(mi.material_overlay):
+			mi.material_overlay = (mi.material_overlay as Material).next_pass
+	_tinted.clear()
+
+
+## The tint material over `outline` (null, the hover or the selection outline).
+func tint_material(outline: Material) -> StandardMaterial3D:
+	var key := 0 if outline == null else outline.get_instance_id()
+	if not _tint_mats.has(key):
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.albedo_color = Color(WARN_INK, TINT_ALPHA)
+		m.next_pass = outline
+		_tint_mats[key] = m
+	return _tint_mats[key]
 
 
 func _fill_mat(sel: bool) -> StandardMaterial3D:
@@ -558,7 +716,9 @@ func _gui_input(event: InputEvent) -> void:
 				pocket_between(_ndc_of(_pocket_from), _ndc_of(mb.position))
 			elif mb.button_index == MOUSE_BUTTON_LEFT and _drag != "" and not _press_moved \
 					and mb.position.distance_to(_press_pos) <= CLICK_SLOP_PX:
-				if frame_tool == "drill":
+				if open_warning_at(mb.position):
+					pass
+				elif frame_tool == "drill":
 					drill_at(_ndc_of(mb.position))
 				elif frame_tool == "fill":
 					fill_at(_ndc_of(mb.position))
@@ -642,6 +802,7 @@ func _process(delta: float) -> void:
 	apply_camera()
 	step_panel(delta)
 	place_picker()
+	_update_callouts_if_moved()
 
 
 ## Eases the readouts panel out while zoomed in or framing a part, and back at normal distance.
@@ -682,6 +843,9 @@ func _build_stage() -> void:
 	_tex.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_tex)
+	# Over the stage, under every panel.
+	callouts = CalloutLayer.new()
+	add_child(callouts)
 
 	_stage = Node3D.new()
 	_stage.name = "StageRoot"
@@ -937,6 +1101,7 @@ func pack_label_text() -> String:
 ## Regenerates every pick shape from the model's current meshes. The one call any mesh change makes.
 func rebuild_picks() -> void:
 	picks.rebuild(model, _stage)
+	_rebuild_callout_hulls()
 
 
 # ---------------------------------------------------------------------------
@@ -974,6 +1139,14 @@ func _build_panel() -> void:
 	flight_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
 	flight_label.add_theme_color_override("font_color", WARN_INK)
 	panel.add_child(flight_label)
+	# "2 issues": the count of warning pins; the sentences are on the pins (Section 8).
+	issues_label = Label.new()
+	issues_label.name = "Issues"
+	issues_label.visible = false
+	issues_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	issues_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	issues_label.add_theme_color_override("font_color", WARN_INK)
+	panel.add_child(issues_label)
 
 	var rows := [["auw_g", "All-up weight"], ["thrust_to_weight", "Thrust to weight"],
 		["hover_throttle", "Hover throttle"], ["flight_time_min", "Flight time (est.)"],
@@ -991,7 +1164,24 @@ func _build_panel() -> void:
 		val.name = String(row[0])
 		val.add_theme_font_size_override("font_size", 26)
 		val.add_theme_color_override("font_color", INK)
-		box.add_child(val)
+		# The value and, beside it, the amber mark of any warning that moves it in the air.
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 10)
+		line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		line.add_child(val)
+		var mark := Button.new()
+		mark.name = "mark_" + String(row[0])
+		mark.flat = true
+		mark.visible = false
+		mark.focus_mode = Control.FOCUS_NONE
+		mark.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		mark.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+		for st in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+			mark.add_theme_color_override(st, WARN_INK)
+		mark.pressed.connect(open_readout_warning.bind(String(row[0])))
+		line.add_child(mark)
+		box.add_child(line)
+		mark_buttons[row[0]] = mark
 		var dl := Label.new()
 		dl.name = "delta_" + String(row[0])
 		dl.visible = false
@@ -1020,11 +1210,6 @@ func _build_panel() -> void:
 		delta_labels[row[0]] = dl
 		delta_bars[row[0]] = bar
 
-	warnings_box = VBoxContainer.new()
-	warnings_box.name = "Warnings"
-	warnings_box.add_theme_constant_override("separation", 4)
-	warnings_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(warnings_box)
 
 	home_button = Button.new()
 	home_button.name = "Home"
@@ -1911,6 +2096,7 @@ func refresh_shelf() -> void:
 ## A part picked up off the shelf; the drag follows the pointer until it is released.
 func begin_shelf_drag(part_id: String) -> void:
 	cancel_drag()
+	_drop_refusal()
 	drag_kind = "shelf"
 	drag_part = part_id
 	clear_preview()
@@ -1919,6 +2105,7 @@ func begin_shelf_drag(part_id: String) -> void:
 ## A mounted part (its address) carried off the drone; released out of reach, it is removed.
 func begin_off_drag(address: String) -> void:
 	cancel_drag()
+	_drop_refusal()
 	if PartSnap.category_at(address) == "":
 		return
 	drag_kind = "off"
@@ -1985,7 +2172,31 @@ func end_drag(screen_pos: Vector2) -> Dictionary:
 		return done
 	if kind == "off" and String(v.get("kind", "")) == "remove":
 		return _remove(address)
+	if kind == "shelf" and String(v.get("kind", "")) == "refused":
+		# A refused drop stays on the drone as a blocking pin on the mount it was refused at,
+		# until the next change or drag.
+		_refusal = WarningPins.of_refusal(v, _refusal_mount(String(v["category"]), drop_point(screen_pos)))
+		refresh()
 	return v
+
+
+## The category's mount nearest the drop point (PartSnap's space); "" when it has none.
+func _refusal_mount(category: String, point: Vector3) -> String:
+	var best := ""
+	var best_d := INF
+	var mounts: Dictionary = _mount_map.get("mounts", {})
+	for address in PartSnap.mounts_for(_mount_map, category):
+		var d := point.distance_to(mounts[address]["centre"])
+		if d < best_d:
+			best_d = d
+			best = address
+	return best
+
+
+func _drop_refusal() -> void:
+	if not _refusal.is_empty():
+		_refusal = {}
+		refresh()
 
 
 ## Whether the ray through `ndc` meets `address` anywhere along it (in front or behind).
@@ -2099,3 +2310,141 @@ func _input(event: InputEvent) -> void:
 
 func _local_px(viewport_pos: Vector2) -> Vector2:
 	return get_global_transform_with_canvas().affine_inverse() * viewport_pos if is_inside_tree() else viewport_pos
+
+
+# ---------------------------------------------------------------------------
+# Callouts that explain why (Section 8)
+# ---------------------------------------------------------------------------
+
+## Re-reads every callout's number off `b` (the build the panel just showed); {} without one.
+func _refresh_callout_numbers(b: Build) -> void:
+	_callout_numbers = {}
+	_callout_version += 1
+	if b == null:
+		return
+	for e in Callouts.TABLE:
+		var t := Callouts.number_text(e, b)
+		if t != "":
+			_callout_numbers[String(e["id"])] = {"number": t,
+				"confidence": Callouts.confidence_of(e, session, _catalog)}
+
+
+func _rebuild_callout_hulls() -> void:
+	_callout_hulls = []
+	_callout_version += 1
+	for entry in picks.entries:
+		if entry["proxy"]:
+			continue
+		var mi := entry["node"] as MeshInstance3D
+		var key := mi.mesh.get_rid()
+		if not _hull_cache.has(key):
+			_hull_cache[key] = Callouts.hull_points(mi.mesh)
+		_callout_hulls.append((entry["xform"] as Transform3D) * (_hull_cache[key] as PackedVector3Array))
+
+
+## The drone's silhouette now: one convex polygon (px) per drawn mesh.
+func silhouette_polys() -> Array:
+	return Callouts.silhouette(rig, _callout_hulls, size)
+
+
+## Every on-screen rect a callout label must stay clear of (px): the back and home links, the
+## readouts, and whichever of inspector, tool row, shelf and picker is showing. From offsets and
+## minimum sizes, so it holds headless (where containers never lay out) as well as in the window.
+func callout_avoid_rects() -> Array:
+	var out: Array = []
+	for b in [back_button, home_button]:
+		var c := b as Control
+		var y0 := c.offset_top + (size.y if c.anchor_top == 1.0 else 0.0)
+		out.append(Rect2(c.offset_left, y0, c.offset_right - c.offset_left, c.offset_bottom - c.offset_top))
+	var ph := maxf(panel.offset_bottom - panel.offset_top, panel.get_combined_minimum_size().y)
+	out.append(Rect2(size.x + panel.offset_left, panel.offset_top, panel.offset_right - panel.offset_left, ph))
+	if inspector.visible:
+		var ih := maxf(inspector.size.y, inspector.get_combined_minimum_size().y)
+		out.append(Rect2(size.x + inspector.offset_left, size.y + inspector.offset_bottom - ih,
+			inspector.offset_right - inspector.offset_left, ih))
+	if tool_row.visible:
+		var tm := tool_row.get_combined_minimum_size()
+		out.append(Rect2(tool_row.offset_left, tool_row.offset_top, maxf(tool_row.offset_right - tool_row.offset_left, tm.x),
+			maxf(tool_row.size.y, tm.y)))
+	if shelf.visible:
+		var sm := shelf.get_combined_minimum_size()
+		out.append(Rect2(shelf.offset_left, shelf.offset_top, maxf(PartsShelf.WIDTH, sm.x), maxf(shelf.size.y, sm.y)))
+	if picker.visible:
+		var pm := picker.get_combined_minimum_size()
+		out.append(Rect2(picker.position, Vector2(maxf(maxf(picker.size.x, pm.x), PICKER_W), maxf(picker.size.y, pm.y))))
+	return out
+
+
+## The frame loop's call: lays out again only when something the layout reads has changed (the
+## shown camera, the size, hover, selection, the panels, the numbers or the meshes). A layout costs
+## about 5 ms; a still frame costs a comparison.
+func _update_callouts_if_moved() -> void:
+	var inputs := [rig.yaw, rig.pitch, rig.distance, rig.target, size, hovered, selected, callout_focus,
+		drag_kind, _callout_version, picker.visible, picker.position, picker.size, shelf.visible,
+		shelf.open, shelf.size, tool_row.visible, tool_row.size, inspector.visible, inspector.size,
+		panel.size]
+	if inputs == _callout_inputs:
+		return
+	_callout_inputs = inputs
+	update_callouts()
+
+
+## Where the k-th warning pin on `anchor` sits (px): the top of the part's box, then a step right
+## for each further warning on the same part, so two pins on the battery are two dots.
+func warning_pin_px(anchor: String, k: int) -> Vector2:
+	var box := picks.box_of(anchor)
+	var top := box.get_center() + Vector3(0.0, box.size.y * 0.5, 0.0)
+	return PickerPlace.to_px(rig.project(top), size) + Vector2(WARN_PIN_STEP * k, 0.0)
+
+
+## Lays the callouts out for the camera as it is now and hands them to the layer. Called every
+## frame (pins track their parts while the camera eases or orbits), and by tests directly.
+## Hidden with no build, while zoomed in, and during a drag.
+func update_callouts() -> void:
+	if callouts == null:
+		return
+	if (_callout_numbers.is_empty() and warning_pins.is_empty()) or rig.is_zoomed_in() \
+			or drag_kind != "" or size.x <= 0.0:
+		callouts.clear()
+		return
+	var have := picks.addresses()
+	var items: Array = []
+	var info := {}
+	for i in Callouts.TABLE.size():
+		var e: Dictionary = Callouts.TABLE[i]
+		var id := String(e["id"])
+		if not _callout_numbers.has(id) or not have.has(String(e["anchor"])):
+			continue
+		var expanded := callout_focus == id or Callouts.matches(e, hovered) or Callouts.matches(e, selected)
+		var n: Dictionary = _callout_numbers[id]
+		var lines := [String(e["why"]), "%s  \u00b7  %s" % [n["number"], n["confidence"]]]
+		var pin := PickerPlace.to_px(rig.project(picks.box_of(String(e["anchor"])).get_center()), size)
+		# The one being looked at is placed first, so a crowded view never drops it.
+		items.append({"id": id, "kind": "callout", "pin": pin, "priority": -1 if expanded else i,
+			"size": CalloutLayer.label_size(String(e["name"]), lines, expanded)})
+		info[id] = {"number": i + 1, "name": String(e["name"]), "lines": lines, "expanded": expanded}
+	# The warning pins, in the same layout so every no-overlap rule holds between the kinds. Placed
+	# before any callout (blocking first), so a crowded view drops callouts, never a warning; the
+	# cap is the callouts' six plus the warnings.
+	var per_anchor := {}
+	var n_warn := 0
+	for i in warning_pins.size():
+		var w: Dictionary = warning_pins[i]
+		var anchor := _pin_anchor(w, have)
+		if anchor == "":
+			continue
+		var k := int(per_anchor.get(anchor, 0))
+		per_anchor[anchor] = k + 1
+		var blocking := String(w["severity"]) == WarningPins.BLOCKING
+		var wid := String(w["id"])
+		items.append({"id": wid, "kind": "warning", "pin": warning_pin_px(anchor, k),
+			"priority": (-200 if blocking else -100) + i,
+			"size": CalloutLayer.label_size(String(w["tag"]), [], false)})
+		info[wid] = {"number": 0, "name": String(w["tag"]), "lines": [], "expanded": false,
+			"severity": String(w["severity"]), "solid": blocking, "tint": bool(w["tint"]), "anchor": anchor}
+		n_warn += 1
+	var placed: Array = Callouts.layout(items, silhouette_polys(), callout_avoid_rects(), size,
+		Callouts.MAX_SHOWN + n_warn)
+	for p in placed:
+		p.merge(info[String(p["id"])])
+	callouts.show_items(placed)

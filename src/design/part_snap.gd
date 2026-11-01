@@ -137,6 +137,7 @@ static func resolve(session: DesignSession, catalog: PartsCatalog, part_id: Stri
 	var verdict := PartSwap.judge(judging_session(session, catalog), catalog, category, part_id, false)
 	if not verdict["ok"]:
 		out["reason"] = String(verdict["reason"])
+		out["refused_by"] = verdict.get("refused_by")
 		return out
 	var mounts: Dictionary = map["mounts"]
 	var best := ""

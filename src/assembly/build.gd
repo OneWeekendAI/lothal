@@ -1823,6 +1823,25 @@ func pole_pairs() -> float:
 func all_up_weight_g() -> float:
 	return mass_properties.total_mass_kg * 1000.0
 
+## The pack's own mass, as the catalogue gives it (the Design Space battery callout reads this).
+func battery_mass_g() -> float:
+	return float(battery["mass_g"])
+
+
+## The frame's mass with any designer edit applied (`set_frame_edit` refits `frame`), as the mass
+## properties use it (the Design Space frame callout reads this).
+func frame_mass_g() -> float:
+	return float(frame["mass_g"])
+
+
+## Thrust-to-weight IN THE AIR: the peak thrust the pack can actually reach (sag and the current
+## cap included, `peak_thrust`) over the weight, where `thrust_to_weight` is the bench figure at
+## nominal volts. The same ratio `pack_sag` and `cannot_hover` carry as `reachable_twr`; the Design
+## Space's readout mark for a current-capped build reads it from here.
+func reachable_thrust_to_weight() -> float:
+	return float(peak_thrust()["thrust_n"]) / weight_n()
+
+
 func weight_n() -> float:
 	return mass_properties.total_mass_kg * GRAVITY_MPS2
 

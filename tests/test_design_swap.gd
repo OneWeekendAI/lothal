@@ -237,12 +237,13 @@ static func _test_preview(ds: DesignSpace, catalog: PartsCatalog, home: Dictiona
 		bar.size.x > 1.0 and grows_right == (d_auw > 0.0), "w %.1f x %.1f d %.1f" % [bar.size.x, bar.position.x, d_auw]))
 	results.append(TestResult.new("hovering changes nothing: same selection, same readouts",
 		ds.session.selection == home and _labels(ds) == _want_labels(_direct(catalog, home)), ""))
-	results.append(TestResult.new("while previewing, the fitted drone's warnings step aside",
-		not ds.warnings_box.visible, ""))
+	results.append(TestResult.new("while previewing, the fitted drone's issue count and marks step aside",
+		not ds.issues_label.visible and not (ds.mark_buttons["thrust_to_weight"] as Button).visible, ""))
 	ds.clear_preview()
 	results.append(TestResult.new("leaving the row hides the deltas",
 		not (ds.delta_labels["auw_g"] as Label).visible, ""))
-	results.append(TestResult.new("and brings the warnings back", ds.warnings_box.visible, ""))
+	results.append(TestResult.new("and brings the issue count and the T:W mark back",
+		ds.issues_label.visible and (ds.mark_buttons["thrust_to_weight"] as Button).visible, ""))
 	ds.open_picker("motor")
 	var bad := ds.picker_rows().filter(func(r): return not r["ok"])
 	var none := bad.is_empty() or ds.hover_row(ds.picker_rows().find(bad[0])).is_empty()
@@ -342,24 +343,30 @@ static func _test_warnings_shown(ds: DesignSpace, catalog: PartsCatalog, home: D
 	var results: Array = []
 	var v := ds.choose("battery", "battery_1s_300")
 	var direct := _direct(catalog, home.merged({"battery": "battery_1s_300"}, true))
-	var firsts: Array = []
+	var longs: Array = []
 	for w in BuildWarning.by_severity(direct.warnings()):
 		if w.severity != BuildWarning.Severity.CHARACTERISTIC:
-			firsts.append(PartSwap.first_sentence(w.message))
-	var lines := ds.warning_lines()
+			longs.append(w.message)
 	results.append(TestResult.new("a pack that cannot lift the 5\" is applied, not refused (only hard misfits refuse)",
 		v["ok"] and ds.session.selection["battery"] == "battery_1s_300", str(v.get("reason", ""))))
-	results.append(TestResult.new("and its warnings are shown, word for word, in the warning accent",
-		not lines.is_empty() and lines == firsts.slice(0, 3)
-		and (ds.warnings_box.get_child(0) as Label).get_theme_color("font_color") == LothalTheme.WARNING,
-		"%s vs %s" % [lines, firsts.slice(0, 3)]))
+	# Section 8: the panel counts them; each pin opens its sentence, word for word, in the inspector.
+	results.append(TestResult.new("and the panel counts its warnings in the warning accent",
+		not longs.is_empty() and ds.issues_label.text == WarningPins.count_text(longs.size())
+		and ds.issues_label.get_theme_color("font_color") == LothalTheme.WARNING,
+		"'%s' vs %d" % [ds.issues_label.text, longs.size()]))
+	var opened: Array = []
+	for p in ds.warning_pins:
+		ds.open_warning([String(p["id"])])
+		opened.append(ds.inspector_lines().back() if not ds.inspector_lines().is_empty() else "")
+	results.append(TestResult.new("and each one's pin opens its sentence word for word", opened == longs,
+		"%s vs %s" % [opened, longs]))
 	_reset(ds, home)
-	var home_first: Array = []
-	for w in BuildWarning.by_severity(_direct(catalog, home).warnings()):
+	var home_n := 0
+	for w in _direct(catalog, home).warnings():
 		if w.severity != BuildWarning.Severity.CHARACTERISTIC:
-			home_first.append(PartSwap.first_sentence(w.message))
-	results.append(TestResult.new("back on the default 5\" the lines are its own warnings, not the last pack's",
-		ds.warning_lines() == home_first.slice(0, 3), str(ds.warning_lines())))
+			home_n += 1
+	results.append(TestResult.new("back on the default 5\" the count is its own warnings', not the last pack's",
+		ds.issues_label.text == WarningPins.count_text(home_n), "'%s' vs %d" % [ds.issues_label.text, home_n]))
 	return results
 
 

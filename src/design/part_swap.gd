@@ -77,6 +77,9 @@ static func judge(session: DesignSession, catalog: PartsCatalog, category: Strin
 	for w in warnings:
 		if w.severity == BuildWarning.Severity.IMPOSSIBLE and HARD_IDS.has(w.id):
 			out["reason"] = first_sentence(w.message)
+			# The warning itself, so a refusal shown as a warning pin (Section 8) reads its numbers
+			# and full sentence from data rather than from the reason's text.
+			out["refused_by"] = w
 			return out
 	out["ok"] = true
 	if with_readouts:
