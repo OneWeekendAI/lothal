@@ -99,6 +99,19 @@ func _init() -> void:
 	for spec in chip_arg.split(",", false):
 		var bits := spec.split(":")
 		ds.shelf.set_filter(bits[0], bits[1], bits[2])
+	# Arg 11 "reason" clicks the dimmed card nearest the fitted one, so its reason line shows.
+	if args.size() > 11 and args[11] == "reason":
+		var rows := ds.picker_rows()
+		var fitted := rows.map(func(r): return r["fitted"]).find(true)
+		var pick := -1
+		for i in rows.size():
+			if not rows[i]["ok"] and (pick < 0 or absi(i - fitted) < absi(pick - fitted)):
+				pick = i
+		if pick >= 0:
+			var ev := InputEventMouseButton.new()
+			ev.button_index = MOUSE_BUTTON_LEFT
+			ev.pressed = true
+			(rows[pick]["button"] as Button).gui_input.emit(ev)
 	for i in 60:
 		await process_frame
 	root.get_texture().get_image().save_png(out_path)

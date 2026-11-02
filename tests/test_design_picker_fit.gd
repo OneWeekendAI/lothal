@@ -1,8 +1,8 @@
 class_name TestDesignPickerFit
 extends RefCounted
 ## The swap strip at 1280x720 on the 5" (PLAN Section 3): clicking a part opens it with exactly that
-## slot's alternatives, it is docked at the bottom clear of everything else on screen, the camera is
-## left alone, and the fitted or hovered card scrolls into view. The old pop-up is gone.
+## slot's alternatives, it is docked at the bottom clear of everything else on screen, the camera
+## lifts the drone clear of it, and the fitted or hovered card scrolls into view. The old pop-up is gone.
 ##
 ## ## The checks that could have passed while proving nothing
 ##
@@ -171,17 +171,19 @@ static func _others(ds: DesignSpace) -> Array:
 
 
 static func _test_camera_untouched(ds: DesignSpace) -> TestResult:
+	# The strip lifts the drone clear of itself (tests/test_strip_polish.gd checks where it ends up)
+	# and closing it gives the camera back exactly: the home view, bit for bit.
 	ds.select("")
 	ds.place_picker()
 	ds.rig.snap_home()
 	var t0 := ds.rig.goal_target
 	var d0 := ds.rig.goal_distance
 	ds.select("part/battery")
-	var same := ds.rig.goal_target.is_equal_approx(t0) and is_equal_approx(ds.rig.goal_distance, d0)
+	var moved := not (ds.rig.goal_target.is_equal_approx(t0) and is_equal_approx(ds.rig.goal_distance, d0))
 	ds.select("")
 	ds.place_picker()
-	return TestResult.new("opening and closing the strip leaves the camera where it was",
-		same and ds.rig.goal_target.is_equal_approx(t0) and is_equal_approx(ds.rig.goal_distance, d0),
+	return TestResult.new("closing the strip puts the camera back where it was (it moved while open: %s)" % moved,
+		moved and ds.rig.goal_target.is_equal_approx(t0) and is_equal_approx(ds.rig.goal_distance, d0),
 		"now %s %f (was %s %f)" % [ds.rig.goal_target, ds.rig.goal_distance, t0, d0])
 
 

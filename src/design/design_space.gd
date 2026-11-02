@@ -45,14 +45,16 @@ const WARN_PIN_STEP := 24.0
 const PANEL_W := 212.0
 const PANEL_EDGE := 12.0
 ## The swap strip: cards along the bottom edge, between the Home link and the inspector's column.
-const STRIP_H := 140.0
+const STRIP_H := 160.0
 const STRIP_BOTTOM := 16.0
 const STRIP_LEFT := 152.0          ## past the Home link (32..140)
 const STRIP_MIN_W := 320.0
 const STRIP_PAD := 8.0
 const STRIP_SEP := 6
-const STRIP_CARD_W := 118.0
-const STRIP_CARD_H := 96.0
+const STRIP_CARD_W := 132.0
+const STRIP_CARD_H := 108.0
+## The drone's lowest edge stays this far (px) above the open strip.
+const STRIP_AIR := 12.0
 const STRIP_ICON_K := 0.62         ## the shelf's 98 px picture drawn at 61 px
 ## Readout delta bars: a delta of this size fills half the track.
 const DELTA_SCALE := {"auw_g": 150.0, "thrust_to_weight": 4.0, "hover_throttle": 0.2,
@@ -1853,13 +1855,16 @@ func _build_picker() -> void:
 	scroll.name = "Scroll"
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Exactly as wide as the whole cards it shows (see `_layout_from`), centred in the row: the
+	# leftover is padding, so no card is ever cut by the strip's edge.
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_SHRINK_CENTER
 	scroll.custom_minimum_size = Vector2(200.0, STRIP_CARD_H)
 	row.add_child(scroll)
 	row.add_child(_arrow("›", 1))
 	_picker_list = HBoxContainer.new()
 	_picker_list.add_theme_constant_override("separation", STRIP_SEP)
 	scroll.add_child(_picker_list)
+	scroll.get_h_scroll_bar().value_changed.connect(_on_strip_scrolled)
 
 
 func _arrow(glyph: String, dir: int) -> Button:
@@ -1877,11 +1882,10 @@ func _arrow(glyph: String, dir: int) -> Button:
 	return b
 
 
-## Pages the strip by about three cards (the arrow buttons; the wheel and a drag also scroll).
+## Pages the strip by three cards (the arrow buttons; the wheel and a drag move it a card at a time).
 func scroll_strip(dir: int) -> void:
-	var scroll := _picker_scroll()
-	var step := int((STRIP_CARD_W + STRIP_SEP) * 3.0)
-	scroll.scroll_horizontal = maxi(scroll.scroll_horizontal + dir * step, 0)
+	var spans := _item_spans()
+	_layout_from(_clamp_first(_first_for(float(_picker_scroll().scroll_horizontal), spans) + dir * 3, spans), spans)
 
 
 ## Opens the strip for a pick slot ("battery", "motor", "stack", ...): every catalog alternative as
@@ -1891,6 +1895,7 @@ func open_picker(slot: String) -> void:
 		close_picker()
 		return
 	strip_slot = slot
+	_focus_row = -1
 	for c in _picker_list.get_children():
 		_picker_list.remove_child(c)
 		c.queue_free()
@@ -1953,6 +1958,11 @@ func _add_row(opt: Dictionary) -> void:
 	pic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vb.add_child(pic)
 	var name_label := _caption(String(opt["name"]), ink)
+	# The whole name, over up to three lines: a card never ends a name in a cut.
+	name_label.clip_text = false
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_label.max_lines_visible = 3
 	vb.add_child(name_label)
 	# The one key spec under the name, never one the name already says (PartCaption.for_card).
 	var spec := PartCaption.for_card(part, cat, String(opt["name"]))
@@ -1974,15 +1984,20 @@ func _add_row(opt: Dictionary) -> void:
 	row["reason_label"] = null
 	var i := _picker_rows.size()
 	b.mouse_entered.connect(func(): _show_note(i); hover_row(i))
-	b.mouse_exited.connect(func(): _show_note(-1); clear_preview())
+	b.mouse_exited.connect(func(): _show_note(_focus_row); clear_preview())
 	b.pressed.connect(func(): press_row(i))
+	# A dimmed card cannot be pressed, but a click on it still says why (kept until another card
+	# is clicked or the strip closes), so the reason never needs a hover.
+	b.gui_input.connect(func(ev: InputEvent):
+		if b.disabled and ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			focus_row(i))
 	_picker_list.add_child(b)
 	if not opt["ok"]:
 		# The misfit's one-line reason: shown beside the title while the pointer is on its card.
 		var why := Label.new()
 		why.text = String(opt["reason"])
-		why.clip_text = true
-		why.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		why.max_lines_visible = 2
 		why.visible = false
 		why.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		why.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
@@ -2005,6 +2020,25 @@ func _caption(text: String, color: Color) -> Label:
 	return l
 
 
+## The card whose reason is held on the header line (-1 none).
+var _focus_row := -1
+
+
+## Holds card i's reason on the header line without the pointer on it (a click on a dimmed card).
+func focus_row(i: int) -> void:
+	_focus_row = i
+	_show_note(i)
+
+
+## The reason line now showing on the strip's header ("" when none).
+func strip_reason() -> String:
+	for r in _picker_rows:
+		var why: Variant = r["reason_label"]
+		if why != null and (why as Label).visible:
+			return (why as Label).text
+	return ""
+
+
 ## Shows only card i's reason line (-1 hides all).
 func _show_note(i: int) -> void:
 	for k in _picker_rows.size():
@@ -2015,8 +2049,12 @@ func _show_note(i: int) -> void:
 
 func close_picker() -> void:
 	strip_slot = ""
+	_focus_row = -1
 	strip.visible = false
 	clear_preview()
+	# The room the strip took goes back; the open shelf, if any, asks again for its own.
+	_give_back_room()
+	_update_room()
 
 
 ## The strip's cards, for tests and the seams below: {category, id, name, ok, reason, fitted,
@@ -2073,7 +2111,9 @@ func place_picker() -> void:
 	strip.offset_right = r.end.x
 	strip.offset_bottom = r.end.y
 	strip.custom_minimum_size = r.size
-	_picker_scroll().custom_minimum_size.x = r.size.x - 2.0 * STRIP_PAD - 56.0
+	_strip_avail = r.size.x - 2.0 * STRIP_PAD - 56.0
+	var spans := _item_spans()
+	_layout_from(_first_for(float(_picker_scroll().scroll_horizontal), spans), spans)
 	_finish_reveal()
 
 
@@ -2124,23 +2164,29 @@ func _make_room_for_picker() -> void:
 func _update_room() -> void:
 	if rig.is_zoomed_in() or size.x <= 0.0:
 		return
-	if not shelf_open():
+	var strip_up := strip != null and strip.visible
+	if not shelf_open() and not strip_up:
 		_give_back_room()
 		return
 	var view := PickerPlace.settled(rig)
 	var r := PickerPlace.screen_rect(view, _mesh_aabbs(), size)
 	var left := _left_edge()
-	var w := 0.0
-	var fits := true
-	if shelf_open():
-		fits = r.position.x >= left and r.end.x <= size.x - PickerPlace.COLUMN_W
-	if fits:
+	var limit_y := strip_rect().position.y
+	var fits_side := not shelf_open() or (r.position.x >= left and r.end.x <= size.x - PickerPlace.COLUMN_W)
+	var fits_strip := not strip_up or r.end.y <= limit_y - STRIP_AIR
+	if fits_side and fits_strip:
 		return
 	if _room_before.is_empty():
 		_room_before = {"target": rig.goal_target, "distance": rig.goal_distance}
-	var g := PickerPlace.room_goal(rig, _mesh_aabbs(), size, w, left)
-	rig.goal_target = g["target"]
-	rig.goal_distance = g["distance"]
+	var g := {}
+	if not fits_side:
+		g = PickerPlace.room_goal(rig, _mesh_aabbs(), size, 0.0, left)
+		rig.goal_target = g["target"]
+		rig.goal_distance = g["distance"]
+	if strip_up:
+		g = PickerPlace.lift_goal(rig, _mesh_aabbs(), size, limit_y, STRIP_AIR)
+		rig.goal_target = g["target"]
+		rig.goal_distance = g["distance"]
 	_room_goal = g
 
 
@@ -2192,15 +2238,93 @@ func _apply_reveal(i: int) -> void:
 	if i < 0 or i >= _picker_rows.size():
 		return
 	var scroll := _picker_scroll()
-	var span := picker_row_span(i)
-	var view_w := scroll.custom_minimum_size.x
-	var content := _picker_content_w()
+	var spans := _item_spans()
+	var item := _picker_list.get_children().find((_picker_rows[i] as Dictionary)["button"])
+	if item < 0 or spans.is_empty():
+		return
+	var first := _first_for(float(scroll.scroll_horizontal), spans)
+	if item < first:
+		first = item
+	elif item > _last_fit(first, spans):
+		# The nearest first card that still has this one whole in view.
+		first = item
+		while first > 0 and spans[item].y - spans[first - 1].x <= _strip_avail:
+			first -= 1
+	_layout_from(_clamp_first(first, spans), spans)
+
+
+# The strip scrolls by whole cards: it shows items first..last, as wide as exactly those, and the
+# row centres it, so the strip's edge never cuts a card or its caption. Everything below is
+# arithmetic on the cards' minimum widths, so it holds before the deferred layout and headless.
+
+var _strip_avail := 600.0       ## the width the scroll area may use (px)
+var _snapping := false
+var _laid_x := 0.0              ## the scroll offset `_layout_from` last set
+
+
+## Every child of the list (cards and slot headings) as [left, right] in the list's own px.
+func _item_spans() -> Array:
+	var out: Array = []
+	var x := 0.0
+	for c in _picker_list.get_children():
+		var w := (c as Control).get_combined_minimum_size().x
+		out.append(Vector2(x, x + w))
+		x += w + _picker_sep()
+	return out
+
+
+## The first item at or right of scroll offset `x` (the last one if none).
+func _first_for(x: float, spans: Array) -> int:
+	for i in spans.size():
+		if (spans[i] as Vector2).x >= x - 0.5:
+			return i
+	return maxi(spans.size() - 1, 0)
+
+
+## The last item that fits whole in the width available, starting from item `first`.
+func _last_fit(first: int, spans: Array) -> int:
+	var last := first
+	while last + 1 < spans.size() and spans[last + 1].y - spans[first].x <= _strip_avail:
+		last += 1
+	return last
+
+
+## `first`, kept no further right than the position where the list's end is already in view.
+func _clamp_first(first: int, spans: Array) -> int:
+	var kmax := maxi(spans.size() - 1, 0)
+	while kmax > 0 and _last_fit(kmax - 1, spans) >= spans.size() - 1:
+		kmax -= 1
+	return clampi(first, 0, kmax)
+
+
+## Shows items first..last: the scroll area as wide as exactly them, scrolled to the first.
+func _layout_from(first: int, spans: Array) -> void:
+	if spans.is_empty():
+		return
+	first = clampi(first, 0, spans.size() - 1)
+	var last := _last_fit(first, spans)
+	var scroll := _picker_scroll()
+	var w: float = spans[last].y - spans[first].x
+	var content: float = spans[spans.size() - 1].y
 	var bar := scroll.get_h_scroll_bar()
-	# Before the deferred layout the bar still has the old list's range; give it this one's.
 	bar.max_value = content
-	bar.page = view_w
-	var want := PickerPlace.reveal(span.x, span.y, view_w, float(scroll.scroll_horizontal))
-	scroll.scroll_horizontal = int(roundf(clampf(want, 0.0, maxf(content - view_w, 0.0))))
+	bar.page = w
+	scroll.custom_minimum_size.x = w
+	_snapping = true
+	scroll.scroll_horizontal = int(roundf(spans[first].x))
+	_laid_x = float(scroll.scroll_horizontal)
+	_snapping = false
+
+
+## The wheel or a drag moved the strip: take it on to the next (or previous) whole card.
+func _on_strip_scrolled(v: float) -> void:
+	if _snapping or _picker_rows.is_empty():
+		return
+	var spans := _item_spans()
+	var first := _first_for(v, spans)
+	if v < _laid_x - 0.5 and first > 0 and (spans[first] as Vector2).x > v + 0.5:
+		first -= 1
+	_layout_from(_clamp_first(first, spans), spans)
 
 
 func _finish_reveal() -> void:

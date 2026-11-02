@@ -95,6 +95,31 @@ static func room_goal(rig: CameraRig, boxes: Array, size: Vector2, w: float, lef
 	return {"target": v.goal_target, "distance": v.goal_distance}
 
 
+## The goal {target, distance} that lifts the drone clear of a strip whose top edge is at `limit_y`
+## (px): the least change, only up (and a step back when the drone is too tall to fit above it),
+## keeping yaw, pitch and the sideways framing. The drone's lowest edge ends `air` px above.
+static func lift_goal(rig: CameraRig, boxes: Array, size: Vector2, limit_y: float, air: float) -> Dictionary:
+	var v := settled(rig)
+	var t := tan(deg_to_rad(CameraRig.FOV_DEG) * 0.5)
+	var want_end := limit_y - air
+	for i in 10:
+		var r := screen_rect(v, boxes, size)
+		if r.end.y <= want_end and i > 0:
+			break
+		var room := want_end - TOP
+		if r.size.y > room:
+			v.goal_distance *= r.size.y / room * 1.02
+			v.snap()
+			r = screen_rect(v, boxes, size)
+		var dy := 0.0
+		if r.end.y > want_end:
+			dy = minf(maxf(want_end - r.end.y, TOP - r.position.y), 0.0)
+		var world_per_px := 2.0 * v.goal_distance * t / size.y
+		v.goal_target += v.up_of(v.goal_yaw, v.goal_pitch) * dy * world_per_px
+		v.snap()
+	return {"target": v.goal_target, "distance": v.goal_distance}
+
+
 ## The scroll offset that shows the span [top, bottom] in a window `view_h` tall now at `current`:
 ## unchanged when it already shows, else the least move that does.
 static func reveal(top: float, bottom: float, view_h: float, current: float) -> float:
