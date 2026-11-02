@@ -140,7 +140,7 @@ static func _true_silhouette(ds: DesignSpace) -> Array:
 static func _ui_rects(ds: DesignSpace) -> Dictionary:
 	var s := ds.size
 	var out := {"back link": Rect2(32, 20, 108, 32), "home link": Rect2(32, s.y - 56, 108, 32),
-		"readouts": Rect2(s.x - 300, 48, 260, maxf(352.0, ds.panel.get_combined_minimum_size().y))}
+		"readouts": Rect2(s.x - DesignSpace.PANEL_W - DesignSpace.PANEL_EDGE, 48, DesignSpace.PANEL_W, maxf(352.0, ds.panel.get_combined_minimum_size().y))}
 	if ds.inspector.visible:
 		var h := ds.inspector.get_combined_minimum_size().y
 		out["inspector"] = Rect2(s.x - 340, s.y - 24 - h, 300, h)

@@ -19,6 +19,7 @@ static func run() -> Array:
 	results.append_array(_test_choose_lands_on_the_model())
 	results.append_array(_test_readouts_equal_the_engine(catalog))
 	results.append_array(_test_build_change_updates_readouts(catalog))
+	results.append_array(_test_gauge_fractions())
 	results.append_array(_test_camera_limits())
 	results.append_array(_test_home_restores())
 	results.append_array(_test_back_to_picker())
@@ -106,6 +107,9 @@ static func _test_build_change_updates_readouts(catalog: PartsCatalog) -> Array:
 	var before: Dictionary = {}
 	for key in ds.value_labels:
 		before[key] = (ds.value_labels[key] as Label).text
+	var fill_before: Dictionary = {}
+	for key in ds.gauges:
+		fill_before[key] = (ds.gauges[key] as ReadoutGauge).fill
 	var changed := ds.set_part("battery", "battery_6s_1300")
 	var build := session.build(catalog)
 	var bad := _panel_matches(ds, build)
@@ -117,9 +121,40 @@ static func _test_build_change_updates_readouts(catalog: PartsCatalog) -> Array:
 			moved += 1
 	results.append(TestResult.new("and every one of the five figures moved (4S 1500 -> 6S 1300)",
 		moved == 5, "moved=%d" % moved))
+	var gauges_moved := 0
+	var gauges_right := 0
+	for key in ds.gauges:
+		var g := ds.gauges[key] as ReadoutGauge
+		if absf(g.fill - float(fill_before[key])) > 1e-6:
+			gauges_moved += 1
+		if absf(g.fill - ReadoutGauge.fraction(key, session.readouts(catalog)[key])) < 1e-9:
+			gauges_right += 1
+	results.append(TestResult.new("and every one of the five gauges moved, to the fraction of the new figure",
+		gauges_moved == 5 and gauges_right == 5, "moved=%d right=%d" % [gauges_moved, gauges_right]))
 	results.append(TestResult.new("an unknown category changes nothing",
 		not ds.set_part("flux_capacitor", "x") and _panel_matches(ds, build) == "", ""))
 	ds.free()
+	return results
+
+
+static func _test_gauge_fractions() -> Array:
+	var results: Array = []
+	for key in ReadoutGauge.RANGES:
+		var lo := float(ReadoutGauge.RANGES[key][0])
+		var hi := float(ReadoutGauge.RANGES[key][1])
+		var mid := ReadoutGauge.fraction(key, (lo + hi) * 0.5)
+		var q := ReadoutGauge.fraction(key, lo + (hi - lo) * 0.25)
+		results.append(TestResult.new("%s gauge: low end 0, high end 1, midpoint 0.5, quarter 0.25" % key,
+			ReadoutGauge.fraction(key, lo) == 0.0 and ReadoutGauge.fraction(key, hi) == 1.0
+				and absf(mid - 0.5) < 1e-9 and absf(q - 0.25) < 1e-9, "mid=%f q=%f" % [mid, q]))
+		results.append(TestResult.new("%s gauge: clamped outside the range, empty when absent" % key,
+			ReadoutGauge.fraction(key, hi * 10.0 + 5.0) == 1.0 and ReadoutGauge.fraction(key, lo - 99.0) == 0.0
+				and ReadoutGauge.fraction(key, null) == 0.0 and ReadoutGauge.fraction(key, NAN) == 0.0, ""))
+	results.append(TestResult.new("an unknown readout key has an empty gauge",
+		ReadoutGauge.fraction("flux", 5.0) == 0.0, ""))
+	results.append(TestResult.new("the 5\" seed: 507.5 g is half-ish of 1000 g, 11.43:1 is 0.762 of 15",
+		absf(ReadoutGauge.fraction("auw_g", 507.5) - 0.5075) < 1e-9
+			and absf(ReadoutGauge.fraction("thrust_to_weight", 11.43) - 0.762) < 1e-9, ""))
 	return results
 
 

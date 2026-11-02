@@ -41,6 +41,9 @@ const WARN_INK := LothalTheme.WARNING
 const TINT_ALPHA := 0.2
 ## Two warning pins on one part sit this far apart (px).
 const WARN_PIN_STEP := 24.0
+## The readouts column: narrow, and flush to the right edge (the stage gets the room).
+const PANEL_W := 212.0
+const PANEL_EDGE := 12.0
 const PICKER_W := 360.0
 const PICKER_MAX_H := 430.0
 ## Readout delta bars: a delta of this size fills half the track.
@@ -109,6 +112,7 @@ var picker_slot := ""
 ## the readout marks, and which pins the inspector is showing.
 var warning_pins: Array = []
 var issues_label: Label
+var gauges: Dictionary = {}          ## readout key -> its ReadoutGauge (fill = where the value sits in its range)
 var mark_buttons: Dictionary = {}    ## readout key -> its mark Button ("\u25b2 8.0 in air")
 var warning_open: Array = []          ## pin ids the inspector shows ([] for none)
 var _refusal := {}                    ## the last refused drop's pin, until the next change or drag
@@ -259,6 +263,7 @@ func refresh() -> void:
 	var keys := ["auw_g", "thrust_to_weight", "hover_throttle", "flight_time_min", "top_speed_kmh"]
 	for key in keys:
 		(value_labels[key] as Label).text = format_readout(key, r)
+		(gauges[key] as ReadoutGauge).set_value(r.get(key, null))
 	var fs := session.flight_state(_catalog)
 	var b := session.build(_catalog)
 	_refresh_warnings(b, fs)
@@ -282,6 +287,7 @@ func _refresh_warnings(b: Build, fs: Dictionary) -> void:
 	var m := WarningPins.marks(pins)
 	for key in mark_buttons:
 		(mark_buttons[key] as Button).text = String(m[key]["text"]) if m.has(key) else ""
+		(gauges[key] as ReadoutGauge).set_warn(m.has(key))
 	_show_warning_panel(previewing.is_empty())
 	if not warning_open.is_empty():
 		var ids: Array = pins.map(func(p): return String(p["id"]))
@@ -1126,8 +1132,8 @@ func _build_panel() -> void:
 	panel.anchor_right = 1.0
 	panel.anchor_top = 0.0
 	panel.anchor_bottom = 0.0
-	panel.offset_left = -300
-	panel.offset_right = -40
+	panel.offset_left = -PANEL_W - PANEL_EDGE
+	panel.offset_right = -PANEL_EDGE
 	panel.offset_top = 48
 	panel.offset_bottom = 400
 	panel.add_theme_constant_override("separation", 14)
@@ -1156,8 +1162,13 @@ func _build_panel() -> void:
 		["hover_throttle", "Hover throttle"], ["flight_time_min", "Flight time (est.)"],
 		["top_speed_kmh", "Top speed (est.)"]]
 	for row in rows:
+		var pic := HBoxContainer.new()
+		pic.add_theme_constant_override("separation", 10)
+		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pic.add_child(ReadoutGauge.Icon.new(String(row[0])))
 		var box := VBoxContainer.new()
 		box.add_theme_constant_override("separation", 0)
+		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var cap := Label.new()
 		cap.text = String(row[1])
@@ -1166,7 +1177,7 @@ func _build_panel() -> void:
 		box.add_child(cap)
 		var val := Label.new()
 		val.name = String(row[0])
-		val.add_theme_font_size_override("font_size", 26)
+		val.add_theme_font_size_override("font_size", 22)
 		val.add_theme_color_override("font_color", INK)
 		# The value and, beside it, the amber mark of any warning that moves it in the air.
 		var line := HBoxContainer.new()
@@ -1185,6 +1196,14 @@ func _build_panel() -> void:
 		mark.pressed.connect(open_readout_warning.bind(String(row[0])))
 		line.add_child(mark)
 		box.add_child(line)
+		var gauge := ReadoutGauge.new(String(row[0]))
+		gauge.custom_minimum_size = Vector2(0, 3)
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(0, 4)
+		gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(gap)
+		box.add_child(gauge)
+		gauges[row[0]] = gauge
 		mark_buttons[row[0]] = mark
 		var dl := Label.new()
 		dl.name = "delta_" + String(row[0])
@@ -1209,7 +1228,8 @@ func _build_panel() -> void:
 		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		track.add_child(bar)
 		box.add_child(track)
-		panel.add_child(box)
+		pic.add_child(box)
+		panel.add_child(pic)
 		value_labels[row[0]] = val
 		delta_labels[row[0]] = dl
 		delta_bars[row[0]] = bar
