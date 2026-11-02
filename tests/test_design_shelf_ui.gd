@@ -154,6 +154,8 @@ static func _test_shelf(catalog: PartsCatalog) -> Array:
 		not ds.shelf.open and ds.shelf.rows.is_empty() and not ds.shelf.scroll.visible, "open=%s" % ds.shelf.open))
 	ds.shelf.set_open(true)
 	ds.shelf.toggle_category("motor")
+	# Misfits are held back by default (tests/test_part_filter.gd); the toggle brings them in.
+	ds.shelf.set_show_misfits("motor", true)
 	var rows: Array = ds.shelf.rows.filter(func(r): return String(r["category"]) == "motor")
 	var oks: Array = rows.map(func(r): return bool(r["ok"]))
 	var first_bad := oks.find(false)
@@ -484,7 +486,7 @@ static func _test_home_shelf(catalog: PartsCatalog) -> Array:
 ## Hand-written (category, part, expected caption) triples: the expected text is typed here, never
 ## computed by PartCaption. One generated test per category.
 const CAPTION_CASES := [
-	["battery", {"specs": {"cells": 4, "mah": 1500.0}}, "4S 1500 mAh"],
+	["battery", {"mass_g": 94.0, "specs": {"cells": 4, "mah": 1500.0}}, "94 g"],
 	["motor", {"specs": {"stator_diameter_mm": 22, "stator_height_mm": 7, "kv": 1950}}, "2207 1950KV"],
 	["propeller", {"specs": {"diameter_inches": 5.1, "pitch_inches": 3.0, "blades": 3}}, "5.1 in 3-blade"],
 	["esc", {"specs": {"continuous_a": 45.0, "channels": 4}}, "45 A 4-ch"],

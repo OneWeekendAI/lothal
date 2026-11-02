@@ -94,6 +94,11 @@ func _init() -> void:
 		ds.shelf.set_open(true)
 		for cat in shelf_arg.trim_prefix("shelf").trim_prefix(":").split(",", false):
 			ds.shelf.toggle_category(cat)
+	# Arg 10, "motor:kv:kv_mid,..." presses those shelf chips (category:group:option).
+	var chip_arg: String = args[10] if args.size() > 10 else ""
+	for spec in chip_arg.split(",", false):
+		var bits := spec.split(":")
+		ds.shelf.set_filter(bits[0], bits[1], bits[2])
 	for i in 60:
 		await process_frame
 	root.get_texture().get_image().save_png(out_path)

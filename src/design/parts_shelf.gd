@@ -22,8 +22,10 @@ const WIDTH := 240.0
 const MAX_LIST_H := 470.0
 ## Cards: two to a row in WIDTH (less the scrollbar); headers and notes take a whole row.
 const CARD_W := 106.0
-const CARD_H := 100.0
+const CARD_H := 116.0
 const GAP := 4
+const CHIP_H := 18.0
+const TAG_W := 40.0
 const ROW_W := 218.0
 
 var open := false
@@ -34,6 +36,14 @@ var scroll: ScrollContainer
 var expanded := {}
 ## Rows as shown, for tests: [{category, id, name, ok, reason, button}] (open categories only).
 var rows: Array = []
+## category -> {group key: option id}: the chips pressed (PartFilter).
+var filters := {}
+## category -> true while its misfits are shown (the default is to hide them).
+var show_misfits := {}
+## The cue under the list that it runs on below the fold.
+var more_cue: Label
+## The list's laid-out height (estimated from the cards), to tell whether it overflows.
+var _content_h := 0.0
 ## The groups last handed in (PartSnap.shelf's shape).
 var _groups: Array = []
 ## Callable(category) -> {part_id: {ok, reason}}; null shows every part as fitting.
@@ -60,6 +70,17 @@ func _init() -> void:
 	list.add_theme_constant_override("h_separation", GAP)
 	list.add_theme_constant_override("v_separation", GAP)
 	scroll.add_child(list)
+	more_cue = Label.new()
+	more_cue.name = "MoreCue"
+	more_cue.text = "⌄  more below"
+	more_cue.visible = false
+	more_cue.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	more_cue.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	more_cue.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	more_cue.add_theme_color_override("font_color", INK_MUTED)
+	add_child(more_cue)
+	scroll.get_v_scroll_bar().value_changed.connect(func(_v): _update_cue())
+	scroll.get_v_scroll_bar().changed.connect(_update_cue)
 	_update_header()
 
 
@@ -103,6 +124,8 @@ func _rebuild() -> void:
 	rows.clear()
 	if not open:
 		scroll.custom_minimum_size.y = 0.0
+		_content_h = 0.0
+		_update_cue()
 		return
 	var h := 0.0
 	for g in _groups:
@@ -119,30 +142,155 @@ func _rebuild() -> void:
 		if not is_open:
 			continue
 		var verdicts: Dictionary = judge.call(cat) if judge.is_valid() else {}
-		var fits: Array = []
-		var misfits: Array = []
+		var entries: Array = []
 		for p in parts:
 			var v: Dictionary = verdicts.get(String(p["id"]), {"ok": true, "reason": "", "rank": 0.0})
-			(fits if v["ok"] else misfits).append([p, v])
+			entries.append({"part": p.get("part", {}), "p": p, "ok": v["ok"], "v": v})
+		var chosen: Dictionary = filters.get(cat, {})
+		h += _add_chips(cat, chosen)
+		var shown := PartFilter.view(entries, cat, chosen, bool(show_misfits.get(cat, false)))
+		var fits: Array = shown["fits"]
+		var misfits: Array = shown["misfits"]
 		# Among the parts that mount, the ones nearest this drone's own first (`rank`, the caller's).
-		fits.sort_custom(func(a, b): return float(a[1].get("rank", 0.0)) < float(b[1].get("rank", 0.0)))
-		for pair in fits:
-			_add_row(cat, pair[0], pair[1])
+		fits.sort_custom(func(a, b): return float(a["v"].get("rank", 0.0)) < float(b["v"].get("rank", 0.0)))
+		for e in fits:
+			_add_row(cat, e["p"], e["v"])
 		h += _card_rows(fits.size())
+		if fits.is_empty() and misfits.is_empty():
+			h += _add_note("Nothing here fits" if int(shown["hidden"]) == 0 else "Nothing fits with these filters")
+		if int(shown["hidden"]) > 0 or int(shown["total_misfits"]) > 0:
+			h += _add_misfit_toggle(cat, int(shown["hidden"]), bool(show_misfits.get(cat, false)))
 		if not misfits.is_empty():
-			var note := Label.new()
-			note.text = "Does not fit this drone"
-			note.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			note.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-			note.add_theme_color_override("font_color", INK_MUTED)
-			note.custom_minimum_size = Vector2(ROW_W, 20)
-			note.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-			list.add_child(note)
-			h += note.get_combined_minimum_size().y + GAP
-			for pair in misfits:
-				_add_row(cat, pair[0], pair[1])
+			h += _add_note("Does not fit this drone")
+			for e in misfits:
+				_add_row(cat, e["p"], e["v"])
 			h += _card_rows(misfits.size())
+	_content_h = h
 	scroll.custom_minimum_size.y = minf(h, MAX_LIST_H)
+	scroll.scroll_vertical = mini(scroll.scroll_vertical, maxi(int(h - MAX_LIST_H), 0))
+	_update_cue()
+
+
+## Set one chip: pressing the option already chosen clears it. Rebuilds.
+func set_filter(category: String, key: String, option_id: String) -> void:
+	var f: Dictionary = filters.get(category, {}).duplicate()
+	if option_id == "" or String(f.get(key, "")) == option_id:
+		f.erase(key)
+	else:
+		f[key] = option_id
+	filters[category] = f
+	_rebuild()
+
+
+func set_show_misfits(category: String, want: bool) -> void:
+	show_misfits[category] = want
+	_rebuild()
+
+
+## Whether the list runs on below what shows (the "more below" cue is up). Once the scroll bar has
+## its real range (a laid-out window) that decides; before, the estimate from the cards does.
+func can_scroll_more() -> bool:
+	if not open:
+		return false
+	var bar := scroll.get_v_scroll_bar()
+	if bar.page > 0.0:
+		return bar.value + bar.page < bar.max_value - 1.0
+	return _content_h > scroll.custom_minimum_size.y + 1.0 \
+		and float(scroll.scroll_vertical) + scroll.custom_minimum_size.y < _content_h - 1.0
+
+
+func _update_cue() -> void:
+	more_cue.visible = can_scroll_more()
+
+
+## The category's chip groups: a faint label then small toggle chips. Returns the height used.
+func _add_chips(cat: String, chosen: Dictionary) -> float:
+	var h := 0.0
+	for g in PartFilter.chips(cat):
+		var flow := HFlowContainer.new()
+		flow.name = "Chips_" + String(g["key"])
+		flow.custom_minimum_size.x = ROW_W
+		flow.add_theme_constant_override("h_separation", 2)
+		flow.add_theme_constant_override("v_separation", 2)
+		var tag := Label.new()
+		tag.text = String(g["label"])
+		tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tag.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL - 2)
+		tag.add_theme_color_override("font_color", INK_FAINT)
+		tag.custom_minimum_size = Vector2(TAG_W, CHIP_H)
+		tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		flow.add_child(tag)
+		var x := TAG_W
+		var n_rows := 1
+		for o in g["options"]:
+			var on := String(chosen.get(g["key"], "")) == String(o["id"])
+			var c := _chip(String(o["label"]), on)
+			c.name = "Chip_%s_%s" % [g["key"], o["id"]]
+			var key := String(g["key"])
+			var oid := String(o["id"])
+			c.pressed.connect(func(): set_filter(cat, key, oid))
+			flow.add_child(c)
+			var w := c.custom_minimum_size.x + 2.0
+			if x + w > ROW_W:
+				n_rows += 1
+				x = 0.0
+			x += w
+		list.add_child(flow)
+		h += n_rows * (CHIP_H + 2.0) + GAP
+	return h
+
+
+func _chip(text: String, on: bool) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.toggle_mode = true
+	b.button_pressed = on
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL - 1)
+	b.add_theme_color_override("font_color", INK_MUTED)
+	b.add_theme_color_override("font_hover_color", INK)
+	b.add_theme_color_override("font_pressed_color", INK)
+	b.add_theme_color_override("font_hover_pressed_color", INK)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(1, 1, 1, 0.14) if on else Color(1, 1, 1, 0.04)
+	sb.border_color = INK_MUTED if on else Color(1, 1, 1, 0.10)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(9)
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	sb.content_margin_top = 1
+	sb.content_margin_bottom = 1
+	var hv := sb.duplicate() as StyleBoxFlat
+	hv.bg_color = Color(1, 1, 1, 0.18 if on else 0.09)
+	for st in ["normal", "pressed"]:
+		b.add_theme_stylebox_override(st, sb)
+	for st in ["hover", "hover_pressed"]:
+		b.add_theme_stylebox_override(st, hv)
+	b.custom_minimum_size = Vector2(maxf(26.0, 12.0 + 6.5 * text.length()), CHIP_H)
+	return b
+
+
+## The "show parts that don't fit (N)" toggle. Returns its height.
+func _add_misfit_toggle(cat: String, n_hidden: int, showing: bool) -> float:
+	var t := "hide parts that don't fit" if showing else "show parts that don't fit (%d)" % n_hidden
+	var b := _flat_button(t, LothalTheme.FONT_SIZE_SMALL - 1, INK_MUTED)
+	b.name = "MisfitToggle_" + cat
+	b.custom_minimum_size = Vector2(ROW_W, 0)
+	b.pressed.connect(func(): set_show_misfits(cat, not showing))
+	list.add_child(b)
+	return b.get_combined_minimum_size().y + GAP
+
+
+func _add_note(text: String) -> float:
+	var note := Label.new()
+	note.text = text
+	note.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	note.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	note.add_theme_color_override("font_color", INK_MUTED)
+	note.custom_minimum_size = Vector2(ROW_W, 20)
+	note.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	list.add_child(note)
+	return note.get_combined_minimum_size().y + GAP
 
 
 ## Height of `n` cards laid two to a row.
@@ -167,7 +315,11 @@ func _add_row(cat: String, part: Dictionary, v: Dictionary) -> void:
 	var pic := PartPicture.new(cat, part.get("part", {}), ink)
 	pic.name = "Picture"
 	col.add_child(pic)
-	col.add_child(_caption(String(part["name"]), ink, LothalTheme.FONT_SIZE_SMALL, "Name"))
+	var name_label := _caption(String(part["name"]), ink, LothalTheme.FONT_SIZE_SMALL, "Name")
+	# The whole name, over two lines when it needs them: a card never ends a name in an ellipsis.
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	col.add_child(name_label)
 	col.add_child(_caption(String(part.get("caption", "")), INK_MUTED if v["ok"] else INK_FAINT,
 		LothalTheme.FONT_SIZE_SMALL - 1, "Spec"))
 	b.add_child(col)

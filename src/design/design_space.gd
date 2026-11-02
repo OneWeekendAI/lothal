@@ -1954,11 +1954,8 @@ func _add_row(opt: Dictionary) -> void:
 	vb.add_child(pic)
 	var name_label := _caption(String(opt["name"]), ink)
 	vb.add_child(name_label)
-	# The one key spec under the name; where the name already says it (a motor is named by its size
-	# and KV), the part's mass instead, so the two lines never repeat each other.
-	var spec := PartCaption.key_spec(part, cat)
-	if (spec == "" or String(opt["name"]).contains(spec)) and not (opt["numbers"] as Array).is_empty():
-		spec = String((opt["numbers"] as Array).back())
+	# The one key spec under the name, never one the name already says (PartCaption.for_card).
+	var spec := PartCaption.for_card(part, cat, String(opt["name"]))
 	var spec_label := _caption(spec, INK_FAINT if b.disabled else INK_MUTED)
 	vb.add_child(spec_label)
 	var badge := Label.new()

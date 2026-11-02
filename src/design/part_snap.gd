@@ -214,7 +214,7 @@ static func shelf(session: DesignSession, catalog: PartsCatalog) -> Array:
 				continue
 			parts.append({"id": id, "name": String(part.get("name", id)),
 				"numbers": PartSwap.deciding_numbers(part, cat),
-				"caption": PartCaption.key_spec(part, cat), "part": part})
+				"caption": PartCaption.for_card(part, cat, String(part.get("name", id))), "part": part})
 		out.append({"category": cat, "name": String(PartSwap.CATEGORY_NAMES.get(cat, cat)),
 			"parts": parts})
 	return out

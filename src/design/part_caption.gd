@@ -10,7 +10,8 @@ static func key_spec(part: Dictionary, category: String) -> String:
 	var s: Dictionary = part.get("specs", {})
 	match category:
 		"battery":
-			return "%dS %d mAh" % [int(s.get("cells", 0)), int(round(float(s.get("mah", 0))))]
+			# Its name already says cells, capacity and C ("4S 1300mAh 95C"): the caption is the mass.
+			return mass_text(part)
 		"motor":
 			return "%02d%02d %dKV" % [int(round(float(s.get("stator_diameter_mm", 0)))),
 				int(round(float(s.get("stator_height_mm", 0)))), int(round(float(s.get("kv", 0))))]
@@ -28,6 +29,32 @@ static func key_spec(part: Dictionary, category: String) -> String:
 	if s.has("length_mm"):
 		return "%s x %s mm" % [_trim(float(s["length_mm"])), _trim(float(s.get("width_mm", 0)))]
 	return ""
+
+
+## The caption for a card named `part_name`: the key spec, unless the name already says it (a motor
+## is named "2207 1950KV"), then the part's mass; "" only when neither adds anything. Spaces and
+## case do not count, so "4S 1300 mAh" is said by "4S 1300mAh 95C".
+static func for_card(part: Dictionary, category: String, part_name: String) -> String:
+	var spec := key_spec(part, category)
+	if spec != "" and not _said_by(part_name, spec):
+		return spec
+	var m := mass_text(part)
+	return m if m != "" and not _said_by(part_name, m) else ""
+
+
+static func mass_text(part: Dictionary) -> String:
+	var g := float(part.get("mass_g", 0.0))
+	if g <= 0.0:
+		return ""
+	return "%.0f g" % g if g >= 10.0 else "%.1f g" % g
+
+
+static func _said_by(part_name: String, text: String) -> bool:
+	return _squash(part_name).contains(_squash(text))
+
+
+static func _squash(t: String) -> String:
+	return t.to_lower().replace(" ", "")
 
 
 static func _trim(v: float) -> String:
