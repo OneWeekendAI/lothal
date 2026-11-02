@@ -20,10 +20,15 @@ const INK_MUTED := Color(0.58, 0.58, 0.58)
 const INK_FAINT := Color(0.34, 0.34, 0.34)
 const WIDTH := 240.0
 const MAX_LIST_H := 470.0
+## Cards: two to a row in WIDTH (less the scrollbar); headers and notes take a whole row.
+const CARD_W := 106.0
+const CARD_H := 100.0
+const GAP := 4
+const ROW_W := 218.0
 
 var open := false
 var header: Button
-var list: VBoxContainer
+var list: HFlowContainer
 var scroll: ScrollContainer
 ## category -> true while that category is opened.
 var expanded := {}
@@ -50,9 +55,10 @@ func _init() -> void:
 	scroll.custom_minimum_size = Vector2(WIDTH, 0)
 	scroll.visible = false
 	add_child(scroll)
-	list = VBoxContainer.new()
+	list = HFlowContainer.new()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list.add_theme_constant_override("separation", 1)
+	list.add_theme_constant_override("h_separation", GAP)
+	list.add_theme_constant_override("v_separation", GAP)
 	scroll.add_child(list)
 	_update_header()
 
@@ -108,7 +114,8 @@ func _rebuild() -> void:
 		head.name = "Cat_" + cat
 		head.pressed.connect(func(): toggle_category(cat))
 		list.add_child(head)
-		h += head.get_combined_minimum_size().y + 1.0
+		head.custom_minimum_size.x = ROW_W
+		h += head.get_combined_minimum_size().y + GAP
 		if not is_open:
 			continue
 		var verdicts: Dictionary = judge.call(cat) if judge.is_valid() else {}
@@ -120,36 +127,66 @@ func _rebuild() -> void:
 		# Among the parts that mount, the ones nearest this drone's own first (`rank`, the caller's).
 		fits.sort_custom(func(a, b): return float(a[1].get("rank", 0.0)) < float(b[1].get("rank", 0.0)))
 		for pair in fits:
-			h += _add_row(cat, pair[0], pair[1])
+			_add_row(cat, pair[0], pair[1])
+		h += _card_rows(fits.size())
 		if not misfits.is_empty():
 			var note := Label.new()
 			note.text = "Does not fit this drone"
 			note.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			note.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 			note.add_theme_color_override("font_color", INK_MUTED)
-			note.custom_minimum_size = Vector2(0, 20)
+			note.custom_minimum_size = Vector2(ROW_W, 20)
 			note.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 			list.add_child(note)
-			h += note.get_combined_minimum_size().y + 1.0
+			h += note.get_combined_minimum_size().y + GAP
 			for pair in misfits:
-				h += _add_row(cat, pair[0], pair[1])
+				_add_row(cat, pair[0], pair[1])
+			h += _card_rows(misfits.size())
 	scroll.custom_minimum_size.y = minf(h, MAX_LIST_H)
 
 
-func _add_row(cat: String, part: Dictionary, v: Dictionary) -> float:
-	var numbers := " · ".join(PackedStringArray(part.get("numbers", [])))
-	var b := _flat_button(String(part["name"]) + ("\n" + numbers if numbers != "" else ""),
-		LothalTheme.FONT_SIZE_SMALL, INK if v["ok"] else INK_FAINT)
+## Height of `n` cards laid two to a row.
+func _card_rows(n: int) -> float:
+	return ceilf(n / 2.0) * (CARD_H + GAP)
+
+
+func _add_row(cat: String, part: Dictionary, v: Dictionary) -> void:
+	var ink: Color = INK if v["ok"] else INK_FAINT
+	var b := _flat_button("", LothalTheme.FONT_SIZE_SMALL, ink)
 	b.name = "Part_" + String(part["id"])
-	b.clip_text = true
+	b.custom_minimum_size = Vector2(CARD_W, CARD_H)
 	b.mouse_default_cursor_shape = Control.CURSOR_DRAG
-	b.tooltip_text = "" if v["ok"] else String(v["reason"])
+	b.tooltip_text = String(part["name"]) if v["ok"] else String(v["reason"])
 	var id := String(part["id"])
 	b.button_down.connect(func(): drag_started.emit(id))
+	var col := VBoxContainer.new()
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	col.add_theme_constant_override("separation", 1)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	var pic := PartPicture.new(cat, part.get("part", {}), ink)
+	pic.name = "Picture"
+	col.add_child(pic)
+	col.add_child(_caption(String(part["name"]), ink, LothalTheme.FONT_SIZE_SMALL, "Name"))
+	col.add_child(_caption(String(part.get("caption", "")), INK_MUTED if v["ok"] else INK_FAINT,
+		LothalTheme.FONT_SIZE_SMALL - 1, "Spec"))
+	b.add_child(col)
 	list.add_child(b)
 	rows.append({"category": cat, "id": id, "name": String(part["name"]), "ok": v["ok"],
-		"reason": String(v["reason"]), "button": b})
-	return b.get_combined_minimum_size().y + 1.0
+		"reason": String(v["reason"]), "button": b, "caption": String(part.get("caption", ""))})
+
+
+func _caption(text: String, ink: Color, font_px: int, node_name: String) -> Label:
+	var l := Label.new()
+	l.name = node_name
+	l.text = text
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.add_theme_font_size_override("font_size", font_px)
+	l.add_theme_color_override("font_color", ink)
+	l.custom_minimum_size.x = CARD_W - 8.0
+	return l
 
 
 func _flat_button(text: String, font_size: int, ink: Color) -> Button:

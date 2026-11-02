@@ -46,6 +46,8 @@ static func run() -> Array:
 	results.append_array(_test_not_modelled_contrast(catalog))
 	results.append_array(_test_home_picker(catalog))
 	results.append_array(_test_home_shelf(catalog))
+	results.append_array(_test_captions())
+	results.append_array(_test_cards(catalog))
 	return results
 
 
@@ -475,4 +477,53 @@ static func _test_home_shelf(catalog: PartsCatalog) -> Array:
 		ds.rig.goal_distance == plain.goal_distance and ds.rig.goal_target.is_equal_approx(plain.goal_target),
 		"%f vs %f" % [ds.rig.goal_distance, plain.goal_distance]))
 	_done(ds)
+	return out
+
+
+## Hand-written (category, part, expected caption) triples: the expected text is typed here, never
+## computed by PartCaption. One generated test per category.
+const CAPTION_CASES := [
+	["battery", {"specs": {"cells": 4, "mah": 1500.0}}, "4S 1500 mAh"],
+	["motor", {"specs": {"stator_diameter_mm": 22, "stator_height_mm": 7, "kv": 1950}}, "2207 1950KV"],
+	["propeller", {"specs": {"diameter_inches": 5.1, "pitch_inches": 3.0, "blades": 3}}, "5.1 in 3-blade"],
+	["esc", {"specs": {"continuous_a": 45.0, "channels": 4}}, "45 A 4-ch"],
+	["flight_controller", {"mounting": {"pattern": "30.5x30.5"}}, "30.5x30.5 mm"],
+	["guard", {"specs": {"kind": "bumper", "outer_radius_mm": 72.0}}, "bumper 144 mm"],
+	["receiver", {"specs": {"length_mm": 12.0, "width_mm": 8.0, "height_mm": 3.0}}, "12 x 8 mm"],
+	["camera", {"specs": {"length_mm": 19.0, "width_mm": 19.0, "height_mm": 20.0}}, "19 x 19 mm"],
+	["vtx", {"specs": {"length_mm": 28.5, "width_mm": 22.0, "height_mm": 5.0}}, "28.5 x 22 mm"],
+	["antenna", {"specs": {"length_mm": 40.0, "width_mm": 4.0, "height_mm": 4.0}}, "40 x 4 mm"],
+]
+
+
+static func _test_captions() -> Array:
+	var out: Array = []
+	for c in CAPTION_CASES:
+		var got: String = PartCaption.key_spec(c[1], String(c[0]))
+		out.append(TestResult.new("the shelf caption for a %s is its one key spec (%s)" % [c[0], c[2]],
+			got == String(c[2]), "got '%s'" % got))
+	return out
+
+
+## The shelf shows pictures: a card per part with a drawn picture, the name and the caption, in a grid.
+static func _test_cards(catalog: PartsCatalog) -> Array:
+	var out: Array = []
+	var ds := _ds(catalog)
+	ds.shelf.set_open(true)
+	for cat in ["battery", "motor", "propeller"]:
+		ds.shelf.toggle_category(cat)
+	var bad := 0
+	var empty_caption := 0
+	for r in ds.shelf.rows:
+		var b := r["button"] as Button
+		var pic := b.find_child("Picture", true, false) as Control
+		var cap := b.find_child("Spec", true, false) as Label
+		if pic == null or pic.custom_minimum_size.x < 40.0 or pic.get_script() != PartPicture:
+			bad += 1
+		if cap == null or cap.text == "" or cap.text != String(r["caption"]):
+			empty_caption += 1
+	out.append(TestResult.new("every shelf row is a card with a drawn picture",
+		not ds.shelf.rows.is_empty() and bad == 0, "%d of %d without" % [bad, ds.shelf.rows.size()]))
+	out.append(TestResult.new("every shelf card carries its key-spec caption",
+		not ds.shelf.rows.is_empty() and empty_caption == 0, "%d without" % empty_caption))
 	return out

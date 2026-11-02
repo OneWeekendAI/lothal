@@ -198,7 +198,7 @@ static func category_at(address: String) -> String:
 	return String(PRIMARY_CATEGORY.get(p[1], ""))
 
 
-## The shelf: [{category, name, parts: [{id, name, numbers}]}] in SHELF_CATEGORIES order. Every
+## The shelf: [{category, name, parts: [{id, name, numbers, caption, part}]}] in SHELF_CATEGORIES order. Every
 ## catalog part of each category that is NOT fitted, so a part removed or replaced is back on it
 ## and a fitted one is not. No verdicts here (they cost a build each); the drag preview judges.
 static func shelf(session: DesignSession, catalog: PartsCatalog) -> Array:
@@ -213,7 +213,8 @@ static func shelf(session: DesignSession, catalog: PartsCatalog) -> Array:
 			if id == "" or id == fitted:
 				continue
 			parts.append({"id": id, "name": String(part.get("name", id)),
-				"numbers": PartSwap.deciding_numbers(part, cat)})
+				"numbers": PartSwap.deciding_numbers(part, cat),
+				"caption": PartCaption.key_spec(part, cat), "part": part})
 		out.append({"category": cat, "name": String(PartSwap.CATEGORY_NAMES.get(cat, cat)),
 			"parts": parts})
 	return out

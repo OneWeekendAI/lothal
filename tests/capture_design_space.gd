@@ -88,6 +88,12 @@ func _init() -> void:
 		ds.rig.frame(AABB(c - Vector3(0.015, 0.004, 0.015), Vector3(0.03, 0.008, 0.03)))
 		# From nearly overhead: the pack and the props stand between the home view and this arm.
 		ds.rig.goal_pitch = deg_to_rad(78.0)
+	# "shelf:battery,motor" opens the parts shelf with those categories expanded.
+	var shelf_arg: String = args[9] if args.size() > 9 else ""
+	if shelf_arg.begins_with("shelf"):
+		ds.shelf.set_open(true)
+		for cat in shelf_arg.trim_prefix("shelf").trim_prefix(":").split(",", false):
+			ds.shelf.toggle_category(cat)
 	for i in 60:
 		await process_frame
 	root.get_texture().get_image().save_png(out_path)
