@@ -15,7 +15,9 @@ const RANGES := {
 }
 const INK := Color(0.93, 0.93, 0.93)
 const INK_FAINT := Color(0.34, 0.34, 0.34)
-const ICON_PX := 20.0
+const ICON_PX := 14.0
+## The icons are drawn on a 20-unit grid and scaled down to ICON_PX.
+const ART_UNITS := 20.0
 const TRACK_H := 3.0
 
 var key: String = ""
@@ -57,7 +59,7 @@ func _draw() -> void:
 	draw_rect(Rect2(0, 0, size.x * fill, TRACK_H), ink)
 
 
-## The icon Control for a readout: drawn in code, 20 px, one stroke weight.
+## The icon Control for a readout: drawn in code, ICON_PX, one stroke weight.
 class Icon extends Control:
 	var key: String = ""
 
@@ -88,3 +90,4 @@ class Icon extends Control:
 			"top_speed_kmh":  # a speedometer arc and needle
 				draw_arc(Vector2(10, 14), 8.0, PI, TAU, 20, c, w, true)
 				draw_line(Vector2(10, 14), Vector2(15, 8), c, w, true)
+				draw_line(Vector2(2, 15), Vector2(18, 15), c, w, true)  # the base, so the dial reads whole
