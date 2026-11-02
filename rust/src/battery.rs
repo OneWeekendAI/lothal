@@ -152,9 +152,20 @@ fn max_charge_c(chemistry: &str) -> f64 {
     }
 }
 
-/// Class-typical maximum cell temperature in degrees C.
-fn max_temp_c(_chemistry: &str) -> f64 {
-    60.0
+/// Maximum cell temperature in degrees C: the upper end of each chemistry's PUBLISHED DISCHARGE
+/// temperature range (ambient / operating), not a safety margin below thermal runaway.
+///
+/// - LiPo and LiPo HV, 60 C: Tattu pack listings, "Operation Temperature -20 - 60 C", discharge
+///   10-60 C (Tattu Pro 22000 mAh 14S HV product page on the Gens ace / Tattu store).
+/// - Li-ion, 60 C: Molicel INR-18650-P28A and INR-21700-P45B data sheets, discharge -40 to 60 C;
+///   Samsung INR21700-40T specification, discharge -20 to 60 C (ambient); Sony/Murata US18650VTC6
+///   specification, discharge -20 to 60 C.
+/// - LiFePO4, 55 C: A123 ANR26650M1-B data sheet, discharge temperature -30 to 55 C.
+fn max_temp_c(chemistry: &str) -> f64 {
+    match chemistry {
+        "LiFePO4" => 55.0,
+        _ => 60.0,
+    }
 }
 
 /// Class-typical gravimetric energy density, Wh/kg, at cell level.
@@ -426,6 +437,14 @@ mod tests {
         }
         let expect = AMBIENT_C + i * i * r / (COOLING_W_PER_K_PER_G * m);
         assert!(((t - expect) / (expect - AMBIENT_C)).abs() < 0.01, "got {t} want {expect}");
+    }
+
+    #[test]
+    fn max_temp_follows_each_chemistrys_published_discharge_limit() {
+        assert_eq!(max_temp_c("LiPo"), 60.0);
+        assert_eq!(max_temp_c("LiPo HV"), 60.0);
+        assert_eq!(max_temp_c("Li-ion"), 60.0);
+        assert_eq!(max_temp_c("LiFePO4"), 55.0, "A123 publishes -30 to 55 C");
     }
 
     #[test]

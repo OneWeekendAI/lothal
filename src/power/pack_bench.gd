@@ -15,6 +15,8 @@ extends RefCounted
 const AMBIENT_C := 25.0
 const TAPER_END_C := 1.0 / 20.0
 const MAX_STEPS := 400000
+## Room above the limit (or the peak) on the temperature chart.
+const TEMP_AXIS_MARGIN_C := 5.0
 
 ## Ohm x Ah per cell; a guess, not a measurement.
 const CHARGE_POLARISATION_OHM_AH_PER_CELL := 0.04
@@ -185,6 +187,17 @@ static func warnings(design: PackDesign, run: Dictionary, build: Build = null,
 static func voltage_axis(design: PackDesign) -> Vector2:
 	var f := design.derive()
 	return Vector2(floorf(float(f.empty_v)), ceilf(float(f.full_v)))
+
+
+## The cell-temperature chart's range: from just under ambient to the chemistry's limit or the run's
+## peak, whichever is higher, plus a margin, rounded up to whole tens so the limit never sits on
+## the frame.
+static func temp_axis(design: PackDesign, run: Dictionary) -> Vector2:
+	var peak_t := AMBIENT_C
+	for x in run.get("cell_temp_c", PackedFloat64Array()):
+		peak_t = maxf(peak_t, x)
+	var top := maxf(BatteryModel.max_temp_c(design.chemistry()), peak_t) + TEMP_AXIS_MARGIN_C
+	return Vector2(20.0, ceilf(top / 10.0) * 10.0)
 
 
 ## Series count, parallel count and per-cell figures for the thermal step. A legacy pack has no

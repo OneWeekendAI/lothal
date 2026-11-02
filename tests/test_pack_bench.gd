@@ -78,6 +78,9 @@ static func run() -> Array:
 	return results
 
 
+const AMBIENT_FLOOR := 25.0
+
+
 static func _max(a: PackedFloat64Array) -> float:
 	var m := -1e30
 	for v in a:
@@ -144,6 +147,25 @@ static func _warnings(lib: CellLibrary, d: PackDesign) -> Array:
 	var w9 := PackBench.warnings(thin, calm, build)
 	out.append(_t("with a drone the lead is judged on its sustained draw, not the punch-out",
 		_has(w9, "pigtail") == (drone_a > WireGauge.ampacity_a(22)), "%.1f A: %s" % [drone_a, str(w9)]))
+
+	# The temperature limit is per chemistry (published discharge limits) and the chart axis clears it.
+	out.append(_t("max temperature is per chemistry: LiPo, HV and Li-ion 60 C, LiFePO4 55 C",
+		BatteryModel.max_temp_c("LiPo") == 60.0 and BatteryModel.max_temp_c("LiPo HV") == 60.0
+		and BatteryModel.max_temp_c("Li-ion") == 60.0 and BatteryModel.max_temp_c("LiFePO4") == 55.0,
+		"%s %s %s %s" % [BatteryModel.max_temp_c("LiPo"), BatteryModel.max_temp_c("LiPo HV"),
+			BatteryModel.max_temp_c("Li-ion"), BatteryModel.max_temp_c("LiFePO4")]))
+	var cool_axis := PackBench.temp_axis(d, PackBench.discharge(d, 6.0))
+	out.append(_t("temperature axis keeps its limit inside the chart with a margin, even on a cool run",
+		cool_axis.y > BatteryModel.max_temp_c("LiPo") + 4.0 and cool_axis.x <= AMBIENT_FLOOR, str(cool_axis)))
+	var hot_run := PackBench.discharge(d, 100.0)
+	var hot_axis := PackBench.temp_axis(d, hot_run)
+	out.append(_t("and follows a peak over the limit, with a margin",
+		_max(hot_run.cell_temp_c) > 60.0 and hot_axis.y > _max(hot_run.cell_temp_c) + 4.0, "%s peak %.1f" % [hot_axis, _max(hot_run.cell_temp_c)]))
+	var iron := PackDesign.default_design(lib)
+	iron.cell = lib.get_cell("cell_a123_anr26650m1b")
+	var iron_axis := PackBench.temp_axis(iron, PackBench.discharge(iron, 5.0))
+	out.append(_t("a LiFePO4 pack's axis is scaled to its own limit",
+		iron_axis.y > 55.0 and iron_axis.y < cool_axis.y + 0.5, str(iron_axis)))
 
 	var ax := PackBench.voltage_axis(d)
 	var fig := d.derive()

@@ -1294,9 +1294,7 @@ func _refresh_bench() -> void:
 	if tab == "discharge":
 		var t: PackedFloat64Array = _run.get("t", PackedFloat64Array())
 		var vaxis := PackBench.voltage_axis(design)
-		var peak_t := 25.0
-		for x in _run.get("cell_temp_c", PackedFloat64Array()):
-			peak_t = maxf(peak_t, x)
+		var taxis := PackBench.temp_axis(design, _run)
 		result_label.text = "Runs %s to empty   ·   %.1f Wh   ·   sags %.1f V   ·   %.2f V/cell loaded" % [
 			_duration(float(_run.get("run_time_s", 0.0))), float(_run.get("wh_delivered", 0.0)),
 			float(_run.get("peak_sag_v", 0.0)), float(_run.get("cell_v_load", 0.0))]
@@ -1305,7 +1303,7 @@ func _refresh_bench() -> void:
 			{"title": "Pack voltage", "x": t, "y": _run.get("v_live", PackedFloat64Array()),
 				"y_min": vaxis.x, "y_max": vaxis.y, "unit": " V", "color": LothalTheme.ACCENT},
 			{"title": "Cell temperature", "x": t, "y": _run.get("cell_temp_c", PackedFloat64Array()),
-				"y_min": 20.0, "y_max": maxf(60.0, ceilf(peak_t / 10.0) * 10.0), "unit": " °C",
+				"y_min": taxis.x, "y_max": taxis.y, "unit": " °C",
 				"color": LothalTheme.WARNING},
 			{"title": "Capacity used", "x": t, "y": _run.get("used_mah", PackedFloat64Array()),
 				"y_min": 0.0, "y_max": mah, "unit": " mAh", "color": LothalTheme.TEXT_MUTED,
