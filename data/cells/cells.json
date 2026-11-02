@@ -1,30 +1,32 @@
 {
-  "_schema": "The cell library behind the pack designer. One record per cell: cell_id, name, chemistry (must be one BatteryModel knows), form (cylindrical or pouch), specs and a source plus a basis. `basis` is \"datasheet\" when the figures are the manufacturer's published ones for that exact cell, and \"class-typical\" when no single datasheet stands behind them (generic LiPo pouch classes): those are representative of the size class, chosen to sit in the same range as the shipped pack presets, and are NOT a specific product. Every figure here is an ideal / datasheet figure, never a measurement of a cell on a bench. specs: mah is rated capacity; nominal_v the datasheet nominal per cell; max_cont_a and max_burst_a the published continuous and short-pulse discharge limits (pouch classes: C rating x Ah, burst 1.5x to 2x); r_mohm is the per-cell internal resistance (datasheet AC impedance for cylindrical cells, a class-typical DC figure for pouch); mass_g is the bare cell. Dimensions: cylindrical cells carry diameter_mm and length_mm; pouch cells carry length_mm, width_mm and thickness_mm.",
+  "_schema": "The cell library behind the pack designer. One record per cell: cell_id, name, chemistry (must be one BatteryModel knows), form (cylindrical or pouch), specs and a source plus a basis. `basis` is \"datasheet\" when the figures are the manufacturer's published ones for that exact cell, and \"class-typical\" when no single datasheet stands behind them (generic LiPo pouch classes): those are representative of the size class, chosen to sit in the same range as the shipped pack presets, and are NOT a specific product. Every figure here is an ideal / datasheet figure, never a measurement of a cell on a bench. specs: mah is rated capacity; nominal_v the datasheet nominal per cell; max_cont_a and max_burst_a the published continuous and short-pulse discharge limits (pouch classes: C rating x Ah, burst 1.5x to 2x); r_mohm is the per-cell internal resistance (datasheet AC impedance for cylindrical cells, a class-typical DC figure for pouch); mass_g is the bare cell. `burst_basis` of \"estimate\" marks a max_burst_a the datasheet does not publish (unverified; not a measurement). Dimensions: cylindrical cells carry diameter_mm and length_mm; pouch cells carry length_mm, width_mm and thickness_mm.",
   "cells": [
     {
       "cell_id": "cell_molicel_p42a",
       "name": "Molicel INR-21700-P42A",
       "chemistry": "Li-ion",
       "form": "cylindrical",
-      "specs": {"mah": 4200.0, "nominal_v": 3.6, "max_cont_a": 45.0, "max_burst_a": 100.0, "r_mohm": 12.0, "mass_g": 70.0, "diameter_mm": 21.7, "length_mm": 70.15},
+      "specs": {"mah": 4200.0, "nominal_v": 3.6, "max_cont_a": 45.0, "max_burst_a": 100.0, "r_mohm": 10.0, "mass_g": 70.0, "diameter_mm": 21.4, "length_mm": 70.0},
       "source": "Molicel INR-21700-P42A product data sheet (molicel.com): 4200 mAh, 3.6 V nominal, 45 A max continuous, 70 g",
-      "basis": "datasheet"
+      "basis": "datasheet",
+   "burst_basis": "estimate"
     },
     {
       "cell_id": "cell_molicel_p45b",
       "name": "Molicel INR-21700-P45B",
       "chemistry": "Li-ion",
       "form": "cylindrical",
-      "specs": {"mah": 4500.0, "nominal_v": 3.6, "max_cont_a": 45.0, "max_burst_a": 100.0, "r_mohm": 12.0, "mass_g": 70.0, "diameter_mm": 21.7, "length_mm": 70.15},
+      "specs": {"mah": 4500.0, "nominal_v": 3.6, "max_cont_a": 45.0, "max_burst_a": 100.0, "r_mohm": 12.0, "mass_g": 70.0, "diameter_mm": 21.4, "length_mm": 70.0},
       "source": "Molicel INR-21700-P45B product data sheet (molicel.com): 4500 mAh, 3.6 V nominal, 45 A max continuous, 70 g",
-      "basis": "datasheet"
+      "basis": "datasheet",
+   "burst_basis": "estimate"
     },
     {
       "cell_id": "cell_samsung_40t",
       "name": "Samsung INR21700-40T",
       "chemistry": "Li-ion",
       "form": "cylindrical",
-      "specs": {"mah": 4000.0, "nominal_v": 3.6, "max_cont_a": 35.0, "max_burst_a": 60.0, "r_mohm": 13.0, "mass_g": 68.0, "diameter_mm": 21.7, "length_mm": 70.0},
+      "specs": {"mah": 4000.0, "nominal_v": 3.6, "max_cont_a": 35.0, "max_burst_a": 60.0, "r_mohm": 12.0, "mass_g": 68.0, "diameter_mm": 21.7, "length_mm": 70.0},
       "source": "Samsung SDI INR21700-40T product specification (samsungsdi.com): 4000 mAh, 3.6 V nominal, 35 A max continuous",
       "basis": "datasheet"
     },
@@ -96,7 +98,7 @@
       "name": "A123 ANR26650M1-B",
       "chemistry": "LiFePO4",
       "form": "cylindrical",
-      "specs": {"mah": 2500.0, "nominal_v": 3.3, "max_cont_a": 50.0, "max_burst_a": 120.0, "r_mohm": 6.0, "mass_g": 76.0, "diameter_mm": 26.0, "length_mm": 65.0},
+      "specs": {"mah": 2500.0, "nominal_v": 3.3, "max_cont_a": 70.0, "max_burst_a": 120.0, "r_mohm": 6.0, "mass_g": 76.0, "diameter_mm": 26.0, "length_mm": 65.0},
       "source": "A123 Systems ANR26650M1-B data sheet: 2500 mAh, 3.3 V nominal, 50 A continuous, 120 A 10 s pulse, 76 g",
       "basis": "datasheet"
     }

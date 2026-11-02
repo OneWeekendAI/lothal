@@ -72,6 +72,27 @@ static func run() -> Array:
 			missing.append(n)
 	results.append(_t("the named cells are present", missing.is_empty(), str(missing)))
 
+
+	# Datasheet corrections (cell_check 2026-11): figures pinned to the published sheets.
+	var chk := {
+		"cell_a123_anr26650m1b": {"max_cont_a": 70.0},
+		"cell_molicel_p42a": {"r_mohm": 10.0, "diameter_mm": 21.4, "length_mm": 70.0},
+		"cell_molicel_p45b": {"diameter_mm": 21.4, "length_mm": 70.0},
+		"cell_samsung_40t": {"r_mohm": 12.0},
+	}
+	var wrong: Array = []
+	for cid in chk:
+		var rec: Dictionary = lib.get_cell(cid)
+		for k in chk[cid]:
+			if absf(float(rec.get("specs", {}).get(k, -1.0)) - float(chk[cid][k])) > 1e-9:
+				wrong.append("%s.%s" % [cid, k])
+	results.append(_t("datasheet-corrected figures match the published sheets", wrong.is_empty(), str(wrong)))
+	var unflagged: Array = []
+	for cid in ["cell_molicel_p42a", "cell_molicel_p45b"]:
+		if String(lib.get_cell(cid).get("burst_basis", "")) != "estimate":
+			unflagged.append(cid)
+	results.append(_t("Molicel burst figures are flagged as unverified estimates", unflagged.is_empty(), str(unflagged)))
+
 	var cc := CellLibrary.custom_cell("Mine", "Li-ion", 3000.0, 20.0, 30.0, 15.0, 48.0,
 		Vector3(18.4, 65.0, 0.0), "cylindrical")
 	results.append(_t("custom_cell builds a record flagged custom",
