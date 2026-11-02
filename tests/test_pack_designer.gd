@@ -64,6 +64,7 @@ static func run() -> Array:
 	var catalog := PartsCatalog.load_default()
 	results.append_array(_test_tile(catalog))
 	results.append_array(_test_opens_valid(catalog))
+	results.append_array(_test_default_load(catalog))
 	results.append_array(_test_series_rederives(catalog))
 	results.append_array(_test_label(catalog))
 	results.append_array(_test_typed_fields(catalog))
@@ -170,6 +171,25 @@ static func _test_opens_valid(catalog: PartsCatalog) -> Array:
 		"S%d P%d mah %s run %s warn %s" % [d.design.series, d.design.parallel, f.get("mah"),
 			bench.get("run_time_s"), d.warnings()]))
 	d.free()
+	return out
+
+
+static func _test_default_load(catalog: PartsCatalog) -> Array:
+	var out: Array = []
+	var with_build := _designer(catalog, true)
+	with_build.open_new()
+	out.append(_t("the bench defaults to 'This drone' when a build is present",
+		with_build.discharge_mode == "this_drone" and with_build.drone_button.button_pressed
+		and not with_build.steady_button.button_pressed
+		and absf(with_build._discharge_current() - PackBench.this_drone_current_a(with_build.build)) < 1e-9,
+		"%s %s" % [with_build.discharge_mode, with_build._discharge_current()]))
+	with_build.free()
+	var bare := _designer(catalog, false)
+	bare.open_new()
+	out.append(_t("with no build the bench defaults to a steady 10 A",
+		bare.discharge_mode == "constant" and absf(bare._discharge_current() - 10.0) < 1e-9
+		and bare.steady_button.button_pressed, "%s %s" % [bare.discharge_mode, bare._discharge_current()]))
+	bare.free()
 	return out
 
 

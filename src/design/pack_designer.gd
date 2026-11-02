@@ -127,6 +127,8 @@ func _init(p_catalog: PartsCatalog = null, p_lib: CellLibrary = null, p_store: D
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_ALL
 	design = PackDesign.default_design(lib)
+	# The load a pack is judged on is the drone it would fly in, when there is one.
+	discharge_mode = "this_drone" if build != null else "constant"
 	_build_ui()
 
 
