@@ -70,6 +70,7 @@ var _recharge_pending := false
 var _charged_now := false
 var _charge_from_frac := 0.0
 var _syncing := false
+var _test_drained := false
 
 # Controls.
 var window: PanelContainer
@@ -115,6 +116,8 @@ var charge_line: Label
 var charge_bar: ProgressBar
 var result_label: Label
 var warning_label: Label
+## "This test used the pack's charge": shown after a Discharge run drained a stored pack.
+var test_note: Label
 var charts: PackCharts
 var _custom_spins := {}
 var _cell_ids: Array = []
@@ -399,6 +402,7 @@ func typed_fields() -> Array:
 
 func _rederive() -> void:
 	derive_count += 1
+	_test_drained = false
 	if not _recharge_pending:
 		_charged_now = false
 	_figs = design.derive()
@@ -408,6 +412,22 @@ func _rederive() -> void:
 		charge_c if tab == "recharge" else NAN)
 	_refresh()
 	_play_reveal()
+
+
+## The Discharge run, pressed: runs the bench and, for a pack that has an id (saved, or on the
+## shelf), leaves its stored used_mah at the run's end. A new unsaved design has nothing stored, so
+## it is untouched. Only this press drains; editing, reopening or the automatic first run never do.
+func run_discharge_test() -> void:
+	_rederive()
+	if part_id == "":
+		return
+	var used: PackedFloat64Array = _run.get("used_mah", PackedFloat64Array())
+	if used.is_empty():
+		return
+	charge.set_used_mah(part_id, float(used[used.size() - 1]))
+	charge.save(charge_path)
+	_test_drained = true
+	_refresh()
 
 
 func _discharge_current() -> float:
@@ -932,7 +952,7 @@ func _build_right() -> Control:
 	run_button = Button.new()
 	run_button.name = "RunAgain"
 	run_button.text = "Run again"
-	run_button.pressed.connect(_rederive)
+	run_button.pressed.connect(run_discharge_test)
 	discharge_row.add_child(run_button)
 	col.add_child(discharge_row)
 
@@ -978,6 +998,12 @@ func _build_right() -> Control:
 	result_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
 	result_label.add_theme_color_override("font_color", LothalTheme.TEXT_MAIN)
 	col.add_child(result_label)
+	test_note = Label.new()
+	test_note.name = "TestNote"
+	test_note.visible = false
+	test_note.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	test_note.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
+	col.add_child(test_note)
 	charts = PackCharts.new()
 	col.add_child(charts)
 	warning_label = Label.new()
@@ -1253,6 +1279,8 @@ func _refresh() -> void:
 	_refresh_bench()
 	warning_label.text = "\n".join(_warns)
 	warning_label.visible = not _warns.is_empty()
+	test_note.visible = _test_drained and tab == "discharge"
+	test_note.text = "This test used the pack's charge" if test_note.visible else ""
 
 
 func _layout_text() -> String:

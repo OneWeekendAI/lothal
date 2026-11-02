@@ -69,6 +69,7 @@ static func run() -> Array:
 	results.append_array(_test_label(catalog))
 	results.append_array(_test_typed_fields(catalog))
 	results.append_array(_test_recharge(catalog))
+	results.append_array(_test_drain(catalog))
 	results.append_array(_test_my_packs(catalog))
 	results.append_array(_test_cell_voltage_and_knee(catalog))
 	results.append_array(_test_delete(catalog))
@@ -321,6 +322,48 @@ static func _test_recharge(catalog: PartsCatalog) -> Array:
 		e.charge_line.text == "Charged to 100% \u2713" and e.charge_bar.value == 100.0,
 		e.charge_line.text))
 	e.free()
+	return out
+
+
+static func _test_drain(catalog: PartsCatalog) -> Array:
+	var out: Array = []
+	var d := _designer(catalog)
+	d.open_new()
+	var id := d.save()
+	d.open_pack(id)
+	out.append(_t("opening and editing a saved pack does not drain it",
+		d.charge.used_mah(id) == 0.0 and not d.test_note.visible, str(d.charge.used_mah(id))))
+	d.run_discharge_test()
+	var used: PackedFloat64Array = d.bench_result().used_mah
+	var end_used := float(used[used.size() - 1])
+	var reloaded := PackCharge.load_from(CHARGE)
+	out.append(_t("a Discharge run on a saved pack leaves its stored used_mah at the run's end",
+		end_used > 0.0 and absf(d.charge.used_mah(id) - end_used) < 1e-6
+		and absf(reloaded.used_mah(id) - end_used) < 1e-6,
+		"run end %.1f stored %.1f file %.1f" % [end_used, d.charge.used_mah(id), reloaded.used_mah(id)]))
+	out.append(_t("and the bench says so",
+		d.test_note.visible and d.test_note.text == "This test used the pack's charge", d.test_note.text))
+	out.append(_t("the charge line then reads the drained state",
+		d.charge_line.text.begins_with("Charge: ") and not d.charge_line.text.begins_with("Charge: 100%"),
+		d.charge_line.text))
+	d.set_series(5)
+	out.append(_t("the note clears on the next change", not d.test_note.visible))
+	d.free()
+
+	var e := _designer(catalog)
+	e.open_new()
+	e.run_discharge_test()
+	out.append(_t("a new unsaved design is not drained and shows no note",
+		e.charge.used_mah("") == 0.0 and not e.test_note.visible and e.charge._used_mah.is_empty(),
+		str(e.charge._used_mah)))
+	e.free()
+
+	var p := _designer(catalog)
+	p.open_pack("battery_4s_1300")
+	p.run_discharge_test()
+	out.append(_t("a shelf preset's charge is drained by the run too",
+		p.charge.used_mah("battery_4s_1300") > 0.0 and p.test_note.visible, str(p.charge.used_mah("battery_4s_1300"))))
+	p.free()
 	return out
 
 
