@@ -345,6 +345,8 @@ func set_wiring(connector_family: String, awg: int, length_mm: float) -> void:
 	design.connector_family = connector_family
 	design.lead_awg = awg
 	design.lead_length_mm = clampf(length_mm, 20.0, 400.0)
+	if not _syncing:
+		_sync_widgets()
 	_rederive()
 
 

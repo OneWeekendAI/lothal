@@ -216,6 +216,10 @@ static func _test_series_rederives(catalog: PartsCatalog) -> Array:
 	d.set_parallel(2)
 	out.append(_t("changing P doubles capacity",
 		float(d.figures().mah) == 3000.0 and d.derive_count == stamp + 2))
+	d.set_wiring("XT60", 22, 150.0)
+	out.append(_t("set_wiring shows the new gauge and length in the controls",
+		d.awg_option.get_selected_id() == 22 and is_equal_approx(d.length_spin.value, 150.0),
+		"wire box shows %d AWG" % d.awg_option.get_selected_id()))
 	d.free()
 	return out
 
