@@ -2066,7 +2066,19 @@ func _shelf_judge(category: String) -> Dictionary:
 func refresh_shelf() -> void:
 	if shelf != null:
 		shelf.fitted = _fitted_now()
+		shelf.value_ranges = _value_ranges()
 		shelf.fill(_shelf_groups())
+
+
+var _ranges_cache := {}
+
+
+## Each category's range of the value its icons show, over the whole catalogue (PartColour).
+func _value_ranges() -> Dictionary:
+	if _ranges_cache.is_empty():
+		for cat in PartSnap.SHELF_CATEGORIES:
+			_ranges_cache[cat] = PartColour.range_of(_catalog.list_category(cat), cat)
+	return _ranges_cache
 
 
 ## The shelf's groups (PartSnap.shelf: catalog parts that are not fitted). While a part is selected,

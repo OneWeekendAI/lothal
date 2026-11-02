@@ -7,7 +7,7 @@ extends SceneTree
 ## dumped at the end, so a suite that hangs or crashes names itself instead of leaving
 ## the runner silent.
 
-const SUITES := ["class picker", "design space", "design picking", "design swap", "side swap", "frame edits design", "frame edits ui", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
+const SUITES := ["class picker", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "build panel", "details footers",
 	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "field room", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
@@ -413,6 +413,7 @@ func _run_suite(suite_name: String) -> Array:
 		"design picking": return TestDesignPicking.run()
 		"design swap": return TestDesignSwap.run()
 		"side swap": return TestSideSwap.run()
+		"part colour": return TestPartColour.run()
 		"frame edits design": return TestFrameEditsDesign.run()
 		"design shelf": return TestDesignShelf.run()
 		"design shelf ui": return TestDesignShelfUi.run()

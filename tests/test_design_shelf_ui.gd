@@ -48,6 +48,7 @@ static func run() -> Array:
 	results.append_array(_test_home_shelf(catalog))
 	results.append_array(_test_captions())
 	results.append_array(_test_cards(catalog))
+	results.append_array(_test_card_size(catalog))
 	return results
 
 
@@ -528,4 +529,63 @@ static func _test_cards(catalog: PartsCatalog) -> Array:
 		not ds.shelf.rows.is_empty() and bad == 0, "%d of %d without" % [bad, ds.shelf.rows.size()]))
 	out.append(TestResult.new("every shelf card carries its key-spec caption",
 		not ds.shelf.rows.is_empty() and empty_caption == 0, "%d without" % empty_caption))
+	return out
+
+
+## The cards are small: an icon 40-48 px wide, three to a row, and small type; the words stay
+## monochrome (only the icon carries colour, and a misfit's reason the amber).
+static func _test_card_size(catalog: PartsCatalog) -> Array:
+	var out: Array = []
+	var ds := _ds(catalog)
+	ds.shelf.set_open(true)
+	for cat in ["battery", "motor", "propeller"]:
+		ds.shelf.toggle_category(cat)
+		ds.shelf.set_show_misfits(cat, true)
+	var rows: Array = ds.shelf.rows
+	var off_size := 0
+	var big_type := 0
+	var coloured_text := 0
+	var icon_h := 0.0
+	for r in rows:
+		var b := r["button"] as Button
+		var pic := b.find_child("Picture", true, false) as Control
+		if pic.custom_minimum_size.x < 40.0 or pic.custom_minimum_size.x > 48.0:
+			off_size += 1
+		icon_h = maxf(icon_h, pic.custom_minimum_size.y)
+		for nm in ["Name", "Spec"]:
+			var l := b.find_child(nm, true, false) as Label
+			if l.get_theme_font_size("font_size") >= LothalTheme.FONT_SIZE_SMALL:
+				big_type += 1
+			if _sat(l.get_theme_color("font_color")) > MONO_SAT:
+				coloured_text += 1
+	out.append(TestResult.new("every card's icon is 40-48 px wide", not rows.is_empty() and off_size == 0, "%d of %d off" % [off_size, rows.size()]))
+	out.append(TestResult.new("the card type is smaller than the shelf's old caption size, and monochrome",
+		big_type == 0 and coloured_text == 0, "%d large, %d coloured" % [big_type, coloured_text]))
+	var w := PartsShelf.CARD_W
+	var g := float(PartsShelf.GAP)
+	out.append(TestResult.new("three cards fit across the shelf's rows, and not four",
+		PartsShelf.COLUMNS == 3 and 3.0 * w + 2.0 * g <= PartsShelf.ROW_W and 4.0 * w + 3.0 * g > PartsShelf.ROW_W,
+		"card %.0f row %.0f" % [w, PartsShelf.ROW_W]))
+	# Where the cards sit (their estimated y): three to a row.
+	var ys: Array = rows.filter(func(r): return r["category"] == "battery").map(func(r): return float(r["y"]))
+	out.append(TestResult.new("the first three cards of a category share a row, the fourth starts the next",
+		ys.size() >= 4 and ys[0] == ys[1] and ys[1] == ys[2] and is_equal_approx(ys[3] - ys[2], PartsShelf.CARD_H + PartsShelf.GAP),
+		str(ys.slice(0, 4))))
+	# A card holds an icon, a name over up to four lines and the spec line.
+	var font := ds.shelf.get_theme_default_font()
+	var need := 12.0 + icon_h + 4.0 * (font.get_height(PartsShelf.NAME_PX) + PartsShelf.NAME_LINE_GAP) + font.get_height(PartsShelf.SPEC_PX)
+	out.append(TestResult.new("a card is tall enough for the icon, a four-line name and its spec (%.0f of %.0f px)" % [need, PartsShelf.CARD_H],
+		need <= PartsShelf.CARD_H, ""))
+	# The shelf stays in its column: nothing wider than the column.
+	var wide := rows.filter(func(r): return (r["button"] as Button).custom_minimum_size.x > PartsShelf.ROW_W)
+	out.append(TestResult.new("no card is wider than the shelf's rows", wide.is_empty(), ""))
+	# A misfit's icon keeps its colour but dims.
+	ds.select("part/motor/FL")
+	var bad: Array = ds.shelf.rows.filter(func(r): return not r["ok"] and r["category"] == "motor")
+	var good: Array = ds.shelf.rows.filter(func(r): return r["ok"] and r["category"] == "motor")
+	var pb := ((bad[0]["button"] as Button).find_child("Picture", true, false) as PartPicture) if not bad.is_empty() else null
+	var pg := ((good[0]["button"] as Button).find_child("Picture", true, false) as PartPicture) if not good.is_empty() else null
+	out.append(TestResult.new("a card that does not fit has its icon dimmed, its colour code kept",
+		pb != null and pg != null and pb.modulate.a < 1.0 and pg.modulate.a == 1.0 and not pb.code.is_empty(), ""))
+	_done(ds)
 	return out

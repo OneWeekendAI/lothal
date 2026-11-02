@@ -226,7 +226,7 @@ static func _test_scroll_to_fitted(ds: DesignSpace) -> Array:
 	var fitted: Array = ds.shelf.rows.filter(func(r): return r["fitted"])
 	var y: float = float(fitted[0]["y"]) if fitted.size() == 1 else -1.0
 	out.append(TestResult.new("with a far card fitted, the panel's scroll goal is its position less a little of the heading",
-		fitted.size() == 1 and y > PartsShelf.MAX_LIST_H and is_equal_approx(ds.shelf.scroll_target, y - 56.0),
+		fitted.size() == 1 and y + PartsShelf.CARD_H > PartsShelf.MAX_LIST_H and is_equal_approx(ds.shelf.scroll_target, y - 56.0),
 		"y %.0f target %.0f" % [y, ds.shelf.scroll_target]))
 	var first: Dictionary = ds.shelf.rows[0]
 	ds.select("")

@@ -25,10 +25,16 @@ const INK_MUTED := Color(0.58, 0.58, 0.58)
 const INK_FAINT := Color(0.34, 0.34, 0.34)
 const WIDTH := 240.0
 const MAX_LIST_H := 470.0
-## Cards: two to a row in WIDTH (less the scrollbar); headers and notes take a whole row.
-const CARD_W := 106.0
-const CARD_H := 116.0
+## Cards: three to a row in WIDTH (less the scrollbar); headers and notes take a whole row.
+const CARD_W := 68.0
+const CARD_H := 108.0
 const GAP := 4
+const COLUMNS := 3
+## Type sizes on a card: the name, then the one key spec under it.
+const NAME_PX := 10
+const SPEC_PX := 9
+## Closer line spacing for a name wrapped over up to four lines (the theme font's own is loose).
+const NAME_LINE_GAP := -5
 const CHIP_H := 18.0
 const TAG_W := 40.0
 const ROW_W := 218.0
@@ -59,6 +65,9 @@ var judge: Callable
 ## card then only drags when the pointer leaves it), and the part fitted now in each ("" for none).
 var swap_cats: Array = []
 var fitted := {}
+## category -> Vector2(least, greatest) of the value its icons show (PartColour.range_of), the
+## caller's: a card's colour is its part's place in that range.
+var value_ranges := {}
 ## Where the list scrolls to, once the fitted part's card is laid out (px from the list's top).
 var scroll_target := -1.0
 var _scroll_pending := false
@@ -203,7 +212,7 @@ func _rebuild() -> void:
 				"ok": true, "v": {"ok": true, "reason": "", "rank": 0.0}})
 		var base := h
 		for k in fits.size():
-			_add_row(cat, fits[k]["p"], fits[k]["v"], base + floorf(k / 2.0) * (CARD_H + GAP))
+			_add_row(cat, fits[k]["p"], fits[k]["v"], base + floorf(k / float(COLUMNS)) * (CARD_H + GAP))
 		h += _card_rows(fits.size())
 		if empty_view:
 			h += _add_note("Nothing here fits" if int(shown["hidden"]) == 0 else "Nothing fits with these filters")
@@ -213,7 +222,7 @@ func _rebuild() -> void:
 			h += _add_note("Does not fit this drone")
 			base = h
 			for k in misfits.size():
-				_add_row(cat, misfits[k]["p"], misfits[k]["v"], base + floorf(k / 2.0) * (CARD_H + GAP))
+				_add_row(cat, misfits[k]["p"], misfits[k]["v"], base + floorf(k / float(COLUMNS)) * (CARD_H + GAP))
 			h += _card_rows(misfits.size())
 	_content_h = h
 	scroll.custom_minimum_size.y = minf(h, MAX_LIST_H)
@@ -363,9 +372,9 @@ func _add_note(text: String) -> float:
 	return note.get_combined_minimum_size().y + GAP
 
 
-## Height of `n` cards laid two to a row.
+## Height of `n` cards laid COLUMNS to a row.
 func _card_rows(n: int) -> float:
-	return ceilf(n / 2.0) * (CARD_H + GAP)
+	return ceilf(n / float(COLUMNS)) * (CARD_H + GAP)
 
 
 func _add_row(cat: String, part: Dictionary, v: Dictionary, y: float = 0.0) -> void:
@@ -395,21 +404,29 @@ func _add_row(cat: String, part: Dictionary, v: Dictionary, y: float = 0.0) -> v
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	col.add_theme_constant_override("separation", 1)
-	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	var pic := PartPicture.new(cat if id != "" else "none", part.get("part", {}), ink)
+	col.alignment = BoxContainer.ALIGNMENT_BEGIN
+	col.offset_top = 12.0   # clear of the FITTED tag, so every icon in a row sits level
+	var cat_part: Dictionary = part.get("part", {})
+	var code := PartColour.encode(cat_part, cat, value_ranges.get(cat, Vector2(NAN, NAN))) if id != "" else {}
+	var pic := PartPicture.new(cat if id != "" else "none", cat_part, ink, PartPicture.SHELF_K, code, PartPicture.SHELF_W)
 	pic.name = "Picture"
+	# A card that does not fit keeps its colour but dims with the rest of the card.
+	if not v["ok"]:
+		pic.modulate = Color(1, 1, 1, 0.5)
+	pic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	col.add_child(pic)
-	var name_label := _caption(String(part["name"]), ink, LothalTheme.FONT_SIZE_SMALL, "Name")
+	var name_label := _caption(String(part["name"]), ink, NAME_PX, "Name")
 	# The whole name, over two lines when it needs them: a card never ends a name in an ellipsis.
+	name_label.add_theme_constant_override("line_spacing", NAME_LINE_GAP)
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	name_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	col.add_child(name_label)
 	col.add_child(_caption(String(part.get("caption", "")), INK_MUTED if v["ok"] else INK_FAINT,
-		LothalTheme.FONT_SIZE_SMALL - 1, "Spec"))
+		SPEC_PX, "Spec"))
 	# A misfit, while a part is selected: its one-line reason on the card itself, no hover needed.
 	var why: Label = null
 	if swap_cats.has(cat) and not v["ok"]:
-		why = _caption(String(v["reason"]), WARN, LothalTheme.FONT_SIZE_SMALL - 2, "Reason")
+		why = _caption(String(v["reason"]), WARN, SPEC_PX - 1, "Reason")
 		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		why.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		why.max_lines_visible = 3
