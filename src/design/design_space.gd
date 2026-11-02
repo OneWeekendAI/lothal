@@ -2019,6 +2019,7 @@ func _build_shelf() -> void:
 	shelf.card_hovered.connect(hover_card)
 	shelf.card_clicked.connect(click_card)
 	shelf.card_unhovered.connect(func(): if drag_kind == "": clear_preview())
+	shelf.pack_designer_requested.connect(open_pack_designer)
 	add_child(shelf)
 
 	_ghost_mat = StandardMaterial3D.new()
@@ -2061,6 +2062,42 @@ func _shelf_judge(category: String) -> Dictionary:
 		var rank := absf(log(m / ref)) if m > 0.0 and ref > 0.0 else INF
 		out[String(opt["id"])] = {"ok": opt["ok"], "reason": opt["reason"], "rank": rank}
 	return out
+
+
+## The pack designer pop-up, while it is open (null otherwise). Opened by the shelf's "+" tile.
+var pack_designer: PackDesigner
+## Where saved packs live; the pop-up writes here and the shelf reloads from here.
+var custom_parts_path: String = CustomParts.SAVE_PATH
+var pack_charge_path: String = PackCharge.SAVE_PATH
+
+
+## Opens the pack designer over the Design Space: a new default pack, with this drone as the "this
+## drone" load. A second call while it is open does nothing.
+func open_pack_designer() -> void:
+	if pack_designer != null:
+		return
+	cancel_drag()
+	var store := DesignedPacks.load_from(custom_parts_path)
+	var charge := PackCharge.load_from(pack_charge_path)
+	var designer := PackDesigner.new(_catalog, CellLibrary.load_default(), store, charge, session.build(_catalog))
+	designer.store_path = custom_parts_path
+	designer.charge_path = pack_charge_path
+	designer.saved.connect(func(_id: String): refresh_catalog())
+	designer.closed.connect(func(): pack_designer = null)
+	pack_designer = designer
+	add_child(designer)
+	designer.open_new()
+	if designer.is_inside_tree():
+		designer.grab_focus()
+
+
+## A pack was saved: read the catalog again with the builder's custom parts, so the new pack is on
+## the shelf, and re-fill everything that reads it.
+func refresh_catalog() -> void:
+	_catalog = PartsCatalog.load_with_custom(custom_parts_path)
+	_ranges_cache = {}
+	_shelf_verdicts = {}
+	_after_change()
 
 
 func refresh_shelf() -> void:

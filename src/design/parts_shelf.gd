@@ -19,6 +19,8 @@ signal card_hovered(category: String, part_id: String)
 signal card_unhovered
 ## The "None" card pressed (the other cards are clicked through the drag, see DesignSpace.end_drag).
 signal card_clicked(category: String, part_id: String)
+## The "+" tile at the end of the battery list was pressed: the builder wants the pack designer.
+signal pack_designer_requested
 
 const INK := Color(0.93, 0.93, 0.93)
 const INK_MUTED := Color(0.58, 0.58, 0.58)
@@ -213,7 +215,11 @@ func _rebuild() -> void:
 		var base := h
 		for k in fits.size():
 			_add_row(cat, fits[k]["p"], fits[k]["v"], base + floorf(k / float(COLUMNS)) * (CARD_H + GAP))
-		h += _card_rows(fits.size())
+		# The "+" tile follows the last pack: here when no misfit is showing, else after the misfits.
+		var tile_here := cat == "battery" and misfits.is_empty()
+		if tile_here:
+			_add_pack_tile()
+		h += _card_rows(fits.size() + (1 if tile_here else 0))
 		if empty_view:
 			h += _add_note("Nothing here fits" if int(shown["hidden"]) == 0 else "Nothing fits with these filters")
 		if int(shown["hidden"]) > 0 or int(shown["total_misfits"]) > 0:
@@ -223,7 +229,9 @@ func _rebuild() -> void:
 			base = h
 			for k in misfits.size():
 				_add_row(cat, misfits[k]["p"], misfits[k]["v"], base + floorf(k / float(COLUMNS)) * (CARD_H + GAP))
-			h += _card_rows(misfits.size())
+			if cat == "battery":
+				_add_pack_tile()
+			h += _card_rows(misfits.size() + (1 if cat == "battery" else 0))
 	_content_h = h
 	scroll.custom_minimum_size.y = minf(h, MAX_LIST_H)
 	scroll.scroll_vertical = mini(scroll.scroll_vertical, maxi(int(h - MAX_LIST_H), 0))
@@ -445,6 +453,38 @@ func _add_row(cat: String, part: Dictionary, v: Dictionary, y: float = 0.0) -> v
 	rows.append({"category": cat, "id": id, "name": String(part["name"]), "ok": v["ok"],
 		"reason": String(v["reason"]), "button": b, "caption": String(part.get("caption", "")),
 		"fitted": is_fitted, "y": y, "reason_label": why})
+
+
+## The "+" tile: the only way into the pack designer. Same size as a card, so it sits in the grid
+## like the next pack would; it is a click, never a drag.
+func _add_pack_tile() -> void:
+	var b := _flat_button("", LothalTheme.FONT_SIZE_SMALL, INK_MUTED)
+	b.name = "AddPack"
+	b.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	b.tooltip_text = "Design your own battery pack"
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var edge := StyleBoxFlat.new()
+	edge.bg_color = Color(1, 1, 1, 0.025)
+	edge.border_color = Color(1, 1, 1, 0.14)
+	edge.set_border_width_all(1)
+	edge.set_corner_radius_all(6)
+	var hv := edge.duplicate() as StyleBoxFlat
+	hv.bg_color = Color(1, 1, 1, 0.07)
+	hv.border_color = INK_MUTED
+	b.add_theme_stylebox_override("normal", edge)
+	for st in ["hover", "pressed", "hover_pressed"]:
+		b.add_theme_stylebox_override(st, hv)
+	var col := VBoxContainer.new()
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_theme_constant_override("separation", 2)
+	var plus := _caption("+", INK_MUTED, 28, "Plus")
+	col.add_child(plus)
+	col.add_child(_caption("New pack", INK_MUTED, SPEC_PX, "Label"))
+	b.add_child(col)
+	b.pressed.connect(func(): pack_designer_requested.emit())
+	list.add_child(b)
 
 
 func _caption(text: String, ink: Color, font_px: int, node_name: String) -> Label:
