@@ -31,6 +31,18 @@ static func run() -> Array:
 		and _close(float(f.empty_v), 4.0 * BatteryModel.min_cell_v("LiPo"))
 		and float(f.mah) == 1500.0, str(f)))
 
+	var fe := PackDesign.default_design(lib)
+	fe.cell = lib.get_cell("cell_a123_anr26650m1b")
+	fe.series = 3
+	var fef := fe.derive()
+	results.append(_t("a LiFePO4 pack uses the cell's own nominal (A123: 3 x 3.3 V, not the 3.2 V chemistry default)",
+		_close(float(fef.nominal_v), 3.0 * 3.3) and _close(float(fef.wh), 3.0 * 3.3 * 2.5)
+		and _close(float(fe.to_record().specs.nominal_v), 9.9), str(fef.nominal_v)))
+	var lp := PackDesign.default_design(lib)
+	lp.cell = lib.get_cell("cell_lipo_1500")
+	results.append(_t("a cell whose nominal equals its chemistry's changes nothing",
+		_close(float(lp.derive().nominal_v), 4.0 * BatteryModel.nominal_cell_v("LiPo"))))
+
 	var d2 := PackDesign.default_design(lib)
 	d2.parallel = 2
 	var f2 := d2.derive()

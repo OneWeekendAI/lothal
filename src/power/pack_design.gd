@@ -72,7 +72,9 @@ func derive() -> Dictionary:
 	var chem := String(cell.get("chemistry", "LiPo"))
 	var cs: Dictionary = cell.get("specs", {})
 	var n := float(s * p)
-	var nominal_v := float(s) * BatteryModel.nominal_cell_v(chem)
+	# The cell's own datasheet nominal when it has one (A123 LiFePO4 is 3.3 V, the chemistry default 3.2 V).
+	var cell_nominal := float(cs.get("nominal_v", 0.0))
+	var nominal_v := float(s) * (cell_nominal if cell_nominal > 0.0 else BatteryModel.nominal_cell_v(chem))
 	var mah := float(cs.get("mah", 0.0)) * float(p)
 
 	var length_m := lead_length_mm / 1000.0
