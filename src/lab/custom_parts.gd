@@ -42,7 +42,10 @@ extends RefCounted
 ## category's geometry or physics defined, and a make_record. Nothing else.
 
 const SAVE_PATH := "user://custom_parts.json"
-const SCHEMA_VERSION := 1
+## Schema 2 (pack designer): battery records may carry a `design` block, and the batteries array is
+## read by DesignedPacks, which migrates v1 records on load. Every other category's records are
+## unchanged. A document read at an older schema is never rewritten until something saves it.
+const SCHEMA_VERSION := 2
 
 var _records: Array = []
 var _rejections: Array[String] = []
@@ -71,6 +74,13 @@ func category() -> String:
 ## the generic checks have passed nothing on to it that is not at least a part.
 func _category_problems(_record: Dictionary, _catalog: PartsCatalog) -> Array[String]:
 	return []
+
+
+## Hook for reading an older document. Called with the parsed file and the schema it declared;
+## returns the document to read records from. In memory only: nothing is written back here. A
+## category with nothing to migrate leaves it as it is.
+func _migrate(document: Dictionary, _from_version: int) -> Dictionary:
+	return document
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +204,7 @@ func read_from(path: String, catalog: PartsCatalog = null) -> void:
 	if document.is_empty():
 		return
 
+	document = _migrate(document, int(document.get("schema", 1)))
 	_unknown_top = JsonStore.unknown_fields(document, ["schema", array_key()])
 
 	var stored: Variant = document.get(array_key(), [])

@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "frames": [],
+  "x_future_block": {"keep": "me"},
+  "batteries": [
+    {
+      "part_id": "custom_shed_4s_1300",
+      "name": "Shed 4S 1300",
+      "category": "battery",
+      "mass_g": 155.0,
+      "mounting": {"attachment": "strap"},
+      "specs": {
+        "cells": 4, "nominal_v": 14.8, "mah": 1300.0, "internal_r_ohm": 0.0113,
+        "chemistry": "LiPo", "c_rating": 95.0,
+        "length_mm": 77.0, "width_mm": 38.5, "height_mm": 27.0
+      },
+      "catalog": {"cell_class": "4S", "connector": "XT60"},
+      "source": "measured on my kitchen scale, dimensions with a caliper",
+      "derivation": {"nominal_v": true, "internal_r_ohm": true},
+      "x_note_from_the_future": {"tag": "keep"}
+    },
+    {
+      "part_id": "custom_long_range_6s",
+      "name": "Long range 6S",
+      "category": "battery",
+      "mass_g": 612.5,
+      "mounting": {"attachment": "strap"},
+      "specs": {
+        "cells": 6, "nominal_v": 21.6, "mah": 4200.0, "internal_r_ohm": 0.2345,
+        "chemistry": "Li-ion", "c_rating": 8.0,
+        "length_mm": 80.0, "width_mm": 66.0, "height_mm": 44.0
+      },
+      "catalog": {"cell_class": "6S", "connector": "XT90"},
+      "source": "vendor page",
+      "derivation": {"nominal_v": true, "internal_r_ohm": false}
+    },
+    {
+      "part_id": "custom_whoop_1s",
+      "name": "Whoop 1S",
+      "category": "battery",
+      "mass_g": 9.5,
+      "mounting": {"attachment": "strap"},
+      "specs": {
+        "cells": 1, "nominal_v": 3.7, "mah": 450.0, "internal_r_ohm": 0.0721,
+        "chemistry": "LiPo", "c_rating": 50.0,
+        "length_mm": 60.0, "width_mm": 16.0, "height_mm": 7.0
+      },
+      "catalog": {"cell_class": "1S", "connector": "BT2.0"},
+      "source": "printed on the wrapper"
+    }
+  ]
+}
