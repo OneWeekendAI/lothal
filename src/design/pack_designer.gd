@@ -75,6 +75,9 @@ var rebuild_button: Button
 var start_from_button: Button
 var my_packs_button: Button
 var save_as_button: Button
+var copy_button: Button
+var save_text_button: Button
+var _specs_dialog: FileDialog
 var save_button: Button
 var back_button: Button
 var my_packs_panel: PanelContainer
@@ -472,6 +475,36 @@ func save_as() -> String:
 	return id
 
 
+## The buy-and-build sheet for this pack (PackSheet), put on the clipboard. Returns the text.
+func copy_specs() -> String:
+	var text := PackSheet.to_text(design)
+	DisplayServer.clipboard_set(text)
+	return text
+
+
+## Writes the same sheet to `path` as plain text. True when the file was written.
+func save_specs(path: String) -> bool:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string(PackSheet.to_text(design))
+	f.close()
+	return true
+
+
+func _ask_specs_path() -> void:
+	if _specs_dialog == null:
+		_specs_dialog = FileDialog.new()
+		_specs_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+		_specs_dialog.access = FileDialog.ACCESS_FILESYSTEM
+		_specs_dialog.use_native_dialog = true
+		_specs_dialog.filters = PackedStringArray(["*.txt ; Text file"])
+		_specs_dialog.file_selected.connect(func(path: String): save_specs(path))
+		add_child(_specs_dialog)
+	_specs_dialog.current_file = "%s.txt" % String(design.name).to_snake_case()
+	_specs_dialog.popup_centered_ratio(0.6)
+
+
 func close() -> void:
 	if _tween != null and _tween.is_valid():
 		_tween.kill()
@@ -574,6 +607,17 @@ func _build_top_bar() -> Control:
 	my_packs_button.text = "My packs"
 	my_packs_button.pressed.connect(_toggle_my_packs)
 	bar.add_child(my_packs_button)
+	copy_button = Button.new()
+	copy_button.name = "CopySpecs"
+	copy_button.text = "Copy specs"
+	copy_button.tooltip_text = "Copy a buy-and-build sheet for this pack"
+	copy_button.pressed.connect(func(): copy_specs())
+	bar.add_child(copy_button)
+	save_text_button = Button.new()
+	save_text_button.name = "SaveSpecs"
+	save_text_button.text = "Save as text…"
+	save_text_button.pressed.connect(_ask_specs_path)
+	bar.add_child(save_text_button)
 	save_as_button = Button.new()
 	save_as_button.name = "SaveAs"
 	save_as_button.text = "Save as new"
