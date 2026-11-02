@@ -93,6 +93,33 @@ const CURVES_LIFEPO4: [(f64, f64); 12] = [
     (1.00, 3.65),
 ];
 
+/// Ambient air temperature for the display-only thermal model, degrees C.
+pub const AMBIENT_C: f64 = 25.0;
+/// Specific heat of a lithium cell, J/(kg*K). Class-typical figure (about 900), an ideal value.
+const CELL_CP_J_PER_KG_K: f64 = 900.0;
+/// Cooling conductance h*A per gram of cell, W/K/g. A LABELLED GUESS for a pack in still-ish air,
+/// not a measurement: ideal, display-only. It never feeds voltage, resistance or Build.
+pub const COOLING_W_PER_K_PER_G: f64 = 0.002;
+
+/// One explicit-Euler step of dT = (I^2 R - hA (T - ambient)) / (m cp) * dt for one cell.
+/// Mass in grams. Substeps keep it stable if a caller passes a large dt.
+fn cell_temp_step_impl(temp_c: f64, current_cell_a: f64, r_cell_ohm: f64, mass_g: f64, dt_s: f64) -> f64 {
+    if mass_g <= 0.0 || dt_s <= 0.0 {
+        return temp_c;
+    }
+    let heat_cap = mass_g / 1000.0 * CELL_CP_J_PER_KG_K; // J/K
+    let h_a = COOLING_W_PER_K_PER_G * mass_g; // W/K
+    let tau = heat_cap / h_a;
+    let n = (dt_s / (tau * 0.1)).ceil().max(1.0) as u32;
+    let h = dt_s / n as f64;
+    let mut t = temp_c;
+    for _ in 0..n {
+        let p_in = current_cell_a * current_cell_a * r_cell_ohm;
+        t += (p_in - h_a * (t - AMBIENT_C)) / heat_cap * h;
+    }
+    t
+}
+
 /// The four chemistries the model knows, in display order.
 pub const KNOWN_CHEMISTRIES: [&str; 4] = ["LiPo", "LiPo HV", "Li-ion", "LiFePO4"];
 
@@ -216,6 +243,12 @@ impl BatteryModel {
     #[func]
     pub fn known_chemistries() -> PackedStringArray {
         KNOWN_CHEMISTRIES.iter().map(|c| GString::from(*c)).collect()
+    }
+
+    /// Display-only lumped thermal step for one cell. Never feeds back into the electrical model.
+    #[func]
+    pub fn cell_temp_step(temp_c: f64, current_cell_a: f64, r_cell_ohm: f64, mass_g: f64, dt_s: f64) -> f64 {
+        cell_temp_step_impl(temp_c, current_cell_a, r_cell_ohm, mass_g, dt_s)
     }
 
     #[func]
@@ -363,6 +396,36 @@ mod tests {
             assert!(n > c[0].1 && n < c[c.len() - 1].1, "{chem}: nominal on its curve");
         }
         assert!(!known_chemistry("Unobtainium"));
+    }
+
+    #[test]
+    fn no_current_stays_ambient() {
+        assert_eq!(cell_temp_step_impl(AMBIENT_C, 0.0, 0.02, 40.0, 1.0), AMBIENT_C);
+    }
+
+    #[test]
+    fn heats_with_current_and_cools_back_to_ambient() {
+        let mut t = AMBIENT_C;
+        for _ in 0..120 {
+            t = cell_temp_step_impl(t, 20.0, 0.02, 40.0, 1.0);
+        }
+        assert!(t > AMBIENT_C + 1.0, "heated to {t}");
+        let hot = t;
+        for _ in 0..6000 {
+            t = cell_temp_step_impl(t, 0.0, 0.02, 40.0, 1.0);
+        }
+        assert!(t < hot && (t - AMBIENT_C).abs() < 0.5, "cooled to {t}");
+    }
+
+    #[test]
+    fn steady_state_matches_analytic() {
+        let (i, r, m) = (10.0, 0.02, 40.0);
+        let mut t = AMBIENT_C;
+        for _ in 0..20000 {
+            t = cell_temp_step_impl(t, i, r, m, 1.0);
+        }
+        let expect = AMBIENT_C + i * i * r / (COOLING_W_PER_K_PER_G * m);
+        assert!(((t - expect) / (expect - AMBIENT_C)).abs() < 0.01, "got {t} want {expect}");
     }
 
     #[test]
