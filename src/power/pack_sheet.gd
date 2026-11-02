@@ -99,7 +99,8 @@ static func to_text(design: PackDesign) -> String:
 	lines.append("  Size: %.0f x %.0f x %.0f mm" % [dims.x, dims.y, dims.z])
 	lines.append("  Current: %.0f A steady, %.0f A burst%s" % [float(f["cont_a"]), float(f["burst_a"]),
 		" (est.)" if bool(f.get("burst_estimated", false)) else ""])
-	lines.append("  Internal resistance: %.0f mOhm" % (float(f["internal_r_ohm"]) * 1000.0))
+	lines.append("  Internal resistance: %.0f mOhm%s" % [float(f["internal_r_ohm"]) * 1000.0,
+		" (est.)" if bool(f.get("resistance_estimated", false)) else ""])
 	lines.append("")
 	lines.append("SAFETY")
 	for line in d["safety"]:

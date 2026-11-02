@@ -88,6 +88,10 @@ static func run() -> Array:
 	results.append(_t("changing the wiring changes the sheet",
 		String(s2["connector"]["family"]) == "XT90" and int(s2["lead"]["awg"]) == 12))
 
+	var v5text := PackSheet.to_text(_design(lib, "cell_murata_vtc5a", 4, 1))
+	results.append(_t("the sheet marks an estimated resistance (est.)",
+		v5text.contains("mOhm (est.)") and not text.contains("mOhm (est.)"), v5text))
+
 	var typ := PackSheet.compose(_design(lib, "cell_lipo_1500", 4, 1))
 	var typ_text := PackSheet.to_text(_design(lib, "cell_lipo_1500", 4, 1))
 	results.append(_t("a class-typical pack's sheet says typical",

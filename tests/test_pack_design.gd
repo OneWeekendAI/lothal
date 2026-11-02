@@ -56,6 +56,12 @@ static func run() -> Array:
 		bool(p42.derive().burst_estimated) and not bool(dsheet.derive().burst_estimated)
 		and not bool(f.burst_estimated), "%s %s" % [p42.derive().burst_estimated, dsheet.derive().burst_estimated]))
 
+	var v5 := PackDesign.default_design(lib)
+	v5.cell = lib.get_cell("cell_murata_vtc5a")
+	results.append(_t("resistance_estimated follows the cell's r_basis",
+		bool(v5.derive().resistance_estimated) and not bool(p42.derive().resistance_estimated)
+		and not bool(f.resistance_estimated), ""))
+
 	var d2 := PackDesign.default_design(lib)
 	d2.parallel = 2
 	var f2 := d2.derive()

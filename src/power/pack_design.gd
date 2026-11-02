@@ -116,6 +116,7 @@ func derive() -> Dictionary:
 		"connector_contact_r_ohm_info": _connector_contact_ohm(),
 		"basis": basis_label(),
 		"burst_estimated": String(cell.get("burst_basis", "")) == "estimate",
+		"resistance_estimated": String(cell.get("r_basis", "")) == "estimate",
 	}
 
 
@@ -214,6 +215,7 @@ func _derive_legacy() -> Dictionary:
 		"connector_contact_r_ohm_info": _connector_contact_ohm(),
 		"basis": LEGACY_BASIS,
 		"burst_estimated": false,
+		"resistance_estimated": false,
 	}
 
 

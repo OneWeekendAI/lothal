@@ -243,6 +243,9 @@ static func _test_label(catalog: PartsCatalog) -> Array:
 	out.append(_t("the burst figure is marked (est.) when the datasheet does not publish it",
 		(d._figure_values["current"] as Label).text.contains("burst (est.)"),
 		(d._figure_values["current"] as Label).text))
+	d.set_cell("cell_murata_vtc5a")
+	out.append(_t("an estimated resistance is marked (est.) too",
+		(d._figure_values["resistance"] as Label).text.contains("(est.)"), (d._figure_values["resistance"] as Label).text))
 	d.set_cell("cell_samsung_40t")
 	out.append(_t("and is not marked for a published burst",
 		not (d._figure_values["current"] as Label).text.contains("est."),

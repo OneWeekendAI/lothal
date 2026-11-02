@@ -61,7 +61,8 @@ static func run() -> Array:
 	results.append(_t("get_cell returns a record by id, empty for unknown",
 		not some.is_empty() and lib.get_cell("nope").is_empty(), ""))
 
-	var named := ["Molicel INR-21700-P42A", "Molicel INR-21700-P45B", "Samsung INR21700-40T", "VTC6", "A123"]
+	var named := ["Molicel INR-21700-P42A", "Molicel INR-21700-P45B", "Samsung INR21700-40T", "VTC6", "A123",
+		"Samsung INR21700-50S", "Molicel INR-18650-P28A", "VTC5A"]
 	var missing: Array = []
 	for n in named:
 		var hit := false
@@ -92,6 +93,43 @@ static func run() -> Array:
 		if String(lib.get_cell(cid).get("burst_basis", "")) != "estimate":
 			unflagged.append(cid)
 	results.append(_t("Molicel burst figures are flagged as unverified estimates", unflagged.is_empty(), str(unflagged)))
+
+	# Cells added with cited sources (2026-11), and the figures sourced for the gaps.
+	var added := {
+		"cell_samsung_50s": {"mah": 5000.0, "max_cont_a": 20.0, "max_burst_a": 45.0, "r_mohm": 14.0},
+		"cell_molicel_p28a": {"mah": 2800.0, "max_cont_a": 35.0, "r_mohm": 20.0},
+		"cell_murata_vtc5a": {"mah": 2600.0, "max_cont_a": 35.0, "mass_g": 44.9},
+		"cell_molicel_p45b": {"r_mohm": 7.0},
+		"cell_murata_vtc6": {"r_mohm": 13.0},
+		"cell_samsung_40t": {"max_burst_a": 45.0, "diameter_mm": 21.22, "length_mm": 70.3},
+	}
+	var off: Array = []
+	for cid in added:
+		var rec2: Dictionary = lib.get_cell(cid)
+		for k in added[cid]:
+			if absf(float(rec2.get("specs", {}).get(k, -1.0)) - float(added[cid][k])) > 1e-9:
+				off.append("%s.%s" % [cid, k])
+	results.append(_t("added and newly sourced cell figures match their cited sheets", off.is_empty(), str(off)))
+	var unsourced: Array = []
+	for cid in ["cell_samsung_50s", "cell_molicel_p28a", "cell_murata_vtc5a", "cell_molicel_p45b", "cell_murata_vtc6", "cell_samsung_40t"]:
+		var src := String(lib.get_cell(cid).get("source", ""))
+		if not (src.contains("mOhm") or src.contains("impedance")) or not (src.contains("data sheet") or src.contains("specification")):
+			unsourced.append(cid)
+	results.append(_t("each of them cites what it was read from", unsourced.is_empty(), str(unsourced)))
+	var est: Array = []
+	if String(lib.get_cell("cell_molicel_p28a").get("burst_basis", "")) != "estimate":
+		est.append("p28a burst")
+	if String(lib.get_cell("cell_murata_vtc5a").get("burst_basis", "")) != "estimate":
+		est.append("vtc5a burst")
+	if String(lib.get_cell("cell_murata_vtc5a").get("r_basis", "")) != "estimate":
+		est.append("vtc5a r")
+	for cid in ["cell_samsung_50s", "cell_samsung_40t", "cell_murata_vtc6", "cell_molicel_p45b"]:
+		if lib.get_cell(cid).has("r_basis"):
+			est.append("%s r flagged" % cid)
+	for cid in ["cell_samsung_50s", "cell_samsung_40t"]:
+		if lib.get_cell(cid).has("burst_basis"):
+			est.append("%s burst flagged" % cid)
+	results.append(_t("figures a sheet does not publish are marked estimate, published ones are not", est.is_empty(), str(est)))
 
 	var cc := CellLibrary.custom_cell("Mine", "Li-ion", 3000.0, 20.0, 30.0, 15.0, 48.0,
 		Vector3(18.4, 65.0, 0.0), "cylindrical")

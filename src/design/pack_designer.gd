@@ -1231,7 +1231,8 @@ func _refresh() -> void:
 	(_figure_values["size"] as Label).text = "%.0f × %.0f × %.0f mm" % [dims.x, dims.y, dims.z]
 	(_figure_values["current"] as Label).text = "%.0f A steady   ·   %.0f A burst%s" % [float(f.get("cont_a", 0.0)), float(f.get("burst_a", 0.0)),
 		" (est.)" if bool(f.get("burst_estimated", false)) else ""]
-	(_figure_values["resistance"] as Label).text = "%.0f mΩ" % (float(f.get("internal_r_ohm", 0.0)) * 1000.0)
+	(_figure_values["resistance"] as Label).text = "%.0f mΩ%s" % [float(f.get("internal_r_ohm", 0.0)) * 1000.0,
+		" (est.)" if bool(f.get("resistance_estimated", false)) else ""]
 	# The basis is in the header; a row repeats it only where it differs: the mass allowance.
 	for key in FIGURE_ROWS:
 		(_figure_values[key + "_tag"] as Label).text = ""

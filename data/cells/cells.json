@@ -1,5 +1,5 @@
 {
-  "_schema": "The cell library behind the pack designer. One record per cell: cell_id, name, chemistry (must be one BatteryModel knows), form (cylindrical or pouch), specs and a source plus a basis. `basis` is \"datasheet\" when the figures are the manufacturer's published ones for that exact cell, and \"class-typical\" when no single datasheet stands behind them (generic LiPo pouch classes): those are representative of the size class, chosen to sit in the same range as the shipped pack presets, and are NOT a specific product. Every figure here is an ideal / datasheet figure, never a measurement of a cell on a bench. specs: mah is rated capacity; nominal_v the datasheet nominal per cell; max_cont_a and max_burst_a the published continuous and short-pulse discharge limits (pouch classes: C rating x Ah, burst 1.5x to 2x); r_mohm is the per-cell internal resistance (datasheet AC impedance for cylindrical cells, a class-typical DC figure for pouch); mass_g is the bare cell. `burst_basis` of \"estimate\" marks a max_burst_a the datasheet does not publish (unverified; not a measurement). Dimensions: cylindrical cells carry diameter_mm and length_mm; pouch cells carry length_mm, width_mm and thickness_mm.",
+  "_schema": "The cell library behind the pack designer. One record per cell: cell_id, name, chemistry (must be one BatteryModel knows), form (cylindrical or pouch), specs and a source plus a basis. `basis` is \"datasheet\" when the figures are the manufacturer's published ones for that exact cell, and \"class-typical\" when no single datasheet stands behind them (generic LiPo pouch classes): those are representative of the size class, chosen to sit in the same range as the shipped pack presets, and are NOT a specific product. Every figure here is an ideal / datasheet figure, never a measurement of a cell on a bench. specs: mah is rated capacity; nominal_v the datasheet nominal per cell; max_cont_a and max_burst_a the published continuous and short-pulse discharge limits (pouch classes: C rating x Ah, burst 1.5x to 2x); r_mohm is the per-cell internal resistance (datasheet AC impedance for cylindrical cells, a class-typical DC figure for pouch); mass_g is the bare cell. `burst_basis` of \"estimate\" marks a max_burst_a the datasheet does not publish (unverified; not a measurement). `r_basis` of \"estimate\" likewise marks an r_mohm the manufacturer does not publish for that cell. Both are shown as (est.) beside the figure in the designer and on the build sheet. Dimensions: cylindrical cells carry diameter_mm and length_mm; pouch cells carry length_mm, width_mm and thickness_mm.",
   "cells": [
     {
       "cell_id": "cell_molicel_p42a",
@@ -16,8 +16,8 @@
       "name": "Molicel INR-21700-P45B",
       "chemistry": "Li-ion",
       "form": "cylindrical",
-      "specs": {"mah": 4500.0, "nominal_v": 3.6, "max_cont_a": 45.0, "max_burst_a": 100.0, "r_mohm": 12.0, "mass_g": 70.0, "diameter_mm": 21.4, "length_mm": 70.0},
-      "source": "Molicel INR-21700-P45B product data sheet (molicel.com): 4500 mAh, 3.6 V nominal, 45 A max continuous, 70 g",
+      "specs": {"mah": 4500.0, "nominal_v": 3.6, "max_cont_a": 45.0, "max_burst_a": 100.0, "r_mohm": 7.0, "mass_g": 70.0, "diameter_mm": 21.4, "length_mm": 70.0},
+      "source": "Molicel INR-21700-P45B product data sheet v1.4 (molicel.com, INR21700P45B_1.4_Product-Data-Sheet): 4500 mAh typical, 3.6 V nominal, 45 A continuous (80 C cut-off), 70 g max, discharge -40 to 60 C; resistance is the sheet's typical AC impedance at 30% SOC, 7 mOhm (its DC figure at 50% SOC is 15 mOhm); size kept at the nominal 21.4 x 70 mm (sheet maxima 21.55 x 70.15 mm); the burst figure is not published",
       "basis": "datasheet",
    "burst_basis": "estimate"
     },
@@ -26,8 +26,8 @@
       "name": "Samsung INR21700-40T",
       "chemistry": "Li-ion",
       "form": "cylindrical",
-      "specs": {"mah": 4000.0, "nominal_v": 3.6, "max_cont_a": 35.0, "max_burst_a": 60.0, "r_mohm": 12.0, "mass_g": 68.0, "diameter_mm": 21.7, "length_mm": 70.0},
-      "source": "Samsung SDI INR21700-40T product specification (samsungsdi.com): 4000 mAh, 3.6 V nominal, 35 A max continuous",
+      "specs": {"mah": 4000.0, "nominal_v": 3.6, "max_cont_a": 35.0, "max_burst_a": 45.0, "r_mohm": 12.0, "mass_g": 70.0, "diameter_mm": 21.22, "length_mm": 70.3},
+      "source": "Samsung SDI INR21700-40T product specification: 4000 mAh, 3.6 V nominal, 35 A max continuous without a temperature cut and 45 A with an 80 C cut (used here as the burst), 70.0 g max, size 21.22 x 70.30 mm max, initial AC 1 kHz impedance 12 mOhm max, discharge -20 to 60 C",
       "basis": "datasheet"
     },
     {
@@ -35,9 +35,39 @@
       "name": "Sony/Murata US18650VTC6",
       "chemistry": "Li-ion",
       "form": "cylindrical",
-      "specs": {"mah": 3000.0, "nominal_v": 3.6, "max_cont_a": 15.0, "max_burst_a": 30.0, "r_mohm": 15.0, "mass_g": 46.6, "diameter_mm": 18.4, "length_mm": 65.0},
-      "source": "Murata (Sony) US18650VTC6 product data sheet (murata.com): 3000 mAh, 3.6 V nominal, 15 A continuous (30 A pulse), 46.6 g",
+      "specs": {"mah": 3000.0, "nominal_v": 3.6, "max_cont_a": 15.0, "max_burst_a": 30.0, "r_mohm": 13.0, "mass_g": 46.6, "diameter_mm": 18.4, "length_mm": 65.0},
+      "source": "Murata (Sony) US18650VTC6 product data sheet (murata.com) and Sony Energy Devices product specification: 3000 mAh rated, 3.6 V nominal, 15 A continuous without the 80 C temperature cut and 30 A with it, 46.6 +/-1.5 g, discharge -20 to 60 C; resistance is the middle of the specification's AC 1 kHz range, 8 to 18 mOhm (it publishes a range, not a typical)",
       "basis": "datasheet"
+    },
+    {
+      "cell_id": "cell_samsung_50s",
+      "name": "Samsung INR21700-50S",
+      "chemistry": "Li-ion",
+      "form": "cylindrical",
+      "specs": {"mah": 5000.0, "nominal_v": 3.6, "max_cont_a": 20.0, "max_burst_a": 45.0, "r_mohm": 14.0, "mass_g": 70.6, "diameter_mm": 21.25, "length_mm": 70.62},
+      "source": "Samsung SDI INR21700-50S introduction/specification (2022 v1): 5000 mAh typical, 3.6 V nominal, 20 A max discharge without a temperature cut and 45 A with an 80 C cut (used here as the burst), initial AC 1 kHz impedance 14 mOhm max, size 21.25 x 70.62 mm max; the sheet gives no weight, so the 70.6 g is Batemo's measured cell mass (batemo.com cell explorer)",
+      "basis": "datasheet"
+    },
+    {
+      "cell_id": "cell_molicel_p28a",
+      "name": "Molicel INR-18650-P28A",
+      "chemistry": "Li-ion",
+      "form": "cylindrical",
+      "specs": {"mah": 2800.0, "nominal_v": 3.6, "max_cont_a": 35.0, "max_burst_a": 70.0, "r_mohm": 20.0, "mass_g": 46.0, "diameter_mm": 18.6, "length_mm": 65.2},
+      "source": "Molicel INR-18650-P28A product data sheet v1.3 (molicel.com): 2800 mAh typical, 3.6 V nominal, 35 A max discharge, AC 1 kHz impedance 20 mOhm max (DC 10 A/1 s 20 mOhm), 46 g typical, size 18.6 x 65.2 mm max, discharge -40 to 60 C; the burst figure is not published",
+      "basis": "datasheet",
+      "burst_basis": "estimate"
+    },
+    {
+      "cell_id": "cell_murata_vtc5a",
+      "name": "Sony/Murata US18650VTC5A",
+      "chemistry": "Li-ion",
+      "form": "cylindrical",
+      "specs": {"mah": 2600.0, "nominal_v": 3.6, "max_cont_a": 35.0, "max_burst_a": 60.0, "r_mohm": 13.0, "mass_g": 44.9, "diameter_mm": 18.5, "length_mm": 65.2},
+      "source": "Murata US18650VTC5A product data sheet (murata.com): 2600 mAh nominal (2500 rated), 3.6 V nominal, 44.9 g typical, size 18.5 x 65.2 mm max; the 35 A continuous figure is from the Sony/Murata power-cell listing (megacellmonitor.com vendor spec table) and About:Energy's library, not the one-page Murata sheet; the burst figure and the 13 mOhm resistance (a mid-range guess from the sister VTC6 specification, 8 to 18 mOhm) are NOT published for this cell",
+      "basis": "datasheet",
+      "burst_basis": "estimate",
+      "r_basis": "estimate"
     },
     {
       "cell_id": "cell_lipo_450",
