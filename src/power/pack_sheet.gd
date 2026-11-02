@@ -54,7 +54,7 @@ static func compose(design: PackDesign) -> Dictionary:
 		"balance_lead": {
 			"pins": s + 1,
 			"connector": BALANCE_CONNECTOR,
-			"text": "%d-pin %s balance lead: one pin on the pack's negative, then one at each of the %d series junctions in order, ending on the positive." % [s + 1, BALANCE_CONNECTOR, s],
+			"text": "%d-pin %s balance lead: one wire on the pack's negative, one on each of the %d junctions between cells in order, and one on the positive." % [s + 1, BALANCE_CONNECTOR, maxi(s - 1, 0)],
 		},
 		"expected": f,
 		"safety": _safety(chem, legacy),

@@ -26,6 +26,10 @@ static func _design(lib: CellLibrary, cell_id: String, s: int, p: int) -> PackDe
 	return d
 
 
+static func one_text_for(lib: CellLibrary) -> String:
+	return String(PackSheet.compose(_design(lib, "cell_lipo_1500", 4, 1))["balance_lead"]["text"])
+
+
 static func run() -> Array:
 	var results: Array = []
 	var lib := CellLibrary.load_default()
@@ -38,6 +42,12 @@ static func run() -> Array:
 		and String(sheet["arrangement"]) == "6S3P"
 		and text.contains("Molicel INR-21700-P42A") and text.contains("18") and text.contains("6S3P"),
 		str(sheet["cells"])))
+
+	var bt4 := String(one_text_for(lib))
+	results.append(_t("balance text counts S-1 junctions between cells and S+1 wires (4S: 3 junctions, 5 wires)",
+		bt4.contains("5-pin") and bt4.contains("3 junctions") and not bt4.contains("4 series junctions")
+		and String(sheet["balance_lead"]["text"]).contains("5 junctions") and text.contains("5 junctions"),
+		bt4 + " | " + String(sheet["balance_lead"]["text"])))
 
 	var order: Array = sheet["wiring_order"]
 	results.append(_t("wiring order reads series then parallel",
