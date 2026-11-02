@@ -48,6 +48,17 @@ static func run() -> Array:
 		and JSON.stringify(no_thermal.v_rest) == JSON.stringify(hot.v_rest),
 		"hot %.1f cool %.1f" % [peak_hot, peak_cool]))
 
+	var over_ok := true
+	var over_detail := ""
+	for amps in [3.0, 7.0, 10.0, 17.3]:
+		for step in [1.0, 3.0, 7.0]:
+			var u: PackedFloat64Array = PackBench.discharge(d, amps, step).used_mah
+			if _max(u) > float(f.mah):
+				over_ok = false
+				over_detail += " %.1fA/%.0fs=%.1f" % [amps, step, _max(u)]
+	results.append(_t("a discharge never reports more charge used than the pack holds",
+		over_ok, "capacity %.0f:%s" % [float(f.mah), over_detail]))
+
 	var sag := PackBench.discharge(d, 60.0)
 	results.append(_t("peak sag is the largest rest minus live gap",
 		absf(float(sag.peak_sag_v) - 60.0 * r) < 0.02, "%s vs %s" % [sag.peak_sag_v, 60.0 * r]))

@@ -52,7 +52,8 @@ static func _run_discharge(design: PackDesign, current_a: float, dt_s: float, th
 		v_rest.append(rest)
 		v_live.append(live)
 		temp.append(temp_c)
-		used.append(pack.used_mah)
+		# The last step can overshoot the capacity by up to one step's charge; the chart never shows that.
+		used.append(minf(pack.used_mah, float(f.mah)))
 		sag = maxf(sag, rest - live)
 		if live / float(lay.s) <= floor_v:
 			stopped = "cutoff"
