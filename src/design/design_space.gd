@@ -282,6 +282,7 @@ func _refresh_warnings(b: Build, fs: Dictionary) -> void:
 	for cat in fs["missing"]:
 		pins.append(WarningPins.of_missing(String(cat)))
 	pins.append_array(WarningPins.of_build(b))
+	pins.append_array(WarningPins.of_pack_fit(b))
 	if not _refusal.is_empty():
 		pins.append(_refusal)
 	warning_pins = pins

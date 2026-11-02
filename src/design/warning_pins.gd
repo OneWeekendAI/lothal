@@ -150,6 +150,24 @@ static func of_build(b: Build) -> Array:
 	return out
 
 
+## The fit of a DESIGNED pack (one with a `design` block, made in the pack designer): the same
+## battery_fit_warnings() the Lab and the assembly panel show, on a throwaway airframe drawn from
+## `b`. Shelf presets are skipped on purpose: a curated pack on a frame it ships with is the
+## catalog's statement, and the plan-view check flags several of those (a 1S on a whoop) that no
+## builder should be told are issues. Their pin counts stay exactly as they were.
+static func of_pack_fit(b: Build) -> Array:
+	var out: Array = []
+	if b == null or not b.battery.has("design"):
+		return out
+	var airframe := AirframeModel.new()
+	airframe.rebuild(b)
+	for w in airframe.battery_fit_warnings():
+		w.item = WarningRows.BATTERY
+		out.append(of_warning(w, b))
+	airframe.free()
+	return out
+
+
 ## One warning's pin. `b` answers a `mark_method`; null leaves such a mark empty.
 static func of_warning(w: BuildWarning, b: Build) -> Dictionary:
 	var row: Dictionary = TABLE.get(w.id, {})

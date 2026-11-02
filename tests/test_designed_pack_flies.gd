@@ -38,6 +38,15 @@ static func _build(catalog: PartsCatalog, battery_id: String) -> Build:
 		ReferenceBuild.PROPELLER_ID, battery_id)
 
 
+static func _fit_pins(ds: DesignSpace) -> Array:
+	var out: Array = []
+	for p in ds.warning_pins:
+		var w := String(p.get("warning", ""))
+		if w == "pack_in_prop_disc" or w == "pack_wider_than_plate":
+			out.append(w)
+	return out
+
+
 static func run() -> Array:
 	var results: Array = []
 	_wipe(SCRATCH)
@@ -99,6 +108,32 @@ static func run() -> Array:
 	var fam60 := String((flies.get_part(String(h60[Harness.CONNECTOR])).get("catalog", {}) as Dictionary).get("family", ""))
 	results.append(_t("harness picks the designer's connector", fam90 == "XT90" and fam60 == "XT60",
 		"%s / %s" % [fam90, fam60]))
+
+	# Fit: an oversize designed pack raises an issue in the Design Space, a fitting one does not, and a
+	# shelf preset's pins are exactly what they were.
+	var shelf_id := "battery_6s_5600"
+	ds.choose("battery", shelf_id)
+	var shelf_pins := ds.warning_pins.size()
+	var shelf_fit := _fit_pins(ds)
+	ds.choose("battery", id_2p)
+	var small_fit := _fit_pins(ds)
+	ds.open_pack_designer()
+	ds.pack_designer.open_new()
+	ds.pack_designer.set_cell("cell_molicel_p42a")
+	ds.pack_designer.set_series(6)
+	ds.pack_designer.set_parallel(4)
+	ds.pack_designer.name_field.text = "Flies huge"
+	var id_big := ds.pack_designer.save()
+	ds.choose("battery", id_big)
+	var big_fit := _fit_pins(ds)
+	results.append(_t("an oversize designed pack raises a fit issue in the Design Space",
+		not big_fit.is_empty() and ds.issues_label.text == WarningPins.count_text(ds.warning_pins.size()),
+		"big %s small %s" % [str(big_fit), str(small_fit)]))
+	results.append(_t("a designed pack that fits raises none", small_fit.is_empty(), str(small_fit)))
+	ds.choose("battery", shelf_id)
+	results.append(_t("a shelf preset's issues are unchanged (no fit pin, same count)",
+		shelf_fit.is_empty() and _fit_pins(ds).is_empty() and ds.warning_pins.size() == shelf_pins,
+		"%d vs %d" % [ds.warning_pins.size(), shelf_pins]))
 
 	var pin_failures := 0
 	for r in TestPresetPackPin.run():
