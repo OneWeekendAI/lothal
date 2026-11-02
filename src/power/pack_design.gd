@@ -229,6 +229,11 @@ func _connector_pair_mass_g() -> float:
 	return float(_connector_row().get("mass_g", 0.0))
 
 
+## The connector family's continuous rating in amps (0.0 when the family is unknown).
+func connector_continuous_a() -> float:
+	return float((_connector_row().get("specs", {}) as Dictionary).get("continuous_a", 0.0))
+
+
 ## Read-only: the harness counts this, the designer only displays it.
 func _connector_contact_ohm() -> float:
 	return float((_connector_row().get("specs", {}) as Dictionary).get("contact_resistance_ohm", 0.0)) \

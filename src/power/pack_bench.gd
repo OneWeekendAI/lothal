@@ -157,6 +157,20 @@ static func warnings(design: PackDesign, run: Dictionary, build: Build = null,
 	if not is_nan(charge_c) and charge_c > BatteryModel.max_charge_c(chem):
 		out.append("A charge rate of %.1fC is over the %.1fC maximum for %s." % [
 			charge_c, BatteryModel.max_charge_c(chem), chem])
+	# The pack's own pigtail and plug, against the load the pack carries. Ratings are CONTINUOUS, so
+	# they are read against the sustained draw (the drone's average flight current, or the steady
+	# load of the run), as HarnessChecks does; the punch-out peak is quoted, never the limit.
+	var lead_a := cur
+	if build != null:
+		lead_a = this_drone_current_a(build)
+	var rating := WireGauge.ampacity_a(design.lead_awg)
+	if not design.is_legacy() and lead_a > rating:
+		out.append("The pigtail is %d AWG, rated %.0f A, and carries %.0f A. Use a thicker wire or the lead will run hot and sag." % [
+			design.lead_awg, rating, lead_a])
+	var plug := design.connector_continuous_a()
+	if plug > 0.0 and lead_a > plug:
+		out.append("The %s connector is rated %.0f A continuous and carries %.0f A. Use a larger connector." % [
+			design.connector_family, plug, lead_a])
 	if build != null:
 		var peak := peak_drone_current_a(build)
 		if peak > float(f.burst_a) and float(f.burst_a) > 0.0:

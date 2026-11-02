@@ -111,6 +111,29 @@ static func _warnings(lib: CellLibrary, d: PackDesign) -> Array:
 	var each_distinct := not (_has(w4, "minimum voltage") or _has(w4, "continuous") or _has(w4, "temperature"))
 	out.append(_t("a charge-rate warning does not drag the discharge warnings with it", each_distinct, str(w4)))
 
+	# Pigtail ampacity and connector rating: continuous ratings, checked against the sustained load
+	# (the harness precedent), never the full-throttle punch.
+	var thin := PackDesign.default_design(lib)
+	thin.lead_awg = 22
+	var w6 := PackBench.warnings(thin, PackBench.discharge(thin, 20.0))
+	out.append(_t("warning: pigtail wire over its ampacity (22 AWG at 20 A)",
+		_has(w6, "pigtail") and _has(w6, "22 awg"), str(w6)))
+	var small_plug := PackDesign.default_design(lib)
+	small_plug.connector_family = "XT30"
+	small_plug.lead_awg = 12
+	var w7 := PackBench.warnings(small_plug, PackBench.discharge(small_plug, 40.0))
+	out.append(_t("warning: connector over its continuous rating (XT30 at 40 A)",
+		_has(w7, "xt30") and _has(w7, "connector") and not _has(w7, "pigtail"), str(w7)))
+	var fat := PackDesign.default_design(lib)
+	fat.connector_family = "XT90"
+	fat.lead_awg = 12
+	var w8 := PackBench.warnings(fat, PackBench.discharge(fat, 30.0))
+	out.append(_t("no lead or connector warning when both clear the load",
+		not _has(w8, "pigtail") and not _has(w8, "connector"), str(w8)))
+	var w9 := PackBench.warnings(thin, calm, build)
+	out.append(_t("with a drone the lead is judged on its sustained draw, not the punch-out",
+		_has(w9, "pigtail") == (drone_a > WireGauge.ampacity_a(22)), "%.1f A: %s" % [drone_a, str(w9)]))
+
 	var ax := PackBench.voltage_axis(d)
 	var fig := d.derive()
 	out.append(_t("voltage axis spans the pack's own empty and full resting voltage",
