@@ -20,6 +20,7 @@ static func run() -> Array:
 	results.append_array(_test_readouts_equal_the_engine(catalog))
 	results.append_array(_test_build_change_updates_readouts(catalog))
 	results.append_array(_test_gauge_fractions())
+	results.append_array(_test_ring_shape())
 	results.append_array(_test_camera_limits())
 	results.append_array(_test_home_restores())
 	results.append_array(_test_back_to_picker())
@@ -155,6 +156,41 @@ static func _test_gauge_fractions() -> Array:
 	results.append(TestResult.new("the 5\" seed: 507.5 g is half-ish of 1000 g, 11.43:1 is 0.762 of 15",
 		absf(ReadoutGauge.fraction("auw_g", 507.5) - 0.5075) < 1e-9
 			and absf(ReadoutGauge.fraction("thrust_to_weight", 11.43) - 0.762) < 1e-9, ""))
+	return results
+
+
+## The ring: the arc sweeps fraction x a full turn, the number sits inside it, icon then label below.
+static func _test_ring_shape() -> Array:
+	var results: Array = []
+	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"), PartsCatalog.load_default())
+	var bad_sweep: Array = []
+	for key in ReadoutGauge.RANGES:
+		var lo := float(ReadoutGauge.RANGES[key][0])
+		var hi := float(ReadoutGauge.RANGES[key][1])
+		var g := ReadoutGauge.new(key)
+		for f in [0.0, 0.25, 0.762, 1.0]:
+			g.set_value(lo + (hi - lo) * f)
+			if absf(g.arc_sweep() - f * TAU) > 1e-6:
+				bad_sweep.append("%s@%s" % [key, f])
+		g.free()
+	results.append(TestResult.new("the ring's arc sweeps the fraction of a full turn, for every readout",
+		bad_sweep.is_empty(), str(bad_sweep)))
+	var bad_stack: Array = []
+	for key in ds.gauges:
+		var g := ds.gauges[key] as ReadoutGauge
+		var val := ds.value_labels[key] as Label
+		var cell := g.get_parent()
+		var icon_at := g.get_index() + 1
+		if val.get_parent() != g or not (cell.get_child(icon_at) is ReadoutGauge.Icon) \
+				or not (cell.get_child(icon_at + 1) is Label) or (cell.get_child(icon_at + 1) as Label).text == "":
+			bad_stack.append(key)
+	results.append(TestResult.new("each readout stacks ring (number inside), then icon, then a label",
+		bad_stack.is_empty() and ds.gauges.size() == 5, str(bad_stack)))
+	var small := true
+	for key in ds.value_labels:
+		small = small and (ds.value_labels[key] as Label).get_theme_font_size("font_size") <= LothalTheme.FONT_SIZE_SMALL
+	results.append(TestResult.new("the readout text is small (the old 22 px numbers are gone)", small, ""))
+	ds.free()
 	return results
 
 

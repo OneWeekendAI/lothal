@@ -51,6 +51,7 @@ static func run() -> Array:
 	results.append(_no_tint_on_seed(ds))
 	results.append(_readout_mark(ds))
 	results.append(_issues_count(ds))
+	results.append(_ring_amber(ds))
 	_reset(ds, home)
 	ds.select("part/battery")
 	ds.remove_selected()
@@ -373,7 +374,7 @@ static func _no_tint_on_seed(ds: DesignSpace) -> TestResult:
 static func _readout_mark(ds: DesignSpace) -> TestResult:
 	var mark := ds.mark_buttons["thrust_to_weight"] as Button
 	var val := ds.value_labels["thrust_to_weight"] as Label
-	var line := mark.get_parent()
+	var cell := mark.get_parent()
 	var amber := true
 	for st in ["font_color", "font_hover_color", "font_pressed_color"]:
 		amber = amber and _amber(mark.get_theme_color(st))
@@ -381,11 +382,24 @@ static func _readout_mark(ds: DesignSpace) -> TestResult:
 	for k in ds.mark_buttons:
 		if k != "thrust_to_weight" and (ds.mark_buttons[k] as Button).visible:
 			others.append(k)
-	return TestResult.new("seed: T:W carries an amber \"in air\" mark right after its number, in the same row",
+	return TestResult.new("seed: T:W carries an amber \"in air\" mark in its own cell, under its ring and label",
 		mark.visible and mark.text.begins_with("▲") and mark.text.ends_with("in air") and amber
-		and line == val.get_parent() and mark.get_index() == val.get_index() + 1 and others.is_empty()
+		and cell == val.get_parent().get_parent() and mark.get_index() > val.get_parent().get_index() and others.is_empty()
 		and mark.get_theme_font_size("font_size") <= val.get_theme_font_size("font_size"),
-		"'%s' visible %s amber %s same row %s, other marks %s" % [mark.text, mark.visible, amber, line == val.get_parent(), others])
+		"'%s' visible %s amber %s same cell %s, other marks %s" % [mark.text, mark.visible, amber, cell == val.get_parent().get_parent(), others])
+
+
+## The ring turns amber exactly where a warning moves its readout (the seed's T:W), grey elsewhere.
+static func _ring_amber(ds: DesignSpace) -> TestResult:
+	var marks := WarningPins.marks(ds.warning_pins)
+	var bad: Array = []
+	for k in ds.gauges:
+		var g := ds.gauges[k] as ReadoutGauge
+		var want := marks.has(k)
+		if _amber(g.ink_color()) != want or g.warn != want:
+			bad.append(k)
+	return TestResult.new("seed: a ring is amber exactly when a warning moves its readout, else grey",
+		marks.has("thrust_to_weight") and not marks.has("auw_g") and bad.is_empty(), "wrong: %s, marked %s" % [bad, marks.keys()])
 
 
 static func _issues_count(ds: DesignSpace) -> TestResult:

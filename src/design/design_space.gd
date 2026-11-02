@@ -59,7 +59,7 @@ const STRIP_ICON_K := 0.62         ## the shelf's 98 px picture drawn at 61 px
 ## Readout delta bars: a delta of this size fills half the track.
 const DELTA_SCALE := {"auw_g": 150.0, "thrust_to_weight": 4.0, "hover_throttle": 0.2,
 	"flight_time_min": 3.0, "top_speed_kmh": 40.0}
-const DELTA_TRACK_W := 120.0
+const DELTA_TRACK_W := 56.0
 const OUTLINE_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_front, shadows_disabled, fog_disabled;
@@ -1147,7 +1147,7 @@ func _build_panel() -> void:
 	panel.offset_right = -PANEL_EDGE
 	panel.offset_top = 48
 	panel.offset_bottom = 400
-	panel.add_theme_constant_override("separation", 14)
+	panel.add_theme_constant_override("separation", 10)
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(panel)
 
@@ -1169,62 +1169,65 @@ func _build_panel() -> void:
 	issues_label.add_theme_color_override("font_color", WARN_INK)
 	panel.add_child(issues_label)
 
-	var rows := [["auw_g", "All-up weight"], ["thrust_to_weight", "Thrust to weight"],
-		["hover_throttle", "Hover throttle"], ["flight_time_min", "Flight time (est.)"],
+	# Five stacked units in a two-column grid: the ring with its number inside, the icon beneath,
+	# a short label below that, and the amber mark of any warning that moves it.
+	var rows := [["auw_g", "Weight"], ["thrust_to_weight", "Thrust : weight"],
+		["hover_throttle", "Hover"], ["flight_time_min", "Flight (est.)"],
 		["top_speed_kmh", "Top speed (est.)"]]
+	var grid := GridContainer.new()
+	grid.name = "ReadoutGrid"
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 8)
+	grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(grid)
 	for row in rows:
-		var pic := HBoxContainer.new()
-		pic.add_theme_constant_override("separation", 10)
-		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pic.add_child(ReadoutGauge.Icon.new(String(row[0])))
 		var box := VBoxContainer.new()
-		box.add_theme_constant_override("separation", 0)
+		box.add_theme_constant_override("separation", 2)
 		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var gauge := ReadoutGauge.new(String(row[0]))
+		var val := Label.new()
+		val.name = String(row[0])
+		val.set_anchors_preset(Control.PRESET_FULL_RECT)
+		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		val.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		val.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		val.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+		val.add_theme_color_override("font_color", INK)
+		gauge.add_child(val)
+		box.add_child(gauge)
+		box.add_child(ReadoutGauge.Icon.new(String(row[0])))
 		var cap := Label.new()
 		cap.text = String(row[1])
+		cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cap.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		cap.add_theme_color_override("font_color", INK_MUTED)
 		box.add_child(cap)
-		var val := Label.new()
-		val.name = String(row[0])
-		val.add_theme_font_size_override("font_size", 22)
-		val.add_theme_color_override("font_color", INK)
-		# The value and, beside it, the amber mark of any warning that moves it in the air.
-		var line := HBoxContainer.new()
-		line.add_theme_constant_override("separation", 10)
-		line.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		line.add_child(val)
 		var mark := Button.new()
 		mark.name = "mark_" + String(row[0])
 		mark.flat = true
 		mark.visible = false
 		mark.focus_mode = Control.FOCUS_NONE
 		mark.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		mark.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		mark.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		for st in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 			mark.add_theme_color_override(st, WARN_INK)
 		mark.pressed.connect(open_readout_warning.bind(String(row[0])))
-		line.add_child(mark)
-		box.add_child(line)
-		var gauge := ReadoutGauge.new(String(row[0]))
-		gauge.custom_minimum_size = Vector2(0, 3)
-		var gap := Control.new()
-		gap.custom_minimum_size = Vector2(0, 4)
-		gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		box.add_child(gap)
-		box.add_child(gauge)
+		box.add_child(mark)
 		gauges[row[0]] = gauge
 		mark_buttons[row[0]] = mark
 		var dl := Label.new()
 		dl.name = "delta_" + String(row[0])
 		dl.visible = false
+		dl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		dl.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		dl.add_theme_color_override("font_color", INK_MUTED)
 		box.add_child(dl)
 		var track := Control.new()
 		track.custom_minimum_size = Vector2(DELTA_TRACK_W, 3)
-		track.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		track.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		track.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		track.visible = false
 		var tick := ColorRect.new()
@@ -1239,8 +1242,7 @@ func _build_panel() -> void:
 		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		track.add_child(bar)
 		box.add_child(track)
-		pic.add_child(box)
-		panel.add_child(pic)
+		grid.add_child(box)
 		value_labels[row[0]] = val
 		delta_labels[row[0]] = dl
 		delta_bars[row[0]] = bar

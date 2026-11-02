@@ -1,8 +1,8 @@
 class_name ReadoutGauge
 extends Control
-## One readout's gauge: a thin track whose fill shows where the value sits in a stated range. The
-## fill fraction is a pure function (`fraction`), so it is tested without a window. Monochrome;
-## amber only when `warn` is set (a warning moves this readout).
+## One readout's gauge: a ring whose arc shows where the value sits in a stated range, the value
+## number inside it. The fill fraction is a pure function (`fraction`), so it is tested without a
+## window. Monochrome; amber only when `warn` is set (a warning moves this readout).
 
 ## key -> [low, high]: the value at the empty and the full end of the gauge. Chosen to bracket
 ## the classes from a 65 mm whoop to a 7" long-range build, so a 5" sits mid-gauge.
@@ -18,7 +18,10 @@ const INK_FAINT := Color(0.34, 0.34, 0.34)
 const ICON_PX := 14.0
 ## The icons are drawn on a 20-unit grid and scaled down to ICON_PX.
 const ART_UNITS := 20.0
-const TRACK_H := 3.0
+## The ring: its outer size, stroke and the point the arc starts from (12 o'clock, clockwise).
+const RING_PX := 58.0
+const RING_W := 3.0
+const RING_START := -PI / 2.0
 
 var key: String = ""
 var fill: float = 0.0
@@ -40,7 +43,8 @@ static func fraction(key_: String, value: Variant) -> float:
 func _init(key_: String = "") -> void:
 	key = key_
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	custom_minimum_size = Vector2(0, TRACK_H)
+	custom_minimum_size = Vector2(RING_PX, RING_PX)
+	size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 
 
 func set_value(value: Variant) -> void:
@@ -53,10 +57,22 @@ func set_warn(on: bool) -> void:
 	queue_redraw()
 
 
+## The arc's sweep (radians) for the current fill.
+func arc_sweep() -> float:
+	return fill * TAU
+
+
+## The ring's ink: amber only when a warning moves this readout.
+func ink_color() -> Color:
+	return LothalTheme.WARNING if warn else INK
+
+
 func _draw() -> void:
-	draw_rect(Rect2(0, 0, size.x, TRACK_H), INK_FAINT)
-	var ink := LothalTheme.WARNING if warn else INK
-	draw_rect(Rect2(0, 0, size.x * fill, TRACK_H), ink)
+	var c := size * 0.5
+	var r := minf(size.x, size.y) * 0.5 - RING_W * 0.5
+	draw_arc(c, r, 0.0, TAU, 48, INK_FAINT, RING_W, true)
+	if fill > 0.0:
+		draw_arc(c, r, RING_START, RING_START + arc_sweep(), 48, ink_color(), RING_W, true)
 
 
 ## The icon Control for a readout: drawn in code, ICON_PX, one stroke weight.
@@ -68,6 +84,7 @@ class Icon extends Control:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		custom_minimum_size = Vector2(ICON_PX, ICON_PX)
 		size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 
 	func _draw() -> void:
 		var c := Color(0.72, 0.72, 0.72)
