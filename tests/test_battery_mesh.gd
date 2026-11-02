@@ -23,6 +23,7 @@ static func run() -> Array:
 	results.append(_a_different_pack_is_a_different_block(catalog))
 	results.append(_the_cell_division_is_the_pack_s_cell_count(catalog))
 	results.append(_chemistry_changes_what_the_cells_are(catalog))
+	results.append_array(_a_designed_pack_draws_its_parallel_cells_too())
 	results.append(_leads_come_out_of_one_end(catalog))
 	results.append(_a_pack_with_no_dimensions_still_draws_something(catalog))
 	results.append(_lab_reports_the_fit_of_the_pack_it_just_fitted(catalog))
@@ -266,3 +267,32 @@ static func _count_cells_of_type(mesh: BatteryMesh, cylindrical: bool) -> int:
 		if is_cylinder == cylindrical:
 			count += 1
 	return count
+
+
+## A designed pack carries its wiring in `design.parallel`: 4S2P is eight cells, and the picture must
+## show eight, laid out as the designer's own dims say (series across the width, parallel groups
+## stacked), not only the four of the series string. Presets carry no `design` block and keep the
+## series-only count the tests above pin.
+static func _a_designed_pack_draws_its_parallel_cells_too() -> Array:
+	var out: Array = []
+	var lib := CellLibrary.load_default()
+	for cell_id in ["cell_molicel_p42a", "cell_lipo_1500"]:
+		var d := PackDesign.default_design(lib)
+		d.cell = lib.get_cell(cell_id)
+		d.series = 4
+		d.parallel = 2
+		var mesh := BatteryMesh.new()
+		mesh.rebuild(d.to_record())
+		var drawn := _count_named(mesh, "Cell_")
+		out.append(TestResult.new("a 4S2P %s pack draws 8 cells" % cell_id, drawn == 8 and mesh.cell_count == 8,
+			"drew %d, cell_count %d" % [drawn, mesh.cell_count]))
+		mesh.free()
+	var d1 := PackDesign.default_design(lib)
+	d1.cell = lib.get_cell("cell_molicel_p42a")
+	d1.series = 3
+	d1.parallel = 1
+	var m1 := BatteryMesh.new()
+	m1.rebuild(d1.to_record())
+	out.append(TestResult.new("a 3S1P designed pack still draws 3 cells", _count_named(m1, "Cell_") == 3, ""))
+	m1.free()
+	return out

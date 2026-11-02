@@ -72,8 +72,11 @@ const LEAD_HEIGHT_TO_HEIGHT_RATIO := 0.15
 ## AirframeModel to seat it and to measure its overhang, so the number the fit check uses is the
 ## number that was drawn.
 var size_m := Vector3.ZERO
-## How many cells are drawn, which is how many the pack has.
+## How many cells are drawn, which is how many the pack has (series x parallel for a designed pack).
 var cell_count := 0
+## The series string and the parallel groups. A shelf preset has no `design` block, so it is S x 1.
+var series_count := 1
+var parallel_count := 1
 
 
 ## Clears any previously generated pack and rebuilds it from `battery`. Safe to call on every
@@ -91,7 +94,11 @@ func rebuild(battery: Dictionary) -> void:
 	size_m = Build.battery_size_of(battery)
 
 	var specs: Dictionary = battery.get("specs", {})
-	cell_count = maxi(int(specs.get("cells", 1)), 1)
+	series_count = maxi(int(specs.get("cells", 1)), 1)
+	# A designed pack records its wiring in `design`; presets do not, and stay series-only.
+	var wiring: Dictionary = battery.get("design", {}) if battery.get("design") is Dictionary else {}
+	parallel_count = maxi(int(wiring.get("parallel", 1)), 1)
+	cell_count = series_count * parallel_count
 	var chemistry := String(specs.get("chemistry", "LiPo")).to_lower()
 
 	# Cylindrical cells are what "Li-ion" means in this catalog — 18650s and 21700s. Matched by
@@ -204,6 +211,10 @@ func _build_cylindrical_cells() -> void:
 ## How many cells across, chosen so the grid's proportions follow the pack's own. Clamped to the
 ## cell count at both ends so a 1S entry cannot ask for a fractional column.
 func _cell_columns() -> int:
+	# A designed pack's dims already put the series string across the width and the parallel groups
+	# up the height, so the grid is the wiring, not a guess from proportions.
+	if parallel_count > 1:
+		return series_count
 	if size_m.y <= 0.0:
 		return cell_count
 	var ideal := sqrt(float(cell_count) * size_m.x / size_m.y)
