@@ -44,18 +44,6 @@ const WARN_PIN_STEP := 24.0
 ## The readouts column: narrow, and flush to the right edge (the stage gets the room).
 const PANEL_W := 212.0
 const PANEL_EDGE := 12.0
-## The swap strip: cards along the bottom edge, between the Home link and the inspector's column.
-const STRIP_H := 160.0
-const STRIP_BOTTOM := 16.0
-const STRIP_LEFT := 152.0          ## past the Home link (32..140)
-const STRIP_MIN_W := 320.0
-const STRIP_PAD := 8.0
-const STRIP_SEP := 6
-const STRIP_CARD_W := 132.0
-const STRIP_CARD_H := 108.0
-## The drone's lowest edge stays this far (px) above the open strip.
-const STRIP_AIR := 12.0
-const STRIP_ICON_K := 0.62         ## the shelf's 98 px picture drawn at 61 px
 ## Readout delta bars: a delta of this size fills half the track.
 const DELTA_SCALE := {"auw_g": 150.0, "thrust_to_weight": 4.0, "hover_throttle": 0.2,
 	"flight_time_min": 3.0, "top_speed_kmh": 40.0}
@@ -124,9 +112,9 @@ var _tint_mats := {}
 var _pad_marker: MeshInstance3D
 var _last_click_ndc := Vector2(INF, INF)
 var _last_click_order: Array = []
-## Click to swap (Section 3).
-var strip: PanelContainer
-var strip_slot := ""
+## Click to swap (Section 3): the pick slot of the selected part ("" when none); its categories are
+## the ones the shelf swaps in place.
+var swap_slot := ""
 ## Section 8 warnings on the parts (WarningPins): the pins of the drone on screen, the panel's count,
 ## the readout marks, and which pins the inspector is showing.
 var warning_pins: Array = []
@@ -138,11 +126,6 @@ var _refusal := {}                    ## the last refused drop's pin, until the 
 var delta_labels: Dictionary = {}
 var delta_bars: Dictionary = {}
 var previewing := {}
-var _picker_list: HBoxContainer
-var _note_host: HBoxContainer
-var _picker_title: Label
-var _picker_rows: Array = []
-var _verdicts := {}
 var _motor_hulls := {}
 ## The drawn parts (the class seed the model was built for) and each swappable node as drawn.
 var _drawn_selection: Dictionary = {}
@@ -213,7 +196,6 @@ func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
 	_build_stage()
 	_build_panel()
 	_build_inspector()
-	_build_picker()
 	_build_frame_tools()
 	_build_shelf()
 	_build_file_bar()
@@ -268,8 +250,6 @@ func _after_change() -> void:
 	if selected != "" and not picks.addresses().has(selected):
 		selected = _plate_address_of(selected)
 	_update_tool_row()
-	if strip_slot != "":
-		open_picker(strip_slot)
 	if selected != "":
 		_fill_inspector()
 	refresh_shelf()
@@ -507,7 +487,7 @@ func hover_at(ndc: Vector2, screen_pos: Vector2 = Vector2.ZERO) -> String:
 	var hit := pick(ndc)
 	hovered = String(hit.get("address", ""))
 	hover_label.text = String(hit.get("name", ""))
-	hover_label.visible = hovered != ""
+	hover_label.visible = hovered != "" and not labels_hidden
 	hover_label.position = screen_pos + Vector2(16, 14)
 	callout_focus = callouts.at(screen_pos) if callouts != null and callouts.visible else ""
 	_apply_marks()
@@ -523,9 +503,9 @@ func select(address: String) -> void:
 	_update_tool_row()
 	var slot := PartSwap.slot_of(address)
 	if slot != "":
-		open_picker(slot)
+		open_slot(slot)
 	else:
-		close_picker()
+		close_slot()
 
 
 func clear_selection() -> void:
@@ -841,7 +821,6 @@ func _process(delta: float) -> void:
 	apply_camera()
 	step_panel(delta)
 	step_labels(delta)
-	place_picker()
 	_update_callouts_if_moved()
 
 
@@ -863,6 +842,9 @@ func set_labels_hidden(on: bool) -> void:
 	labels_hidden = on
 	if on:
 		label_alpha = 0.0
+	# The name tag by the cursor is a label too: hidden with the rest, back as the pointer moves.
+	if hover_label != null:
+		hover_label.visible = hovered != "" and not on
 	_idle_s = 0.0
 	_apply_label_alpha()
 
@@ -1441,7 +1423,7 @@ func open_design(file_name: String) -> Dictionary:
 		return r
 	session = r["session"]
 	design_name = String(r["name"]) if String(r["name"]) != "" else file_name.get_basename()
-	close_picker()
+	close_slot()
 	set_frame_tool("")
 	select("")
 	_after_change()
@@ -1910,315 +1892,54 @@ func _notification(what: int) -> void:
 				if is_instance_valid(proxy) and (proxy as Node).get_parent() == null:
 					(proxy as Node).free()
 
-
 # ---------------------------------------------------------------------------
-# The swap strip (Section 3): a horizontally scrolling row of small cards docked at the bottom
+# Swapping from the side panel (Section 3): a click on a part opens its category in the shelf
 # ---------------------------------------------------------------------------
 
-func _build_picker() -> void:
-	strip = PanelContainer.new()
-	strip.name = "SwapStrip"
-	strip.visible = false
-	strip.mouse_filter = Control.MOUSE_FILTER_STOP
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.06, 0.06, 0.065, 0.96)
-	sb.border_color = INK_FAINT
-	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(6)
-	sb.set_content_margin_all(STRIP_PAD)
-	strip.add_theme_stylebox_override("panel", sb)
-	add_child(strip)
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 4)
-	strip.add_child(vb)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 12)
-	vb.add_child(head)
-	_picker_title = Label.new()
-	_picker_title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
-	_picker_title.add_theme_color_override("font_color", INK)
-	head.add_child(_picker_title)
-	_note_host = HBoxContainer.new()
-	_note_host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(_note_host)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
-	vb.add_child(row)
-	row.add_child(_arrow("‹", -1))
-	var scroll := ScrollContainer.new()
-	scroll.name = "Scroll"
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-	# Exactly as wide as the whole cards it shows (see `_layout_from`), centred in the row: the
-	# leftover is padding, so no card is ever cut by the strip's edge.
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_SHRINK_CENTER
-	scroll.custom_minimum_size = Vector2(200.0, STRIP_CARD_H)
-	row.add_child(scroll)
-	row.add_child(_arrow("›", 1))
-	_picker_list = HBoxContainer.new()
-	_picker_list.add_theme_constant_override("separation", STRIP_SEP)
-	scroll.add_child(_picker_list)
-	scroll.get_h_scroll_bar().value_changed.connect(_on_strip_scrolled)
-
-
-func _arrow(glyph: String, dir: int) -> Button:
-	var b := Button.new()
-	b.text = glyph
-	b.flat = true
-	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(24, 0)
-	for state in ["normal", "hover", "pressed", "disabled"]:
-		b.add_theme_stylebox_override(state, StyleBoxEmpty.new())
-	b.add_theme_font_size_override("font_size", 22)
-	b.add_theme_color_override("font_color", INK_MUTED)
-	b.add_theme_color_override("font_hover_color", INK)
-	b.pressed.connect(func(): scroll_strip(dir))
-	return b
-
-
-## Pages the strip by three cards (the arrow buttons; the wheel and a drag move it a card at a time).
-func scroll_strip(dir: int) -> void:
-	var spans := _item_spans()
-	_layout_from(_clamp_first(_first_for(float(_picker_scroll().scroll_horizontal), spans) + dir * 3, spans), spans)
-
-
-## Opens the strip for a pick slot ("battery", "motor", "stack", ...): every catalog alternative as
-## a card, the fitted one marked, misfits disabled with their reason.
-func open_picker(slot: String) -> void:
+## Opens the shelf on a pick slot ("battery", "motor", "stack", ...): the Parts panel opens if it
+## was closed, only that slot's categories are expanded, the fitted part is marked and scrolled to.
+## A click on a card then swaps it in (`click_card`); a hover previews it (`hover_card`).
+func open_slot(slot: String) -> void:
 	if not PartSwap.SLOTS.has(slot):
-		close_picker()
+		close_slot()
 		return
-	strip_slot = slot
-	_focus_row = -1
-	for c in _picker_list.get_children():
-		_picker_list.remove_child(c)
-		c.queue_free()
-	for c in _note_host.get_children():
-		_note_host.remove_child(c)
-		c.queue_free()
-	_picker_rows.clear()
-	_picker_title.text = "Swap  ·  %s" % PickRegistry.PART_NAMES.get(slot, slot)
-	var cats: Array = PartSwap.SLOTS[slot]
-	for cat in cats:
-		if cats.size() > 1:
-			var head := Label.new()
-			head.text = String(PartSwap.CATEGORY_NAMES.get(cat, cat)).to_upper()
-			head.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-			head.add_theme_color_override("font_color", INK_FAINT)
-			head.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			head.custom_minimum_size = Vector2(0, STRIP_CARD_H)
-			_picker_list.add_child(head)
-		for opt in PartSwap.options(session, _catalog, String(cat), _verdicts):
-			_add_row(opt)
-	strip.visible = true
-	_make_room_for_picker()
-	place_picker()
-	var fitted := _picker_rows.map(func(r): return r["fitted"]).find(true)
-	reveal_row(maxi(fitted, 0))
+	swap_slot = slot
+	if shelf != null:
+		shelf.focus_slot(PartSwap.SLOTS[slot], _fitted_now(), _shelf_groups())
+		_update_room()
 
 
-## One card: the part's picture, its name, and its one key spec. The Button is the whole card.
-func _add_row(opt: Dictionary) -> void:
-	var cat := String(opt["category"])
-	var part: Dictionary = _catalog.get_part(String(opt["id"])) if String(opt["id"]) != "" else {}
-	var b := Button.new()
-	b.flat = true
-	b.focus_mode = Control.FOCUS_NONE
-	b.clip_contents = true
-	b.custom_minimum_size = Vector2(STRIP_CARD_W, STRIP_CARD_H)
-	b.disabled = not opt["ok"]
-	b.tooltip_text = String(opt["name"]) + "\n" + " · ".join(PackedStringArray(opt["numbers"]))
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(1, 1, 1, 0.07) if opt["fitted"] else Color(0, 0, 0, 0)
-	box.border_color = INK_MUTED if opt["fitted"] else Color(0, 0, 0, 0)
-	box.set_border_width_all(1)
-	box.set_corner_radius_all(6)
-	var hover := box.duplicate() as StyleBoxFlat
-	hover.bg_color = Color(1, 1, 1, 0.1)
-	b.add_theme_stylebox_override("normal", box)
-	b.add_theme_stylebox_override("hover", hover)
-	b.add_theme_stylebox_override("pressed", hover)
-	b.add_theme_stylebox_override("disabled", box)
-	var ink := INK_FAINT if b.disabled else (INK if opt["fitted"] else INK_MUTED)
-	var vb := VBoxContainer.new()
-	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_theme_constant_override("separation", 1)
-	vb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	vb.offset_left = 4
-	vb.offset_right = -4
-	vb.offset_top = 6
-	b.add_child(vb)
-	var pic := PartPicture.new(cat if String(opt["id"]) != "" else "none", part, ink, STRIP_ICON_K)
-	pic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	vb.add_child(pic)
-	var name_label := _caption(String(opt["name"]), ink)
-	# The whole name, over up to three lines: a card never ends a name in a cut.
-	name_label.clip_text = false
-	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	name_label.max_lines_visible = 3
-	vb.add_child(name_label)
-	# The one key spec under the name, never one the name already says (PartCaption.for_card).
-	var spec := PartCaption.for_card(part, cat, String(opt["name"]))
-	var spec_label := _caption(spec, INK_FAINT if b.disabled else INK_MUTED)
-	vb.add_child(spec_label)
-	var badge := Label.new()
-	badge.text = "FITTED" if opt["fitted"] else ("NO FIT" if b.disabled else "")
-	badge.visible = badge.text != ""
-	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	badge.add_theme_font_size_override("font_size", 10)
-	badge.add_theme_color_override("font_color", WARN_INK if b.disabled else INK)
-	badge.position = Vector2(6, 2)
-	b.add_child(badge)
-	var row := opt.duplicate()
-	row["button"] = b
-	row["name_label"] = name_label
-	row["caption"] = spec_label
-	row["badge"] = badge
-	row["reason_label"] = null
-	var i := _picker_rows.size()
-	b.mouse_entered.connect(func(): _show_note(i); hover_row(i))
-	b.mouse_exited.connect(func(): _show_note(_focus_row); clear_preview())
-	b.pressed.connect(func(): press_row(i))
-	# A dimmed card cannot be pressed, but a click on it still says why (kept until another card
-	# is clicked or the strip closes), so the reason never needs a hover.
-	b.gui_input.connect(func(ev: InputEvent):
-		if b.disabled and ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
-			focus_row(i))
-	_picker_list.add_child(b)
-	if not opt["ok"]:
-		# The misfit's one-line reason: shown beside the title while the pointer is on its card.
-		var why := Label.new()
-		why.text = String(opt["reason"])
-		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		why.max_lines_visible = 2
-		why.visible = false
-		why.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		why.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-		why.add_theme_color_override("font_color", WARN_INK)
-		why.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_note_host.add_child(why)
-		row["reason_label"] = why
-	_picker_rows.append(row)
-
-
-func _caption(text: String, color: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.clip_text = true
-	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	l.add_theme_color_override("font_color", color)
-	return l
-
-
-## The card whose reason is held on the header line (-1 none).
-var _focus_row := -1
-
-
-## Holds card i's reason on the header line without the pointer on it (a click on a dimmed card).
-func focus_row(i: int) -> void:
-	_focus_row = i
-	_show_note(i)
-
-
-## The reason line now showing on the strip's header ("" when none).
-func strip_reason() -> String:
-	for r in _picker_rows:
-		var why: Variant = r["reason_label"]
-		if why != null and (why as Label).visible:
-			return (why as Label).text
-	return ""
-
-
-## Shows only card i's reason line (-1 hides all).
-func _show_note(i: int) -> void:
-	for k in _picker_rows.size():
-		var why: Variant = _picker_rows[k]["reason_label"]
-		if why != null:
-			(why as Label).visible = k == i
-
-
-func close_picker() -> void:
-	strip_slot = ""
-	_focus_row = -1
-	strip.visible = false
+## No part is selected: the shelf stops swapping (what it had open stays open).
+func close_slot() -> void:
+	swap_slot = ""
 	clear_preview()
-	# The room the strip took goes back; the open shelf, if any, asks again for its own.
-	_give_back_room()
-	_update_room()
+	if shelf != null:
+		shelf.clear_focus(_shelf_groups())
 
 
-## The strip's cards, for tests and the seams below: {category, id, name, ok, reason, fitted,
-## deltas, button, name_label, caption, badge, reason_label}.
-func picker_rows() -> Array:
-	return _picker_rows
+## The selected slot's fitted part per category ({} for no slot).
+func _fitted_now() -> Dictionary:
+	var out := {}
+	if swap_slot == "":
+		return out
+	for cat in PartSwap.SLOTS[swap_slot]:
+		out[String(cat)] = String(session.selection.get(cat, ""))
+	return out
 
 
-## The pointer over a card: preview its readout deltas (nothing for a disabled card).
-func hover_row(i: int) -> Dictionary:
-	var row: Dictionary = _picker_rows[i]
-	reveal_row(i)
-	if (row["button"] as Button).disabled:
-		clear_preview()
+## A card in the shelf was clicked: swap it in place when a part is selected (the same session
+## swap as ever, so undo and redo work); {} when no part is selected or the card is another slot's.
+func click_card(category: String, part_id: String) -> Dictionary:
+	if swap_slot == "" or not (PartSwap.SLOTS[swap_slot] as Array).has(category):
 		return {}
-	return preview(String(row["category"]), String(row["id"]))
+	return choose(category, part_id)
 
 
-## A card chosen. A disabled card does nothing, and `choose` judges again regardless.
-func press_row(i: int) -> Dictionary:
-	var row: Dictionary = _picker_rows[i]
-	if (row["button"] as Button).disabled:
-		return {"ok": false, "reason": row["reason"]}
-	return choose(String(row["category"]), String(row["id"]))
-
-
-## Where the strip sits (px): along the bottom, right of the Home link (or of the open shelf) and
-## left of the inspector's column, so it covers none of the readouts, links or callouts.
-func strip_rect() -> Rect2:
-	var x := _strip_left()
-	var w := maxf(size.x - PickerPlace.COLUMN_W - x, STRIP_MIN_W)
-	return Rect2(x, size.y - STRIP_BOTTOM - STRIP_H, w, STRIP_H)
-
-
-func _strip_left() -> float:
-	if shelf_open():
-		return shelf.offset_left + PartsShelf.WIDTH + PickerPlace.GAP
-	return STRIP_LEFT
-
-
-## Docks the strip (each frame, so a resized window follows). When it has closed, gives back any
-## room the camera made (see `_update_room`).
-func place_picker() -> void:
-	if strip == null:
-		return
-	if not strip.visible:
-		if shelf == null or not shelf_open():
-			_give_back_room()
-		return
-	var r := strip_rect()
-	strip.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	strip.offset_left = r.position.x
-	strip.offset_top = r.position.y
-	strip.offset_right = r.end.x
-	strip.offset_bottom = r.end.y
-	strip.custom_minimum_size = r.size
-	_strip_avail = r.size.x - 2.0 * STRIP_PAD - 56.0
-	var spans := _item_spans()
-	_layout_from(_first_for(float(_picker_scroll().scroll_horizontal), spans), spans)
-	_finish_reveal()
-
-
-# ---------------------------------------------------------------------------
-# Swap strip placement and scrolling helpers (Section 3 fixes)
-# ---------------------------------------------------------------------------
-
-var _room_before := {}         ## the camera goal before the picker made room; {} when it made none
-var _room_goal := {}           ## the goal it set, to tell whether the user has moved since
-var _reveal_pending := -1      ## a row to reveal again while the list is being laid out
-var _reveal_frames := 0
+## The pointer is over a card: preview its readout deltas (nothing for a misfit or another slot).
+func hover_card(category: String, part_id: String) -> Dictionary:
+	if swap_slot == "" or not (PartSwap.SLOTS[swap_slot] as Array).has(category) or drag_kind != "":
+		return {}
+	return preview(category, part_id)
 
 
 ## The drone on screen now: the union of every drawn mesh's box, its 8 corners projected (px).
@@ -2230,57 +1951,29 @@ func _mesh_aabbs() -> Array:
 	return mesh_boxes().map(func(e): return e["box"])
 
 
-func _picker_sep() -> float:
-	return float(STRIP_SEP)
+var _room_before := {}         ## the camera goal before the shelf made room; {} when it made none
+var _room_goal := {}           ## the goal it set, to tell whether the user has moved since
 
 
-## The list's full width, summed from its children (the list's own cached minimum size is stale
-## until the deferred layout runs, and never refreshes headless).
-func _picker_content_w() -> float:
-	var x := 0.0
-	for c in _picker_list.get_children():
-		x += (c as Control).get_combined_minimum_size().x + _picker_sep()
-	return maxf(x - _picker_sep(), 0.0)
-
-
-func _picker_scroll() -> ScrollContainer:
-	return _picker_list.get_parent() as ScrollContainer
-
-
-## Makes room for the open shelf (see `_update_room`); the strip takes none, it sits below.
-func _make_room_for_picker() -> void:
-	_update_room()
-
-
-## Makes room for whatever is open beside the drone: the picker (on either side of it) and the shelf
-## (on the left). Backs the camera off and slides the drone into the space left free, when it does
-## not already fit; with nothing open, gives the room back. Not while zoomed in or framing a part.
+## Makes room for the open shelf (on the left): backs the camera off and slides the drone into the
+## space left free, when it does not already fit; with the shelf shut, gives the room back. Not
+## while zoomed in or framing a part.
 func _update_room() -> void:
 	if rig.is_zoomed_in() or size.x <= 0.0:
 		return
-	var strip_up := strip != null and strip.visible
-	if not shelf_open() and not strip_up:
+	if not shelf_open():
 		_give_back_room()
 		return
 	var view := PickerPlace.settled(rig)
 	var r := PickerPlace.screen_rect(view, _mesh_aabbs(), size)
 	var left := _left_edge()
-	var limit_y := strip_rect().position.y
-	var fits_side := not shelf_open() or (r.position.x >= left and r.end.x <= size.x - PickerPlace.COLUMN_W)
-	var fits_strip := not strip_up or r.end.y <= limit_y - STRIP_AIR
-	if fits_side and fits_strip:
+	if r.position.x >= left and r.end.x <= size.x - PickerPlace.COLUMN_W:
 		return
 	if _room_before.is_empty():
 		_room_before = {"target": rig.goal_target, "distance": rig.goal_distance}
-	var g := {}
-	if not fits_side:
-		g = PickerPlace.room_goal(rig, _mesh_aabbs(), size, 0.0, left)
-		rig.goal_target = g["target"]
-		rig.goal_distance = g["distance"]
-	if strip_up:
-		g = PickerPlace.lift_goal(rig, _mesh_aabbs(), size, limit_y, STRIP_AIR)
-		rig.goal_target = g["target"]
-		rig.goal_distance = g["distance"]
+	var g := PickerPlace.room_goal(rig, _mesh_aabbs(), size, 0.0, left)
+	rig.goal_target = g["target"]
+	rig.goal_distance = g["distance"]
 	_room_goal = g
 
 
@@ -2295,7 +1988,7 @@ func _left_edge() -> float:
 	return PickerPlace.MARGIN
 
 
-## The picker closed: the camera goes back, unless the user moved it since it made room.
+## The shelf closed: the camera goes back, unless the user moved it since it made room.
 func _give_back_room() -> void:
 	if _room_before.is_empty():
 		return
@@ -2305,129 +1998,6 @@ func _give_back_room() -> void:
 	_room_before = {}
 	_room_goal = {}
 
-
-## Card i's span in the strip (px from the list's left edge). From minimum sizes: an HBox with no
-## expanding children gives each child exactly its minimum width, so this is the layout itself, and
-## it holds before the deferred layout has run (and headless, where it never runs).
-func picker_row_span(i: int) -> Vector2:
-	var b := (_picker_rows[i] as Dictionary)["button"] as Button
-	var x := 0.0
-	for c in _picker_list.get_children():
-		var wc := (c as Control).get_combined_minimum_size().x
-		if c == b:
-			return Vector2(x, x + wc)
-		x += wc + _picker_sep()
-	return Vector2.ZERO
-
-
-## Scrolls the strip so card i shows whole (the least move; nothing if it already shows), and
-## again over the next few frames until the strip has its width.
-func reveal_row(i: int) -> void:
-	_reveal_pending = i
-	_reveal_frames = 3
-	_apply_reveal(i)
-
-
-func _apply_reveal(i: int) -> void:
-	if i < 0 or i >= _picker_rows.size():
-		return
-	var scroll := _picker_scroll()
-	var spans := _item_spans()
-	var item := _picker_list.get_children().find((_picker_rows[i] as Dictionary)["button"])
-	if item < 0 or spans.is_empty():
-		return
-	var first := _first_for(float(scroll.scroll_horizontal), spans)
-	if item < first:
-		first = item
-	elif item > _last_fit(first, spans):
-		# The nearest first card that still has this one whole in view.
-		first = item
-		while first > 0 and spans[item].y - spans[first - 1].x <= _strip_avail:
-			first -= 1
-	_layout_from(_clamp_first(first, spans), spans)
-
-
-# The strip scrolls by whole cards: it shows items first..last, as wide as exactly those, and the
-# row centres it, so the strip's edge never cuts a card or its caption. Everything below is
-# arithmetic on the cards' minimum widths, so it holds before the deferred layout and headless.
-
-var _strip_avail := 600.0       ## the width the scroll area may use (px)
-var _snapping := false
-var _laid_x := 0.0              ## the scroll offset `_layout_from` last set
-
-
-## Every child of the list (cards and slot headings) as [left, right] in the list's own px.
-func _item_spans() -> Array:
-	var out: Array = []
-	var x := 0.0
-	for c in _picker_list.get_children():
-		var w := (c as Control).get_combined_minimum_size().x
-		out.append(Vector2(x, x + w))
-		x += w + _picker_sep()
-	return out
-
-
-## The first item at or right of scroll offset `x` (the last one if none).
-func _first_for(x: float, spans: Array) -> int:
-	for i in spans.size():
-		if (spans[i] as Vector2).x >= x - 0.5:
-			return i
-	return maxi(spans.size() - 1, 0)
-
-
-## The last item that fits whole in the width available, starting from item `first`.
-func _last_fit(first: int, spans: Array) -> int:
-	var last := first
-	while last + 1 < spans.size() and spans[last + 1].y - spans[first].x <= _strip_avail:
-		last += 1
-	return last
-
-
-## `first`, kept no further right than the position where the list's end is already in view.
-func _clamp_first(first: int, spans: Array) -> int:
-	var kmax := maxi(spans.size() - 1, 0)
-	while kmax > 0 and _last_fit(kmax - 1, spans) >= spans.size() - 1:
-		kmax -= 1
-	return clampi(first, 0, kmax)
-
-
-## Shows items first..last: the scroll area as wide as exactly them, scrolled to the first.
-func _layout_from(first: int, spans: Array) -> void:
-	if spans.is_empty():
-		return
-	first = clampi(first, 0, spans.size() - 1)
-	var last := _last_fit(first, spans)
-	var scroll := _picker_scroll()
-	var w: float = spans[last].y - spans[first].x
-	var content: float = spans[spans.size() - 1].y
-	var bar := scroll.get_h_scroll_bar()
-	bar.max_value = content
-	bar.page = w
-	scroll.custom_minimum_size.x = w
-	_snapping = true
-	scroll.scroll_horizontal = int(roundf(spans[first].x))
-	_laid_x = float(scroll.scroll_horizontal)
-	_snapping = false
-
-
-## The wheel or a drag moved the strip: take it on to the next (or previous) whole card.
-func _on_strip_scrolled(v: float) -> void:
-	if _snapping or _picker_rows.is_empty():
-		return
-	var spans := _item_spans()
-	var first := _first_for(v, spans)
-	if v < _laid_x - 0.5 and first > 0 and (spans[first] as Vector2).x > v + 0.5:
-		first -= 1
-	_layout_from(_clamp_first(first, spans), spans)
-
-
-func _finish_reveal() -> void:
-	if _reveal_pending < 0:
-		return
-	_apply_reveal(_reveal_pending)
-	_reveal_frames -= 1
-	if _reveal_frames <= 0:
-		_reveal_pending = -1
 
 
 # ---------------------------------------------------------------------------
@@ -2446,6 +2016,9 @@ func _build_shelf() -> void:
 	shelf.judge = _shelf_judge
 	shelf.drag_started.connect(begin_shelf_drag)
 	shelf.toggled.connect(func(_open: bool): _update_room())
+	shelf.card_hovered.connect(hover_card)
+	shelf.card_clicked.connect(click_card)
+	shelf.card_unhovered.connect(func(): if drag_kind == "": clear_preview())
 	add_child(shelf)
 
 	_ghost_mat = StandardMaterial3D.new()
@@ -2492,7 +2065,27 @@ func _shelf_judge(category: String) -> Dictionary:
 
 func refresh_shelf() -> void:
 	if shelf != null:
-		shelf.fill(session.shelf(_catalog))
+		shelf.fitted = _fitted_now()
+		shelf.fill(_shelf_groups())
+
+
+## The shelf's groups (PartSnap.shelf: catalog parts that are not fitted). While a part is selected,
+## its categories also list the fitted part, so a swap can be seen against it and put back.
+func _shelf_groups() -> Array:
+	var groups := session.shelf(_catalog)
+	var fitted := _fitted_now()
+	for g in groups:
+		var cat := String(g["category"])
+		var id := String(fitted.get(cat, ""))
+		if id == "":
+			continue
+		var part := _catalog.get_part(id)
+		if part.is_empty():
+			continue
+		(g["parts"] as Array).append({"id": id, "name": String(part.get("name", id)),
+			"numbers": PartSwap.deciding_numbers(part, cat),
+			"caption": PartCaption.for_card(part, cat, String(part.get("name", id))), "part": part})
+	return groups
 
 
 ## A part picked up off the shelf; the drag follows the pointer until it is released.
@@ -2568,6 +2161,9 @@ func end_drag(screen_pos: Vector2) -> Dictionary:
 	var address := drag_address
 	cancel_drag()
 	_drag = ""
+	# Pressed and released on the same card while a part is selected: a click, which swaps it in.
+	if kind == "shelf" and swap_slot != "" and pointer_on_card(part, screen_pos):
+		return click_card(String(shelf.row_of(part)["category"]), part)
 	if kind == "shelf" and String(v.get("kind", "")) == "snap":
 		var done := session.drop(_catalog, part, drop_point(screen_pos), _mount_map)
 		_after_change()
@@ -2580,6 +2176,15 @@ func end_drag(screen_pos: Vector2) -> Dictionary:
 		_refusal = WarningPins.of_refusal(v, _refusal_mount(String(v["category"]), drop_point(screen_pos)))
 		refresh()
 	return v
+
+
+## Whether `screen_pos` (px, this control's own) is over the shelf card of `part_id`.
+func pointer_on_card(part_id: String, screen_pos: Vector2) -> bool:
+	var row := shelf.row_of(part_id)
+	if row.is_empty():
+		return false
+	var b := row["button"] as Button
+	return Rect2(_local_px(b.get_global_rect().position), b.size).has_point(screen_pos)
 
 
 ## The category's mount nearest the drop point (PartSnap's space); "" when it has none.
@@ -2775,8 +2380,6 @@ func callout_avoid_rects() -> Array:
 	if shelf.visible:
 		var sm := shelf.get_combined_minimum_size()
 		out.append(Rect2(shelf.offset_left, shelf.offset_top, maxf(PartsShelf.WIDTH, sm.x), maxf(shelf.size.y, sm.y)))
-	if strip.visible:
-		out.append(strip_rect())
 	return out
 
 
@@ -2785,7 +2388,7 @@ func callout_avoid_rects() -> Array:
 ## about 5 ms; a still frame costs a comparison.
 func _update_callouts_if_moved() -> void:
 	var inputs := [rig.yaw, rig.pitch, rig.distance, rig.target, size, hovered, selected, callout_focus,
-		drag_kind, _callout_version, strip.visible, strip.position, strip.size, shelf.visible,
+		drag_kind, _callout_version, shelf.visible,
 		shelf.open, shelf.size, file_bar.dialog_open(), tool_row.visible, tool_row.size, inspector.visible, inspector.size,
 		panel.size]
 	if inputs == _callout_inputs:

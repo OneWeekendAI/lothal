@@ -14,6 +14,11 @@ extends VBoxContainer
 
 signal drag_started(part_id: String)
 signal toggled(open: bool)
+## Swap mode (a part is selected on the drone): the pointer over a card, and off it again.
+signal card_hovered(category: String, part_id: String)
+signal card_unhovered
+## The "None" card pressed (the other cards are clicked through the drag, see DesignSpace.end_drag).
+signal card_clicked(category: String, part_id: String)
 
 const INK := Color(0.93, 0.93, 0.93)
 const INK_MUTED := Color(0.58, 0.58, 0.58)
@@ -27,6 +32,8 @@ const GAP := 4
 const CHIP_H := 18.0
 const TAG_W := 40.0
 const ROW_W := 218.0
+## The one amber of the shelf: a misfit's reason, as the rest of the app shows a warning.
+const WARN := Color(0.95, 0.72, 0.28)
 
 var open := false
 var header: Button
@@ -48,6 +55,13 @@ var _content_h := 0.0
 var _groups: Array = []
 ## Callable(category) -> {part_id: {ok, reason}}; null shows every part as fitting.
 var judge: Callable
+## Swap mode: the categories of the selected part's slot (a click on a card swaps it in place; a
+## card then only drags when the pointer leaves it), and the part fitted now in each ("" for none).
+var swap_cats: Array = []
+var fitted := {}
+## Where the list scrolls to, once the fitted part's card is laid out (px from the list's top).
+var scroll_target := -1.0
+var _scroll_pending := false
 
 
 func _init() -> void:
@@ -81,6 +95,7 @@ func _init() -> void:
 	add_child(more_cue)
 	scroll.get_v_scroll_bar().value_changed.connect(func(_v): _update_cue())
 	scroll.get_v_scroll_bar().changed.connect(_update_cue)
+	scroll.get_v_scroll_bar().changed.connect(_apply_scroll)
 	_update_header()
 
 
@@ -97,6 +112,32 @@ func set_open(want: bool) -> void:
 ## Shows `groups` ([{category, name, parts: [{id, name, numbers}]}]); keeps which are expanded.
 func fill(groups: Array) -> void:
 	_groups = groups
+	_rebuild()
+
+
+## A part was selected on the drone: opens the shelf if it was shut, expands exactly `cats`
+## (collapsing the rest), marks `fitted_ids` ({category: part id}) and scrolls to the first of them.
+func focus_slot(cats: Array, fitted_ids: Dictionary, groups: Array) -> void:
+	_groups = groups
+	swap_cats = cats.duplicate()
+	fitted = fitted_ids.duplicate()
+	expanded = {}
+	for c in cats:
+		expanded[String(c)] = true
+	if open:
+		_rebuild()
+	else:
+		set_open(true)
+
+
+## Nothing is selected: no swapping, no marks. What was expanded stays so.
+func clear_focus(groups: Array) -> void:
+	if swap_cats.is_empty() and fitted.is_empty():
+		return
+	_groups = groups
+	swap_cats = []
+	fitted = {}
+	scroll_target = -1.0
 	_rebuild()
 
 
@@ -122,6 +163,8 @@ func _rebuild() -> void:
 		list.remove_child(c)
 		c.queue_free()
 	rows.clear()
+	scroll_target = -1.0
+	_scroll_pending = false
 	if not open:
 		scroll.custom_minimum_size.y = 0.0
 		_content_h = 0.0
@@ -153,22 +196,49 @@ func _rebuild() -> void:
 		var misfits: Array = shown["misfits"]
 		# Among the parts that mount, the ones nearest this drone's own first (`rank`, the caller's).
 		fits.sort_custom(func(a, b): return float(a["v"].get("rank", 0.0)) < float(b["v"].get("rank", 0.0)))
-		for e in fits:
-			_add_row(cat, e["p"], e["v"])
+		var empty_view := fits.is_empty() and misfits.is_empty()
+		# Swapping a part that may be left off: a first card for "not fitted".
+		if swap_cats.has(cat) and ProjectSchema.OPTIONAL_CATEGORIES.has(cat):
+			fits.push_front({"part": {}, "p": {"id": "", "name": "None", "part": {}, "caption": ""},
+				"ok": true, "v": {"ok": true, "reason": "", "rank": 0.0}})
+		var base := h
+		for k in fits.size():
+			_add_row(cat, fits[k]["p"], fits[k]["v"], base + floorf(k / 2.0) * (CARD_H + GAP))
 		h += _card_rows(fits.size())
-		if fits.is_empty() and misfits.is_empty():
+		if empty_view:
 			h += _add_note("Nothing here fits" if int(shown["hidden"]) == 0 else "Nothing fits with these filters")
 		if int(shown["hidden"]) > 0 or int(shown["total_misfits"]) > 0:
 			h += _add_misfit_toggle(cat, int(shown["hidden"]), bool(show_misfits.get(cat, false)))
 		if not misfits.is_empty():
 			h += _add_note("Does not fit this drone")
-			for e in misfits:
-				_add_row(cat, e["p"], e["v"])
+			base = h
+			for k in misfits.size():
+				_add_row(cat, misfits[k]["p"], misfits[k]["v"], base + floorf(k / 2.0) * (CARD_H + GAP))
 			h += _card_rows(misfits.size())
 	_content_h = h
 	scroll.custom_minimum_size.y = minf(h, MAX_LIST_H)
 	scroll.scroll_vertical = mini(scroll.scroll_vertical, maxi(int(h - MAX_LIST_H), 0))
+	for r in rows:
+		if bool(r["fitted"]):
+			# A card already in view leaves the list at the top (the category's head and chips stay
+			# showing); a farther one comes up with a little of the way to it above.
+			var y := float(r["y"])
+			scroll_target = 0.0 if y + CARD_H <= MAX_LIST_H else y - 56.0
+			_scroll_pending = true
+			break
+	_apply_scroll()
 	_update_cue()
+
+
+## Scrolls to the fitted card once the list has the range for it (called again as the bar's range
+## changes, so a list that is laid out a frame later still arrives).
+func _apply_scroll() -> void:
+	if not _scroll_pending:
+		return
+	var bar := scroll.get_v_scroll_bar()
+	scroll.scroll_vertical = int(scroll_target)
+	if bar.page > 0.0:
+		_scroll_pending = false
 
 
 ## Set one chip: pressing the option already chosen clears it. Rebuilds.
@@ -298,21 +368,35 @@ func _card_rows(n: int) -> float:
 	return ceilf(n / 2.0) * (CARD_H + GAP)
 
 
-func _add_row(cat: String, part: Dictionary, v: Dictionary) -> void:
+func _add_row(cat: String, part: Dictionary, v: Dictionary, y: float = 0.0) -> void:
 	var ink: Color = INK if v["ok"] else INK_FAINT
-	var b := _flat_button("", LothalTheme.FONT_SIZE_SMALL, ink)
-	b.name = "Part_" + String(part["id"])
-	b.custom_minimum_size = Vector2(CARD_W, CARD_H)
-	b.mouse_default_cursor_shape = Control.CURSOR_DRAG
-	b.tooltip_text = String(part["name"]) if v["ok"] else String(v["reason"])
 	var id := String(part["id"])
-	b.button_down.connect(func(): drag_started.emit(id))
+	var is_fitted := swap_cats.has(cat) and fitted.has(cat) and String(fitted[cat]) == id
+	var b := _flat_button("", LothalTheme.FONT_SIZE_SMALL, ink)
+	b.name = "Part_" + id if id != "" else "Part_none_" + cat
+	b.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	b.mouse_default_cursor_shape = Control.CURSOR_DRAG if id != "" else Control.CURSOR_POINTING_HAND
+	b.tooltip_text = String(part["name"]) if v["ok"] else String(v["reason"])
+	if id != "":
+		b.button_down.connect(func(): drag_started.emit(id))
+	elif swap_cats.has(cat):
+		b.pressed.connect(func(): card_clicked.emit(cat, id))
+	if swap_cats.has(cat):
+		b.mouse_entered.connect(func(): card_hovered.emit(cat, id))
+		b.mouse_exited.connect(func(): card_unhovered.emit())
+		if is_fitted:
+			var mark := StyleBoxFlat.new()
+			mark.bg_color = Color(1, 1, 1, 0.07)
+			mark.border_color = INK_MUTED
+			mark.set_border_width_all(1)
+			mark.set_corner_radius_all(6)
+			b.add_theme_stylebox_override("normal", mark)
 	var col := VBoxContainer.new()
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	col.add_theme_constant_override("separation", 1)
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	var pic := PartPicture.new(cat, part.get("part", {}), ink)
+	var pic := PartPicture.new(cat if id != "" else "none", part.get("part", {}), ink)
 	pic.name = "Picture"
 	col.add_child(pic)
 	var name_label := _caption(String(part["name"]), ink, LothalTheme.FONT_SIZE_SMALL, "Name")
@@ -322,10 +406,28 @@ func _add_row(cat: String, part: Dictionary, v: Dictionary) -> void:
 	col.add_child(name_label)
 	col.add_child(_caption(String(part.get("caption", "")), INK_MUTED if v["ok"] else INK_FAINT,
 		LothalTheme.FONT_SIZE_SMALL - 1, "Spec"))
+	# A misfit, while a part is selected: its one-line reason on the card itself, no hover needed.
+	var why: Label = null
+	if swap_cats.has(cat) and not v["ok"]:
+		why = _caption(String(v["reason"]), WARN, LothalTheme.FONT_SIZE_SMALL - 2, "Reason")
+		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		why.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		why.max_lines_visible = 3
+		col.add_child(why)
 	b.add_child(col)
+	if is_fitted:
+		var badge := Label.new()
+		badge.name = "Fitted"
+		badge.text = "FITTED"
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		badge.add_theme_font_size_override("font_size", 9)
+		badge.add_theme_color_override("font_color", INK)
+		badge.position = Vector2(5, 2)
+		b.add_child(badge)
 	list.add_child(b)
 	rows.append({"category": cat, "id": id, "name": String(part["name"]), "ok": v["ok"],
-		"reason": String(v["reason"]), "button": b, "caption": String(part.get("caption", ""))})
+		"reason": String(v["reason"]), "button": b, "caption": String(part.get("caption", "")),
+		"fitted": is_fitted, "y": y, "reason_label": why})
 
 
 func _caption(text: String, ink: Color, font_px: int, node_name: String) -> Label:

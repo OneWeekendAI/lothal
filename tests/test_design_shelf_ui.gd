@@ -44,7 +44,7 @@ static func run() -> Array:
 	results.append_array(_test_cannot_fly(catalog))
 	results.append_array(_test_tool_button_mono(catalog))
 	results.append_array(_test_not_modelled_contrast(catalog))
-	results.append_array(_test_home_picker(catalog))
+	results.append_array(_test_home_selected_part(catalog))
 	results.append_array(_test_home_shelf(catalog))
 	results.append_array(_test_captions())
 	results.append_array(_test_cards(catalog))
@@ -374,11 +374,12 @@ static func _test_cannot_fly(catalog: PartsCatalog) -> Array:
 	ds.select("part/camera")
 	out.append(TestResult.new("the inspector still fills for another part with no build", ds.inspector_lines().size() >= 2,
 		"%s" % [ds.inspector_lines()]))
-	ds.open_picker("battery")
-	var pack_rows: Array = ds.picker_rows().filter(func(row): return String(row["category"]) == "battery")
-	out.append(TestResult.new("the battery picker opens on the empty slot and offers packs",
-		ds.strip.visible and ds.strip_slot == "battery" and pack_rows.size() >= 2 and pack_rows.size() == ds.picker_rows().size(),
-		"%d rows" % ds.picker_rows().size()))
+	ds.open_slot("battery")
+	ds.shelf.set_show_misfits("battery", true)
+	var pack_rows: Array = ds.shelf.rows.filter(func(row): return String(row["category"]) == "battery")
+	out.append(TestResult.new("the battery panel opens on the empty slot and offers packs",
+		ds.shelf.open and ds.swap_slot == "battery" and pack_rows.size() >= 2 and pack_rows.size() == ds.shelf.rows.size(),
+		"%d rows" % ds.shelf.rows.size()))
 	ds.undo()
 	out.append(TestResult.new("undo puts the pack back: the count returns to the seed's and the readouts return",
 		ds.issues_label.text == count_before and not _labels_text(ds).has(DASH), "%s" % [_labels_text(ds)]))
@@ -440,7 +441,7 @@ static func _overlap(a: Rect2, b: Rect2) -> float:
 	return i.size.x * i.size.y if a.intersects(b) else 0.0
 
 
-static func _test_home_picker(catalog: PartsCatalog) -> Array:
+static func _test_home_selected_part(catalog: PartsCatalog) -> Array:
 	var out: Array = []
 	var ds := _ds(catalog)
 	ds.select("part/battery")
@@ -449,14 +450,12 @@ static func _test_home_picker(catalog: PartsCatalog) -> Array:
 	ds.rig.snap()
 	ds.go_home()
 	ds.rig.snap()
-	ds.place_picker()
 	var drone := ds.drone_screen_rect()
-	var pr := ds.strip_rect()
-	var column := Rect2(SIZE.x - PickerPlace.COLUMN_W, 0.0, PickerPlace.COLUMN_W, SIZE.y)
-	out.append(TestResult.new("Home with the strip open frames the drone clear of the right column, and the strip clears it too",
-		ds.strip.visible and not pr.intersects(column) and drone.end.x <= SIZE.x - PickerPlace.COLUMN_W
+	var edge := ds.shelf.offset_left + PartsShelf.WIDTH
+	out.append(TestResult.new("Home with a part selected (its panel open) frames the drone clear of the panel and the right column",
+		ds.shelf_open() and drone.position.x >= edge and drone.end.x <= SIZE.x - PickerPlace.COLUMN_W
 		and is_equal_approx(ds.rig.goal_yaw, CameraRig.HOME_YAW),
-		"drone %s strip %s" % [drone, pr]))
+		"drone %s panel edge %.0f" % [drone, edge]))
 	_done(ds)
 	return out
 

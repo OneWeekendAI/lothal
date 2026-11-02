@@ -133,4 +133,29 @@ static func run() -> Array:
 	ds.step_labels(DesignSpace.IDLE_HIDE_S + 1.0)
 	results.append(TestResult.new("with the eye open, idle still hides them", _gone(ds), ""))
 	ds.free()
+	results.append_array(_hover_tag())
 	return results
+
+
+## The name tag that follows the cursor is a label too: the eye hides it and keeps it hidden.
+static func _hover_tag() -> Array:
+	var out: Array = []
+	var ds := _fresh()
+	var box := ds.picks.box_of("part/battery")
+	var ndc := ds.rig.project(box.get_center())
+	var px := Vector2((ndc.x + 1.0) * 0.5 * ds.size.x, (1.0 - ndc.y) * 0.5 * ds.size.y)
+	var on := ds.hover_at(ndc, px)
+	out.append(TestResult.new("seed: hovering a part shows its name tag by the cursor",
+		on != "" and ds.hover_label.visible and ds.hover_label.text != "", "'%s' %s" % [ds.hover_label.text, on]))
+	ds.toggle_labels()
+	out.append(TestResult.new("the eye hides the hover name tag at once", not ds.hover_label.visible, ""))
+	ds.hover_at(ndc, px + Vector2(3, 3))
+	out.append(TestResult.new("and moving the pointer over the part does not bring it back",
+		ds.hovered == on and not ds.hover_label.visible, ""))
+	ds.toggle_labels()
+	out.append(TestResult.new("showing the labels again shows the tag of the part still under the pointer",
+		ds.hover_label.visible and ds.hover_label.text != "", ""))
+	ds.hover_at(Vector2(-0.99, 0.99), Vector2(4, 4))
+	out.append(TestResult.new("and off a part there is no tag", not ds.hover_label.visible, ""))
+	ds.free()
+	return out

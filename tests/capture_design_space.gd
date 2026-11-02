@@ -60,10 +60,7 @@ func _init() -> void:
 	var preview: String = args[7] if args.size() > 7 else ""
 	if preview != "":
 		var kv := preview.split("=")
-		for i in ds.picker_rows().size():
-			var row: Dictionary = ds.picker_rows()[i]
-			if String(row["category"]) == kv[0] and String(row["id"]) == kv[1]:
-				print("preview %s" % ds.hover_row(i))
+		print("preview %s" % ds.hover_card(kv[0], kv[1]))
 	# A frame op (Section 4) on arm FL, 91 mm out along its axis (tests/test_frame_edits_ui.gd's
 	# point): "drill" drills a 3 mm hole there through the tool's own click path; "refuse" drills on
 	# the arm's first lightening hole, so the refusal line shows; "select" only selects the arm.
@@ -99,19 +96,6 @@ func _init() -> void:
 	for spec in chip_arg.split(",", false):
 		var bits := spec.split(":")
 		ds.shelf.set_filter(bits[0], bits[1], bits[2])
-	# Arg 11 "reason" clicks the dimmed card nearest the fitted one, so its reason line shows.
-	if args.size() > 11 and args[11] == "reason":
-		var rows := ds.picker_rows()
-		var fitted := rows.map(func(r): return r["fitted"]).find(true)
-		var pick := -1
-		for i in rows.size():
-			if not rows[i]["ok"] and (pick < 0 or absi(i - fitted) < absi(pick - fitted)):
-				pick = i
-		if pick >= 0:
-			var ev := InputEventMouseButton.new()
-			ev.button_index = MOUSE_BUTTON_LEFT
-			ev.pressed = true
-			(rows[pick]["button"] as Button).gui_input.emit(ev)
 	# Arg 12 "labels_off" presses the eye: every label, callout and warning pin hidden.
 	if args.size() > 12 and args[12] == "labels_off":
 		ds.toggle_labels()

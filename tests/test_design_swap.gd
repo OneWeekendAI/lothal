@@ -4,7 +4,7 @@ extends RefCounted
 ##
 ## ## The checks that could have passed while proving nothing
 ##
-## - ONE GENERATED TEST PER SLOT AND PART. Each one presses that part's row in the real picker and
+## - ONE GENERATED TEST PER SLOT AND PART. Each one clicks that part's card in the real side panel and
 ##   compares the panel's labels with a `Build.from_ids` the test makes ITSELF from the selection it
 ##   expects, not with the session's own figures (which would agree with anything the session did).
 ## - Before each case the session is put back to the default WITHOUT a refresh, so the labels still
@@ -13,8 +13,8 @@ extends RefCounted
 ## - Whether a case is refused is decided by the test from the direct build's own impossible
 ##   warnings, so a picker that refused nothing, or everything, fails the cases it got wrong.
 ## - The known misfits are found in the catalog, not hard-coded, and the test fails if none exists.
-## - A refused row is pressed through its BUTTON's pressed signal too, so a picker whose disabled
-##   flag was only cosmetic fails.
+## - A refused card is clicked through the stage's own `click_card` AND released on its button through
+##   `end_drag` (the live path), so a panel that only dimmed a misfit, without refusing it, fails.
 
 const CLASS_ID := "five_inch"
 const HARD := [&"motor_mount", &"prop_clearance", &"stack_mount", &"fc_stack_mount"]
@@ -94,12 +94,25 @@ static func _hard(b: Build) -> Array:
 	return b.warnings().filter(func(w): return w.severity == BuildWarning.Severity.IMPOSSIBLE and HARD.has(w.id))
 
 
+## The shelf's cards for the selected slot, misfits shown (they are hidden by default).
+static func _open(ds: DesignSpace, slot: String) -> void:
+	ds.open_slot(slot)
+	for cat in PartSwap.SLOTS[slot]:
+		ds.shelf.set_show_misfits(String(cat), true)
+
+
 static func _row_index(ds: DesignSpace, cat: String, id: String) -> int:
-	var rows := ds.picker_rows()
+	var rows := ds.shelf.rows
 	for i in rows.size():
 		if String(rows[i]["category"]) == cat and String(rows[i]["id"]) == id:
 			return i
 	return -1
+
+
+## Whether the card is drawn dimmed: its name in the faint ink.
+static func _dimmed(row: Dictionary) -> bool:
+	var name := ((row["button"] as Button).get_child(0) as Control).get_node("Name") as Label
+	return name.get_theme_color("font_color") == PartsShelf.INK_FAINT
 
 
 static func _test_slots_cover_categories(ds: DesignSpace) -> Array:
@@ -126,16 +139,16 @@ static func _test_case(ds: DesignSpace, catalog: PartsCatalog, home: Dictionary,
 	ds.session.selection = home.duplicate(true)
 	ds.session._undo.clear()
 	ds.session._redo.clear()
-	ds.open_picker(slot)
+	_open(ds, slot)
 	var i := _row_index(ds, cat, id)
 	if i < 0:
-		return TestResult.new(name, false, "no picker row")
+		return TestResult.new(name, false, "no card in the panel")
 	var want_sel := home.duplicate(true)
 	want_sel[cat] = id
 	var direct := _direct(catalog, want_sel)
 	var refuse := direct == null or not _hard(direct).is_empty()
 	var before := _labels(ds)
-	var v := ds.press_row(i)
+	var v := ds.click_card(cat, id)
 	if refuse:
 		var ok: bool = not v["ok"] and ds.session.selection == home and _labels(ds) == before \
 			and String(v["reason"]) != "" and not ds.session.can_undo()
@@ -179,26 +192,33 @@ static func _test_known_misfits(ds: DesignSpace, catalog: PartsCatalog, home: Di
 		var cat := String(case[1])
 		var part: Dictionary = case[2]
 		var sides: Array = case[3]
-		ds.open_picker(slot)
+		_open(ds, slot)
 		var i := _row_index(ds, cat, String(part["part_id"]))
-		var row: Dictionary = ds.picker_rows()[i] if i >= 0 else {}
+		var row: Dictionary = ds.shelf.rows[i] if i >= 0 else {}
 		var before := _labels(ds)
 		var reason := String(row.get("reason", ""))
 		var names_both: bool = sides.all(func(s): return reason.contains(String(s)))
-		results.append(TestResult.new("%s (%s) is listed disabled, its reason naming both sides" % [part["name"], cat],
-			i >= 0 and (row["button"] as Button).disabled and not row["ok"] and names_both
-			and row["reason_label"] != null and (row["reason_label"] as Label).text == reason,
+		results.append(TestResult.new("%s (%s) is listed dimmed, its reason naming both sides, on the card itself" % [part["name"], cat],
+			i >= 0 and _dimmed(row) and not row["ok"] and names_both
+			and row["reason_label"] != null and (row["reason_label"] as Label).text == reason
+			and (row["reason_label"] as Label).visible,
 			"reason '%s', wants %s" % [reason, sides]))
 		var direct := _direct(catalog, home.merged({cat: part["part_id"]}, true))
 		var first := PartSwap.first_sentence(_hard(direct)[0].message) if not _hard(direct).is_empty() else "?"
 		results.append(TestResult.new("and the reason is the blocking warning's first sentence, word for word",
 			reason == first, "'%s' vs '%s'" % [reason, first]))
+		var live := {}
 		if i >= 0:
-			(row["button"] as Button).pressed.emit()
+			# The live path: pressed on the card, released on it.
+			var b := row["button"] as Button
+			b.position = Vector2(10, 10)
+			b.size = Vector2(60, 60)
+			ds.begin_shelf_drag(String(part["part_id"]))
+			live = ds.end_drag(b.get_global_rect().get_center())
 		var v := ds.choose(cat, String(part["part_id"]))
-		results.append(TestResult.new("pressing it, or choosing it directly, applies nothing",
+		results.append(TestResult.new("clicking it, or choosing it directly, applies nothing",
 			not v["ok"] and ds.session.selection == home and _labels(ds) == before
-			and not ds.session.can_undo(), str(v)))
+			and not ds.session.can_undo() and not bool(live.get("ok", false)), str(v)))
 	return results
 
 
@@ -206,8 +226,8 @@ static func _test_two_swaps_in_a_row(ds: DesignSpace, catalog: PartsCatalog, hom
 	var results: Array = []
 	var sel := home.duplicate(true)
 	for id in ["battery_6s_1300", "battery_4s_1300"]:
-		ds.open_picker("battery")
-		ds.press_row(_row_index(ds, "battery", id))
+		_open(ds, "battery")
+		ds.click_card("battery", id)
 		sel["battery"] = id
 		results.append(TestResult.new("after swapping to %s the readouts are that drone's, not the last one's" % id,
 			_labels(ds) == _want_labels(_direct(catalog, sel)), str(_labels(ds))))
@@ -216,9 +236,8 @@ static func _test_two_swaps_in_a_row(ds: DesignSpace, catalog: PartsCatalog, hom
 
 static func _test_preview(ds: DesignSpace, catalog: PartsCatalog, home: Dictionary) -> Array:
 	var results: Array = []
-	ds.open_picker("battery")
-	var i := _row_index(ds, "battery", "battery_6s_1300")
-	var shown := ds.hover_row(i)
+	_open(ds, "battery")
+	var shown := ds.hover_card("battery", "battery_6s_1300")
 	var now := DesignSession.readouts_of(_direct(catalog, home))
 	var then := DesignSession.readouts_of(_direct(catalog, home.merged({"battery": "battery_6s_1300"}, true)))
 	var ok := shown.size() == KEYS.size()
@@ -240,14 +259,14 @@ static func _test_preview(ds: DesignSpace, catalog: PartsCatalog, home: Dictiona
 	results.append(TestResult.new("while previewing, the fitted drone's issue count and marks step aside",
 		not ds.issues_label.visible and not (ds.mark_buttons["thrust_to_weight"] as Button).visible, ""))
 	ds.clear_preview()
-	results.append(TestResult.new("leaving the row hides the deltas",
+	results.append(TestResult.new("leaving the card hides the deltas",
 		not (ds.delta_labels["auw_g"] as Label).visible, ""))
 	results.append(TestResult.new("and brings the issue count and the T:W mark back",
 		ds.issues_label.visible and (ds.mark_buttons["thrust_to_weight"] as Button).visible, ""))
-	ds.open_picker("motor")
-	var bad := ds.picker_rows().filter(func(r): return not r["ok"])
-	var none := bad.is_empty() or ds.hover_row(ds.picker_rows().find(bad[0])).is_empty()
-	results.append(TestResult.new("hovering a refused row previews nothing",
+	_open(ds, "motor")
+	var bad: Array = ds.shelf.rows.filter(func(r): return not r["ok"])
+	var none := bad.is_empty() or ds.hover_card(String(bad[0]["category"]), String(bad[0]["id"])).is_empty()
+	results.append(TestResult.new("hovering a refused card previews nothing",
 		not bad.is_empty() and none and not (ds.delta_labels["auw_g"] as Label).visible, ""))
 	# preview() judges on its own too, not only through the row's disabled flag.
 	var direct := {} if bad.is_empty() else ds.preview(String(bad[0]["category"]), String(bad[0]["id"]))
@@ -300,45 +319,42 @@ static func _test_undo_redo(ds: DesignSpace, catalog: PartsCatalog, home: Dictio
 
 static func _test_picker_beside_part(ds: DesignSpace, catalog: PartsCatalog) -> Array:
 	var results: Array = []
+	ds.shelf.set_open(false)
 	ds.select("part/battery")
-	var rows := ds.picker_rows()
+	ds.shelf.set_show_misfits("battery", true)
+	var rows := ds.shelf.rows
 	var packs := catalog.list_category("battery")
-	results.append(TestResult.new("selecting the battery opens its strip listing every catalog pack",
-		ds.strip.visible and ds.strip_slot == "battery" and rows.size() == packs.size(),
-		"%d rows, %d packs" % [rows.size(), packs.size()]))
+	results.append(TestResult.new("selecting the battery opens the Parts panel on every catalog pack, and only on packs",
+		ds.shelf.open and ds.swap_slot == "battery" and rows.size() == packs.size()
+		and ds.shelf.expanded == {"battery": true}, "%d rows, %d packs, %s" % [rows.size(), packs.size(), ds.shelf.expanded]))
 	var fitted := rows.filter(func(x): return x["fitted"])
 	results.append(TestResult.new("exactly one card is the fitted pack, and it says so",
 		fitted.size() == 1 and String(fitted[0]["id"]) == String(ds.session.selection["battery"])
-		and (fitted[0]["badge"] as Label).visible and (fitted[0]["badge"] as Label).text == "FITTED", ""))
+		and (fitted[0]["button"] as Button).find_child("Fitted", false, false) != null
+		and ((fitted[0]["button"] as Button).find_child("Fitted", false, false) as Label).text == "FITTED", ""))
 	var p := catalog.get_part("battery_6s_1300")
 	var row: Dictionary = rows[_row_index(ds, "battery", "battery_6s_1300")]
-	# The card shows the one key spec; the tooltip carries every deciding number.
-	var t := (row["button"] as Button).tooltip_text.get_slice("\n", 1)
-	results.append(TestResult.new("a card's tooltip carries its deciding numbers: cells, capacity, mass, C rating",
-		t.contains("6S") and t.contains("%d mAh" % int(p["specs"]["mah"])) and t.contains("%.0f g" % float(p["mass_g"]))
-		and t.contains("%dC" % int(p["specs"]["c_rating"])), t))
-	results.append(TestResult.new("and its caption names the part with one key spec",
-		(row["name_label"] as Label).text == String(p["name"]) and (row["caption"] as Label).text == PartCaption.key_spec(p, "battery")
-		and (row["caption"] as Label).text != (row["name_label"] as Label).text,
-		(row["caption"] as Label).text))
-	ds.place_picker()
-	var r := ds.strip_rect()
-	var readouts := Rect2(Vector2(ds.size.x - 300.0, 48.0), Vector2(260.0, 400.0))
-	results.append(TestResult.new("the strip is docked at the bottom, on screen, clear of the readouts and the Home link",
-		Rect2(Vector2.ZERO, ds.size).encloses(r) and not r.intersects(readouts)
-		and not r.intersects(Rect2(32, ds.size.y - 56, 108, 32)) and r.end.y > ds.size.y - 40.0
-		and Rect2(ds.strip.position, Vector2(1, 1)).position.is_equal_approx(r.position), "%s" % r))
+	var col := (row["button"] as Button).get_child(0) as Control
+	var name_label := col.get_node("Name") as Label
+	var spec_label := col.get_node("Spec") as Label
+	results.append(TestResult.new("a card names the part with one key spec under it",
+		name_label.text == String(p["name"]) and spec_label.text == PartCaption.for_card(p, "battery", String(p["name"]))
+		and spec_label.text != name_label.text and spec_label.text != "", spec_label.text))
 	ds.select("part/stack")
 	var cats := {}
-	for x in ds.picker_rows():
+	for x in ds.shelf.rows:
 		cats[x["category"]] = true
-	results.append(TestResult.new("the stack's picker lists flight controllers, ESCs and receivers",
-		cats.has("flight_controller") and cats.has("esc") and cats.has("receiver"), str(cats.keys())))
+	results.append(TestResult.new("the stack opens flight controllers, ESCs and receivers, and collapses the battery",
+		ds.shelf.expanded == {"flight_controller": true, "esc": true, "receiver": true}
+		and cats.has("flight_controller") and cats.has("esc") and cats.has("receiver") and not cats.has("battery"),
+		str(ds.shelf.expanded)))
 	ds.select("frame/plate/top")
-	results.append(TestResult.new("selecting a frame region closes the strip", not ds.strip.visible, ""))
+	results.append(TestResult.new("selecting a frame region stops swapping (no slot, no fitted mark)",
+		ds.swap_slot == "" and ds.shelf.swap_cats.is_empty() and ds.shelf.rows.all(func(r): return not r["fitted"]), ""))
 	ds.select("part/motor/FL")
 	ds.clear_selection()
-	results.append(TestResult.new("clearing the selection closes it", not ds.strip.visible, ""))
+	results.append(TestResult.new("clearing the selection stops it too, and a click on a card then swaps nothing",
+		ds.swap_slot == "" and ds.click_card("motor", String(ds.session.selection["motor"])).is_empty(), ""))
 	return results
 
 

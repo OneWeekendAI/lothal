@@ -196,7 +196,7 @@ static func run() -> Array:
 	ds = _ds(catalog)
 	var home_readouts := _readouts(ds)
 	ds.select("part/battery")
-	ds.open_picker("battery")
+	ds.open_slot("battery")
 	ds.open_open_dialog()
 	var btn: Button = null
 	for b in ds.file_bar.recent_buttons:
@@ -215,7 +215,7 @@ static func run() -> Array:
 	out.append(TestResult.new("the dialog closes, the name shows, the bar says Opened",
 		not ds.file_bar.dialog_open() and ds.file_bar.name_label.text == "z newer" and ds.file_bar.status_label.text == "Opened", ds.file_bar.name_label.text))
 	out.append(TestResult.new("a loaded design starts with an empty undo history", not ds.session.can_undo() and not ds.session.can_redo(), ""))
-	out.append(TestResult.new("the old strip and selection are gone after a load", not ds.strip.visible and ds.selected == "", ds.selected))
+	out.append(TestResult.new("the old swap mode and selection are gone after a load", ds.swap_slot == "" and ds.shelf.swap_cats.is_empty() and ds.selected == "", ds.selected))
 	ds.save_design()
 	out.append(TestResult.new("Save after an open writes back to the same file", DesignFile.list().has("z newer.lothaldesign") and ds.design_name == "z newer", ds.design_name))
 	_done(ds)
