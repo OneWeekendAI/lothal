@@ -70,6 +70,7 @@ static func run() -> Array:
 	results.append_array(_test_the_shape_is_plateau_then_knee())
 	results.append_array(_test_chemistry_changes_the_curve())
 	results.append_array(_test_the_oracles_have_not_moved())
+	results.append_array(_test_the_four_chemistries())
 
 	return results
 
@@ -365,6 +366,29 @@ static func _test_chemistry_changes_the_curve() -> Array:
 ## are quoted, which is a different claim and the one the datum change could have broken: Build's
 ## analytic layer solves at nominal voltage, exactly, and no state of charge anywhere can reach it.
 ## A tolerance-based oracle check can absorb a small error here; this cannot.
+static func _test_the_four_chemistries() -> Array:
+	var results: Array = []
+	var pack := BatteryModel.create(12.8, 0.015, 1500.0, 4, "LiFePO4")
+	pack.used_mah = 0.0
+	results.append(TestResult.new("LiFePO4 full pack rests at 3.65 V/cell",
+		absf(pack.resting_cell_v() - 3.65) < 1e-9,
+		"rests at %.4f V/cell" % pack.resting_cell_v()))
+	var known := BatteryModel.known_chemistries()
+	results.append(TestResult.new("the model knows exactly LiPo, LiPo HV, Li-ion and LiFePO4",
+		Array(known) == ["LiPo", "LiPo HV", "Li-ion", "LiFePO4"], str(known)))
+	for chemistry in known:
+		var soc := BatteryModel.soc_at_nominal(chemistry)
+		results.append(TestResult.new("every known chemistry's nominal sits on its own curve (%s)" % chemistry,
+			BatteryModel.is_known_chemistry(chemistry) and soc > 0.0 and soc < 1.0,
+			"soc at nominal %.3f" % soc))
+		var top := BatteryModel.cell_open_circuit_v(1.0, chemistry)
+		results.append(TestResult.new("%s full cell equals its max_cell_v" % chemistry,
+			absf(top - BatteryModel.max_cell_v(chemistry)) < 1e-9, "%.3f vs %.3f" % [top, BatteryModel.max_cell_v(chemistry)]))
+	results.append(TestResult.new("an unknown chemistry is not known (runtime fallback to LiPo is separate)",
+		not BatteryModel.is_known_chemistry("Unobtainium"), ""))
+	return results
+
+
 static func _test_the_oracles_have_not_moved() -> Array:
 	var results: Array = []
 	var build := ReferenceBuild.build()

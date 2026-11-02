@@ -53,6 +53,8 @@ const BATTERIES_KEY := "batteries"
 const NOMINAL_V_PER_CELL := {
 	"LiPo": 3.70,
 	"Li-ion": 3.60,
+	"LiPo HV": 3.85,
+	"LiFePO4": 3.20,
 }
 
 ## Pre-registered from the shipped catalog before any custom pack was measured against them. See the

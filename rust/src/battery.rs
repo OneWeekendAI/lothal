@@ -56,10 +56,95 @@ const CURVES_LIION: [(f64, f64); 12] = [
 /// not values read off the curve — the two must agree, which test_battery_model.gd asserts.
 const NOMINAL_CELL_LIPO: f64 = 3.70;
 const NOMINAL_CELL_LIION: f64 = 3.60;
+const NOMINAL_CELL_LIPO_HV: f64 = 3.85;
+const NOMINAL_CELL_LIFEPO4: f64 = 3.20;
+
+/// LiPo HV (4.35 V full) resting curve, class-typical published figures for high-voltage
+/// pouch cells. Sits above the plain LiPo curve through the middle.
+const CURVES_LIPO_HV: [(f64, f64); 12] = [
+    (0.00, 3.30),
+    (0.05, 3.45),
+    (0.10, 3.55),
+    (0.20, 3.68),
+    (0.30, 3.76),
+    (0.40, 3.82),
+    (0.50, 3.87),
+    (0.60, 3.93),
+    (0.70, 4.00),
+    (0.80, 4.10),
+    (0.90, 4.22),
+    (1.00, 4.35),
+];
+
+/// LiFePO4 (2.5-3.65 V) resting curve, class-typical (A123 26650-style cells): a very flat
+/// plateau around 3.2-3.3 V between the knee and the top.
+const CURVES_LIFEPO4: [(f64, f64); 12] = [
+    (0.00, 2.80),
+    (0.05, 3.00),
+    (0.10, 3.15),
+    (0.20, 3.22),
+    (0.30, 3.25),
+    (0.40, 3.27),
+    (0.50, 3.28),
+    (0.60, 3.30),
+    (0.70, 3.32),
+    (0.80, 3.33),
+    (0.90, 3.40),
+    (1.00, 3.65),
+];
+
+/// The four chemistries the model knows, in display order.
+pub const KNOWN_CHEMISTRIES: [&str; 4] = ["LiPo", "LiPo HV", "Li-ion", "LiFePO4"];
+
+fn known_chemistry(chemistry: &str) -> bool {
+    KNOWN_CHEMISTRIES.contains(&chemistry)
+}
+
+/// Lowest per-cell voltage the chemistry should be discharged to under load (cutoff).
+fn min_cell_v(chemistry: &str) -> f64 {
+    match chemistry {
+        "Li-ion" | "LiFePO4" => 2.5,
+        _ => 3.0,
+    }
+}
+
+/// Full-charge per-cell voltage; equals the top knot of the curve.
+fn max_cell_v(chemistry: &str) -> f64 {
+    match chemistry {
+        "LiPo HV" => 4.35,
+        "LiFePO4" => 3.65,
+        _ => 4.2,
+    }
+}
+
+/// Class-typical maximum charge rate, in C. Conservative, label as ideal.
+fn max_charge_c(chemistry: &str) -> f64 {
+    match chemistry {
+        "Li-ion" => 0.5,
+        _ => 1.0,
+    }
+}
+
+/// Class-typical maximum cell temperature in degrees C.
+fn max_temp_c(_chemistry: &str) -> f64 {
+    60.0
+}
+
+/// Class-typical gravimetric energy density, Wh/kg, at cell level.
+fn typical_wh_per_kg(chemistry: &str) -> f64 {
+    match chemistry {
+        "LiPo HV" => 170.0,
+        "Li-ion" => 250.0,
+        "LiFePO4" => 110.0,
+        _ => 150.0,
+    }
+}
 
 fn curve(chemistry: &str) -> &'static [(f64, f64)] {
     match chemistry {
         "Li-ion" => &CURVES_LIION,
+        "LiPo HV" => &CURVES_LIPO_HV,
+        "LiFePO4" => &CURVES_LIFEPO4,
         _ => &CURVES_LIPO, // DEFAULT_CHEMISTRY, and the fallback for any unknown string
     }
 }
@@ -67,6 +152,8 @@ fn curve(chemistry: &str) -> &'static [(f64, f64)] {
 fn nominal_cell(chemistry: &str) -> f64 {
     match chemistry {
         "Li-ion" => NOMINAL_CELL_LIION,
+        "LiPo HV" => NOMINAL_CELL_LIPO_HV,
+        "LiFePO4" => NOMINAL_CELL_LIFEPO4,
         _ => NOMINAL_CELL_LIPO,
     }
 }
@@ -106,9 +193,10 @@ impl BatteryModel {
         };
         // Unknown chemistry falls back to LiPo: batteries.json is contributor-editable and a
         // typo must not silently delete the model and leave a flat baseline.
-        let chemistry = match chem.as_str() {
-            "LiPo" | "Li-ion" => chemistry,
-            _ => GString::from(DEFAULT_CHEMISTRY),
+        let chemistry = if known_chemistry(chem.as_str()) {
+            chemistry
+        } else {
+            GString::from(DEFAULT_CHEMISTRY)
         };
         Gd::from_object(Self {
             nominal_v,
@@ -118,6 +206,41 @@ impl BatteryModel {
             cells,
             chemistry,
         })
+    }
+
+    #[func]
+    pub fn is_known_chemistry(chemistry: GString) -> bool {
+        known_chemistry(&chemistry.to_string())
+    }
+
+    #[func]
+    pub fn known_chemistries() -> PackedStringArray {
+        KNOWN_CHEMISTRIES.iter().map(|c| GString::from(*c)).collect()
+    }
+
+    #[func]
+    pub fn min_cell_v(chemistry: GString) -> f64 {
+        min_cell_v(&chemistry.to_string())
+    }
+
+    #[func]
+    pub fn max_cell_v(chemistry: GString) -> f64 {
+        max_cell_v(&chemistry.to_string())
+    }
+
+    #[func]
+    pub fn max_charge_c(chemistry: GString) -> f64 {
+        max_charge_c(&chemistry.to_string())
+    }
+
+    #[func]
+    pub fn max_temp_c(chemistry: GString) -> f64 {
+        max_temp_c(&chemistry.to_string())
+    }
+
+    #[func]
+    pub fn typical_wh_per_kg(chemistry: GString) -> f64 {
+        typical_wh_per_kg(&chemistry.to_string())
     }
 
     /// Where the pack sits with nothing drawing from it. Falls as the pack empties, passing
@@ -215,5 +338,37 @@ impl BatteryModel {
     #[func]
     pub fn remaining_fraction(&self) -> f64 {
         (1.0 - self.used_mah / self.capacity_mah).clamp(0.0, 1.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL: [&str; 4] = ["LiPo", "LiPo HV", "Li-ion", "LiFePO4"];
+
+    #[test]
+    fn curves_monotonic_and_end_at_limits() {
+        for chem in ALL {
+            assert!(known_chemistry(chem), "{chem} should be known");
+            let c = curve(chem);
+            for w in c.windows(2) {
+                assert!(w[1].0 > w[0].0, "{chem}: soc knots must ascend");
+                assert!(w[1].1 >= w[0].1, "{chem}: voltage must not fall as soc rises");
+            }
+            assert_eq!(c[c.len() - 1].0, 1.0);
+            assert_eq!(c[c.len() - 1].1, max_cell_v(chem), "{chem}: full cell sits at its max");
+            assert!(c[0].1 >= min_cell_v(chem) - 0.3, "{chem}: empty knot near min");
+            let n = nominal_cell(chem);
+            assert!(n > c[0].1 && n < c[c.len() - 1].1, "{chem}: nominal on its curve");
+        }
+        assert!(!known_chemistry("Unobtainium"));
+    }
+
+    #[test]
+    fn match_arms_cover_all() {
+        assert_ne!(nominal_cell("LiFePO4"), nominal_cell("LiPo"));
+        assert_ne!(nominal_cell("LiPo HV"), nominal_cell("LiPo"));
+        assert_ne!(curve("LiFePO4")[5].1, curve("LiPo")[5].1);
     }
 }
