@@ -402,6 +402,8 @@ static func run(tree: SceneTree) -> Array:
 	# -----------------------------------------------------------------------
 	results.append_array(await _test_a_second_boot_writes_no_new_drone(tree))
 
+	results.append_array(await _pack_designer_top_bar_is_reachable(tree))
+
 	held.restore()
 	return results
 
@@ -2044,3 +2046,33 @@ static func _the_field_rooms_scrollbars_have_a_width(shell: GlassShell) -> TestR
 		rail_w >= FieldSystem.SCROLLBAR_WIDTH and panel_w >= FieldSystem.SCROLLBAR_WIDTH,
 		"rail bar %.1f px, panel bar %.1f px, against the %.1f px this room asks for" % [
 			rail_w, panel_w, FieldSystem.SCROLLBAR_WIDTH])
+
+
+## The pack designer pop-up's top bar: Back, name, My packs, Copy specs, Save as text, Save as new and
+## Save to shelf must all be laid out INSIDE the pop-up's window rect, visible, at the 1920 a builder
+## screenshots at and at the 1280 the app opens at. A button that exists but is clipped past the window
+## edge is the failure this catches (an `exists` check passes on it).
+static func _pack_designer_top_bar_is_reachable(tree: SceneTree) -> Array:
+	var out: Array = []
+	for sz in [Vector2i(1920, 1080), Vector2i(1280, 720)]:
+		var frame := SubViewport.new()
+		frame.size = sz
+		tree.root.add_child(frame)
+		var d := PackDesigner.new(PartsCatalog.load_default(), CellLibrary.load_default(),
+			DesignedPacks.new(), PackCharge.new(), null)
+		frame.add_child(d)
+		d.open_new()
+		for i in SETTLE_FRAMES:
+			await tree.process_frame
+		var win := d.window.get_global_rect()
+		var screen := Rect2(Vector2.ZERO, Vector2(sz))
+		var bad: Array = []
+		for b in [d.back_button, d.name_field, d.my_packs_button, d.copy_button, d.save_text_button,
+				d.save_as_button, d.save_button]:
+			var r: Rect2 = b.get_global_rect()
+			if not b.is_visible_in_tree() or r.size.x < 8.0 or not win.encloses(r) or not screen.encloses(r):
+				bad.append("%s %s in %s" % [b.name, r, win])
+		out.append(TestResult.new("pack designer top bar (Copy specs included) is inside the pop-up at %dx%d" % [sz.x, sz.y],
+			bad.is_empty(), str(bad)))
+		frame.queue_free()
+	return out
