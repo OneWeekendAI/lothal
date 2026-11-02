@@ -466,7 +466,7 @@ func _process(delta: float) -> void:
 
 
 ## Writes what this run took out of the pack back to the persistent store. Called when the room is
-## left rather than every frame — see BatteryBenchScreen.persist_pack_charge. Only the bench's own
+## left rather than every frame — see PackCharge. Only the bench's own
 ## pack: the yardstick's is not the user's.
 func persist_pack_charge() -> void:
 	if pack_charge != null:

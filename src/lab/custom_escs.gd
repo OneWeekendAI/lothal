@@ -112,7 +112,7 @@ static func id_for(name: String) -> String:
 
 ## The picker's board bucket, spelled the way escs.json spells it. A custom board lands in the
 ## shipped catalog's own filter bucket rather than in a bucket of one — the same reasoning
-## CustomBatteries.cell_class_for carries.
+## the retired custom-pack record carried.
 static func board_class_for(channels: int) -> String:
 	return "4-in-1" if channels == DEFAULT_CHANNELS else "%d-channel" % channels
 

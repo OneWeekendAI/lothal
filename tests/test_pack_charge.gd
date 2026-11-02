@@ -71,9 +71,6 @@ static func _test_every_room_shares_one_shelf() -> Array:
 	var results: Array = []
 	var shell := AppShell.new()
 
-	shell.show_battery_bench()
-	var bench_store := shell.battery_bench.pack_charge
-	shell.show_lab()
 	shell.show_bench()
 	var stand_store := shell.bench.pack_charge
 	shell.show_lab()
@@ -82,16 +79,16 @@ static func _test_every_room_shares_one_shelf() -> Array:
 	shell.show_lab()
 
 	results.append(TestResult.new(
-		"the two benches, the field and Lab all read and write ONE set of packs",
-		bench_store == shell.pack_charge and stand_store == shell.pack_charge
+		"the thrust bench, the field and Lab all read and write ONE set of packs",
+		stand_store == shell.pack_charge
 			and sim_store == shell.pack_charge and shell.lab.pack_charge == shell.pack_charge,
-		"one PackCharge instance across Lab, both benches and Sim"
+		"one PackCharge instance across Lab, the bench and Sim"
 	))
 
 	results.append(TestResult.new(
 		"walking through every room without running anything leaves nothing to save",
 		not shell.pack_charge.has_unsaved_changes(),
-		"has_unsaved_changes = %s after four room changes" % shell.pack_charge.has_unsaved_changes()
+		"has_unsaved_changes = %s after three room changes" % shell.pack_charge.has_unsaved_changes()
 	))
 
 	shell.free()
@@ -462,17 +459,12 @@ static func _test_a_bench_run_costs_charge_that_survives_the_app(catalog: PartsC
 	_clean()
 
 	var charge := PackCharge.new()
-	var bench := BatteryBenchScreen.new(catalog, ReferenceBuild.MOTOR_ID,
-		ReferenceBuild.PROPELLER_ID, PACK_A, charge)
-
-	bench.set_load_mode(BatteryBenchScreen.Load.PUNCH)
-	bench.set_running(true)
-	for _i in 80:
-		bench.advance(0.25)
-	var used_on_the_bench := bench.powertrain.battery.used_mah
-	bench.persist_pack_charge()
+	var design := PackDesign.from_record(
+		DesignedPacks.migrate_v1_record(catalog.get_part(PACK_A)), CellLibrary.load_default())
+	var bench_run := PackBench.discharge(design, 30.0, 1.0)
+	var used_on_the_bench := minf((bench_run["used_mah"] as PackedFloat64Array)[-1], 800.0)
+	charge.set_used_mah(PACK_A, used_on_the_bench)
 	charge.save(TEST_PATH)
-	bench.free()
 
 	results.append(TestResult.new(
 		"a bench run costs real charge, because a motor on a stand is drawing current",
@@ -492,15 +484,15 @@ static func _test_a_bench_run_costs_charge_that_survives_the_app(catalog: PartsC
 	# ...and a bench opened on that pack starts where the last run left off rather than on a
 	# freshly charged one. This is the assertion that a seeded-from-disk bench passes and a bench
 	# that always builds a full pack does not.
-	var second_bench := BatteryBenchScreen.new(catalog, ReferenceBuild.MOTOR_ID,
-		ReferenceBuild.PROPELLER_ID, PACK_A, after_restart)
+	var second_build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, PACK_A)
+	var second_model := second_build.battery_model()
+	after_restart.apply_to(PACK_A, second_model)
 	results.append(TestResult.new(
-		"the bench opens on the pack as it actually is, not on a freshly charged one",
-		absf(second_bench.powertrain.battery.used_mah - used_on_the_bench) < 1.0,
-		"bench opened at %.0f%% charge" % (
-			second_bench.powertrain.battery.remaining_fraction() * 100.0)
+		"a pack model opens as the pack actually is, not freshly charged",
+		absf(second_model.used_mah - used_on_the_bench) < 1.0,
+		"model opened at %.0f%% charge" % (second_model.remaining_fraction() * 100.0)
 	))
-	second_bench.free()
 
 	# Charging in the garage puts it back.
 	var capacity := float(catalog.get_part(PACK_A)["specs"]["mah"])

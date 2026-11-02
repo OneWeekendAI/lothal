@@ -49,7 +49,7 @@ extends Control
 ## precisely what sharing Powertrain exists to prevent.
 const PHYSICS_HZ := 1000.0
 ## High enough that a quarter-second step still runs at the full 1 kHz, for the same reason
-## BatteryBenchScreen's is: the screenshot tool drives this bench by hand in large steps.
+## the retired pack bench's was: the screenshot tool drives this bench by hand in large steps.
 const MAX_SUBSTEPS := 300
 
 ## Idle to full, one direction. The thrust stand sweeps up and back because it is judging a curve;
@@ -296,7 +296,7 @@ func _process(delta: float) -> void:
 
 
 ## Writes what this sweep took out of the pack back to the persistent store. Called when the room
-## is left rather than every frame — see BatteryBenchScreen.persist_pack_charge.
+## is left rather than every frame — see PackCharge.
 func persist_pack_charge() -> void:
 	if pack_charge != null:
 		pack_charge.record_from(battery_id, powertrain.battery)

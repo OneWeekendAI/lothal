@@ -25,7 +25,7 @@ extends CustomParts
 ## So a builder picks their IMU by name and enters the sample rate, and the noise floor follows.
 ##
 ## HOW THIS DIFFERS FROM THE BATTERY'S DERIVED RESISTANCE, and it is worth saying out loud because
-## the two look alike: CustomBatteries derives internal resistance from a fit against the shipped
+## the two look alike: the retired custom-pack form derived internal resistance from a fit against the shipped
 ## catalog's own representative figures, so it reproduces an assumption and proves nothing about a
 ## real pack. THIS derivation runs on published datasheet densities. It is not a self-consistency
 ## relationship — it is the same arithmetic the datasheet invites — and it is correspondingly more

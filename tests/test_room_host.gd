@@ -74,7 +74,6 @@ static func _test_every_room_opens_and_is_freed() -> Array:
 	# entry here is a visible omission rather than a test that quietly covers six of seven.
 	var doors := {
 		"bench": host.show_bench,
-		"battery_bench": host.show_battery_bench,
 		"esc_bench": host.show_esc_bench,
 		"frame_bench": host.show_frame_bench,
 		"studio": host.show_studio,
@@ -298,7 +297,7 @@ static func _test_returning_lands_on_the_system_you_left() -> Array:
 ## Adding to it is therefore a claim, and the claim is checked one assertion down: every id here
 ## must be a door RoomHost actually has, so a typo or a room that is later deleted fails rather
 ## than quietly excusing nothing.
-const INSPECTOR_DOORS := ["battery_bench", "bench", "esc_bench"]
+const INSPECTOR_DOORS := ["bench", "esc_bench"]
 
 ## And the rooms reached from the DOCK rather than from the menu or from an inspector — F10.
 ##
@@ -417,12 +416,16 @@ static func _test_the_room_menu_reaches_every_room() -> Array:
 		not RoomMenu.room_ids().has("esc_bench"),
 		"menu offers %s" % [RoomMenu.room_ids()]))
 
-	# And the pack bench, PW4's move, for the same reason again. Three rooms, three assertions: a
-	# failure has to name the bench that came back, and one shared assertion could not.
+	# And the pack bench is gone from RoomHost altogether (the pack designer pop-up replaced it): the
+	# menu may only offer rooms that are real doors.
+	var menu_ids: Array = RoomMenu.room_ids()
+	var stray: Array = []
+	for id in menu_ids:
+		if not host.has_method("show_" + String(id)):
+			stray.append(id)
 	results.append(TestResult.new(
-		"the Rooms menu no longer lists the pack bench",
-		not RoomMenu.room_ids().has("battery_bench"),
-		"menu offers %s" % [RoomMenu.room_ids()]))
+		"every Rooms menu entry is a door RoomHost has",
+		stray.is_empty(), "menu offers %s, no door for %s" % [menu_ids, stray]))
 
 	host.free()
 

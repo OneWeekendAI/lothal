@@ -634,11 +634,6 @@ func _build_rails() -> void:
 	# PartsCatalog.load_with_custom merges props before motors precisely so that resolves.
 	propeller_picker.custom_propellers_changed.connect(reload_catalog)
 
-	# A pack added or deleted needs the same rebuild, and it is the category where a stale screen
-	# would mislead most: the pack is usually the largest single mass in the build, so mass, CG and
-	# every hover-throttle figure hanging off them move with it.
-	battery_picker.custom_batteries_changed.connect(reload_catalog)
-
 	# The two halves of the stack. Neither rail cross-references anything else, so neither needs the
 	# ordering note the prop rail carries — but both reload for the same reason all six do: the
 	# categories are not independent on screen, and a build panel showing the aircraft from before a

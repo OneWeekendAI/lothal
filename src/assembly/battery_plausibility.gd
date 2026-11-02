@@ -4,7 +4,7 @@ extends RefCounted
 ##
 ## The custom-parts sibling to FramePlausibility and MotorPlausibility, and the same rules hold:
 ## nothing here blocks anything (labs-and-sim.md §2 warns and never blocks — the refusals are all
-## in CustomBatteries, where the alternative is silence), and every bound was PRE-REGISTERED
+## in DesignedPacks and CellLibrary, where the alternative is silence), and every bound was PRE-REGISTERED
 ## against the shipped catalog before it was run against any custom data.
 ##
 ## ---------------------------------------------------------------------------

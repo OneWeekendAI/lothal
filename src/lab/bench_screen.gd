@@ -293,7 +293,7 @@ func camera_transform() -> Transform3D:
 
 
 ## Writes what this run took out of the pack back to the persistent store. Called when the room
-## is left rather than every frame — see BatteryBenchScreen.persist_pack_charge.
+## is left rather than every frame — see PackCharge.
 func persist_pack_charge() -> void:
 	if pack_charge != null:
 		pack_charge.record_from(battery_id, powertrain.battery)

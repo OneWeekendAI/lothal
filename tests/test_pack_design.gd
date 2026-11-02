@@ -60,9 +60,9 @@ static func run() -> Array:
 	results.append_array(_harness_boundary(d))
 
 	var rec := d.to_record()
-	var scratch_doc := CustomBatteries.new()
+	var scratch_doc := DesignedPacks.new()
 	var problems := scratch_doc.add(rec)
-	results.append(_t("record passes the CustomBatteries refusals", problems.is_empty(), str(problems)))
+	results.append(_t("record passes the DesignedPacks refusals", problems.is_empty(), str(problems)))
 	results.append(_t("record is catalog-shaped",
 		rec.specs.cells == 4 and rec.catalog.connector == "XT60" and rec.catalog.cell_class == "4S"
 		and rec.mounting.attachment == "strap" and rec.category == "battery"
@@ -90,7 +90,7 @@ static func run() -> Array:
 		cback.cell.basis == "custom" and absf(float(cback.cell.specs.mah) - 3000.0) < 1e-9
 		and cback.series == 3 and cback.parallel == 2
 		and JSON.stringify(cback.to_record()) == JSON.stringify(crec)
-		and CustomBatteries.new().add(crec).is_empty(), ""))
+		and DesignedPacks.new().add(crec).is_empty(), ""))
 
 	var legacy := PackDesign.new()
 	legacy.name = "Typed"
@@ -118,7 +118,7 @@ static func run() -> Array:
 ## trunk resistance must still include it for a designed pack.
 static func _harness_boundary(d: PackDesign) -> Array:
 	var out: Array = []
-	var doc := CustomBatteries.new()
+	var doc := DesignedPacks.new()
 	var rec := d.to_record()
 	var problems := doc.add(rec)
 	if not problems.is_empty():

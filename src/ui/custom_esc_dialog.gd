@@ -50,7 +50,7 @@ func _init() -> void:
 	title = "New custom ESC"
 	ok_button_text = "Save ESC"
 	# `confirmed` rather than the OK button's `pressed`, and re-shown on a refusal — see
-	# _on_confirmed, and CustomBatteryDialog's copy of the same note for why there is no other way.
+	# _on_confirmed, and the retired pack dialog's copy of the same note for why there is no other way.
 	confirmed.connect(_on_confirmed)
 
 	var root := VBoxContainer.new()
@@ -128,7 +128,7 @@ func _refresh_implied() -> void:
 
 ## What the entered rating means across the whole board, as a string. Separate from the Label so a
 ## test can assert it without instantiating a Control — the same reasoning
-## CustomBatteryDialog.derived_text carries.
+## the retired pack dialog carried.
 func implied_text() -> String:
 	var channels := int(_channels.value)
 	var continuous := _continuous.value
@@ -162,7 +162,7 @@ func problems() -> Array[String]:
 
 ## Builds the record, asks CustomEscs to accept it, and writes the file. Returns the refusals —
 ## empty means it was saved. The document is RELOADED rather than held, for the reason
-## CustomBatteryDialog.submit gives: a stale copy is how one window silently loses another's part.
+## the retired pack dialog's submit gave: a stale copy is how one window silently loses another's part.
 func submit() -> Array[String]:
 	var document := CustomEscs.load_from()
 	var cell_index := _cell_range.selected
@@ -187,7 +187,7 @@ func submit() -> Array[String]:
 	return _last_problems
 
 
-## Save, and re-open the form if the record was refused. See CustomBatteryDialog._on_confirmed for
+## Save, and re-open the form if the record was refused. See the other dialogs' _on_confirmed for
 ## why the window has to be put back up rather than kept from closing.
 func _on_confirmed() -> void:
 	if not submit().is_empty():

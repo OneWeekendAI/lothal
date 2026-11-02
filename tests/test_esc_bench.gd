@@ -357,7 +357,7 @@ static func _test_it_is_a_room_of_its_own() -> Array:
 
 	results.append(TestResult.new(
 		"the ESC bench opens on the board chosen on Lab's rail, with no other room running",
-		shell.esc_bench != null and shell.bench == null and shell.battery_bench == null
+		shell.esc_bench != null and shell.bench == null
 			and shell.sim == null
 			and shell.esc_bench.current_build().esc["part_id"] == UNDERSIZED_ESC,
 		"testing %s" % shell.esc_bench.current_build().esc["name"]

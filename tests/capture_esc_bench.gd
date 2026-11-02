@@ -1,7 +1,7 @@
 extends SceneTree
 ## Dev tool, not a test: boots the real app shell, walks through to the ESC bench with a chosen
 ## board under the chosen motors, runs the sweep, and writes a PNG. The companion to
-## capture_battery_bench.gd, capture_bench.gd, capture_lab.gd and capture_frame.gd.
+## capture_bench.gd, capture_lab.gd and capture_frame.gd.
 ##
 ##   godot --script res://tests/capture_esc_bench.gd -- <out.png> [esc_id] [motor_id] [prop_id]
 ##
@@ -9,7 +9,7 @@ extends SceneTree
 ## have, so a headless run HANGS silently rather than failing.
 ##
 ## The sweep is driven by hand with the bench's own _process turned off, the way
-## capture_battery_bench.gd drives the discharge — not to compress time here (six seconds is not
+## the retired pack-bench capture drove the discharge — not to compress time here (six seconds is not
 ## long) but because with both driving it every step would be counted twice, the ramp would reach
 ## the top in three seconds, and the picture would look entirely plausible.
 ##

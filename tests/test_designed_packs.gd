@@ -84,27 +84,47 @@ static func _migration() -> Array:
 	return out
 
 
+## Figures of the three v1 fixture packs, FROZEN from the retired v1 custom-pack path (captured the
+## day before it was deleted): [AUW g, T/W, hover throttle, flight min, top km/h, R ohm, pack mass g].
+const V1_GOLDEN := {
+	"custom_shed_4s_1300": [477.480708465516, 12.1470876145751, 0.289249207812102,
+		4.1203447293119, 104.940833999123, 0.0113, 155.0],
+	"custom_long_range_6s": [944.980708465516, 13.0734172553998, 0.358017319318658,
+		9.20382996372665, 147.631172121907, 0.2345, 612.5],
+	"custom_whoop_1s": [327.030708465516, 1.10845859613891, 1.0,
+		0.0, 50.3259123243466, 0.0721, 9.5],
+}
+const V1_GOLDEN_SPECS := {
+	"custom_shed_4s_1300": {"c_rating": 95.0, "cells": 4.0, "chemistry": "LiPo", "height_mm": 27.0,
+		"internal_r_ohm": 0.0113, "length_mm": 77.0, "mah": 1300.0, "nominal_v": 14.8, "width_mm": 38.5},
+	"custom_long_range_6s": {"c_rating": 8.0, "cells": 6.0, "chemistry": "Li-ion", "height_mm": 44.0,
+		"internal_r_ohm": 0.2345, "length_mm": 80.0, "mah": 4200.0, "nominal_v": 21.6, "width_mm": 66.0},
+	"custom_whoop_1s": {"c_rating": 50.0, "cells": 1.0, "chemistry": "LiPo", "height_mm": 7.0,
+		"internal_r_ohm": 0.0721, "length_mm": 60.0, "mah": 450.0, "nominal_v": 3.7, "width_mm": 16.0},
+}
+
+
 static func _flies_identically() -> Array:
 	var out: Array = []
-	var path := _stage()
-	var v1 := PartsCatalog.load_default()
-	v1._merge_custom(path, CustomBatteries.load_from(path))
-	var v2 := PartsCatalog.load_with_custom(path)
+	var v2 := PartsCatalog.load_with_custom(_stage())
 	var bad := ""
 	for id in CHAIN_IDS:
-		var a := Build.from_ids(v1, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
-			ReferenceBuild.PROPELLER_ID, id)
 		var b := Build.from_ids(v2, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
 			ReferenceBuild.PROPELLER_ID, id)
-		var fa: Array = [a.all_up_weight_g(), a.thrust_to_weight(), a.hover_throttle(),
-			a.flight_time_min(), a.top_speed_kmh(), float(a.battery.specs.internal_r_ohm),
-			float(a.battery.mass_g)]
 		var fb: Array = [b.all_up_weight_g(), b.thrust_to_weight(), b.hover_throttle(),
 			b.flight_time_min(), b.top_speed_kmh(), float(b.battery.specs.internal_r_ohm),
 			float(b.battery.mass_g)]
-		if JSON.stringify(fa) != JSON.stringify(fb) or JSON.stringify(a.battery.specs) != JSON.stringify(b.battery.specs):
-			bad += " %s" % id
-	out.append(_t("migrated pack flies identically (v1 path vs v2 path)", bad == "", bad))
+		var gold: Array = V1_GOLDEN[id]
+		for k in gold.size():
+			if absf(float(fb[k]) - float(gold[k])) > 1e-9 * maxf(absf(float(gold[k])), 1.0):
+				bad += " %s[%d] %s vs %s" % [id, k, fb[k], gold[k]]
+		var want: Dictionary = V1_GOLDEN_SPECS[id]
+		for key in want:
+			if absf(float(b.battery.specs.get(key, -1)) - float(want[key])) > 1e-9 and String(key) != "chemistry":
+				bad += " %s.%s" % [id, key]
+		if String(b.battery.specs.get("chemistry", "")) != String(want["chemistry"]):
+			bad += " %s.chemistry" % id
+	out.append(_t("migrated pack flies as the v1 path did (frozen golden table)", bad == "", bad))
 	out.append(_t("the merged catalog carries the migrated packs",
 		v2.get_part("custom_shed_4s_1300").has("design"), ""))
 	return out

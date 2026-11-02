@@ -568,8 +568,6 @@ func _ready() -> void:
 	# The pack sheet sits in the Pack tab's own scroll, under the charger; its inner scroll had no
 	# height there and folded the spec rows to nothing. The tab scrolls; the sheet takes its rows.
 	lab.battery_details.fit_to_content()
-	# Under the charger the ten rows push the bench button off a 1280x720 window; see the method.
-	lab.battery_details.put_bench_button_first()
 	# The "class-typical defaults" paragraph is the `~` on the Harness page's numbers.
 	lab.harness_panel.set_caption_visible(false)
 	lab.charge_panel.set_note_visible(false)
@@ -1265,11 +1263,6 @@ func _build_blade_room() -> void:
 	# tests — the move P10f named and left. Through the same `_open_room` as every other room, so
 	# the lifecycle stays RoomHost's and there is no second construction path.
 	lab.esc_details.esc_bench_requested.connect(func() -> void: _open_room("esc_bench"))
-	# The pack bench, the third and the last one this menu had that tests a component (PW4). Its
-	# panel did not change owner — Pack was already Power's — but the ESC's did, and a Power system
-	# that reaches its ESC bench from an inspector while its pack bench is still in a global menu
-	# would be two different answers to the same question inside one room.
-	lab.battery_details.pack_bench_requested.connect(func() -> void: _open_room("battery_bench"))
 	lab.motor_details.mount_stl_requested.connect(_on_mount_stl_requested)
 	lab.propeller_details.guard_stl_requested.connect(_on_guard_stl_requested)
 	lab.print_panel.export_requested.connect(_on_printed_export_requested)
@@ -2871,7 +2864,6 @@ func _layout_dock() -> void:
 func _open_room(room_id: String) -> void:
 	match room_id:
 		"bench": rooms.show_bench()
-		"battery_bench": rooms.show_battery_bench()
 		"esc_bench": rooms.show_esc_bench()
 		"frame_bench": rooms.show_frame_bench()
 		"studio": rooms.show_studio()

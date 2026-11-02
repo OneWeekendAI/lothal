@@ -37,8 +37,6 @@ var sim: Node:
 	get: return rooms.sim
 var bench: BenchScreen:
 	get: return rooms.bench
-var battery_bench: BatteryBenchScreen:
-	get: return rooms.battery_bench
 var esc_bench: EscBenchScreen:
 	get: return rooms.esc_bench
 var frame_bench: FrameBenchScreen:
@@ -52,7 +50,6 @@ var pack_charge: PackCharge:
 
 var _lab_button: Button
 var _bench_button: Button
-var _pack_bench_button: Button
 var _esc_bench_button: Button
 var _frame_bench_button: Button
 var _sim_button: Button
@@ -88,7 +85,6 @@ func _init() -> void:
 
 	_lab_button = _add_tab(bar, "Lab", show_lab)
 	_bench_button = _add_tab(bar, "Thrust", show_bench)
-	_pack_bench_button = _add_tab(bar, "Pack", show_battery_bench)
 	_esc_bench_button = _add_tab(bar, "ESC", show_esc_bench)
 	_frame_bench_button = _add_tab(bar, "Frame", show_frame_bench)
 	_sim_button = _add_tab(bar, "Sim", show_sim)
@@ -164,10 +160,6 @@ func show_bench() -> void:
 	rooms.show_bench()
 
 
-func show_battery_bench() -> void:
-	rooms.show_battery_bench()
-
-
 func show_esc_bench() -> void:
 	rooms.show_esc_bench()
 
@@ -187,7 +179,6 @@ func show_sim() -> void:
 func _refresh_tabs() -> void:
 	_lab_button.button_pressed = rooms.showing_lab()
 	_bench_button.button_pressed = rooms.bench != null
-	_pack_bench_button.button_pressed = rooms.battery_bench != null
 	_esc_bench_button.button_pressed = rooms.esc_bench != null
 	_frame_bench_button.button_pressed = rooms.frame_bench != null
 	_sim_button.button_pressed = rooms.sim != null

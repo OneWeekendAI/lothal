@@ -46,7 +46,7 @@ const PROCESSORS := ["F411", "F405", "F722", "H743"]
 
 ## The IMUs Lothal holds a density for, plus the escape hatch. Read off
 ## CustomFlightControllers rather than written again here, for the same reason
-## CustomBatteryDialog reads its chemistries off CustomBatteries: an option this dialog offered
+## the retired pack dialog read its chemistries off the model: an option this dialog offered
 ## that the model had no figure for would derive a noise floor from nothing.
 const OTHER_IMU := "Other (enter density)"
 

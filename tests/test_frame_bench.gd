@@ -473,7 +473,7 @@ static func screen_tests() -> Array:
 	shell.show_frame_bench()
 	results.append(TestResult.new(
 		"the frame bench opens on the frame chosen on Lab's rail, with no other room running",
-		shell.frame_bench != null and shell.bench == null and shell.battery_bench == null
+		shell.frame_bench != null and shell.bench == null
 			and shell.esc_bench == null and shell.sim == null
 			and shell.frame_bench.current_build().frame["part_id"] == LONG_FRAME,
 		"testing %s" % shell.frame_bench.current_build().frame["name"]

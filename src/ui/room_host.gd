@@ -46,7 +46,6 @@ var bench: BenchScreen = null
 ## in. Same argument as `bench` and `sim`: it holds a running Powertrain draining a real pack, and
 ## a pack that kept emptying while you were next door choosing propellers would be the worst kind
 ## of bug, since the only evidence would be a number that was wrong later.
-var battery_bench: BatteryBenchScreen = null
 ## The ESC bench — a board swept against the motors chosen — or null when it is not the room you
 ## are in. Same argument as the other two: it holds a running Powertrain drawing real current out
 ## of a real pack, and a sweep left running behind Lab would be flattening a battery to answer a
@@ -246,24 +245,6 @@ func show_bench() -> void:
 	_enter_room(bench)
 
 
-## Onto the battery bench, with the pack currently chosen on Lab's rail and the motors and props
-## that will be pulling on it. Built fresh every time, for the same reason the thrust stand is: a
-## bench you walked away from mid-run and came back to still under load would be a machine left
-## unattended, and here it would have been quietly flattening a battery the whole time.
-func show_battery_bench() -> void:
-	_close_rooms()
-	var selection := lab.selection()
-	_unplug_for(selection)
-	battery_bench = BatteryBenchScreen.new(
-		lab.catalog,
-		selection["motor"],
-		selection["propeller"],
-		selection["battery"],
-		pack_charge
-	)
-	_enter_room(battery_bench)
-
-
 ## Onto the ESC bench, with the board currently chosen on Lab's rail and the motors that will be
 ## pulling through it. Built fresh every time, for the same reason the other two benches are: a
 ## bench you walked away from mid-sweep and came back to still at full throttle would be a machine
@@ -413,11 +394,6 @@ func _close_rooms() -> void:
 		_host.remove_child(bench)
 		bench.free()
 		bench = null
-	if battery_bench != null:
-		battery_bench.persist_pack_charge()
-		_host.remove_child(battery_bench)
-		battery_bench.free()
-		battery_bench = null
 	if esc_bench != null:
 		esc_bench.persist_pack_charge()
 		_host.remove_child(esc_bench)

@@ -1,7 +1,7 @@
 extends SceneTree
 ## Dev tool, not a test: boots the real app shell, walks through to the frame bench with a chosen
 ## frame carrying chosen parts, runs the step, and writes a PNG. The companion to
-## capture_esc_bench.gd, capture_battery_bench.gd, capture_bench.gd and capture_lab.gd.
+## capture_esc_bench.gd, capture_bench.gd and capture_lab.gd.
 ##
 ##   godot --script res://tests/capture_frame_bench.gd -- <out.png> [frame_id] [axis] [motor_id] [prop_id] [pack_offset_mm]
 ##
