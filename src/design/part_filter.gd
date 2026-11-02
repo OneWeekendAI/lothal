@@ -14,7 +14,7 @@ const BAND_INF := 1.0e9
 static func chips(category: String) -> Array:
 	match category:
 		"battery":
-			return [_g("cells", "CELLS", [_n(1, "1S"), _n(2, "2S"), _n(3, "3S"), _n(4, "4S"), _n(5, "5S"), _n(6, "6S")])]
+			return [_g("cells", "CELLS", [_n(1, "1S"), _n(2, "2S"), _n(3, "3S"), _n(4, "4S"), _n(5, "5S"), _n(6, "6S"), _n(7, "7S"), _n(8, "8S")])]
 		"motor":
 			return [
 				_g("stator", "STATOR", [_b("s_small", "08-15", 0, 20), _b("s_mid", "21-23", 20, 24), _b("s_big", "25-28", 24, BAND_INF)]),

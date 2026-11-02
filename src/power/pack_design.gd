@@ -22,8 +22,8 @@ const LEGACY_BASIS := "legacy (typed figures)"
 const INTERCONNECT_WRAP_G_PER_CELL := 1.0
 
 ## Matches the shelf's CELLS chips.
-const S_RANGE := Vector2i(1, 6)
-const P_RANGE := Vector2i(1, 4)
+const S_RANGE := Vector2i(1, 8)
+const P_RANGE := Vector2i(1, 6)
 
 const PIGTAIL_CONDUCTORS := 2
 

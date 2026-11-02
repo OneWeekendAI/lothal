@@ -135,7 +135,19 @@ static func run() -> Array:
 	var bad := PackDesign.default_design(lib)
 	bad.series = 0
 	results.append(_t("series is clamped into the shelf's range", bad.derive().nominal_v > 0.0 and
-		PackDesign.S_RANGE == Vector2i(1, 6) and PackDesign.P_RANGE == Vector2i(1, 4), ""))
+		PackDesign.S_RANGE == Vector2i(1, 8) and PackDesign.P_RANGE == Vector2i(1, 6), ""))
+	var big := PackDesign.default_design(lib)
+	big.series = 8
+	big.parallel = 6
+	var bf := big.derive()
+	var over := PackDesign.default_design(lib)
+	over.series = 9
+	over.parallel = 7
+	var of := over.derive()
+	results.append(_t("8S6P derives (S 1-8, P 1-6) and anything beyond is clamped to it",
+		_close(float(bf.nominal_v), 8.0 * 3.7) and _close(float(bf.mah), 9000.0)
+		and int(big.to_record().specs.cells) == 8 and _close(float(of.nominal_v), float(bf.nominal_v))
+		and _close(float(of.mah), float(bf.mah)), "%s %s" % [bf.nominal_v, bf.mah]))
 	return results
 
 

@@ -18,7 +18,7 @@ const CHARGE := "user://test_pack_designer_charge.json"
 const BEFORE_NAMES := ["Back", "Cat_antenna", "Cat_battery", "Cat_camera", "Cat_esc",
 	"Cat_flight_controller", "Cat_guard", "Cat_motor", "Cat_propeller", "Cat_receiver", "Cat_vtx",
 	"Chip_cells_n1", "Chip_cells_n2", "Chip_cells_n3", "Chip_cells_n4", "Chip_cells_n5",
-	"Chip_cells_n6", "Home", "LabelsToggle", "ShelfHeader", "mark_auw_g", "mark_flight_time_min",
+	"Chip_cells_n6", "Chip_cells_n7", "Chip_cells_n8", "Home", "LabelsToggle", "ShelfHeader", "mark_auw_g", "mark_flight_time_min",
 	"mark_hover_throttle", "mark_thrust_to_weight", "mark_top_speed_kmh"]
 ## And its unnamed ("@Button@N") buttons.
 const BEFORE_UNNAMED := 15
@@ -69,6 +69,7 @@ static func run() -> Array:
 	results.append_array(_test_label(catalog))
 	results.append_array(_test_typed_fields(catalog))
 	results.append_array(_test_recharge(catalog))
+	results.append_array(_test_range(catalog))
 	results.append_array(_test_drain(catalog))
 	results.append_array(_test_my_packs(catalog))
 	results.append_array(_test_cell_voltage_and_knee(catalog))
@@ -336,6 +337,19 @@ static func _test_recharge(catalog: PartsCatalog) -> Array:
 		e.charge_line.text == "Charged to 100% \u2713" and e.charge_bar.value == 100.0,
 		e.charge_line.text))
 	e.free()
+	return out
+
+
+static func _test_range(catalog: PartsCatalog) -> Array:
+	var out: Array = []
+	var d := _designer(catalog)
+	d.open_new()
+	d.set_series(20)
+	d.set_parallel(20)
+	out.append(_t("the steppers reach 8S and 6P and stop there",
+		d.design.series == 8 and d.design.parallel == 6 and d.series_label.text == "8S"
+		and d.parallel_label.text == "6P" and float(d.figures().nominal_v) > 29.0, d.series_label.text))
+	d.free()
 	return out
 
 

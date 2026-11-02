@@ -22,7 +22,7 @@ const SIZE := Vector2(1280, 720)
 
 ## [category, group key, spec path, {option id: [lo, hi) band | exact string}]
 const CHIP_CASES := [
-	["battery", "cells", "specs.cells", {"n1": [1, 2], "n2": [2, 3], "n3": [3, 4], "n4": [4, 5], "n5": [5, 6], "n6": [6, 7]}],
+	["battery", "cells", "specs.cells", {"n1": [1, 2], "n2": [2, 3], "n3": [3, 4], "n4": [4, 5], "n5": [5, 6], "n6": [6, 7], "n7": [7, 8], "n8": [8, 9]}],
 	["motor", "stator", "specs.stator_diameter_mm", {"s_small": [0, 20], "s_mid": [20, 24], "s_big": [24, 1000]}],
 	["motor", "kv", "specs.kv", {"kv_low": [0, 1800], "kv_mid": [1800, 2500], "kv_high": [2500, 100000]}],
 	["propeller", "diameter", "specs.diameter_inches", {"d2": [1.5, 2.5], "d3": [2.5, 3.5], "d4": [3.5, 4.5], "d5": [4.5, 5.5],
