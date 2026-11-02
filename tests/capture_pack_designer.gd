@@ -5,7 +5,9 @@ extends SceneTree
 ##   godot --script res://tests/capture_pack_designer.gd -- <out.png> [WxH] [state]
 ##
 ## state: "" (the default pack, discharge tab) | "recharge" | "custom" | "preset" | "shelf" (no pop-up,
-## the shelf with its "+" tile) | "mypacks" | "6s2p"
+## the shelf with its "+" tile) | "mypacks" | "6s2p" | "8s" (an 8S2P pack) | "lead" (a 22 AWG pigtail on
+## a drone that pulls more than it carries) | "fit" (an oversize designed pack fitted in the Design Space)
+## | "drain" (a Discharge run on a saved pack) | "cellchips" (the shelf top: CELLS chips)
 ##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
@@ -52,7 +54,12 @@ func _init() -> void:
 	ds.shelf.toggle_category("battery")
 	for i in 10:
 		await process_frame
-	if state == "shelf":
+	if state == "cellchips":
+		# The battery list scrolled to its top: the CELLS chips, with 7S and 8S.
+		ds.shelf.scroll.scroll_vertical = 0
+		for i in 10:
+			await process_frame
+	elif state == "shelf":
 		# Scroll the battery list to its end so the tile shows.
 		ds.shelf.scroll.scroll_vertical = 100000
 		for i in 10:
@@ -69,6 +76,32 @@ func _init() -> void:
 				d.set_series(6)
 				d.set_parallel(2)
 				d.set_tab("recharge")
+			"8s":
+				d.set_series(8)
+				d.set_parallel(2)
+			"lead":
+				d.set_wiring("XT60", 22, 100.0)
+			"fit", "fit_issue":
+				d.set_cell("cell_molicel_p42a")
+				d.set_series(6)
+				d.set_parallel(4)
+				d.name_field.text = "Big 6S4P"
+				var big := d.save()
+				d.close()
+				for i in 6:
+					await process_frame
+				ds.shelf.set_open(false)
+				ds.choose("battery", big)
+				for i in 30:
+					await process_frame
+				root.get_texture().get_image().save_png(out_path)
+				print("saved %s" % ProjectSettings.globalize_path(out_path))
+				quit()
+				return
+			"drain":
+				d.name_field.text = "Drained"
+				d.save()
+				d.run_discharge_test()
 			"4s2p":
 				d.set_parallel(2)
 			"6s2p":
