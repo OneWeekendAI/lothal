@@ -70,6 +70,8 @@ static func run() -> Array:
 	results.append_array(_test_typed_fields(catalog))
 	results.append_array(_test_recharge(catalog))
 	results.append_array(_test_my_packs(catalog))
+	results.append_array(_test_cell_voltage_and_knee(catalog))
+	results.append_array(_test_delete(catalog))
 	results.append_array(_test_modal(catalog))
 	_wipe(SCRATCH)
 	_wipe(CHARGE)
@@ -363,4 +365,54 @@ static func _test_modal(catalog: PartsCatalog) -> Array:
 	if d != null:
 		d.close()
 	out.append(_t("closing removes the pop-up", ds.pack_designer == null))
+	return out
+
+
+## Audit A7 and A8: per-cell voltage under load in the bench row; the capacity chart turns red past
+## the knee (less than 20 % of the pack left).
+static func _test_cell_voltage_and_knee(catalog: PartsCatalog) -> Array:
+	var out: Array = []
+	var d := _designer(catalog)
+	d.open_new()
+	d.set_series(4)
+	var res: Dictionary = d.bench_result()
+	var per_cell := float(res.get("cell_v_load", 0.0))
+	var v0: float = (res.get("v_live", PackedFloat64Array()) as PackedFloat64Array)[0]
+	out.append(_t("bench row shows the per-cell voltage under load",
+		absf(per_cell - v0 / 4.0) < 1e-6 and per_cell > 2.5
+		and d.result_label.text.contains("%.2f V/cell" % per_cell),
+		"cell %s v0 %s row '%s'" % [per_cell, v0, d.result_label.text]))
+	var cap: Dictionary = {}
+	for c in d.charts.charts:
+		if String(c.get("title", "")) == "Capacity used":
+			cap = c
+	var mah := float(d.figures().get("mah", 0.0))
+	out.append(_t("capacity chart turns red past the knee at 20 % left",
+		cap.has("red_above") and absf(float(cap.get("red_above", 0.0)) - 0.8 * mah) < 1e-6,
+		"chart %s mah %s" % [cap.get("red_above", "none"), mah]))
+	out.append(_t("charge left reads 100 % at the start and under 20 % at the end",
+		PackCharts.left_pct(cap, 0) > 99.9 and PackCharts.left_pct(cap, 1000000) < 20.0
+		and PackCharts.is_red(cap, 1000000) and not PackCharts.is_red(cap, 0),
+		"start %s end %s" % [PackCharts.left_pct(cap, 0), PackCharts.left_pct(cap, 1000000)]))
+	d.free()
+	return out
+
+
+## Audit A17: Delete in My packs, behind a confirm step; presets cannot be deleted.
+static func _test_delete(catalog: PartsCatalog) -> Array:
+	var out: Array = []
+	var d := _designer(catalog)
+	d.open_new()
+	var id := d.save()
+	var preset_id := String(catalog.list_category("battery")[0].part_id)
+	out.append(_t("My packs delete asks first and removes nothing on the first press",
+		not d.request_delete(id) and d.store.records().size() == 1 and d.pending_delete == id,
+		"pending '%s'" % d.pending_delete))
+	out.append(_t("My packs delete removes the pack on confirm and persists it",
+		d.request_delete(id) and d.store.records().size() == 0 and d.pending_delete == ""
+		and DesignedPacks.load_from(SCRATCH).records().size() == 0))
+	out.append(_t("My packs delete refuses a shelf preset",
+		not d.request_delete(preset_id) and not d.request_delete(preset_id)
+		and not d.my_packs().filter(func(r): return r.id == preset_id).is_empty()))
+	d.free()
 	return out

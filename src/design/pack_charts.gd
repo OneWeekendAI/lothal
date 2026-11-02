@@ -7,10 +7,12 @@ extends Control
 
 const MAX_POINTS := 240
 const PAD_L := 40.0
-const PAD_R := 56.0
+const PAD_R := 68.0
 const PAD_T := 16.0
 const PAD_B := 4.0
 const GAP := 6.0
+## Below this fraction of charge left a capacity chart is "past the knee" and draws red.
+const KNEE_LEFT := 0.2
 
 ## Each chart: {title, x: PackedFloat64Array (seconds), y: PackedFloat64Array, y_min, y_max,
 ## unit, color, x_max (optional, seconds)}.
@@ -84,12 +86,54 @@ func _draw_chart(c: Dictionary, area: Rect2) -> void:
 		i += stride
 	if (upto % stride) != 0 or pts.size() == 0:
 		pts.append(_to_plot(plot, xs[upto], ys[upto], x_max, y_min, span_y))
-	if pts.size() >= 2:
-		draw_polyline(pts, c.get("color", LothalTheme.ACCENT), 1.6, true)
+	var col: Color = c.get("color", LothalTheme.ACCENT)
+	var has_knee := c.has("red_above")
+	if has_knee:
+		# The knee: a faint line where 20 % is left, and the trace red past it.
+		var ky := _to_plot(plot, 0.0, float(c.get("red_above")), x_max, y_min, span_y).y
+		draw_line(Vector2(plot.position.x, ky), Vector2(plot.end.x, ky), LothalTheme.DANGER.darkened(0.4), 1.0)
+		var prev := _to_plot(plot, xs[0], ys[0], x_max, y_min, span_y)
+		var j := stride
+		while j <= upto or j - stride < upto:
+			var jj := mini(j, upto)
+			var here := _to_plot(plot, xs[jj], ys[jj], x_max, y_min, span_y)
+			draw_line(prev, here, LothalTheme.DANGER if is_red(c, jj) else col, 1.6, true)
+			prev = here
+			if jj == upto:
+				break
+			j += stride
+	elif pts.size() >= 2:
+		draw_polyline(pts, col, 1.6, true)
 	var tip := pts[pts.size() - 1]
-	draw_circle(tip, 2.5, c.get("color", LothalTheme.ACCENT))
-	draw_string(font, Vector2(plot.end.x + 6.0, clampf(tip.y + 4.0, plot.position.y + 8.0, plot.end.y)),
-		"%s%s" % [_num(ys[upto]), unit], HORIZONTAL_ALIGNMENT_LEFT, PAD_R - 6.0, small, LothalTheme.TEXT_MAIN)
+	var tip_col := col
+	var label_col: Color = LothalTheme.TEXT_MAIN
+	if has_knee and is_red(c, upto):
+		tip_col = LothalTheme.DANGER
+		label_col = LothalTheme.DANGER
+	draw_circle(tip, 2.5, tip_col)
+	var ty := clampf(tip.y + 4.0, plot.position.y + 8.0, plot.end.y - (11.0 if has_knee else 0.0))
+	draw_string(font, Vector2(plot.end.x + 6.0, ty),
+		"%s%s" % [_num(ys[upto]), unit], HORIZONTAL_ALIGNMENT_LEFT, PAD_R - 6.0, small, label_col)
+	if has_knee:
+		draw_string(font, Vector2(plot.end.x + 6.0, ty + 11.0),
+			"%.0f%% left" % left_pct(c, upto), HORIZONTAL_ALIGNMENT_LEFT, PAD_R - 6.0, small, label_col)
+
+
+## Percent of the pack left at sample `i` of a capacity-used chart (needs the chart's "total").
+static func left_pct(c: Dictionary, i: int) -> float:
+	var ys: PackedFloat64Array = c.get("y", PackedFloat64Array())
+	var total := float(c.get("total", 0.0))
+	if ys.size() == 0 or total <= 0.0:
+		return 100.0
+	return clampf(100.0 * (1.0 - ys[clampi(i, 0, ys.size() - 1)] / total), 0.0, 100.0)
+
+
+## True when sample `i` of a chart that has a "red_above" level is past it.
+static func is_red(c: Dictionary, i: int) -> bool:
+	var ys: PackedFloat64Array = c.get("y", PackedFloat64Array())
+	if not c.has("red_above") or ys.size() == 0:
+		return false
+	return ys[clampi(i, 0, ys.size() - 1)] > float(c.get("red_above"))
 
 
 static func _to_plot(plot: Rect2, x: float, y: float, x_max: float, y_min: float, span_y: float) -> Vector2:

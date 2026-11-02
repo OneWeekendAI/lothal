@@ -70,6 +70,8 @@ static func _run_discharge(design: PackDesign, current_a: float, dt_s: float, th
 		"t": t, "v_live": v_live, "v_rest": v_rest, "cell_temp_c": temp, "used_mah": used,
 		"run_time_s": clock, "wh_delivered": wh, "peak_sag_v": sag, "stopped_by": stopped,
 		"current_a": current_a,
+		# A7: the voltage one series cell sits at under the load, at the start of the run.
+		"cell_v_load": (v_live[0] / float(lay.s)) if v_live.size() > 0 else 0.0,
 	}
 
 

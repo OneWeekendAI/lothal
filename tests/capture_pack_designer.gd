@@ -48,6 +48,8 @@ func _init() -> void:
 				d.set_series(6)
 				d.set_parallel(2)
 				d.set_tab("recharge")
+			"4s2p":
+				d.set_parallel(2)
 			"6s2p":
 				d.set_series(6)
 				d.set_parallel(2)
@@ -56,6 +58,7 @@ func _init() -> void:
 			"preset":
 				d.open_pack("battery_4s_1300")
 			"mypacks":
+				d.save()
 				d.my_packs_button.pressed.emit()
 			"drone":
 				d.set_discharge_mode("this_drone")

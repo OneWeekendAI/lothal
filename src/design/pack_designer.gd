@@ -46,6 +46,8 @@ var store: DesignedPacks
 var charge: PackCharge
 var build: Build
 ## Where the shelf reloads the saved packs from, and where the charge state is written.
+## The id armed for deletion by a first press (empty when none).
+var pending_delete := ""
 var store_path: String = CustomParts.SAVE_PATH
 var charge_path: String = PackCharge.SAVE_PATH
 
@@ -195,6 +197,26 @@ func _after_open() -> void:
 	my_packs_panel.visible = false
 	_sync_widgets()
 	_rederive()
+
+
+## A17: delete a saved pack. The first call for an id only arms it (returns false); the second call
+## for the same id deletes it and returns true. Shelf presets are never deletable.
+func request_delete(id: String) -> bool:
+	if id == "" or not PartsCatalog.is_custom(id):
+		pending_delete = ""
+		return false
+	if pending_delete != id:
+		pending_delete = id
+		return false
+	pending_delete = ""
+	if not store.remove(id):
+		return false
+	store.save(store_path)
+	if part_id == id:
+		open_new()
+	if my_packs_panel.visible:
+		_fill_my_packs()
+	return true
 
 
 ## Every pack on the shelf, presets included: [{id, name, kind: preset | saved | legacy}].
@@ -982,7 +1004,20 @@ func _fill_my_packs() -> void:
 		b.clip_text = true
 		var id := String(r["id"])
 		b.pressed.connect(func(): open_pack(id))
-		my_packs_list.add_child(b)
+		if kind == "preset":
+			my_packs_list.add_child(b)
+			continue
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var row := HBoxContainer.new()
+		row.add_child(b)
+		var del := Button.new()
+		del.name = "Delete_" + id
+		del.flat = true
+		del.text = "Sure?" if pending_delete == id else "Delete"
+		del.add_theme_color_override("font_color", LothalTheme.DANGER)
+		del.pressed.connect(func(): request_delete(id); _fill_my_packs())
+		row.add_child(del)
+		my_packs_list.add_child(row)
 
 
 func _toggle_custom() -> void:
@@ -1175,9 +1210,9 @@ func _refresh_bench() -> void:
 		var peak_t := 25.0
 		for x in _run.get("cell_temp_c", PackedFloat64Array()):
 			peak_t = maxf(peak_t, x)
-		result_label.text = "Runs %s to empty   ·   %.1f Wh   ·   sags %.1f V" % [
+		result_label.text = "Runs %s to empty   ·   %.1f Wh   ·   sags %.1f V   ·   %.2f V/cell loaded" % [
 			_duration(float(_run.get("run_time_s", 0.0))), float(_run.get("wh_delivered", 0.0)),
-			float(_run.get("peak_sag_v", 0.0))]
+			float(_run.get("peak_sag_v", 0.0)), float(_run.get("cell_v_load", 0.0))]
 		var mah := maxf(float(_figs.get("mah", 1.0)), 1.0)
 		charts.set_charts([
 			{"title": "Pack voltage", "x": t, "y": _run.get("v_live", PackedFloat64Array()),
@@ -1186,7 +1221,8 @@ func _refresh_bench() -> void:
 				"y_min": 20.0, "y_max": maxf(60.0, ceilf(peak_t / 10.0) * 10.0), "unit": " °C",
 				"color": LothalTheme.WARNING},
 			{"title": "Capacity used", "x": t, "y": _run.get("used_mah", PackedFloat64Array()),
-				"y_min": 0.0, "y_max": mah, "unit": " mAh", "color": LothalTheme.TEXT_MUTED},
+				"y_min": 0.0, "y_max": mah, "unit": " mAh", "color": LothalTheme.TEXT_MUTED,
+				"red_above": mah * (1.0 - PackCharts.KNEE_LEFT), "total": mah},
 		])
 	else:
 		var rt: PackedFloat64Array = _recharge.get("t", PackedFloat64Array())

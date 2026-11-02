@@ -1394,7 +1394,9 @@ static func _the_squeezed_list_is_still_a_list(shell: GlassShell) -> TestResult:
 	return TestResult.new(
 		"the list gives way only within its bounds, and the header and authoring row survive",
 		height <= PartFinder.LIST_HEIGHT and height >= PartFinder.LIST_HEIGHT_MIN
-			and finder.action_labels().size() == 2
+			# The battery shelf authors through the pack designer (the "+" tile), so its finder has no
+			# New/Delete row any more; the facets still must survive.
+			and finder.action_labels().size() == 0
 			and finder.facet_labels().size() == 4,
 		"the list is %.0f px (full %.0f, floor %.0f), %d facets and %d actions remain" % [
 			height, PartFinder.LIST_HEIGHT, PartFinder.LIST_HEIGHT_MIN,

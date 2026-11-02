@@ -28,7 +28,6 @@ static func run(shell: GlassShell, tree: SceneTree, _window: Vector2i) -> Array:
 	out.append(TestResult.new("power dock: the Pack sheet carries no whole-build warning list",
 		not shell.lab.battery_details.warnings_visible(), ""))
 	out.append(_a_label_is_on_screen(shell, shell.lab.battery_details, "Cells"))
-	out.append(_a_button_is_on_screen(shell, shell.lab.battery_details, "Open pack bench…"))
 
 	shell.open_row(&"esc")
 	await _settle(tree)

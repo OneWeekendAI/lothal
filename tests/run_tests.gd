@@ -12,7 +12,7 @@ const SUITES := ["class picker", "design space", "design picking", "design swap"
 	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "field room", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
-	"battery rail", "battery model", "preset pack pin", "cell library", "pack design", "designed packs", "pack bench", "pack designer", "designed pack flies", "pack sheet", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
+	"battery rail", "battery model", "preset pack pin", "cell library", "pack design", "designed packs", "pack bench", "pack designer", "battery audit", "designed pack flies", "pack sheet", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
 	"yaw authority", "gyro", "wind", "wind numbers", "motor mixer", "control path", "stick release", "warnings", "build warnings", "warning rows", "section list",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio", "spectrum",
 	"custom frames", "custom motors", "custom propellers", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
@@ -357,6 +357,7 @@ func _run_suite(suite_name: String) -> Array:
 		"designed packs": return TestDesignedPacks.run()
 		"pack bench": return TestPackBench.run()
 		"pack designer": return TestPackDesigner.run()
+		"battery audit": return TestBatteryAudit.run()
 		"designed pack flies": return TestDesignedPackFlies.run()
 		"pack sheet": return TestPackSheet.run()
 		"hover at charge": return TestHoverAtCharge.run()
@@ -364,7 +365,7 @@ func _run_suite(suite_name: String) -> Array:
 		"charge readouts": return TestChargeReadouts.run()
 		"esc": return TestEsc.run()
 		"esc bench": return TestEscBench.run()
-				"frame bench": return TestFrameBench.run()
+		"frame bench": return TestFrameBench.run()
 		"pack charge": return TestPackCharge.run()
 		"battery mesh": return TestBatteryMesh.run()
 		"component mesh": return TestComponentMesh.run()
