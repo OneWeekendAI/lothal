@@ -76,7 +76,7 @@ static func run() -> Array:
 
 	# Datasheet corrections (cell_check 2026-11): figures pinned to the published sheets.
 	var chk := {
-		"cell_a123_anr26650m1b": {"max_cont_a": 70.0},
+		"cell_a123_anr26650m1b": {"max_cont_a": 50.0},
 		"cell_molicel_p42a": {"r_mohm": 10.0, "diameter_mm": 21.4, "length_mm": 70.0},
 		"cell_molicel_p45b": {"diameter_mm": 21.4, "length_mm": 70.0},
 		"cell_samsung_40t": {"r_mohm": 12.0},

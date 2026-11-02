@@ -128,7 +128,7 @@
       "name": "A123 ANR26650M1-B",
       "chemistry": "LiFePO4",
       "form": "cylindrical",
-      "specs": {"mah": 2500.0, "nominal_v": 3.3, "max_cont_a": 70.0, "max_burst_a": 120.0, "r_mohm": 6.0, "mass_g": 76.0, "diameter_mm": 26.0, "length_mm": 65.0},
+      "specs": {"mah": 2500.0, "nominal_v": 3.3, "max_cont_a": 50.0, "max_burst_a": 120.0, "r_mohm": 6.0, "mass_g": 76.0, "diameter_mm": 26.0, "length_mm": 65.0},
       "source": "A123 Systems ANR26650M1-B data sheet: 2500 mAh, 3.3 V nominal, 50 A continuous, 120 A 10 s pulse, 76 g",
       "basis": "datasheet"
     }
