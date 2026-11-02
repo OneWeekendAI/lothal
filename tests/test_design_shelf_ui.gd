@@ -375,7 +375,7 @@ static func _test_cannot_fly(catalog: PartsCatalog) -> Array:
 	ds.open_picker("battery")
 	var pack_rows: Array = ds.picker_rows().filter(func(row): return String(row["category"]) == "battery")
 	out.append(TestResult.new("the battery picker opens on the empty slot and offers packs",
-		ds.picker.visible and ds.picker_slot == "battery" and pack_rows.size() >= 2 and pack_rows.size() == ds.picker_rows().size(),
+		ds.strip.visible and ds.strip_slot == "battery" and pack_rows.size() >= 2 and pack_rows.size() == ds.picker_rows().size(),
 		"%d rows" % ds.picker_rows().size()))
 	ds.undo()
 	out.append(TestResult.new("undo puts the pack back: the count returns to the seed's and the readouts return",
@@ -449,11 +449,12 @@ static func _test_home_picker(catalog: PartsCatalog) -> Array:
 	ds.rig.snap()
 	ds.place_picker()
 	var drone := ds.drone_screen_rect()
-	var pr := Rect2(ds.picker.position, Vector2(maxf(ds.picker.size.x, DesignSpace.PICKER_W), ds.picker.size.y))
-	out.append(TestResult.new("Home with the picker open frames the drone clear of the picker (and the right column)",
-		ds.picker.visible and _overlap(drone, pr) == 0.0 and drone.end.x <= SIZE.x - PickerPlace.COLUMN_W
+	var pr := ds.strip_rect()
+	var column := Rect2(SIZE.x - PickerPlace.COLUMN_W, 0.0, PickerPlace.COLUMN_W, SIZE.y)
+	out.append(TestResult.new("Home with the strip open frames the drone clear of the right column, and the strip clears it too",
+		ds.strip.visible and not pr.intersects(column) and drone.end.x <= SIZE.x - PickerPlace.COLUMN_W
 		and is_equal_approx(ds.rig.goal_yaw, CameraRig.HOME_YAW),
-		"drone %s picker %s" % [drone, pr]))
+		"drone %s strip %s" % [drone, pr]))
 	_done(ds)
 	return out
 

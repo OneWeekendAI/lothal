@@ -44,8 +44,16 @@ const WARN_PIN_STEP := 24.0
 ## The readouts column: narrow, and flush to the right edge (the stage gets the room).
 const PANEL_W := 212.0
 const PANEL_EDGE := 12.0
-const PICKER_W := 360.0
-const PICKER_MAX_H := 430.0
+## The swap strip: cards along the bottom edge, between the Home link and the inspector's column.
+const STRIP_H := 140.0
+const STRIP_BOTTOM := 16.0
+const STRIP_LEFT := 152.0          ## past the Home link (32..140)
+const STRIP_MIN_W := 320.0
+const STRIP_PAD := 8.0
+const STRIP_SEP := 6
+const STRIP_CARD_W := 118.0
+const STRIP_CARD_H := 96.0
+const STRIP_ICON_K := 0.62         ## the shelf's 98 px picture drawn at 61 px
 ## Readout delta bars: a delta of this size fills half the track.
 const DELTA_SCALE := {"auw_g": 150.0, "thrust_to_weight": 4.0, "hover_throttle": 0.2,
 	"flight_time_min": 3.0, "top_speed_kmh": 40.0}
@@ -106,8 +114,8 @@ var _pad_marker: MeshInstance3D
 var _last_click_ndc := Vector2(INF, INF)
 var _last_click_order: Array = []
 ## Click to swap (Section 3).
-var picker: PanelContainer
-var picker_slot := ""
+var strip: PanelContainer
+var strip_slot := ""
 ## Section 8 warnings on the parts (WarningPins): the pins of the drone on screen, the panel's count,
 ## the readout marks, and which pins the inspector is showing.
 var warning_pins: Array = []
@@ -119,7 +127,8 @@ var _refusal := {}                    ## the last refused drop's pin, until the 
 var delta_labels: Dictionary = {}
 var delta_bars: Dictionary = {}
 var previewing := {}
-var _picker_list: VBoxContainer
+var _picker_list: HBoxContainer
+var _note_host: HBoxContainer
 var _picker_title: Label
 var _picker_rows: Array = []
 var _verdicts := {}
@@ -248,8 +257,8 @@ func _after_change() -> void:
 	if selected != "" and not picks.addresses().has(selected):
 		selected = _plate_address_of(selected)
 	_update_tool_row()
-	if picker_slot != "":
-		open_picker(picker_slot)
+	if strip_slot != "":
+		open_picker(strip_slot)
 	if selected != "":
 		_fill_inspector()
 	refresh_shelf()
@@ -1807,137 +1816,219 @@ func _notification(what: int) -> void:
 
 
 # ---------------------------------------------------------------------------
-# The swap picker (Section 3)
+# The swap strip (Section 3): a horizontally scrolling row of small cards docked at the bottom
 # ---------------------------------------------------------------------------
 
 func _build_picker() -> void:
-	picker = PanelContainer.new()
-	picker.name = "SwapPicker"
-	picker.visible = false
-	picker.mouse_filter = Control.MOUSE_FILTER_STOP
+	strip = PanelContainer.new()
+	strip.name = "SwapStrip"
+	strip.visible = false
+	strip.mouse_filter = Control.MOUSE_FILTER_STOP
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.06, 0.06, 0.065, 0.96)
 	sb.border_color = INK_FAINT
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(6)
-	sb.set_content_margin_all(12)
-	picker.add_theme_stylebox_override("panel", sb)
-	add_child(picker)
+	sb.set_content_margin_all(STRIP_PAD)
+	strip.add_theme_stylebox_override("panel", sb)
+	add_child(strip)
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 8)
-	picker.add_child(vb)
+	vb.add_theme_constant_override("separation", 4)
+	strip.add_child(vb)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	vb.add_child(head)
 	_picker_title = Label.new()
 	_picker_title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
 	_picker_title.add_theme_color_override("font_color", INK)
-	vb.add_child(_picker_title)
+	head.add_child(_picker_title)
+	_note_host = HBoxContainer.new()
+	_note_host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(_note_host)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	vb.add_child(row)
+	row.add_child(_arrow("‹", -1))
 	var scroll := ScrollContainer.new()
 	scroll.name = "Scroll"
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.custom_minimum_size = Vector2(PICKER_W - 24.0, 0)
-	vb.add_child(scroll)
-	_picker_list = VBoxContainer.new()
-	_picker_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_picker_list.add_theme_constant_override("separation", 2)
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(200.0, STRIP_CARD_H)
+	row.add_child(scroll)
+	row.add_child(_arrow("›", 1))
+	_picker_list = HBoxContainer.new()
+	_picker_list.add_theme_constant_override("separation", STRIP_SEP)
 	scroll.add_child(_picker_list)
 
 
-## Opens the picker for a pick slot ("battery", "motor", "stack", ...): every catalog alternative
-## with its deciding numbers, the fitted one marked, misfits disabled with their reason.
+func _arrow(glyph: String, dir: int) -> Button:
+	var b := Button.new()
+	b.text = glyph
+	b.flat = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(24, 0)
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		b.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	b.add_theme_font_size_override("font_size", 22)
+	b.add_theme_color_override("font_color", INK_MUTED)
+	b.add_theme_color_override("font_hover_color", INK)
+	b.pressed.connect(func(): scroll_strip(dir))
+	return b
+
+
+## Pages the strip by about three cards (the arrow buttons; the wheel and a drag also scroll).
+func scroll_strip(dir: int) -> void:
+	var scroll := _picker_scroll()
+	var step := int((STRIP_CARD_W + STRIP_SEP) * 3.0)
+	scroll.scroll_horizontal = maxi(scroll.scroll_horizontal + dir * step, 0)
+
+
+## Opens the strip for a pick slot ("battery", "motor", "stack", ...): every catalog alternative as
+## a card, the fitted one marked, misfits disabled with their reason.
 func open_picker(slot: String) -> void:
 	if not PartSwap.SLOTS.has(slot):
 		close_picker()
 		return
-	picker_slot = slot
+	strip_slot = slot
 	for c in _picker_list.get_children():
 		_picker_list.remove_child(c)
 		c.queue_free()
+	for c in _note_host.get_children():
+		_note_host.remove_child(c)
+		c.queue_free()
 	_picker_rows.clear()
-	_picker_title.text = "Swap  \u00b7  %s" % PickRegistry.PART_NAMES.get(slot, slot)
+	_picker_title.text = "Swap  ·  %s" % PickRegistry.PART_NAMES.get(slot, slot)
 	var cats: Array = PartSwap.SLOTS[slot]
-	var height := 0.0
 	for cat in cats:
 		if cats.size() > 1:
 			var head := Label.new()
 			head.text = String(PartSwap.CATEGORY_NAMES.get(cat, cat)).to_upper()
 			head.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 			head.add_theme_color_override("font_color", INK_FAINT)
+			head.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			head.custom_minimum_size = Vector2(0, STRIP_CARD_H)
 			_picker_list.add_child(head)
-			height += head.get_combined_minimum_size().y + _picker_sep()
 		for opt in PartSwap.options(session, _catalog, String(cat), _verdicts):
-			height += _add_row(opt)
-	var scroll := _picker_list.get_parent() as ScrollContainer
-	scroll.custom_minimum_size.y = minf(maxf(height - _picker_sep(), 0.0), PICKER_MAX_H)
-	picker.reset_size()
-	picker.visible = true
+			_add_row(opt)
+	strip.visible = true
 	_make_room_for_picker()
 	place_picker()
 	var fitted := _picker_rows.map(func(r): return r["fitted"]).find(true)
 	reveal_row(maxi(fitted, 0))
 
 
-func _add_row(opt: Dictionary) -> float:
+## One card: the part's picture, its name, and its one key spec. The Button is the whole card.
+func _add_row(opt: Dictionary) -> void:
+	var cat := String(opt["category"])
+	var part: Dictionary = _catalog.get_part(String(opt["id"])) if String(opt["id"]) != "" else {}
 	var b := Button.new()
 	b.flat = true
 	b.focus_mode = Control.FOCUS_NONE
-	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.clip_text = true
-	var numbers := " · ".join(PackedStringArray(opt["numbers"]))
-	if opt["fitted"]:
-		numbers = (numbers + "  ·  fitted") if numbers != "" else "fitted"
-	b.text = String(opt["name"]) + ("\n" + numbers if numbers != "" else "")
+	b.clip_contents = true
+	b.custom_minimum_size = Vector2(STRIP_CARD_W, STRIP_CARD_H)
 	b.disabled = not opt["ok"]
-	b.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	b.add_theme_color_override("font_color", INK if opt["fitted"] else INK_MUTED)
-	b.add_theme_color_override("font_hover_color", INK)
-	b.add_theme_color_override("font_pressed_color", INK)
-	b.add_theme_color_override("font_disabled_color", INK_FAINT)
-	var hover := StyleBoxFlat.new()
-	hover.bg_color = Color(1, 1, 1, 0.06)
-	hover.set_corner_radius_all(4)
-	hover.set_content_margin_all(6)
-	var plain := StyleBoxEmpty.new()
-	plain.set_content_margin_all(6)
-	b.add_theme_stylebox_override("normal", (hover as StyleBox) if opt["fitted"] else (plain as StyleBox))
+	b.tooltip_text = String(opt["name"]) + "\n" + " · ".join(PackedStringArray(opt["numbers"]))
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(1, 1, 1, 0.07) if opt["fitted"] else Color(0, 0, 0, 0)
+	box.border_color = INK_MUTED if opt["fitted"] else Color(0, 0, 0, 0)
+	box.set_border_width_all(1)
+	box.set_corner_radius_all(6)
+	var hover := box.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(1, 1, 1, 0.1)
+	b.add_theme_stylebox_override("normal", box)
 	b.add_theme_stylebox_override("hover", hover)
 	b.add_theme_stylebox_override("pressed", hover)
-	b.add_theme_stylebox_override("disabled", plain)
+	b.add_theme_stylebox_override("disabled", box)
+	var ink := INK_FAINT if b.disabled else (INK if opt["fitted"] else INK_MUTED)
+	var vb := VBoxContainer.new()
+	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_theme_constant_override("separation", 1)
+	vb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vb.offset_left = 4
+	vb.offset_right = -4
+	vb.offset_top = 6
+	b.add_child(vb)
+	var pic := PartPicture.new(cat if String(opt["id"]) != "" else "none", part, ink, STRIP_ICON_K)
+	pic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	vb.add_child(pic)
+	var name_label := _caption(String(opt["name"]), ink)
+	vb.add_child(name_label)
+	# The one key spec under the name; where the name already says it (a motor is named by its size
+	# and KV), the part's mass instead, so the two lines never repeat each other.
+	var spec := PartCaption.key_spec(part, cat)
+	if (spec == "" or String(opt["name"]).contains(spec)) and not (opt["numbers"] as Array).is_empty():
+		spec = String((opt["numbers"] as Array).back())
+	var spec_label := _caption(spec, INK_FAINT if b.disabled else INK_MUTED)
+	vb.add_child(spec_label)
+	var badge := Label.new()
+	badge.text = "FITTED" if opt["fitted"] else ("NO FIT" if b.disabled else "")
+	badge.visible = badge.text != ""
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_theme_font_size_override("font_size", 10)
+	badge.add_theme_color_override("font_color", WARN_INK if b.disabled else INK)
+	badge.position = Vector2(6, 2)
+	b.add_child(badge)
 	var row := opt.duplicate()
 	row["button"] = b
+	row["name_label"] = name_label
+	row["caption"] = spec_label
+	row["badge"] = badge
 	row["reason_label"] = null
 	var i := _picker_rows.size()
-	b.mouse_entered.connect(func(): hover_row(i))
-	b.mouse_exited.connect(clear_preview)
+	b.mouse_entered.connect(func(): _show_note(i); hover_row(i))
+	b.mouse_exited.connect(func(): _show_note(-1); clear_preview())
 	b.pressed.connect(func(): press_row(i))
 	_picker_list.add_child(b)
-	var h := b.get_combined_minimum_size().y + _picker_sep()
 	if not opt["ok"]:
+		# The misfit's one-line reason: shown beside the title while the pointer is on its card.
 		var why := Label.new()
 		why.text = String(opt["reason"])
-		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		why.custom_minimum_size = Vector2(PICKER_W - 48.0, 0)
+		why.clip_text = true
+		why.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		why.visible = false
+		why.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		why.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		why.add_theme_color_override("font_color", WARN_INK)
 		why.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_picker_list.add_child(why)
+		_note_host.add_child(why)
 		row["reason_label"] = why
-		h += why.get_combined_minimum_size().y + _picker_sep()
 	_picker_rows.append(row)
-	return h
+
+
+func _caption(text: String, color: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.clip_text = true
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	l.add_theme_color_override("font_color", color)
+	return l
+
+
+## Shows only card i's reason line (-1 hides all).
+func _show_note(i: int) -> void:
+	for k in _picker_rows.size():
+		var why: Variant = _picker_rows[k]["reason_label"]
+		if why != null:
+			(why as Label).visible = k == i
 
 
 func close_picker() -> void:
-	picker_slot = ""
-	picker.visible = false
+	strip_slot = ""
+	strip.visible = false
 	clear_preview()
 
 
-## The picker's rows, for tests and the seams below: {category, id, name, ok, reason, fitted,
-## deltas, button, reason_label}.
+## The strip's cards, for tests and the seams below: {category, id, name, ok, reason, fitted,
+## deltas, button, name_label, caption, badge, reason_label}.
 func picker_rows() -> Array:
 	return _picker_rows
 
 
-## The pointer over a row: preview its readout deltas (nothing for a disabled row).
+## The pointer over a card: preview its readout deltas (nothing for a disabled card).
 func hover_row(i: int) -> Dictionary:
 	var row: Dictionary = _picker_rows[i]
 	reveal_row(i)
@@ -1947,7 +2038,7 @@ func hover_row(i: int) -> Dictionary:
 	return preview(String(row["category"]), String(row["id"]))
 
 
-## A row chosen. A disabled row does nothing, and `choose` judges again regardless.
+## A card chosen. A disabled card does nothing, and `choose` judges again regardless.
 func press_row(i: int) -> Dictionary:
 	var row: Dictionary = _picker_rows[i]
 	if (row["button"] as Button).disabled:
@@ -1955,35 +2046,42 @@ func press_row(i: int) -> Dictionary:
 	return choose(String(row["category"]), String(row["id"]))
 
 
-## Keeps the picker beside the drone (never over it) and near the selected part, clear of the
-## right column (readouts, inspector). Placed for the view the camera is easing to. When the picker
-## has closed, gives back any room the camera made for it (see `_make_room_for_picker`).
+## Where the strip sits (px): along the bottom, right of the Home link (or of the open shelf) and
+## left of the inspector's column, so it covers none of the readouts, links or callouts.
+func strip_rect() -> Rect2:
+	var x := _strip_left()
+	var w := maxf(size.x - PickerPlace.COLUMN_W - x, STRIP_MIN_W)
+	return Rect2(x, size.y - STRIP_BOTTOM - STRIP_H, w, STRIP_H)
+
+
+func _strip_left() -> float:
+	if shelf_open():
+		return shelf.offset_left + PartsShelf.WIDTH + PickerPlace.GAP
+	return STRIP_LEFT
+
+
+## Docks the strip (each frame, so a resized window follows). When it has closed, gives back any
+## room the camera made (see `_update_room`).
 func place_picker() -> void:
-	if picker == null:
+	if strip == null:
 		return
-	if not picker.visible:
+	if not strip.visible:
 		if shelf == null or not shelf_open():
 			_give_back_room()
 		return
-	if selected == "":
-		return
+	var r := strip_rect()
+	strip.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	strip.offset_left = r.position.x
+	strip.offset_top = r.position.y
+	strip.offset_right = r.end.x
+	strip.offset_bottom = r.end.y
+	strip.custom_minimum_size = r.size
+	_picker_scroll().custom_minimum_size.x = r.size.x - 2.0 * STRIP_PAD - 56.0
 	_finish_reveal()
-	var view := PickerPlace.settled(rig)
-	var p := PickerPlace.to_px(view.project(picks.box_of(selected).get_center()), size)
-	var w := maxf(picker.size.x, PICKER_W)
-	var h := picker.size.y
-	var x := PickerPlace.side_x(PickerPlace.screen_rect(view, _mesh_aabbs(), size), w, size, p.x, _left_edge())
-	if is_nan(x):
-		# No side clear of the drone (zoomed in, or the user moved the camera): beside the part.
-		x = p.x + 48.0
-		if x + w > size.x - PickerPlace.COLUMN_W:
-			x = p.x - 48.0 - w
-		x = clampf(x, _left_edge(), maxf(size.x - PickerPlace.COLUMN_W - w, _left_edge()))
-	picker.position = Vector2(x, PickerPlace.near_y(p.y, h, size))
 
 
 # ---------------------------------------------------------------------------
-# Swap picker placement and scrolling helpers (Section 3 fixes)
+# Swap strip placement and scrolling helpers (Section 3 fixes)
 # ---------------------------------------------------------------------------
 
 var _room_before := {}         ## the camera goal before the picker made room; {} when it made none
@@ -2002,24 +2100,23 @@ func _mesh_aabbs() -> Array:
 
 
 func _picker_sep() -> float:
-	return float(_picker_list.get_theme_constant("separation"))
+	return float(STRIP_SEP)
 
 
-## The list's full height, summed from its children (the list's own cached minimum size is stale
+## The list's full width, summed from its children (the list's own cached minimum size is stale
 ## until the deferred layout runs, and never refreshes headless).
-func _picker_content_h() -> float:
-	var y := 0.0
+func _picker_content_w() -> float:
+	var x := 0.0
 	for c in _picker_list.get_children():
-		y += (c as Control).get_combined_minimum_size().y + _picker_sep()
-	return maxf(y - _picker_sep(), 0.0)
+		x += (c as Control).get_combined_minimum_size().x + _picker_sep()
+	return maxf(x - _picker_sep(), 0.0)
 
 
 func _picker_scroll() -> ScrollContainer:
 	return _picker_list.get_parent() as ScrollContainer
 
 
-## At a view where neither side of the drone has room for the picker, backs the camera off and
-## slides the drone left until the picker fits beside it. Not while zoomed in or framing a part.
+## Makes room for the open shelf (see `_update_room`); the strip takes none, it sits below.
 func _make_room_for_picker() -> void:
 	_update_room()
 
@@ -2030,20 +2127,16 @@ func _make_room_for_picker() -> void:
 func _update_room() -> void:
 	if rig.is_zoomed_in() or size.x <= 0.0:
 		return
-	var want_picker := picker.visible and selected != ""
-	if not want_picker and not shelf_open():
+	if not shelf_open():
 		_give_back_room()
 		return
 	var view := PickerPlace.settled(rig)
 	var r := PickerPlace.screen_rect(view, _mesh_aabbs(), size)
 	var left := _left_edge()
-	var w := maxf(picker.size.x, PICKER_W) if want_picker else 0.0
+	var w := 0.0
 	var fits := true
 	if shelf_open():
 		fits = r.position.x >= left and r.end.x <= size.x - PickerPlace.COLUMN_W
-	if want_picker:
-		var p := PickerPlace.to_px(view.project(picks.box_of(selected).get_center()), size)
-		fits = fits and not is_nan(PickerPlace.side_x(r, w, size, p.x, left))
 	if fits:
 		return
 	if _room_before.is_empty():
@@ -2076,28 +2169,22 @@ func _give_back_room() -> void:
 	_room_goal = {}
 
 
-## Row i's span in the list (px from the list's top): its button and any reason line under it.
-## From minimum sizes: a VBox with no expanding children gives each child exactly its minimum
-## height, so this is the layout itself, and it holds before the deferred layout has run (and
-## headless, where it never runs).
+## Card i's span in the strip (px from the list's left edge). From minimum sizes: an HBox with no
+## expanding children gives each child exactly its minimum width, so this is the layout itself, and
+## it holds before the deferred layout has run (and headless, where it never runs).
 func picker_row_span(i: int) -> Vector2:
-	var row: Dictionary = _picker_rows[i]
-	var b := row["button"] as Button
-	var last: Control = row["reason_label"] if row["reason_label"] != null else b
-	var y := 0.0
-	var top := 0.0
+	var b := (_picker_rows[i] as Dictionary)["button"] as Button
+	var x := 0.0
 	for c in _picker_list.get_children():
-		var hc := (c as Control).get_combined_minimum_size().y
+		var wc := (c as Control).get_combined_minimum_size().x
 		if c == b:
-			top = y
-		if c == last:
-			return Vector2(top, y + hc)
-		y += hc + _picker_sep()
+			return Vector2(x, x + wc)
+		x += wc + _picker_sep()
 	return Vector2.ZERO
 
 
-## Scrolls the picker so row i shows whole (the least move; nothing if it already shows), and
-## again over the next few frames: a wrapped reason line only knows its height once laid out.
+## Scrolls the strip so card i shows whole (the least move; nothing if it already shows), and
+## again over the next few frames until the strip has its width.
 func reveal_row(i: int) -> void:
 	_reveal_pending = i
 	_reveal_frames = 3
@@ -2109,14 +2196,14 @@ func _apply_reveal(i: int) -> void:
 		return
 	var scroll := _picker_scroll()
 	var span := picker_row_span(i)
-	var view_h := scroll.custom_minimum_size.y
-	var content := _picker_content_h()
-	var bar := scroll.get_v_scroll_bar()
+	var view_w := scroll.custom_minimum_size.x
+	var content := _picker_content_w()
+	var bar := scroll.get_h_scroll_bar()
 	# Before the deferred layout the bar still has the old list's range; give it this one's.
 	bar.max_value = content
-	bar.page = view_h
-	var want := PickerPlace.reveal(span.x, span.y, view_h, float(scroll.scroll_vertical))
-	scroll.scroll_vertical = int(roundf(clampf(want, 0.0, maxf(content - view_h, 0.0))))
+	bar.page = view_w
+	var want := PickerPlace.reveal(span.x, span.y, view_w, float(scroll.scroll_horizontal))
+	scroll.scroll_horizontal = int(roundf(clampf(want, 0.0, maxf(content - view_w, 0.0))))
 
 
 func _finish_reveal() -> void:
@@ -2470,9 +2557,8 @@ func callout_avoid_rects() -> Array:
 	if shelf.visible:
 		var sm := shelf.get_combined_minimum_size()
 		out.append(Rect2(shelf.offset_left, shelf.offset_top, maxf(PartsShelf.WIDTH, sm.x), maxf(shelf.size.y, sm.y)))
-	if picker.visible:
-		var pm := picker.get_combined_minimum_size()
-		out.append(Rect2(picker.position, Vector2(maxf(maxf(picker.size.x, pm.x), PICKER_W), maxf(picker.size.y, pm.y))))
+	if strip.visible:
+		out.append(strip_rect())
 	return out
 
 
@@ -2481,7 +2567,7 @@ func callout_avoid_rects() -> Array:
 ## about 5 ms; a still frame costs a comparison.
 func _update_callouts_if_moved() -> void:
 	var inputs := [rig.yaw, rig.pitch, rig.distance, rig.target, size, hovered, selected, callout_focus,
-		drag_kind, _callout_version, picker.visible, picker.position, picker.size, shelf.visible,
+		drag_kind, _callout_version, strip.visible, strip.position, strip.size, shelf.visible,
 		shelf.open, shelf.size, file_bar.dialog_open(), tool_row.visible, tool_row.size, inspector.visible, inspector.size,
 		panel.size]
 	if inputs == _callout_inputs:

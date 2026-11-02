@@ -9,7 +9,7 @@ extends RefCounted
 ##   intersects each label's rect with each polygon. A layout that skipped a mesh, or a stale cache,
 ##   is caught by geometry it never saw.
 ## - THE UI RECTS HERE ARE THE TEST'S OWN, written from the panels' offsets and sizes (readouts,
-##   inspector, tool row, shelf, picker at least PICKER_W wide, back and home links), not
+##   inspector, tool row, shelf, swap strip, back and home links), not
 ##   `callout_avoid_rects`, so dropping a panel from that list fails here.
 ## - NO EMPTY PASSES. Every overlap/crossing case also demands at least MIN_SHOWN labels: an empty
 ##   layout overlaps nothing.
@@ -40,7 +40,7 @@ static func run() -> Array:
 			_view(ds, v)
 			ds.update_callouts()
 			results.append_array(_geometry(ds, "%dx%d %s" % [sz.x, sz.y, v[0]]))
-		for state in ["battery hovered", "battery selected (picker)", "shelf open", "frame selected (tool row)"]:
+		for state in ["battery hovered", "battery selected (strip)", "shelf open", "frame selected (tool row)"]:
 			_reset(ds, home)
 			_state(ds, String(state))
 			ds.update_callouts()
@@ -106,7 +106,7 @@ static func _state(ds: DesignSpace, state: String) -> void:
 	match state:
 		"battery hovered":
 			ds.hovered = "part/battery"
-		"battery selected (picker)":
+		"battery selected (strip)":
 			ds.select("part/battery")
 			ds.rig.snap()
 			ds.place_picker()
@@ -148,8 +148,8 @@ static func _ui_rects(ds: DesignSpace) -> Dictionary:
 		out["tool row"] = Rect2(Vector2(32, 64), ds.tool_row.get_combined_minimum_size().max(Vector2(300, 0)))
 	if ds.shelf.visible:
 		out["shelf"] = Rect2(Vector2(32, 64), ds.shelf.get_combined_minimum_size().max(Vector2(PartsShelf.WIDTH, 0)))
-	if ds.picker.visible:
-		out["picker"] = Rect2(ds.picker.position, ds.picker.get_combined_minimum_size().max(ds.picker.size).max(Vector2(DesignSpace.PICKER_W, 0)))
+	if ds.strip.visible:
+		out["swap strip"] = ds.strip_rect()
 	return out
 
 
@@ -438,7 +438,7 @@ static func _opposite_sides_never_overlap() -> TestResult:
 ## The avoid list holds every panel that is showing, each at least as large as this test's own rect.
 static func _avoid_lists(ds: DesignSpace, home: Dictionary) -> Array:
 	var out: Array = []
-	for state in ["battery selected (picker)", "shelf open", "frame selected (tool row)"]:
+	for state in ["battery selected (strip)", "shelf open", "frame selected (tool row)"]:
 		_reset(ds, home)
 		_state(ds, String(state))
 		var ui := _ui_rects(ds)

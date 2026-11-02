@@ -10,21 +10,29 @@ const SIZE := Vector2(98, 58)
 var category := ""
 var part: Dictionary = {}
 var ink := Color(0.93, 0.93, 0.93)
+## Drawing scale: 1.0 is the shelf's 98 px picture; the swap strip draws the same lines smaller.
+var scale_k := 1.0
 
 
-func _init(category_: String = "", part_: Dictionary = {}, ink_: Color = Color(0.93, 0.93, 0.93)) -> void:
+func _init(category_: String = "", part_: Dictionary = {}, ink_: Color = Color(0.93, 0.93, 0.93),
+		scale_: float = 1.0) -> void:
 	category = category_
 	part = part_
 	ink = ink_
-	custom_minimum_size = SIZE
+	scale_k = scale_
+	custom_minimum_size = SIZE * scale_
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 func _draw() -> void:
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(scale_k, scale_k))
 	var s: Dictionary = part.get("specs", {})
 	var c := SIZE * 0.5
 	var w := 1.4
 	match category:
+		"none":  # an empty slot: a ring with a slash
+			draw_arc(c, 16.0, 0.0, TAU, 28, ink * Color(1, 1, 1, 0.6), w)
+			draw_line(c + Vector2(-11, 11), c + Vector2(11, -11), ink * Color(1, 1, 1, 0.6), w)
 		"battery":
 			var cells := clampi(int(s.get("cells", 1)), 1, 8)
 			var r := Rect2(14, 14, 70, 30)

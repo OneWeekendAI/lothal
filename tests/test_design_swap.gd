@@ -303,28 +303,31 @@ static func _test_picker_beside_part(ds: DesignSpace, catalog: PartsCatalog) -> 
 	ds.select("part/battery")
 	var rows := ds.picker_rows()
 	var packs := catalog.list_category("battery")
-	results.append(TestResult.new("selecting the battery opens its picker listing every catalog pack",
-		ds.picker.visible and ds.picker_slot == "battery" and rows.size() == packs.size(),
+	results.append(TestResult.new("selecting the battery opens its strip listing every catalog pack",
+		ds.strip.visible and ds.strip_slot == "battery" and rows.size() == packs.size(),
 		"%d rows, %d packs" % [rows.size(), packs.size()]))
 	var fitted := rows.filter(func(x): return x["fitted"])
-	results.append(TestResult.new("exactly one row is the fitted pack, and it says so",
+	results.append(TestResult.new("exactly one card is the fitted pack, and it says so",
 		fitted.size() == 1 and String(fitted[0]["id"]) == String(ds.session.selection["battery"])
-		and (fitted[0]["button"] as Button).text.contains("fitted"), ""))
+		and (fitted[0]["badge"] as Label).visible and (fitted[0]["badge"] as Label).text == "FITTED", ""))
 	var p := catalog.get_part("battery_6s_1300")
 	var row: Dictionary = rows[_row_index(ds, "battery", "battery_6s_1300")]
-	# The numbers line only: the first line is the part's name, which may carry the same figures.
-	var t := (row["button"] as Button).text.get_slice("\n", 1)
-	results.append(TestResult.new("a row carries its deciding numbers: cells, capacity, mass, C rating",
+	# The card shows the one key spec; the tooltip carries every deciding number.
+	var t := (row["button"] as Button).tooltip_text.get_slice("\n", 1)
+	results.append(TestResult.new("a card's tooltip carries its deciding numbers: cells, capacity, mass, C rating",
 		t.contains("6S") and t.contains("%d mAh" % int(p["specs"]["mah"])) and t.contains("%.0f g" % float(p["mass_g"]))
 		and t.contains("%dC" % int(p["specs"]["c_rating"])), t))
+	results.append(TestResult.new("and its caption names the part with one key spec",
+		(row["name_label"] as Label).text == String(p["name"]) and (row["caption"] as Label).text == PartCaption.key_spec(p, "battery")
+		and (row["caption"] as Label).text != (row["name_label"] as Label).text,
+		(row["caption"] as Label).text))
 	ds.place_picker()
-	var r := Rect2(ds.picker.position, ds.picker.size)
+	var r := ds.strip_rect()
 	var readouts := Rect2(Vector2(ds.size.x - 300.0, 48.0), Vector2(260.0, 400.0))
-	var ndc := ds.rig.project(ds.picks.box_of("part/battery").get_center())
-	var part_px := Vector2((ndc.x + 1.0) * 0.5 * ds.size.x, (1.0 - ndc.y) * 0.5 * ds.size.y)
-	results.append(TestResult.new("the picker sits beside the part, on screen, clear of the readouts and the part",
-		Rect2(Vector2.ZERO, ds.size).encloses(r) and not r.intersects(readouts) and not r.has_point(part_px)
-		and absf(r.get_center().y - part_px.y) < 260.0, "%s part %s" % [r, part_px]))
+	results.append(TestResult.new("the strip is docked at the bottom, on screen, clear of the readouts and the Home link",
+		Rect2(Vector2.ZERO, ds.size).encloses(r) and not r.intersects(readouts)
+		and not r.intersects(Rect2(32, ds.size.y - 56, 108, 32)) and r.end.y > ds.size.y - 40.0
+		and Rect2(ds.strip.position, Vector2(1, 1)).position.is_equal_approx(r.position), "%s" % r))
 	ds.select("part/stack")
 	var cats := {}
 	for x in ds.picker_rows():
@@ -332,10 +335,10 @@ static func _test_picker_beside_part(ds: DesignSpace, catalog: PartsCatalog) -> 
 	results.append(TestResult.new("the stack's picker lists flight controllers, ESCs and receivers",
 		cats.has("flight_controller") and cats.has("esc") and cats.has("receiver"), str(cats.keys())))
 	ds.select("frame/plate/top")
-	results.append(TestResult.new("selecting a frame region closes the picker", not ds.picker.visible, ""))
+	results.append(TestResult.new("selecting a frame region closes the strip", not ds.strip.visible, ""))
 	ds.select("part/motor/FL")
 	ds.clear_selection()
-	results.append(TestResult.new("clearing the selection closes it", not ds.picker.visible, ""))
+	results.append(TestResult.new("clearing the selection closes it", not ds.strip.visible, ""))
 	return results
 
 
