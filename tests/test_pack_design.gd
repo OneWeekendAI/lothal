@@ -23,7 +23,7 @@ static func run() -> Array:
 	results.append(_t("default design derives a valid pack",
 		d.series == 4 and d.parallel == 1 and d.connector_family == "XT60" and d.lead_awg == 14
 		and d.lead_length_mm == 100.0 and float(f.mah) == 1500.0 and float(f.mass_g) > 0.0
-		and float(f.internal_r_ohm) > 0.0 and String(f.basis) == "ideal / datasheet", str(f)))
+		and float(f.internal_r_ohm) > 0.0 and String(f.basis) == "typical", str(f)))
 
 	results.append(_t("4S1P pouch: nominal = 4 x chemistry nominal, mah = cell mah",
 		_close(float(f.nominal_v), 4.0 * BatteryModel.nominal_cell_v("LiPo"))
@@ -42,6 +42,19 @@ static func run() -> Array:
 	lp.cell = lib.get_cell("cell_lipo_1500")
 	results.append(_t("a cell whose nominal equals its chemistry's changes nothing",
 		_close(float(lp.derive().nominal_v), 4.0 * BatteryModel.nominal_cell_v("LiPo"))))
+
+	var dsheet := PackDesign.default_design(lib)
+	dsheet.cell = lib.get_cell("cell_samsung_40t")
+	var p42 := PackDesign.default_design(lib)
+	p42.cell = lib.get_cell("cell_molicel_p42a")
+	results.append(_t("basis: class-typical cells say typical, datasheet cells say ideal / datasheet",
+		String(f.basis) == "typical" and String(d.to_record().design.basis) == "typical"
+		and String(d.to_record().source).contains("typical") and not String(d.to_record().source).contains("datasheet")
+		and String(dsheet.derive().basis) == "ideal / datasheet" and String(p42.derive().basis) == "ideal / datasheet",
+		"%s %s %s" % [f.basis, dsheet.derive().basis, p42.derive().basis]))
+	results.append(_t("burst_estimated follows the cell's burst_basis",
+		bool(p42.derive().burst_estimated) and not bool(dsheet.derive().burst_estimated)
+		and not bool(f.burst_estimated), "%s %s" % [p42.derive().burst_estimated, dsheet.derive().burst_estimated]))
 
 	var d2 := PackDesign.default_design(lib)
 	d2.parallel = 2

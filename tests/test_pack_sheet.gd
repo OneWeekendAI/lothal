@@ -88,6 +88,15 @@ static func run() -> Array:
 	results.append(_t("changing the wiring changes the sheet",
 		String(s2["connector"]["family"]) == "XT90" and int(s2["lead"]["awg"]) == 12))
 
+	var typ := PackSheet.compose(_design(lib, "cell_lipo_1500", 4, 1))
+	var typ_text := PackSheet.to_text(_design(lib, "cell_lipo_1500", 4, 1))
+	results.append(_t("a class-typical pack's sheet says typical",
+		String(typ["label"]) == "typical" and typ_text.contains("Figures are typical") and not typ_text.contains("ideal / datasheet")
+		and not typ_text.contains("est.)  burst") and not typ_text.contains("burst (est.)"), String(typ["label"])))
+	results.append(_t("a pack whose cell burst is only an estimate says (est.) beside the burst figure",
+		text.contains(" A burst (est.)") and not PackSheet.to_text(_design(lib, "cell_samsung_40t", 4, 1)).contains("(est.)"),
+		text))
+
 	var legacy := PackDesign.from_record(DesignedPacks.migrate_v1_record(
 		PartsCatalog.load_default().get_part("battery_4s_1300")), lib)
 	var lsheet := PackSheet.compose(legacy)

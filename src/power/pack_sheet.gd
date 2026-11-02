@@ -57,7 +57,7 @@ static func compose(design: PackDesign) -> Dictionary:
 			"text": "%d-pin %s balance lead: one wire on the pack's negative, one on each of the %d junctions between cells in order, and one on the positive." % [s + 1, BALANCE_CONNECTOR, maxi(s - 1, 0)],
 		},
 		"expected": f,
-		"safety": _safety(chem, legacy),
+		"safety": _safety(chem, legacy, String(f.get("basis", PackDesign.BASIS))),
 	}
 
 
@@ -97,7 +97,8 @@ static func to_text(design: PackDesign) -> String:
 	lines.append("  Capacity: %.0f mAh, %.1f Wh" % [float(f["mah"]), float(f["wh"])])
 	lines.append("  Mass: about %.0f g (the wrap and solder allowance is an estimate)" % float(f["mass_g"]))
 	lines.append("  Size: %.0f x %.0f x %.0f mm" % [dims.x, dims.y, dims.z])
-	lines.append("  Current: %.0f A steady, %.0f A burst" % [float(f["cont_a"]), float(f["burst_a"])])
+	lines.append("  Current: %.0f A steady, %.0f A burst%s" % [float(f["cont_a"]), float(f["burst_a"]),
+		" (est.)" if bool(f.get("burst_estimated", false)) else ""])
 	lines.append("  Internal resistance: %.0f mOhm" % (float(f["internal_r_ohm"]) * 1000.0))
 	lines.append("")
 	lines.append("SAFETY")
@@ -133,7 +134,7 @@ static func _busbar_note(cylindrical: bool, cont_a: float) -> String:
 	return "Busbar: pouch cells are joined tab to tab with short, thick solder joints or copper strip, kept brief so the tabs do not overheat; most builders buy ready-made pouch packs instead."
 
 
-static func _safety(chem: String, typed: bool) -> Array:
+static func _safety(chem: String, typed: bool, basis: String = PackDesign.BASIS) -> Array:
 	return [
 		"Lithium cells can start a fire. Build and charge on a fireproof surface, away from anything that burns, and never leave a charging pack alone.",
 		"Check polarity at every joint before connecting; a short circuit can ignite a cell.",
@@ -141,5 +142,5 @@ static func _safety(chem: String, typed: bool) -> Array:
 			chem, BatteryModel.max_charge_c(chem), BatteryModel.max_cell_v(chem)],
 		"Never discharge below %.2f V per cell, and stop using a puffed, dented or hot cell." % BatteryModel.min_cell_v(chem),
 		"These figures were typed by hand, not taken from a cell datasheet; check them against the real pack." if typed
-			else "These figures are ideal / datasheet values for the cells named; a real pack built by hand will differ.",
+			else "These figures are %s values for the cells named; a real pack built by hand will differ." % basis,
 	]

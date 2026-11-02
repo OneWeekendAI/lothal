@@ -10,10 +10,12 @@ extends RefCounted
 ## So the figures here include only the PACK side: two conductors of pigtail, and the pack half of the
 ## connector's mass. Contact resistance is reported as read-only info and never enters internal_r_ohm.
 ##
-## All figures are ideal / datasheet: cell values come from cells.json, wiring from WireGauge. The
+## All figures are ideal / datasheet ("typical" for a class-typical cell): cell values come from cells.json, wiring from WireGauge. The
 ## interconnect/wrap allowance is a labelled guess.
 
 const BASIS := "ideal / datasheet"
+## A class-typical cell (a generic LiPo pouch class) has no single datasheet behind it.
+const BASIS_TYPICAL := "typical"
 const LEGACY_BASIS := "legacy (typed figures)"
 
 ## Nickel strip, solder and heat-shrink per cell. A guess, shown to the user as an estimate.
@@ -56,6 +58,11 @@ func rebuild_from_cells() -> PackDesign:
 	legacy_specs = {}
 	legacy_mass_g = 0.0
 	return self
+
+
+## What the derived figures are: "typical" for a class-typical cell, else "ideal / datasheet".
+func basis_label() -> String:
+	return BASIS_TYPICAL if String(cell.get("basis", "")) == "class-typical" else BASIS
 
 
 func chemistry() -> String:
@@ -107,7 +114,8 @@ func derive() -> Dictionary:
 		"internal_r_ohm": float(r_parts["cells"]) + float(r_parts["lead"]),
 		"r_parts": r_parts,
 		"connector_contact_r_ohm_info": _connector_contact_ohm(),
-		"basis": BASIS,
+		"basis": basis_label(),
+		"burst_estimated": String(cell.get("burst_basis", "")) == "estimate",
 	}
 
 
@@ -139,7 +147,7 @@ func to_record() -> Dictionary:
 		"parallel": parallel,
 		"lead_awg": lead_awg,
 		"lead_length_mm": lead_length_mm,
-		"basis": LEGACY_BASIS if is_legacy() else BASIS,
+		"basis": LEGACY_BASIS if is_legacy() else basis_label(),
 	}
 	if is_legacy():
 		design["legacy"] = true
@@ -158,7 +166,7 @@ func to_record() -> Dictionary:
 			"cell_class": "%dS" % int(specs.get("cells", series)),
 			"connector": connector_family,
 		},
-		"source": "pack designer: %s, ideal / datasheet figures" % String(cell.get("name", "custom cell")),
+		"source": "pack designer: %s, %s figures" % [String(cell.get("name", "custom cell")), basis_label()],
 		"design": design,
 	}
 
@@ -205,6 +213,7 @@ func _derive_legacy() -> Dictionary:
 		"r_parts": {"pack": float(legacy_specs.get("internal_r_ohm", 0.0))},
 		"connector_contact_r_ohm_info": _connector_contact_ohm(),
 		"basis": LEGACY_BASIS,
+		"burst_estimated": false,
 	}
 
 

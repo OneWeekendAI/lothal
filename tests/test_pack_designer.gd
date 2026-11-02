@@ -223,6 +223,7 @@ static func _test_label(catalog: PartsCatalog) -> Array:
 	var out: Array = []
 	var d := _designer(catalog)
 	d.open_new()
+	d.set_cell("cell_molicel_p42a")
 	var f := d.figures()
 	var texts: Array = []
 	var labels: Array = []
@@ -233,11 +234,24 @@ static func _test_label(catalog: PartsCatalog) -> Array:
 	for tx in texts:
 		if String(tx).contains(PackDesign.BASIS):
 			has_header = true
-	out.append(_t("figures carry the ideal / datasheet label",
+	out.append(_t("figures carry the ideal / datasheet label (datasheet cell)",
 		String(f.get("basis", "")) == "ideal / datasheet" and has_header
 		and String(d.figure_tags().get("mass_g", "")) == "estimate"
 		and String(d.figure_tags().get("nominal_v", "")) == "ideal / datasheet",
 		str(d.figure_tags())))
+	out.append(_t("the burst figure is marked (est.) when the datasheet does not publish it",
+		(d._figure_values["current"] as Label).text.contains("burst (est.)"),
+		(d._figure_values["current"] as Label).text))
+	d.set_cell("cell_samsung_40t")
+	out.append(_t("and is not marked for a published burst",
+		not (d._figure_values["current"] as Label).text.contains("est."),
+		(d._figure_values["current"] as Label).text))
+	d.set_cell("cell_lipo_1500")
+	var head := d.figures_header.text
+	out.append(_t("a class-typical cell says typical, in the header and on every figure",
+		String(d.figures().get("basis", "")) == "typical" and head.contains("typical") and not head.contains("datasheet")
+		and String(d.figure_tags().get("nominal_v", "")) == "typical"
+		and String(d.figure_tags().get("mass_g", "")) == "estimate", head + " " + str(d.figure_tags())))
 	d.free()
 	return out
 
