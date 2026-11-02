@@ -112,6 +112,9 @@ func _init() -> void:
 			ev.button_index = MOUSE_BUTTON_LEFT
 			ev.pressed = true
 			(rows[pick]["button"] as Button).gui_input.emit(ev)
+	# Arg 12 "labels_off" presses the eye: every label, callout and warning pin hidden.
+	if args.size() > 12 and args[12] == "labels_off":
+		ds.toggle_labels()
 	for i in 60:
 		await process_frame
 	root.get_texture().get_image().save_png(out_path)

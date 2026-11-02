@@ -60,6 +60,10 @@ const STRIP_ICON_K := 0.62         ## the shelf's 98 px picture drawn at 61 px
 const DELTA_SCALE := {"auw_g": 150.0, "thrust_to_weight": 4.0, "hover_throttle": 0.2,
 	"flight_time_min": 3.0, "top_speed_kmh": 40.0}
 const DELTA_TRACK_W := 56.0
+## The labels and callouts over the drone fade out after this long without mouse or key input,
+## taking LABEL_FADE_S to go and to come back.
+const IDLE_HIDE_S := 4.0
+const LABEL_FADE_S := 0.3
 const OUTLINE_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_front, shadows_disabled, fog_disabled;
@@ -86,6 +90,11 @@ var camera: Camera3D
 var model: Node3D
 var title_label: Label
 var home_button: Button
+var labels_button: Button            ## the eye: hides or shows every label and callout over the drone
+## The eye hides (true) or shows the labels; it beats idle. `label_alpha` is what is drawn now.
+var labels_hidden := false
+var label_alpha := 1.0
+var _idle_s := 0.0
 var back_button: Button
 var panel: VBoxContainer
 var panel_alpha := 1.0
@@ -336,7 +345,7 @@ func open_warning(ids: Array) -> void:
 
 ## A click on a warning pin or its label (px): opens it. False when there is none there.
 func open_warning_at(px: Vector2) -> bool:
-	if callouts == null:
+	if callouts == null or not callouts.visible:
 		return false
 	var id := callouts.warning_at(px)
 	if id == "":
@@ -500,7 +509,7 @@ func hover_at(ndc: Vector2, screen_pos: Vector2 = Vector2.ZERO) -> String:
 	hover_label.text = String(hit.get("name", ""))
 	hover_label.visible = hovered != ""
 	hover_label.position = screen_pos + Vector2(16, 14)
-	callout_focus = callouts.at(screen_pos) if callouts != null else ""
+	callout_focus = callouts.at(screen_pos) if callouts != null and callouts.visible else ""
 	_apply_marks()
 	return hovered
 
@@ -798,6 +807,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		open_open_dialog()
 	elif key == KEY_H or key == KEY_HOME:
 		go_home()
+	elif key == KEY_L and not command:
+		toggle_labels()
 	elif key == KEY_DELETE:
 		remove_selected()
 	elif key == KEY_BACKSPACE:
@@ -829,6 +840,7 @@ func _process(delta: float) -> void:
 	rig.step(delta)
 	apply_camera()
 	step_panel(delta)
+	step_labels(delta)
 	place_picker()
 	_update_callouts_if_moved()
 
@@ -839,6 +851,47 @@ func step_panel(delta: float) -> void:
 	panel_alpha = move_toward(panel_alpha, want, delta / PANEL_FADE_S)
 	# smoothstep gives the ease; the panel never takes clicks, so nothing else changes.
 	panel.modulate.a = smoothstep(0.0, 1.0, panel_alpha)
+
+
+## The eye (or L): hides every label, callout and warning pin over the drone, or shows them. Hiding
+## is immediate; showing fades in. It beats the idle fade: input never brings back what it hid.
+func toggle_labels() -> void:
+	set_labels_hidden(not labels_hidden)
+
+
+func set_labels_hidden(on: bool) -> void:
+	labels_hidden = on
+	if on:
+		label_alpha = 0.0
+	_idle_s = 0.0
+	_apply_label_alpha()
+
+
+## Any mouse or key input: the idle clock restarts and the labels fade back in.
+func note_input() -> void:
+	_idle_s = 0.0
+
+
+## True once the user has been inactive for IDLE_HIDE_S.
+func labels_idle() -> bool:
+	return _idle_s >= IDLE_HIDE_S
+
+
+## Advances the idle clock and the fade by `delta` seconds (the frame loop's call; tests pass time).
+func step_labels(delta: float) -> void:
+	_idle_s += delta
+	var want := 0.0 if labels_hidden or labels_idle() else 1.0
+	label_alpha = move_toward(label_alpha, want, delta / LABEL_FADE_S)
+	_apply_label_alpha()
+
+
+func _apply_label_alpha() -> void:
+	if callouts == null:
+		return
+	callouts.modulate.a = label_alpha
+	callouts.visible = label_alpha > 0.0
+	if labels_button != null:
+		labels_button.queue_redraw()
 
 
 func apply_camera() -> void:
@@ -1136,6 +1189,35 @@ func rebuild_picks() -> void:
 # The panel: five numbers, nothing else
 # ---------------------------------------------------------------------------
 
+## The eye button: an open eye while labels show, struck through while hidden.
+class LabelsEye extends Button:
+	var _ds: DesignSpace
+
+	func _init(ds: DesignSpace) -> void:
+		_ds = ds
+		flat = true
+		focus_mode = Control.FOCUS_NONE
+		anchor_top = 1.0
+		anchor_bottom = 1.0
+
+	func _draw() -> void:
+		var c := Color(0.93, 0.93, 0.93) if is_hovered() else Color(0.58, 0.58, 0.58)
+		var o := size * 0.5
+		var pts := PackedVector2Array()
+		for i in 21:
+			var t := float(i) / 20.0
+			var x := lerpf(-9.0, 9.0, t)
+			pts.append(o + Vector2(x, -5.0 * sin(PI * t)))
+		for i in range(20, -1, -1):
+			var t := float(i) / 20.0
+			var x := lerpf(-9.0, 9.0, t)
+			pts.append(o + Vector2(x, 5.0 * sin(PI * t)))
+		draw_polyline(pts, c, 1.5, true)
+		draw_circle(o, 2.5, c)
+		if _ds != null and _ds.labels_hidden:
+			draw_line(o + Vector2(-8, 8), o + Vector2(8, -8), c, 1.5, true)
+
+
 func _build_panel() -> void:
 	panel = VBoxContainer.new()
 	panel.name = "Readouts"
@@ -1265,6 +1347,16 @@ func _build_panel() -> void:
 	home_button.add_theme_color_override("font_pressed_color", INK)
 	home_button.pressed.connect(go_home)
 	add_child(home_button)
+
+	labels_button = LabelsEye.new(self)
+	labels_button.name = "LabelsToggle"
+	labels_button.tooltip_text = "Show or hide labels  (L)"
+	labels_button.offset_left = 32
+	labels_button.offset_right = 60
+	labels_button.offset_top = -96
+	labels_button.offset_bottom = -64
+	labels_button.pressed.connect(toggle_labels)
+	add_child(labels_button)
 
 	back_button = Button.new()
 	back_button.name = "Back"
@@ -2605,6 +2697,9 @@ func _clear_ghosts() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if visible and (event is InputEventMouseMotion or event is InputEventMouseButton or event is InputEventKey
+			or event is InputEventPanGesture or event is InputEventMagnifyGesture):
+		note_input()
 	if drag_kind == "" or not visible:
 		return
 	if event is InputEventMouseMotion:
@@ -2662,7 +2757,7 @@ func silhouette_polys() -> Array:
 ## minimum sizes, so it holds headless (where containers never lay out) as well as in the window.
 func callout_avoid_rects() -> Array:
 	var out: Array = []
-	for b in [back_button, home_button]:
+	for b in [back_button, home_button, labels_button]:
 		var c := b as Control
 		var y0 := c.offset_top + (size.y if c.anchor_top == 1.0 else 0.0)
 		out.append(Rect2(c.offset_left, y0, c.offset_right - c.offset_left, c.offset_bottom - c.offset_top))
