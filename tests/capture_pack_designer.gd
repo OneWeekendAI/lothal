@@ -27,6 +27,27 @@ func _init() -> void:
 	for i in 20:
 		await process_frame
 	var ds: DesignSpace = shell.design_space
+	if state.begins_with("chip"):
+		# Main screen with the battery's charge chip: chip_62 | chip_mid | chip_full
+		var id := ds.selected_battery()
+		var mah := float(ds._catalog.get_part(id)["specs"]["mah"])
+		var cp := PackCharge.load_from(ds.pack_charge_path)
+		cp.set_used_mah(id, mah * 0.38)
+		cp.save(ds.pack_charge_path)
+		ds.refresh_charge_chip()
+		if state == "chip_mid":
+			ds.charge_chip.plug.pressed.emit()
+			ds.charge_chip.set_process(false)
+			ds.charge_chip.step(1.3)
+		elif state == "chip_full":
+			ds.charge_chip.plug.pressed.emit()
+			ds.charge_chip.step(4.0)
+		for i in 6:
+			await process_frame
+		root.get_texture().get_image().save_png(out_path)
+		print("saved %s" % ProjectSettings.globalize_path(out_path))
+		quit()
+		return
 	ds.shelf.set_open(true)
 	ds.shelf.toggle_category("battery")
 	for i in 10:

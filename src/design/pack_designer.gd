@@ -67,6 +67,8 @@ var _recharge: Dictionary = {}
 var _warns: Array[String] = []
 var _tween: Tween
 var _recharge_pending := false
+var _charged_now := false
+var _charge_from_frac := 0.0
 var _syncing := false
 
 # Controls.
@@ -109,6 +111,8 @@ var charge_spin: SpinBox
 var charge_button: Button
 var discharge_row: HBoxContainer
 var recharge_row: HBoxContainer
+var charge_line: Label
+var charge_bar: ProgressBar
 var result_label: Label
 var warning_label: Label
 var charts: PackCharts
@@ -395,6 +399,8 @@ func typed_fields() -> Array:
 
 func _rederive() -> void:
 	derive_count += 1
+	if not _recharge_pending:
+		_charged_now = false
 	_figs = design.derive()
 	_run = _run_discharge()
 	_recharge = _run_recharge_preview()
@@ -430,6 +436,7 @@ func _run_recharge_preview() -> Dictionary:
 ## Charges the pack: plays the recharge, and when it completes the stored state is back to full.
 func run_recharge() -> void:
 	tab = "recharge"
+	_charge_from_frac = charge_fraction()
 	_recharge_pending = true
 	_rederive()
 	if not is_inside_tree():
@@ -440,11 +447,45 @@ func _finish_recharge() -> void:
 	if not _recharge_pending:
 		return
 	_recharge_pending = false
+	_charged_now = true
 	if part_id != "":
 		charge.set_used_mah(part_id, 0.0)
 		charge.save(charge_path)
 	_recharge = _run_recharge_preview()
 	_refresh()
+
+
+## The stored charge of this pack as a fraction of its capacity (1.0 for a pack not yet saved).
+func charge_fraction() -> float:
+	var mah := float(_figs.get("mah", 0.0))
+	if part_id == "" or mah <= 0.0:
+		return 1.0
+	return charge.remaining_fraction(part_id, mah)
+
+
+## "Charge: 38% (930 of 1500 mAh used)", then "Charging 74%" during the reveal, then
+## "Charged to 100% ✓".
+func charge_line_text() -> String:
+	var mah := float(_figs.get("mah", 0.0))
+	if _recharge_pending and is_inside_tree():
+		return "Charging %d%%" % roundi(_charge_shown() * 100.0)
+	if _charged_now:
+		return "Charged to 100% \u2713"
+	var used := charge.used_mah(part_id) if part_id != "" else 0.0
+	var pct := 100 if used <= 0.0 else clampi(roundi(charge_fraction() * 100.0), 0, 99)
+	return "Charge: %d%% (%d of %d mAh used)" % [pct, roundi(used), roundi(mah)]
+
+
+func _charge_shown() -> float:
+	if _recharge_pending and is_inside_tree():
+		return lerpf(_charge_from_frac, 1.0, charts.reveal)
+	return 1.0 if _charged_now else charge_fraction()
+
+
+func _process(_delta: float) -> void:
+	if _recharge_pending and charge_line != null:
+		charge_line.text = charge_line_text()
+		charge_bar.value = _charge_shown() * 100.0
 
 
 func _play_reveal() -> void:
@@ -918,6 +959,19 @@ func _build_right() -> Control:
 	recharge_row.add_child(charge_button)
 	col.add_child(recharge_row)
 
+	charge_line = Label.new()
+	charge_line.name = "ChargeLine"
+	charge_line.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
+	charge_line.add_theme_color_override("font_color", LothalTheme.TEXT_MAIN)
+	col.add_child(charge_line)
+	charge_bar = ProgressBar.new()
+	charge_bar.name = "ChargeBar"
+	charge_bar.show_percentage = false
+	charge_bar.min_value = 0.0
+	charge_bar.max_value = 100.0
+	charge_bar.custom_minimum_size = Vector2(0, 6)
+	col.add_child(charge_bar)
+
 	result_label = Label.new()
 	result_label.name = "Result"
 	result_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1188,6 +1242,10 @@ func _refresh() -> void:
 	tab_recharge.button_pressed = tab == "recharge"
 	discharge_row.visible = tab == "discharge"
 	recharge_row.visible = tab == "recharge"
+	charge_line.visible = tab == "recharge"
+	charge_bar.visible = tab == "recharge"
+	charge_line.text = charge_line_text()
+	charge_bar.value = _charge_shown() * 100.0
 	steady_button.button_pressed = discharge_mode == "constant"
 	drone_button.button_pressed = discharge_mode == "this_drone"
 	amps_spin.set_value_no_signal(_discharge_current())

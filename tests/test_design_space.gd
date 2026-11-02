@@ -25,6 +25,7 @@ static func run() -> Array:
 	results.append_array(_test_home_restores())
 	results.append_array(_test_back_to_picker())
 	results.append_array(_test_panel_fades())
+	results.append_array(_test_charge_chip(catalog))
 	return results
 
 
@@ -371,4 +372,73 @@ static func _test_panel_fades() -> Array:
 	results.append(TestResult.new("framing a part hides it too",
 		framed and is_equal_approx(ds.panel.modulate.a, 0.0), str(ds.panel.modulate.a)))
 	ds.free()
+	return results
+
+
+const CHIP_CHARGE := "user://test_ds_chip_charge.json"
+
+
+static func _chip_ds(catalog: PartsCatalog) -> DesignSpace:
+	if FileAccess.file_exists(CHIP_CHARGE):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(CHIP_CHARGE))
+	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"), catalog)
+	ds.pack_charge_path = CHIP_CHARGE
+	ds.refresh_charge_chip()
+	return ds
+
+
+## The selected-battery charge chip. Each check names a way the chip could be wrong: shown with no
+## battery, a percentage not read from used_mah, a plug that does not store full, an enabled plug at 100%.
+static func _test_charge_chip(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	var bare := DesignSession.default_for_class("five_inch")
+	bare.selection.erase("battery")
+	var ds0 := DesignSpace.new(bare, catalog)
+	ds0.pack_charge_path = CHIP_CHARGE
+	ds0.refresh_charge_chip()
+	results.append(TestResult.new("charge chip is hidden when no battery is selected",
+		ds0.charge_chip != null and not ds0.charge_chip.visible, ""))
+
+	var ds := _chip_ds(catalog)
+	var id := ds.selected_battery()
+	var mah := float(catalog.get_part(id)["specs"]["mah"])
+	results.append(TestResult.new("a full fitted battery shows its pack and 100%",
+		ds.charge_chip.visible and ds.charge_chip.label.text == "4S %dmAh \u00b7 100%%" % int(mah),
+		ds.charge_chip.label.text))
+	var c := PackCharge.load_from(CHIP_CHARGE)
+	c.set_used_mah(id, mah * 0.38)
+	c.save(CHIP_CHARGE)
+	ds.refresh_charge_chip()
+	results.append(TestResult.new("the percentage is read from used_mah (38% used shows 62%)",
+		ds.charge_chip.label.text.ends_with("\u00b7 62%") and not ds.charge_chip.plug.disabled,
+		ds.charge_chip.label.text))
+	ds.charge_chip.plug.pressed.emit()
+	var stored := PackCharge.load_from(CHIP_CHARGE)
+	results.append(TestResult.new("pressing the plug ends at 100% and stores used_mah 0",
+		ds.charge_chip.label.text.ends_with("\u00b7 100%") and stored.used_mah(id) == 0.0,
+		"%s stored %s" % [ds.charge_chip.label.text, stored.used_mah(id)]))
+	results.append(TestResult.new("at 100% the plug is disabled",
+		ds.charge_chip.plug.disabled, ""))
+
+	# The animation, stepped by hand: the count rises monotonically and the text says Charging.
+	var chip := ChargeChip.new()
+	chip.set_pack("x", "4S 1500mAh", 1500.0, 930.0)
+	chip._charging = true
+	chip._from_frac = chip.fraction()
+	var last := chip.percent()
+	var rose := true
+	var said := false
+	for i in 31:
+		chip.step(0.1)
+		if chip.is_charging():
+			said = said or chip.label.text.begins_with("Charging ")
+			rose = rose and chip.percent() >= last
+			last = chip.percent()
+	results.append(TestResult.new("over 3 s the charge counts up, says Charging, then lands on 100%",
+		rose and said and not chip.is_charging() and chip.label.text.ends_with("100%"),
+		"%s rose=%s said=%s" % [chip.label.text, rose, said]))
+	chip.free()
+	ds.free()
+	ds0.free()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(CHIP_CHARGE))
 	return results

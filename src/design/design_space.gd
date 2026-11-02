@@ -119,6 +119,9 @@ var swap_slot := ""
 ## the readout marks, and which pins the inspector is showing.
 var warning_pins: Array = []
 var issues_label: Label
+var charge_chip: ChargeChip
+## A battery card clicked on the shelf; it is the one the chip shows until the build changes.
+var _clicked_battery := ""
 var gauges: Dictionary = {}          ## readout key -> its ReadoutGauge (fill = where the value sits in its range)
 var mark_buttons: Dictionary = {}    ## readout key -> its mark Button ("\u25b2 8.0 in air")
 var warning_open: Array = []          ## pin ids the inspector shows ([] for none)
@@ -243,6 +246,7 @@ func redo() -> bool:
 ## Everything a changed selection moves: readouts, the drawn parts, pick shapes, picker, inspector.
 func _after_change() -> void:
 	_refusal = {}
+	_clicked_battery = ""
 	clear_preview()
 	refresh()
 	regenerate_frame()
@@ -284,6 +288,7 @@ func _refresh_warnings(b: Build, fs: Dictionary) -> void:
 	_callout_version += 1
 	_apply_tint()
 	issues_label.text = WarningPins.count_text(pins.size())
+	refresh_charge_chip()
 	var m := WarningPins.marks(pins)
 	for key in mark_buttons:
 		(mark_buttons[key] as Button).text = String(m[key]["text"]) if m.has(key) else ""
@@ -1224,6 +1229,10 @@ func _build_panel() -> void:
 	rule.custom_minimum_size = Vector2(0, 1)
 	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(rule)
+	# The selected battery's charge: "4S 1500mAh · 62%" and a plug that charges it.
+	charge_chip = ChargeChip.new()
+	charge_chip.charged.connect(_on_chip_charged)
+	panel.add_child(charge_chip)
 	# "2 issues": the count of warning pins; the sentences are on the pins (Section 8).
 	issues_label = Label.new()
 	issues_label.name = "Issues"
@@ -1930,6 +1939,9 @@ func _fitted_now() -> Dictionary:
 ## A card in the shelf was clicked: swap it in place when a part is selected (the same session
 ## swap as ever, so undo and redo work); {} when no part is selected or the card is another slot's.
 func click_card(category: String, part_id: String) -> Dictionary:
+	if category == "battery":
+		_clicked_battery = part_id
+		refresh_charge_chip()
 	if swap_slot == "" or not (PartSwap.SLOTS[swap_slot] as Array).has(category):
 		return {}
 	return choose(category, part_id)
@@ -2083,7 +2095,9 @@ func open_pack_designer() -> void:
 	designer.store_path = custom_parts_path
 	designer.charge_path = pack_charge_path
 	designer.saved.connect(func(_id: String): refresh_catalog())
-	designer.closed.connect(func(): pack_designer = null)
+	designer.closed.connect(func():
+		pack_designer = null
+		refresh_charge_chip())
 	pack_designer = designer
 	add_child(designer)
 	designer.open_new()
@@ -2505,3 +2519,32 @@ func update_callouts() -> void:
 	for p in placed:
 		p.merge(info[String(p["id"])])
 	callouts.show_items(placed)
+
+
+## The battery the chip speaks of: the last one clicked on the shelf, else the one fitted. "" if none.
+func selected_battery() -> String:
+	if _clicked_battery != "":
+		return _clicked_battery
+	return String(session.selection.get("battery", ""))
+
+
+## Points the chip at the selected battery with its stored charge; hides it with none.
+func refresh_charge_chip() -> void:
+	if charge_chip == null:
+		return
+	var id := selected_battery()
+	var part := _catalog.get_part(id) if id != "" else {}
+	var specs: Dictionary = part.get("specs", {})
+	var mah := float(specs.get("mah", 0.0))
+	if part.is_empty() or mah <= 0.0:
+		charge_chip.clear_pack()
+		return
+	var cells := int(specs.get("cells", 0))
+	var text := "%s%dmAh" % ["%dS " % cells if cells > 0 else "", roundi(mah)]
+	charge_chip.set_pack(id, text, mah, PackCharge.load_from(pack_charge_path).used_mah(id))
+
+
+func _on_chip_charged(id: String) -> void:
+	var charge := PackCharge.load_from(pack_charge_path)
+	charge.set_used_mah(id, 0.0)
+	charge.save(pack_charge_path)

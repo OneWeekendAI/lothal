@@ -102,6 +102,7 @@ static func _test_tile(catalog: PartsCatalog) -> Array:
 	named.sort()
 	var expected: Array = BEFORE_NAMES.duplicate()
 	expected.append("AddPack")
+	expected.append("Plug")  # the selected-battery charge chip's plug button (charge_chip.gd)
 	expected.sort()
 	out.append(_t("battery shelf ends with an AddPack tile and no other new button exists",
 		named == expected and unnamed == BEFORE_UNNAMED, "named %s unnamed %d" % [named, unnamed]))
@@ -301,6 +302,25 @@ static func _test_recharge(catalog: PartsCatalog) -> Array:
 		and float(d.recharge_result().get("time_to_full_s", 0.0)) > 0.0,
 		"id %s before %s after %s" % [id, before, d.charge.used_mah(id)]))
 	d.free()
+
+	# The charge line: before, and after.
+	var e := _designer(catalog)
+	e.open_new()
+	var pid := e.save()
+	var mah := roundi(float(e.figures()["mah"]))
+	e.charge.set_used_mah(pid, 930.0)
+	e.open_pack(pid)
+	e.set_tab("recharge")
+	var expect_before := "Charge: %d%% (930 of %d mAh used)" % [roundi((1.0 - 930.0 / mah) * 100.0), mah]
+	out.append(_t("recharge tab states the charge before: percent and mAh used",
+		e.charge_line.text == expect_before and e.charge_line.visible and e.charge_bar.visible
+		and absf(e.charge_bar.value - (1.0 - 930.0 / mah) * 100.0) < 0.01,
+		"%s | %s" % [e.charge_line.text, expect_before]))
+	e.run_recharge()
+	out.append(_t("and 'Charged to 100% \u2713' with a full bar after",
+		e.charge_line.text == "Charged to 100% \u2713" and e.charge_bar.value == 100.0,
+		e.charge_line.text))
+	e.free()
 	return out
 
 
