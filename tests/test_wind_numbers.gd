@@ -69,8 +69,11 @@ static func run() -> Array:
 ## in the 11th significant digit (e.g. 15.75313526557218502 -> 15.75313526557580346, 2e-13 relative)
 ## while hover (11 A) is nowhere near any limit. Re-measured with the same %.17f capture; the
 ## bit-identical claim now reads "identical to the code as of the ceiling change", not pre-F8.
-const GOLDEN_AVG_CURRENT := 15.753135265575803  # 17 sig. digits: the 20-digit literal parses one ulp off
-const GOLDEN_FLIGHT_TIME := 4.57051874348698295
+## RE-FROZEN again at the DC-law motor re-baseline (pack current = ESC duty x winding current; k_t fitted at the
+## loaded rated rpm): average flight current 15.753 -> 10.321 A, flight time 4.5705 -> 6.9757 min, hover current
+## 11.20 -> 5.485 A. Same capture precision; the figures below are the live ones.
+const GOLDEN_AVG_CURRENT := 10.321487052293875  # 17 sig. digits: the 20-digit literal parses one ulp off
+const GOLDEN_FLIGHT_TIME := 6.97573902241136157
 
 ## MUTATION THIS CATCHES: the wind term added as `+ wind_mps` with no zero guard, using a non-zero
 ## default. That mutation moves BOTH figures away from the golden literals even at the call sites
@@ -256,10 +259,10 @@ static func _hover_delegates_in_source() -> Array:
 ## is left calm, so the mitigation named here is now the mitigation that runs. Nothing else was
 ## needed for check 3: fixing check 5 restores it.
 ## Re-measured 2026-09-27 — see GOLDEN_AVG_CURRENT's note (the ceiling bounds the bisection).
-const FT_CALM := 4.57051874348698295
-const FT_3 := 4.00312954088890205
-const FT_7 := 3.35449307131979202
-const FT_12 := 2.67310517827104155
+const FT_CALM := 6.97573902241136157
+const FT_3 := 5.42409025808935752
+const FT_7 := 3.90239041225940619
+const FT_12 := 3.09203751470311916
 
 ## MUTATION THIS CATCHES: the wind term applied to one segment only. With only one of five legs
 ## seeing the wind, the weighted average moves far less per m/s of wind than the pinned literals
@@ -292,10 +295,10 @@ static func _flight_time_falls() -> Array:
 # ---------------------------------------------------------------------------
 
 ## Re-measured 2026-09-27 — see GOLDEN_AVG_CURRENT's note (the ceiling bounds the bisection).
-const HOVER_0 := 11.19957425582619059
-const HOVER_3 := 10.94871863159634806
-const HOVER_7 := 10.13878938882512770
-const HOVER_12 := 11.26892665012122308
+const HOVER_0 := 5.48529463085796998
+const HOVER_3 := 5.23949478503618593
+const HOVER_7 := 4.73630474415647207
+const HOVER_12 := 6.02293785431465345
 
 ## MUTATION THIS CATCHES: `hover_current_in_wind_a` ignoring its argument. With the argument
 ## ignored, every one of the four pinned values below collapses to HOVER_0 (or whatever constant

@@ -49,6 +49,10 @@ pub struct MotorModel {
     pub dc_io_v: f64,
     #[var]
     pub dc_k_q: f64,
+    /// How many identical motors one powertrain thruster stands for: 1 for every plan position
+    /// except a coaxial pair lumped into one thruster (2). Scales the CURRENT only -- each motor
+    /// in the pair still turns the rpm one motor solves to.
+    pub dc_count: f64,
 }
 
 #[godot_api]
@@ -75,6 +79,7 @@ impl MotorModel {
             dc_io_a: 0.0,
             dc_io_v: 0.0,
             dc_k_q: 0.0,
+            dc_count: 1.0,
         })
     }
 
@@ -86,6 +91,13 @@ impl MotorModel {
         self.dc_io_a = io_a;
         self.dc_io_v = io_voltage_v;
         self.dc_k_q = k_q;
+    }
+
+    /// A thruster that stands for `n` identical motors (a lumped coaxial pair) draws `n` times one
+    /// motor's current at the same rpm.
+    #[func]
+    pub fn set_dc_count(&mut self, n: f64) {
+        self.dc_count = n.max(1.0);
     }
 
     #[func]
@@ -112,7 +124,15 @@ impl MotorModel {
     /// prop's torque over Kt. Only meaningful when `uses_dc`.
     #[func]
     pub fn dc_current_at_rpm(&self, rpm: f64) -> f64 {
-        dc_current_impl(rpm, self.kv, self.dc_io_a, self.dc_io_v, self.dc_k_q)
+        self.dc_count * dc_current_impl(rpm, self.kv, self.dc_io_a, self.dc_io_v, self.dc_k_q)
+    }
+
+    /// PACK-side current of this thruster at `rpm` on a supply of `v_supply` volts (duty times the
+    /// winding current; see `dc_pack_current_impl`). What a battery drains by.
+    #[func]
+    pub fn dc_pack_current_at_rpm(&self, rpm: f64, v_supply: f64) -> f64 {
+        self.dc_count * dc_pack_current_impl(rpm, v_supply, self.kv, self.dc_rm_ohm, self.dc_io_a,
+            self.dc_io_v, self.dc_k_q)
     }
 
     #[func]
@@ -296,6 +316,18 @@ pub fn dc_current_impl(rpm: f64, kv: f64, io: f64, io_v: f64, k_q: f64) -> f64 {
     io_impl(io, io_v, kv, rpm) + k_q * w * w / kt_impl(kv).max(1e-12)
 }
 
+/// PACK-side current of one motor at `rpm` fed from a supply of `v_supply` volts through an ideal
+/// ESC. The ESC chops the supply at duty d = V_motor / V_supply, where V_motor = rpm/Kv + I*Rm is
+/// what the winding needs, so the supply sees d * I (power in = power out). Without this a
+/// motor at 30% duty charged the pack its full winding current, three times what it takes.
+pub fn dc_pack_current_impl(rpm: f64, v_supply: f64, kv: f64, rm: f64, io: f64, io_v: f64,
+                            k_q: f64) -> f64 {
+    let i = dc_current_impl(rpm, kv, io, io_v, k_q);
+    if v_supply <= 0.0 || kv <= 0.0 { return i; }
+    let v_motor = rpm / kv + i * rm.max(0.0);
+    i * (v_motor / v_supply).clamp(0.0, 1.0)
+}
+
 /// Pack current and rpm per motor for `n` identical DC motors at duty `t` on a pack of open-circuit
 /// `rest_v` behind `r_pack`. The pack carries the motors' summed current (no ESC model, as in the
 /// legacy law), so terminal V = rest_v - I_total*r_pack. Demand falls as amps rise, so one root,
@@ -306,12 +338,14 @@ pub fn dc_pack_state(t: f64, rest_v: f64, r_pack: f64, n: f64, kv: f64, rm: f64,
     let at = |amps: f64| solve_point(t * (rest_v - amps * r_pack).max(0.0), kv, rm, io, io_v, k_q);
     if r_pack <= 0.0 {
         let p = at(0.0);
-        return (n * p.current_a, p.rpm);
+        return (n * t * p.current_a, p.rpm);
     }
+    // The winding sees t * V_terminal, so the PACK carries t times the winding current (an ideal
+    // ESC conserves power); summing winding currents is the duty-cycle error that tripled hover draw.
     let (mut lo, mut hi) = (0.0, rest_v / r_pack);
     for _ in 0..60 {
         let mid = 0.5 * (lo + hi);
-        if n * at(mid).current_a > mid { lo = mid } else { hi = mid }
+        if n * t * at(mid).current_a > mid { lo = mid } else { hi = mid }
     }
     let amps = 0.5 * (lo + hi);
     (amps, at(amps).rpm)
@@ -333,17 +367,26 @@ pub fn solve_point_series(v: f64, r_s: f64, kv: f64, rm: f64, io: f64, io_v: f64
     let zero = Point { rpm: 0.0, current_a: 0.0, torque_nm: 0.0, shaft_w: 0.0, electrical_w: 0.0, efficiency: 0.0, io_a: 0.0 };
     if v <= 0.0 || kv <= 0.0 || rm <= 0.0 { return zero; }
     let kt = kt_impl(kv);
-    let f = |rpm: f64| {
-        let i = current_impl(v, rpm, kv, rm + r_s);
-        let w = rpm * std::f64::consts::TAU / 60.0;
-        (i - io_impl(io, io_v, kv, rpm)) * kt - k_q * w * w
+    // Closed form. The balance (i - Io(rpm)) * Kt = k_q * w^2 with i = (v - rpm/Kv) / R and Io
+    // linear in rpm (or constant when io_v is unset) is a quadratic in rpm:
+    //   a rpm^2 + b rpm - c = 0,  a = k_q (2pi/60)^2,  b = Kt (1/(Kv R) + io/(Kv io_v)),
+    //   c = Kt (v/R - io_const).
+    // Its one non-negative root is the crossing the 80-step bisection on [0, Kv*v] used to find.
+    // Since 2026-11-03 every motor is on this law, and the bisection nested inside the pack-sag
+    // bisection (60 x 80 solves per throttle) made hover and peak-thrust 17x slower and pushed the
+    // full suite past its watchdog. The root form 2c / (b + sqrt(b^2 + 4ac)) has no cancellation.
+    let r = rm + r_s;
+    let ref_rpm = kv * io_v;
+    let (io_slope, io_const) = if ref_rpm > 0.0 { (io / ref_rpm, 0.0) } else { (0.0, io) };
+    let rad = std::f64::consts::TAU / 60.0;
+    let a = k_q.max(0.0) * rad * rad;
+    let b = kt * (1.0 / (kv * r) + io_slope);
+    let c = kt * (v / r - io_const);
+    let rpm = if c <= 0.0 {
+        0.0
+    } else {
+        (2.0 * c / (b + (b * b + 4.0 * a * c).sqrt())).min(kv * v)
     };
-    let (mut lo, mut hi) = (0.0, kv * v);
-    for _ in 0..80 {
-        let mid = 0.5 * (lo + hi);
-        if f(mid) > 0.0 { lo = mid } else { hi = mid }
-    }
-    let rpm = 0.5 * (lo + hi);
     let i = current_impl(v, rpm, kv, rm + r_s);
     let io_now = io_impl(io, io_v, kv, rpm);
     let torque = (i - io_now) * kt;
@@ -467,6 +510,19 @@ mod tests {
     }
 
     #[test]
+    fn a_lumped_coaxial_thruster_draws_every_motors_current_at_the_same_rpm() {
+        let mut m = MotorModel { kv: KV, max_throttle: 1.0, tau_s: 0.03, dc_rm_ohm: RM, dc_io_a: IO,
+                                 dc_io_v: IOV, dc_k_q: KQ, dc_count: 1.0 };
+        let one = m.dc_current_at_rpm(15000.0);
+        let rpm_one = m.target_rpm(0.6, 22.2);
+        m.set_dc_count(2.0);
+        assert!((m.dc_current_at_rpm(15000.0) - 2.0 * one).abs() < 1e-12);
+        assert!((m.target_rpm(0.6, 22.2) - rpm_one).abs() < 1e-12, "count scales current, not rpm");
+        m.set_dc_count(0.0);
+        assert!((m.dc_current_at_rpm(15000.0) - one).abs() < 1e-12, "never below one motor");
+    }
+
+    #[test]
     fn rm_and_io_move_the_drones_current_and_rpm() {
         let (a0, r0) = dc_pack_state(0.8, 22.2, 0.02, 4.0, KV, RM, IO, IOV, KQ);
         let (a1, r1) = dc_pack_state(0.8, 22.2, 0.02, 4.0, KV, 2.0 * RM, IO, IOV, KQ);
@@ -479,7 +535,7 @@ mod tests {
     #[test]
     fn legacy_motor_target_is_throttle_kv_voltage() {
         let m = MotorModel { kv: KV, max_throttle: 0.9, tau_s: 0.03, dc_rm_ohm: 0.0, dc_io_a: 0.0,
-                             dc_io_v: 0.0, dc_k_q: 0.0 };
+                             dc_io_v: 0.0, dc_k_q: 0.0, dc_count: 1.0 };
         assert!(!m.uses_dc());
         assert!((m.target_rpm(1.0, 20.0) - 0.9 * KV * 20.0).abs() < 1e-9);
     }

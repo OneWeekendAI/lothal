@@ -20,13 +20,21 @@ const SIZES := [Vector2(1280, 720), Vector2(1920, 1080)]
 const READOUT_KEYS := ["auw_g", "thrust_to_weight", "hover_throttle", "flight_time_min", "top_speed_kmh"]
 
 ## The build-warning cases: [case, category, part (null = seed), pin id, anchor, readout, blocking].
+## A case that needs more than one swap gives category "" and, as its part, an Array of
+## [category, part] steps applied in order (every step must be accepted).
+##
+## RE-BASELINE 2026-11-03 (DC motor law): pack currents fell, so the two single-swap 6S cases lost
+## their warnings. 6S 1300 alone is now capped by the BATTERY (the seed case already covers that
+## pin), and 6S 5600 alone is capped by the 45 A board and no longer overloads a wire. The motor cap
+## now needs the 80 A board as well, and the wire overload needs the 7" long-range frame with the
+## 2807 on 6S 5600 (32.6 A sustained on the main lead). Same pins, same anchors.
 const CASES := [
 	["seed current cap", "", null, "w:current_limit:battery", "part/battery", "thrust_to_weight", false],
 	["seed sag", "", null, "w:pack_sag:battery", "part/battery", "thrust_to_weight", false],
-	["6S pack, motor current cap", "battery", "battery_6s_1300", "w:current_limit:motors", "part/motor/FR", "thrust_to_weight", false],
+	["6S 5600 + 80 A board, motor current cap", "", [["battery", "battery_6s_5600"], ["esc", "esc_4in1_80a_30x30"]], "w:current_limit:motors", "part/motor/FR", "thrust_to_weight", false],
 	["16\" props, cannot hover", "propeller", "prop_16x12x4", "w:cannot_hover:motors", "part/motor/FR", "thrust_to_weight", true],
 	["2S 300 pack, plug over rating", "battery", "battery_2s_300", "w:connector_rating:harness", "part/wires", "", false],
-	["6S 5600 pack, wire over rating", "battery", "battery_6s_5600", "w:harness_ampacity:harness", "part/wires", "", false],
+	["7\" 2807 on 6S 5600, wire over rating", "", [["frame", "frame_7in_long_range"], ["motor", "motor_2807_1300kv"], ["battery", "battery_6s_5600"]], "w:harness_ampacity:harness", "part/wires", "", false],
 	["no receiver", "receiver", "", "w:no_receiver:receiver", "part/stack", "", false],
 	["FC-powered buzzer", "buzzer", "buzz_passive_pad", "w:buzzer_not_self_powered:receiver", "part/stack", "", false],
 ]
@@ -42,7 +50,14 @@ static func run() -> Array:
 	results.append_array(_seed(ds, catalog))
 	for c in CASES:
 		_reset(ds, home)
-		if String(c[1]) != "":
+		if c[2] is Array:
+			var refused: Array = []
+			for st in c[2]:
+				if not ds.choose(String(st[0]), String(st[1]))["ok"]:
+					refused.append(st)
+			results.append(TestResult.new("%s: every swap the case needs is accepted" % c[0],
+				refused.is_empty(), "refused: %s" % [refused]))
+		elif String(c[1]) != "":
 			ds.choose(String(c[1]), String(c[2]))
 		ds.update_callouts()
 		results.append_array(_kind(ds, catalog, c))

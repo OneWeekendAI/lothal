@@ -42,14 +42,14 @@ const INERTIA_EPS := 1.0e-12
 #
 #     all-up weight     496.0 g   ->  507.5 g   (+11.5 g, the harness costing what it costs)
 #     thrust-to-weight  11.69 : 1 ->  11.43 : 1
-#     hover throttle    29.6 %    ->  29.9 %
+#     hover throttle    29.6 %    ->  29.9 % (PW2), 25.0 % after the DC-law motor re-baseline
 #
 # The old lump was LOW at the 5" end and HIGH at the small end: a 65 mm whoop's harness comes out
 # at about half the flat 14 g, because its motor leads are shorter than the leads its motors
 # already ship with and its plug is a third of a gram of BT2.0 rather than three grams of XT60.
 const REFERENCE_AUW_G := 507.48
 const REFERENCE_TWR := 11.43
-const REFERENCE_HOVER := 0.2992
+const REFERENCE_HOVER := 0.2500
 ## The old figures, carried so the diff and the failure message both say what moved from what.
 const PREVIOUS_AUW_G := 496.0
 
@@ -373,7 +373,7 @@ static func _test_the_reference_build_matches_its_recorded_figures() -> TestResu
 	passed = passed and build.all_up_weight_g() > PREVIOUS_AUW_G
 
 	return TestResult.new(
-		"the reference build weighs 507.5 g at 11.43 : 1 and hovers at 29.9%, and the harness is why",
+		"the reference build weighs 507.5 g at 11.43 : 1 and hovers at 25.0%, and the harness is why",
 		passed,
 		"%.2f g (was %.1f), %.3f : 1, %.2f%% hover; harness %.2f g against the old 14.0 g lump" % [
 			build.all_up_weight_g(), PREVIOUS_AUW_G, build.thrust_to_weight(),

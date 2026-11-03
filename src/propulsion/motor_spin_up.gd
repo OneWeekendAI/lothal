@@ -103,7 +103,8 @@ static func compute(motor: Dictionary,
 		materials: FrameMaterials,
 		k_q_at_fit_prop: float,
 		k_q_at_test_prop: float,
-		omega_hover_rad_s: float) -> Dictionary:
+		omega_hover_rad_s: float,
+		omega_rated_loaded_rad_s: float = 0.0) -> Dictionary:
 	var specs: Dictionary = motor.get("specs", {})
 	var kv: float = float(specs.get("kv", 0.0))
 	if kv <= 0.0:
@@ -142,7 +143,8 @@ static func compute(motor: Dictionary,
 	var test: Dictionary = motor.get("thrust_test", {})
 	var test_voltage_v: float = float(test.get("voltage_v", 0.0))
 	var max_amps: float = float(specs.get("max_amps", 0.0))
-	var recovery := _recover_r_winding(k_e, test_voltage_v, max_amps, k_q_at_test_prop)
+	var recovery := _recover_r_winding(k_e, test_voltage_v, max_amps, k_q_at_test_prop,
+		omega_rated_loaded_rad_s)
 	var r_winding: float = recovery["r_ohm"]
 	var omega_loaded: float = recovery["omega_loaded_rad_s"]
 	var tier: String = recovery["tier"]
@@ -208,13 +210,23 @@ static func tau_s(motor: Dictionary,
 ## Guards against every degenerate input: missing amps, missing voltage, a k_q so small that
 ## Omega_loaded exceeds no-load Omega, and a resulting R that would be non-positive. Each
 ## returns the same shape with an explicit tier the caller reports rather than a masked zero.
+##
+## THE LOADED RATED RPM, WHEN THE CALLER HAS IT (2026-11-03). `Build.fit_rated_point` now solves the
+## rpm the datasheet thrust is made at (the loaded point k_t is fitted at). When it is passed in,
+## Omega_loaded is that rpm and k_q drops out: the torque balance above was only ever a way to FIND
+## the loaded rpm, and it runs through the prop's aero k_q, which is pitch/blade-blind and ~2x the
+## datasheet-implied torque (MOTOR_REBASELINE.md, open item). Through k_q the refit k_t inflated the
+## recovered R 0.12 -> 0.20 ohm and the reference tau 29.7 -> 39.4 ms, and the hand-tuned rate loop
+## stopped settling (80 -> 135 ms). R is still (V - K_e Omega_loaded) / I_max: datasheet amps at
+## the datasheet's own rated point.
 static func _recover_r_winding(k_e: float, voltage_v: float, max_amps: float,
-		k_q_test: float) -> Dictionary:
-	if voltage_v <= 0.0 or max_amps <= 0.0 or k_q_test <= 0.0:
+		k_q_test: float, omega_rated_loaded: float = 0.0) -> Dictionary:
+	if voltage_v <= 0.0 or max_amps <= 0.0 or (k_q_test <= 0.0 and omega_rated_loaded <= 0.0):
 		return {"r_ohm": 0.0, "omega_loaded_rad_s": 0.0, "tier": "insufficient_data"}
 	# K_t == K_e in SI units. Naming both here for readability of the physics.
 	var k_t := k_e
-	var omega_loaded_sq: float = k_t * max_amps / k_q_test
+	var omega_loaded_sq: float = omega_rated_loaded * omega_rated_loaded \
+		if omega_rated_loaded > 0.0 else k_t * max_amps / k_q_test
 	if omega_loaded_sq <= 0.0:
 		return {"r_ohm": 0.0, "omega_loaded_rad_s": 0.0, "tier": "insufficient_data"}
 	var omega_loaded: float = sqrt(omega_loaded_sq)

@@ -28,6 +28,15 @@ extends RefCounted
 ##     esc_4in1_20a_20x20 passes 20 A a channel  ->  20 - 32 = -12 A. Undersized.
 ##     esc_4in1_60a_30x30 passes 60 A a channel  ->  60 - 32 = +28 A. Ample.
 ##
+## THE DEMAND IS THE MODEL'S, SINCE THE DC MOTOR LAW (2026-11-03). One motor's demand is
+## `Build.motor_rated_draw_a()`: the DC draw of the 2207 on its own test prop flat out at its test
+## voltage, which is what "rated" means on this model. It is 59.7 A, 1.86x the sheet's 32 A, because
+## the prop's aero k_q is pitch/blade-blind (MOTOR_REBASELINE.md, accepted open item). So the
+## margins are worked from the model's demand, and the "ample" board is the 80 A one (60 A clears a
+## 59.7 A demand by 0.3 A, a knife-edge):
+##     esc_4in1_20a_20x20  ->  20 - 59.7 = -39.7 A. Undersized.
+##     esc_4in1_80a_30x30  ->  80 - 59.7 = +20.3 A. Ample.
+##
 ## Every Control built here is freed, or the runner emits leaked-RID ERROR lines that read like
 ## failures.
 
@@ -38,7 +47,10 @@ const DT := 1.0 / 60.0
 ## board, exactly as only the pack differs between the battery bench's two traces.
 const UNDERSIZED_ESC := "esc_4in1_20a_20x20"
 const ADEQUATE_ESC := "esc_4in1_60a_30x30"
+## The sheet's figure, kept for the message: the model's demand is read from Build, see the header.
 const MOTOR_RATED_A := 32.0
+const AMPLE_ESC := "esc_4in1_80a_30x30"
+const AMPLE_RATING_A := 80.0
 const UNDERSIZED_RATING_A := 20.0
 const ADEQUATE_RATING_A := 60.0
 
@@ -123,11 +135,12 @@ static func _test_headroom_fails_in_both_directions(catalog: PartsCatalog) -> Ar
 	# the prop the motor's own amp figure was measured on, one motor pulls exactly its rating.
 	var probe := _bench(catalog, ADEQUATE_ESC)
 	var demand: float = probe.readings()["demand_per_channel_a"]
+	var model_rated: float = probe.current_build().motor_rated_draw_a()
 	results.append(TestResult.new(
-		"one motor's demand is its rated current on the prop that rating was measured with",
-		absf(demand - MOTOR_RATED_A) < 0.01,
-		"%s pulls %.2f A flat out, rated %.0f A" % [
-			probe.current_build().motor["name"], demand, MOTOR_RATED_A]
+		"one motor's demand is its rated draw on the prop that rating was measured with",
+		model_rated > 0.0 and absf(demand - model_rated) < 0.01,
+		"%s pulls %.2f A flat out, model's rated draw %.2f A (sheet %.0f A)" % [
+			probe.current_build().motor["name"], demand, model_rated, MOTOR_RATED_A]
 	))
 	probe.free()
 
@@ -136,22 +149,22 @@ static func _test_headroom_fails_in_both_directions(catalog: PartsCatalog) -> Ar
 	results.append(TestResult.new(
 		"an undersized board reports INSUFFICIENT headroom, by the margin the two sheets give",
 		not small_read["has_headroom"]
-			and absf(small_read["headroom_a"] - (UNDERSIZED_RATING_A - MOTOR_RATED_A)) < 0.01,
-		"%s: %.0f A a channel against %.0f A demanded — headroom %+.1f A (hand-computed %+.0f A)" % [
+			and absf(small_read["headroom_a"] - (UNDERSIZED_RATING_A - model_rated)) < 0.01,
+		"%s: %.0f A a channel against %.0f A demanded — headroom %+.1f A (hand-computed %+.1f A)" % [
 			small.current_build().esc["name"], small_read["rating_a"], demand,
-			small_read["headroom_a"], UNDERSIZED_RATING_A - MOTOR_RATED_A]
+			small_read["headroom_a"], UNDERSIZED_RATING_A - model_rated]
 	))
 	small.free()
 
-	var big := _bench(catalog, ADEQUATE_ESC)
+	var big := _bench(catalog, AMPLE_ESC)
 	var big_read := big.readings()
 	results.append(TestResult.new(
 		"an adequate board reports SUFFICIENT headroom, by the margin the two sheets give",
-		big_read["has_headroom"]
-			and absf(big_read["headroom_a"] - (ADEQUATE_RATING_A - MOTOR_RATED_A)) < 0.01,
-		"%s: %.0f A a channel against %.0f A demanded — headroom %+.1f A (hand-computed %+.0f A)" % [
+		big_read["has_headroom"] and AMPLE_RATING_A - model_rated > 5.0
+			and absf(big_read["headroom_a"] - (AMPLE_RATING_A - model_rated)) < 0.01,
+		"%s: %.0f A a channel against %.0f A demanded — headroom %+.1f A (hand-computed %+.1f A)" % [
 			big.current_build().esc["name"], big_read["rating_a"], demand,
-			big_read["headroom_a"], ADEQUATE_RATING_A - MOTOR_RATED_A]
+			big_read["headroom_a"], AMPLE_RATING_A - model_rated]
 	))
 	big.free()
 

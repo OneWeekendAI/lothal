@@ -77,6 +77,12 @@ pub struct Powertrain {
     pub last_voltage_v: f64,
     #[var]
     pub last_current_total_a: f64,
+    /// The supply voltage `last_current_total_a` was computed at: the voltage at the START of the
+    /// last step (or the primed voltage). A DC motor's PACK current is duty x winding current and
+    /// the duty depends on the supply, so publish() must price each motor's current at this
+    /// voltage, not at the post-step sagged `last_voltage_v`, or the per-motor currents stop
+    /// summing to the pack current they were drawn as (2026-11-03: 40.9 A vs 39.7 A).
+    pub current_supply_v: f64,
     /// The aircraft's velocity in the BODY frame as of the last step, kept so publish() can be
     /// idempotent: it recomputes reaction torque and per-motor current from stored state, and
     /// those are now functions of airspeed as well as rpm. Vector3::ZERO on a bench, for ever,
@@ -162,6 +168,7 @@ impl Powertrain {
             motor_rpm: PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0]),
             last_voltage_v,
             last_current_total_a: 0.0,
+            current_supply_v: last_voltage_v,
             last_body_velocity_mps: Vector3::ZERO,
             observables,
         });
@@ -175,12 +182,18 @@ impl Powertrain {
     /// ceiling, a high-resistance pack would run away to a total voltage collapse.
     #[func]
     fn current_at_rpm(&self, rpm: f64) -> f64 {
+        self.current_at_rpm_on(rpm, self.last_voltage_v)
+    }
+
+    /// `current_at_rpm` with the supply voltage stated: a DC motor's PACK current depends on it
+    /// (the ESC's duty), so a solve that is still iterating the sag must pass its own voltage.
+    fn current_at_rpm_on(&self, rpm: f64, v_supply: f64) -> f64 {
         {
             // Motor Designer M4: a motor on the DC model draws Io(rpm) + torque/Kt, with the
             // torque of THIS powertrain's prop; every other motor keeps the rated-amps law.
             let mm = self.motor_model.bind();
             if mm.uses_dc() {
-                return mm.dc_current_at_rpm(rpm);
+                return mm.dc_pack_current_at_rpm(rpm, v_supply);
             }
         }
         if self.rated_rpm <= 0.0 {
@@ -217,10 +230,11 @@ impl Powertrain {
         let mut rpm = 0.0;
         for _ in 0..12 {
             rpm = self.motor_model.bind().target_rpm(t, voltage_v);
-            voltage_v = self.battery.bind().voltage_live(4.0 * self.current_at_rpm(rpm));
+            voltage_v = self.battery.bind().voltage_live(4.0 * self.current_at_rpm_on(rpm, voltage_v));
         }
-        self.last_current_total_a = 4.0 * self.current_at_rpm(rpm);
+        self.last_current_total_a = 4.0 * self.current_at_rpm_on(rpm, voltage_v);
         self.last_voltage_v = voltage_v;
+        self.current_supply_v = voltage_v;
         // Priming means "standing still at this throttle". A respawn after a fast flight must not
         // inherit that flight's airspeed into its first published tick.
         self.last_body_velocity_mps = Vector3::ZERO;
@@ -294,6 +308,7 @@ impl Powertrain {
 
         self.battery.bind_mut().drain(total_current_a, dt);
         self.last_current_total_a = total_current_a;
+        self.current_supply_v = self.last_voltage_v;
         // The live voltage the NEXT step's RPM ceiling is taken against. This one line is the
         // difference between a bench and a spreadsheet.
         self.last_voltage_v = self.battery.bind().voltage_live(total_current_a);
@@ -339,7 +354,7 @@ impl Powertrain {
             let reaction_nm = PropellerModel::reaction_torque_n_m(self.k_q, rpm)
                 * power_ratio_at(rpm);
             reaction.push(reaction_nm);
-            current.push(self.current_at_rpm(rpm) * power_ratio_at(rpm));
+            current.push(self.current_at_rpm_on(rpm, self.current_supply_v) * power_ratio_at(rpm));
             // Recomputed from stored rpm like everything else in this function, so a republish
             // is still idempotent — the value step() published this tick, read back the same.
             total_thrust += thrust_arr[i] as f64;

@@ -10,7 +10,7 @@ extends RefCounted
 ## TWO DIFFERENT COMMANDS, AND BOTH HAVE TO WORK
 ## ---------------------------------------------------------------------------
 ##
-## THE QUOTED FIGURE. Build.hover_throttle() is solved at the nominal voltage datum: it is the 29%
+## THE QUOTED FIGURE. Build.hover_throttle() is solved at the nominal voltage datum: it is the 25%
 ## on the stats panel, the number two builders compare, and it does not move. The first group below
 ## commands exactly that and asks whether the aircraft stays up on a half-empty pack.
 ##

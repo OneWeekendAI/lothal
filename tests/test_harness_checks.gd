@@ -20,8 +20,10 @@ extends RefCounted
 ##   - the reference 5" is the build that must stay CLEAN on ampacity. If it warns, the check is
 ##     noise.
 ##   - `_six_s_cinelifter` is a 10" on 6S — the only build in the catalog whose sustained draw is
-##     large enough that 22 AWG motor leads are genuinely under-rated. A 7" on 6S is not: it draws
-##     17 A sustained, 4.3 A per lead, and 22 AWG clears that. The plan's row-one wording ("a 6S
+##     large enough that thin motor leads are genuinely under-rated. A 7" on 6S is not: it draws
+##     17 A sustained, 4.3 A per lead, and 22 AWG clears that. (24 AWG since the 2026-11-03 DC-law
+##     re-baseline: the 10" now draws 26.3 A sustained, 6.6 A per lead, under 22 AWG's 7 A but over
+##     24 AWG's 3.5 A.) The plan's row-one wording ("a 6S
 ##     build") is satisfied by both and only one of them can actually fail, which is the difference
 ##     between a fixture and a decoration.
 
@@ -80,7 +82,7 @@ static func _test_the_reference_build_has_no_ampacity_complaint() -> TestResult:
 ## MUTATION CONFIRMED RED: widen the ampacity threshold (`segment_a <= rating_a * 4.0`).
 static func _test_thin_motor_leads_on_a_six_s_build_name_the_segment_and_a_fix() -> TestResult:
 	var build := _six_s_cinelifter()
-	build.harness.set_value(Harness.MOTOR_LEAD_AWG, 22)
+	build.harness.set_value(Harness.MOTOR_LEAD_AWG, 24)
 	var entry := _find(HarnessChecks.warnings_for(build), &"harness_ampacity")
 
 	var passed := entry != null
@@ -88,7 +90,7 @@ static func _test_thin_motor_leads_on_a_six_s_build_name_the_segment_and_a_fix()
 		passed = entry.severity == BuildWarning.Severity.LIMITING
 		# The SEGMENT, by name, and not merely "a wire somewhere".
 		passed = passed and String(entry.values["segment"]) == "motor_lead"
-		passed = passed and int(entry.values["awg"]) == 22
+		passed = passed and int(entry.values["awg"]) == 24
 		# And a gauge that CLEARS it, which is the half that turns a complaint into a shopping
 		# list — asserted by re-checking the named gauge against the same rating table.
 		var clears := int(entry.values["gauge_that_clears"])
@@ -101,7 +103,7 @@ static func _test_thin_motor_leads_on_a_six_s_build_name_the_segment_and_a_fix()
 				passed = passed and other.severity != BuildWarning.Severity.IMPOSSIBLE
 
 	return TestResult.new(
-		"22 AWG motor leads on a 6S build name the segment and a gauge that clears it, at limiting",
+		"24 AWG motor leads on a 6S build name the segment and a gauge that clears it, at limiting",
 		passed,
 		"no ampacity warning at all" if entry == null else "\"%s\"" % entry.message
 	)
@@ -446,7 +448,7 @@ static func _test_the_capacitor_severity_scales_with_cell_count() -> TestResult:
 ## mismatch warning).
 static func _test_every_warning_carries_the_current_it_was_computed_from() -> TestResult:
 	var build := _six_s_cinelifter()
-	build.harness.set_value(Harness.MOTOR_LEAD_AWG, 22)
+	build.harness.set_value(Harness.MOTOR_LEAD_AWG, 24)
 	build.harness.set_value(Harness.CONNECTOR, "connector_xt30")
 	build.harness.set_value(Harness.CAPACITOR, "")
 	var reading := HarnessChecks.draw(build)
@@ -520,8 +522,8 @@ static func _test_the_current_is_the_powertrains_own_published_figure() -> TestR
 # Fixtures and helpers
 # ---------------------------------------------------------------------------
 
-## A 10" long-range on 6S — 33 A sustained, which is the only build in the shipped catalog that
-## draws enough for 22 AWG motor leads to be genuinely under-rated. See the header.
+## A 10" long-range on 6S — 26.3 A sustained since the DC-law re-baseline (was 33 A), the largest
+## draw in the shipped catalog; 24 AWG motor leads (3.5 A) are genuinely under-rated on it. See the header.
 static func _six_s_cinelifter() -> Build:
 	return Build.from_ids(PartsCatalog.load_default(), "frame_10in_long_range",
 		"motor_2808_1300kv", "prop_10x5x2", "battery_6s_1300", "esc_4in1_80a_30x30",

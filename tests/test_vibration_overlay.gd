@@ -483,8 +483,14 @@ static func _test_the_frequency_axis_is_logarithmic() -> TestResult:
 	var linear_x := inner_left + inner_width * (mid_hz / top)
 	var not_linear: bool = absf(linear_x - centre) > 10.0
 
+	# Every power of ten inside the axis, counted here independently. Was ">= 2", which only held
+	# while the operating rpm was Kv x V x hover throttle; on the loaded hover rpm (2026-11-03) the
+	# fitted build's axis is 30-846 Hz, which holds exactly one (100 Hz).
 	var decades := overlay.decade_gridlines()
-	var decades_ok := decades.size() >= 2
+	var powers_inside := 0
+	if bottom > 0.0:
+		powers_inside = int(floor(log(top) / log(10.0))) - int(ceil(log(bottom) / log(10.0))) + 1
+	var decades_ok := decades.size() >= 1 and decades.size() == powers_inside
 	for hz in decades:
 		var gx := overlay.to_pixels(hz, 1.0).x
 		decades_ok = decades_ok and hz >= bottom and hz <= top \

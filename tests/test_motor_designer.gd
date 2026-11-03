@@ -77,12 +77,12 @@ static func _test_size_limits_kv(cfg: MotorConfigs, catalog: PartsCatalog) -> Ar
 		bad.is_empty() and names.size() == 15, str(bad)))
 
 	d.set_stator("2207")
-	var ok_2207 := d.set_kv(2750.0)
+	var ok_2207 := d.set_kv(2400.0)
 	d.set_stator("1404")
 	var moved_kv := d.design.kv
 	var accepted := d.set_kv(1960.0)
-	out.append(_t("a 2207 at 2750 KV moved to 1404 lands on 1404's nearest option, and 1960 KV is refused there",
-		ok_2207 and moved_kv == 3800.0 and not accepted and d.design.kv == 3800.0,
+	out.append(_t("a 2207 at 2400 KV moved to 1404 lands on 1404's nearest option, and 1960 KV is refused there",
+		ok_2207 and moved_kv == 2750.0 and not accepted and d.design.kv == 2750.0,
 		"moved %s accepted %s now %s opts %s" % [moved_kv, accepted, d.design.kv, cfg.kv_options("1404")]))
 
 	d.set_stator("0802")

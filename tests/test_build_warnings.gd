@@ -45,8 +45,13 @@ const CANNOT_FLY := ["frame_3in_toothpick", "motor_1103_8000kv", "prop_3x3x3",
 ## pack — hovers at 3500 m at 100% throttle (can_hover still true, "almost nothing in hand")
 ## and is impossible at 5000 m (flips at 3600 m), which is exactly the boundary the field test
 ## needs to walk.
+##
+## THE PACK WENT FROM 4S 650 TO 4S 1500 IN THE 2026-11-03 RE-BASELINE (DC motor law, k_t fitted at
+## the loaded rated point): on the 650 the build reached 2.33:1 and hovered even at 5000 m, so the
+## boundary walk had nothing to find. On the 1500 it is 1.84:1 at sea level, hovers at 3000 m/35 °C
+## at ~92% throttle and stops hovering at 4300 m — the same job, the same parts otherwise.
 const FIELD_VEHICLE := ["frame_5in_deadcat", "motor_f60proii_2207_1750kv", "prop_35x28x3",
-	"battery_4s_650", "esc_4in1_45a_30x30"]
+	"battery_4s_1500", "esc_4in1_45a_30x30"]
 
 
 static func run() -> Array:
@@ -252,8 +257,11 @@ static func _test_the_cinelifter_is_described_not_scolded(catalog: PartsCatalog)
 		# The wording is only right if the numbers under it did not move to make it right.
 		TestResult.new(
 			"...and the figures it is described by are the ones the pilot flew",
-			absf(build.thrust_to_weight() - 1.504) < 0.02
-				and absf(build.hover_throttle() - 0.822) < 0.005
+			# Re-pinned 2026-11-03 (DC motor law, k_t fitted at the loaded rated point): 1.504:1 /
+			# 82.2% -> 2.575:1 / 62.5%. The T:W move is the k_t refit on a non-test prop; the parts
+			# and AUW are unchanged, and the tolerances are the same.
+			absf(build.thrust_to_weight() - 2.575) < 0.02
+				and absf(build.hover_throttle() - 0.625) < 0.005
 				and build.can_hover(),
 			"%.2f:1, hover %.1f%%, can_hover=%s" % [build.thrust_to_weight(),
 				build.hover_throttle() * 100.0, build.can_hover()]
@@ -272,7 +280,7 @@ static func _test_climb_margin_is_the_acceleration_it_actually_has(catalog: Part
 		"climb margin is g(TWR - 1), reported as an acceleration and not as a verdict",
 		entry != null and entry.severity == BuildWarning.Severity.CHARACTERISTIC
 			and absf(float(entry.values.get("climb_accel_mps2", -1.0)) - expected) < 1e-6
-			and absf(expected - 4.94) < 0.05
+			and absf(expected - 15.45) < 0.05  # was 4.94 before the 2026-11-03 re-baseline
 			and entry.message.contains("m/s"),
 		"expected %.2f m/s^2; %s" % [expected, "absent" if entry == null else entry.message]
 	)
@@ -296,7 +304,7 @@ static func _test_manoeuvre_headroom_comes_from_the_mixer(catalog: PartsCatalog)
 		"manoeuvre headroom is the mixer's own clipping point, not a threshold typed into a branch",
 		entry != null and entry.severity == BuildWarning.Severity.CHARACTERISTIC
 			and absf(float(entry.values.get("attitude_demand_fraction", -1.0)) - expected) < 0.005
-			and absf(expected - 0.297) < 0.02,
+			and absf(expected - 0.624) < 0.02,  # was 0.297 before the 2026-11-03 re-baseline
 		"expected %.3f of full demand; %s" % [expected, "absent" if entry == null else entry.message]
 	)
 
@@ -320,28 +328,34 @@ static func _test_both_facts_are_told_every_time(catalog: PartsCatalog) -> TestR
 	)
 
 
-## Hover throttle and thrust-to-weight are ONE quantity, not two: thrust goes as the square of RPM
-## and RPM as the throttle command, so hover sits at sqrt(1 / TWR) of the way up. TWR 2.0 IS hover
-## 70.7%. The old block cut that single continuum in two places, at 2.0:1 and at 60%, and the two
-## constants could be edited into disagreeing with each other about the same aircraft.
+## Hover and thrust-to-weight are ONE quantity, not two: thrust goes as the square of RPM, so the
+## hover RPM sits at sqrt(1 / TWR) of the flat-out RPM. TWR 2.0 IS hover at 70.7% of full RPM. The old
+## block cut that single continuum in two places, at 2.0:1 and at 60%, and the two constants could be
+## edited into disagreeing with each other about the same aircraft.
 ##
-## The residual against real builds is pack sag, which lifts the real hover a little above the
-## square-law figure — a percent or so on these two, and it is a physical effect rather than slack
-## in the identity.
+## IN RPM, NOT IN THROTTLE, SINCE THE DC MOTOR LAW (2026-11-03). Under the legacy law rpm was
+## throttle x Kv x V, so the identity held for the throttle too (to a percent of sag). On the DC law
+## duty x V = rpm/Kv + I x Rm: at hover I x Rm is small, flat out it is not, so the flat-out rpm is
+## well under Kv x V and the hover THROTTLE sits below sqrt(1/TWR) (reference: 25.0% against 29.6%;
+## the 2.6:1 cinelifter 62.5% against 62.3%). The premise "rpm is proportional to throttle" is false
+## now; the square law in rpm is not, and it is exact here because hover thrust and the T:W bench
+## thrust are both k_t w^2 on the same rotors.
 static func _test_hover_throttle_and_thrust_to_weight_are_one_fact(catalog: PartsCatalog) -> TestResult:
 	var worst := 0.0
 	var details: Array = []
 	for build in [ReferenceBuild.build(), _build(catalog, CINELIFTER)]:
 		var ideal := sqrt(1.0 / build.thrust_to_weight())
-		var error := absf(build.hover_throttle() - ideal) / ideal
+		var hover_rpm: float = build.rpm_at_throttle(build.hover_throttle())
+		var fraction: float = hover_rpm / build.max_rpm_at_nominal()
+		var error := absf(fraction - ideal) / ideal
 		worst = maxf(worst, error)
-		details.append("%.1f:1 -> %.1f%% against sqrt(1/TWR) = %.1f%%" % [
-			build.thrust_to_weight(), build.hover_throttle() * 100.0, ideal * 100.0])
+		details.append("%.1f:1 -> hover at %.2f%% of flat-out rpm against sqrt(1/TWR) = %.2f%% (throttle %.1f%%)" % [
+			build.thrust_to_weight(), fraction * 100.0, ideal * 100.0, build.hover_throttle() * 100.0])
 
 	return TestResult.new(
-		"hover throttle is sqrt(1 / thrust-to-weight): one fact, so it cannot be cut twice",
-		worst < 0.03 and absf(sqrt(1.0 / 2.0) - 0.707) < 0.001,
-		"worst deviation %.1f%% (%s)" % [worst * 100.0, "; ".join(details)]
+		"hover RPM is sqrt(1 / thrust-to-weight) of flat-out RPM: one fact, so it cannot be cut twice",
+		worst < 0.002 and absf(sqrt(1.0 / 2.0) - 0.707) < 0.001,
+		"worst deviation %.3f%% (%s)" % [worst * 100.0, "; ".join(details)]
 	)
 
 

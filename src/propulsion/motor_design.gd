@@ -172,7 +172,6 @@ func to_record(cfg: MotorConfigs) -> Dictionary:
 			"io_a": f["io_a"],
 			"io_voltage_v": f["io_voltage_v"],
 			"rm_io_basis": "est.",
-			"current_model": "dc",
 			"magnet": magnet,
 			"magnet_max_c": f["magnet_max_c"],
 			"shaft_mm": shaft_mm,

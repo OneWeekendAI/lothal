@@ -79,12 +79,18 @@ static func _restore(path: String, previous: String) -> void:
 
 
 ## The thrust figure a motor must publish for its fitted k_t to come out at exactly `k_t`, on
-## its own test prop and voltage. The inverse of PropellerModel.fit_k_t, so that a test can
+## its own test prop and voltage. The inverse of Build.fit_rated_point, so that a test can
 ## place a motor at a chosen distance from the band edge instead of guessing a gram figure and
-## hoping. Any drift between this and the fit shows up as the boundary tests going soft, which
-## is why it is written from the same two lines rather than from a remembered constant.
-static func _thrust_g_for_k_t(k_t: float, kv: float, voltage_v: float) -> float:
-	var omega := PropellerModel.rpm_to_rad_s(kv * voltage_v)
+## hoping. Since 2026-11-03 the fit is at the LOADED rated rpm, not Kv x V: the DC model's flat-out
+## rpm under the test prop's torque. That rpm depends on k_t only (k_q is a fixed multiple of it),
+## so the inverse is exact: solve the loaded rpm at this k_t, then T = k_t w^2. Inverting at Kv x V
+## (the pre-DC form) put the "just inside" motor 1.4x over the edge.
+static func _thrust_g_for_k_t(k_t: float, record: Dictionary, test_prop: Dictionary) -> float:
+	var p := Build.dc_motor_params(record)
+	var d_m := float(test_prop["specs"]["diameter_inches"]) * Build.INCH_M
+	var rpm := float(MotorModel.operating_point(float(record["thrust_test"]["voltage_v"]),
+		p[0], p[1], p[2], p[3], PropellerModel.fit_k_q(k_t, d_m))["rpm"])
+	var omega := PropellerModel.rpm_to_rad_s(rpm)
 	return k_t * omega * omega / GRAVITY_MPS2 * 1000.0
 
 
@@ -176,7 +182,7 @@ static func _test_a_custom_motor_does_not_move_the_reference_build() -> TestResu
 
 	_restore(CustomMotors.SAVE_PATH, previous)
 	return TestResult.new(
-		"a defined custom motor does not move the reference build's 507.5 g / 11.43 / 29.9%",
+		"a defined custom motor does not move the reference build's 507.5 g / 11.43 / 25.0%",
 		merged_has_it and pinned and merged_pinned and merged_motors == shipped_motors + 1,
 		"merged sees it=%s, %d shipped vs %d merged motors, shipped build %.2f g / %.2f TWR, merged build %.2f g / %.2f TWR" % [
 			merged_has_it, shipped_motors, merged_motors,
@@ -187,7 +193,7 @@ static func _test_a_custom_motor_does_not_move_the_reference_build() -> TestResu
 static func _is_the_oracle(build: Build) -> bool:
 	return absf(build.all_up_weight_g() - 507.48) < EPS \
 		and absf(build.thrust_to_weight() - 11.43) < 0.01 \
-		and absf(build.hover_throttle() - 0.299) < 0.001
+		and absf(build.hover_throttle() - 0.25) < 0.001
 
 
 # ---------------------------------------------------------------------------
@@ -337,15 +343,13 @@ static func _test_the_k_t_band_is_asserted_from_both_sides() -> TestResult:
 	var test_prop: Dictionary = catalog.get_part(str(_record_2810()["thrust_test"]["prop_id"]))
 	var band := MotorPlausibility.k_t_band_for_prop(catalog, test_prop)
 
-	var kv := 1100.0
-	var voltage := 22.2
 
 	# Just inside the upper edge, and just outside it. One percent, which is far tighter than
 	# any real spread and therefore pins the comparison to the edge itself.
 	var inside := _record_2810()
-	inside["specs"]["max_thrust_g"] = _thrust_g_for_k_t(float(band["high"]) * 0.99, kv, voltage)
+	inside["specs"]["max_thrust_g"] = _thrust_g_for_k_t(float(band["high"]) * 0.99, inside, test_prop)
 	var outside := _record_2810()
-	outside["specs"]["max_thrust_g"] = _thrust_g_for_k_t(float(band["high"]) * 1.01, kv, voltage)
+	outside["specs"]["max_thrust_g"] = _thrust_g_for_k_t(float(band["high"]) * 1.01, outside, test_prop)
 	outside["name"] = "Shed 2810 Overclaimed"
 
 	var inside_warns := _has_warning(_warnings_with_motor(inside), &"implausible_thrust_coefficient")
@@ -354,7 +358,7 @@ static func _test_the_k_t_band_is_asserted_from_both_sides() -> TestResult:
 	# And the low edge, since a thrust figure can be typed small as easily as large.
 	var under := _record_2810()
 	under["name"] = "Shed 2810 Underclaimed"
-	under["specs"]["max_thrust_g"] = _thrust_g_for_k_t(float(band["low"]) * 0.99, kv, voltage)
+	under["specs"]["max_thrust_g"] = _thrust_g_for_k_t(float(band["low"]) * 0.99, under, test_prop)
 	var under_warns := _has_warning(_warnings_with_motor(under), &"implausible_thrust_coefficient")
 
 	return TestResult.new(
@@ -609,8 +613,13 @@ static func _test_a_custom_motor_is_selectable_and_flyable() -> TestResult:
 	# The same fit, from the record rather than from the build.
 	var specs: Dictionary = record["specs"]
 	var test: Dictionary = record["thrust_test"]
-	var expected_at_test := PropellerModel.fit_k_t(float(specs["max_thrust_g"]),
-		float(specs["kv"]) * float(test["voltage_v"]))
+	# Fitted at the LOADED rated rpm (Build.fit_rated_point, 2026-11-03), and that fit must close:
+	# k_t x w_loaded^2 is the record's own thrust figure, at an rpm below Kv x V.
+	var fit := Build.fit_rated_point(record, catalog.get_part(str(test["prop_id"])))
+	var fit_rpm := float(fit["rpm"])
+	var expected_at_test := PropellerModel.fit_k_t(float(specs["max_thrust_g"]), fit_rpm)
+	var fit_closes := absf(float(fit["k_t"]) - expected_at_test) < expected_at_test * 1e-6 \
+		and fit_rpm < 0.95 * float(specs["kv"]) * float(test["voltage_v"])
 	# The move to the fitted prop is the BEMT geometry ratio (§0, P5) — the same law
 	# build.gd now uses — computed here from the record's own planforms.
 	var from_doc := PropellerDocument.from_catalog_prop(catalog.get_part(str(test["prop_id"])))
@@ -618,9 +627,9 @@ static func _test_a_custom_motor_is_selectable_and_flyable() -> TestResult:
 	var expected := BemtModel.scale_k_t_to_prop(expected_at_test,
 		from_doc.diameter_mm * 0.001, from_doc.pitch_mm * 0.001, float(from_doc.blades), from_doc.chord,
 		to_doc.diameter_mm * 0.001, to_doc.pitch_mm * 0.001, float(to_doc.blades), to_doc.chord,
-		float(specs["kv"]) * float(test["voltage_v"]))
+		fit_rpm)
 
-	var k_t_ok := absf(build.k_t - expected) < expected * 0.001
+	var k_t_ok := fit_closes and absf(build.k_t - expected) < expected * 0.001
 	# And it is a DIFFERENT aircraft from the reference build, so this cannot be passing by
 	# quietly having flown the catalog's 2207.
 	var reference_build := ReferenceBuild.build()

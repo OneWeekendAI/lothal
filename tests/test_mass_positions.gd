@@ -89,9 +89,9 @@ static func _reference_is_unmoved() -> Array:
 		"got %.2f" % build.thrust_to_weight()
 	))
 	out.append(TestResult.new(
-		"the reference build still hovers at 29% throttle",
-		# The oracle's own tolerance, from test_hover.gd:31 — the same 29% figure, so the same band.
-		absf(build.hover_throttle() - 0.29) < 0.02,
+		"the reference build still hovers at 25% throttle",
+		# The oracle's own tolerance, from test_hover.gd:31 — the same 25% figure, so the same band.
+		absf(build.hover_throttle() - 0.25) < 0.02,
 		"got %.1f%%" % (build.hover_throttle() * 100.0)
 	))
 

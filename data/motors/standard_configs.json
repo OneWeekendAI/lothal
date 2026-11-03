@@ -2,9 +2,9 @@
  "_schema": "The standard motor configuration grid behind the Motor Designer (Decided #1): stator size x the KV options sold for that size x the pole configuration the size uses. Every combination is allowed; there is no turns or wire-gauge input. Rm, Io, Kt, mass and max current are NOT stored per motor: they are derived by formulas from stator volume and KV (see src/propulsion/motor_configs.gd), using the coefficients below. Every coefficient has basis \"est.\" (a class-typical fit, not a measurement and not a datasheet value) and a note saying what it was anchored to. Nothing here is a measurement of a motor on a bench; all derived figures are ideal / model figures. Size rows: stator_diameter_mm and stator_height_mm are read from the size name (2306.5 = 23 mm x 6.5 mm); config is the slot/pole pair (9N12P = 9 slots 12 poles); kv_options lists the KV values commonly listed for that stator size (basis est.: representative of vendor catalogs, no single source, and not an exhaustive list of every motor sold); max_cells is the largest pack the class is normally flown on (est.); io_voltage_v is the voltage at which Io is stated (est.; Io scales with rpm as in MotorModel.io_at_rpm). shaft_mm_options and mount_options (est.: representative of vendor catalogs for the size; the first entry is the size's usual one) are the designer's Bell & shaft choices; the first shaft is the one mass_base_g already allows for.",
  "coefficients": {
   "rm_c": {
-   "value": 940000.0,
+   "value": 1128000.0,
    "basis": "est.",
-   "note": "Rm = rm_c / (V_cm3^(5/3) * Kv^2), ohm. Kv*Kt-style winding law: Rm scales as 1/Kv^2 at fixed stator; 5/3 exponent is geometric scaling of the motor constant (Km ~ L^2.5). Anchor: a 2207 1750KV near 0.06 ohm. Anchor value is a class-typical figure, not a datasheet."
+   "note": "Rm = rm_c / (V_cm3^(5/3) * Kv^2), ohm. Kv*Kt-style winding law: Rm scales as 1/Kv^2 at fixed stator; 5/3 exponent is geometric scaling of the motor constant (Km ~ L^2.5). Anchor: a 2207 1750KV near 0.06 ohm. Anchor value is a class-typical figure, not a datasheet. 2026-11-03: raised 940000 -> 1128000 (x1.2) after MOTOR_RM_IO_CHECK.md measured estimates at 0.6-1.0x (median 0.8x) of published Rm; shop-listed Rm is +/-30% noise."
   },
   "io_k": {
    "value": 0.215,
@@ -64,7 +64,8 @@
     15000,
     19000,
     22000,
-    25000
+    25000,
+    27000
    ],
    "kv_basis": "est.",
    "max_cells": 1,
@@ -74,7 +75,8 @@
    ],
    "mount_options": [
     "6.6 mm, M1.4"
-   ]
+   ],
+   "kv_note": "2026-11-03 (MOTOR_RM_IO_CHECK.md): added KVs seen in shop listings; none removed. Added values from search-result titles are unverified; kept values not seen in any listing remain est."
   },
   {
    "size": "1103",
@@ -130,9 +132,12 @@
    "slots": 9,
    "poles": 12,
    "kv_options": [
+    2750,
     3800,
+    3850,
     4600,
-    5500
+    5000,
+    7000
    ],
    "kv_basis": "est.",
    "max_cells": 4,
@@ -143,7 +148,8 @@
    ],
    "mount_options": [
     "9 x 9 mm, M2"
-   ]
+   ],
+   "kv_note": "2026-11-03 (MOTOR_RM_IO_CHECK.md): added KVs seen in shop listings; removed 5500 (not sold). Added values from search-result titles are unverified; kept values not seen in any listing remain est."
   },
   {
    "size": "1505",
@@ -226,9 +232,13 @@
    "kv_options": [
     1650,
     1750,
+    1860,
     1960,
     2100,
+    2150,
     2400,
+    2550,
+    2650,
     2750
    ],
    "kv_basis": "est.",
@@ -240,7 +250,8 @@
    ],
    "mount_options": [
     "16 x 16 mm, M3"
-   ]
+   ],
+   "kv_note": "2026-11-03 (MOTOR_RM_IO_CHECK.md): added KVs seen in shop listings; none removed. Added values from search-result titles are unverified; kept values not seen in any listing remain est."
   },
   {
    "size": "2306",
@@ -252,9 +263,11 @@
    "kv_options": [
     1700,
     1900,
+    2100,
     2200,
     2450,
-    2550
+    2550,
+    2700
    ],
    "kv_basis": "est.",
    "max_cells": 6,
@@ -265,7 +278,8 @@
    ],
    "mount_options": [
     "16 x 16 mm, M3"
-   ]
+   ],
+   "kv_note": "2026-11-03 (MOTOR_RM_IO_CHECK.md): added KVs seen in shop listings; none removed. Added values from search-result titles are unverified; kept values not seen in any listing remain est."
   },
   {
    "size": "2306.5",
@@ -345,8 +359,9 @@
    "poles": 14,
    "kv_options": [
     1300,
+    1350,
     1500,
-    1700
+    1750
    ],
    "kv_basis": "est.",
    "max_cells": 6,
@@ -358,7 +373,8 @@
    "mount_options": [
     "16 x 16 mm, M3",
     "19 x 19 mm, M3"
-   ]
+   ],
+   "kv_note": "2026-11-03 (MOTOR_RM_IO_CHECK.md): added KVs seen in shop listings; removed 1700 (not sold). Added values from search-result titles are unverified; kept values not seen in any listing remain est."
   },
   {
    "size": "2810",

@@ -106,16 +106,25 @@ static func _test_the_rating_reaches_the_model(catalog: PartsCatalog) -> Array:
 ## 128 A is their draw at their 14.8 V test voltage without sag, the model the ceiling no longer
 ## uses. At a 1S pack's 4.2 V the same motors cannot pull even 9 A flat out, so the rating never
 ## binds: what stops this aircraft is the pack's VOLTAGE (it cannot hover), not its C-rating.
+##
+## AND BACK AGAIN ON THE DC MOTOR LAW (2026-11-03). The legacy law scaled current as (rpm/rated)^2,
+## so a slow motor drew almost nothing. On Kv/Rm/Io a 2207 at 4.2 V turns far below no-load and the
+## volts it cannot turn into back-EMF go across a 0.057 ohm winding: flat out the four draw ~14 A,
+## past the pack's 9 A. So the RATING binds again, at a ceiling below full throttle, and the aircraft
+## still cannot hover. Both halves are asserted.
 static func _test_a_small_pack_on_big_motors_is_pack_limited(catalog: PartsCatalog) -> Array:
 	var results: Array = []
 	var build := _build(catalog, "motor_2207_1960kv", "prop_5x43x3", "battery_1s_300")
 
 	results.append(TestResult.new(
-		"a whoop pack on 2207s cannot reach its own 9 A at 4.2 V, so its rating does not bind — its voltage does",
-		build.fresh_draw_at_a(1.0) < build.pack_max_amps()
-			and build.pack_throttle_limit() == 1.0 and not build.can_hover(),
-		"%.1f A flat out against a %.1f A rating, hovers: %s" % [build.fresh_draw_at_a(1.0),
-			build.pack_max_amps(), build.can_hover()]
+		"a whoop pack on 2207s is driven past its own 9 A at 4.2 V, so its rating binds — and it still cannot hover",
+		build.fresh_draw_at_a(1.0) > build.pack_max_amps()
+			and build.pack_throttle_limit() < 1.0 and build.limiting_component()["name"] == "battery"
+			and absf(build.fresh_draw_at_a(build.pack_throttle_limit()) - build.pack_max_amps()) < 0.05
+			and not build.can_hover(),
+		"%.1f A flat out against a %.1f A rating, capped at %.1f%% (%.2f A), hovers: %s" % [
+			build.fresh_draw_at_a(1.0), build.pack_max_amps(), build.pack_throttle_limit() * 100.0,
+			build.fresh_draw_at_a(build.pack_throttle_limit()), build.can_hover()]
 	))
 
 	# The Li-ion is the catalog's other deliberate lesson: 3000 mAh at 10C is 30 A, so an enormous
@@ -213,13 +222,14 @@ static func _test_the_bench_figure_is_untouched(_catalog: PartsCatalog) -> Array
 			build.max_throttle_fraction() * 100.0]
 	))
 
-	# The hover oracle is untouched for a different and stronger reason: hover draws about 11 A
+	# The hover oracle (25.0% since the DC motor law, 2026-11-03; was 29%) is untouched by any
+	# current limit for a different and stronger reason: hover draws about 5.5 A
 	# on this build, nowhere near the pack's 112 A, so no current limit is anywhere near binding
 	# on the rising branch the hover throttle is bisected on.
 	results.append(TestResult.new(
-		"hover is nowhere near any current limit, so the 29% oracle cannot be moved by one",
+		"hover is nowhere near any current limit, so the 25% oracle cannot be moved by one",
 		build.hover_current_a(build.hover_throttle()) < build.pack_max_amps() * 0.2
-			and absf(build.hover_throttle() - 0.29) < 0.02,
+			and absf(build.hover_throttle() - 0.25) < 0.02,
 		"%.1f A at a %.1f%% hover, against a %.0f A pack" % [
 			build.hover_current_a(build.hover_throttle()), build.hover_throttle() * 100.0,
 			build.pack_max_amps()]
@@ -294,10 +304,15 @@ static func _test_battery_row_page_motors_page_and_warning_agree() -> TestResult
 ## voltage) let the four of them pull well past their rated max amps. Solved on the fresh-pack
 ## draw, one motor at the ceiling draws its rating — and the case must actually be motor-limited
 ## and at a ceiling below full throttle, or this proves nothing.
+##
+## "ITS RATING" IS `Build.motor_rated_draw_a()` SINCE THE DC LAW (2026-11-03): the model's own draw
+## of this motor on its own test prop, flat out at its test voltage — what the catalog amps mean on
+## this model. That is 1.6x the catalog 12 A for this 1404 (the prop k_q is pitch/blade-blind, an
+## open item in MOTOR_REBASELINE.md), and the ceiling is solved on it, not on the catalog figure.
 static func _test_motor_limited_draw_is_the_motors_rating(catalog: PartsCatalog) -> TestResult:
 	var build := _build(catalog, "motor_1404_3800kv", "prop_3x3x3", "battery_6s_1300")
 	var per_motor := PowerFigures.worst_draw_a(build) / 4.0
-	var rating := float(build.motor["specs"]["max_amps"])
+	var rating := build.motor_rated_draw_a()
 	return TestResult.new("motor-limited: one motor draws its rated max amps at the ceiling on a fresh pack, not more",
 		build.limiting_component()["name"] == "motors" and build.max_throttle_fraction() < 0.99
 			and per_motor <= rating + 0.01 and per_motor > rating - 0.05,

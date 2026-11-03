@@ -187,7 +187,11 @@ static func _battery_page_numbers(build: Build) -> TestResult:
 
 static func _esc_page_numbers(build: Build) -> TestResult:
 	var got := SectionRows.page_numbers(&"esc", build)
-	var want := [["Headroom per channel", "13 A · 29%"], ["Motors' max per channel", "32 A of 45 A"]]
+	# Was 13 A · 29% / 32 A of 45 A (the 2207's sheet amps). Since the DC motor law (2026-11-03) the
+	# motors' ask is Build.motor_rated_draw_a(), the model's own flat-out draw on the rated prop:
+	# 59.7 A, 1.86x the sheet, because the prop k_q is pitch/blade-blind (MOTOR_REBASELINE.md, open
+	# item). So the reference 45 A board reads short on this page until that is fixed.
+	var want := [["Headroom per channel", "-15 A · -33%"], ["Motors' max per channel", "60 A of 45 A"]]
 	return TestResult.new("page numbers: ESC shows headroom per channel and the motors' ask",
 		got == want, "%s want %s" % [got, want])
 

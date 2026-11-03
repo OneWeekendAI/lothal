@@ -341,9 +341,15 @@ static func _test_drain_runs_at_one_to_one(catalog: PartsCatalog) -> Array:
 	# dynamic run below actually does. The flight-to-hover ratio is READ from the two functions
 	# rather than written down: it is a derived consequence of the profile now, not a constant, and
 	# a copy of it here would be a second answer to what flying costs.
-	var flight_to_hover := build.average_flight_current_a() / build.hover_current_a(build.hover_throttle())
+	var nominal_hover_a := build.hover_current_a(build.hover_throttle())
+	var flight_to_hover := build.average_flight_current_a() / nominal_hover_a
+	# ...and moved from the nominal datum to the full pack the run starts on. On the DC motor law
+	# (2026-11-03) PACK current is duty x winding current, i.e. shaft power over pack volts, so the
+	# same hover costs fewer amps on a fresh pack (4.8 A at 16.8 V against 5.5 A at 14.8 V). Under the
+	# legacy law current ignored the volts and this factor was 1.
 	var analytic_s := build.flight_time_min() * 60.0 \
-		* (1.0 / Build.USABLE_CAPACITY_FRACTION) * flight_to_hover
+		* (1.0 / Build.USABLE_CAPACITY_FRACTION) * flight_to_hover \
+		* (nominal_hover_a / hover_current_a)
 
 	var runner := _powertrain_for(build)
 	runner.prime(hover)
@@ -367,12 +373,13 @@ static func _test_drain_runs_at_one_to_one(catalog: PartsCatalog) -> Array:
 			elapsed, analytic_s, ratio, ratio / 60.0]
 	))
 
-	# And the sanity floor the two-route check exists to replace: this is a four-minute pack, so
+	# And the sanity floor the two-route check exists to replace: this is a seven-minute freestyle
+	# pack (four minutes before the DC motor law; hover-to-empty ~22 min at 4.8 A falling), so
 	# it has to take minutes rather than seconds or hours. Stated in absolute terms because both
 	# routes above would still agree with each other if both were wrong by the same factor.
 	results.append(TestResult.new(
-		"a four-minute pack takes minutes to flatten in real time, not seconds and not an hour",
-		elapsed > 120.0 and elapsed < 900.0,
+		"a seven-minute pack takes minutes to flatten in real time, not seconds and not an hour",
+		elapsed > 120.0 and elapsed < 2400.0,
 		"%.0f s (%.1f min) at hover on a %.0f mAh pack drawing %.1f A" % [
 			elapsed, elapsed / 60.0, build.battery["specs"]["mah"], hover_current_a]
 	))

@@ -70,16 +70,16 @@ static func _test_loader_refuses_a_custom_prefixed_entry() -> TestResult:
 			impostor_rejected, ordinary_loaded, error_named, catalog.load_errors])
 
 
-## The 507.5 g / 11.43 / 29.9% oracle, asserted here as well as in the day-2 tests, because THIS is
+## The 507.5 g / 11.43 / 25.0% oracle, asserted here as well as in the day-2 tests, because THIS is
 ## the suite that would notice it moving for a custom-frames reason.
 static func _test_reference_build_is_out_of_reach() -> TestResult:
 	var build := ReferenceBuild.build()
 	var auw := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
-	var ok := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.299) < 0.001
+	var ok := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.25) < 0.001
 	return TestResult.new(
-		"the reference build is 507.5 g / 11.43 : 1 / 29.9% hover",
+		"the reference build is 507.5 g / 11.43 : 1 / 25.0% hover",
 		ok, "AUW %.2f g, TWR %.2f, hover %.1f%%" % [auw, twr, hover * 100.0])
 
 
@@ -280,7 +280,7 @@ static func _test_a_custom_frame_does_not_move_the_reference_build() -> TestResu
 	var auw := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
-	var pinned := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.299) < 0.001
+	var pinned := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.25) < 0.001
 
 	# And the shipped frame count is unchanged in load_default(), so nothing leaked sideways.
 	var shipped_frames: int = PartsCatalog.load_default().list_category("frame").size()
@@ -288,7 +288,7 @@ static func _test_a_custom_frame_does_not_move_the_reference_build() -> TestResu
 
 	_restore(CustomFrames.SAVE_PATH, previous)
 	return TestResult.new(
-		"a defined custom frame does not move the reference build's 507.5 g / 11.43 / 29.9%",
+		"a defined custom frame does not move the reference build's 507.5 g / 11.43 / 25.0%",
 		merged_has_it and pinned and merged_frames == shipped_frames + 1,
 		"merged sees it=%s, %d shipped vs %d merged frames, AUW %.2f g, TWR %.2f, hover %.1f%%" % [
 			merged_has_it, shipped_frames, merged_frames, auw, twr, hover * 100.0])

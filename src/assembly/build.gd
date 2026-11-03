@@ -473,6 +473,9 @@ var frame: Dictionary
 var _frame_edit: Dictionary = {}
 ## throttle_limit_for's memo, amps -> throttle. Cleared wherever what it is solved from changes.
 var _throttle_limits: Dictionary = {}
+## The same memo for the bench form (`throttle_limit_for`), kept apart: a supply limit and a bench
+## limit asked for the same amps are different numbers.
+var _bench_limits: Dictionary = {}
 var motor: Dictionary
 var propeller: Dictionary
 var battery: Dictionary
@@ -603,6 +606,9 @@ var k_q: float
 ## that demands more torque at a given RPM also draws more current than the one the
 ## motor's amp figure was measured with.
 var effective_max_amps: float
+## k_q of the motor's own THRUST-TEST prop, open rotor, standard air: the load its amp rating was
+## measured on. `motor_rated_draw_a` reads it.
+var _k_q_at_test_prop: float = 0.0
 var drag_coefficient: float
 
 ## How this builder assembled the aircraft, in the same resolved form AssemblyTweaks hands the
@@ -894,6 +900,7 @@ func mount_points() -> Array[MountPoint]:
 
 func _recompute() -> void:
 	_throttle_limits.clear()
+	_bench_limits.clear()
 	arm_m = float(frame["specs"]["arm_mm"]) / 1000.0
 
 	# The guard's tip-loss closure and static thrust boost — computed first, before k_t, because
@@ -942,9 +949,11 @@ func _recompute() -> void:
 	# (the reference build), the ratio short-circuits to 1.0 bit-exact — the anchor the
 	# 496 g / 11.69:1 / 29.6% oracles hang on.
 	var test_prop: Dictionary = catalog.get_part(motor["thrust_test"]["prop_id"])
-	var test_voltage: float = float(motor["thrust_test"]["voltage_v"])
-	var test_max_rpm: float = float(motor["specs"]["kv"]) * test_voltage
-	var k_t_at_test_prop := PropellerModel.fit_k_t(float(motor["specs"]["max_thrust_g"]), test_max_rpm)
+	# Fitted at the LOADED rated point (fit_rated_point), so flat out on the test prop at the test
+	# voltage the DC model reproduces the datasheet thrust; the geometry move runs at that rpm.
+	var rated_fit := fit_rated_point(motor, test_prop)
+	var test_max_rpm: float = float(rated_fit["rpm"])
+	var k_t_at_test_prop: float = float(rated_fit["k_t"])
 
 	var test_doc := PropellerDocument.from_catalog_prop(test_prop)
 	var prop_doc := PropellerDocument.from_catalog_prop(propeller)
@@ -1007,10 +1016,12 @@ func _recompute() -> void:
 	k_q = PropellerModel.fit_k_q(k_t_open_rotor, _prop_geometry(propeller).diameter_m) \
 		* _static_closure_torque_factor
 
-	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop, _prop_geometry(test_prop).diameter_m)
+	var k_q_at_test_prop: float = float(rated_fit["k_q"])
+	_k_q_at_test_prop = k_q_at_test_prop
 	effective_max_amps = float(motor["specs"]["max_amps"]) * (k_q / k_q_at_test_prop)
 	# Every current limit is solved against effective_max_amps; one set before this line is stale.
 	_throttle_limits.clear()
+	_bench_limits.clear()
 
 	var drag_area_m2: float = REFERENCE_DRAG_AREA_M2 * pow(arm_m / REFERENCE_ARM_M, 2.0)
 	drag_coefficient = 0.5 * air.kgm3() * drag_area_m2
@@ -1507,7 +1518,22 @@ func max_throttle_fraction() -> float:
 ## this ceiling draws at most its rated max_amps. Priced at the test voltage without sag it let a
 ## 6S pack (25.2 V fresh) drive 1404s rated 12 A to 29.5 A each at a "100%" motor ceiling.
 func motor_throttle_limit() -> float:
-	return supply_limit_for(float(motor_count()) * float(motor["specs"]["max_amps"]))
+	return supply_limit_for(float(motor_count()) * motor_rated_draw_a())
+
+
+## What ONE motor's amp rating means on this model: the DC draw of the motor on its own thrust-test
+## prop at 100% throttle on the test voltage (no sag). A rating is "this motor, this prop, this
+## voltage, flat out"; reading the catalog amps as a hard clamp instead made the ceiling bind
+## BELOW 100% on the very prop the rating was measured with, because the prop's aero k_q (a fixed
+## Q/T ratio) loads the est. Rm/Io motor 1.15-1.7x harder than the datasheet amps
+## (MOTOR_REBASELINE.md). So the motors' ceiling is exactly 1.0 on the rated prop at the test
+## voltage, as it was under the legacy law, and binds only on a prop that loads them harder.
+func motor_rated_draw_a() -> float:
+	var a := _dc_args()
+	if a.is_empty() or _k_q_at_test_prop <= 0.0:
+		return float(motor["specs"]["max_amps"])
+	return Fitting.dc_pack_draw_a(1.0, a[0], a[1], a[2], a[3], _k_q_at_test_prop,
+		float(motor["thrust_test"]["voltage_v"]), 0.0, 1.0)
 
 
 ## The motors' limit as their SPEC SHEET means it: max_amps at the motor's own test voltage, no sag
@@ -1515,7 +1541,7 @@ func motor_throttle_limit() -> float:
 ## the per-channel demand the ESC bench sweeps to — which describe the motor-and-prop pairing, not
 ## the pack it happens to be flown on. Flight uses `motor_throttle_limit`.
 func motor_bench_limit() -> float:
-	return throttle_limit_for(float(motor_count()) * float(motor["specs"]["max_amps"]))
+	return throttle_limit_for(float(motor_count()) * motor_rated_draw_a())
 
 
 ## The pack's maximum continuous discharge: capacity in amp-hours times its C-rating. The number
@@ -1541,11 +1567,31 @@ func pack_throttle_limit() -> float:
 ## One expression, used by both limits, so the pack limit cannot end up meaning something subtly
 ## different from the motor limit that has been in the project since day one.
 func throttle_limit_for(total_amps: float) -> float:
-	# The arithmetic lives in Rust (rust/src/fitting.rs) — the current-limit expression, one
-	# copy in the codebase, and the part of the fitting pipeline the compiled core exists for.
 	# The BENCH form only (`motor_bench_limit`): a motor's max_amps at its own test voltage, which
 	# the spec-sheet T:W is quoted at on purpose. Every flight ceiling uses `supply_limit_for`.
-	return Fitting.throttle_limit_for(total_amps, float(motor_count()) * effective_max_amps)
+	# One motor law: the throttle at which ONE motor on the DC model, straight off a pack at the
+	# thrust-test voltage with no sag, draws its share of `total_amps` (1.0 if it never gets there).
+	var a := _dc_args()
+	var n := float(motor_count())
+	if a.is_empty() or total_amps <= 0.0 or n <= 0.0:
+		return 1.0
+	if _bench_limits.has(total_amps):
+		return float(_bench_limits[total_amps])
+	var each := total_amps / n
+	var test_v := float(motor["thrust_test"]["voltage_v"])
+	var limit := 1.0
+	if Fitting.dc_pack_draw_a(1.0, a[0], a[1], a[2], a[3], a[4], test_v, 0.0, 1.0) > each:
+		var low := 0.0
+		var high := 1.0
+		for _i in 50:
+			var mid := (low + high) * 0.5
+			if Fitting.dc_pack_draw_a(mid, a[0], a[1], a[2], a[3], a[4], test_v, 0.0, 1.0) > each:
+				high = mid
+			else:
+				low = mid
+		limit = low
+	_bench_limits[total_amps] = limit
+	return limit
 
 
 ## The throttle a SUPPLY-side rating (the pack's, the ESC's) allows: the highest throttle at which
@@ -1561,7 +1607,7 @@ func throttle_limit_for(total_amps: float) -> float:
 ## Memoised per recompute: `rpm_at_throttle` reads the ceiling on every call, and peak_thrust asks
 ## it 400 times.
 func supply_limit_for(total_amps: float) -> float:
-	if total_amps <= 0.0 or effective_max_amps <= 0.0:
+	if total_amps <= 0.0 or _dc_args().is_empty():
 		return 1.0   # "no limit stated" — the unrated-part rule `limiting_component` relies on
 	if _throttle_limits.has(total_amps):
 		return float(_throttle_limits[total_amps])
@@ -1588,32 +1634,12 @@ func supply_limit_for(total_amps: float) -> float:
 ## fixed-point loop in `rpm_at_throttle` oscillates on a high-resistance pack — the Li-ion reads
 ## anywhere in its cycle after twelve steps, which is the divergence `thrust_at_throttle_n` warns of.
 func fresh_draw_at_a(throttle: float) -> float:
-	var rated := rated_rpm()
-	if rated <= 0.0 or throttle <= 0.0:
+	var a := _dc_args()
+	if a.is_empty() or throttle <= 0.0:
 		return 0.0
-	if uses_dc_motor():
-		var a := _dc_args()
-		return Fitting.dc_pack_draw_a(throttle, a[0], a[1], a[2], a[3], a[4],
-			battery_model().resting_voltage_v(), float(battery["specs"]["internal_r_ohm"]),
-			float(motor_count()))
-	var rest_v := battery_model().resting_voltage_v()
-	var r := float(battery["specs"]["internal_r_ohm"])
-	var kv := float(motor["specs"]["kv"])
-	var t := clampf(throttle, 0.0, 1.0)
-	var low := 0.0
-	var high := rest_v / r if r > 0.0 else float(motor_count()) * Fitting.current_at_rpm(t * kv * rest_v,
-		effective_max_amps, rated)
-	if r <= 0.0:
-		return high
-	for _i in 60:
-		var amps := (low + high) * 0.5
-		var demand := float(motor_count()) * Fitting.current_at_rpm(t * kv * maxf(rest_v - amps * r, 0.0),
-			effective_max_amps, rated)
-		if demand > amps:
-			low = amps
-		else:
-			high = amps
-	return (low + high) * 0.5
+	return Fitting.dc_pack_draw_a(throttle, a[0], a[1], a[2], a[3], a[4],
+		battery_model().resting_voltage_v(), float(battery["specs"]["internal_r_ohm"]),
+		float(motor_count()))
 
 
 ## WHICH component is holding this build back, by name, with the ceiling it imposes.
@@ -1634,7 +1660,7 @@ func limiting_component() -> Dictionary:
 		{
 			"name": "motors",
 			"label": str(motor["name"]),
-			"amps": float(motor_count()) * float(motor["specs"]["max_amps"]),
+			"amps": float(motor_count()) * motor_rated_draw_a(),
 			"throttle": motor_throttle_limit(),
 		},
 		{
@@ -1677,13 +1703,15 @@ func motor_model() -> MotorModel:
 func spin_up() -> Dictionary:
 	var prop_doc := PropellerDocument.from_catalog_prop(propeller)
 	var test_prop: Dictionary = catalog.get_part(motor["thrust_test"]["prop_id"])
-	var k_t_at_test_prop := PropellerModel.fit_k_t(float(motor["specs"]["max_thrust_g"]),
-		float(motor["specs"]["kv"]) * float(motor["thrust_test"]["voltage_v"]))
-	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop,
-		_prop_geometry(test_prop).diameter_m)
+	var fit := fit_rated_point(motor, test_prop)
+	var k_q_at_test_prop: float = float(fit["k_q"])
 	var omega_ref: float = _omega_hover_rad_s()
+	# The loaded rated rpm the k_t fit solved: the recovery's Omega_loaded, so R comes from the
+	# datasheet amps at the same rated point as k_t, not through the prop's aero k_q.
+	var omega_rated := 0.0 if dc_motor_params(motor).is_empty() \
+		else PropellerModel.rpm_to_rad_s(float(fit["rpm"]))
 	return MotorSpinUp.compute(motor, prop_doc, _spin_up_materials(), k_q, k_q_at_test_prop,
-		omega_ref)
+		omega_ref, omega_rated)
 
 
 func _tau_s() -> float:
@@ -1696,22 +1724,27 @@ func _omega_hover_rad_s() -> float:
 	return PropellerModel.rpm_to_rad_s(operating_rpm())
 
 
-## The RPM this aircraft is judged at: hover if it hovers, rated if it does not.
+## The RPM this aircraft is judged at: hover if it hovers, flat out if it does not.
 ##
-## rated_rpm() is the RPM at max throttle at the test voltage. Multiply by hover_throttle when the
-## build actually hovers so the linearisation lands where a stick input actually operates; fall
-## back to rated_rpm otherwise, since 0.5 · rated is the wrong number when the aircraft cannot
-## hover at all.
+## THE LOADED RPM ON THE DC MODEL (2026-11-03). It used to be rated_rpm() x hover_throttle(), which
+## was exact while rpm was linear in throttle off Kv x V. Under the DC law it is not: rpm/Kv =
+## duty x V - I x Rm, and k_t is now fitted at the LOADED rated rpm, so Kv x V x hover_throttle
+## sat ~19% above the rpm whose thrust actually holds the aircraft up (reference: 7840 vs 6590 rpm).
+## Now it is `rpm_at_throttle(hover_throttle())`, the rpm whose k_t w^2 IS the hover thrust; and,
+## for a build that cannot hover, the rpm at its throttle ceiling (`reachable_rpm`), since 0.5 x
+## anything is the wrong number when the aircraft cannot hover at all.
 ##
 ## Public and named because P10e's thrust-distribution overlay needs the SAME operating point the
 ## spin-up linearisation uses. Two definitions of "the RPM this drone sits at" would let the
-## overlay draw a blade loading the τ nobody flies, and the disagreement would be invisible —
-## both numbers are plausible and neither is labelled.
+## overlay draw a blade loading the tau nobody flies, and the disagreement would be invisible —
+## both numbers are plausible and neither is labelled. Falls back to rated_rpm() only for a build
+## with no DC model at all (no k_q), where there is no loaded rpm to solve.
 func operating_rpm() -> float:
-	var rated := rated_rpm()
+	if _dc_args().is_empty():
+		return rated_rpm()
 	if not can_hover():
-		return rated
-	return rated * hover_throttle()
+		return reachable_rpm()
+	return rpm_at_throttle(hover_throttle())
 
 
 ## The static thrust the fitted blade makes at each annulus of the solve, at `operating_rpm()`.
@@ -1803,13 +1836,22 @@ func lumped_max_amps() -> float:
 	return effective_max_amps * float(motors_per_arm())
 
 
+## The motor model of the lumped thruster `build_drone_core` flies: `motor_model()`, with its current
+## scaled by the motors on the arm position (a coaxial pair draws twice one motor's current at the
+## same rpm). Exactly `motor_model()` for a quad.
+func lumped_motor_model() -> MotorModel:
+	var mm := motor_model()
+	mm.set_dc_count(float(motors_per_arm()))
+	return mm
+
+
 func build_drone_core() -> DroneCore:
 	var geometry := _prop_geometry(propeller)
 	# A coaxial pair is flown as ONE thruster at its plan position (the sim has four): see
 	# lumped_k_t / lumped_k_q / lumped_max_amps. FrameBench and RateTune's plant read the SAME
 	# three, so the gains are derived for the aircraft the sim flies. All exactly the single-motor
 	# values for a quad.
-	var core := DroneCore.new(mass_properties, motor_model(), arm_m, lumped_k_t(), lumped_k_q(),
+	var core := DroneCore.new(mass_properties, lumped_motor_model(), arm_m, lumped_k_t(), lumped_k_q(),
 		battery_model(), lumped_max_amps(), rated_rpm(), drag_coefficient,
 		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m,
 		air.kgm3(), blade_chord(), guard_closure)
@@ -1899,7 +1941,12 @@ func max_total_thrust_n() -> float:
 ## current limit lets them reach. Factored out because top_speed_kmh() asks the same question at a
 ## non-zero airspeed, and two spellings of one RPM ceiling is one edit away from two answers.
 func max_rpm_at_nominal() -> float:
-	return float(motor["specs"]["kv"]) * float(battery["specs"]["nominal_v"]) * motor_bench_limit()
+	var a := _dc_args()
+	if a.is_empty():
+		return 0.0
+	# Loaded rpm on the DC model at the bench limit, straight off nominal volts (no sag).
+	return Fitting.dc_rpm_at_throttle(motor_bench_limit(), 1.0, a[0], a[1], a[2], a[3], a[4],
+		float(battery["specs"]["nominal_v"]), 0.0, 1.0)
 
 func thrust_to_weight() -> float:
 	return max_total_thrust_n() / weight_n()
@@ -1911,7 +1958,15 @@ func thrust_to_weight() -> float:
 ## it is why hover is solved by bracketing rather than by iterating a fixed point — the
 ## fixed point diverges on exactly the packs the catalog includes to be interesting.
 func thrust_at_throttle_n(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
-	return thrust_rotor_equivalents() * PropellerModel.thrust_n(k_t, rpm_at_throttle(throttle, open_circuit_v))
+	return _thrust_at_throttle_capped_n(throttle, max_throttle_fraction(), open_circuit_v)
+
+
+## `thrust_at_throttle_n` with the throttle ceiling passed in. peak_thrust and hover_throttle ask
+## ~460 throttles per call; re-deriving the ceiling (three limit chains) each time was most of
+## their cost once every motor went onto the DC law. Same answer, computed once per call.
+func _thrust_at_throttle_capped_n(throttle: float, cap: float, open_circuit_v: float) -> float:
+	return thrust_rotor_equivalents() * PropellerModel.thrust_n(k_t,
+		_rpm_at_throttle_capped(throttle, cap, open_circuit_v))
 
 ## Steady-state RPM at a throttle command. RPM and pack sag depend on each other, but the
 ## loop converges quickly: more sag means less RPM means less current means less sag.
@@ -1923,44 +1978,137 @@ func resolve_open_circuit_v(open_circuit_v: float) -> float:
 	return open_circuit_v
 
 
-## Motor Designer M4. True when this build's motor draws current from the DC model (Kv, Rm, Io)
-## instead of the legacy rated-amps law. The switch is the motor record's own
-## `specs.current_model == "dc"`: designer motors carry it, and the 16 shelf presets do NOT, even
-## though M3 gave them Rm and Io, because moving them onto the DC law moves every flight figure
-## they have (tests/test_motor_presets.gd pins those; tests/test_motor_current.gd sizes the drift).
+## The one motor law (owner decision 2026-11-03): EVERY motor draws current from the DC model --
+## Kv, Rm, Io and the prop's torque. The legacy rated-amps law and the `specs.current_model == "dc"`
+## gate that kept the 16 presets on it are retired. A motor record that carries Rm and Io (all
+## presets, designer motors) uses them; one that does not (a Lab-form custom motor) gets the same
+## est. values the preset table was derived from, off its stator size and KV. This is false only
+## for a motor with no stator size to derive from, which the custom-motor validator already rejects.
 func uses_dc_motor() -> bool:
-	var sp: Dictionary = motor.get("specs", {})
-	return String(sp.get("current_model", "")) == "dc" and float(sp.get("rm_ohm", 0.0)) > 0.0 \
-		and sp.has("io_a") and float(sp.get("io_voltage_v", 0.0)) > 0.0 and k_q > 0.0
+	return not _dc_args().is_empty()
+
+
+static var _motor_cfg: MotorConfigs = null
 
 
 ## The DC model's arguments for this build's motor and prop, in Fitting's order: kv, rm, io, io_v, k_q.
+## Empty when there is no k_q or no way to know Rm and Io.
 func _dc_args() -> Array:
-	var sp: Dictionary = motor["specs"]
-	return [float(sp["kv"]), float(sp["rm_ohm"]), float(sp["io_a"]), float(sp["io_voltage_v"]), k_q]
+	if k_q <= 0.0:
+		return []
+	var p := dc_motor_params(motor)
+	if p.is_empty():
+		return []
+	return p + [k_q]
+
+
+## A motor record's DC parameters, [kv, rm, io, io_v]: its own Rm/Io when it carries them, else the
+## est. values the preset table was derived from, off its stator size and KV. Empty when there is
+## nothing to derive from. Static because the k_t fit (`fit_rated_point`) needs them before any
+## Build exists — ThrustValidation and MotorPlausibility fit a motor with no frame or pack.
+static func dc_motor_params(m: Dictionary) -> Array:
+	var sp: Dictionary = m.get("specs", {})
+	var kv := float(sp.get("kv", 0.0))
+	var rm := float(sp.get("rm_ohm", 0.0))
+	var io := float(sp.get("io_a", 0.0))
+	var io_v := float(sp.get("io_voltage_v", 0.0))
+	if rm <= 0.0 or not sp.has("io_a") or io_v <= 0.0:
+		if _motor_cfg == null:
+			_motor_cfg = MotorConfigs.load_default()
+		io_v = float(m.get("thrust_test", {}).get("voltage_v", 0.0))
+		var d := _motor_cfg.derive_stator(float(sp.get("stator_diameter_mm", 0.0)),
+			float(sp.get("stator_height_mm", 0.0)), kv, io_v)
+		if d.is_empty():
+			return []
+		rm = float(d["rm_ohm"])
+		io = float(d["io_a"])
+	return [kv, rm, io, io_v]
+
+
+## The motor's thrust coefficient on its own test prop, fitted at the LOADED rated point, plus that
+## point: {k_t, k_q, rpm}. A thrust table is "this motor, this prop, this voltage, flat out": the
+## datasheet thrust happens at the rpm the motor actually reaches under that prop's torque, not at
+## the no-load Kv x V. Fitting at Kv x V (the pre-2026-11-03 fit) put full-throttle thrust at
+## 0.67-0.79x the datasheet once the DC model solved the real, lower rpm (MOTOR_REBASELINE.md).
+##
+## Solved jointly with the prop torque: k_q is the fixed aero multiple of k_t, so each k_t moves
+## the load, which moves the loaded rpm, which moves k_t. Fixed-point iteration on
+## k_t = T / omega_loaded(k_q(k_t))^2; it settles in a handful of steps because the torque at the
+## fitted point is k_q w^2 = (k_q/k_t) T, independent of w. No sag: the spec-sheet form, like
+## `motor_rated_draw_a`. A motor with no DC parameters keeps the no-load fit.
+##
+## MEMOISED: `_recompute` and every `spin_up()` (so every `motor_model()`) ask for it, and each solve is
+## up to 100 operating-point bisections. Uncached it pushed the full suite past its 1200 s watchdog.
+## The key is every input the solve reads, so an edited motor (the designer) gets a fresh fit.
+static var _rated_fit_cache: Dictionary = {}
+
+static func fit_rated_point(m: Dictionary, test_prop: Dictionary) -> Dictionary:
+	var sp: Dictionary = m.get("specs", {})
+	var key := "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [sp.get("kv"), sp.get("rm_ohm"), sp.get("io_a"),
+		sp.get("io_voltage_v"), sp.get("stator_diameter_mm"), sp.get("stator_height_mm"),
+		sp.get("max_thrust_g"), m.get("thrust_test", {}).get("voltage_v"),
+		test_prop.get("specs", {}).get("diameter_inches"), m.has("specs")]
+	if _rated_fit_cache.has(key):
+		return (_rated_fit_cache[key] as Dictionary).duplicate()
+	var fit := _fit_rated_point_uncached(m, test_prop)
+	_rated_fit_cache[key] = fit
+	return fit.duplicate()
+
+
+static func _fit_rated_point_uncached(m: Dictionary, test_prop: Dictionary) -> Dictionary:
+	var thrust_g := float(m["specs"]["max_thrust_g"])
+	var v := float(m["thrust_test"]["voltage_v"])
+	var kv := float(m["specs"]["kv"])
+	var d_m := float(test_prop["specs"]["diameter_inches"]) * INCH_M
+	var rpm := kv * v
+	var kt := PropellerModel.fit_k_t(thrust_g, rpm)
+	var p := dc_motor_params(m)
+	if not p.is_empty() and thrust_g > 0.0 and rpm > 0.0:
+		for _i in 100:
+			var r := float(MotorModel.operating_point(v, p[0], p[1], p[2], p[3],
+				PropellerModel.fit_k_q(kt, d_m))["rpm"])
+			if r <= 0.0:
+				break
+			var next_kt := PropellerModel.fit_k_t(thrust_g, r)
+			rpm = r
+			var done := absf(next_kt - kt) <= 1e-10 * next_kt
+			kt = next_kt
+			if done:
+				break
+	return {"k_t": kt, "k_q": PropellerModel.fit_k_q(kt, d_m), "rpm": rpm}
 
 
 func rpm_at_throttle(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
-	if uses_dc_motor():
-		var a := _dc_args()
-		return Fitting.dc_rpm_at_throttle(throttle, max_throttle_fraction(), a[0], a[1], a[2], a[3],
-			a[4], resolve_open_circuit_v(open_circuit_v),
-			float(battery["specs"]["internal_r_ohm"]), float(motor_count()))
-	# The 12-iteration sag fixed point lives in Rust (rust/src/fitting.rs) — it is the same
-	# convergence Powertrain reaches dynamically by integrating the lag.
-	var kv: float = float(motor["specs"]["kv"])
-	var rest_v := resolve_open_circuit_v(open_circuit_v)
-	var internal_r: float = float(battery["specs"]["internal_r_ohm"])
-	return Fitting.rpm_at_throttle(throttle, max_throttle_fraction(), kv, rest_v,
-		internal_r, effective_max_amps, rated_rpm())
+	return _rpm_at_throttle_capped(throttle, max_throttle_fraction(), open_circuit_v)
 
-## Current drawn by one motor at a given RPM — see DroneCore.current_at_rpm, which this
-## must agree with exactly, or the HUD's numbers and the flight model's numbers diverge.
-func current_at_rpm(rpm: float) -> float:
-	if uses_dc_motor():
-		var a := _dc_args()
-		return Fitting.dc_current_at_rpm(rpm, a[0], a[2], a[3], a[4])
-	return Fitting.current_at_rpm(rpm, effective_max_amps, rated_rpm())
+
+func _rpm_at_throttle_capped(throttle: float, cap: float, open_circuit_v: float) -> float:
+	var a := _dc_args()
+	if a.is_empty():
+		return 0.0
+	return Fitting.dc_rpm_at_throttle(throttle, cap, a[0], a[1], a[2], a[3],
+		a[4], resolve_open_circuit_v(open_circuit_v),
+		float(battery["specs"]["internal_r_ohm"]), float(motor_count()))
+
+## PACK current drawn by one motor at a given RPM on a supply of `supply_v` volts (default: the
+## pack's nominal) — see DroneCore.current_at_rpm, which this must agree with exactly at the same
+## supply voltage, or the HUD's numbers and the flight model's numbers diverge. Pack-side, not the
+## winding current: the ESC's duty (rpm/Kv + I*Rm over the supply) scales one into the other.
+func current_at_rpm(rpm: float, supply_v: float = AT_NOMINAL) -> float:
+	var a := _dc_args()
+	if a.is_empty():
+		return 0.0
+	return Fitting.dc_pack_current_at_rpm(rpm, resolve_open_circuit_v(supply_v), a[0], a[1], a[2],
+		a[3], a[4])
+
+
+## The current in ONE motor's winding at a given RPM: Io(rpm) + prop torque / Kt. What the motor's
+## copper and its rated amps are about; the pack sees this times the ESC duty (`current_at_rpm`).
+func winding_current_at_rpm(rpm: float) -> float:
+	var a := _dc_args()
+	if a.is_empty():
+		return 0.0
+	return Fitting.dc_current_at_rpm(rpm, a[0], a[2], a[3], a[4])
 
 ## The RPM at which this motor draws its rated amps with the prop actually fitted: KV times
 ## the pack voltage the manufacturer's amp figure was measured at.
@@ -1976,7 +2124,7 @@ func peak_thrust(open_circuit_v: float = AT_NOMINAL) -> Dictionary:
 	var samples := 400
 	for i in range(samples + 1):
 		var t := cap * float(i) / float(samples)
-		var thrust := thrust_at_throttle_n(t, open_circuit_v)
+		var thrust := _thrust_at_throttle_capped_n(t, cap, open_circuit_v)
 		if thrust > best_thrust:
 			best_thrust = thrust
 			best_throttle = t
@@ -2002,9 +2150,10 @@ func hover_throttle(open_circuit_v: float = AT_NOMINAL) -> float:
 
 	var low := 0.0
 	var high: float = peak["throttle"]
+	var cap := max_throttle_fraction()
 	for _i in 60:
 		var mid := (low + high) * 0.5
-		if thrust_at_throttle_n(mid, open_circuit_v) < target_n:
+		if _thrust_at_throttle_capped_n(mid, cap, open_circuit_v) < target_n:
 			low = mid
 		else:
 			high = mid
@@ -2108,11 +2257,15 @@ func esc_burst_a() -> float:
 ## builder finds out that the money is better spent there.
 ##
 ## Equal to the motor's rated max_amps whenever the fitted prop is heavy enough to reach that
-## rating, and less on a prop too small to load the motor that far — which is why this bench, like
+## rating (DC model, at the thrust-test voltage), and less on a prop too small to load the motor that far — which is why this bench, like
 ## the thrust stand, is testing a PAIRING and not a board against a datasheet.
 func motor_demand_per_channel_a() -> float:
 	var ceiling := motor_bench_limit()
-	return effective_max_amps * ceiling * ceiling
+	var a := _dc_args()
+	if a.is_empty():
+		return 0.0
+	return Fitting.dc_pack_draw_a(ceiling, a[0], a[1], a[2], a[3], a[4],
+		float(motor["thrust_test"]["voltage_v"]), 0.0, 1.0)
 
 
 ## Continuous amps available on one channel, less what one motor will ask of it. Negative means the
@@ -2130,8 +2283,16 @@ func esc_has_channel_headroom() -> bool:
 
 
 ## Total pack current at a throttle command, via the RPM that throttle actually reaches.
+##
+## The PACK's current: the same series solve `rpm_at_throttle` makes (winding current times the ESC
+## duty, summed over the motors, with the pack sagging under it), at the throttle clamped to the ceiling.
 func hover_current_a(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
-	return float(motor_count()) * current_at_rpm(rpm_at_throttle(throttle, open_circuit_v))
+	var a := _dc_args()
+	if a.is_empty():
+		return 0.0
+	return Fitting.dc_pack_draw_a(clampf(throttle, 0.0, max_throttle_fraction()), a[0], a[1], a[2],
+		a[3], a[4], resolve_open_circuit_v(open_circuit_v),
+		float(battery["specs"]["internal_r_ohm"]), float(motor_count()))
 
 
 ## The hover throttle for a pack in the state it is ACTUALLY in, rather than at the nominal datum.
@@ -2187,8 +2348,12 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 	# `high` is the ceiling itself when this segment is unreachable, which reads as "flat out and
 	# still not holding it" — the same convention hover_throttle() uses for a build that cannot
 	# hold itself up, rather than a number quietly clamped into looking achievable.
+	# Pack current = duty x winding current: the duty is the throttle (clamped to the ceiling, as
+	# rpm_at_throttle clamps it), the winding carries the airspeed-scaled torque.
 	var rpm := rpm_at_throttle(high, open_circuit_v)
-	return float(motor_count()) * current_at_rpm(rpm) * ratios.power_ratio(rpm, v_axial, v_edge)
+	var duty := clampf(high, 0.0, max_throttle_fraction())
+	return float(motor_count()) * duty * winding_current_at_rpm(rpm) \
+		* ratios.power_ratio(rpm, v_axial, v_edge)
 
 
 ## The current a pack actually sees over a flight: the model's answer at each row of

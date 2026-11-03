@@ -98,8 +98,8 @@ static func _the_reference_build_is_unmoved() -> Array:
 		"got %.4f" % build.thrust_to_weight()
 	))
 	out.append(TestResult.new(
-		"and it still hovers at 29.9%",
-		absf(build.hover_throttle() * 100.0 - 29.92) < 0.05,
+		"and it still hovers at 25.0%",
+		absf(build.hover_throttle() * 100.0 - 25.00) < 0.05,
 		"got %.4f%%" % (build.hover_throttle() * 100.0)
 	))
 

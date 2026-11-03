@@ -82,6 +82,14 @@ impl Fitting {
         crate::motor::dc_current_impl(rpm, kv, io, io_v, k_q)
     }
 
+    /// PACK-side current of one DC-model motor at an rpm on a supply of `v_supply` volts: the
+    /// winding current times the ESC duty that rpm needs.
+    #[func]
+    fn dc_pack_current_at_rpm(rpm: f64, v_supply: f64, kv: f64, rm: f64, io: f64, io_v: f64,
+                              k_q: f64) -> f64 {
+        crate::motor::dc_pack_current_impl(rpm, v_supply, kv, rm, io, io_v, k_q)
+    }
+
     /// Total pack current at a throttle under the DC model, ignoring every ceiling.
     #[func]
     fn dc_pack_draw_a(throttle: f64, kv: f64, rm: f64, io: f64, io_v: f64, k_q: f64,

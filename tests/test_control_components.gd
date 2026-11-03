@@ -52,10 +52,10 @@ const ALPHA_EPS := 1.0e-3
 ## among them and `plant_alpha` is.
 const REFERENCE_AUW_G := 507.480708
 const REFERENCE_TWR := 11.429006
-const REFERENCE_HOVER := 0.299194
+const REFERENCE_HOVER := 0.249957
 const REFERENCE_COM_Y_M := 0.01183166
 const REFERENCE_COM_Z_M := 0.00017882
-const REFERENCE_PLANT_ALPHA := Vector3(396.628113, 369.980194, 54.708401)
+const REFERENCE_PLANT_ALPHA := Vector3(422.044342, 393.643250, 58.214161)
 
 ## The equal-mass pair. The shipped catalog HAS NO SUCH PAIR — C1 authored flats at 4.0/6.5/9.0 g
 ## and masts at 11.0/14.0 g, and no flat and masted entry share a mass — so "a masted GPS raises the
@@ -114,7 +114,7 @@ static func _the_reference_build_is_bit_identical() -> Array:
 	))
 
 	out.append(TestResult.new(
-		"and therefore still weighs 507.480708 g at 11.429 : 1, hovering at 29.92%",
+		"and therefore still weighs 507.480708 g at 11.429 : 1, hovering at 25.00%",
 		absf(build.all_up_weight_g() - REFERENCE_AUW_G) < MASS_EPS_G
 			and absf(build.thrust_to_weight() - REFERENCE_TWR) < TWR_EPS
 			and absf(build.hover_throttle() - REFERENCE_HOVER) < THROTTLE_EPS,

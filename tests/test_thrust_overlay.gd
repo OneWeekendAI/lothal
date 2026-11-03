@@ -243,20 +243,26 @@ static func _test_a_refused_rotor_is_refused_rather_than_flat() -> TestResult:
 ## `_omega_hover_rad_s` — rather than by reading a private method, and on a build that hovers AND
 ## one that does not, because the two arms of that function are exactly where they could diverge.
 ##
-## MUTATION that turns this red: make `operating_rpm` return `rated_rpm()` unconditionally, which
+## MUTATION that turns this red: make `operating_rpm` return `rated_rpm() * hover_throttle()` (the
+## pre-DC definition), or `rated_rpm()` unconditionally, which
 ## is the plausible simplification (it is what the method returns for anything that cannot hover)
 ## and moves the hovering build's operating point by a factor of about three.
 static func _test_the_operating_point_is_the_spin_ups() -> TestResult:
 	var flying := ReferenceBuild.build()
 	var hovers := flying.can_hover()
 	var rpm := flying.operating_rpm()
-	var expected: float = flying.rated_rpm() * flying.hover_throttle()
-	var hover_ok: bool = hovers and absf(rpm - expected) < 1e-12
+	# The loaded hover rpm on the DC model (2026-11-03), and the physics it must satisfy: at that rpm
+	# the rotors make the aircraft's weight. Kv x V x hover_throttle (the pre-DC definition) misses
+	# that by ~40% of weight on the reference build, so the second clause is what bites.
+	var expected: float = flying.rpm_at_throttle(flying.hover_throttle())
+	var lift_n: float = flying.thrust_rotor_equivalents() * PropellerModel.thrust_n(flying.k_t, rpm)
+	var hover_ok: bool = hovers and absf(rpm - expected) < 1e-12 \
+		and absf(lift_n - flying.weight_n()) < 1e-3 * flying.weight_n()
 
-	# The other arm: a build carrying a pack far too heavy to lift falls back to rated.
+	# The other arm: a build carrying a pack far too heavy to lift falls back to flat out.
 	var heavy := _overloaded_build()
 	var heavy_rpm := heavy.operating_rpm()
-	var heavy_ok: bool = not heavy.can_hover() and heavy_rpm == heavy.rated_rpm()
+	var heavy_ok: bool = not heavy.can_hover() and heavy_rpm == heavy.reachable_rpm()
 
 	# And the distribution really is taken at it — same RPM in, same numbers out.
 	var geometry := flying.prop_geometry()

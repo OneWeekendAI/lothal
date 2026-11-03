@@ -235,10 +235,12 @@ static func implied_k_t_on(catalog: PartsCatalog, motor: Dictionary, to_geometry
 	var fit_prop: Dictionary = catalog.get_part(str(test.get("prop_id", "")))
 	if fit_prop.is_empty():
 		return 0.0
-	var fit_rpm := float(motor.get("specs", {}).get("kv", 0.0)) * float(test.get("voltage_v", 0.0))
-	if fit_rpm <= 0.0:
+	if float(motor.get("specs", {}).get("kv", 0.0)) * float(test.get("voltage_v", 0.0)) <= 0.0:
 		return 0.0
-	var k_t_at_fit := PropellerModel.fit_k_t(float(motor.get("specs", {}).get("max_thrust_g", 0.0)), fit_rpm)
+	# Build's own fit: k_t at the LOADED rated point, and that rpm for the geometry move.
+	var fitted := Build.fit_rated_point(motor, fit_prop)
+	var fit_rpm := float(fitted["rpm"])
+	var k_t_at_fit := float(fitted["k_t"])
 	# The cross-prop move is the BEMT geometry ratio (§0, P5) — blade count and twist in the
 	# integral, at the fit RPM — not the deleted exponent law. `to_geometry` carries the
 	# target prop's chord (ThrustValidation.geometry_of supplies it).

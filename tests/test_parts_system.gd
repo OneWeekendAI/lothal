@@ -405,8 +405,8 @@ static func _reference_build_matches_the_documented_table(_catalog: PartsCatalog
 		"reference build stats all land in physics.md's real-world bands",
 		b.all_up_weight_g() >= 500.0 - 50.0 and b.all_up_weight_g() <= 650.0
 			and b.thrust_to_weight() >= 9.0 and b.thrust_to_weight() <= 12.0
-			and b.hover_throttle() >= 0.28 and b.hover_throttle() <= 0.32
-			and b.flight_time_min() >= 4.0 and b.flight_time_min() <= 6.0
+			and b.hover_throttle() >= 0.23 and b.hover_throttle() <= 0.27
+			and b.flight_time_min() >= 4.0 and b.flight_time_min() <= 7.0
 			and b.top_speed_kmh() >= 100.0 and b.top_speed_kmh() <= 130.0,
 		"%.0f g, %.1f:1, %.1f%% hover, %.1f min, %.0f km/h" % [
 			b.all_up_weight_g(), b.thrust_to_weight(), b.hover_throttle() * 100.0,

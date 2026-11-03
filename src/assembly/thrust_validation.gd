@@ -67,13 +67,15 @@ static func evaluate_motor(catalog: PartsCatalog, motor: Dictionary) -> Array:
 
 	var kv: float = float(motor["specs"]["kv"])
 	var fit_voltage: float = float(test.get("voltage_v", 0.0))
-	var fit_rpm := kv * fit_voltage
-	if fit_rpm <= 0.0:
+	if kv * fit_voltage <= 0.0:
 		return out
 
-	# The same two lines Build._recompute uses to fit, so the bench cannot validate a
-	# coefficient that differs from the one the physics actually flies on.
-	var k_t_at_fit_prop := PropellerModel.fit_k_t(float(motor["specs"]["max_thrust_g"]), fit_rpm)
+	# The same fit Build._recompute uses (k_t at the LOADED rated point), so the bench cannot
+	# validate a coefficient that differs from the one the physics actually flies on.
+	var fitted := Build.fit_rated_point(motor, fit_prop)
+	var fit_rpm := float(fitted["rpm"])
+	var k_t_at_fit_prop := float(fitted["k_t"])
+	var dc := Build.dc_motor_params(motor)
 	var fit_doc := PropellerDocument.from_catalog_prop(fit_prop)
 
 	for point in motor.get("validation", []):
@@ -91,7 +93,13 @@ static func evaluate_motor(catalog: PartsCatalog, motor: Dictionary) -> Array:
 			hold_doc.diameter_mm * 0.001, hold_doc.pitch_mm * 0.001, float(hold_doc.blades), hold_doc.chord,
 			fit_rpm)
 		var voltage_v: float = float(point.get("voltage_v", 0.0))
-		var predicted_n := PropellerModel.thrust_n(k_t, kv * voltage_v)
+		# Predicted at the rpm the motor reaches under THAT prop's torque at that voltage, the
+		# same loaded convention the fit used (no-load Kv x V when the motor has no DC data).
+		var predict_rpm := kv * voltage_v
+		if not dc.is_empty():
+			predict_rpm = float(MotorModel.operating_point(voltage_v, dc[0], dc[1], dc[2], dc[3],
+				PropellerModel.fit_k_q(k_t, hold_doc.diameter_mm * 0.001))["rpm"])
+		var predicted_n := PropellerModel.thrust_n(k_t, predict_rpm)
 		var predicted_g := predicted_n / GRAVITY_MPS2 * 1000.0
 
 		var measured_g: float = float(point.get("measured_thrust_g", 0.0))

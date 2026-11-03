@@ -163,8 +163,8 @@ static func _test_the_electronics_budget_still_totals_the_lump(_catalog: PartsCa
 
 ## The three fixed points, restated here rather than only in test_validation.gd, because this is
 ## the slice that could move them and a failure should say so next to the change that caused it.
-## 507.5 g, 11.43:1 and 30% are parts.md's reference build after PW2 re-baselined it (the harness
-## stopped being a flat 14 g lump); it was 496 g / 11.7 : 1 / 29% before that.
+## 507.5 g, 11.43:1 and 25% are parts.md's reference build after the DC-law motor re-baseline (PW2 harness: 30%;
+## the harness stopped being a flat 14 g lump); it was 496 g / 11.7 : 1 / 29% before that.
 static func _test_the_reference_oracles_did_not_move() -> TestResult:
 	var build := ReferenceBuild.build()
 	var weight_g := build.all_up_weight_g()
@@ -173,12 +173,12 @@ static func _test_the_reference_oracles_did_not_move() -> TestResult:
 
 	var passed := absf(weight_g - 507.48) < 0.5 \
 		and absf(twr - 11.43) < 0.1 \
-		and absf(hover - 0.30) < 0.01
+		and absf(hover - 0.25) < 0.01
 
 	return TestResult.new(
 		"mounting the stack moved neither the weight, the thrust-to-weight, nor the hover throttle",
 		passed,
-		"%.1f g (want 507.5), %.2f:1 (want 11.43), %.1f%% hover (want 29.9)" % [
+		"%.1f g (want 507.5), %.2f:1 (want 11.43), %.1f%% hover (want 25.0)" % [
 			weight_g, twr, hover * 100.0])
 
 

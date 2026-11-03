@@ -62,15 +62,17 @@ const RESONANCE_BAND_FRAC := 0.20
 ## Per-rev multipliers, name → order, exactly as `Build.excitation_orders()` returned them.
 var orders: Dictionary = {}
 
-## The right-hand edge of the RPM axis: what the motor is rated at.
+## The right-hand edge of the RPM axis: the motor's no-load Kv x test voltage, an upper bound no
+## load can exceed. Only an axis extent: since the DC law (2026-11-03) no build actually turns it,
+## which is why `reachable_rpm` (the loaded ceiling) is always hatched short of it.
 var rated_rpm := 0.0
 
 ## The highest RPM this build can actually turn. Everything above it is shaded, because a
 ## crossing there is one the aircraft cannot reach.
 var reachable_rpm := 0.0
 
-## Where the aircraft actually sits. `Build.operating_rpm()` — hover throttle × rated when it
-## hovers, rated when it cannot — the SAME operating point the thrust overlay draws at and the
+## Where the aircraft actually sits. `Build.operating_rpm()` — the loaded hover rpm when it
+## hovers, the rpm at its throttle ceiling when it cannot — the SAME operating point the thrust overlay draws at and the
 ## spin-up linearises at. A third definition of "the RPM this drone sits at" would put this
 ## overlay's vertical line and that overlay's curve on different aircraft.
 var hover_rpm := 0.0

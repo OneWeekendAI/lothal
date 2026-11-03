@@ -33,14 +33,17 @@ const DT := 0.001   # 1 kHz, matching physics.md §6
 ## than "close". A golden value taken from the implementation it is guarding is a test that cannot
 ## fail — this project has paid for that mistake three times — so these are frozen from the OLD
 ## code, which never heard of `Wind`.
-const GOLDEN_POS := Vector3(0.00000000000000000, -48.30846786499023438, 21.69212913513183594)
-const GOLDEN_VEL := Vector3(0.00000000000000000, -21.41524314880371094, -1.71378135681152344)
-const GOLDEN_ANGVEL := Vector3(2.43456506729125977, 0.00000000000000000, 0.00000000000000000)
-const GOLDEN_ORIENT := Quaternion(-0.06778866052627563, 0.00000000000000000, 0.00000000000000000,
-	-0.99769967794418335)
-const GOLDEN_GFORCE := 1.50548096947470689
-const GOLDEN_CURRENT := 11.13983036513683267
-const GOLDEN_AIRSPEED := 21.48370742797851562
+## RE-FROZEN at the DC-law motor re-baseline (per-motor spin-up tau changed, hover throttle 29.9% -> 25.0%,
+## pack current = ESC duty x winding current): the same open-loop 5 s trajectory, re-captured at %.17f from the
+## live code. The pre-F7 claim now reads "identical to the code as of the motor re-baseline".
+const GOLDEN_POS := Vector3(0.00000000000000000, -46.74622726440429688, 20.47204589843750000)
+const GOLDEN_VEL := Vector3(0.00000000000000000, -22.30006980895996094, -2.76372194290161133)
+const GOLDEN_ANGVEL := Vector3(2.13913440704345703, 0.00000000000000000, 0.00000000000000000)
+const GOLDEN_ORIENT := Quaternion(0.19708307087421417, 0.00000000000000000, 0.00000000000000000,
+	-0.98038685321807861)
+const GOLDEN_GFORCE := 1.50884118891880292
+const GOLDEN_CURRENT := 4.81708604540729635
+const GOLDEN_AIRSPEED := 22.47067642211914062
 
 static func run() -> Array:
 	var results: Array = []
@@ -246,14 +249,19 @@ static func _holding_station_in_wind() -> Array:
 	# moderate headwinds draw LESS current (translational lift), and only past the power curve's
 	# minimum does the extra thrust demanded to hold station against drag start to dominate.
 	var build := ReferenceBuild.build()
-	var hover_current := build.hover_current_a(build.hover_throttle())
-	var ceiling: float = build.peak_thrust()["throttle"]
+	# DroneCore flies a FRESH pack, so the oracle is asked at that same open-circuit voltage. Since
+	# the DC current law, pack current = electrical power / pack voltage: the nominal-voltage oracle
+	# read 14.8/16.8 = 0.880 of DroneCore's figure on every speed, a voltage mismatch, not a wiring
+	# fault (re-baseline 2026-11-03).
+	var fresh_v: float = build.battery_model().resting_voltage_v()
+	var hover_current := build.hover_current_a(build.hover_throttle(fresh_v), fresh_v)
+	var ceiling: float = build.peak_thrust(fresh_v)["throttle"]
 	var speeds := [15.0, 18.0, 22.0]
 	var currents: Array[float] = []
 	var oracle_currents: Array[float] = []
 	for speed in speeds:
 		currents.append(_trimmed_current_holding_station(build, speed, ceiling))
-		oracle_currents.append(build.flight_current_at_a(speed, 1.0, ceiling))
+		oracle_currents.append(build.flight_current_at_a(speed, 1.0, ceiling, fresh_v))
 
 	var all_above_hover := true
 	for c in currents:
