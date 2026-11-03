@@ -175,6 +175,14 @@ impl Powertrain {
     /// ceiling, a high-resistance pack would run away to a total voltage collapse.
     #[func]
     fn current_at_rpm(&self, rpm: f64) -> f64 {
+        {
+            // Motor Designer M4: a motor on the DC model draws Io(rpm) + torque/Kt, with the
+            // torque of THIS powertrain's prop; every other motor keeps the rated-amps law.
+            let mm = self.motor_model.bind();
+            if mm.uses_dc() {
+                return mm.dc_current_at_rpm(rpm);
+            }
+        }
         if self.rated_rpm <= 0.0 {
             return 0.0;
         }
@@ -208,7 +216,7 @@ impl Powertrain {
         let mut voltage_v = self.battery.bind().nominal_v;
         let mut rpm = 0.0;
         for _ in 0..12 {
-            rpm = t * self.motor_model.bind().max_rpm(voltage_v);
+            rpm = self.motor_model.bind().target_rpm(t, voltage_v);
             voltage_v = self.battery.bind().voltage_live(4.0 * self.current_at_rpm(rpm));
         }
         self.last_current_total_a = 4.0 * self.current_at_rpm(rpm);

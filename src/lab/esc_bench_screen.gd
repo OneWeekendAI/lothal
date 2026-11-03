@@ -211,8 +211,13 @@ func _motor_model_for_the_sweep() -> MotorModel:
 	# different throttle ceiling — so its tau is the build's tau. Deriving tau twice would risk
 	# two slightly different numbers reaching the two panels; asking Build for its own tau keeps
 	# them one.
-	return MotorModel.create_with_tau(float(_build.motor["specs"]["kv"]), sweep_ceiling(),
+	var mm := MotorModel.create_with_tau(float(_build.motor["specs"]["kv"]), sweep_ceiling(),
 		float(_build.spin_up().get("tau_s", MotorSpinUp.FALLBACK_TAU_S)))
+	# Motor Designer M4: a DC-model motor sweeps on the DC law, like the build that flies it.
+	if _build.uses_dc_motor():
+		var a := _build._dc_args()
+		mm.set_dc(a[1], a[2], a[3], a[4])
+	return mm
 
 
 ## The ceiling the ramp runs to — what these MOTORS will ask for, and deliberately not

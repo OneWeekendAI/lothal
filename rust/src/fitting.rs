@@ -66,6 +66,30 @@ impl Fitting {
         rpm
     }
 
+    /// Motor Designer M4: the DC-model counterpart of `rpm_at_throttle` for a motor with Rm and
+    /// Io. Throttle scales the applied voltage, the winding drops I*Rm, the pack sags by the
+    /// summed current of `n_motors`. Same signature spirit; the root is found by bisection.
+    #[func]
+    fn dc_rpm_at_throttle(throttle: f64, cap: f64, kv: f64, rm: f64, io: f64, io_v: f64,
+                          k_q: f64, rest_v: f64, internal_r: f64, n_motors: f64) -> f64 {
+        let t = throttle.clamp(0.0, cap);
+        crate::motor::dc_pack_state(t, rest_v, internal_r, n_motors, kv, rm, io, io_v, k_q).1
+    }
+
+    /// Current of one DC-model motor at an rpm: Io(rpm) + prop torque / Kt.
+    #[func]
+    fn dc_current_at_rpm(rpm: f64, kv: f64, io: f64, io_v: f64, k_q: f64) -> f64 {
+        crate::motor::dc_current_impl(rpm, kv, io, io_v, k_q)
+    }
+
+    /// Total pack current at a throttle under the DC model, ignoring every ceiling.
+    #[func]
+    fn dc_pack_draw_a(throttle: f64, kv: f64, rm: f64, io: f64, io_v: f64, k_q: f64,
+                      rest_v: f64, internal_r: f64, n_motors: f64) -> f64 {
+        crate::motor::dc_pack_state(throttle.clamp(0.0, 1.0), rest_v, internal_r, n_motors, kv,
+            rm, io, io_v, k_q).0
+    }
+
     /// WHICH component is holding a build back, by index into [motors, battery, esc]
     /// (build.gd:476). Ties go to the motors, then the pack, then the ESC — the pre-existing
     /// behaviour: an unrated part yields a zero limit that throttle_limit_for reads as "no

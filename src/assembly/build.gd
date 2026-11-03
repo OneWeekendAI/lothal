@@ -1591,6 +1591,11 @@ func fresh_draw_at_a(throttle: float) -> float:
 	var rated := rated_rpm()
 	if rated <= 0.0 or throttle <= 0.0:
 		return 0.0
+	if uses_dc_motor():
+		var a := _dc_args()
+		return Fitting.dc_pack_draw_a(throttle, a[0], a[1], a[2], a[3], a[4],
+			battery_model().resting_voltage_v(), float(battery["specs"]["internal_r_ohm"]),
+			float(motor_count()))
 	var rest_v := battery_model().resting_voltage_v()
 	var r := float(battery["specs"]["internal_r_ohm"])
 	var kv := float(motor["specs"]["kv"])
@@ -1656,8 +1661,12 @@ func motor_model() -> MotorModel:
 	# MotorModel without this — the pre-P7 shared 0.03 s constant is gone; MotorModel's own
 	# fallback matches it identically so a probe that skips the derivation reproduces the
 	# old numbers rather than a silent zero.
-	return MotorModel.create_with_tau(float(motor["specs"]["kv"]), max_throttle_fraction(),
+	var mm := MotorModel.create_with_tau(float(motor["specs"]["kv"]), max_throttle_fraction(),
 		_tau_s())
+	if uses_dc_motor():
+		var a := _dc_args()
+		mm.set_dc(a[1], a[2], a[3], a[4])
+	return mm
 
 
 ## The τ this build hands to MotorModel. Derived at the hover operating point when the build
@@ -1914,7 +1923,29 @@ func resolve_open_circuit_v(open_circuit_v: float) -> float:
 	return open_circuit_v
 
 
+## Motor Designer M4. True when this build's motor draws current from the DC model (Kv, Rm, Io)
+## instead of the legacy rated-amps law. The switch is the motor record's own
+## `specs.current_model == "dc"`: designer motors carry it, and the 16 shelf presets do NOT, even
+## though M3 gave them Rm and Io, because moving them onto the DC law moves every flight figure
+## they have (tests/test_motor_presets.gd pins those; tests/test_motor_current.gd sizes the drift).
+func uses_dc_motor() -> bool:
+	var sp: Dictionary = motor.get("specs", {})
+	return String(sp.get("current_model", "")) == "dc" and float(sp.get("rm_ohm", 0.0)) > 0.0 \
+		and sp.has("io_a") and float(sp.get("io_voltage_v", 0.0)) > 0.0 and k_q > 0.0
+
+
+## The DC model's arguments for this build's motor and prop, in Fitting's order: kv, rm, io, io_v, k_q.
+func _dc_args() -> Array:
+	var sp: Dictionary = motor["specs"]
+	return [float(sp["kv"]), float(sp["rm_ohm"]), float(sp["io_a"]), float(sp["io_voltage_v"]), k_q]
+
+
 func rpm_at_throttle(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:
+	if uses_dc_motor():
+		var a := _dc_args()
+		return Fitting.dc_rpm_at_throttle(throttle, max_throttle_fraction(), a[0], a[1], a[2], a[3],
+			a[4], resolve_open_circuit_v(open_circuit_v),
+			float(battery["specs"]["internal_r_ohm"]), float(motor_count()))
 	# The 12-iteration sag fixed point lives in Rust (rust/src/fitting.rs) — it is the same
 	# convergence Powertrain reaches dynamically by integrating the lag.
 	var kv: float = float(motor["specs"]["kv"])
@@ -1926,6 +1957,9 @@ func rpm_at_throttle(throttle: float, open_circuit_v: float = AT_NOMINAL) -> flo
 ## Current drawn by one motor at a given RPM — see DroneCore.current_at_rpm, which this
 ## must agree with exactly, or the HUD's numbers and the flight model's numbers diverge.
 func current_at_rpm(rpm: float) -> float:
+	if uses_dc_motor():
+		var a := _dc_args()
+		return Fitting.dc_current_at_rpm(rpm, a[0], a[2], a[3], a[4])
 	return Fitting.current_at_rpm(rpm, effective_max_amps, rated_rpm())
 
 ## The RPM at which this motor draws its rated amps with the prop actually fitted: KV times

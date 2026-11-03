@@ -36,6 +36,19 @@ pub struct MotorModel {
     /// forgot to pass tau_s produces the same numbers the old code did, not silently wrong ones.
     #[var]
     pub tau_s: f64,
+    /// Motor Designer M4. The DC model's winding resistance (ohm); 0 means "legacy": the drone
+    /// keeps the quadratic rated-amps current law and rpm = throttle * KV * V. A motor whose
+    /// record says `current_model: "dc"` gets Rm, Io, the voltage Io is stated at and the prop's
+    /// k_q handed in through `set_dc`, and then target rpm and current both come from the same
+    /// operating-point solve the designer's bench uses, so there is one model.
+    #[var]
+    pub dc_rm_ohm: f64,
+    #[var]
+    pub dc_io_a: f64,
+    #[var]
+    pub dc_io_v: f64,
+    #[var]
+    pub dc_k_q: f64,
 }
 
 #[godot_api]
@@ -58,7 +71,48 @@ impl MotorModel {
             kv,
             max_throttle: max_throttle.clamp(0.0, 1.0),
             tau_s: if tau_s > 0.0 { tau_s } else { DEFAULT_TAU_S },
+            dc_rm_ohm: 0.0,
+            dc_io_a: 0.0,
+            dc_io_v: 0.0,
+            dc_k_q: 0.0,
         })
+    }
+
+    /// Switches this motor to the DC (Kv, Rm, Io) model for the drone. `rm_ohm <= 0` switches it
+    /// back to the legacy law.
+    #[func]
+    pub fn set_dc(&mut self, rm_ohm: f64, io_a: f64, io_voltage_v: f64, k_q: f64) {
+        self.dc_rm_ohm = rm_ohm;
+        self.dc_io_a = io_a;
+        self.dc_io_v = io_voltage_v;
+        self.dc_k_q = k_q;
+    }
+
+    #[func]
+    pub fn uses_dc(&self) -> bool {
+        self.dc_rm_ohm > 0.0 && self.dc_k_q > 0.0
+    }
+
+    /// Steady rpm for a throttle command at the pack's live terminal voltage. Legacy: the
+    /// command (capped at max_throttle) times KV times voltage. DC: the throttle scales the
+    /// applied voltage and the winding drops I*Rm of it, so the same command spins slower under
+    /// load, exactly the operating-point solve.
+    #[func]
+    pub fn target_rpm(&self, throttle_cmd: f64, voltage_v: f64) -> f64 {
+        let t = throttle_cmd.clamp(0.0, self.max_throttle);
+        if self.uses_dc() {
+            solve_point(t * voltage_v, self.kv, self.dc_rm_ohm, self.dc_io_a, self.dc_io_v,
+                self.dc_k_q).rpm
+        } else {
+            t * self.max_rpm(voltage_v)
+        }
+    }
+
+    /// Current of ONE motor at `rpm` under the DC model: the no-load current at that rpm plus the
+    /// prop's torque over Kt. Only meaningful when `uses_dc`.
+    #[func]
+    pub fn dc_current_at_rpm(&self, rpm: f64) -> f64 {
+        dc_current_impl(rpm, self.kv, self.dc_io_a, self.dc_io_v, self.dc_k_q)
     }
 
     #[func]
@@ -69,7 +123,7 @@ impl MotorModel {
     /// Advances current RPM one dt toward the throttle-commanded target, via first-order lag.
     #[func]
     pub fn step(&self, current_rpm: f64, throttle_cmd: f64, voltage_v: f64, dt: f64) -> f64 {
-        let target = throttle_cmd.clamp(0.0, self.max_throttle) * self.max_rpm(voltage_v);
+        let target = self.target_rpm(throttle_cmd, voltage_v);
         let alpha = 1.0 - (-dt / self.tau_s).exp();
         current_rpm + (target - current_rpm) * alpha
     }
@@ -236,6 +290,33 @@ fn temp_step_impl(t: f64, loss: f64, c: f64, h: f64, dt: f64) -> f64 {
     t_inf + (t - t_inf) * (-dt * h / c).exp()
 }
 
+/// Current of one motor at `rpm` driving a prop of torque k_q * omega^2: Io(rpm) + torque / Kt.
+pub fn dc_current_impl(rpm: f64, kv: f64, io: f64, io_v: f64, k_q: f64) -> f64 {
+    let w = rpm * std::f64::consts::TAU / 60.0;
+    io_impl(io, io_v, kv, rpm) + k_q * w * w / kt_impl(kv).max(1e-12)
+}
+
+/// Pack current and rpm per motor for `n` identical DC motors at duty `t` on a pack of open-circuit
+/// `rest_v` behind `r_pack`. The pack carries the motors' summed current (no ESC model, as in the
+/// legacy law), so terminal V = rest_v - I_total*r_pack. Demand falls as amps rise, so one root,
+/// found by bisection (the fixed-point iteration oscillates on a high-resistance pack).
+pub fn dc_pack_state(t: f64, rest_v: f64, r_pack: f64, n: f64, kv: f64, rm: f64, io: f64,
+                     io_v: f64, k_q: f64) -> (f64, f64) {
+    if t <= 0.0 || rest_v <= 0.0 { return (0.0, 0.0); }
+    let at = |amps: f64| solve_point(t * (rest_v - amps * r_pack).max(0.0), kv, rm, io, io_v, k_q);
+    if r_pack <= 0.0 {
+        let p = at(0.0);
+        return (n * p.current_a, p.rpm);
+    }
+    let (mut lo, mut hi) = (0.0, rest_v / r_pack);
+    for _ in 0..60 {
+        let mid = 0.5 * (lo + hi);
+        if n * at(mid).current_a > mid { lo = mid } else { hi = mid }
+    }
+    let amps = 0.5 * (lo + hi);
+    (amps, at(amps).rpm)
+}
+
 pub struct Point { pub rpm: f64, pub current_a: f64, pub torque_nm: f64, pub shaft_w: f64,
                    pub electrical_w: f64, pub efficiency: f64, pub io_a: f64 }
 
@@ -368,4 +449,38 @@ mod tests {
 
     fn thermal_mass(cu: f64, fe: f64) -> f64 { cu * CU_J_PER_G_K + fe * FE_J_PER_G_K }
     fn cooling(m: f64, v: f64) -> f64 { AREA_M2_PER_G23 * m.powf(2.0 / 3.0) * (H_STILL_W_M2K + H_FLOW_W_M2K_PER_MPS * v) }
+
+    #[test]
+    fn dc_pack_state_is_the_series_operating_point() {
+        // One motor, duty 1: the pack solve must agree with solve_point_series.
+        let (amps, rpm) = dc_pack_state(1.0, 22.2, 0.02, 1.0, KV, RM, IO, IOV, KQ);
+        let p = solve_point_series(22.2, 0.02, KV, RM, IO, IOV, KQ);
+        assert!((amps - p.current_a).abs() < 1e-6, "{} vs {}", amps, p.current_a);
+        assert!((rpm - p.rpm).abs() < 1e-3 * p.rpm);
+    }
+
+    #[test]
+    fn dc_current_is_io_plus_torque_over_kt_and_matches_the_solve() {
+        let p = solve_point(20.0, KV, RM, IO, IOV, KQ);
+        let i = dc_current_impl(p.rpm, KV, IO, IOV, KQ);
+        assert!((i - p.current_a).abs() < 1e-6, "{} vs {}", i, p.current_a);
+    }
+
+    #[test]
+    fn rm_and_io_move_the_drones_current_and_rpm() {
+        let (a0, r0) = dc_pack_state(0.8, 22.2, 0.02, 4.0, KV, RM, IO, IOV, KQ);
+        let (a1, r1) = dc_pack_state(0.8, 22.2, 0.02, 4.0, KV, 2.0 * RM, IO, IOV, KQ);
+        let (a2, _) = dc_pack_state(0.8, 22.2, 0.02, 4.0, KV, RM, 3.0 * IO, IOV, KQ);
+        assert!(r1 < r0, "more Rm, less rpm");
+        assert!(a1 < a0, "more Rm, less current");
+        assert!(a2 > a0, "more Io, more current: {} vs {}", a2, a0);
+    }
+
+    #[test]
+    fn legacy_motor_target_is_throttle_kv_voltage() {
+        let m = MotorModel { kv: KV, max_throttle: 0.9, tau_s: 0.03, dc_rm_ohm: 0.0, dc_io_a: 0.0,
+                             dc_io_v: 0.0, dc_k_q: 0.0 };
+        assert!(!m.uses_dc());
+        assert!((m.target_rpm(1.0, 20.0) - 0.9 * KV * 20.0).abs() < 1e-9);
+    }
 }
