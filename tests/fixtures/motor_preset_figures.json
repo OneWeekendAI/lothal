@@ -1,0 +1,184 @@
+{
+	"class/cinelifter": {
+		"auw_g": 2513.64897599697,
+		"flight_time_min": 4.19194789280938,
+		"hover_throttle": 0.349429456566137,
+		"thrust_to_weight": 8.30664909833663,
+		"top_speed_kmh": 132.428542985025
+	},
+	"class/cinewhoop_3": {
+		"auw_g": 235.143724265035,
+		"flight_time_min": 3.26590044322552,
+		"hover_throttle": 0.386677444776072,
+		"thrust_to_weight": 6.80434914859395,
+		"top_speed_kmh": 115.725199435731
+	},
+	"class/five_inch": {
+		"auw_g": 507.480708465516,
+		"flight_time_min": 4.57051874348698,
+		"hover_throttle": 0.299194499708295,
+		"thrust_to_weight": 11.4290058779527,
+		"top_speed_kmh": 108.1873206628
+	},
+	"class/four_inch": {
+		"auw_g": 367.709867503704,
+		"flight_time_min": 4.05443646675012,
+		"hover_throttle": 0.29546257704331,
+		"thrust_to_weight": 7.42433163007925,
+		"top_speed_kmh": 105.521435544623
+	},
+	"class/seven_lr": {
+		"auw_g": 663.074146349915,
+		"flight_time_min": 3.24606751829943,
+		"hover_throttle": 0.320895583472285,
+		"thrust_to_weight": 9.89793103895576,
+		"top_speed_kmh": 90.6878425228264
+	},
+	"class/six_inch": {
+		"auw_g": 585.661527894149,
+		"flight_time_min": 4.08618980259494,
+		"hover_throttle": 0.279844006708549,
+		"thrust_to_weight": 12.9767786307002,
+		"top_speed_kmh": 98.3420546001475
+	},
+	"class/sub250_35": {
+		"auw_g": 250.589343585273,
+		"flight_time_min": 2.54551269643459,
+		"hover_throttle": 0.275143633326544,
+		"thrust_to_weight": 6.56737538064647,
+		"top_speed_kmh": 95.0293828480337
+	},
+	"class/tiny_whoop": {
+		"auw_g": 61.9198494259765,
+		"flight_time_min": 0.0,
+		"hover_throttle": 0.875103181483159,
+		"thrust_to_weight": 1.80878992824252,
+		"top_speed_kmh": 111.093369975541
+	},
+	"class/toothpick": {
+		"auw_g": 123.190528401202,
+		"flight_time_min": 2.34319204097876,
+		"hover_throttle": 0.535943117552452,
+		"thrust_to_weight": 3.57170316346908,
+		"top_speed_kmh": 97.7229773731461
+	},
+	"class/x_class": {
+		"auw_g": 1251.24269193228,
+		"flight_time_min": 7.60528141871071,
+		"hover_throttle": 0.336752049033467,
+		"thrust_to_weight": 7.02114554241592,
+		"top_speed_kmh": 86.9143724512074
+	},
+	"motor/motor_0802_19000kv": {
+		"auw_g": 376.280708465516,
+		"flight_time_min": 0.0,
+		"hover_throttle": 0.22302591922845,
+		"thrust_to_weight": 4.76240200383334,
+		"top_speed_kmh": 93.1585184479337
+	},
+	"motor/motor_1103_8000kv": {
+		"auw_g": 391.080708465516,
+		"flight_time_min": 0.0,
+		"hover_throttle": 0.450121654501216,
+		"thrust_to_weight": 4.50034983036038,
+		"top_speed_kmh": 94.972920511854
+	},
+	"motor/motor_1404_3800kv": {
+		"auw_g": 426.280708465516,
+		"flight_time_min": 4.03685851268054,
+		"hover_throttle": 0.522942140047707,
+		"thrust_to_weight": 3.75339528208894,
+		"top_speed_kmh": 99.1549582506465
+	},
+	"motor/motor_1404_4600kv": {
+		"auw_g": 426.280708465516,
+		"flight_time_min": 4.16913084404589,
+		"hover_throttle": 0.477204611109787,
+		"thrust_to_weight": 4.50407433850673,
+		"top_speed_kmh": 99.1549582506465
+	},
+	"motor/motor_1507_3600kv": {
+		"auw_g": 454.280708465516,
+		"flight_time_min": 4.46645145665061,
+		"hover_throttle": 0.386137940297146,
+		"thrust_to_weight": 6.86800020749029,
+		"top_speed_kmh": 102.359638578888
+	},
+	"motor/motor_2207_1750kv": {
+		"auw_g": 507.480708465516,
+		"flight_time_min": 5.02550474555284,
+		"hover_throttle": 0.397006674039936,
+		"thrust_to_weight": 6.48081559362837,
+		"top_speed_kmh": 108.1873206628
+	},
+	"motor/motor_2207_1960kv": {
+		"auw_g": 507.480708465516,
+		"flight_time_min": 4.57051874348698,
+		"hover_throttle": 0.299194499708295,
+		"thrust_to_weight": 11.4290058779527,
+		"top_speed_kmh": 108.1873206628
+	},
+	"motor/motor_2207_2400kv": {
+		"auw_g": 507.480708465516,
+		"flight_time_min": 3.87819190533101,
+		"hover_throttle": 0.276954728577948,
+		"thrust_to_weight": 13.3995241327722,
+		"top_speed_kmh": 108.1873206628
+	},
+	"motor/motor_2306_2450kv": {
+		"auw_g": 497.480708465516,
+		"flight_time_min": 3.71745559252993,
+		"hover_throttle": 0.287188230749358,
+		"thrust_to_weight": 12.4627948270074,
+		"top_speed_kmh": 107.116091764687
+	},
+	"motor/motor_2506_1500kv": {
+		"auw_g": 542.280708465516,
+		"flight_time_min": 5.31469900994681,
+		"hover_throttle": 0.404658824410154,
+		"thrust_to_weight": 6.22883632968583,
+		"top_speed_kmh": 111.835239964163
+	},
+	"motor/motor_2807_1300kv": {
+		"auw_g": 605.480708465516,
+		"flight_time_min": 4.42816616339935,
+		"hover_throttle": 0.393571582921064,
+		"thrust_to_weight": 6.60632113306681,
+		"top_speed_kmh": 118.172589365265
+	},
+	"motor/motor_2808_1300kv": {
+		"auw_g": 641.480708465516,
+		"flight_time_min": 4.57943636701033,
+		"hover_throttle": 0.356738323466801,
+		"thrust_to_weight": 8.0369611860786,
+		"top_speed_kmh": 121.63495439802
+	},
+	"motor/motor_f60proii_2207_1750kv": {
+		"auw_g": 510.680708465516,
+		"flight_time_min": 5.24802649548633,
+		"hover_throttle": 0.427405270808614,
+		"thrust_to_weight": 5.58816682789333,
+		"top_speed_kmh": 108.527880786999
+	},
+	"motor/motor_speedx2_2107_1960kv": {
+		"auw_g": 494.280708465516,
+		"flight_time_min": 5.54783868118504,
+		"hover_throttle": 0.397310194182779,
+		"thrust_to_weight": 6.45643468671558,
+		"top_speed_kmh": 106.771028650188
+	},
+	"motor/motor_speedx_gr2306_2450kv": {
+		"auw_g": 515.080708465516,
+		"flight_time_min": 3.72815679748027,
+		"hover_throttle": 0.308585715271152,
+		"thrust_to_weight": 10.8105286590476,
+		"top_speed_kmh": 108.994413492202
+	},
+	"motor/motor_xing2_2207_1750kv": {
+		"auw_g": 499.080708465516,
+		"flight_time_min": 4.84189975126631,
+		"hover_throttle": 0.464660250759627,
+		"thrust_to_weight": 4.73220440831826,
+		"top_speed_kmh": 107.288207147391
+	}
+}

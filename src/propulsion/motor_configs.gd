@@ -57,6 +57,32 @@ static func stator_volume_cm3(diameter_mm: float, height_mm: float) -> float:
 	return PI / 4.0 * diameter_mm * diameter_mm * height_mm / 1000.0
 
 
+## Winding resistance (ohm) from stator volume and KV. The one place the law lives: the grid, and
+## the shelf presets in data/parts/motors.json (M3), both read it.
+func rm_for(volume_cm3: float, kv: float) -> float:
+	return coefficient("rm_c") / (pow(volume_cm3, 5.0 / 3.0) * kv * kv)
+
+
+## No-load current (A) at `io_voltage_v` from stator volume and KV.
+func io_for(volume_cm3: float, kv: float, io_voltage_v: float) -> float:
+	return coefficient("io_k") * volume_cm3 * (kv * io_voltage_v / 10000.0)
+
+
+## Rm and Io for a stator that need not be on the grid (a shelf 2506, 2807, 1507...): the same
+## laws, taken from the stator's own dimensions. est. like everything here.
+func derive_stator(diameter_mm: float, height_mm: float, kv: float, io_voltage_v: float) -> Dictionary:
+	if diameter_mm <= 0.0 or height_mm <= 0.0 or kv <= 0.0 or io_voltage_v <= 0.0:
+		return {}
+	var vol := stator_volume_cm3(diameter_mm, height_mm)
+	return {
+		"stator_volume_cm3": vol,
+		"rm_ohm": rm_for(vol, kv),
+		"io_a": io_for(vol, kv, io_voltage_v),
+		"io_voltage_v": io_voltage_v,
+		"basis": "est.",
+	}
+
+
 ## Every derived figure for one grid point. Returns {} for a size not on the grid or a KV <= 0.
 ## All of rm/io/mass/limits carry basis "est." (the key `basis`).
 func derive(size: String, kv: float) -> Dictionary:
@@ -64,9 +90,9 @@ func derive(size: String, kv: float) -> Dictionary:
 	if s.is_empty() or kv <= 0.0:
 		return {}
 	var vol := stator_volume_cm3(float(s.stator_diameter_mm), float(s.stator_height_mm))
-	var rm := coefficient("rm_c") / (pow(vol, 5.0 / 3.0) * kv * kv)
 	var io_v := float(s.io_voltage_v)
-	var io := coefficient("io_k") * vol * (kv * io_v / 10000.0)
+	var rm := rm_for(vol, kv)
+	var io := io_for(vol, kv, io_v)
 	var mass := coefficient("mass_base_g") + coefficient("mass_per_cm3_g") * vol
 	var loss_w := coefficient("loss_w_per_g23") * pow(mass, 2.0 / 3.0)
 	var i_max := sqrt(loss_w / rm)

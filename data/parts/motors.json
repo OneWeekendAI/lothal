@@ -1,5 +1,5 @@
 {
-  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md \u00a74: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. EVERY motor must carry a thrust_test whose prop_id exists in propellers.json \u2014 a typo there does not make the drone slightly wrong, it fits k_t against an empty dictionary; tests/test_parts_system.gd guards this. 'poles' is carried for the electrical-frequency observable (a 14-pole motor has 7 pole pairs); no consumer reads it yet, and it is kept because it is a real spec of a real motor, not because something depends on it. Two tiers, as in frames.json: `specs` is physics-bearing, `catalog` is browsing metadata only, and colour, price and vendor links are banned by name from both. Entries are ordered by stator size then KV, which is what gives the stator filter an ascending order without anything sorting it. 'validation' is OPTIONAL and is what stops the thrust stand from marking its own homework: k_t is FITTED from 'thrust_test', so checking the bench against that same row is a test that cannot fail. Each validation entry is an independently-measured HELD-OUT point \u2014 a different prop, or a different voltage, from the one the fit came from \u2014 and its 'source' must name the table and the row it was read off. A motor with no validation block displays 'not validated' on the bench, which is the honest reading; a fabricated number here would produce a self-congratulating bench that proves nothing, so no entry may be added without a real, citable measurement. Two consequences of that rule shaped this file. First, a motor carrying validation has its thrust_test read from the SAME test run as its validation points, because mixing two sources measures the difference between the sources rather than measuring this model \u2014 so those motors are NAMED PRODUCTS rather than class-typical entries, which is also the direction labs-and-sim.md \u00a77 recommends for the catalog as a whole. Second, the named-product entries were ADDED rather than grafted onto the generic ones: re-sourcing an existing entry moves its physics, and the generic 2207 1750KV in particular is the 6S half of the day-5 '4S -> 6S is different to fly' gate. Most entries here are therefore still unvalidated, including the reference build's motor_2207_1960kv, and the bench says so out loud for each of them. P7 (propulsion.md §3.4) added 'bell_diameter_ratio', 'bell_height_ratio' and 'bell_mass_fraction' to specs — the geometry that used to be hidden as visual-only constants in motor_mesh.gd, now physics-bearing because MotorSpinUp reads them to derive J_rotor. Populated uniformly (1.27 / 2.6 / 0.40) across every entry because no per-motor teardowns have been sourced yet: this migration DECLARES the ratios as physics inputs, it does not claim per-motor specificity. Custom motors created through the Lab form inherit the same defaults through MotorSpinUp's fallback; a builder with bench data can override any of the three on a per-motor basis and the physics picks it up unchanged.",
+  "_schema": "Motors publish a headline thrust figure that is only meaningful alongside the prop and pack it was measured with, so 'thrust_test' names both. That is what lets the sim fit the thrust coefficient k_t from real data (physics.md \u00a74: do not guess C_T) instead of inventing one, and what lets the same motor produce more thrust on 6S without any extra data. EVERY motor must carry a thrust_test whose prop_id exists in propellers.json \u2014 a typo there does not make the drone slightly wrong, it fits k_t against an empty dictionary; tests/test_parts_system.gd guards this. 'poles' is carried for the electrical-frequency observable (a 14-pole motor has 7 pole pairs); no consumer reads it yet, and it is kept because it is a real spec of a real motor, not because something depends on it. Two tiers, as in frames.json: `specs` is physics-bearing, `catalog` is browsing metadata only, and colour, price and vendor links are banned by name from both. Entries are ordered by stator size then KV, which is what gives the stator filter an ascending order without anything sorting it. 'validation' is OPTIONAL and is what stops the thrust stand from marking its own homework: k_t is FITTED from 'thrust_test', so checking the bench against that same row is a test that cannot fail. Each validation entry is an independently-measured HELD-OUT point \u2014 a different prop, or a different voltage, from the one the fit came from \u2014 and its 'source' must name the table and the row it was read off. A motor with no validation block displays 'not validated' on the bench, which is the honest reading; a fabricated number here would produce a self-congratulating bench that proves nothing, so no entry may be added without a real, citable measurement. Two consequences of that rule shaped this file. First, a motor carrying validation has its thrust_test read from the SAME test run as its validation points, because mixing two sources measures the difference between the sources rather than measuring this model \u2014 so those motors are NAMED PRODUCTS rather than class-typical entries, which is also the direction labs-and-sim.md \u00a77 recommends for the catalog as a whole. Second, the named-product entries were ADDED rather than grafted onto the generic ones: re-sourcing an existing entry moves its physics, and the generic 2207 1750KV in particular is the 6S half of the day-5 '4S -> 6S is different to fly' gate. Most entries here are therefore still unvalidated, including the reference build's motor_2207_1960kv, and the bench says so out loud for each of them. P7 (propulsion.md §3.4) added 'bell_diameter_ratio', 'bell_height_ratio' and 'bell_mass_fraction' to specs — the geometry that used to be hidden as visual-only constants in motor_mesh.gd, now physics-bearing because MotorSpinUp reads them to derive J_rotor. Populated uniformly (1.27 / 2.6 / 0.40) across every entry because no per-motor teardowns have been sourced yet: this migration DECLARES the ratios as physics inputs, it does not claim per-motor specificity. Custom motors created through the Lab form inherit the same defaults through MotorSpinUp's fallback; a builder with bench data can override any of the three on a per-motor basis and the physics picks it up unchanged. M3 (Motor Designer) added 'rm_ohm', 'io_a', 'io_voltage_v' and 'rm_io_basis' to specs on every entry: winding resistance, no-load current stated at io_voltage_v (the entry's own thrust_test voltage), all marked est. because no manufacturer publishes them for these motors. They come from the standard-configuration formulas in src/propulsion/motor_configs.gd (stator volume and KV), rounded to 5 and 4 decimals, and tests/test_motor_presets.gd re-derives and compares them. Nothing reads them for a shelf motor's flight figures: the drone keeps the legacy current law unless a motor's specs say current_model is dc (the designer's motors, M4), which is what keeps every preset's AUW, thrust:weight, hover throttle, flight time and top speed identical.",
   "parts": [
     {
       "part_id": "motor_0802_19000kv",
@@ -16,7 +16,11 @@
         "poles": 12,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.1198,
+        "io_a": 0.1519,
+        "io_voltage_v": 3.7,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_16x12x4",
@@ -44,7 +48,11 @@
         "poles": 12,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.11893,
+        "io_a": 0.3629,
+        "io_voltage_v": 7.4,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_25x25x4",
@@ -72,7 +80,11 @@
         "poles": 12,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.14607,
+        "io_a": 0.7445,
+        "io_voltage_v": 14.8,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_3x3x3",
@@ -100,7 +112,11 @@
         "poles": 12,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.09968,
+        "io_a": 0.9013,
+        "io_voltage_v": 14.8,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_3x3x3",
@@ -128,7 +144,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.05088,
+        "io_a": 1.417,
+        "io_voltage_v": 14.8,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_35x28x3",
@@ -156,7 +176,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.04985,
+        "io_a": 2.6272,
+        "io_voltage_v": 24.0,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_hq_ethix_s5_5x4x3",
@@ -184,7 +208,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.06007,
+        "io_a": 2.2226,
+        "io_voltage_v": 22.2,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_5x43x3",
@@ -212,7 +240,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.06007,
+        "io_a": 2.4979,
+        "io_voltage_v": 24.95,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_nazgul_f5_51x35x3",
@@ -240,7 +272,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.04789,
+        "io_a": 1.6595,
+        "io_voltage_v": 14.8,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_5x43x3",
@@ -268,7 +304,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.03194,
+        "io_a": 2.0321,
+        "io_voltage_v": 14.8,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_5x43x3",
@@ -296,7 +336,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.05434,
+        "io_a": 2.4643,
+        "io_voltage_v": 23.41,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_5x43x3",
@@ -338,7 +382,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.03473,
+        "io_a": 2.0135,
+        "io_voltage_v": 15.46,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_5x43x3",
@@ -374,7 +422,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.03417,
+        "io_a": 1.9434,
+        "io_voltage_v": 14.8,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_5x5x2",
@@ -402,7 +454,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.06904,
+        "io_a": 2.1086,
+        "io_voltage_v": 22.2,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_6x45x3",
@@ -430,7 +486,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.04872,
+        "io_a": 2.6745,
+        "io_voltage_v": 22.2,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_7x4x3",
@@ -458,7 +518,11 @@
         "poles": 14,
         "bell_diameter_ratio": 1.27,
         "bell_height_ratio": 2.6,
-        "bell_mass_fraction": 0.4
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.039,
+        "io_a": 3.0565,
+        "io_voltage_v": 22.2,
+        "rm_io_basis": "est."
       },
       "thrust_test": {
         "prop_id": "prop_8x45x3",
