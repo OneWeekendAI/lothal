@@ -1,0 +1,295 @@
+{
+ "_schema": "The standard motor configuration grid behind the Motor Designer (Decided #1): stator size x the KV options sold for that size x the pole configuration the size uses. Every combination is allowed; there is no turns or wire-gauge input. Rm, Io, Kt, mass and max current are NOT stored per motor: they are derived by formulas from stator volume and KV (see src/propulsion/motor_configs.gd), using the coefficients below. Every coefficient has basis \"est.\" (a class-typical fit, not a measurement and not a datasheet value) and a note saying what it was anchored to. Nothing here is a measurement of a motor on a bench; all derived figures are ideal / model figures. Size rows: stator_diameter_mm and stator_height_mm are read from the size name (2306.5 = 23 mm x 6.5 mm); config is the slot/pole pair (9N12P = 9 slots 12 poles); kv_options lists the KV values commonly listed for that stator size (basis est.: representative of vendor catalogs, no single source, and not an exhaustive list of every motor sold); max_cells is the largest pack the class is normally flown on (est.); io_voltage_v is the voltage at which Io is stated (est.; Io scales with rpm as in MotorModel.io_at_rpm).",
+ "coefficients": {
+  "rm_c": {
+   "value": 940000.0,
+   "basis": "est.",
+   "note": "Rm = rm_c / (V_cm3^(5/3) * Kv^2), ohm. Kv*Kt-style winding law: Rm scales as 1/Kv^2 at fixed stator; 5/3 exponent is geometric scaling of the motor constant (Km ~ L^2.5). Anchor: a 2207 1750KV near 0.06 ohm. Anchor value is a class-typical figure, not a datasheet."
+  },
+  "io_k": {
+   "value": 0.215,
+   "basis": "est.",
+   "note": "Io(A) = io_k * V_cm3 * (Kv * io_voltage_v / 10000). Iron and friction loss grow with stator volume and rpm. Anchor: a 2207 1750KV near 1.0 A at 10 V."
+  },
+  "mass_base_g": {
+   "value": 2.5,
+   "basis": "est.",
+   "note": "mass_g = mass_base_g + mass_per_cm3_g * V_cm3. Bell, shaft, bearings and base as a size-independent allowance. Fitted by eye to the shelf's 0802 3.2 g, 2207 32 g, 2807 52 g (data/parts/motors.json); small 14xx motors weigh more than this line."
+  },
+  "mass_per_cm3_g": {
+   "value": 11.0,
+   "basis": "est.",
+   "note": "Grams of stator, copper, magnets and bell per cm3 of stator volume. Same fit as mass_base_g."
+  },
+  "loss_w_per_g23": {
+   "value": 7.0,
+   "basis": "est.",
+   "note": "Continuous dissipation the motor can shed, W = loss_w_per_g23 * mass_g^(2/3) (surface area law). Max continuous current = sqrt(that / Rm). Anchor: a 2207 1750KV near 35 A continuous. Tiny motors (08xx) come out higher than their published 3-5 A ratings."
+  },
+  "copper_mass_fraction": {
+   "value": 0.25,
+   "basis": "est.",
+   "note": "Share of motor mass that is winding copper; feeds the thermal mass."
+  },
+  "stator_mass_fraction": {
+   "value": 0.3,
+   "basis": "est.",
+   "note": "Share of motor mass that is stator iron; feeds the thermal mass."
+  },
+  "nominal_cell_v": {
+   "value": 3.7,
+   "basis": "nominal",
+   "note": "Used only for max_power_w: max continuous current at max_cells x 3.7 V."
+  }
+ },
+ "sizes": [
+  {
+   "size": "0802",
+   "stator_diameter_mm": 8,
+   "stator_height_mm": 2,
+   "config": "9N12P",
+   "slots": 9,
+   "poles": 12,
+   "kv_options": [
+    15000,
+    19000,
+    22000,
+    25000
+   ],
+   "kv_basis": "est.",
+   "max_cells": 1,
+   "io_voltage_v": 3.7
+  },
+  {
+   "size": "1103",
+   "stator_diameter_mm": 11,
+   "stator_height_mm": 3,
+   "config": "9N12P",
+   "slots": 9,
+   "poles": 12,
+   "kv_options": [
+    8000,
+    10000,
+    11000,
+    12000
+   ],
+   "kv_basis": "est.",
+   "max_cells": 1,
+   "io_voltage_v": 3.7
+  },
+  {
+   "size": "1204",
+   "stator_diameter_mm": 12,
+   "stator_height_mm": 4,
+   "config": "9N12P",
+   "slots": 9,
+   "poles": 12,
+   "kv_options": [
+    5000,
+    5500,
+    6000,
+    7000
+   ],
+   "kv_basis": "est.",
+   "max_cells": 3,
+   "io_voltage_v": 7.4
+  },
+  {
+   "size": "1404",
+   "stator_diameter_mm": 14,
+   "stator_height_mm": 4,
+   "config": "9N12P",
+   "slots": 9,
+   "poles": 12,
+   "kv_options": [
+    3800,
+    4600,
+    5500
+   ],
+   "kv_basis": "est.",
+   "max_cells": 4,
+   "io_voltage_v": 7.4
+  },
+  {
+   "size": "1505",
+   "stator_diameter_mm": 15,
+   "stator_height_mm": 5,
+   "config": "9N12P",
+   "slots": 9,
+   "poles": 12,
+   "kv_options": [
+    2750,
+    3600,
+    4500
+   ],
+   "kv_basis": "est.",
+   "max_cells": 4,
+   "io_voltage_v": 10.0
+  },
+  {
+   "size": "1804",
+   "stator_diameter_mm": 18,
+   "stator_height_mm": 4,
+   "config": "12N14P",
+   "slots": 12,
+   "poles": 14,
+   "kv_options": [
+    2450,
+    3000,
+    3600
+   ],
+   "kv_basis": "est.",
+   "max_cells": 4,
+   "io_voltage_v": 10.0
+  },
+  {
+   "size": "2004",
+   "stator_diameter_mm": 20,
+   "stator_height_mm": 4,
+   "config": "12N14P",
+   "slots": 12,
+   "poles": 14,
+   "kv_options": [
+    1700,
+    2300,
+    3000
+   ],
+   "kv_basis": "est.",
+   "max_cells": 4,
+   "io_voltage_v": 10.0
+  },
+  {
+   "size": "2207",
+   "stator_diameter_mm": 22,
+   "stator_height_mm": 7,
+   "config": "12N14P",
+   "slots": 12,
+   "poles": 14,
+   "kv_options": [
+    1650,
+    1750,
+    1960,
+    2100,
+    2400,
+    2750
+   ],
+   "kv_basis": "est.",
+   "max_cells": 6,
+   "io_voltage_v": 10.0
+  },
+  {
+   "size": "2306",
+   "stator_diameter_mm": 23,
+   "stator_height_mm": 6,
+   "config": "12N14P",
+   "slots": 12,
+   "poles": 14,
+   "kv_options": [
+    1700,
+    1900,
+    2200,
+    2450,
+    2550
+   ],
+   "kv_basis": "est.",
+   "max_cells": 6,
+   "io_voltage_v": 10.0
+  },
+  {
+   "size": "2306.5",
+   "stator_diameter_mm": 23,
+   "stator_height_mm": 6.5,
+   "config": "12N14P",
+   "slots": 12,
+   "poles": 14,
+   "kv_options": [
+    1700,
+    1950,
+    2400
+   ],
+   "kv_basis": "est.",
+   "max_cells": 6,
+   "io_voltage_v": 10.0
+  },
+  {
+   "size": "2407",
+   "stator_diameter_mm": 24,
+   "stator_height_mm": 7,
+   "config": "12N14P",
+   "slots": 12,
+   "poles": 14,
+   "kv_options": [
+    1700,
+    1900,
+    2150
+   ],
+   "kv_basis": "est.",
+   "max_cells": 6,
+   "io_voltage_v": 10.0
+  },
+  {
+   "size": "2507",
+   "stator_diameter_mm": 25,
+   "stator_height_mm": 7,
+   "config": "12N14P",
+   "slots": 12,
+   "poles": 14,
+   "kv_options": [
+    1250,
+    1500,
+    1800
+   ],
+   "kv_basis": "est.",
+   "max_cells": 6,
+   "io_voltage_v": 10.0
+  },
+  {
+   "size": "2806.5",
+   "stator_diameter_mm": 28,
+   "stator_height_mm": 6.5,
+   "config": "12N14P",
+   "slots": 12,
+   "poles": 14,
+   "kv_options": [
+    1300,
+    1500,
+    1700
+   ],
+   "kv_basis": "est.",
+   "max_cells": 6,
+   "io_voltage_v": 10.0
+  },
+  {
+   "size": "2810",
+   "stator_diameter_mm": 28,
+   "stator_height_mm": 10,
+   "config": "12N14P",
+   "slots": 12,
+   "poles": 14,
+   "kv_options": [
+    900,
+    1100,
+    1250
+   ],
+   "kv_basis": "est.",
+   "max_cells": 6,
+   "io_voltage_v": 10.0
+  },
+  {
+   "size": "3115",
+   "stator_diameter_mm": 31,
+   "stator_height_mm": 15,
+   "config": "12N14P",
+   "slots": 12,
+   "poles": 14,
+   "kv_options": [
+    900,
+    1050,
+    1200
+   ],
+   "kv_basis": "est.",
+   "max_cells": 8,
+   "io_voltage_v": 10.0
+  }
+ ]
+}
