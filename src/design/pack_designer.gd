@@ -1,5 +1,5 @@
 class_name PackDesigner
-extends Control
+extends DesignerShell
 ## The pack designer: a pop-up over the Design Space (opened only from the "+" tile at the end of
 ## the battery list). Three columns. Left: 1 Cell, 2 Layout, 3 Wiring. Middle: the pack in 3D.
 ## Right: the pack's figures, then the bench (Discharge and Recharge).
@@ -12,16 +12,15 @@ extends Control
 ## The figures column holds labels only. A pack that arrived as typed figures ("legacy") or a shelf
 ## preset is locked until "Rebuild from cells" / "Start from this".
 ##
+## The backdrop, window, top bar start and column widgets are DesignerShell's (shared with the
+## motor designer).
+##
 ## Every setter ends in _rederive(): derive, run the bench, refresh the screen, replay the reveal.
 ## The reveal is a ~3 s draw-in that ends on static charts; with no scene tree (tests) it is skipped.
 
 signal saved(part_id: String)
-signal closed
 
 const REVEAL_S := 3.0
-const BACKDROP := Color(0.0, 0.0, 0.0, 0.58)
-const MARGIN_X := 36
-const MARGIN_Y := 24
 const LEFT_W := 300.0
 const RIGHT_W := 440.0
 const CHEMISTRIES := ["LiPo", "LiPo HV", "Li-ion", "LiFePO4"]
@@ -69,12 +68,9 @@ var _tween: Tween
 var _recharge_pending := false
 var _charged_now := false
 var _charge_from_frac := 0.0
-var _syncing := false
 var _test_drained := false
 
 # Controls.
-var window: PanelContainer
-var name_field: LineEdit
 var badge_label: Label
 var rebuild_button: Button
 var start_from_button: Button
@@ -84,7 +80,6 @@ var copy_button: Button
 var save_text_button: Button
 var _specs_dialog: FileDialog
 var save_button: Button
-var back_button: Button
 var my_packs_panel: PanelContainer
 var my_packs_list: VBoxContainer
 var chip_row: HFlowContainer
@@ -130,11 +125,7 @@ func _init(p_catalog: PartsCatalog = null, p_lib: CellLibrary = null, p_store: D
 	store = p_store if p_store != null else DesignedPacks.new()
 	charge = p_charge if p_charge != null else PackCharge.new()
 	build = p_build
-	name = "PackDesigner"
-	theme = LothalTheme.get_theme()
-	set_anchors_preset(Control.PRESET_FULL_RECT)
-	mouse_filter = Control.MOUSE_FILTER_STOP
-	focus_mode = Control.FOCUS_ALL
+	_init_shell("PackDesigner")
 	design = PackDesign.default_design(lib)
 	# The load a pack is judged on is the drone it would fly in, when there is one.
 	discharge_mode = "this_drone" if build != null else "constant"
@@ -592,19 +583,9 @@ func _ask_specs_path() -> void:
 	_specs_dialog.popup_centered_ratio(0.6)
 
 
-func close() -> void:
+func _before_close() -> void:
 	if _tween != null and _tween.is_valid():
 		_tween.kill()
-	closed.emit()
-	if get_parent() != null:
-		get_parent().remove_child(self)
-	queue_free()
-
-
-func _unhandled_key_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		close()
-		get_viewport().set_input_as_handled()
 
 
 # ---------------------------------------------------------------------------
@@ -612,62 +593,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 # ---------------------------------------------------------------------------
 
 func _build_ui() -> void:
-	var dim := ColorRect.new()
-	dim.name = "Backdrop"
-	dim.color = BACKDROP
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(dim)
-
-	window = PanelContainer.new()
-	window.name = "Window"
-	window.set_anchors_preset(Control.PRESET_FULL_RECT)
-	window.offset_left = MARGIN_X
-	window.offset_right = -MARGIN_X
-	window.offset_top = MARGIN_Y
-	window.offset_bottom = -MARGIN_Y
-	var box := LothalTheme.glass_box(Color(0.075, 0.083, 0.105, 0.98), LothalTheme.RADIUS_PANEL)
-	box.content_margin_left = LothalTheme.SPACE_4
-	box.content_margin_right = LothalTheme.SPACE_4
-	box.content_margin_top = LothalTheme.SPACE_3
-	box.content_margin_bottom = LothalTheme.SPACE_4
-	window.add_theme_stylebox_override("panel", box)
-	add_child(window)
-
-	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", LothalTheme.SPACE_3)
-	window.add_child(root)
-	root.add_child(_build_top_bar())
-
-	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", LothalTheme.SPACE_4)
-	root.add_child(body)
-	body.add_child(_build_left())
-	body.add_child(_build_middle())
-	body.add_child(_build_right())
-
+	_build_shell(_build_top_bar(), _build_left(), _build_middle(), _build_right())
 	_build_my_packs_panel()
 
 
 func _build_top_bar() -> Control:
-	var bar := HBoxContainer.new()
-	bar.name = "TopBar"
-	bar.add_theme_constant_override("separation", LothalTheme.SPACE_2)
-	back_button = Button.new()
-	back_button.name = "Back"
-	back_button.text = "‹  Back"
-	back_button.flat = true
-	back_button.focus_mode = Control.FOCUS_NONE
-	back_button.pressed.connect(close)
-	bar.add_child(back_button)
-	name_field = LineEdit.new()
-	name_field.name = "NameField"
-	name_field.placeholder_text = "Pack name"
-	name_field.custom_minimum_size = Vector2(240, 0)
-	name_field.max_length = 40
-	name_field.text_changed.connect(func(t: String): if not _syncing: set_pack_name(t))
-	bar.add_child(name_field)
+	var bar := _top_bar_start("Pack name", set_pack_name)
 	badge_label = Label.new()
 	badge_label.name = "Badge"
 	badge_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
@@ -686,9 +617,7 @@ func _build_top_bar() -> Control:
 	start_from_button.visible = false
 	start_from_button.pressed.connect(start_from_this)
 	bar.add_child(start_from_button)
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bar.add_child(spacer)
+	bar.add_child(_fill())
 	my_packs_button = Button.new()
 	my_packs_button.name = "MyPacks"
 	my_packs_button.text = "My packs"
@@ -718,32 +647,10 @@ func _build_top_bar() -> Control:
 	return bar
 
 
-func _section(title: String) -> Label:
-	var l := Label.new()
-	l.text = title
-	l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
-	l.add_theme_color_override("font_color", LothalTheme.TEXT_MAIN)
-	return l
-
-
-func _faint(text: String) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	l.add_theme_color_override("font_color", LothalTheme.TEXT_FAINT)
-	return l
-
-
 func _build_left() -> Control:
-	var scroll := ScrollContainer.new()
-	scroll.name = "LeftScroll"
-	scroll.custom_minimum_size = Vector2(LEFT_W, 0)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	var col := VBoxContainer.new()
-	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col.add_theme_constant_override("separation", LothalTheme.SPACE_2)
-	scroll.add_child(col)
+	var out := []
+	var scroll := _left_column(LEFT_W, out)
+	var col: VBoxContainer = out[0]
 
 	col.add_child(_section("1 · Cell"))
 	chip_row = HFlowContainer.new()
@@ -778,9 +685,9 @@ func _build_left() -> Control:
 
 	col.add_child(_spacer(LothalTheme.SPACE_1))
 	col.add_child(_section("2 · Layout"))
-	series_label = _add_stepper(col, "Series", "cells in a row: sets the voltage",
+	series_label = _add_stepper(col, "Series", "Series  (voltage)", "cells in a row: sets the voltage",
 		func(): set_series(design.series - 1), func(): set_series(design.series + 1))
-	parallel_label = _add_stepper(col, "Parallel", "side by side: sets the capacity",
+	parallel_label = _add_stepper(col, "Parallel", "Parallel  (capacity)", "side by side: sets the capacity",
 		func(): set_parallel(design.parallel - 1), func(): set_parallel(design.parallel + 1))
 
 	col.add_child(_spacer(LothalTheme.SPACE_1))
@@ -811,63 +718,8 @@ func _build_left() -> Control:
 	return scroll
 
 
-func _spacer(h: float) -> Control:
-	var c := Control.new()
-	c.custom_minimum_size = Vector2(0, h)
-	return c
-
-
-func _labelled(text: String, ctl: Control) -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", LothalTheme.SPACE_2)
-	var l := Label.new()
-	l.text = text
-	l.custom_minimum_size = Vector2(88, 0)
-	l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	l.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
-	row.add_child(l)
-	ctl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(ctl)
-	return row
-
-
-func _add_stepper(parent: Control, title: String, hint: String, on_minus: Callable, on_plus: Callable) -> Label:
-	var row := HBoxContainer.new()
-	row.name = "Stepper_" + title
-	row.add_theme_constant_override("separation", LothalTheme.SPACE_2)
-	var l := Label.new()
-	l.text = "%s  (%s)" % [title, "voltage" if title == "Series" else "capacity"]
-	l.custom_minimum_size = Vector2(120, 0)
-	l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	l.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
-	row.add_child(l)
-	var minus := Button.new()
-	minus.name = "%sMinus" % title
-	minus.text = "−"
-	minus.custom_minimum_size = Vector2(32, 0)
-	minus.pressed.connect(on_minus)
-	row.add_child(minus)
-	var v := Label.new()
-	v.name = "%sValue" % title
-	v.custom_minimum_size = Vector2(44, 0)
-	v.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	row.add_child(v)
-	var plus := Button.new()
-	plus.name = "%sPlus" % title
-	plus.text = "+"
-	plus.custom_minimum_size = Vector2(32, 0)
-	plus.pressed.connect(on_plus)
-	row.add_child(plus)
-	l.tooltip_text = hint
-	parent.add_child(row)
-	return v
-
-
 func _build_middle() -> Control:
-	var col := VBoxContainer.new()
-	col.name = "Middle"
-	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+	var col := _middle_column()
 	pack_view = PackView3D.new()
 	col.add_child(pack_view)
 	summary_label = Label.new()
@@ -880,10 +732,7 @@ func _build_middle() -> Control:
 
 
 func _build_right() -> Control:
-	var col := VBoxContainer.new()
-	col.name = "Right"
-	col.custom_minimum_size = Vector2(RIGHT_W, 0)
-	col.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+	var col := _right_column(RIGHT_W)
 
 	figures_header = Label.new()
 	figures_header.name = "FiguresHeader"
@@ -891,31 +740,7 @@ func _build_right() -> Control:
 	figures_header.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
 	figures_header.add_theme_color_override("font_color", LothalTheme.TEXT_MAIN)
 	col.add_child(figures_header)
-	figures_box = GridContainer.new()
-	figures_box.name = "Figures"
-	figures_box.columns = 3
-	figures_box.add_theme_constant_override("h_separation", LothalTheme.SPACE_3)
-	figures_box.add_theme_constant_override("v_separation", 2)
-	for key in FIGURE_ROWS:
-		var n := Label.new()
-		n.text = _figure_name(key)
-		n.custom_minimum_size = Vector2(88, 0)
-		n.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-		n.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
-		figures_box.add_child(n)
-		var v := Label.new()
-		v.name = "Fig_" + key
-		v.custom_minimum_size = Vector2(214, 0)
-		v.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
-		v.add_theme_color_override("font_color", LothalTheme.TEXT_MAIN)
-		figures_box.add_child(v)
-		_figure_values[key] = v
-		var t := Label.new()
-		t.name = "Tag_" + key
-		t.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL - 1)
-		t.add_theme_color_override("font_color", LothalTheme.TEXT_FAINT)
-		figures_box.add_child(t)
-		_figure_values[key + "_tag"] = t
+	figures_box = _figure_grid(FIGURE_ROWS, _figure_name, _figure_values)
 	col.add_child(figures_box)
 
 	col.add_child(_spacer(LothalTheme.SPACE_1))

@@ -2033,6 +2033,7 @@ func _build_shelf() -> void:
 	shelf.card_clicked.connect(click_card)
 	shelf.card_unhovered.connect(func(): if drag_kind == "": clear_preview())
 	shelf.pack_designer_requested.connect(open_pack_designer)
+	shelf.motor_designer_requested.connect(open_motor_designer)
 	add_child(shelf)
 
 	_ghost_mat = StandardMaterial3D.new()
@@ -2102,6 +2103,25 @@ func open_pack_designer() -> void:
 	pack_designer = designer
 	add_child(designer)
 	designer.open_new()
+	if designer.is_inside_tree():
+		designer.grab_focus()
+
+
+## The motor designer pop-up, while it is open (null otherwise). Opened by the motor shelf's
+## "Design your own" tile.
+var motor_designer: MotorDesigner
+
+
+## Opens the motor designer over the Design Space on its default motor. A second call while it is
+## open does nothing.
+func open_motor_designer() -> void:
+	if motor_designer != null:
+		return
+	cancel_drag()
+	var designer := MotorDesigner.new(MotorConfigs.load_default(), _catalog)
+	designer.closed.connect(func(): motor_designer = null)
+	motor_designer = designer
+	add_child(designer)
 	if designer.is_inside_tree():
 		designer.grab_focus()
 

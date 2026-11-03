@@ -7,9 +7,12 @@ extends RefCounted
 ## MotorModel (Rust).
 
 const DEFAULT_PATH := "res://data/motors/standard_configs.json"
+## The two slot/pole configurations in the grid, by magnet pole count.
+const POLE_CONFIGS := {12: "9N12P", 14: "12N14P"}
 
 var _sizes: Array = []
 var _coef: Dictionary = {}
+var _magnets: Array = []
 
 
 static func load_default() -> MotorConfigs:
@@ -23,6 +26,9 @@ static func load_default() -> MotorConfigs:
 	var c: Variant = doc.get("coefficients", {})
 	if c is Dictionary:
 		cfg._coef = c
+	var mags: Variant = doc.get("magnets", [])
+	if mags is Array:
+		cfg._magnets = mags
 	return cfg
 
 
@@ -83,16 +89,56 @@ func derive_stator(diameter_mm: float, height_mm: float, kv: float, io_voltage_v
 	}
 
 
+## The shaft diameters (mm) offered for a size; the first is the size's usual one.
+func shaft_options(size: String) -> Array:
+	return get_size(size).get("shaft_mm_options", [])
+
+
+## The mount patterns offered for a size; the first is the size's usual one.
+func mount_options(size: String) -> Array:
+	return get_size(size).get("mount_options", [])
+
+
+## The magnet grades on offer: [{grade, max_c, basis, note}].
+func magnets() -> Array:
+	return _magnets
+
+
+## The highest working temperature (C) of a magnet grade; NAN for an unknown grade.
+func magnet_max_c(grade: String) -> float:
+	for m in _magnets:
+		if String(m.get("grade", "")) == grade:
+			return float(m.get("max_c", NAN))
+	return NAN
+
+
+## Grams a shaft of `shaft_mm` adds over the size's usual shaft (negative when thinner): steel,
+## running the bell's height plus 8 mm. est. The usual shaft is already inside mass_base_g.
+func shaft_mass_delta_g(size: String, shaft_mm: float) -> float:
+	var opts := shaft_options(size)
+	var s := get_size(size)
+	if opts.is_empty() or s.is_empty() or shaft_mm <= 0.0:
+		return 0.0
+	var d0 := float(opts[0])
+	var length_mm := float(s.stator_height_mm) * MotorMesh.bell_height_ratio({}) + 8.0
+	var vol_cm3 := PI / 4.0 * (shaft_mm * shaft_mm - d0 * d0) * length_mm / 1000.0
+	return coefficient("shaft_density_g_cm3") * vol_cm3
+
+
 ## Every derived figure for one grid point. Returns {} for a size not on the grid or a KV <= 0.
-## All of rm/io/mass/limits carry basis "est." (the key `basis`).
-func derive(size: String, kv: float) -> Dictionary:
+## All of rm/io/mass/limits carry basis "est." (the key `basis`). `poles` other than the size's
+## usual count scales Io by (poles / usual)^io_pole_exponent (iron loss follows electrical
+## frequency); 0 means the size's usual poles.
+func derive(size: String, kv: float, poles: int = 0) -> Dictionary:
 	var s := get_size(size)
 	if s.is_empty() or kv <= 0.0:
 		return {}
 	var vol := stator_volume_cm3(float(s.stator_diameter_mm), float(s.stator_height_mm))
 	var io_v := float(s.io_voltage_v)
 	var rm := rm_for(vol, kv)
-	var io := io_for(vol, kv, io_v)
+	var usual_poles := int(s.poles)
+	var p := poles if poles > 0 else usual_poles
+	var io := io_for(vol, kv, io_v) * pow(float(p) / float(usual_poles), coefficient("io_pole_exponent"))
 	var mass := coefficient("mass_base_g") + coefficient("mass_per_cm3_g") * vol
 	var loss_w := coefficient("loss_w_per_g23") * pow(mass, 2.0 / 3.0)
 	var i_max := sqrt(loss_w / rm)
@@ -100,8 +146,8 @@ func derive(size: String, kv: float) -> Dictionary:
 	return {
 		"size": size,
 		"kv": kv,
-		"config": String(s.config),
-		"poles": int(s.poles),
+		"config": String(s.config) if p == usual_poles else String(POLE_CONFIGS.get(p, s.config)),
+		"poles": p,
 		"stator_volume_cm3": vol,
 		"kt": MotorModel.kt(kv),
 		"rm_ohm": rm,

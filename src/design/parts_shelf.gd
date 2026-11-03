@@ -21,6 +21,14 @@ signal card_unhovered
 signal card_clicked(category: String, part_id: String)
 ## The "+" tile at the end of the battery list was pressed: the builder wants the pack designer.
 signal pack_designer_requested
+## The "Design your own" tile at the end of the motor list was pressed: the motor designer.
+signal motor_designer_requested
+
+## The categories that end in a design tile, and what each tile says: [node name, caption, tooltip].
+const DESIGN_TILES := {
+	"battery": ["AddPack", "New pack", "Design your own battery pack"],
+	"motor": ["AddMotor", "Design your own", "Design your own motor"],
+}
 
 const INK := Color(0.93, 0.93, 0.93)
 const INK_MUTED := Color(0.58, 0.58, 0.58)
@@ -215,10 +223,11 @@ func _rebuild() -> void:
 		var base := h
 		for k in fits.size():
 			_add_row(cat, fits[k]["p"], fits[k]["v"], base + floorf(k / float(COLUMNS)) * (CARD_H + GAP))
-		# The "+" tile follows the last pack: here when no misfit is showing, else after the misfits.
-		var tile_here := cat == "battery" and misfits.is_empty()
+		# The design tile follows the last part: here when no misfit is showing, else after the misfits.
+		var has_tile := DESIGN_TILES.has(cat)
+		var tile_here := has_tile and misfits.is_empty()
 		if tile_here:
-			_add_pack_tile()
+			_add_design_tile(cat)
 		h += _card_rows(fits.size() + (1 if tile_here else 0))
 		if empty_view:
 			h += _add_note("Nothing here fits" if int(shown["hidden"]) == 0 else "Nothing fits with these filters")
@@ -229,9 +238,9 @@ func _rebuild() -> void:
 			base = h
 			for k in misfits.size():
 				_add_row(cat, misfits[k]["p"], misfits[k]["v"], base + floorf(k / float(COLUMNS)) * (CARD_H + GAP))
-			if cat == "battery":
-				_add_pack_tile()
-			h += _card_rows(misfits.size() + (1 if cat == "battery" else 0))
+			if has_tile:
+				_add_design_tile(cat)
+			h += _card_rows(misfits.size() + (1 if has_tile else 0))
 	_content_h = h
 	scroll.custom_minimum_size.y = minf(h, MAX_LIST_H)
 	scroll.scroll_vertical = mini(scroll.scroll_vertical, maxi(int(h - MAX_LIST_H), 0))
@@ -455,13 +464,14 @@ func _add_row(cat: String, part: Dictionary, v: Dictionary, y: float = 0.0) -> v
 		"fitted": is_fitted, "y": y, "reason_label": why})
 
 
-## The "+" tile: the only way into the pack designer. Same size as a card, so it sits in the grid
-## like the next pack would; it is a click, never a drag.
-func _add_pack_tile() -> void:
+## The "+" tile: the only way into a part designer (packs, motors). Same size as a card, so it
+## sits in the grid like the next part would; it is a click, never a drag.
+func _add_design_tile(cat: String) -> void:
+	var spec: Array = DESIGN_TILES[cat]
 	var b := _flat_button("", LothalTheme.FONT_SIZE_SMALL, INK_MUTED)
-	b.name = "AddPack"
+	b.name = String(spec[0])
 	b.custom_minimum_size = Vector2(CARD_W, CARD_H)
-	b.tooltip_text = "Design your own battery pack"
+	b.tooltip_text = String(spec[2])
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var edge := StyleBoxFlat.new()
 	edge.bg_color = Color(1, 1, 1, 0.025)
@@ -481,9 +491,16 @@ func _add_pack_tile() -> void:
 	col.add_theme_constant_override("separation", 2)
 	var plus := _caption("+", INK_MUTED, 28, "Plus")
 	col.add_child(plus)
-	col.add_child(_caption("New pack", INK_MUTED, SPEC_PX, "Label"))
+	var label := _caption(String(spec[1]), INK_MUTED, SPEC_PX, "Label")
+	# "Design your own" is wider than a card: wrap it rather than trim it to "Design your o…".
+	label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(label)
 	b.add_child(col)
-	b.pressed.connect(func(): pack_designer_requested.emit())
+	if cat == "battery":
+		b.pressed.connect(func(): pack_designer_requested.emit())
+	else:
+		b.pressed.connect(func(): motor_designer_requested.emit())
 	list.add_child(b)
 
 

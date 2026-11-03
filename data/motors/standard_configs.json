@@ -1,5 +1,5 @@
 {
- "_schema": "The standard motor configuration grid behind the Motor Designer (Decided #1): stator size x the KV options sold for that size x the pole configuration the size uses. Every combination is allowed; there is no turns or wire-gauge input. Rm, Io, Kt, mass and max current are NOT stored per motor: they are derived by formulas from stator volume and KV (see src/propulsion/motor_configs.gd), using the coefficients below. Every coefficient has basis \"est.\" (a class-typical fit, not a measurement and not a datasheet value) and a note saying what it was anchored to. Nothing here is a measurement of a motor on a bench; all derived figures are ideal / model figures. Size rows: stator_diameter_mm and stator_height_mm are read from the size name (2306.5 = 23 mm x 6.5 mm); config is the slot/pole pair (9N12P = 9 slots 12 poles); kv_options lists the KV values commonly listed for that stator size (basis est.: representative of vendor catalogs, no single source, and not an exhaustive list of every motor sold); max_cells is the largest pack the class is normally flown on (est.); io_voltage_v is the voltage at which Io is stated (est.; Io scales with rpm as in MotorModel.io_at_rpm).",
+ "_schema": "The standard motor configuration grid behind the Motor Designer (Decided #1): stator size x the KV options sold for that size x the pole configuration the size uses. Every combination is allowed; there is no turns or wire-gauge input. Rm, Io, Kt, mass and max current are NOT stored per motor: they are derived by formulas from stator volume and KV (see src/propulsion/motor_configs.gd), using the coefficients below. Every coefficient has basis \"est.\" (a class-typical fit, not a measurement and not a datasheet value) and a note saying what it was anchored to. Nothing here is a measurement of a motor on a bench; all derived figures are ideal / model figures. Size rows: stator_diameter_mm and stator_height_mm are read from the size name (2306.5 = 23 mm x 6.5 mm); config is the slot/pole pair (9N12P = 9 slots 12 poles); kv_options lists the KV values commonly listed for that stator size (basis est.: representative of vendor catalogs, no single source, and not an exhaustive list of every motor sold); max_cells is the largest pack the class is normally flown on (est.); io_voltage_v is the voltage at which Io is stated (est.; Io scales with rpm as in MotorModel.io_at_rpm). shaft_mm_options and mount_options (est.: representative of vendor catalogs for the size; the first entry is the size's usual one) are the designer's Bell & shaft choices; the first shaft is the one mass_base_g already allows for.",
  "coefficients": {
   "rm_c": {
    "value": 940000.0,
@@ -40,6 +40,16 @@
    "value": 3.7,
    "basis": "nominal",
    "note": "Used only for max_power_w: max continuous current at max_cells x 3.7 V."
+  },
+  "io_pole_exponent": {
+   "value": 1.0,
+   "basis": "est.",
+   "note": "Io scales as (poles / size's usual poles)^io_pole_exponent when the builder picks the other pole config: iron (hysteresis) loss grows with electrical frequency, which is rpm x pole pairs. 1.0 is the hysteresis-only case; eddy loss would push it higher."
+  },
+  "shaft_density_g_cm3": {
+   "value": 7.85,
+   "basis": "est.",
+   "note": "Steel. A shaft other than the size's usual one changes mass by density x pi/4 x (d^2 - d0^2) x length, length = bell height + 8 mm."
   }
  },
  "sizes": [
@@ -58,7 +68,13 @@
    ],
    "kv_basis": "est.",
    "max_cells": 1,
-   "io_voltage_v": 3.7
+   "io_voltage_v": 3.7,
+   "shaft_mm_options": [
+    1.0
+   ],
+   "mount_options": [
+    "6.6 mm, M1.4"
+   ]
   },
   {
    "size": "1103",
@@ -75,7 +91,13 @@
    ],
    "kv_basis": "est.",
    "max_cells": 1,
-   "io_voltage_v": 3.7
+   "io_voltage_v": 3.7,
+   "shaft_mm_options": [
+    1.5
+   ],
+   "mount_options": [
+    "6.6 mm, M1.4"
+   ]
   },
   {
    "size": "1204",
@@ -92,7 +114,13 @@
    ],
    "kv_basis": "est.",
    "max_cells": 3,
-   "io_voltage_v": 7.4
+   "io_voltage_v": 7.4,
+   "shaft_mm_options": [
+    1.5
+   ],
+   "mount_options": [
+    "9 x 9 mm, M2"
+   ]
   },
   {
    "size": "1404",
@@ -108,7 +136,14 @@
    ],
    "kv_basis": "est.",
    "max_cells": 4,
-   "io_voltage_v": 7.4
+   "io_voltage_v": 7.4,
+   "shaft_mm_options": [
+    1.5,
+    2.0
+   ],
+   "mount_options": [
+    "9 x 9 mm, M2"
+   ]
   },
   {
    "size": "1505",
@@ -124,7 +159,15 @@
    ],
    "kv_basis": "est.",
    "max_cells": 4,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    1.5,
+    2.0
+   ],
+   "mount_options": [
+    "9 x 9 mm, M2",
+    "12 x 12 mm, M2"
+   ]
   },
   {
    "size": "1804",
@@ -140,7 +183,14 @@
    ],
    "kv_basis": "est.",
    "max_cells": 4,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    2.0,
+    3.0
+   ],
+   "mount_options": [
+    "12 x 12 mm, M2"
+   ]
   },
   {
    "size": "2004",
@@ -156,7 +206,15 @@
    ],
    "kv_basis": "est.",
    "max_cells": 4,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    2.0,
+    3.0
+   ],
+   "mount_options": [
+    "12 x 12 mm, M2",
+    "16 x 16 mm, M2"
+   ]
   },
   {
    "size": "2207",
@@ -175,7 +233,14 @@
    ],
    "kv_basis": "est.",
    "max_cells": 6,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    4.0,
+    5.0
+   ],
+   "mount_options": [
+    "16 x 16 mm, M3"
+   ]
   },
   {
    "size": "2306",
@@ -193,7 +258,14 @@
    ],
    "kv_basis": "est.",
    "max_cells": 6,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    4.0,
+    5.0
+   ],
+   "mount_options": [
+    "16 x 16 mm, M3"
+   ]
   },
   {
    "size": "2306.5",
@@ -209,7 +281,14 @@
    ],
    "kv_basis": "est.",
    "max_cells": 6,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    4.0,
+    5.0
+   ],
+   "mount_options": [
+    "16 x 16 mm, M3"
+   ]
   },
   {
    "size": "2407",
@@ -225,7 +304,14 @@
    ],
    "kv_basis": "est.",
    "max_cells": 6,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    4.0,
+    5.0
+   ],
+   "mount_options": [
+    "16 x 16 mm, M3"
+   ]
   },
   {
    "size": "2507",
@@ -241,7 +327,14 @@
    ],
    "kv_basis": "est.",
    "max_cells": 6,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    4.0,
+    5.0
+   ],
+   "mount_options": [
+    "16 x 16 mm, M3"
+   ]
   },
   {
    "size": "2806.5",
@@ -257,7 +350,15 @@
    ],
    "kv_basis": "est.",
    "max_cells": 6,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    4.0,
+    5.0
+   ],
+   "mount_options": [
+    "16 x 16 mm, M3",
+    "19 x 19 mm, M3"
+   ]
   },
   {
    "size": "2810",
@@ -273,7 +374,14 @@
    ],
    "kv_basis": "est.",
    "max_cells": 6,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    5.0
+   ],
+   "mount_options": [
+    "16 x 16 mm, M3",
+    "19 x 19 mm, M3"
+   ]
   },
   {
    "size": "3115",
@@ -289,7 +397,29 @@
    ],
    "kv_basis": "est.",
    "max_cells": 8,
-   "io_voltage_v": 10.0
+   "io_voltage_v": 10.0,
+   "shaft_mm_options": [
+    5.0,
+    6.0
+   ],
+   "mount_options": [
+    "19 x 19 mm, M3",
+    "25 x 25 mm, M3"
+   ]
+  }
+ ],
+ "magnets": [
+  {
+   "grade": "N52",
+   "max_c": 80,
+   "basis": "grade rating",
+   "note": "NdFeB N-grade: maximum working temperature 80 C (grade suffix none)."
+  },
+  {
+   "grade": "N52H",
+   "max_c": 120,
+   "basis": "grade rating",
+   "note": "NdFeB H-grade: maximum working temperature 120 C."
   }
  ]
 }
