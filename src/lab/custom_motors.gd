@@ -52,6 +52,8 @@ extends CustomParts
 ## feature. It is the honest reading of what is known about a number one person typed in.
 
 const MOTORS_KEY := "motors"
+## The basis a migrated hand-typed motor carries: its figures are the ones the builder typed.
+const LEGACY_BASIS := "typed figures"
 
 
 func array_key() -> String:
@@ -74,6 +76,71 @@ static func load_from(path: String = SAVE_PATH, catalog: PartsCatalog = null) ->
 	var doc := CustomMotors.new()
 	doc.read_from(path, catalog)
 	return doc
+
+
+# ---------------------------------------------------------------------------
+# Schema 3: designed motors, and the migration of hand-typed ones
+# ---------------------------------------------------------------------------
+#
+# A record with no `design` block is a motor somebody typed in (the custom-motor dialog, or any
+# file from before schema 3). On load it gets a `design` block marking it legacy and nothing else
+# changes: specs, thrust_test, mass_g, mount_pattern, part_id and name are the very same values, so
+# it flies exactly as before. In memory only, like DesignedPacks: the file is rewritten only when
+# something saves it.
+
+func _migrate(document: Dictionary, _from_version: int) -> Dictionary:
+	var stored: Variant = document.get(MOTORS_KEY, null)
+	if not (stored is Array):
+		return document
+	var out := document.duplicate(false)
+	var migrated: Array = []
+	for entry in (stored as Array):
+		if entry is Dictionary and not (entry as Dictionary).has("design"):
+			migrated.append(migrate_typed_record(entry as Dictionary))
+		else:
+			migrated.append(entry)
+	out[MOTORS_KEY] = migrated
+	return out
+
+
+## A hand-typed motor record plus a legacy design block; every other field is carried over as is.
+static func migrate_typed_record(rec: Dictionary) -> Dictionary:
+	var out := rec.duplicate(true)
+	out["design"] = {"legacy": true, "basis": LEGACY_BASIS}
+	return out
+
+
+## A hand-typed (migrated) motor rather than a designed one.
+static func is_legacy(rec: Dictionary) -> bool:
+	var block: Variant = rec.get("design", null)
+	return not (block is Dictionary) or bool((block as Dictionary).get("legacy", false))
+
+
+## Saves a designed motor under `previous_id` (an edit) or a fresh id, writes the file and returns
+## the id; "" when refused. `catalog` resolves the reference test prop (MotorDesign.drone_record).
+func save_design(design: MotorDesign, cfg: MotorConfigs, catalog: PartsCatalog,
+		previous_id: String = "") -> String:
+	var rec := design.drone_record(cfg, catalog)
+	if rec.is_empty():
+		return ""
+	var id := put_record(rec, previous_id)
+	if id == "":
+		return ""
+	save(_path)
+	return id
+
+
+## A new motor from this design, never touching the one it was opened from.
+func save_as(design: MotorDesign, cfg: MotorConfigs, catalog: PartsCatalog) -> String:
+	return save_design(design, cfg, catalog, "")
+
+
+## Removes a saved motor and writes the file. False for an id that is not held.
+func delete(part_id: String) -> bool:
+	if not remove(part_id):
+		return false
+	save(_path)
+	return true
 
 
 ## A merged catalog for `add`, so a dialog record whose `thrust_test.prop_id` names a custom prop

@@ -45,11 +45,15 @@ const SAVE_PATH := "user://custom_parts.json"
 ## Schema 2 (pack designer): battery records may carry a `design` block, and the batteries array is
 ## read by DesignedPacks, which migrates v1 records on load. Every other category's records are
 ## unchanged. A document read at an older schema is never rewritten until something saves it.
-const SCHEMA_VERSION := 2
+## Schema 3 (motor designer): motor records may carry a `design` block the same way, and
+## CustomMotors migrates an older hand-typed motor on load by adding a legacy block and nothing else.
+const SCHEMA_VERSION := 3
 
 var _records: Array = []
 var _rejections: Array[String] = []
 var _unknown_top: Dictionary = {}
+## The file this document was read from, and where put_record's callers write it back.
+var _path: String = SAVE_PATH
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +140,53 @@ func _add_against(record: Dictionary, catalog: PartsCatalog) -> Array[String]:
 	return problems
 
 
+## Stores `rec` under `previous_id` (an edit: same id, same place on the shelf, and fields this
+## version does not know kept) or, when there is no such record, under a fresh id from its name.
+## In memory only; the caller writes the file. Returns the id, or "" when the record is refused, in
+## which case the stored version is left exactly as it was. The designers' one save path (packs,
+## motors).
+func put_record(rec: Dictionary, previous_id: String = "") -> String:
+	var old := get_record(previous_id) if previous_id != "" else {}
+	var id := previous_id if not old.is_empty() else _fresh_id(String(rec.get("name", "")))
+	var merged := old.duplicate(true)
+	for k in rec:
+		merged[k] = rec[k]
+	merged["part_id"] = id
+	var old_index := _index_of(id)
+	var held: Dictionary = {}
+	if old_index >= 0:
+		held = _records[old_index]
+		_records.remove_at(old_index)
+	var problems := _add_against(merged, _catalog_for_add())
+	if not problems.is_empty():
+		if old_index >= 0:
+			_records.insert(old_index, held)
+		push_warning("%s not saved: %s" % [category(), "; ".join(problems)])
+		return ""
+	if old_index >= 0:
+		# Keep the shelf order: the edited part stays where it was.
+		var added: Dictionary = _records.pop_back()
+		_records.insert(old_index, added)
+	return id
+
+
+func _index_of(part_id: String) -> int:
+	for i in _records.size():
+		if str(_records[i].get("part_id", "")) == part_id:
+			return i
+	return -1
+
+
+func _fresh_id(name: String) -> String:
+	var base := CustomParts.id_for_name(name, category())
+	var id := base
+	var n := 2
+	while _index_of(id) >= 0:
+		id = "%s_%d" % [base, n]
+		n += 1
+	return id
+
+
 func remove(part_id: String) -> bool:
 	for i in _records.size():
 		if str(_records[i].get("part_id", "")) == part_id:
@@ -198,6 +249,7 @@ func save(path: String = SAVE_PATH) -> bool:
 ## `load_from` of their own type, because a static method in GDScript cannot ask what class it
 ## was called on.
 func read_from(path: String, catalog: PartsCatalog = null) -> void:
+	_path = path
 	# Missing, unreadable, invalid JSON, or JSON that is not an object: all handled in the one
 	# place, and all reported as warnings rather than errors.
 	var document := JsonStore.read_document(path)

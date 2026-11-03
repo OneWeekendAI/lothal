@@ -17,9 +17,6 @@ extends CustomParts
 const BATTERIES_KEY := "batteries"
 const STRAP_ATTACHMENT := "strap"
 
-var _path: String = CustomParts.SAVE_PATH
-
-
 func array_key() -> String:
 	return BATTERIES_KEY
 
@@ -94,34 +91,11 @@ func designs(lib: CellLibrary) -> Array[PackDesign]:
 ## and returns the id; "" when the record is refused (the stored version is left as it was).
 ## The caller owns saving `charge`.
 func save_design(design: PackDesign, charge: PackCharge, previous_id: String = "") -> String:
-	var rec := design.to_record()
 	var old := get_record(previous_id) if previous_id != "" else {}
-	var id := previous_id if not old.is_empty() else _fresh_id(design.name)
-	rec["part_id"] = id
-
-	# Fields this version does not know survive an edit.
-	var merged := old.duplicate(true)
-	for k in rec:
-		merged[k] = rec[k]
-
-	var reset := not old.is_empty() and _electrically_changed(old, merged)
-
-	var old_index := _index_of(id)
-	var held: Dictionary = {}
-	if old_index >= 0:
-		held = _records[old_index]
-		_records.remove_at(old_index)
-	var problems := _add_against(merged, _catalog_for_add())
-	if not problems.is_empty():
-		if old_index >= 0:
-			_records.insert(old_index, held)
-		push_warning("pack not saved: %s" % "; ".join(problems))
+	var id := put_record(design.to_record(), previous_id)
+	if id == "":
 		return ""
-	if old_index >= 0:
-		# Keep the shelf order: the edited pack stays where it was.
-		var added: Dictionary = _records.pop_back()
-		_records.insert(old_index, added)
-	if reset and charge != null:
+	if not old.is_empty() and charge != null and _electrically_changed(old, get_record(id)):
 		charge.set_used_mah(id, 0.0)
 	save(_path)
 	return id
@@ -135,23 +109,6 @@ func save_as(design: PackDesign, charge: PackCharge = null) -> String:
 	var id := save_design(copy, charge, "")
 	if id != "" and charge != null:
 		charge.set_used_mah(id, 0.0)
-	return id
-
-
-func _index_of(part_id: String) -> int:
-	for i in _records.size():
-		if str(_records[i].get("part_id", "")) == part_id:
-			return i
-	return -1
-
-
-func _fresh_id(name: String) -> String:
-	var base := CustomParts.id_for_name(name, "battery")
-	var id := base
-	var n := 2
-	while _index_of(id) >= 0:
-		id = "%s_%d" % [base, n]
-		n += 1
 	return id
 
 

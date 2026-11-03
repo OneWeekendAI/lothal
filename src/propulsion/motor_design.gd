@@ -160,7 +160,7 @@ func to_record(cfg: MotorConfigs) -> Dictionary:
 		"name": display_name(),
 		"category": "motor",
 		"mass_g": f["mass_g"],
-		"mount_pattern": mount,
+		"mount_pattern": catalog_mount(mount),
 		"specs": {
 			"kv": kv,
 			"stator_diameter_mm": f["stator_diameter_mm"],
@@ -177,6 +177,125 @@ func to_record(cfg: MotorConfigs) -> Dictionary:
 			"shaft_mm": shaft_mm,
 		},
 	}
+
+
+## A grid mount option ("16 x 16 mm, M3") in the spelling the catalog and the frames use ("16x16"),
+## which is what Build's motor-fit warning compares. A whoop's single hole circle ("6.6 mm, M1.4")
+## is the catalog's "6x6", the pattern the 0802 preset and the whoop frames carry.
+static func catalog_mount(option: String) -> String:
+	var head := option.split("mm")[0]
+	var nums: Array = []
+	for part in head.split("x"):
+		if part.strip_edges().is_valid_float():
+			nums.append(int(float(part.strip_edges())))
+	if nums.size() == 2:
+		return "%dx%d" % [nums[0], nums[1]]
+	if nums.size() == 1:
+		return "%dx%d" % [nums[0], nums[0]]
+	return option
+
+
+## The record a saved motor is stored and flown as: to_record() plus everything the drone needs
+## (a thrust test, a max thrust), the choices that reopen it in the designer, and the derived
+## figures as saved. {} off the grid or with no shelf preset to borrow a test prop from.
+##
+## THE THRUST TEST IS A MODEL FIGURE, NOT A BENCH ONE. The drone fits its thrust coefficient from
+## "this motor, this prop, this voltage, flat out" (Build.fit_rated_point). A designed motor has no
+## table, so it borrows the test prop and voltage of the nearest shelf preset (stator diameter, then
+## height, then KV) and that prop's fitted k_t: the prop's aerodynamics do not depend on which
+## motor turns it. Its max thrust is then that k_t at the rpm THIS motor reaches on that prop at that
+## voltage (the DC operating point), so the drone's own fit lands back on the same k_t, and every
+## figure the drone shows comes from this motor's Kv/Rm/Io. Labelled ideal / model, like the rest.
+func drone_record(cfg: MotorConfigs, catalog: PartsCatalog) -> Dictionary:
+	var rec := to_record(cfg)
+	if rec.is_empty():
+		return {}
+	var f := derive(cfg)
+	var ref := reference_preset(catalog, float(f.stator_diameter_mm), float(f.stator_height_mm), kv)
+	if ref.is_empty():
+		return {}
+	var test: Dictionary = ref["thrust_test"]
+	var test_prop := catalog.get_part(String(test["prop_id"]))
+	if test_prop.is_empty():
+		return {}
+	var v := float(test["voltage_v"])
+	var k_t := float(Build.fit_rated_point(ref, test_prop)["k_t"])
+	var k_q := PropellerModel.fit_k_q(k_t, float(test_prop["specs"]["diameter_inches"]) * Build.INCH_M)
+	var op := MotorModel.operating_point(v, kv, float(f.rm_ohm), float(f.io_a), float(f.io_voltage_v), k_q)
+	var rpm := float(op["rpm"])
+	if rpm <= 0.0:
+		return {}
+	var specs: Dictionary = rec["specs"]
+	specs["max_thrust_g"] = k_t / PropellerModel.fit_k_t(1.0, rpm)
+	rec["thrust_test"] = {"prop_id": String(test["prop_id"]), "voltage_v": v}
+	rec["catalog"] = {
+		"stator_class": CustomMotors.stator_class_for(float(f.stator_diameter_mm)),
+		"kv_class": CustomMotors.kv_class_for(kv),
+		"intended_use": "designed",
+	}
+	rec["source"] = "Motor Designer: %s, %s figures; thrust on the %s test prop at %s V (model)" % [
+		default_name(), BASIS, String(test_prop.get("name", test["prop_id"])), str(v)]
+	rec["design"] = {
+		"size": size,
+		"kv": kv,
+		"poles": poles,
+		"magnet": magnet,
+		"shaft_mm": shaft_mm,
+		"mount": mount,
+		"basis": BASIS,
+		"thrust_reference": String(ref["part_id"]),
+	}
+	rec["figures"] = f
+	return rec
+
+
+## The choices of a saved record, ready to edit. A designed record reopens exactly; a migrated
+## hand-typed one opens on the nearest grid point (size by stator diameter then height, then the nearest KV sold for it).
+static func from_record(rec: Dictionary, cfg: MotorConfigs) -> MotorDesign:
+	var d := default_design(cfg)
+	d.name = String(rec.get("name", ""))
+	var block: Dictionary = rec.get("design", {}) if rec.get("design") is Dictionary else {}
+	if not CustomMotors.is_legacy(rec) and not cfg.get_size(String(block.get("size", ""))).is_empty():
+		d.size = String(block["size"])
+		d.kv = float(block.get("kv", d.kv))
+		d.poles = int(block.get("poles", d.poles))
+		d.magnet = String(block.get("magnet", d.magnet))
+		d.shaft_mm = float(block.get("shaft_mm", d.shaft_mm))
+		d.mount = String(block.get("mount", d.mount))
+		return d
+	var sp: Dictionary = rec.get("specs", {})
+	var want := Vector2(float(sp.get("stator_diameter_mm", 0.0)), float(sp.get("stator_height_mm", 0.0)))
+	var best := ""
+	var best_d := INF
+	for n in cfg.size_names():
+		var row := cfg.get_size(n)
+		# Diameter first (it sets the bell and the mount), then height.
+		var dist := absf(float(row.stator_diameter_mm) - want.x) * 1000.0 + absf(float(row.stator_height_mm) - want.y)
+		if dist < best_d:
+			best_d = dist
+			best = n
+	d.kv = float(sp.get("kv", d.kv))
+	d.size = ""
+	d.set_size(cfg, best)
+	return d
+
+
+## The shelf preset nearest a stator and KV: diameter first, then height, then KV (log distance).
+## Custom parts never count: a designed motor's thrust must not rest on another typed figure.
+static func reference_preset(catalog: PartsCatalog, diameter_mm: float, height_mm: float, p_kv: float) -> Dictionary:
+	var best: Dictionary = {}
+	var best_score := INF
+	for m in catalog.list_category("motor"):
+		if PartsCatalog.is_custom(String(m.get("part_id", ""))) or not m.has("thrust_test"):
+			continue
+		var sp: Dictionary = m.get("specs", {})
+		var score := absf(float(sp.get("stator_diameter_mm", 0.0)) - diameter_mm) * 1.0e6 \
+			+ absf(float(sp.get("stator_height_mm", 0.0)) - height_mm) * 1.0e3 \
+			+ absf(log(maxf(float(sp.get("kv", 1.0)), 1.0) / maxf(p_kv, 1.0)))
+		if score < best_score:
+			best_score = score
+			best = m
+	return best
 
 
 ## The prop diameter (inches) a motor of this stator diameter usually turns: what the 3D view

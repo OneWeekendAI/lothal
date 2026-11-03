@@ -23,6 +23,8 @@ signal card_clicked(category: String, part_id: String)
 signal pack_designer_requested
 ## The "Design your own" tile at the end of the motor list was pressed: the motor designer.
 signal motor_designer_requested
+## A saved motor's card was right-clicked: its context menu (edit in the designer, delete).
+signal card_menu_requested(category: String, part_id: String)
 
 ## The categories that end in a design tile, and what each tile says: [node name, caption, tooltip].
 const DESIGN_TILES := {
@@ -405,6 +407,10 @@ func _add_row(cat: String, part: Dictionary, v: Dictionary, y: float = 0.0) -> v
 	b.tooltip_text = String(part["name"]) if v["ok"] else String(v["reason"])
 	if id != "":
 		b.button_down.connect(func(): drag_started.emit(id))
+	if cat == "motor" and PartsCatalog.is_custom(id):
+		b.gui_input.connect(func(e: InputEvent):
+			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_RIGHT:
+				card_menu_requested.emit(cat, id))
 	elif swap_cats.has(cat):
 		b.pressed.connect(func(): card_clicked.emit(cat, id))
 	if swap_cats.has(cat):

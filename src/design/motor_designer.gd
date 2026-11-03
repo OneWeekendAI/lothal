@@ -11,6 +11,9 @@ extends DesignerShell
 ## MotorConfigs); nothing in the figures column is editable. Every setter ends in _rederive(), so
 ## any change shows at once.
 
+## A motor was saved to the shelf (custom_parts.json) under this id.
+signal saved(part_id: String)
+
 const LEFT_W := 300.0
 const RIGHT_W := 440.0
 const FIGURE_ROWS := ["kv", "kt", "rm_ohm", "io_a", "mass_g", "max_current_a", "max_power_w", "magnet_max_c"]
@@ -20,6 +23,13 @@ var catalog: PartsCatalog
 var design: MotorDesign
 var derive_count := 0
 var prop_id := ""
+## Where saved motors live (the shelf reloads from the same file).
+var store: CustomMotors
+var store_path: String = CustomParts.SAVE_PATH
+## The saved motor being edited; "" for a new design (Save then makes a new one).
+var part_id := ""
+## The id armed for deletion by a first request (empty when none).
+var pending_delete := ""
 
 var _figs: Dictionary = {}
 var _figure_values := {}
@@ -27,6 +37,7 @@ var _figure_values := {}
 # Controls.
 var copy_button: Button
 var save_button: Button
+var save_as_button: Button
 var size_label: Label
 var size_note: Label
 var kv_row: HFlowContainer
@@ -41,13 +52,85 @@ var figures_box: GridContainer
 var bench_box: PanelContainer
 
 
-func _init(p_cfg: MotorConfigs = null, p_catalog: PartsCatalog = null) -> void:
+func _init(p_cfg: MotorConfigs = null, p_catalog: PartsCatalog = null, p_store: CustomMotors = null) -> void:
 	cfg = p_cfg if p_cfg != null else MotorConfigs.load_default()
 	catalog = p_catalog if p_catalog != null else PartsCatalog.load_default()
+	store = p_store if p_store != null else CustomMotors.new()
 	_init_shell("MotorDesigner")
 	design = MotorDesign.default_design(cfg)
 	_build_shell(_build_top_bar(), _build_left(), _build_middle(), _build_right())
 	_rederive()
+
+
+# ---------------------------------------------------------------------------
+# Opening, saving, deleting (the pack designer's path: CustomParts.put_record)
+# ---------------------------------------------------------------------------
+
+## A fresh default motor (2207 at 1960 KV).
+func open_new() -> void:
+	design = MotorDesign.default_design(cfg)
+	part_id = ""
+	_rederive()
+
+
+## A saved motor, to edit. A designed one reopens under its id; a migrated hand-typed one opens on
+## the nearest grid point as a NEW design, so saving never overwrites the figures that were typed.
+func open_motor(p_part_id: String) -> void:
+	var rec := store.get_record(p_part_id)
+	if rec.is_empty():
+		open_new()
+		return
+	design = MotorDesign.from_record(rec, cfg)
+	part_id = "" if CustomMotors.is_legacy(rec) else p_part_id
+	_rederive()
+
+
+## Saves under the current id (a new motor gets one). "" when refused.
+func save() -> String:
+	var typed := name_field.text.strip_edges()
+	if typed != "":
+		design.name = typed
+	var id := store.save_design(design, cfg, catalog, part_id)
+	if id == "":
+		return ""
+	part_id = id
+	saved.emit(id)
+	_refresh()
+	return id
+
+
+## A new motor from this design, never touching the one it was opened from. With the name unchanged
+## it is saved as "<name> copy".
+func save_as() -> String:
+	var copy_name := name_field.text.strip_edges()
+	if part_id != "" and (copy_name == "" or copy_name == String(store.get_record(part_id).get("name", ""))):
+		copy_name = "%s copy" % (design.display_name() if copy_name == "" else copy_name)
+	if copy_name != "":
+		design.name = copy_name
+	var id := store.save_as(design, cfg, catalog)
+	if id == "":
+		return ""
+	part_id = id
+	saved.emit(id)
+	_refresh()
+	return id
+
+
+## Deletes a saved motor. The first call for an id only arms it (false); the second deletes it.
+## Shelf presets are never deletable.
+func request_delete(id: String) -> bool:
+	if id == "" or not PartsCatalog.is_custom(id):
+		pending_delete = ""
+		return false
+	if pending_delete != id:
+		pending_delete = id
+		return false
+	pending_delete = ""
+	if not store.delete(id):
+		return false
+	if part_id == id:
+		part_id = ""
+	return true
 
 
 # ---------------------------------------------------------------------------
@@ -151,9 +234,13 @@ func _build_top_bar() -> Control:
 	copy_button = _bar_button("CopySpecs", "Copy specs", func(): copy_specs(),
 		"Copy this motor's choices and figures as text")
 	bar.add_child(copy_button)
-	save_button = _bar_button("Save", "Save to shelf", func(): pass,
-		"Saving a designed motor to the shelf is not available yet")
-	save_button.disabled = true
+	# Only while editing a saved motor: a copy under a new name instead of an overwrite.
+	save_as_button = _bar_button("SaveAs", "Save as new", func(): save_as(),
+		"Save a copy under the name above, leaving the saved motor as it is")
+	save_as_button.visible = false
+	bar.add_child(save_as_button)
+	save_button = _bar_button("Save", "Save to shelf", func(): save(),
+		"Save this motor to the Motor shelf under the name above")
 	bar.add_child(save_button)
 	return bar
 
@@ -343,6 +430,8 @@ func _refresh() -> void:
 		(_figure_values[key] as Label).text = _format(key)
 		(_figure_values[key + "_tag"] as Label).text = String(tags.get(key, ""))
 	summary_label.text = "%s  ·  %d KV  ·  %s" % [design.size, int(design.kv), design.config()]
+	save_as_button.visible = part_id != ""
+	save_button.text = "Save changes" if part_id != "" else "Save to shelf"
 	_syncing = false
 	_refresh_view()
 

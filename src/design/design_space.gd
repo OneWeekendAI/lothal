@@ -2034,6 +2034,7 @@ func _build_shelf() -> void:
 	shelf.card_unhovered.connect(func(): if drag_kind == "": clear_preview())
 	shelf.pack_designer_requested.connect(open_pack_designer)
 	shelf.motor_designer_requested.connect(open_motor_designer)
+	shelf.card_menu_requested.connect(open_card_menu)
 	add_child(shelf)
 
 	_ghost_mat = StandardMaterial3D.new()
@@ -2114,16 +2115,77 @@ var motor_designer: MotorDesigner
 
 ## Opens the motor designer over the Design Space on its default motor. A second call while it is
 ## open does nothing.
-func open_motor_designer() -> void:
+func open_motor_designer(saved_id: String = "") -> void:
 	if motor_designer != null:
 		return
 	cancel_drag()
-	var designer := MotorDesigner.new(MotorConfigs.load_default(), _catalog)
+	# The store reads against the shipped catalog (its default), never _catalog: that one already
+	# holds these very motors, and every record would be refused as colliding with itself.
+	var designer := MotorDesigner.new(MotorConfigs.load_default(), _catalog,
+		CustomMotors.load_from(custom_parts_path))
+	designer.store_path = custom_parts_path
+	designer.saved.connect(func(_id: String): refresh_catalog())
 	designer.closed.connect(func(): motor_designer = null)
 	motor_designer = designer
 	add_child(designer)
+	if saved_id != "":
+		designer.open_motor(saved_id)
 	if designer.is_inside_tree():
 		designer.grab_focus()
+
+
+## The context menu of a saved motor's card (right-click): "Edit in designer" and "Delete". Delete
+## asks twice, in the menu itself: the first press relabels it, the second deletes.
+var card_menu: PopupMenu
+var _card_menu_id := ""
+
+func open_card_menu(category: String, part_id: String) -> void:
+	if category != "motor" or not PartsCatalog.is_custom(part_id):
+		return
+	if card_menu == null:
+		card_menu = PopupMenu.new()
+		card_menu.name = "CardMenu"
+		card_menu.hide_on_item_selection = false
+		card_menu.id_pressed.connect(_on_card_menu)
+		add_child(card_menu)
+	_card_menu_id = part_id
+	card_menu.clear()
+	card_menu.add_item("Edit in designer", 0)
+	card_menu.add_item("Delete", 1)
+	if card_menu.is_inside_tree():
+		card_menu.popup(Rect2i(Vector2i(get_global_mouse_position()) + get_window().position, Vector2i.ZERO))
+
+
+func _on_card_menu(item: int) -> void:
+	var id := _card_menu_id
+	if item == 0:
+		card_menu.hide()
+		open_motor_designer(id)
+	elif delete_saved_motor(id):
+		card_menu.hide()
+	else:
+		card_menu.set_item_text(1, "Press again to delete")
+
+
+## Deletes a saved motor, arm-then-confirm like the pack designer: false on the first call for an
+## id, true when the second call deleted it. A motor fitted on this drone goes back to the class's
+## own motor first, so the drone never names a part that is gone.
+var _pending_motor_delete := ""
+
+func delete_saved_motor(part_id: String) -> bool:
+	if not PartsCatalog.is_custom(part_id):
+		return false
+	if _pending_motor_delete != part_id:
+		_pending_motor_delete = part_id
+		return false
+	_pending_motor_delete = ""
+	var store := CustomMotors.load_from(custom_parts_path)
+	if not store.delete(part_id):
+		return false
+	if String(session.selection.get("motor", "")) == part_id:
+		session.set_part("motor", String(DroneClass.parts_for(session.drone_class).get("motor", "")))
+	refresh_catalog()
+	return true
 
 
 ## A pack was saved: read the catalog again with the builder's custom parts, so the new pack is on

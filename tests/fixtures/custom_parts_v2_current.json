@@ -1,0 +1,91 @@
+{
+  "batteries": [
+    {
+      "catalog": {
+        "cell_class": "2S",
+        "connector": "XT60"
+      },
+      "category": "battery",
+      "design": {
+        "basis": "ideal / datasheet",
+        "cell_id": "cell_molicel_p42a",
+        "lead_awg": 14,
+        "lead_length_mm": 100.0,
+        "parallel": 2,
+        "series": 2
+      },
+      "mass_g": 293.836812444177,
+      "mounting": {
+        "attachment": "strap"
+      },
+      "name": "shed",
+      "part_id": "custom_shed",
+      "source": "pack designer: Molicel INR-21700-P42A, ideal / datasheet figures",
+      "specs": {
+        "c_rating": 10.7142857142857,
+        "cells": 2,
+        "chemistry": "Li-ion",
+        "height_mm": 42.7999992370605,
+        "internal_r_ohm": 0.01165689572321,
+        "length_mm": 70.0,
+        "mah": 8400.0,
+        "nominal_v": 7.2,
+        "width_mm": 42.7999992370605
+      }
+    }
+  ],
+  "frames": [],
+  "motors": [
+    {
+      "catalog": {
+        "intended_use": "custom",
+        "kv_class": "2000-2600KV",
+        "stator_class": "22xx"
+      },
+      "category": "motor",
+      "mass_g": 30.9,
+      "mount_pattern": "16x16",
+      "name": "5\" Freestyle Shed",
+      "part_id": "custom_5_freestyle_shed",
+      "source": "gemini",
+      "specs": {
+        "kv": 2400.0,
+        "max_amps": 40.0,
+        "max_thrust_g": 1650.0,
+        "poles": 14.0,
+        "stator_diameter_mm": 22.0,
+        "stator_height_mm": 6.0
+      },
+      "thrust_test": {
+        "prop_id": "prop_5x43x3",
+        "voltage_v": 14.0
+      }
+    },
+    {
+      "catalog": {
+        "intended_use": "custom",
+        "kv_class": "2000-2600KV",
+        "stator_class": "22xx"
+      },
+      "category": "motor",
+      "mass_g": 30.9,
+      "mount_pattern": "16x16",
+      "name": "Beast 2207",
+      "part_id": "custom_beast_2207",
+      "source": "page",
+      "specs": {
+        "kv": 2400.0,
+        "max_amps": 40.0,
+        "max_thrust_g": 4000.0,
+        "poles": 14.0,
+        "stator_diameter_mm": 22.0,
+        "stator_height_mm": 6.0
+      },
+      "thrust_test": {
+        "prop_id": "prop_5x43x3",
+        "voltage_v": 14.0
+      }
+    }
+  ],
+  "schema": 2
+}
