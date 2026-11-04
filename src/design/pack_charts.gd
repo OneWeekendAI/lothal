@@ -16,7 +16,9 @@ const KNEE_LEFT := 0.2
 
 ## Each chart: {title, x: PackedFloat64Array (seconds), y: PackedFloat64Array, y_min, y_max,
 ## unit, color, x_max (optional, seconds), x_end_text (optional: the axis-end label when x is not
-## time, e.g. "100 %" for the motor bench's throttle sweep)}.
+## time, e.g. "100 %" for the motor bench's throttle sweep), y2 (optional: a second line on the
+## same x and scale, drawn in color2 (muted by default), for the motor bench's two-motor compare),
+## legend (optional: [{name, color}, ...] drawn on the chart's title row)}.
 var charts: Array = []
 var reveal := 1.0:
 	set(v):
@@ -105,6 +107,34 @@ func _draw_chart(c: Dictionary, area: Rect2) -> void:
 			j += stride
 	elif pts.size() >= 2:
 		draw_polyline(pts, col, 1.6, true)
+	var ys2: PackedFloat64Array = c.get("y2", PackedFloat64Array())
+	if ys2.size() == xs.size():
+		var pts2 := PackedVector2Array()
+		var k := 0
+		while k <= upto:
+			pts2.append(_to_plot(plot, xs[k], ys2[k], x_max, y_min, span_y))
+			k += stride
+		if (upto % stride) != 0 or pts2.size() == 0:
+			pts2.append(_to_plot(plot, xs[upto], ys2[upto], x_max, y_min, span_y))
+		var col2: Color = c.get("color2", LothalTheme.TEXT_MUTED)
+		if pts2.size() >= 2:
+			draw_polyline(pts2, col2, 1.6, true)
+		var tip2 := pts2[pts2.size() - 1]
+		draw_circle(tip2, 2.5, col2)
+		var tip1y := pts[pts.size() - 1].y
+		var ty2 := clampf(tip2.y + 4.0, plot.position.y + 8.0, plot.end.y)
+		if absf(ty2 - clampf(tip1y + 4.0, plot.position.y + 8.0, plot.end.y)) < 11.0:
+			ty2 = ty2 + 11.0 if tip2.y >= tip1y else ty2 - 11.0
+		draw_string(font, Vector2(plot.end.x + 6.0, ty2), "%s%s" % [_num(ys2[upto]), unit],
+			HORIZONTAL_ALIGNMENT_LEFT, PAD_R - 6.0, small, col2)
+	var legend: Array = c.get("legend", [])
+	var lx := area.position.x + 8.0 + font.get_string_size(String(c.get("title", "")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, small).x + 16.0
+	for item in legend:
+		var ic: Color = item.get("color", LothalTheme.TEXT_MAIN)
+		draw_line(Vector2(lx, area.position.y + 8.0), Vector2(lx + 14.0, area.position.y + 8.0), ic, 2.0)
+		var nm := String(item.get("name", ""))
+		draw_string(font, Vector2(lx + 19.0, area.position.y + 12.0), nm, HORIZONTAL_ALIGNMENT_LEFT, -1.0, small, LothalTheme.TEXT_MUTED)
+		lx += 19.0 + font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1.0, small).x + 14.0
 	var tip := pts[pts.size() - 1]
 	var tip_col := col
 	var label_col: Color = LothalTheme.TEXT_MAIN

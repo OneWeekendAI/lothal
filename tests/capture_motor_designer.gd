@@ -9,7 +9,7 @@ extends SceneTree
 ## "3115" (largest size, two mounts) | "options" (2207, 2750 KV, 9N12P, N52H, 5 mm shaft, a name) |
 ## "saved" (the options motor, saved with the Save button) | "shelf_saved" (saved, the pop-up
 ## closed, the motor shelf scrolled to the saved card) | "sweep" | "soak" | "pickers" (punch-out on a 6S 5600 pack and a 7x4x3 prop), "punch" (the default
-## 2207 with that bench run played out; "punch_hot" is a 2306 2100 KV whose punch-out warns of heat and current; "burnout" is the default 2207 on a 7x4x3 prop on a 6S 1300, whose winding burns out)
+## 2207 with that bench run played out; "compare" (the sweep against another motor), "punch_hot" is a 2306 2100 KV whose punch-out warns of heat and current; "burnout" is the default 2207 on a 7x4x3 prop on a 6S 1300, whose winding burns out)
 ##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
@@ -47,12 +47,16 @@ func _init() -> void:
 		match state:
 			"0802", "3115":
 				d.set_stator(state)
-			"sweep", "soak", "punch", "punch_hot", "sweep_warn", "pickers", "burnout":
+			"sweep", "soak", "punch", "punch_hot", "sweep_warn", "pickers", "burnout", "compare":
 				if state == "burnout":
 					# The default 2207 on a 7 inch prop on 6S: the winding burns out mid punch-out.
 					d.set_pack("battery_6s_1300")
 					d.set_prop("prop_7x4x3")
 					state = "punch"
+				if state == "compare":
+					# The default 2207 against a 2306 on the same pack and prop: two lines on the sweep.
+					d.set_compare("motor_2306_2450kv")
+					state = "sweep"
 				if state == "pickers":
 					d.set_pack("battery_6s_5600")
 					d.set_prop("prop_7x4x3")

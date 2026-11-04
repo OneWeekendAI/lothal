@@ -9,6 +9,8 @@ extends RefCounted
 ## - limited-by follows the inputs: hard-code the key in MotorBench.limited_from, or read only one ratio.
 ## - lists: leave designed packs / generator props out of _fill_pickers, or drop the last item.
 ## - round trip: do not call select_pack from DesignSpace._design_pack_for_motor.
+## - view follows prop: pass the class-typical prop (not prop_pick_id()) to show_motor.
+## - compare: drop y2 from the sweep charts, run the compare on the default pack, or draw one legend item.
 ## - palette: take mono_theme() out of MotorDesigner._init, or colour chart lines ACCENT.
 
 const SCRATCH := "user://test_motor_pickers_scratch.json"
@@ -29,6 +31,13 @@ static func _items(o: OptionButton) -> Array:
 	for i in o.item_count:
 		out.append(o.get_item_text(i))
 	return out
+
+
+static func _index_of(o: OptionButton, id: String) -> int:
+	for i in o.item_count:
+		if String(o.get_item_metadata(i)) == id:
+			return i
+	return -1
 
 
 static func _selected_id(o: OptionButton) -> String:
@@ -101,6 +110,63 @@ static func run() -> Array:
 		d.derive_count > n1 and _selected_id(d.prop_option) == "prop_6x4x2"
 		and d.bench_result_label.text != prop_before and float(d.bench_result().end_rpm) != float(seen.end_rpm),
 		prop_before + " -> " + d.bench_result_label.text))
+	# The middle 3D view and its caption follow the Prop picker.
+	d.set_prop("prop_7x4x3")
+	var r7 := d.motor_view.prop.radius_m
+	var cap7 := (d.find_child("PropNote", true, false) as Label).text
+	var blades7 := d.motor_view.prop.blade_count
+	d.set_prop("prop_6x4x2")
+	var r6 := d.motor_view.prop.radius_m
+	var cap6 := (d.find_child("PropNote", true, false) as Label).text
+	out.append(_t("the middle view draws the picked prop (7x4x3 vs 6x4x2: radius, blades) and the caption names it",
+		absf(r7 - 3.5 * 0.0254) < 1e-3 and absf(r6 - 3.0 * 0.0254) < 1e-3 and blades7 == 3
+		and d.motor_view.prop.blade_count == 2 and d.prop_id == "prop_6x4x2"
+		and cap7.contains(String(d.catalog.get_part("prop_7x4x3").name)) and cap6.contains(String(d.catalog.get_part("prop_6x4x2").name)) and cap7 != cap6,
+		"%s | %s | %.4f %.4f" % [cap7, cap6, r7, r6]))
+
+	# Compare with…: a second line on the throttle sweep, a two-item legend, nothing else.
+	d.set_pack(MotorDesigner.DRONE_PACK)
+	d.set_prop(ReferenceBuild.PROPELLER_ID)
+	d.set_bench("sweep")
+	var cmp_items := _items(d.compare_option)
+	var plain: Dictionary = d.charts.charts[0]
+	out.append(_t("Compare with… lists None first, then the shelf motors, with no line yet drawn",
+		cmp_items[0] == "None" and cmp_items.size() > 10 and not plain.has("y2") and not plain.has("legend")
+		and d.compare_result().is_empty(), str(cmp_items.slice(0, 3))))
+	var other_id := ""
+	for i in d.compare_option.item_count:
+		if String(d.compare_option.get_item_text(i)).contains("2306"):
+			other_id = String(d.compare_option.get_item_metadata(i))
+			break
+	d.compare_option.item_selected.emit(_index_of(d.compare_option, other_id))
+	var two: Dictionary = d.charts.charts[0]
+	var leg: Array = two.get("legend", [])
+	out.append(_t("choosing a motor draws two lines on the sweep (this one and the other, same pack and prop) with a two-item legend",
+		other_id != "" and d.compare_id == other_id and two.has("y2") and (two.y2 as PackedFloat64Array).size() == (two.y as PackedFloat64Array).size()
+		and leg.size() == 2 and leg[0].name == d.design.display_name() and leg[1].name == d.compare_name()
+		and d.charts.charts.size() == 3 and leg[0].color != leg[1].color, str(leg)))
+	var other_run := MotorBench.run("sweep", MotorDesign.from_record(d.catalog.get_part(other_id), cfg), cfg, d.bench_parts, {}, d.catalog)
+	out.append(_t("the other line is that motor's own sweep on the same pack and prop, and it differs from this motor's",
+		(two.y2 as PackedFloat64Array) == (other_run.thrust_g as PackedFloat64Array)
+		and absf(float((two.y2 as PackedFloat64Array)[40]) - float((two.y as PackedFloat64Array)[40])) > 50.0, ""))
+	d.set_pack("custom_weak_pack")
+	var weak_two: Dictionary = d.charts.charts[0]
+	out.append(_t("swapping the pack reruns both lines on the new pack",
+		float((weak_two.y2 as PackedFloat64Array)[40]) < float((two.y2 as PackedFloat64Array)[40]) - 20.0
+		and float((weak_two.y as PackedFloat64Array)[40]) < float((two.y as PackedFloat64Array)[40]) - 20.0, ""))
+	d.set_pack(MotorDesigner.DRONE_PACK)
+	d.set_bench("punch")
+	out.append(_t("the other tabs stay single-line and hide the compare row (compare is the sweep's)",
+		not d.charts.charts[0].has("y2") and d.charts.charts.size() == 2 and not d.compare_row.visible, ""))
+	d.set_bench("sweep")
+	d.set_compare("")
+	out.append(_t("the compare dropdown sits in its own row, shown on the sweep tab only",
+		d.compare_row.visible and d.compare_option.get_parent().get_parent() == d.compare_row
+		and d.compare_row.get_parent() == d.bench_box.get_child(0), ""))
+	out.append(_t("choosing None puts the single line back",
+		not d.charts.charts[0].has("y2") and not d.charts.charts[0].has("legend") and d.compare_result().is_empty(), ""))
+	d.set_bench("punch")
+
 	d.set_pack(MotorDesigner.DRONE_PACK)
 	d.set_prop(ReferenceBuild.PROPELLER_ID)
 	out.append(_t("This drone's pack goes back to the drone's own (the first run's result returns)",

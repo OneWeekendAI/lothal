@@ -286,13 +286,32 @@ impl MotorModel {
         area_m2 * (H_NATURAL_W_M2K + nu * AIR_K_W_MK / d_m)
     }
 
+    /// Conductance from the stator and its end-windings straight to the air pulled through the
+    /// bell, W/K: an outrunner's bell is vented and open at the base, so the air the prop pushes
+    /// down passes over the stator. Laminar boundary layer on the stator's side wall (length =
+    /// stack height, the flow direction), Nu_L = 0.664 Re_L^(1/2) Pr^(1/3) (Incropera, 7th ed.,
+    /// Eq. 7.30), Re_L = v L / nu, h = Nu_L k / L, over the stator's cylindrical surface pi D L.
+    /// `wash_mps` is the prop's induced velocity at the disc (the caller's momentum figure from the
+    /// BEMT thrust); the same air is taken to pass through the bell with no inlet loss (an upper
+    /// bound, so a measured motor will run a little hotter). No still-air term: the stator has no
+    /// exposed still-air surface once the bell is on.
+    #[func]
+    pub fn stator_air_conductance_w_per_k(stator_diameter_mm: f64, stator_height_mm: f64, wash_mps: f64) -> f64 {
+        let l = stator_height_mm * 1e-3;
+        let d = stator_diameter_mm * 1e-3;
+        if l <= 0.0 || d <= 0.0 || wash_mps <= 0.0 { return 0.0; }
+        let re = wash_mps * l / AIR_NU_M2_S;
+        let nu = LAMINAR_PLATE_COEFF * re.sqrt() * AIR_PR.powf(1.0 / 3.0);
+        nu * AIR_K_W_MK / l * std::f64::consts::PI * d * l
+    }
+
     /// One step of the two-lump model: the stator + winding (x = temperature, C) takes the
     /// `loss_w`; it conducts to the bell (y), which sheds to the air. Backward Euler in small
     /// sub-steps, so it is stable at any `dt` and never overshoots the steady state.
     /// Returns (winding C, bell C).
     #[func]
-    pub fn bell_temp_step_c(temps: Vector2, loss_w: f64, c_stator: f64, c_bell: f64, g_cond: f64, g_air: f64, dt: f64) -> Vector2 {
-        let (a, b) = two_lump_step(temps.x as f64, temps.y as f64, loss_w, c_stator, c_bell, g_cond, g_air, dt);
+    pub fn bell_temp_step_c(temps: Vector2, loss_w: f64, c_stator: f64, c_bell: f64, g_cond: f64, g_air: f64, g_stator_air: f64, dt: f64) -> Vector2 {
+        let (a, b) = two_lump_step(temps.x as f64, temps.y as f64, loss_w, c_stator, c_bell, g_cond, g_air, g_stator_air, dt);
         Vector2::new(a as f32, b as f32)
     }
 
@@ -356,6 +375,8 @@ const AIR_PR: f64 = 0.707;
 // electrical-machine thermal analysis): Nu_D = 0.133 Re_w^(2/3) Pr^(1/3), Re_w = w D^2 / nu,
 // valid to Re_w ~ 4.3e5 (a 2207 flat out is ~1.4e5).
 const ROT_CYL_COEFF: f64 = 0.133;
+// Laminar flat-plate average Nusselt coefficient, Nu_L = 0.664 Re_L^0.5 Pr^(1/3) (Incropera Eq. 7.30).
+const LAMINAR_PLATE_COEFF: f64 = 0.664;
 
 fn kt_impl(kv: f64) -> f64 {
     if kv <= 0.0 { return 0.0; }
@@ -380,13 +401,13 @@ fn temp_step_impl(t: f64, loss: f64, c: f64, h: f64, dt: f64) -> f64 {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn two_lump_step(mut tw: f64, mut tb: f64, loss: f64, c1: f64, c2: f64, g: f64, ga: f64, dt: f64) -> (f64, f64) {
+fn two_lump_step(mut tw: f64, mut tb: f64, loss: f64, c1: f64, c2: f64, g: f64, ga: f64, gs: f64, dt: f64) -> (f64, f64) {
     if c1 <= 0.0 || c2 <= 0.0 { return (tw, tb); }
     let n = (dt / 0.02).ceil().max(1.0) as usize;
     let h = dt / n as f64;
     for _ in 0..n {
-        // (c1/h + g) tw' - g tb' = c1/h tw + loss ;  -g tw' + (c2/h + g + ga) tb' = c2/h tb + ga ambient
-        let (a11, a12, b1) = (c1 / h + g, -g, c1 / h * tw + loss);
+        // (c1/h + g + gs) tw' - g tb' = c1/h tw + loss + gs ambient ;  -g tw' + (c2/h + g + ga) tb' = c2/h tb + ga ambient
+        let (a11, a12, b1) = (c1 / h + g + gs, -g, c1 / h * tw + loss + gs * AMBIENT_C);
         let (a21, a22, b2) = (-g, c2 / h + g + ga, c2 / h * tb + ga * AMBIENT_C);
         let det = a11 * a22 - a12 * a21;
         tw = (b1 * a22 - a12 * b2) / det;
@@ -580,14 +601,33 @@ mod tests {
         let (c1, c2, g, ga, loss) = (10.0, 6.0, 0.5, 0.3, 12.0);
         let (mut tw, mut tb) = (AMBIENT_C, AMBIENT_C);
         for _ in 0..4000 {
-            let (a, b) = two_lump_step(tw, tb, loss, c1, c2, g, ga, 0.5);
+            let (a, b) = two_lump_step(tw, tb, loss, c1, c2, g, ga, 0.0, 0.5);
             assert!(a >= tw - 1e-9 && b >= tb - 1e-9 && b <= a + 1e-9);
             tw = a; tb = b;
         }
         assert!((tb - (AMBIENT_C + loss / ga)).abs() < 1e-3, "{tb}");
         assert!((tw - (AMBIENT_C + loss / ga + loss / g)).abs() < 1e-3, "{tw}");
         // No loss: stays at ambient.
-        assert_eq!(two_lump_step(AMBIENT_C, AMBIENT_C, 0.0, c1, c2, g, ga, 3.0), (AMBIENT_C, AMBIENT_C));
+        assert_eq!(two_lump_step(AMBIENT_C, AMBIENT_C, 0.0, c1, c2, g, ga, 0.2, 3.0), (AMBIENT_C, AMBIENT_C));
+    }
+
+    #[test]
+    fn stator_air_path_takes_heat_off_the_winding_and_follows_the_wash() {
+        // With a stator-to-air path the winding settles lower, on the parallel-path steady state.
+        let (c1, c2, g, ga, gs, loss) = (10.0, 6.0, 0.5, 0.3, 0.2, 12.0);
+        let (mut tw, mut tb) = (AMBIENT_C, AMBIENT_C);
+        for _ in 0..4000 { let (a, b) = two_lump_step(tw, tb, loss, c1, c2, g, ga, gs, 0.5); tw = a; tb = b; }
+        // Node balance: loss = gs (tw-25) + g (tw-tb); g (tw-tb) = ga (tb-25).
+        let rise = loss / (gs + g * ga / (g + ga));
+        assert!((tw - (AMBIENT_C + rise)).abs() < 1e-3, "{tw}");
+        assert!(tw < AMBIENT_C + loss / ga + loss / g - 1.0);
+        // Hand-worked 2207 (D 22 mm, L 7 mm) at 8 m/s: Re_L = 3524, Nu = 0.664 * 59.4 * 0.891 = 35.1,
+        // h = 132 W/m2K, A = pi * 0.022 * 0.007 = 4.84e-4 m2, G = 0.0639 W/K.
+        let g8 = MotorModel::stator_air_conductance_w_per_k(22.0, 7.0, 8.0);
+        assert!((g8 - 0.0639).abs() < 0.002, "{g8}");
+        let g2 = MotorModel::stator_air_conductance_w_per_k(22.0, 7.0, 2.0);
+        assert!((g8 / g2 - 2.0).abs() < 1e-9, "sqrt law");
+        assert_eq!(MotorModel::stator_air_conductance_w_per_k(22.0, 7.0, 0.0), 0.0);
     }
 
     #[test]

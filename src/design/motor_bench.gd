@@ -13,7 +13,7 @@ extends RefCounted
 ##
 ## Thrust and current are for the whole aircraft (every motor the frame carries); temperature is
 ## one motor's winding. Prop torque is the existing prop model's (k_q is fitted from k_t); the
-## prop-torque chapter is separate, so current reads high until it lands.
+## prop-torque chapter landed with the prop chapter, so the bench current is the real prop's.
 
 const KINDS := ["sweep", "soak", "punch"]
 ## The air the winding starts in, C (the motor model's and the pack bench's 25).
@@ -133,7 +133,7 @@ static func _soak(b: Build, f: Dictionary) -> Dictionary:
 	var voc := b.resolve_open_circuit_v(Build.AT_NOMINAL)
 	var hover_t := hover_throttle(b)
 	var p := b.uncapped_point(hover_t, voc)
-	var temps := _heat(f, float(p.rpm), float(p.winding_current_a), SOAK_S)
+	var temps := _heat(f, float(p.rpm), float(p.winding_current_a), SOAK_S, wash_mps(b, hover_t, voc))
 	var end_c := float(temps.y[temps.y.size() - 1])
 	var limit := float(f.magnet_max_c)
 	var gap := limit - end_c
@@ -153,7 +153,8 @@ static func _soak(b: Build, f: Dictionary) -> Dictionary:
 	}
 
 
-static func _punch(b: Build, f: Dictionary) -> Dictionary:
+## `wash_scale` 0 switches the stator-to-air path off (tests only: it proves the path is in the run).
+static func _punch(b: Build, f: Dictionary, wash_scale: float = 1.0) -> Dictionary:
 	var pack := b.battery_model()
 	var lumps := Lumps.new(f)
 	var t := PackedFloat64Array()
@@ -181,7 +182,7 @@ static func _punch(b: Build, f: Dictionary) -> Dictionary:
 		peak_pack_a = maxf(peak_pack_a, ia)
 		var loss := _loss_w(f, rpm, float(p.winding_current_a))
 		var before := lumps.winding_c
-		lumps.step(loss, rpm, DT_S)
+		lumps.step(loss, rpm, DT_S, wash_scale * wash_mps(b, 1.0, pack.resting_voltage_v()))
 		if lumps.winding_c >= ENAMEL_LIMIT_C:
 			# Burnt out inside this step: the last point is where the line crosses the limit.
 			burn_s = clock + DT_S * (ENAMEL_LIMIT_C - before) / maxf(lumps.winding_c - before, 1e-9)
@@ -207,7 +208,7 @@ static func _punch(b: Build, f: Dictionary) -> Dictionary:
 
 
 ## Winding temperature from ambient at a constant operating point.
-static func _heat(f: Dictionary, rpm: float, winding_a: float, seconds: float) -> Dictionary:
+static func _heat(f: Dictionary, rpm: float, winding_a: float, seconds: float, wash: float = 0.0) -> Dictionary:
 	var lumps := Lumps.new(f)
 	var loss := _loss_w(f, rpm, winding_a)
 	var x := PackedFloat64Array()
@@ -218,7 +219,7 @@ static func _heat(f: Dictionary, rpm: float, winding_a: float, seconds: float) -
 		x.append(clock)
 		y.append(lumps.winding_c)
 		var before := lumps.winding_c
-		lumps.step(loss, rpm, DT_S)
+		lumps.step(loss, rpm, DT_S, wash)
 		if lumps.winding_c >= ENAMEL_LIMIT_C:
 			burn_s = clock + DT_S * (ENAMEL_LIMIT_C - before) / maxf(lumps.winding_c - before, 1e-9)
 			x.append(burn_s)
@@ -230,7 +231,8 @@ static func _heat(f: Dictionary, rpm: float, winding_a: float, seconds: float) -
 
 ## The two heat lumps of one motor: the stator + winding (iron + copper) holds the loss and
 ## conducts into the bell, and the bell sheds to the air, better the faster it spins (forced
-## convection, `MotorModel.air_conductance_w_per_k`). `winding_c` is the figure the bench shows.
+## convection, `MotorModel.air_conductance_w_per_k`). The stator also sheds straight to the air
+## the prop pulls through the bell (`MotorModel.stator_air_conductance_w_per_k`, prop-wash driven). `winding_c` is the figure the bench shows.
 class Lumps extends RefCounted:
 	var winding_c := AMBIENT_C
 	var bell_c := AMBIENT_C
@@ -238,16 +240,22 @@ class Lumps extends RefCounted:
 	var c_bell: float
 	var g_cond: float
 	var mass_g: float
+	var stator_d_mm: float
+	var stator_h_mm: float
 
 	func _init(f: Dictionary) -> void:
 		mass_g = float(f.mass_g)
+		stator_d_mm = float(f.get("stator_diameter_mm", 0.0))
+		stator_h_mm = float(f.get("stator_height_mm", 0.0))
 		c_stator = MotorModel.thermal_mass_j_per_k(float(f.copper_g), float(f.stator_g))
 		c_bell = MotorModel.bell_thermal_mass_j_per_k(float(f.bell_g))
 		g_cond = MotorModel.bell_conduction_w_per_k(mass_g)
 
-	func step(loss_w: float, rpm: float, dt: float) -> void:
+	## `wash_mps`: the prop's induced velocity, the air pulled through the bell over the stator.
+	func step(loss_w: float, rpm: float, dt: float, wash_mps: float = 0.0) -> void:
 		var t := MotorModel.bell_temp_step_c(Vector2(winding_c, bell_c), loss_w, c_stator, c_bell,
-			g_cond, MotorModel.air_conductance_w_per_k(mass_g, rpm), dt)
+			g_cond, MotorModel.air_conductance_w_per_k(mass_g, rpm),
+			MotorModel.stator_air_conductance_w_per_k(stator_d_mm, stator_h_mm, wash_mps), dt)
 		winding_c = t.x
 		bell_c = t.y
 
@@ -258,6 +266,16 @@ static func _loss_w(f: Dictionary, rpm: float, winding_a: float) -> float:
 	var kv := float(f.kv)
 	var io := MotorModel.io_at_rpm(float(f.io_a), float(f.io_voltage_v), kv, rpm)
 	return winding_a * winding_a * float(f.rm_ohm) + io * rpm / kv
+
+
+## The prop's induced velocity at the disc at `throttle`, m/s: momentum theory on the BEMT-fitted
+## thrust of one rotor, v_i = sqrt(T / (2 rho A)) (Leishman, Principles of Helicopter Aerodynamics,
+## eq. 2.20 at zero climb). The air the stator sees is taken to move at this speed.
+static func wash_mps(b: Build, throttle: float, open_circuit_v: float) -> float:
+	var p := b.uncapped_point(throttle, open_circuit_v)
+	var area := PI * pow(float(b.prop_geometry()["diameter_m"]) * 0.5, 2.0)
+	var per_rotor := float(p.thrust_n) / b.thrust_rotor_equivalents()
+	return sqrt(maxf(per_rotor, 0.0) / (2.0 * b.air.kgm3() * maxf(area, 1e-9)))
 
 
 static func hover_throttle(b: Build) -> float:
@@ -318,10 +336,27 @@ static func limited_from(b: Build, f: Dictionary, punch: Dictionary) -> Dictiona
 		"motor": maxf(by_current, by_heat),
 		"prop": PROP_LOADED_MIN / maxf(share, 0.001),
 	}
+	# THE RULE: which limit the run hits first, else the one with the least margin.
+	#  1. The winding burning out ends the run, so it is the limit whatever else was over.
+	#  2. The pack, the motor's current rating and the prop load are all over their limits from the
+	#     first instant of a full-throttle run, so if any is over, they tie at time zero and the one
+	#     furthest over (largest ratio) is the limit.
+	#  3. Otherwise the largest ratio, the least margin; the motor's ratio includes its heat (the
+	#     magnets' limit is only crossed later in the run, so it counts only when nothing above is over).
+	var burned := float(punch.get("burn_s", -1.0)) >= 0.0
+	var steady := {"pack": float(ratios.pack), "prop": float(ratios.prop), "motor": by_current}
 	var key := "pack"
-	for k in ["motor", "prop"]:
-		if float(ratios[k]) > float(ratios[key]):
-			key = k
+	if burned:
+		key = "motor"
+	else:
+		var over_steady := false
+		for k in steady:
+			over_steady = over_steady or float(steady[k]) > 1.0
+		var pool: Dictionary = steady if over_steady else ratios
+		key = ""
+		for k in pool:
+			if key == "" or float(pool[k]) > float(pool[key]):
+				key = k
 	var text := ""
 	match key:
 		"pack":

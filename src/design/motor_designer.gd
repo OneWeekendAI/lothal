@@ -25,7 +25,9 @@ const REVEAL_S := 3.0
 const BENCH_TABS := {"sweep": "Throttle sweep", "soak": "Hover soak", "punch": "Punch-out"}
 const DRONE_PACK := "this_drone"
 const DESIGN_PACK_ITEM := "design_a_pack"
-const BENCH_NOTE := "ideal / model. Current reads high until the prop chapter."
+const BENCH_NOTE := "ideal / model"
+## The compare motor's line: a lighter ink than the chosen motor's.
+const COMPARE_INK := Color(0.62, 0.64, 0.68)
 const FIGURE_ROWS := ["kv", "kt", "rm_ohm", "io_a", "mass_g", "max_current_a", "max_power_w", "magnet_max_c"]
 
 var cfg: MotorConfigs
@@ -73,6 +75,11 @@ var warn_details_open := false
 const WARNINGS_SHOWN := 2
 var pack_option: OptionButton
 var prop_option: OptionButton
+## "Compare with…": another motor on the same pack and prop, a second line on the throttle sweep.
+var compare_option: OptionButton
+var compare_row: HBoxContainer
+var compare_id := ""
+var _compare: Dictionary = {}
 var limited_label: Label
 var _drone_parts: Dictionary = {}
 var _limited: Dictionary = {}
@@ -292,6 +299,23 @@ func set_prop(id: String) -> void:
 	_rederive()
 
 
+## Compares the sweep with another catalog motor ("" = none). The other motor is opened as its
+## nearest grid design (a saved one exactly), on the same pack and prop. Reruns at once.
+func set_compare(id: String) -> void:
+	compare_id = id if id == "" or not catalog.get_part(id).is_empty() else ""
+	_select_in(compare_option, compare_id, "")
+	_rederive()
+
+
+## The sweep of the compare motor, {} when none is chosen or it cannot be flown.
+func compare_result() -> Dictionary:
+	return _compare
+
+
+func compare_name() -> String:
+	return String(catalog.get_part(compare_id).get("name", "")) if compare_id != "" else ""
+
+
 ## "Design a pack…": asks the host to open the pack designer.
 func design_pack() -> void:
 	design_pack_requested.emit()
@@ -358,6 +382,17 @@ func _fill_pickers() -> void:
 				continue
 			pack_option.add_item(String(rec.get("name", id)))
 			pack_option.set_item_metadata(pack_option.item_count - 1, id)
+	compare_option.clear()
+	compare_option.add_item("None")
+	compare_option.set_item_metadata(0, "")
+	for custom in [false, true]:
+		for rec in catalog.list_category("motor"):
+			var id3 := String(rec.get("part_id", ""))
+			if PartsCatalog.is_custom(id3) != custom:
+				continue
+			compare_option.add_item(String(rec.get("name", id3)))
+			compare_option.set_item_metadata(compare_option.item_count - 1, id3)
+	_select_in(compare_option, compare_id, "")
 	pack_option.add_item("Design a pack…")
 	pack_option.set_item_metadata(pack_option.item_count - 1, DESIGN_PACK_ITEM)
 	prop_option.clear()
@@ -433,6 +468,10 @@ func _rederive() -> void:
 func _run_bench() -> void:
 	_bench = MotorBench.run(bench_kind, design, cfg, bench_parts, {}, catalog)
 	_limited = MotorBench.limited_by(design, cfg, bench_parts, {}, catalog)
+	_compare = {}
+	if compare_id != "":
+		var other := MotorDesign.from_record(catalog.get_part(compare_id), cfg)
+		_compare = MotorBench.run("sweep", other, cfg, bench_parts, {}, catalog)
 
 
 ## The chart draws in over REVEAL_S and then stays. Outside the tree there is no animation to play.
@@ -567,6 +606,12 @@ func _build_right() -> Control:
 	prop_option = _picker("PropPicker", "Prop", "The prop the bench runs on", pickers)
 	prop_option.item_selected.connect(_on_prop_picked)
 	inner.add_child(pickers)
+	# The compare picker is the sweep's, so it sits on its own row that shows only on that tab.
+	compare_row = HBoxContainer.new()
+	compare_row.name = "CompareRow"
+	compare_option = _picker("ComparePicker", "Compare with…", "Another motor on the same pack and prop", compare_row)
+	compare_option.item_selected.connect(func(i: int): set_compare(String(compare_option.get_item_metadata(i))))
+	inner.add_child(compare_row)
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", LothalTheme.SPACE_1)
 	for kind in MotorBench.KINDS:
@@ -738,6 +783,7 @@ func _refresh_bench() -> void:
 		return
 	for kind in _bench_tabs:
 		(_bench_tabs[kind] as Button).set_pressed_no_signal(kind == bench_kind)
+	compare_row.visible = bench_kind == "sweep"
 	var r := _bench
 	if r.is_empty():
 		limited_label.text = ""
@@ -766,16 +812,28 @@ func _refresh_bench() -> void:
 					"y_max": ceilf(float(r.start_v) + 0.5), "unit": " V", "color": line_colour(false),
 					"x_max": MotorBench.PUNCH_S}])
 		_:
-			charts.set_charts([
-				{"title": "Thrust", "x": x, "y": r.thrust_g, "y_min": 0.0,
-					"y_max": _ceil_nice(float(r.max_thrust_g)), "unit": " g", "color": line_colour(false),
-					"x_max": 100.0, "x_end_text": "100 %"},
-				{"title": "Current", "x": x, "y": r.current_a, "y_min": 0.0,
-					"y_max": _ceil_nice(float(r.max_current_a)), "unit": " A", "color": line_colour(float(r.peak_winding_a) > float(_figs.max_current_a)),
-					"x_max": 100.0, "x_end_text": "100 %"},
-				{"title": "g per watt", "x": r.gpw_x, "y": r.gpw.slice(int(r.gpw_from)), "y_min": 0.0,
-					"y_max": _ceil_nice(_max_of(r.gpw)), "unit": " g/W", "color": line_colour(false),
-					"x_max": 100.0, "x_end_text": "100 %"}])
+			var o := _compare
+			var two := not o.is_empty()
+			var legend := [{"name": design.display_name(), "color": line_colour(false)},
+				{"name": compare_name(), "color": COMPARE_INK}] if two else []
+			var c_thrust := {"title": "Thrust", "x": x, "y": r.thrust_g, "y_min": 0.0,
+				"y_max": _ceil_nice(maxf(float(r.max_thrust_g), float(o.get("max_thrust_g", 0.0)))), "unit": " g",
+				"color": line_colour(false), "x_max": 100.0, "x_end_text": "100 %"}
+			var c_amps := {"title": "Current", "x": x, "y": r.current_a, "y_min": 0.0,
+				"y_max": _ceil_nice(maxf(float(r.max_current_a), float(o.get("max_current_a", 0.0)))), "unit": " A",
+				"color": line_colour(not two and float(r.peak_winding_a) > float(_figs.max_current_a)),
+				"x_max": 100.0, "x_end_text": "100 %"}
+			var c_gpw := {"title": "g per watt", "x": r.gpw_x, "y": r.gpw.slice(int(r.gpw_from)), "y_min": 0.0,
+				"y_max": _ceil_nice(maxf(_max_of(r.gpw), _max_of(o.get("gpw", PackedFloat64Array())))), "unit": " g/W",
+				"color": line_colour(false), "x_max": 100.0, "x_end_text": "100 %"}
+			if two:
+				c_thrust["y2"] = o.thrust_g
+				c_amps["y2"] = o.current_a
+				c_gpw["y2"] = (o.gpw as PackedFloat64Array).slice(int(o.gpw_from))
+				for cc in [c_thrust, c_amps, c_gpw]:
+					cc["color2"] = COMPARE_INK
+				c_thrust["legend"] = legend
+			charts.set_charts([c_thrust, c_amps, c_gpw])
 
 
 ## The warnings on screen: the two most severe (the bench returns them most severe first), or all
@@ -830,7 +888,10 @@ static func _ceil_nice(v: float) -> float:
 
 
 func _refresh_view() -> void:
-	var prop := _usual_prop(float(cfg.get_size(design.size).stator_diameter_mm))
+	# The picture follows the Prop picker; a class-typical shelf prop only when the pick is unknown.
+	var prop: Dictionary = catalog.by_id.get(prop_pick_id(), {})
+	if prop.is_empty():
+		prop = _usual_prop(float(cfg.get_size(design.size).stator_diameter_mm))
 	prop_id = String(prop.get("part_id", ""))
 	motor_view.show_motor(design.to_record(cfg), prop)
 	var note := find_child("PropNote", true, false) as Label

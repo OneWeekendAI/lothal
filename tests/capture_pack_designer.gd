@@ -116,6 +116,9 @@ func _init() -> void:
 				d.my_packs_button.pressed.emit()
 			"drone":
 				d.set_discharge_mode("this_drone")
+			"motor":
+				# A big shelf motor loads the pack instead of the drone's own.
+				d.set_motor("motor_2807_1300kv")
 		# Let the ~3 s reveal finish so the charts are in their static final state.
 		for i in 220:
 			await process_frame

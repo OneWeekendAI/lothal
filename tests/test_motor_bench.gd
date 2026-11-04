@@ -105,9 +105,12 @@ static func _logic(cfg: MotorConfigs) -> Array:
 	# than the 60-100 / 35-55 C the owner expected; the constants were not tuned to fit it. The band
 	# pins the model, so a changed constant must change this deliberately.
 	var hot := MotorBench.run("punch", _design(cfg, "2207", 1960.0), cfg)
-	out.append(_t("thermal: 2207 1960 KV from physics: punch-out ~130 C (120-140), hover soak ~64 C (58-70), no burn-out",
-		float(hot.end_temp_c) > 120.0 and float(hot.end_temp_c) < 140.0 and float(soak.end_temp_c) > 58.0
-		and float(soak.end_temp_c) < 70.0 and float(hot.burn_s) < 0.0 and hot.x[hot.x.size() - 1] == MotorBench.PUNCH_S,
+	# Since the stator-to-air path (air pulled through the bell, prop-wash driven; 2026-11-04) the
+	# same 2207 reads ~121 C after the punch and ~49 C after the soak (previously 130 and 64): the
+	# path is a cited correlation, not tuned to land anywhere.
+	out.append(_t("thermal: 2207 1960 KV from physics: punch-out ~121 C (115-127), hover soak ~49 C (45-54), no burn-out",
+		float(hot.end_temp_c) > 115.0 and float(hot.end_temp_c) < 127.0 and float(soak.end_temp_c) > 45.0
+		and float(soak.end_temp_c) < 54.0 and float(hot.burn_s) < 0.0 and hot.x[hot.x.size() - 1] == MotorBench.PUNCH_S,
 		"punch %.0f C soak %.0f C" % [hot.end_temp_c, soak.end_temp_c]))
 	# Burn-out: a 2207 on a 7 inch prop on 6S pulls ~90 A a motor; the winding passes the 180 C enamel
 	# limit (IEC 60085 class H) and the run stops there.
@@ -167,6 +170,86 @@ static func _logic(cfg: MotorConfigs) -> Array:
 		fast.bell_c < slow.bell_c - 5.0 and fast.winding_c < slow.winding_c - 5.0,
 		"%.0f vs %.0f, bell %.0f vs %.0f" % [fast.winding_c, slow.winding_c, fast.bell_c, slow.bell_c]))
 
+	# The stator-to-air path: the same loss runs cooler with prop wash over the stator than without.
+	var dry := MotorBench.Lumps.new(fig)
+	var washed := MotorBench.Lumps.new(fig)
+	for i in 1200:
+		dry.step(10.0, 20000.0, 0.5, 0.0)
+		washed.step(10.0, 20000.0, 0.5, 8.0)
+	out.append(_t("thermal: air through the bell cools the stator (same loss, 8 m/s of wash vs none)",
+		washed.winding_c < dry.winding_c - 3.0, "%.1f vs %.1f" % [washed.winding_c, dry.winding_c]))
+	# The wash is the momentum-theory induced velocity of the BEMT-fitted thrust, v = sqrt(T / 2 rho A).
+	var rb := MotorBench.make_build(_design(cfg, "2207", 1960.0), cfg)
+	var voc := rb.resolve_open_circuit_v(Build.AT_NOMINAL)
+	var pt := rb.uncapped_point(1.0, voc)
+	var area := PI * pow(float(rb.propeller["specs"]["diameter_inches"]) * 0.0254 * 0.5, 2.0)
+	var by_hand := sqrt(float(pt.thrust_n) / 4.0 / (2.0 * rb.air.kgm3() * area))
+	out.append(_t("thermal: the prop wash is v_i = sqrt(T / 2 rho A) of one rotor, and is faster at full throttle than at hover",
+		absf(MotorBench.wash_mps(rb, 1.0, voc) - by_hand) < 1e-6 and by_hand > 5.0 and by_hand < 30.0
+		and MotorBench.wash_mps(rb, rb.hover_throttle(), voc) < by_hand, "%.2f" % by_hand))
+	# And the runs really use it: the punch and the soak are cooler than with the path switched off.
+	var f2207 := _design(cfg, "2207", 1960.0).derive(cfg)
+	var no_wash := MotorBench._punch(rb, f2207, 0.0)
+	var hp := rb.uncapped_point(rb.hover_throttle(), voc)
+	var soak_dry := MotorBench._heat(f2207, float(hp.rpm), float(hp.winding_current_a), MotorBench.SOAK_S, 0.0)
+	out.append(_t("thermal: punch and soak both run cooler than the same runs with no air through the bell",
+		float(no_wash.end_temp_c) > float(hot.end_temp_c) + 3.0
+		and float(soak_dry.y[soak_dry.y.size() - 1]) > float(soak.end_temp_c) + 3.0,
+		"punch %.1f vs %.1f, soak %.1f vs %.1f" % [no_wash.end_temp_c, hot.end_temp_c, soak_dry.y[soak_dry.y.size() - 1], soak.end_temp_c]))
+
+	# "Limited by" agrees with the run. THE RULE (MotorBench.limited_from): burn-out ends the run so
+	# it is the limit; else, of the pack / motor current / prop load, any over its limit is hit from
+	# the first instant and the furthest over wins; else the magnets' heat limit if it was passed;
+	# else the least margin. Synthetic punch-outs pin each branch, then real runs.
+	var lb := MotorBench.make_build(_design(cfg, "2207", 1960.0), cfg)
+	var real := MotorBench._punch(lb, f2207)
+	var calm: Dictionary = real.duplicate()
+	calm["peak_temp_c"] = 40.0
+	calm["burn_s"] = -1.0
+	calm["peak_winding_a"] = 1.0
+	calm["peak_pack_a"] = lb.pack_max_amps() * 3.0
+	var burnt_fake: Dictionary = calm.duplicate()
+	burnt_fake["burn_s"] = 6.0
+	burnt_fake["peak_temp_c"] = MotorBench.ENAMEL_LIMIT_C
+	var hot_fake: Dictionary = calm.duplicate()
+	hot_fake["peak_temp_c"] = float(f2207.magnet_max_c) + 1.0
+	hot_fake["peak_pack_a"] = lb.pack_max_amps() * 0.5
+	var both_fake: Dictionary = calm.duplicate()
+	both_fake["peak_temp_c"] = float(f2207.magnet_max_c) + 1.0
+	var late_fake: Dictionary = both_fake.duplicate()
+	late_fake["peak_temp_c"] = 150.0
+	late_fake["peak_pack_a"] = lb.pack_max_amps() * 1.2
+	var lim_late := MotorBench.limited_from(lb, f2207, late_fake)
+	var lim_pack := MotorBench.limited_from(lb, f2207, calm)
+	var lim_burn := MotorBench.limited_from(lb, f2207, burnt_fake)
+	var lim_hot := MotorBench.limited_from(lb, f2207, hot_fake)
+	var lim_both := MotorBench.limited_from(lb, f2207, both_fake)
+	out.append(_t("limited by: a pack 3x over its rating is the limit while the motor is fine",
+		lim_pack.key == "pack" and float(lim_pack.ratios.pack) > float(lim_pack.ratios.motor), str(lim_pack)))
+	out.append(_t("limited by: a winding that burns out is the limit even with the pack 3x over",
+		float(lim_burn.ratios.pack) > float(lim_burn.ratios.motor) and lim_burn.key == "motor"
+		and String(lim_burn.text).contains("burns out"), str(lim_burn)))
+	out.append(_t("limited by: passing the magnet limit is the limit when nothing else is over",
+		lim_hot.key == "motor" and float(lim_hot.ratios.pack) < 1.0 and String(lim_hot.text).contains("°C of"), str(lim_hot)))
+	out.append(_t("limited by: a pack over its rating from the first instant comes before magnets passed later",
+		lim_both.key == "pack", str(lim_both)))
+	out.append(_t("limited by: a pack just over its rating (first instant) beats a much larger heat ratio reached later, short of burn-out",
+		lim_late.key == "pack" and float(lim_late.ratios.motor) > float(lim_late.ratios.pack), str(lim_late.ratios)))
+	var bad_lim := ""
+	for spec in [["2207", 1960.0, {}], ["2207", 1960.0, {"propeller": "prop_7x4x3", "battery": "battery_6s_1300"}],
+			["2306", 1700.0, {}], ["1404", 3800.0, {}], ["2306", 2700.0, {}]]:
+		var dd := _design(cfg, spec[0], spec[1])
+		var run_p := MotorBench.run("punch", dd, cfg, spec[2])
+		var lm := MotorBench.limited_by(dd, cfg, spec[2])
+		if float(run_p.burn_s) >= 0.0 and lm.key != "motor":
+			bad_lim += " %s/%s:%s" % [spec[0], str(spec[2]), lm.key]
+		if float(run_p.burn_s) >= 0.0 and not String(lm.text).contains("burns out"):
+			bad_lim += " %s text" % spec[0]
+	out.append(_t("limited by: every real punch-out that burned out names motor heat and says it burns out", bad_lim == "", bad_lim))
+	var burn_real := MotorBench.limited_by(_design(cfg, "2207", 1960.0), cfg, {"propeller": "prop_7x4x3", "battery": "battery_6s_1300"})
+	out.append(_t("limited by: the reference 2207 on a 7 inch prop and 6S burns out and (pack ratio above the motor's) still says motor",
+		burn_real.key == "motor" and float(burn_real.ratios.pack) > float(burn_real.ratios.motor) and String(burn_real.text).contains("burns out"), str(burn_real)))
+
 	# Current and prop-size warnings.
 	var small := MotorBench.run("sweep", _design(cfg, "0802", 19000.0 if _design(cfg, "0802", 0.0).kv_choices(cfg).has(19000.0) else _design(cfg, "0802", 0.0).kv_choices(cfg)[0]), cfg)
 	out.append(_t("a tiny motor on a 5 inch prop is told the prop is too big and that its current is over rating",
@@ -215,8 +298,8 @@ static func _screen(cfg: MotorConfigs) -> Array:
 		float(d.bench_result().burn_s) > 0.0 and bx2[bx2.size() - 1] == float(d.bench_result().burn_s)
 		and (d.charts.charts[1].x as PackedFloat64Array).size() == bx2.size(), str(bx2[bx2.size() - 1])))
 	var note := d.find_child("BenchNote", true, false) as Label
-	out.append(_t("the bench is labelled ideal / model and says current reads high until the prop chapter",
-		note != null and note.text.contains("ideal / model") and note.text.to_lower().contains("current reads high")
-		and note.text.to_lower().contains("prop chapter"), "" if note == null else note.text))
+	out.append(_t("the bench is labelled ideal / model and the stale 'current reads high' note is gone",
+		note != null and note.text.contains("ideal / model") and not note.text.to_lower().contains("current reads high")
+		and not note.text.to_lower().contains("prop chapter"), "" if note == null else note.text))
 	d.free()
 	return out

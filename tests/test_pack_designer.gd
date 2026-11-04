@@ -65,6 +65,7 @@ static func run() -> Array:
 	results.append_array(_test_tile(catalog))
 	results.append_array(_test_opens_valid(catalog))
 	results.append_array(_test_default_load(catalog))
+	results.append_array(_test_motor_picker(catalog))
 	results.append_array(_test_series_rederives(catalog))
 	results.append_array(_test_label(catalog))
 	results.append_array(_test_typed_fields(catalog))
@@ -176,6 +177,70 @@ static func _test_opens_valid(catalog: PartsCatalog) -> Array:
 		"S%d P%d mah %s run %s warn %s" % [d.design.series, d.design.parallel, f.get("mah"),
 			bench.get("run_time_s"), d.warnings()]))
 	d.free()
+	return out
+
+
+static func _test_motor_picker(catalog: PartsCatalog) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, true)
+	d.open_new()
+	var own_a := d._discharge_current()
+	var items: Array = []
+	for i in d.motor_option.item_count:
+		items.append(d.motor_option.get_item_text(i))
+	var shelf := catalog.list_category("motor")
+	out.append(_t("the Motor dropdown lists this drone's motors first, then every shelf motor",
+		items[0] == "This drone's motors" and items.size() == shelf.size() + 1 and items.has(String(shelf[0].name))
+		and d.motor_option.selected == 0 and d.motor_option.get_parent() == d.discharge_row, str(items.slice(0, 3))))
+	# A small motor and a big one load the same pack very differently.
+	var small_id := ""
+	var big_id := ""
+	var lo := INF
+	var hi := -INF
+	for rec in shelf:
+		var dia := float(rec.specs.get("stator_diameter_mm", 0.0))
+		if dia < lo:
+			lo = dia
+			small_id = String(rec.part_id)
+		if dia > hi:
+			hi = dia
+			big_id = String(rec.part_id)
+	d.motor_option.item_selected.emit(d.motor_option.get_item_count() - 1)
+	var picked_last := d.motor_id
+	d.set_motor(small_id)
+	var small_a := d._discharge_current()
+	var small_run := float(d.bench_result().run_time_s)
+	d.set_motor(big_id)
+	var big_a := d._discharge_current()
+	var big_run := float(d.bench_result().run_time_s)
+	var twin := PackBench.build_with_motor(catalog, d.build, big_id)
+	out.append_array([
+		_t("choosing a motor drives the Discharge run: the current is that motor's average flight draw on this drone",
+			picked_last != "" and absf(big_a - PackBench.this_drone_current_a(twin)) < 1e-9
+			and twin.motor["part_id"] == big_id and d.discharge_mode == "this_drone" and d.drone_button.button_pressed,
+			"%s %.2f" % [d.motor_id, big_a]),
+		_t("a small and a big motor load the same pack differently, and the run time follows the load",
+			absf(big_a - small_a) > 1.0 and absf(big_run - small_run) > 5.0 and (big_a > small_a) == (big_run < small_run),
+			"%.1f A %.0f s vs %.1f A %.0f s" % [small_a, small_run, big_a, big_run]),
+	])
+	d.set_motor("")
+	out.append(_t("This drone's motors puts the drone's own load back",
+		absf(d._discharge_current() - own_a) < 1e-9 and d.motor_option.selected == 0, "%.2f vs %.2f" % [d._discharge_current(), own_a]))
+	d.free()
+	# No drone: no 'This drone's motors' item, but a picked motor still drives the run.
+	var bare := _designer(catalog, false)
+	bare.open_new()
+	var bare_items: Array = []
+	for i in bare.motor_option.item_count:
+		bare_items.append(bare.motor_option.get_item_text(i))
+	bare.set_motor(small_id)
+	var bs := bare._discharge_current()
+	bare.set_motor(big_id)
+	out.append(_t("with no drone the list has no 'This drone's motors' and a picked motor drives the run on the reference airframe",
+		not bare_items.has("This drone's motors") and bare.motor_option.selected >= 0
+		and bare.discharge_mode == "this_drone" and bs > 0.1 and absf(bare._discharge_current() - bs) > 1.0,
+		"%.2f %.2f" % [bs, bare._discharge_current()]))
+	bare.free()
 	return out
 
 

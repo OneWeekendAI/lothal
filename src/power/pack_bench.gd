@@ -124,6 +124,30 @@ static func recharge(design: PackDesign, from_used_mah: float, c_rate: float, dt
 	return {"t": t, "v": v, "i": i, "time_to_full_s": clock, "cv_start_s": cv_start}
 
 
+## The aircraft the Discharge run loads the pack with: `build` as it is when `motor_id` is "" (this
+## drone's own motors), else the same aircraft with that catalog motor fitted instead (the real
+## fit, k_t and DC law included). With no drone at all, the reference build wears the motor. Null
+## when there is neither a drone nor a motor, or the motor is not in the catalog.
+static func build_with_motor(catalog: PartsCatalog, build: Build, motor_id: String) -> Build:
+	if motor_id == "":
+		return build
+	if catalog.get_part(motor_id).is_empty():
+		return build
+	var base: Build = build if build != null else ReferenceBuild.build()
+	var ids := {}
+	for category in Build.OPTIONAL_COMPONENTS:
+		ids[category] = str((base.components[category] as Dictionary)["part_id"]) \
+			if base.components.has(category) else ""
+	var twin := Build.from_ids(catalog, str(base.frame["part_id"]), motor_id,
+		str(base.propeller["part_id"]), str(base.battery["part_id"]), str(base.esc["part_id"]),
+		str(base.fc["part_id"]), ids, base.air, str(base.guard.get("part_id", "")) if not base.guard.is_empty() else "",
+		base.harness.overrides(), str(base.mount.get("part_id", "")) if not base.mount.is_empty() else "")
+	twin.set_frame_edit(base.frame_edit())
+	twin.set_assembly(base.assembly)
+	twin.set_printing(base.printing)
+	return twin
+
+
 static func this_drone_current_a(build: Build) -> float:
 	return build.average_flight_current_a()
 

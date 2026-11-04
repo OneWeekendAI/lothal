@@ -56,6 +56,9 @@ var read_only := false
 var derive_count := 0
 var chemistry_filter := ""
 var discharge_mode := "constant"
+## The motor the Discharge run's load comes from: "" is this drone's own motors, else a catalog
+## motor id (shelf or saved) fitted on this drone's frame and prop (the reference build's with no drone).
+var motor_id := ""
 var discharge_amps := STEADY_DEFAULT_A
 var charge_c := 1.0
 var tab := "discharge"
@@ -101,6 +104,7 @@ var tab_discharge: Button
 var tab_recharge: Button
 var steady_button: Button
 var drone_button: Button
+var motor_option: OptionButton
 var amps_spin: SpinBox
 var run_button: Button
 var charge_spin: SpinBox
@@ -342,10 +346,25 @@ func set_wiring(connector_family: String, awg: int, length_mm: float) -> void:
 
 
 func set_discharge_mode(mode: String, amps: float = NAN) -> void:
-	discharge_mode = mode if mode == "this_drone" and build != null else "constant"
+	discharge_mode = mode if mode == "this_drone" and _load_build() != null else "constant"
 	if not is_nan(amps):
 		discharge_amps = maxf(amps, 0.1)
 	_rederive()
+
+
+## Picks the motor the Discharge run loads the pack with ("" = this drone's own) and switches the
+## run to that load.
+func set_motor(id: String) -> void:
+	motor_id = id if id == "" or not catalog.get_part(id).is_empty() else ""
+	discharge_mode = "this_drone" if _load_build() != null else "constant"
+	_rederive()
+
+
+## The aircraft the motor load is read from: this drone with the picked motor, or null for none.
+func _load_build() -> Build:
+	if motor_id == "" and build == null:
+		return null
+	return PackBench.build_with_motor(catalog, build, motor_id)
 
 
 func set_charge_c(c: float) -> void:
@@ -401,7 +420,7 @@ func _rederive() -> void:
 	_figs = design.derive()
 	_run = _run_discharge()
 	_recharge = _run_recharge_preview()
-	_warns = PackBench.warnings(design, _run, build if discharge_mode == "this_drone" else null,
+	_warns = PackBench.warnings(design, _run, _load_build() if discharge_mode == "this_drone" else null,
 		charge_c if tab == "recharge" else NAN)
 	_refresh()
 	_play_reveal()
@@ -424,8 +443,8 @@ func run_discharge_test() -> void:
 
 
 func _discharge_current() -> float:
-	if discharge_mode == "this_drone" and build != null:
-		return maxf(PackBench.this_drone_current_a(build), 0.1)
+	if discharge_mode == "this_drone" and _load_build() != null:
+		return maxf(PackBench.this_drone_current_a(_load_build()), 0.1)
 	return discharge_amps
 
 
@@ -763,11 +782,20 @@ func _build_right() -> Control:
 	discharge_row.add_child(steady_button)
 	drone_button = Button.new()
 	drone_button.name = "ThisDrone"
-	drone_button.text = "This drone"
+	drone_button.text = "Motor load"
 	drone_button.toggle_mode = true
-	drone_button.disabled = build == null
+	drone_button.disabled = build == null and motor_id == ""
 	drone_button.pressed.connect(func(): set_discharge_mode("this_drone"))
 	discharge_row.add_child(drone_button)
+	motor_option = OptionButton.new()
+	motor_option.name = "MotorPicker"
+	motor_option.tooltip_text = "The motor whose current loads the pack"
+	motor_option.fit_to_longest_item = false
+	motor_option.clip_text = true
+	motor_option.custom_minimum_size = Vector2(150, 0)
+	motor_option.item_selected.connect(func(i: int): if not _syncing: set_motor(String(motor_option.get_item_metadata(i))))
+	discharge_row.add_child(motor_option)
+	_fill_motor_picker()
 	amps_spin = SpinBox.new()
 	amps_spin.name = "DischargeAmps"
 	amps_spin.min_value = 0.5
@@ -1103,6 +1131,8 @@ func _refresh() -> void:
 	charge_bar.value = _charge_shown() * 100.0
 	steady_button.button_pressed = discharge_mode == "constant"
 	drone_button.button_pressed = discharge_mode == "this_drone"
+	drone_button.disabled = _load_build() == null
+	_sync_motor_picker()
 	amps_spin.set_value_no_signal(_discharge_current())
 	amps_spin.editable = discharge_mode == "constant"
 	_refresh_bench()
@@ -1110,6 +1140,30 @@ func _refresh() -> void:
 	warning_label.visible = not _warns.is_empty()
 	test_note.visible = _test_drained and tab == "discharge"
 	test_note.text = "This test used the pack's charge" if test_note.visible else ""
+
+
+## This drone's motors (when there is a drone), then the shelf motors, then the builder's saved ones.
+func _fill_motor_picker() -> void:
+	motor_option.clear()
+	if build != null:
+		motor_option.add_item("This drone's motors")
+		motor_option.set_item_metadata(0, "")
+	for custom in [false, true]:
+		for rec in catalog.list_category("motor"):
+			var id := String(rec.get("part_id", ""))
+			if PartsCatalog.is_custom(id) != custom:
+				continue
+			motor_option.add_item(String(rec.get("name", id)))
+			motor_option.set_item_metadata(motor_option.item_count - 1, id)
+	_sync_motor_picker()
+
+
+func _sync_motor_picker() -> void:
+	for i in motor_option.item_count:
+		if String(motor_option.get_item_metadata(i)) == motor_id:
+			motor_option.select(i)
+			return
+	motor_option.select(-1)
 
 
 func _layout_text() -> String:
