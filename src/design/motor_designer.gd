@@ -5,7 +5,8 @@ extends DesignerShell
 ## Left: 1 Stator (a size on the standard grid), 2 KV (only the options sold for that size),
 ## 3 Poles & bell (pole config, magnet grade, shaft, mount). Middle: the motor in 3D, drawn from
 ## its stator and bell dimensions, with a class-typical prop on it. Right: the derived figures,
-## then the bench (a placeholder until the bench runs exist).
+## then the bench (Throttle sweep, Hover soak, Punch-out: one run at a time, drawn in over about
+## three seconds by the pack designer's chart widget, PackCharts, and then left standing).
 ##
 ## DERIVED, NOT TYPED. Every figure comes from MotorDesign.derive() (the grid laws in
 ## MotorConfigs); nothing in the figures column is editable. Every setter ends in _rederive(), so
@@ -16,6 +17,9 @@ signal saved(part_id: String)
 
 const LEFT_W := 300.0
 const RIGHT_W := 440.0
+const REVEAL_S := 3.0
+const BENCH_TABS := {"sweep": "Throttle sweep", "soak": "Hover soak", "punch": "Punch-out"}
+const BENCH_NOTE := "ideal / model. Current reads high until the prop chapter."
 const FIGURE_ROWS := ["kv", "kt", "rm_ohm", "io_a", "mass_g", "max_current_a", "max_power_w", "magnet_max_c"]
 
 var cfg: MotorConfigs
@@ -50,6 +54,16 @@ var motor_view: MotorView3D
 var summary_label: Label
 var figures_box: GridContainer
 var bench_box: PanelContainer
+## The bench: which run is showing, the prop and pack it runs on ({frame, propeller, battery} ids;
+## missing keys are the reference build's), and the last run.
+var bench_kind := "sweep"
+var bench_parts: Dictionary = {}
+var charts: PackCharts
+var bench_result_label: Label
+var bench_warning_label: Label
+var _bench_tabs := {}
+var _bench: Dictionary = {}
+var _bench_tween: Tween
 
 
 func _init(p_cfg: MotorConfigs = null, p_catalog: PartsCatalog = null, p_store: CustomMotors = null) -> void:
@@ -190,6 +204,34 @@ func figures() -> Dictionary:
 	return _figs
 
 
+## Shows one of the three bench runs ("sweep", "soak", "punch") and plays it.
+func set_bench(kind: String) -> void:
+	bench_kind = kind if MotorBench.KINDS.has(kind) else "sweep"
+	_run_bench()
+	_refresh_bench()
+	_play_reveal()
+
+
+## The prop and pack the bench runs on: the fitted build's frame, prop and pack, if there is one.
+func set_bench_build(b: Build) -> void:
+	bench_parts = {}
+	if b != null:
+		bench_parts = {"frame": String(b.frame.get("part_id", "")),
+			"propeller": String(b.propeller.get("part_id", "")),
+			"battery": String(b.battery.get("part_id", ""))}
+	_rederive()
+
+
+## The last bench run (see MotorBench.run), {} if the motor cannot be flown.
+func bench_result() -> Dictionary:
+	return _bench
+
+
+## The warning lines under the chart now, one per problem.
+func bench_warnings() -> Array:
+	return _bench.get("warnings", [])
+
+
 ## The text the figures column shows for `key` (what a builder reads).
 func figure_text(key: String) -> String:
 	var l: Label = _figure_values.get(key)
@@ -221,7 +263,27 @@ func copy_specs() -> String:
 func _rederive() -> void:
 	_figs = design.derive(cfg)
 	derive_count += 1
+	_run_bench()
 	_refresh()
+	_play_reveal()
+
+
+func _run_bench() -> void:
+	_bench = MotorBench.run(bench_kind, design, cfg, bench_parts, {}, catalog)
+
+
+## The chart draws in over REVEAL_S and then stays. Outside the tree there is no animation to play.
+func _play_reveal() -> void:
+	if _bench_tween != null and _bench_tween.is_valid():
+		_bench_tween.kill()
+	if charts == null:
+		return
+	if not is_inside_tree():
+		charts.reveal = 1.0
+		return
+	charts.reveal = 0.0
+	_bench_tween = create_tween()
+	_bench_tween.tween_property(charts, "reveal", 1.0, REVEAL_S).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
 # ---------------------------------------------------------------------------
@@ -322,21 +384,47 @@ func _build_right() -> Control:
 	col.add_child(figures_box)
 	col.add_child(_spacer(LothalTheme.SPACE_2))
 
-	# The bench (throttle sweep, hover soak, punch-out) arrives in its own piece; this keeps its place.
 	bench_box = PanelContainer.new()
-	bench_box.name = "BenchPlaceholder"
+	bench_box.name = "Bench"
 	bench_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var edge := StyleBoxFlat.new()
 	edge.bg_color = Color(1, 1, 1, 0.02)
 	edge.border_color = Color(1, 1, 1, 0.10)
 	edge.set_border_width_all(1)
 	edge.set_corner_radius_all(LothalTheme.RADIUS_PANEL)
-	edge.set_content_margin_all(LothalTheme.SPACE_3)
+	edge.set_content_margin_all(LothalTheme.SPACE_2)
 	bench_box.add_theme_stylebox_override("panel", edge)
 	var inner := VBoxContainer.new()
 	inner.add_theme_constant_override("separation", LothalTheme.SPACE_1)
-	inner.add_child(_section("Bench"))
-	inner.add_child(_faint("Thrust, current and heat need a prop and a pack. The throttle sweep, hover soak and punch-out runs will sit here."))
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", LothalTheme.SPACE_1)
+	for kind in MotorBench.KINDS:
+		var tb := Button.new()
+		tb.name = "Tab_" + kind
+		tb.text = BENCH_TABS[kind]
+		tb.toggle_mode = true
+		tb.focus_mode = Control.FOCUS_NONE
+		tb.pressed.connect(func(): set_bench(kind))
+		tabs.add_child(tb)
+		_bench_tabs[kind] = tb
+	inner.add_child(tabs)
+	bench_result_label = Label.new()
+	bench_result_label.name = "Result"
+	bench_result_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	bench_result_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
+	bench_result_label.add_theme_color_override("font_color", LothalTheme.TEXT_MAIN)
+	inner.add_child(bench_result_label)
+	charts = PackCharts.new()
+	inner.add_child(charts)
+	bench_warning_label = Label.new()
+	bench_warning_label.name = "Warnings"
+	bench_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	bench_warning_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	bench_warning_label.add_theme_color_override("font_color", LothalTheme.WARNING)
+	inner.add_child(bench_warning_label)
+	var note := _faint(BENCH_NOTE)
+	note.name = "BenchNote"
+	inner.add_child(note)
 	bench_box.add_child(inner)
 	col.add_child(bench_box)
 	return col
@@ -430,10 +518,78 @@ func _refresh() -> void:
 		(_figure_values[key] as Label).text = _format(key)
 		(_figure_values[key + "_tag"] as Label).text = String(tags.get(key, ""))
 	summary_label.text = "%s  ·  %d KV  ·  %s" % [design.size, int(design.kv), design.config()]
+	_refresh_bench()
 	save_as_button.visible = part_id != ""
 	save_button.text = "Save changes" if part_id != "" else "Save to shelf"
 	_syncing = false
 	_refresh_view()
+
+
+func _refresh_bench() -> void:
+	if charts == null:
+		return
+	for kind in _bench_tabs:
+		(_bench_tabs[kind] as Button).set_pressed_no_signal(kind == bench_kind)
+	var r := _bench
+	if r.is_empty():
+		bench_result_label.text = ""
+		bench_warning_label.text = ""
+		charts.set_charts([])
+		return
+	bench_result_label.text = String(r.result)
+	bench_warning_label.text = "\n".join(r.warnings)
+	bench_warning_label.visible = not r.warnings.is_empty()
+	var x: PackedFloat64Array = r.x
+	match String(r.kind):
+		"soak":
+			var ta := _temp_axis(r)
+			charts.set_charts([{"title": "Winding temperature", "x": x, "y": r.temp_c,
+				"y_min": ta.x, "y_max": ta.y, "unit": " °C", "color": LothalTheme.WARNING,
+				"x_max": MotorBench.SOAK_S}])
+		"punch":
+			var ta2 := _temp_axis(r)
+			var floor_v := floorf(float(r.low_v) - 1.0)
+			charts.set_charts([
+				{"title": "Winding temperature", "x": x, "y": r.temp_c, "y_min": ta2.x, "y_max": ta2.y,
+					"unit": " °C", "color": LothalTheme.WARNING, "x_max": MotorBench.PUNCH_S},
+				{"title": "Pack voltage", "x": x, "y": r.v_live, "y_min": floor_v,
+					"y_max": ceilf(float(r.start_v) + 0.5), "unit": " V", "color": LothalTheme.ACCENT,
+					"x_max": MotorBench.PUNCH_S}])
+		_:
+			charts.set_charts([
+				{"title": "Thrust", "x": x, "y": r.thrust_g, "y_min": 0.0,
+					"y_max": _ceil_nice(float(r.max_thrust_g)), "unit": " g", "color": LothalTheme.ACCENT,
+					"x_max": 100.0, "x_end_text": "100 %"},
+				{"title": "Current", "x": x, "y": r.current_a, "y_min": 0.0,
+					"y_max": _ceil_nice(float(r.max_current_a)), "unit": " A", "color": LothalTheme.WARNING,
+					"x_max": 100.0, "x_end_text": "100 %"},
+				{"title": "g per watt", "x": r.gpw_x, "y": r.gpw.slice(int(r.gpw_from)), "y_min": 0.0,
+					"y_max": _ceil_nice(_max_of(r.gpw)), "unit": " g/W", "color": LothalTheme.SUCCESS,
+					"x_max": 100.0, "x_end_text": "100 %"}])
+
+
+## Temperature chart range: ambient up to the run's peak or the magnet limit, with room above.
+func _temp_axis(r: Dictionary) -> Vector2:
+	var top := maxf(float(r.peak_temp_c), float(_figs.magnet_max_c)) + 5.0
+	return Vector2(20.0, ceilf(top / 10.0) * 10.0)
+
+
+static func _max_of(a: PackedFloat64Array) -> float:
+	var m := 0.0
+	for v in a:
+		m = maxf(m, v)
+	return m
+
+
+## Rounds up to 1, 2 or 5 times a power of ten, so axis ends read as plain numbers.
+static func _ceil_nice(v: float) -> float:
+	if v <= 0.0:
+		return 1.0
+	var mag := pow(10.0, floorf(log(v) / log(10.0)))
+	for m in [1.0, 2.0, 5.0, 10.0]:
+		if v <= m * mag:
+			return m * mag
+	return 10.0 * mag
 
 
 func _refresh_view() -> void:

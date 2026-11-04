@@ -8,7 +8,8 @@ extends SceneTree
 ## state: "" (the default 2207) | "shelf" (no pop-up: the motor shelf with its tile) | "0802" |
 ## "3115" (largest size, two mounts) | "options" (2207, 2750 KV, 9N12P, N52H, 5 mm shaft, a name) |
 ## "saved" (the options motor, saved with the Save button) | "shelf_saved" (saved, the pop-up
-## closed, the motor shelf scrolled to the saved card)
+## closed, the motor shelf scrolled to the saved card) | "sweep" | "soak" | "punch" (the default
+## 2207 with that bench run played out; "punch_hot" is a 2507 whose punch-out warns of heat and current)
 ##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
@@ -46,6 +47,15 @@ func _init() -> void:
 		match state:
 			"0802", "3115":
 				d.set_stator(state)
+			"sweep", "soak", "punch", "punch_hot", "sweep_warn":
+				if state == "punch_hot":
+					d.set_stator("2507")
+					d.set_kv(1800.0)
+				elif state == "sweep_warn":
+					d.set_stator("0802")
+				d.set_bench("punch" if state == "punch_hot" else ("sweep" if state == "sweep_warn" else state))
+				# Let the three-second reveal finish, then a moment to settle.
+				await create_timer(MotorDesigner.REVEAL_S + 0.8).timeout
 			"options", "saved", "shelf_saved":
 				d.set_kv(2750.0)
 				d.set_poles(12)

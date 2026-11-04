@@ -2082,6 +2082,27 @@ func rpm_at_throttle(throttle: float, open_circuit_v: float = AT_NOMINAL) -> flo
 	return _rpm_at_throttle_capped(throttle, max_throttle_fraction(), open_circuit_v)
 
 
+## One steady operating point at a throttle with NO ceiling applied, on a pack resting at
+## `open_circuit_v`: what the Motor Designer's bench sweeps, so it can show a motor past its own
+## rating instead of a flat line at the limit. Same DC law and the same pack solve as
+## `rpm_at_throttle` and `hover_current_a` (cap 1.0), nothing new in the physics. Returns rpm,
+## thrust_n (all rotors), pack_current_a (all motors) and winding_current_a (one motor).
+func uncapped_point(throttle: float, open_circuit_v: float = AT_NOMINAL) -> Dictionary:
+	var a := _dc_args()
+	if a.is_empty():
+		return {}
+	var t := clampf(throttle, 0.0, 1.0)
+	var v := resolve_open_circuit_v(open_circuit_v)
+	var rpm := _rpm_at_throttle_capped(t, 1.0, v)
+	var pack_a := 0.0
+	if t > 0.0:
+		pack_a = Fitting.dc_pack_draw_a(t, a[0], a[1], a[2], a[3], a[4], v,
+			float(battery["specs"]["internal_r_ohm"]), float(motor_count()))
+	return {"rpm": rpm, "pack_current_a": pack_a,
+		"thrust_n": thrust_rotor_equivalents() * PropellerModel.thrust_n(k_t, rpm),
+		"winding_current_a": Fitting.dc_current_at_rpm(rpm, a[0], a[2], a[3], a[4])}
+
+
 func _rpm_at_throttle_capped(throttle: float, cap: float, open_circuit_v: float) -> float:
 	var a := _dc_args()
 	if a.is_empty():

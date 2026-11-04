@@ -2124,6 +2124,8 @@ func open_motor_designer(saved_id: String = "") -> void:
 	var designer := MotorDesigner.new(MotorConfigs.load_default(), _catalog,
 		CustomMotors.load_from(custom_parts_path))
 	designer.store_path = custom_parts_path
+	# The bench runs on this drone's frame, prop and pack (the reference build's when there is none).
+	designer.set_bench_build(session.build(_catalog))
 	designer.saved.connect(func(_id: String): refresh_catalog())
 	designer.closed.connect(func(): motor_designer = null)
 	motor_designer = designer

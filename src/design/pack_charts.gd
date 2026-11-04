@@ -15,7 +15,8 @@ const GAP := 6.0
 const KNEE_LEFT := 0.2
 
 ## Each chart: {title, x: PackedFloat64Array (seconds), y: PackedFloat64Array, y_min, y_max,
-## unit, color, x_max (optional, seconds)}.
+## unit, color, x_max (optional, seconds), x_end_text (optional: the axis-end label when x is not
+## time, e.g. "100 %" for the motor bench's throttle sweep)}.
 var charts: Array = []
 var reveal := 1.0:
 	set(v):
@@ -74,7 +75,7 @@ func _draw_chart(c: Dictionary, area: Rect2) -> void:
 		HORIZONTAL_ALIGNMENT_RIGHT, PAD_L - 8.0, small, LothalTheme.TEXT_FAINT)
 	draw_line(Vector2(plot.position.x, plot.end.y), plot.end, LothalTheme.BORDER_STRONG, 1.0)
 	# The time axis end, so "how long" is readable without a legend.
-	draw_string(font, Vector2(plot.end.x - 60.0, area.position.y + 12.0), _time(x_max),
+	draw_string(font, Vector2(plot.end.x - 60.0, area.position.y + 12.0), String(c.get("x_end_text", _time(x_max))),
 		HORIZONTAL_ALIGNMENT_RIGHT, 64.0, small, LothalTheme.TEXT_FAINT)
 
 	var stride := maxi(1, int(ceil(float(xs.size()) / float(MAX_POINTS))))

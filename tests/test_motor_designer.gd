@@ -180,9 +180,9 @@ static func _test_labels(cfg: MotorConfigs, catalog: PartsCatalog) -> Array:
 	var names: Array = []
 	for c in bar.get_children():
 		names.append(String(c.name))
-	out.append(_t("top bar: Back, name, Copy specs, Save; and a bench placeholder region",
+	out.append(_t("top bar: Back, name, Copy specs, Save; and a bench region",
 		names.has("Back") and names.has("NameField") and names.has("CopySpecs") and names.has("Save")
-		and d.find_child("BenchPlaceholder", true, false) != null, str(names)))
+		and d.find_child("Bench", true, false) != null, str(names)))
 
 	d.set_motor_name("Hill climber")
 	var specs := d.copy_specs()
