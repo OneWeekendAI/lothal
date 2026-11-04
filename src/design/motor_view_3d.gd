@@ -8,7 +8,7 @@ extends SubViewportContainer
 const SPIN_RAD_PER_S := 0.3
 
 var viewport: SubViewport
-var motor: MotorMesh
+var motor: MotorDetailMesh
 var prop: PropellerMesh
 var camera: Camera3D
 var _pivot: Node3D
@@ -30,7 +30,7 @@ func _init() -> void:
 	_pivot = Node3D.new()
 	_pivot.name = "Pivot"
 	viewport.add_child(_pivot)
-	motor = MotorMesh.new()
+	motor = MotorDetailMesh.new()
 	_pivot.add_child(motor)
 	prop = PropellerMesh.new()
 	_pivot.add_child(prop)
@@ -74,7 +74,7 @@ func show_motor(record: Dictionary, prop_record: Dictionary) -> void:
 	if prop.visible:
 		radius = maxf(radius, prop.radius_m)
 	var dist := radius / sin(deg_to_rad(camera.fov) * 0.5) * 1.12
-	var tilt := deg_to_rad(28.0)
+	var tilt := deg_to_rad(38.0)
 	# Pure transform maths, so it works before the view is in the tree (headless tests).
 	camera.transform = Transform3D(Basis(), Vector3(0.0, sin(tilt) * dist, cos(tilt) * dist)) \
 		.looking_at(Vector3.ZERO, Vector3.UP)

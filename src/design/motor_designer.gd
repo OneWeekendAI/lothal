@@ -686,6 +686,8 @@ func _build_right() -> Control:
 	bench_total_label.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
 	inner.add_child(bench_total_label)
 	charts = PackCharts.new()
+	# Warnings and the limited-by line stack under the chart; a short chart keeps the window on screen at 720.
+	charts.custom_minimum_size = Vector2(0, 80)
 	inner.add_child(charts)
 	bench_warning_label = Label.new()
 	bench_warning_label.name = "Warnings"

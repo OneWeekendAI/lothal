@@ -10,7 +10,8 @@ extends Control
 
 signal closed
 
-const BACKDROP := Color(0.0, 0.0, 0.0, 0.58)
+## Near-opaque: the shelf or bench behind must not show as a strip past the window's edge.
+const BACKDROP := Color(0.0, 0.0, 0.0, 0.96)
 const MARGIN_X := 36
 const MARGIN_Y := 24
 

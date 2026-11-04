@@ -94,13 +94,13 @@ func _draw_chart(c: Dictionary, area: Rect2) -> void:
 	if has_knee:
 		# The knee: a faint line where 20 % is left, and the trace red past it.
 		var ky := _to_plot(plot, 0.0, float(c.get("red_above")), x_max, y_min, span_y).y
-		draw_line(Vector2(plot.position.x, ky), Vector2(plot.end.x, ky), LothalTheme.DANGER.darkened(0.4), 1.0)
+		draw_line(Vector2(plot.position.x, ky), Vector2(plot.end.x, ky), LothalTheme.WARNING.darkened(0.4), 1.0)
 		var prev := _to_plot(plot, xs[0], ys[0], x_max, y_min, span_y)
 		var j := stride
 		while j <= upto or j - stride < upto:
 			var jj := mini(j, upto)
 			var here := _to_plot(plot, xs[jj], ys[jj], x_max, y_min, span_y)
-			draw_line(prev, here, LothalTheme.DANGER if is_red(c, jj) else col, 1.6, true)
+			draw_line(prev, here, LothalTheme.WARNING if is_red(c, jj) else col, 1.6, true)
 			prev = here
 			if jj == upto:
 				break
@@ -139,8 +139,8 @@ func _draw_chart(c: Dictionary, area: Rect2) -> void:
 	var tip_col := col
 	var label_col: Color = LothalTheme.TEXT_MAIN
 	if has_knee and is_red(c, upto):
-		tip_col = LothalTheme.DANGER
-		label_col = LothalTheme.DANGER
+		tip_col = LothalTheme.WARNING
+		label_col = LothalTheme.WARNING
 	draw_circle(tip, 2.5, tip_col)
 	var ty := clampf(tip.y + 4.0, plot.position.y + 8.0, plot.end.y - (11.0 if has_knee else 0.0))
 	draw_string(font, Vector2(plot.end.x + 6.0, ty),

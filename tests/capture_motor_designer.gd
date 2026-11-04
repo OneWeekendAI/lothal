@@ -45,7 +45,7 @@ func _init() -> void:
 			await process_frame
 		var d: MotorDesigner = ds.motor_designer
 		match state:
-			"0802", "3115":
+			"0802", "3115", "1404", "2806.5":
 				d.set_stator(state)
 			"sweep", "soak", "punch", "punch_hot", "sweep_warn", "pickers", "burnout", "compare", "sweep_current", "specs":
 				var show_sheet := state == "specs"

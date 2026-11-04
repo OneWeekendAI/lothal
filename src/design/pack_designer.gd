@@ -130,6 +130,7 @@ func _init(p_catalog: PartsCatalog = null, p_lib: CellLibrary = null, p_store: D
 	charge = p_charge if p_charge != null else PackCharge.new()
 	build = p_build
 	_init_shell("PackDesigner")
+	theme = MotorDesigner.mono_theme()
 	design = PackDesign.default_design(lib)
 	# The load a pack is judged on is the drone it would fly in, when there is one.
 	discharge_mode = "this_drone" if build != null else "constant"
@@ -1183,10 +1184,10 @@ func _refresh_bench() -> void:
 		var mah := maxf(float(_figs.get("mah", 1.0)), 1.0)
 		charts.set_charts([
 			{"title": "Pack voltage", "x": t, "y": _run.get("v_live", PackedFloat64Array()),
-				"y_min": vaxis.x, "y_max": vaxis.y, "unit": " V", "color": LothalTheme.ACCENT},
+				"y_min": vaxis.x, "y_max": vaxis.y, "unit": " V", "color": DesignSpace.SELECT_INK},
 			{"title": "Cell temperature", "x": t, "y": _run.get("cell_temp_c", PackedFloat64Array()),
 				"y_min": taxis.x, "y_max": taxis.y, "unit": " °C",
-				"color": LothalTheme.WARNING},
+				"color": DesignSpace.SELECT_INK},
 			{"title": "Capacity used", "x": t, "y": _run.get("used_mah", PackedFloat64Array()),
 				"y_min": 0.0, "y_max": mah, "unit": " mAh", "color": LothalTheme.TEXT_MUTED,
 				"red_above": mah * (1.0 - PackCharts.KNEE_LEFT), "total": mah},
@@ -1205,9 +1206,9 @@ func _refresh_bench() -> void:
 		var imax := maxf(charge_c * float(_figs.get("mah", 1000.0)) / 1000.0, 0.1)
 		charts.set_charts([
 			{"title": "Pack voltage", "x": rt, "y": _recharge.get("v", PackedFloat64Array()),
-				"y_min": vaxis2.x, "y_max": vaxis2.y, "unit": " V", "color": LothalTheme.ACCENT},
+				"y_min": vaxis2.x, "y_max": vaxis2.y, "unit": " V", "color": DesignSpace.SELECT_INK},
 			{"title": "Charge current", "x": rt, "y": _recharge.get("i", PackedFloat64Array()),
-				"y_min": 0.0, "y_max": imax, "unit": " A", "color": LothalTheme.SUCCESS},
+				"y_min": 0.0, "y_max": imax, "unit": " A", "color": DesignSpace.SELECT_INK},
 		])
 
 
