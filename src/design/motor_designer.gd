@@ -67,6 +67,10 @@ var bench_parts: Dictionary = {}
 var charts: PackCharts
 var bench_result_label: Label
 var bench_warning_label: Label
+## The "Details" toggle under the warnings: only the two most severe show until it is open.
+var warn_details_button: Button
+var warn_details_open := false
+const WARNINGS_SHOWN := 2
 var pack_option: OptionButton
 var prop_option: OptionButton
 var limited_label: Label
@@ -589,6 +593,14 @@ func _build_right() -> Control:
 	bench_warning_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	bench_warning_label.add_theme_color_override("font_color", LothalTheme.WARNING)
 	inner.add_child(bench_warning_label)
+	warn_details_button = Button.new()
+	warn_details_button.name = "WarningDetails"
+	warn_details_button.flat = true
+	warn_details_button.focus_mode = Control.FOCUS_NONE
+	warn_details_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	warn_details_button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	warn_details_button.pressed.connect(toggle_warning_details)
+	inner.add_child(warn_details_button)
 	limited_label = Label.new()
 	limited_label.name = "LimitedBy"
 	limited_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -731,12 +743,12 @@ func _refresh_bench() -> void:
 		limited_label.text = ""
 		bench_result_label.text = ""
 		bench_warning_label.text = ""
+		warn_details_button.visible = false
 		charts.set_charts([])
 		return
 	bench_result_label.text = String(r.result)
 	limited_label.text = limited_by_text()
-	bench_warning_label.text = "\n".join(r.warnings)
-	bench_warning_label.visible = not r.warnings.is_empty()
+	_refresh_warnings()
 	var x: PackedFloat64Array = r.x
 	match String(r.kind):
 		"soak":
@@ -764,6 +776,29 @@ func _refresh_bench() -> void:
 				{"title": "g per watt", "x": r.gpw_x, "y": r.gpw.slice(int(r.gpw_from)), "y_min": 0.0,
 					"y_max": _ceil_nice(_max_of(r.gpw)), "unit": " g/W", "color": line_colour(false),
 					"x_max": 100.0, "x_end_text": "100 %"}])
+
+
+## The warnings on screen: the two most severe (the bench returns them most severe first), or all
+## of them once Details is open.
+func shown_warnings() -> Array:
+	var all := bench_warnings()
+	return all if warn_details_open else all.slice(0, WARNINGS_SHOWN)
+
+
+func toggle_warning_details() -> void:
+	warn_details_open = not warn_details_open
+	_refresh_warnings()
+
+
+func _refresh_warnings() -> void:
+	var all := bench_warnings()
+	var extra := all.size() - WARNINGS_SHOWN
+	if extra <= 0:
+		warn_details_open = false
+	bench_warning_label.text = "\n".join(shown_warnings())
+	bench_warning_label.visible = not all.is_empty()
+	warn_details_button.visible = extra > 0
+	warn_details_button.text = "Hide details" if warn_details_open else "Details (%d more)" % extra
 
 
 func _over_heat(r: Dictionary) -> bool:

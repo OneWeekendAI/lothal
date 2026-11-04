@@ -270,17 +270,20 @@ impl MotorModel {
         BELL_COND_W_PER_K_PER_G23 * motor_mass_g.max(0.0).powf(2.0 / 3.0)
     }
 
-    /// Conductance from the bell's outer surface to the air, W/K, at `rpm`. Forced convection on
-    /// a rotating cylinder: Nu ~ Re^0.8 (turbulent, Dittus-Boelter; Incropera ch. 7-8), and
-    /// Re ~ surface speed, so the film coefficient is h = h_still + k * (tip speed)^0.8.
-    /// Surface scales as mass^(2/3) and the bell radius as mass^(1/3). est.: coefficients are
-    /// class-typical, not measured.
+    /// Conductance from the bell's outer surface to the air, W/K, at `rpm`: a rotating cylinder
+    /// in free air, Nu_D = 0.133 Re_w^(2/3) Pr^(1/3) with Re_w = w D^2 / nu (Etemad 1955; Kays &
+    /// Crawford), on top of a still-air natural convection + radiation film. Surface scales as
+    /// mass^(2/3) and the bell diameter as mass^(1/3). Prop wash over the bell is not counted.
     #[func]
     pub fn air_conductance_w_per_k(motor_mass_g: f64, rpm: f64) -> f64 {
         let m = motor_mass_g.max(0.0);
+        if m <= 0.0 { return 0.0; }
         let area_m2 = AREA_M2_PER_G23 * m.powf(2.0 / 3.0);
-        let tip_mps = rpm.abs() * std::f64::consts::TAU / 60.0 * BELL_RADIUS_M_PER_G13 * m.powf(1.0 / 3.0);
-        area_m2 * (H_STILL_W_M2K + H_TIP_W_M2K * tip_mps.powf(0.8))
+        let d_m = 2.0 * BELL_RADIUS_M_PER_G13 * m.powf(1.0 / 3.0);
+        let w = rpm.abs() * std::f64::consts::TAU / 60.0;
+        let re = w * d_m * d_m / AIR_NU_M2_S;
+        let nu = ROT_CYL_COEFF * re.powf(2.0 / 3.0) * AIR_PR.powf(1.0 / 3.0);
+        area_m2 * (H_NATURAL_W_M2K + nu * AIR_K_W_MK / d_m)
     }
 
     /// One step of the two-lump model: the stator + winding (x = temperature, C) takes the
@@ -315,22 +318,44 @@ const DEFAULT_TAU_S: f64 = 0.03;
 
 /// Ambient for the winding model, C.
 pub const AMBIENT_C: f64 = 25.0;
-// est.: handbook specific heats, J/(g.K). Copper 0.385, silicon-steel laminations ~0.45.
+// Thermal constants, each from a source (refit 2026-11-04, after the prop k_q fix).
+// Specific heats, J/(g.K): Incropera, Fundamentals of Heat and Mass Transfer, Table A.1 (300 K):
+// copper 385 J/(kg.K), pure iron 447 J/(kg.K) (stator laminations are 3% Si steel, within ~3%).
 const CU_J_PER_G_K: f64 = 0.385;
-const FE_J_PER_G_K: f64 = 0.45;
-// est.: outer surface of a bell motor, m^2 per g^(2/3) (a 30 g 2207 is ~2e-3 m^2).
+const FE_J_PER_G_K: f64 = 0.447;
+// Outer surface of a bell motor, m^2 per g^(2/3): a 31.8 g 2207 has a 28.6 mm x 17 mm bell, so the
+// cylinder (1.5e-3 m^2) plus the top disc (0.64e-3 m^2) is 2.1e-3 m^2 = 2.07e-4 * 31.8^(2/3).
 const AREA_M2_PER_G23: f64 = 2.07e-4;
-// est.: film coefficient W/(m^2.K), still air plus a term per m/s of prop wash.
+// One-lump cooling (cooling_w_per_k, kept for the older probes, not the bench): film coefficient
+// W/(m^2.K), still air plus a term per m/s of prop wash.
 const H_STILL_W_M2K: f64 = 25.0;
 const H_FLOW_W_M2K_PER_MPS: f64 = 8.0;
-// est.: bell = aluminium/steel shell + NdFeB magnets, J/(g.K) (Al 0.90, steel 0.45, NdFeB 0.50).
-const BELL_J_PER_G_K: f64 = 0.55;
-// est.: stator-to-bell conduction, W/K per g^(2/3) (airgap + bearings; ~3 W/K for a 30 g 2207).
-const BELL_COND_W_PER_K_PER_G23: f64 = 0.6;
-// est.: bell radius per g^(1/3), m (a 30 g 2207 bell is ~14 mm).
+// Bell heat capacity J/(g.K): mass-weighted mix of a 7075 aluminium shell (960 J/kg.K, 45 %), NdFeB
+// magnets (~500, 35 %) and the steel shaft (~470, 20 %): 0.45*0.96 + 0.35*0.50 + 0.20*0.47 = 0.70.
+// Densities and cp: Incropera Table A.1; magnet grade cp from supplier data sheets (~420-500).
+const BELL_J_PER_G_K: f64 = 0.70;
+// Stator-to-bell conduction, W/K per g^(2/3). Two parallel paths, both computed for a 2207
+// (31.8 g, g^(2/3) = 10.0): (1) the 0.4 mm airgap, Couette/Taylor-Couette conduction through air,
+// G = Nu k A / gap with k = 0.0263 W/(m.K), A = pi * 22 mm * 7 mm = 4.8e-4 m^2 and, at the bell
+// speeds here (Taylor number ~140), Nu ~ 1.3 from Becker & Kaye 1962 (J. Heat Transfer 84:97),
+// Nu = 0.409 Ta^0.241 for 100 < Ta < 1e7: G = 0.043 W/K. (2) The solid 4 mm steel shaft, k = 52,
+// 12 mm long, ignoring the bearings' own contact resistance (so an upper bound): 0.055 W/K.
+// Total 0.098 W/K / 10.0 = 0.0098, rounded to 0.01. Far lower than the 0.6 this replaced.
+const BELL_COND_W_PER_K_PER_G23: f64 = 0.01;
+// Bell radius per g^(1/3), m (a 31.8 g 2207 bell is 14.3 mm in radius).
 const BELL_RADIUS_M_PER_G13: f64 = 4.5e-3;
-// est.: film coefficient gained per (m/s of tip speed)^0.8, W/(m^2.K^...).
-const H_TIP_W_M2K: f64 = 35.0;
+// Natural convection + radiation from an anodised bell in still air, W/(m^2.K): free convection
+// from a 17 mm cylinder at dT ~ 40 K is ~5 (Incropera ch. 9), radiation 4 eps sigma T^3 with
+// eps ~ 0.8 is ~6; rounded to 10.
+const H_NATURAL_W_M2K: f64 = 10.0;
+// Air at 300 K, Incropera Table A.4: kinematic viscosity 15.89e-6 m^2/s, k 0.0263 W/(m.K), Pr 0.707.
+const AIR_NU_M2_S: f64 = 15.89e-6;
+const AIR_K_W_MK: f64 = 0.0263;
+const AIR_PR: f64 = 0.707;
+// Rotating cylinder in free air (Etemad 1955; Kays & Crawford; Boglietti et al. 2009 review of
+// electrical-machine thermal analysis): Nu_D = 0.133 Re_w^(2/3) Pr^(1/3), Re_w = w D^2 / nu,
+// valid to Re_w ~ 4.3e5 (a 2207 flat out is ~1.4e5).
+const ROT_CYL_COEFF: f64 = 0.133;
 
 fn kt_impl(kv: f64) -> f64 {
     if kv <= 0.0 { return 0.0; }
@@ -572,6 +597,21 @@ mod tests {
         // Forced-convection part ~ rpm^0.8: doubling rpm less than doubles the gain.
         assert!((g(20000.0) - g(0.0)) < 2.0 * (g(10000.0) - g(0.0)));
         assert!((g(20000.0) - g(0.0)) > 1.5 * (g(10000.0) - g(0.0)));
+    }
+
+    #[test]
+    fn thermal_constants_match_the_hand_worked_2207() {
+        // 31.77 g 2207 (copper 6.35 g, stator 11.12 g, bell 12.71 g); worked by hand from the sources
+        // cited at the constants: Incropera A.1 specific heats, Becker-Kaye airgap + shaft conduction,
+        // and the rotating-cylinder correlation Nu = 0.133 Re^(2/3) Pr^(1/3).
+        let m = 31.77;
+        assert!((MotorModel::thermal_mass_j_per_k(6.35, 11.12) - 7.42).abs() < 0.05);
+        assert!((MotorModel::bell_thermal_mass_j_per_k(12.71) - 8.90).abs() < 0.05);
+        assert!((MotorModel::bell_conduction_w_per_k(m) - 0.100).abs() < 0.005);
+        let still = MotorModel::air_conductance_w_per_k(m, 0.0);
+        let flat_out = MotorModel::air_conductance_w_per_k(m, 25000.0);
+        assert!((still - 0.0208).abs() < 0.001, "{still}");
+        assert!((flat_out - 0.614).abs() < 0.02, "{flat_out}");
     }
 
     fn thermal_mass(cu: f64, fe: f64) -> f64 { cu * CU_J_PER_G_K + fe * FE_J_PER_G_K }

@@ -106,28 +106,26 @@ static func run() -> Array:
 	out.append(_t("This drone's pack goes back to the drone's own (the first run's result returns)",
 		d.bench_result_label.text == before_text and _selected_id(d.pack_option) == MotorDesigner.DRONE_PACK, ""))
 
-	# Limited by: computed from the inputs, one sentence, three different answers.
+	# Limited by: computed from the inputs, one short sentence, three different answers. Since the
+	# thermal refit (2026-11-04) the 2207 on the drone's own pack is heat-limited (130 C punch), so
+	# the pack answer is read on a small 4S 650.
 	var default_key := d.limited_by_key()
 	var text0 := d.limited_by_text()
-	d.set_pack("battery_6s_5600")
-	var key_strong := d.limited_by_key()
-	d.set_pack(MotorDesigner.DRONE_PACK)
-	d.set_stator("3115")
-	var key_big := d.limited_by_key()
-	out.append(_t("Limited by: names pack current, then motor heat with a stronger pack, then prop load with a big stator",
-		default_key == "pack" and key_strong == "motor" and key_big == "prop", "%s %s %s" % [default_key, key_strong, key_big]))
-	out.append(_t("the line is one sentence beginning 'Limited by:' and shows on screen under the chart",
-		text0.begins_with("Limited by: pack current") and text0.count(". ") == 1
-		and d.limited_label.text == d.limited_by_text(), text0))
-	d.set_stator("2207")
-	# The drone's own 4S 1500 is no longer over its rating flat out (98% of it, prop chapter 2026-11-04),
-	# so the over-rating sentence is read on a pack that really is: the 4S 650.
 	d.set_pack("battery_4s_650")
+	var key_small := d.limited_by_key()
 	var text_over := d.limited_by_text()
 	var ratio_over: Dictionary = d._limited.ratios
 	d.set_pack(MotorDesigner.DRONE_PACK)
+	d.set_stator("3115")
+	var key_big := d.limited_by_key()
+	out.append(_t("Limited by: names motor heat on the drone's pack, pack current on a small pack, prop load with a big stator",
+		default_key == "motor" and key_small == "pack" and key_big == "prop", "%s %s %s" % [default_key, key_small, key_big]))
+	out.append(_t("the line is one short sentence beginning 'Limited by:' and shows on screen under the chart",
+		text0.begins_with("Limited by: motor heat") and text0.count(". ") == 0 and text0.ends_with(".")
+		and text0.split(" ", false).size() <= 9 and d.limited_label.text == d.limited_by_text(), text0))
+	d.set_stator("2207")
 	out.append(_t("a pack that is over its rating says so with the numbers",
-		float(ratio_over.pack) > 1.0 and text_over.contains(" A of a pack rated for "), text_over))
+		float(ratio_over.pack) > 1.0 and text_over.begins_with("Limited by: pack current, ") and text_over.contains(" A of "), text_over))
 
 	# Design a pack round trip.
 	var asked := [0]

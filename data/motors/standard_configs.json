@@ -27,14 +27,14 @@
    "note": "Continuous dissipation the motor can shed, W = loss_w_per_g23 * mass_g^(2/3) (surface area law). Max continuous current = sqrt(that / Rm). Anchor: a 2207 1750KV near 35 A continuous. Tiny motors (08xx) come out higher than their published 3-5 A ratings."
   },
   "copper_mass_fraction": {
-   "value": 0.25,
+   "value": 0.2,
    "basis": "est.",
-   "note": "Share of motor mass that is winding copper; feeds the thermal mass."
+   "note": "Share of motor mass that is winding copper; feeds the thermal mass. 2207 teardown geometry: slot area ~115 mm2 x 45% fill x ~11 mm turn length x 8.96 g/cm3 = 5-7 g of 31.8 g (Cu density: Incropera Table A.1)."
   },
   "stator_mass_fraction": {
-   "value": 0.3,
+   "value": 0.35,
    "basis": "est.",
-   "note": "Share of motor mass that is stator iron; feeds the thermal mass."
+   "note": "Share of motor mass that is stator iron; feeds the thermal mass. 2207 geometry: ~215 mm2 of tooth and yoke x 7 mm stack x 7.65 g/cm3 x 0.95 stacking = ~11 g of 31.8 g. Bell 0.40 (shell, magnets, shaft); the last ~5% is base and screws."
   },
   "bell_mass_fraction": {
    "value": 0.4,

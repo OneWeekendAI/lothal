@@ -18,6 +18,10 @@ extends RefCounted
 const KINDS := ["sweep", "soak", "punch"]
 ## The air the winding starts in, C (the motor model's and the pack bench's 25).
 const AMBIENT_C := 25.0
+## The winding enamel's limit, C: IEC 60085 thermal class H, 180 C (polyimide / polyester-imide
+## magnet-wire enamel is sold at 180-200 C). Past it the insulation fails and turns short, so a run
+## stops there ("Burns out") and nothing is ever drawn beyond it.
+const ENAMEL_LIMIT_C := 180.0
 const SWEEP_STEPS := 40
 ## g/W is a ratio of two small numbers near zero throttle, so its curve starts at this step (10 %).
 const GPW_FROM_STEP := 4
@@ -133,14 +137,19 @@ static func _soak(b: Build, f: Dictionary) -> Dictionary:
 	var end_c := float(temps.y[temps.y.size() - 1])
 	var limit := float(f.magnet_max_c)
 	var gap := limit - end_c
+	var burn_s := float(temps.burn_s)
+	var line := "Ends at %.0f °C after %s of hover  ·  %s" % [end_c, _duration(SOAK_S),
+		("%.0f °C below the %.0f °C limit" % [gap, limit]) if gap >= 0.0
+		else ("%.0f °C over the %.0f °C limit" % [-gap, limit])]
+	if burn_s >= 0.0:
+		line = "Burns out after %s of hover  ·  the winding reached %.0f °C" % [_burn_time(burn_s), ENAMEL_LIMIT_C]
 	return {
 		"x": temps.x, "temp_c": temps.y, "peak_temp_c": end_c, "end_temp_c": end_c,
+		"burn_s": burn_s,
 		"hover_throttle": hover_t, "can_hover": b.can_hover(),
 		"peak_winding_a": float(p.winding_current_a), "end_rpm": float(p.rpm),
 		"loss_w": float(temps.loss_w),
-		"result": "Ends at %.0f °C after %s of hover  ·  %s" % [end_c, _duration(SOAK_S),
-			("%.0f °C below the %.0f °C limit" % [gap, limit]) if gap >= 0.0
-			else ("%.0f °C over the %.0f °C limit" % [-gap, limit])],
+		"result": line,
 	}
 
 
@@ -157,6 +166,7 @@ static func _punch(b: Build, f: Dictionary) -> Dictionary:
 	var start_v := pack.voltage_live(0.0)
 	var low_v := start_v
 	var rpm := 0.0
+	var burn_s := -1.0
 	while clock <= PUNCH_S + 1e-9:
 		var p := b.uncapped_point(1.0, pack.resting_voltage_v())
 		rpm = float(p.rpm)
@@ -170,17 +180,29 @@ static func _punch(b: Build, f: Dictionary) -> Dictionary:
 		peak_a = maxf(peak_a, float(p.winding_current_a))
 		peak_pack_a = maxf(peak_pack_a, ia)
 		var loss := _loss_w(f, rpm, float(p.winding_current_a))
+		var before := lumps.winding_c
 		lumps.step(loss, rpm, DT_S)
+		if lumps.winding_c >= ENAMEL_LIMIT_C:
+			# Burnt out inside this step: the last point is where the line crosses the limit.
+			burn_s = clock + DT_S * (ENAMEL_LIMIT_C - before) / maxf(lumps.winding_c - before, 1e-9)
+			t.append(burn_s)
+			temp.append(ENAMEL_LIMIT_C)
+			volts.append(live)
+			rpms.append(rpm)
+			break
 		pack.drain(ia, DT_S)
 		clock += DT_S
 	var end_c := temp[temp.size() - 1]
+	var line := "100%% for %s  ·  %.0f °C  ·  pack sags from %.1f to %.1f V at %.0f A" % [
+		_duration(PUNCH_S), end_c, start_v, low_v, peak_pack_a]
+	if burn_s >= 0.0:
+		line = "Burns out after %s at full throttle  ·  the winding reached %.0f °C" % [_burn_time(burn_s), ENAMEL_LIMIT_C]
 	return {
-		"x": t, "temp_c": temp, "v_live": volts, "rpm": rpms,
+		"x": t, "temp_c": temp, "v_live": volts, "rpm": rpms, "burn_s": burn_s,
 		"peak_temp_c": end_c, "end_temp_c": end_c, "end_rpm": rpms[rpms.size() - 1],
 		"start_rpm": rpms[0], "peak_winding_a": peak_a, "peak_pack_a": peak_pack_a,
 		"start_v": start_v, "low_v": low_v, "can_hover": b.can_hover(),
-		"result": "100%% for %s  ·  %.0f °C  ·  pack sags from %.1f to %.1f V at %.0f A" % [
-			_duration(PUNCH_S), end_c, start_v, low_v, peak_pack_a],
+		"result": line,
 	}
 
 
@@ -191,12 +213,19 @@ static func _heat(f: Dictionary, rpm: float, winding_a: float, seconds: float) -
 	var x := PackedFloat64Array()
 	var y := PackedFloat64Array()
 	var clock := 0.0
+	var burn_s := -1.0
 	while clock <= seconds + 1e-9:
 		x.append(clock)
 		y.append(lumps.winding_c)
+		var before := lumps.winding_c
 		lumps.step(loss, rpm, DT_S)
+		if lumps.winding_c >= ENAMEL_LIMIT_C:
+			burn_s = clock + DT_S * (ENAMEL_LIMIT_C - before) / maxf(lumps.winding_c - before, 1e-9)
+			x.append(burn_s)
+			y.append(ENAMEL_LIMIT_C)
+			break
 		clock += DT_S
-	return {"x": x, "y": y, "loss_w": loss}
+	return {"x": x, "y": y, "loss_w": loss, "burn_s": burn_s}
 
 
 ## The two heat lumps of one motor: the stator + winding (iron + copper) holds the loss and
@@ -240,19 +269,23 @@ static func hover_throttle(b: Build) -> float:
 # ---------------------------------------------------------------------------
 
 static func warnings(run_: Dictionary, b: Build, f: Dictionary) -> Array[String]:
+	# One short line each (8 words at most), most severe first: burn-out, then the magnets' heat
+	# limit, then current over rating, then a prop that is too big.
 	var out: Array[String] = []
-	var rating := float(f.max_current_a)
-	var amps := float(run_.get("peak_winding_a", 0.0))
-	if amps > rating:
-		out.append("Current peaks at %.0f A per motor, over this motor's %.0f A rating." % [amps, rating])
+	var burn_s := float(run_.get("burn_s", -1.0))
+	if burn_s >= 0.0:
+		out.append("Winding burns out after %s" % _burn_time(burn_s))
 	var temp := float(run_.get("peak_temp_c", NAN))
 	var limit := float(f.magnet_max_c)
 	if not is_nan(temp) and temp > limit:
-		out.append("The winding reaches %.0f °C, over the %.0f °C its %s magnets can take." % [
-			temp, limit, String(f.magnet)])
+		out.append("Magnets overheat: %.0f °C vs %.0f °C" % [temp, limit])
+	var rating := float(f.max_current_a)
+	var amps := float(run_.get("peak_winding_a", 0.0))
+	if amps > rating:
+		out.append("Over current rating: %.0f A vs %.0f A" % [amps, rating])
 	var share := loaded_share(b, f)
 	if share < PROP_LOADED_MIN:
-		out.append("This prop is too big for the motor: flat out it reaches only %.0f%% of its no-load speed." % (share * 100.0))
+		out.append("Prop too big: %.0f%% of no-load rpm" % (share * 100.0))
 	return out
 
 
@@ -292,17 +325,16 @@ static func limited_from(b: Build, f: Dictionary, punch: Dictionary) -> Dictiona
 	var text := ""
 	match key:
 		"pack":
-			text = "Limited by: pack current. Flat out it asks %.0f A of a pack rated for %.0f A." % [peak_pack, pack_max]
+			text = "Limited by: pack current, %.0f A of %.0f A." % [peak_pack, pack_max]
 		"motor":
-			if by_heat >= by_current:
-				text = "Limited by: motor heat. A 15 s punch-out reaches %.0f °C, against the %.0f °C its magnets take." % [temp, limit_c]
+			if float(punch.get("burn_s", -1.0)) >= 0.0:
+				text = "Limited by: motor heat, burns out in %s." % _burn_time(float(punch.burn_s))
+			elif by_heat >= by_current:
+				text = "Limited by: motor heat, %.0f °C of %.0f °C." % [temp, limit_c]
 			else:
-				text = "Limited by: motor heat. Flat out it draws %.0f A per motor, against its %.0f A rating." % [peak_wind, float(f.max_current_a)]
+				text = "Limited by: motor current, %.0f A of %.0f A." % [peak_wind, float(f.max_current_a)]
 		_:
-			text = "Limited by: prop load. Flat out the motor reaches %.0f%% of its no-load speed." % (share * 100.0)
-	if float(ratios[key]) < 1.0:
-		text = "%s Nothing is over its limit; this is the closest, at %.0f%% of it." % [
-			text.get_slice(". ", 0) + ".", float(ratios[key]) * 100.0]
+			text = "Limited by: prop load, %.0f%% of no-load rpm." % (share * 100.0)
 	return {"key": key, "ratios": ratios, "text": text}
 
 
@@ -321,6 +353,10 @@ static func _thousands(v: float) -> String:
 		out = "," + s.substr(s.length() - 3) + out
 		s = s.substr(0, s.length() - 3)
 	return ("-" if n < 0 else "") + s + out
+
+
+static func _burn_time(s: float) -> String:
+	return "%.1f s" % s if s < 120.0 else _duration(s)
 
 
 static func _duration(s: float) -> String:
