@@ -81,6 +81,14 @@ var compare_row: HBoxContainer
 var compare_id := ""
 var _compare: Dictionary = {}
 var limited_label: Label
+## The sweep shows ONE chart: thrust, or (behind the two small toggles) current or g/W.
+const SWEEP_VIEWS := ["thrust", "current", "efficiency"]
+var sweep_view := "thrust"
+var _view_buttons := {}
+## "x4 = ... in total", small, under the per-motor result line.
+var bench_total_label: Label
+var save_text_button: Button
+var _specs_dialog: FileDialog
 var _drone_parts: Dictionary = {}
 var _limited: Dictionary = {}
 var _bench_tabs := {}
@@ -299,12 +307,19 @@ func set_prop(id: String) -> void:
 	_rederive()
 
 
-## Compares the sweep with another catalog motor ("" = none). The other motor is opened as its
-## nearest grid design (a saved one exactly), on the same pack and prop. Reruns at once.
+## Compares the sweep with another catalog motor ("" = none), flown with its exact record values
+## (Kv, Rm, Io, mass), on the same pack and prop. Reruns at once.
 func set_compare(id: String) -> void:
 	compare_id = id if id == "" or not catalog.get_part(id).is_empty() else ""
 	_select_in(compare_option, compare_id, "")
 	_rederive()
+
+
+## Which chart the sweep shows: "thrust" (default), "current" or "efficiency". Pressing the view
+## already showing goes back to thrust.
+func set_sweep_view(view: String) -> void:
+	sweep_view = view if SWEEP_VIEWS.has(view) else "thrust"
+	_refresh_bench()
 
 
 ## The sweep of the compare motor, {} when none is chosen or it cannot be flown.
@@ -443,18 +458,39 @@ func kv_on_screen() -> Array:
 	return out
 
 
-## A short plain-text spec list, put on the clipboard. The full buy-and-build sheet comes later.
+## The buy-and-build sheet for this motor on the chosen prop and pack (MotorSheet), put on the
+## clipboard. Returns the text.
 func copy_specs() -> String:
-	var lines := PackedStringArray()
-	lines.append(design.display_name())
-	lines.append("%s stator, %d KV, %s, %s magnets, %.1f mm shaft, mount %s" % [design.size,
-		int(design.kv), design.config(), design.magnet, design.shaft_mm, design.mount])
-	for key in FIGURE_ROWS:
-		lines.append("%s: %s (%s)" % [_figure_name(key), _format(key), MotorDesign.figure_tags()[key]])
-	lines.append("All figures %s." % MotorDesign.BASIS)
-	var text := "\n".join(lines)
+	var text := specs_text()
 	DisplayServer.clipboard_set(text)
 	return text
+
+
+func specs_text() -> String:
+	return MotorSheet.to_text(design, cfg, bench_parts, catalog)
+
+
+## Writes the same sheet to `path` as plain text. True when the file was written.
+func save_specs(path: String) -> bool:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string(specs_text())
+	f.close()
+	return true
+
+
+func _ask_specs_path() -> void:
+	if _specs_dialog == null:
+		_specs_dialog = FileDialog.new()
+		_specs_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+		_specs_dialog.access = FileDialog.ACCESS_FILESYSTEM
+		_specs_dialog.use_native_dialog = true
+		_specs_dialog.filters = PackedStringArray(["*.txt ; Text file"])
+		_specs_dialog.file_selected.connect(func(path: String): save_specs(path))
+		add_child(_specs_dialog)
+	_specs_dialog.current_file = "%s.txt" % design.display_name().to_snake_case()
+	_specs_dialog.popup_centered_ratio(0.6)
 
 
 func _rederive() -> void:
@@ -470,8 +506,9 @@ func _run_bench() -> void:
 	_limited = MotorBench.limited_by(design, cfg, bench_parts, {}, catalog)
 	_compare = {}
 	if compare_id != "":
-		var other := MotorDesign.from_record(catalog.get_part(compare_id), cfg)
-		_compare = MotorBench.run("sweep", other, cfg, bench_parts, {}, catalog)
+		# The record exactly as it stands: a shelf motor keeps its own Kv, Rm, Io and mass instead
+		# of the nearest grid design's.
+		_compare = MotorBench.sweep_of_record(catalog.get_part(compare_id), bench_parts, {}, catalog)
 
 
 ## The chart draws in over REVEAL_S and then stays. Outside the tree there is no animation to play.
@@ -496,8 +533,11 @@ func _build_top_bar() -> Control:
 	var bar := _top_bar_start("Motor name", set_motor_name)
 	bar.add_child(_fill())
 	copy_button = _bar_button("CopySpecs", "Copy specs", func(): copy_specs(),
-		"Copy this motor's choices and figures as text")
+		"Copy a buy-and-build sheet for this motor")
 	bar.add_child(copy_button)
+	save_text_button = _bar_button("SaveSpecs", "Save as .txt", _ask_specs_path,
+		"Save the same sheet as a text file")
+	bar.add_child(save_text_button)
 	# Only while editing a saved motor: a copy under a new name instead of an overwrite.
 	save_as_button = _bar_button("SaveAs", "Save as new", func(): save_as(),
 		"Save a copy under the name above, leaving the saved motor as it is")
@@ -611,6 +651,16 @@ func _build_right() -> Control:
 	compare_row.name = "CompareRow"
 	compare_option = _picker("ComparePicker", "Compare with…", "Another motor on the same pack and prop", compare_row)
 	compare_option.item_selected.connect(func(i: int): set_compare(String(compare_option.get_item_metadata(i))))
+	for view in ["current", "efficiency"]:
+		var vb := Button.new()
+		vb.name = "View_" + view
+		vb.text = "Current" if view == "current" else "Efficiency"
+		vb.toggle_mode = true
+		vb.focus_mode = Control.FOCUS_NONE
+		vb.tooltip_text = "Swap the thrust chart for this one"
+		vb.pressed.connect(func(): set_sweep_view("thrust" if sweep_view == view else view))
+		compare_row.add_child(vb)
+		_view_buttons[view] = vb
 	inner.add_child(compare_row)
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", LothalTheme.SPACE_1)
@@ -630,6 +680,11 @@ func _build_right() -> Control:
 	bench_result_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
 	bench_result_label.add_theme_color_override("font_color", LothalTheme.TEXT_MAIN)
 	inner.add_child(bench_result_label)
+	bench_total_label = Label.new()
+	bench_total_label.name = "ResultTotal"
+	bench_total_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	bench_total_label.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
+	inner.add_child(bench_total_label)
 	charts = PackCharts.new()
 	inner.add_child(charts)
 	bench_warning_label = Label.new()
@@ -784,15 +839,19 @@ func _refresh_bench() -> void:
 	for kind in _bench_tabs:
 		(_bench_tabs[kind] as Button).set_pressed_no_signal(kind == bench_kind)
 	compare_row.visible = bench_kind == "sweep"
+	for view in _view_buttons:
+		(_view_buttons[view] as Button).set_pressed_no_signal(view == sweep_view)
 	var r := _bench
 	if r.is_empty():
 		limited_label.text = ""
 		bench_result_label.text = ""
+		bench_total_label.text = ""
 		bench_warning_label.text = ""
 		warn_details_button.visible = false
 		charts.set_charts([])
 		return
 	bench_result_label.text = String(r.result)
+	bench_total_label.text = String(r.get("total_text", ""))
 	limited_label.text = limited_by_text()
 	_refresh_warnings()
 	var x: PackedFloat64Array = r.x
@@ -816,24 +875,28 @@ func _refresh_bench() -> void:
 			var two := not o.is_empty()
 			var legend := [{"name": design.display_name(), "color": line_colour(false)},
 				{"name": compare_name(), "color": COMPARE_INK}] if two else []
-			var c_thrust := {"title": "Thrust", "x": x, "y": r.thrust_g, "y_min": 0.0,
-				"y_max": _ceil_nice(maxf(float(r.max_thrust_g), float(o.get("max_thrust_g", 0.0)))), "unit": " g",
+			# Charts are PER MOTOR, like the result line above them (the run holds the whole aircraft).
+			var c_thrust := {"title": "Thrust per motor", "x": x, "y": _per_motor(r, "thrust_g"), "y_min": 0.0,
+				"y_max": _ceil_nice(maxf(float(r.motor_thrust_g), float(o.get("motor_thrust_g", 0.0)))), "unit": " g",
 				"color": line_colour(false), "x_max": 100.0, "x_end_text": "100 %"}
-			var c_amps := {"title": "Current", "x": x, "y": r.current_a, "y_min": 0.0,
-				"y_max": _ceil_nice(maxf(float(r.max_current_a), float(o.get("max_current_a", 0.0)))), "unit": " A",
+			var c_amps := {"title": "Current per motor", "x": x, "y": _per_motor(r, "current_a"), "y_min": 0.0,
+				"y_max": _ceil_nice(maxf(float(r.motor_current_a), float(o.get("motor_current_a", 0.0)))), "unit": " A",
 				"color": line_colour(not two and float(r.peak_winding_a) > float(_figs.max_current_a)),
 				"x_max": 100.0, "x_end_text": "100 %"}
 			var c_gpw := {"title": "g per watt", "x": r.gpw_x, "y": r.gpw.slice(int(r.gpw_from)), "y_min": 0.0,
 				"y_max": _ceil_nice(maxf(_max_of(r.gpw), _max_of(o.get("gpw", PackedFloat64Array())))), "unit": " g/W",
 				"color": line_colour(false), "x_max": 100.0, "x_end_text": "100 %"}
 			if two:
-				c_thrust["y2"] = o.thrust_g
-				c_amps["y2"] = o.current_a
+				c_thrust["y2"] = _per_motor(o, "thrust_g")
+				c_amps["y2"] = _per_motor(o, "current_a")
 				c_gpw["y2"] = (o.gpw as PackedFloat64Array).slice(int(o.gpw_from))
 				for cc in [c_thrust, c_amps, c_gpw]:
 					cc["color2"] = COMPARE_INK
 				c_thrust["legend"] = legend
-			charts.set_charts([c_thrust, c_amps, c_gpw])
+			var shown: Dictionary = {"current": c_amps, "efficiency": c_gpw}.get(sweep_view, c_thrust)
+			if two:
+				shown["legend"] = legend
+			charts.set_charts([shown])
 
 
 ## The warnings on screen: the two most severe (the bench returns them most severe first), or all
@@ -859,8 +922,19 @@ func _refresh_warnings() -> void:
 	warn_details_button.text = "Hide details" if warn_details_open else "Details (%d more)" % extra
 
 
+## One motor's share of a whole-aircraft series of a sweep.
+static func _per_motor(r: Dictionary, key: String) -> PackedFloat64Array:
+	var a: PackedFloat64Array = r[key]
+	var n := float(maxi(int(r.get("motors", 1)), 1))
+	var out := PackedFloat64Array()
+	for v in a:
+		out.append(v / n)
+	return out
+
+
 func _over_heat(r: Dictionary) -> bool:
-	return float(r.peak_temp_c) > float(_figs.magnet_max_c)
+	# The magnets sit in the bell (read the bell against their limit); the winding against its enamel.
+	return float(r.get("peak_bell_c", 0.0)) > float(_figs.magnet_max_c) or float(r.get("burn_s", -1.0)) >= 0.0
 
 
 ## Temperature chart range: ambient up to the run's peak or the magnet limit, with room above.

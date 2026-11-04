@@ -144,11 +144,30 @@ static func run() -> Array:
 	out.append(_t("choosing a motor draws two lines on the sweep (this one and the other, same pack and prop) with a two-item legend",
 		other_id != "" and d.compare_id == other_id and two.has("y2") and (two.y2 as PackedFloat64Array).size() == (two.y as PackedFloat64Array).size()
 		and leg.size() == 2 and leg[0].name == d.design.display_name() and leg[1].name == d.compare_name()
-		and d.charts.charts.size() == 3 and leg[0].color != leg[1].color, str(leg)))
-	var other_run := MotorBench.run("sweep", MotorDesign.from_record(d.catalog.get_part(other_id), cfg), cfg, d.bench_parts, {}, d.catalog)
+		and d.charts.charts.size() == 1 and leg[0].color != leg[1].color, str(leg)))
+	var other_run := MotorBench.sweep_of_record(d.catalog.get_part(other_id), d.bench_parts, {}, d.catalog)
 	out.append(_t("the other line is that motor's own sweep on the same pack and prop, and it differs from this motor's",
-		(two.y2 as PackedFloat64Array) == (other_run.thrust_g as PackedFloat64Array)
+		(two.y2 as PackedFloat64Array) == MotorDesigner._per_motor(other_run, "thrust_g")
 		and absf(float((two.y2 as PackedFloat64Array)[40]) - float((two.y as PackedFloat64Array)[40])) > 50.0, ""))
+	# Shelf motors use their exact record, not the nearest grid design. Two shelf motors whose grid
+	# neighbour differs (1507 3600 KV: a much hotter record than the grid's 1507; F60 Pro II: 1840 KV
+	# against the grid's 1860) are compared with a Build made straight from the shelf record.
+	var exact_ok := true
+	var exact_detail := ""
+	for mid in ["motor_1507_3600kv", "motor_f60proii_2207_1750kv"]:
+		d.set_compare(mid)
+		var ref_b := Build.from_ids(d.catalog, String(ReferenceBuild.FRAME_ID), mid,
+			String(ReferenceBuild.PROPELLER_ID), String(ReferenceBuild.BATTERY_ID))
+		var ref_p := ref_b.uncapped_point(1.0, ref_b.resolve_open_circuit_v(Build.AT_NOMINAL))
+		var ref_g := float(ref_p.thrust_n) / Build.GRAVITY_MPS2 * 1000.0
+		var grid_g := float(MotorBench.run("sweep", MotorDesign.from_record(d.catalog.get_part(mid), cfg), cfg,
+			d.bench_parts, {}, d.catalog).max_thrust_g)
+		var got := float(d.compare_result().max_thrust_g)
+		exact_ok = exact_ok and absf(got - ref_g) < 1e-6 and absf(got - grid_g) > 5.0
+		exact_detail += " %s: shown %.1f record %.1f grid %.1f;" % [mid, got, ref_g, grid_g]
+	out.append(_t("compare flies a shelf motor's exact record (Kv, Rm, Io, mass), not the nearest grid design",
+		exact_ok, exact_detail))
+	d.set_compare(other_id)
 	d.set_pack("custom_weak_pack")
 	var weak_two: Dictionary = d.charts.charts[0]
 	out.append(_t("swapping the pack reruns both lines on the new pack",
@@ -184,10 +203,22 @@ static func run() -> Array:
 	d.set_pack(MotorDesigner.DRONE_PACK)
 	d.set_stator("3115")
 	var key_big := d.limited_by_key()
-	out.append(_t("Limited by: names motor heat on the drone's pack, pack current on a small pack, prop load with a big stator",
-		default_key == "motor" and key_small == "pack" and key_big == "prop", "%s %s %s" % [default_key, key_small, key_big]))
+	d.set_stator("2207")
+	d.set_kv(1960.0)
+	# Heat: a 6 inch prop on the 4S pack takes the 2207's winding to the enamel limit within the punch.
+	d.set_prop("prop_6x45x3")
+	var key_heat := d.limited_by_key()
+	var text_heat := d.limited_by_text()
+	d.set_prop(ReferenceBuild.PROPELLER_ID)
+	# Since the heat limits were read on the right parts (magnets on the bell, enamel on the winding,
+	# 2026-11-04), the default 2207 on the drone's pack is no longer called heat-limited: its winding
+	# ends the punch near 121 C of 180 C and its bell near 31 C of 80 C, so the pack (110 A of 112 A)
+	# has the least margin.
+	out.append(_t("Limited by: pack current on the drone's pack, pack current on a small pack, prop load with a big stator, motor heat when the winding burns out",
+		default_key == "pack" and key_small == "pack" and key_big == "prop" and key_heat == "motor" and text_heat.contains("burns out"),
+		"%s %s %s %s" % [default_key, key_small, key_big, text_heat]))
 	out.append(_t("the line is one short sentence beginning 'Limited by:' and shows on screen under the chart",
-		text0.begins_with("Limited by: motor heat") and text0.count(". ") == 0 and text0.ends_with(".")
+		text0.begins_with("Limited by: pack current") and text0.count(". ") == 0 and text0.ends_with(".")
 		and text0.split(" ", false).size() <= 9 and d.limited_label.text == d.limited_by_text(), text0))
 	d.set_stator("2207")
 	out.append(_t("a pack that is over its rating says so with the numbers",

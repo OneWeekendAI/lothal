@@ -64,6 +64,28 @@ static func run(kind: String, design: MotorDesign, cfg: MotorConfigs, parts: Dic
 	return out
 
 
+## The throttle sweep of a catalog motor record exactly as it is (shelf and saved motors keep
+## their own Kv, Rm, Io and mass). {} when the record cannot be flown.
+static func sweep_of_record(rec: Dictionary, parts: Dictionary = {}, pack_record: Dictionary = {},
+		catalog: PartsCatalog = null) -> Dictionary:
+	var b := make_build_from_record(rec, parts, pack_record, catalog)
+	if b == null:
+		return {}
+	var out := _sweep(b)
+	out["kind"] = "sweep"
+	out["warnings"] = [] as Array[String]
+	return out
+
+
+## `parts` with the reference build's ids filling any gap.
+static func resolve_parts(parts: Dictionary) -> Dictionary:
+	var out := DEFAULT_PARTS.duplicate()
+	for k in DEFAULT_PARTS:
+		if String(parts.get(k, "")) != "":
+			out[k] = String(parts[k])
+	return out
+
+
 ## The Build the bench reads: the real frame, prop and pack, with this design as the motor.
 static func make_build(design: MotorDesign, cfg: MotorConfigs, parts: Dictionary = {},
 		pack_record: Dictionary = {}, base: PartsCatalog = null) -> Build:
@@ -71,9 +93,20 @@ static func make_build(design: MotorDesign, cfg: MotorConfigs, parts: Dictionary
 		_shipped = PartsCatalog.load_default()
 	if base == null:
 		base = _shipped
-	var rec := design.drone_record(cfg, _shipped)
+	return make_build_from_record(design.drone_record(cfg, _shipped), parts, pack_record, base)
+
+
+## The Build for a catalog motor record flown exactly as it stands (its own Kv, Rm, Io and mass, no
+## grid design in between): what the compare line of a shelf motor uses. Null for an empty record.
+static func make_build_from_record(rec: Dictionary, parts: Dictionary = {},
+		pack_record: Dictionary = {}, base: PartsCatalog = null) -> Build:
+	if _shipped == null:
+		_shipped = PartsCatalog.load_default()
+	if base == null:
+		base = _shipped
 	if rec.is_empty():
 		return null
+	rec = rec.duplicate(true)
 	rec["part_id"] = BENCH_MOTOR_ID
 	var catalog := PartsCatalog.new()
 	catalog.by_id = base.by_id.duplicate()
@@ -119,13 +152,17 @@ static func _sweep(b: Build) -> Dictionary:
 	var hw := float(hp.pack_current_a) * (voc - float(hp.pack_current_a) * pack_r)
 	var hover_gpw := float(hp.thrust_n) / Build.GRAVITY_MPS2 * 1000.0 / maxf(hw, 1.0)
 	var last := SWEEP_STEPS
+	var n := maxi(b.motor_count(), 1)
 	return {
+		"motors": n, "motor_thrust_g": thrust[last] / float(n), "motor_current_a": amps[last] / float(n),
 		"x": x, "gpw_x": x.slice(GPW_FROM_STEP), "gpw_from": GPW_FROM_STEP, "thrust_g": thrust, "current_a": amps, "gpw": gpw, "rpm": rpm, "winding_a": wind,
 		"max_thrust_g": thrust[last], "max_current_a": amps[last], "hover_gpw": hover_gpw,
 		"hover_throttle": hover_t, "can_hover": b.can_hover(),
 		"peak_winding_a": wind[last], "peak_temp_c": NAN, "end_rpm": rpm[last],
-		"result": "Max %s g  ·  %.0f A  ·  %.1f g/W %s" % [_thousands(thrust[last]), amps[last],
-			hover_gpw, "at hover" if b.can_hover() else "at its best throttle (cannot hover)"],
+		"result": "Per motor, full throttle: %s g  ·  %.0f A  ·  %.1f g/W %s" % [
+			_thousands(thrust[last] / float(n)), amps[last] / float(n), hover_gpw,
+			"at hover" if b.can_hover() else "at its best throttle (cannot hover)"],
+		"total_text": "x%d = %s g  ·  %.0f A in total" % [n, _thousands(thrust[last]), amps[last]],
 	}
 
 
@@ -135,16 +172,20 @@ static func _soak(b: Build, f: Dictionary) -> Dictionary:
 	var p := b.uncapped_point(hover_t, voc)
 	var temps := _heat(f, float(p.rpm), float(p.winding_current_a), SOAK_S, wash_mps(b, hover_t, voc))
 	var end_c := float(temps.y[temps.y.size() - 1])
+	var bell_c := float(temps.peak_bell_c)
 	var limit := float(f.magnet_max_c)
-	var gap := limit - end_c
+	var gap := limit - bell_c
 	var burn_s := float(temps.burn_s)
-	var line := "Ends at %.0f °C after %s of hover  ·  %s" % [end_c, _duration(SOAK_S),
-		("%.0f °C below the %.0f °C limit" % [gap, limit]) if gap >= 0.0
-		else ("%.0f °C over the %.0f °C limit" % [-gap, limit])]
+	# The magnets are glued inside the bell, so the magnet limit is read against the BELL; the
+	# enamel limit is read against the winding.
+	var line := "Winding %.0f °C, bell %.0f °C after %s of hover  ·  %s" % [end_c, bell_c, _duration(SOAK_S),
+		("%.0f °C below the %.0f °C magnet limit" % [gap, limit]) if gap >= 0.0
+		else ("%.0f °C over the %.0f °C magnet limit" % [-gap, limit])]
 	if burn_s >= 0.0:
 		line = "Burns out after %s of hover  ·  the winding reached %.0f °C" % [_burn_time(burn_s), ENAMEL_LIMIT_C]
 	return {
 		"x": temps.x, "temp_c": temps.y, "peak_temp_c": end_c, "end_temp_c": end_c,
+		"peak_bell_c": bell_c,
 		"burn_s": burn_s,
 		"hover_throttle": hover_t, "can_hover": b.can_hover(),
 		"peak_winding_a": float(p.winding_current_a), "end_rpm": float(p.rpm),
@@ -168,6 +209,7 @@ static func _punch(b: Build, f: Dictionary, wash_scale: float = 1.0) -> Dictiona
 	var low_v := start_v
 	var rpm := 0.0
 	var burn_s := -1.0
+	var peak_bell := lumps.bell_c
 	while clock <= PUNCH_S + 1e-9:
 		var p := b.uncapped_point(1.0, pack.resting_voltage_v())
 		rpm = float(p.rpm)
@@ -183,6 +225,7 @@ static func _punch(b: Build, f: Dictionary, wash_scale: float = 1.0) -> Dictiona
 		var loss := _loss_w(f, rpm, float(p.winding_current_a))
 		var before := lumps.winding_c
 		lumps.step(loss, rpm, DT_S, wash_scale * wash_mps(b, 1.0, pack.resting_voltage_v()))
+		peak_bell = maxf(peak_bell, lumps.bell_c)
 		if lumps.winding_c >= ENAMEL_LIMIT_C:
 			# Burnt out inside this step: the last point is where the line crosses the limit.
 			burn_s = clock + DT_S * (ENAMEL_LIMIT_C - before) / maxf(lumps.winding_c - before, 1e-9)
@@ -200,7 +243,7 @@ static func _punch(b: Build, f: Dictionary, wash_scale: float = 1.0) -> Dictiona
 		line = "Burns out after %s at full throttle  ·  the winding reached %.0f °C" % [_burn_time(burn_s), ENAMEL_LIMIT_C]
 	return {
 		"x": t, "temp_c": temp, "v_live": volts, "rpm": rpms, "burn_s": burn_s,
-		"peak_temp_c": end_c, "end_temp_c": end_c, "end_rpm": rpms[rpms.size() - 1],
+		"peak_temp_c": end_c, "end_temp_c": end_c, "peak_bell_c": peak_bell, "end_rpm": rpms[rpms.size() - 1],
 		"start_rpm": rpms[0], "peak_winding_a": peak_a, "peak_pack_a": peak_pack_a,
 		"start_v": start_v, "low_v": low_v, "can_hover": b.can_hover(),
 		"result": line,
@@ -215,18 +258,20 @@ static func _heat(f: Dictionary, rpm: float, winding_a: float, seconds: float, w
 	var y := PackedFloat64Array()
 	var clock := 0.0
 	var burn_s := -1.0
+	var peak_bell := lumps.bell_c
 	while clock <= seconds + 1e-9:
 		x.append(clock)
 		y.append(lumps.winding_c)
 		var before := lumps.winding_c
 		lumps.step(loss, rpm, DT_S, wash)
+		peak_bell = maxf(peak_bell, lumps.bell_c)
 		if lumps.winding_c >= ENAMEL_LIMIT_C:
 			burn_s = clock + DT_S * (ENAMEL_LIMIT_C - before) / maxf(lumps.winding_c - before, 1e-9)
 			x.append(burn_s)
 			y.append(ENAMEL_LIMIT_C)
 			break
 		clock += DT_S
-	return {"x": x, "y": y, "loss_w": loss, "burn_s": burn_s}
+	return {"x": x, "y": y, "loss_w": loss, "burn_s": burn_s, "peak_bell_c": peak_bell}
 
 
 ## The two heat lumps of one motor: the stator + winding (iron + copper) holds the loss and
@@ -293,10 +338,12 @@ static func warnings(run_: Dictionary, b: Build, f: Dictionary) -> Array[String]
 	var burn_s := float(run_.get("burn_s", -1.0))
 	if burn_s >= 0.0:
 		out.append("Winding burns out after %s" % _burn_time(burn_s))
-	var temp := float(run_.get("peak_temp_c", NAN))
+	# The magnets sit in the bell, so their limit is read against the bell's temperature (the
+	# winding is the hottest part, but it is the enamel, not the magnet, that its heat threatens).
+	var bell := float(run_.get("peak_bell_c", NAN))
 	var limit := float(f.magnet_max_c)
-	if not is_nan(temp) and temp > limit:
-		out.append("Magnets overheat: %.0f °C vs %.0f °C" % [temp, limit])
+	if not is_nan(bell) and bell > limit:
+		out.append("Magnets overheat: bell %.0f °C vs %.0f °C" % [bell, limit])
 	var rating := float(f.max_current_a)
 	var amps := float(run_.get("peak_winding_a", 0.0))
 	if amps > rating:
@@ -327,10 +374,14 @@ static func limited_from(b: Build, f: Dictionary, punch: Dictionary) -> Dictiona
 	var peak_pack := float(punch.peak_pack_a)
 	var peak_wind := float(punch.peak_winding_a)
 	var temp := float(punch.peak_temp_c)
+	var bell := float(punch.get("peak_bell_c", AMBIENT_C))
 	var limit_c := float(f.magnet_max_c)
 	var share := loaded_share(b, f)
 	var by_current := peak_wind / maxf(float(f.max_current_a), 0.001)
-	var by_heat := (temp - AMBIENT_C) / maxf(limit_c - AMBIENT_C, 1.0)
+	# Two heat limits: the magnets (read on the bell) and the winding enamel (read on the winding).
+	var by_magnet := (bell - AMBIENT_C) / maxf(limit_c - AMBIENT_C, 1.0)
+	var by_enamel := (temp - AMBIENT_C) / maxf(ENAMEL_LIMIT_C - AMBIENT_C, 1.0)
+	var by_heat := maxf(by_magnet, by_enamel)
 	var ratios := {
 		"pack": peak_pack / pack_max,
 		"motor": maxf(by_current, by_heat),
@@ -365,7 +416,10 @@ static func limited_from(b: Build, f: Dictionary, punch: Dictionary) -> Dictiona
 			if float(punch.get("burn_s", -1.0)) >= 0.0:
 				text = "Limited by: motor heat, burns out in %s." % _burn_time(float(punch.burn_s))
 			elif by_heat >= by_current:
-				text = "Limited by: motor heat, %.0f °C of %.0f °C." % [temp, limit_c]
+				if by_magnet >= by_enamel:
+					text = "Limited by: magnet heat, bell %.0f °C of %.0f °C." % [bell, limit_c]
+				else:
+					text = "Limited by: winding heat, %.0f °C of %.0f °C." % [temp, ENAMEL_LIMIT_C]
 			else:
 				text = "Limited by: motor current, %.0f A of %.0f A." % [peak_wind, float(f.max_current_a)]
 		_:

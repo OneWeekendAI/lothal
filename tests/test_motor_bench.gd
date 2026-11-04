@@ -65,21 +65,49 @@ static func _logic(cfg: MotorConfigs) -> Array:
 	var sweep := MotorBench.run("sweep", _design(cfg, "2207", 1960.0), cfg)
 	var amps: PackedFloat64Array = sweep.current_a
 	out.append(_t("sweep: current also rises with throttle and the result line quotes max thrust, A and g/W",
-		amps[amps.size() - 1] > amps[1] and amps[0] == 0.0 and String(sweep.result).begins_with("Max ")
+		amps[amps.size() - 1] > amps[1] and amps[0] == 0.0 and String(sweep.result).begins_with("Per motor")
 		and String(sweep.result).contains(" g/W at hover") and float(sweep.max_thrust_g) > 1000.0, String(sweep.result)))
+	# PER MOTOR, with the total small beside it. The reference frame is a quad: the result line quotes
+	# a quarter of the aircraft's thrust and current, and the total line the whole of it.
+	var n_motors := int(sweep.motors)
+	var one_g := float(sweep.max_thrust_g) / float(n_motors)
+	out.append(_t("sweep: the result line is per motor (a quarter of the quad's total) and a small line gives x4 = the total",
+		n_motors == 4 and is_equal_approx(float(sweep.motor_thrust_g), one_g)
+		and is_equal_approx(float(sweep.motor_current_a), float(sweep.max_current_a) / 4.0)
+		and String(sweep.result).contains(MotorBench._thousands(one_g) + " g")
+		and not String(sweep.result).contains(MotorBench._thousands(float(sweep.max_thrust_g)) + " g")
+		and String(sweep.total_text).begins_with("x4 = ")
+		and String(sweep.total_text).contains(MotorBench._thousands(float(sweep.max_thrust_g)) + " g"),
+		"%s | %s" % [sweep.result, sweep.total_text]))
 
-	# Heat warning follows the magnet's limit (same motor, same run, only the grade differs).
-	# 2306 at 1700 KV (114 C peak, between N52's 80 C and N52H's 120 C, and under the 180 C burn-out).
-	# It was 2700 KV before the thermal refit (2026-11-04), which now burns out the winding instead.
-	var n52 := MotorBench.run("punch", _design(cfg, "2306", 1700.0, "N52"), cfg)
+	# Heat limits, each read against the part it protects. The magnets sit in the BELL: their limit
+	# (N52 80 C, N52H 120 C) is read against the bell's temperature. The winding enamel (class H,
+	# 180 C) is read against the WINDING. A 2207 1960 KV punch-out takes the winding to ~121 C, over
+	# the N52 limit, while the bell is still ~31 C: the magnets are fine, so no magnet warning.
+	var n52 := MotorBench.run("punch", _design(cfg, "2207", 1960.0, "N52"), cfg)
+	out.append(_t("magnet limit is read on the bell: a winding at ~121 C (over 80 C) with the bell near 31 C does not warn the magnets",
+		float(n52.peak_temp_c) > cfg.magnet_max_c("N52") and float(n52.peak_bell_c) < cfg.magnet_max_c("N52") - 30.0
+		and not _has(n52.warnings, "Magnets") and float(n52.burn_s) < 0.0,
+		"winding %.0f bell %.0f %s" % [n52.peak_temp_c, n52.peak_bell_c, n52.warnings]))
+	var wb := MotorBench.make_build(_design(cfg, "2207", 1960.0), cfg)
+	var f52 := _design(cfg, "2207", 1960.0, "N52").derive(cfg)
+	var f52h := _design(cfg, "2207", 1960.0, "N52H").derive(cfg)
+	var warm: Dictionary = n52.duplicate()
+	warm["peak_bell_c"] = 100.0
+	warm["peak_temp_c"] = 110.0
+	out.append(_t("a bell between the N52 limit (80 C) and the N52H limit (120 C) warns the N52 magnets, not the N52H ones, and names the bell",
+		_has(MotorBench.warnings(warm, wb, f52), "Magnets overheat: bell 100") and not _has(MotorBench.warnings(warm, wb, f52h), "Magnets")
+		and MotorBench.warnings(warm, wb, f52).size() == 1, str(MotorBench.warnings(warm, wb, f52))))
+	var cool_bell: Dictionary = warm.duplicate()
+	cool_bell["peak_bell_c"] = 60.0
+	cool_bell["peak_temp_c"] = 170.0
+	out.append(_t("a winding at 170 C with a cool bell warns no magnets (the enamel limit is the burn-out's, 180 C)",
+		not _has(MotorBench.warnings(cool_bell, wb, f52), "Magnets"), str(MotorBench.warnings(cool_bell, wb, f52))))
 	var n52h := MotorBench.run("punch", _design(cfg, "2306", 1700.0, "N52H"), cfg)
-	var peak := float(n52.peak_temp_c)
-	out.append(_t("a hotter magnet limit removes the heat warning (same run, same temperature)",
-		peak > cfg.magnet_max_c("N52") and peak < cfg.magnet_max_c("N52H")
-		and _has(n52.warnings, "Magnets overheat") and not _has(n52h.warnings, "Magnets overheat")
-		and float(n52.burn_s) < 0.0
-		and is_equal_approx(peak, float(n52h.peak_temp_c)),
-		"peak %.1f N52 %s N52H %s" % [peak, n52.warnings, n52h.warnings]))
+	var peak := float(n52h.peak_temp_c)
+	out.append(_t("the soak line compares the BELL with the magnet limit",
+		MotorBench.run("soak", _design(cfg, "2207", 1960.0), cfg).result.contains("bell")
+		and peak > 0.0, ""))
 
 	# A weaker pack lowers the punch-out rpm and the loaded voltage.
 	var d2 := _design(cfg, "2207", 1960.0)
@@ -144,9 +172,21 @@ static func _logic(cfg: MotorConfigs) -> Array:
 	var short := true
 	for w in wl:
 		short = short and String(w).split(" ", false).size() <= 8
-	out.append(_t("warnings: each is 8 words or fewer, and the burn-out comes first, then heat, then current",
-		wl.size() >= 3 and short and String(wl[0]).begins_with("Winding burns out") and String(wl[1]).begins_with("Magnets overheat")
-		and String(wl[2]).begins_with("Over current rating: "), str(wl)))
+	out.append(_t("warnings: each is 8 words or fewer; a real burn-out run names the winding first, then the current (the bell stays cool, so no magnet line)",
+		wl.size() >= 2 and short and String(wl[0]).begins_with("Winding burns out") and String(wl[1]).begins_with("Over current rating: ")
+		and not _has(wl, "Magnets"), str(wl)))
+	# Severity order with every line present: burn-out, magnets (bell), current, prop.
+	var all_lines: Dictionary = burnt.duplicate()
+	all_lines["peak_bell_c"] = 100.0
+	var wb2 := MotorBench.make_build(_design(cfg, "2207", 1960.0), cfg, big)
+	var ordered := MotorBench.warnings(all_lines, wb2, _design(cfg, "2207", 1960.0).derive(cfg))
+	var all_short := true
+	for w in ordered:
+		all_short = all_short and String(w).split(" ", false).size() <= 8
+	out.append(_t("warnings: burn-out comes first, then magnets, then current, then prop, each 8 words or fewer",
+		ordered.size() == 4 and all_short and String(ordered[0]).begins_with("Winding burns out")
+		and String(ordered[1]).begins_with("Magnets overheat") and String(ordered[2]).begins_with("Over current")
+		and String(ordered[3]).begins_with("Prop too big"), str(ordered)))
 	# The bell is part of the heat path: more conduction into it, a cooler winding (same loss).
 	var fig := _design(cfg, "2207", 1960.0).derive(cfg)
 	var lumps := MotorBench.Lumps.new(fig)
@@ -213,11 +253,14 @@ static func _logic(cfg: MotorConfigs) -> Array:
 	burnt_fake["peak_temp_c"] = MotorBench.ENAMEL_LIMIT_C
 	var hot_fake: Dictionary = calm.duplicate()
 	hot_fake["peak_temp_c"] = float(f2207.magnet_max_c) + 1.0
+	hot_fake["peak_bell_c"] = float(f2207.magnet_max_c) + 1.0
 	hot_fake["peak_pack_a"] = lb.pack_max_amps() * 0.5
 	var both_fake: Dictionary = calm.duplicate()
 	both_fake["peak_temp_c"] = float(f2207.magnet_max_c) + 1.0
+	both_fake["peak_bell_c"] = float(f2207.magnet_max_c) + 1.0
 	var late_fake: Dictionary = both_fake.duplicate()
 	late_fake["peak_temp_c"] = 150.0
+	late_fake["peak_bell_c"] = 100.0
 	late_fake["peak_pack_a"] = lb.pack_max_amps() * 1.2
 	var lim_late := MotorBench.limited_from(lb, f2207, late_fake)
 	var lim_pack := MotorBench.limited_from(lb, f2207, calm)
@@ -233,6 +276,20 @@ static func _logic(cfg: MotorConfigs) -> Array:
 		lim_hot.key == "motor" and float(lim_hot.ratios.pack) < 1.0 and String(lim_hot.text).contains("°C of"), str(lim_hot)))
 	out.append(_t("limited by: a pack over its rating from the first instant comes before magnets passed later",
 		lim_both.key == "pack", str(lim_both)))
+	# The two heat limits name the part: magnets on the bell, enamel on the winding.
+	var winding_hot: Dictionary = calm.duplicate()
+	winding_hot["peak_pack_a"] = lb.pack_max_amps() * 0.5
+	winding_hot["peak_temp_c"] = 170.0
+	winding_hot["peak_bell_c"] = 40.0
+	var lim_wind := MotorBench.limited_from(lb, f2207, winding_hot)
+	var bell_hot: Dictionary = winding_hot.duplicate()
+	bell_hot["peak_temp_c"] = 90.0
+	bell_hot["peak_bell_c"] = 79.0
+	var lim_bell := MotorBench.limited_from(lb, f2207, bell_hot)
+	out.append(_t("limited by: a winding at 170 C (bell cool) is winding heat against 180 C, not magnet heat",
+		lim_wind.key == "motor" and String(lim_wind.text).contains("winding heat, 170 °C of 180 °C"), str(lim_wind)))
+	out.append(_t("limited by: a bell at 79 C (winding 90 C) is magnet heat on the bell against 80 C",
+		lim_bell.key == "motor" and String(lim_bell.text).contains("magnet heat, bell 79 °C of 80 °C"), str(lim_bell)))
 	out.append(_t("limited by: a pack just over its rating (first instant) beats a much larger heat ratio reached later, short of burn-out",
 		lim_late.key == "pack" and float(lim_late.ratios.motor) > float(lim_late.ratios.pack), str(lim_late.ratios)))
 	var bad_lim := ""
@@ -270,8 +327,34 @@ static func _screen(cfg: MotorConfigs) -> Array:
 		counts[kind] = d.charts.charts.size()
 		ok_lines = ok_lines and d.bench_result_label.text == String(d.bench_result().result) \
 			and d.bench_result().kind == kind
-	out.append(_t("three-way selector: sweep draws three charts, soak one, punch-out two; one result line each",
-		counts == {"sweep": 3, "soak": 1, "punch": 2} and ok_lines, str(counts)))
+	out.append(_t("three-way selector: sweep draws one chart (thrust), soak one, punch-out two; one result line each",
+		counts == {"sweep": 1, "soak": 1, "punch": 2} and ok_lines, str(counts)))
+	# The sweep's chart toggle: thrust by default; Current / Efficiency swap that one chart.
+	d.set_bench("sweep")
+	var shows_thrust: bool = d.charts.charts[0].title == "Thrust per motor"
+	var tog_cur := d.find_child("View_current", true, false) as Button
+	var tog_eff := d.find_child("View_efficiency", true, false) as Button
+	tog_cur.pressed.emit()
+	var cur_one: bool = d.charts.charts.size() == 1 and d.charts.charts[0].title == "Current per motor" and tog_cur.button_pressed and not tog_eff.button_pressed
+	tog_eff.pressed.emit()
+	var eff_one: bool = d.charts.charts.size() == 1 and d.charts.charts[0].title == "g per watt" and tog_eff.button_pressed and not tog_cur.button_pressed
+	tog_eff.pressed.emit()
+	var back: bool = d.charts.charts.size() == 1 and d.charts.charts[0].title == "Thrust per motor" and not tog_eff.button_pressed
+	out.append(_t("sweep chart toggle: thrust by default; Current and Efficiency each swap the one chart; pressing it again returns to thrust",
+		shows_thrust and cur_one and eff_one and back, "%s %s %s %s" % [shows_thrust, cur_one, eff_one, back]))
+	d.set_bench("punch")
+	var calm_colour: Color = d.charts.charts[0].color
+	out.append(_t("punch chart: the winding at ~121 C over the 80 C magnet limit but a cool bell draws in the normal colour",
+		float(d.bench_result().peak_temp_c) > 80.0 and calm_colour == MotorDesigner.line_colour(false), str(calm_colour)))
+	d.set_bench("sweep")
+	var ch_t: PackedFloat64Array = d.charts.charts[0].y
+	out.append(_t("sweep chart is per motor too: its last point is the result line's per-motor thrust, not the total",
+		is_equal_approx(ch_t[ch_t.size() - 1], float(d.bench_result().motor_thrust_g))
+		and ch_t[ch_t.size() - 1] < float(d.bench_result().max_thrust_g) * 0.3, str(ch_t[ch_t.size() - 1])))
+	out.append(_t("the result line is per motor with the x4 total in its own small label",
+		d.bench_result_label.text.begins_with("Per motor") and d.bench_total_label.text.begins_with("x4 = ")
+		and d.bench_total_label.get_theme_font_size("font_size") < d.bench_result_label.get_theme_font_size("font_size"),
+		d.bench_result_label.text + " | " + d.bench_total_label.text))
 
 	d.set_bench("sweep")
 	var before := String(d.bench_result_label.text)
@@ -293,6 +376,8 @@ static func _screen(cfg: MotorConfigs) -> Array:
 	d.toggle_warning_details()
 	out.append(_t("warnings: Details opens every line, pressing it again folds back to two",
 		opened and d.bench_warning_label.text.split("\n").size() == 2, ""))
+	out.append(_t("punch chart: a burn-out draws in the warning colour",
+		float(d.bench_result().burn_s) > 0.0 and d.charts.charts[0].color == MotorDesigner.line_colour(true), ""))
 	var bx2: PackedFloat64Array = d.charts.charts[0].x
 	out.append(_t("the burn-out chart ends at the burn-out time and the other punch chart too",
 		float(d.bench_result().burn_s) > 0.0 and bx2[bx2.size() - 1] == float(d.bench_result().burn_s)

@@ -9,7 +9,7 @@ extends SceneTree
 ## "3115" (largest size, two mounts) | "options" (2207, 2750 KV, 9N12P, N52H, 5 mm shaft, a name) |
 ## "saved" (the options motor, saved with the Save button) | "shelf_saved" (saved, the pop-up
 ## closed, the motor shelf scrolled to the saved card) | "sweep" | "soak" | "pickers" (punch-out on a 6S 5600 pack and a 7x4x3 prop), "punch" (the default
-## 2207 with that bench run played out; "compare" (the sweep against another motor), "punch_hot" is a 2306 2100 KV whose punch-out warns of heat and current; "burnout" is the default 2207 on a 7x4x3 prop on a 6S 1300, whose winding burns out)
+## 2207 with that bench run played out; "compare" (the sweep against another motor), "punch_hot" is a 2306 2100 KV whose punch-out warns of heat and current; "burnout" is the default 2207 on a 7x4x3 prop on a 6S 1300, whose winding burns out; "sweep_current" is the sweep with the Current toggle on; "specs" is the Copy specs text laid over the screen)
 ##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
@@ -47,7 +47,13 @@ func _init() -> void:
 		match state:
 			"0802", "3115":
 				d.set_stator(state)
-			"sweep", "soak", "punch", "punch_hot", "sweep_warn", "pickers", "burnout", "compare":
+			"sweep", "soak", "punch", "punch_hot", "sweep_warn", "pickers", "burnout", "compare", "sweep_current", "specs":
+				var show_sheet := state == "specs"
+				if state == "sweep_current" or state == "specs":
+					d.set_pack("battery_4s_1500")
+					d.set_prop("prop_5x43x3")
+					d.set_sweep_view("current" if state == "sweep_current" else "thrust")
+					state = "sweep"
 				if state == "burnout":
 					# The default 2207 on a 7 inch prop on 6S: the winding burns out mid punch-out.
 					d.set_pack("battery_6s_1300")
@@ -69,6 +75,22 @@ func _init() -> void:
 				d.set_bench("punch" if state == "punch_hot" else ("sweep" if state == "sweep_warn" else state))
 				# Let the three-second reveal finish, then a moment to settle.
 				await create_timer(MotorDesigner.REVEAL_S + 0.8).timeout
+				if show_sheet:
+					var sheet := d.copy_specs()
+					var layer := CanvasLayer.new()
+					layer.layer = 100
+					root.add_child(layer)
+					var shade := ColorRect.new()
+					shade.color = Color(0.05, 0.06, 0.08, 1.0)
+					shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+					layer.add_child(shade)
+					var lab := Label.new()
+					lab.text = sheet
+					lab.position = Vector2(40, 24)
+					lab.custom_minimum_size = Vector2(1200, 0)
+					lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+					lab.add_theme_font_size_override("font_size", 15)
+					layer.add_child(lab)
 			"options", "saved", "shelf_saved":
 				d.set_kv(2750.0)
 				d.set_poles(12)

@@ -186,9 +186,20 @@ static func _test_labels(cfg: MotorConfigs, catalog: PartsCatalog) -> Array:
 
 	d.set_motor_name("Hill climber")
 	var specs := d.copy_specs()
-	out.append(_t("Copy specs names the motor, its choices and every figure with its tag",
-		specs.begins_with("Hill climber") and specs.contains("2207 stator") and specs.contains("Resistance:")
-		and specs.contains("(est.)") and specs.contains("ideal / model"), specs))
+	out.append(_t("Copy specs is the buy-and-build sheet: spec, per-motor figures, ideal / model label, screw note",
+		specs == MotorSheet.to_text(d.design, d.cfg, d.bench_parts, d.catalog) and specs.begins_with("MOTOR BUILD SHEET: Hill climber")
+		and specs.contains("Stator: 2207") and specs.contains("KV: 1960") and specs.contains("Poles: 14")
+		and specs.contains("Magnets: N52") and specs.contains("Shaft: 4 mm") and specs.contains("Mount: 16 x 16 mm, M3")
+		and specs.contains("EXPECTED FIGURES PER MOTOR (ideal / model)") and specs.contains("M3 screws")
+		, specs))
+	var path := "user://test_motor_sheet_out.txt"
+	var wrote := d.save_specs(path)
+	var on_disk := FileAccess.get_file_as_string(path) if wrote else ""
+	out.append(_t("Save as .txt writes the same sheet, and the bar carries both buttons",
+		wrote and on_disk == specs and d.copy_button.visible and d.save_text_button.visible
+		and d.save_text_button.text == "Save as .txt", "wrote=%s" % wrote))
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	d.free()
 	return out
 
