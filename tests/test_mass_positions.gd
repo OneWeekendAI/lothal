@@ -84,14 +84,14 @@ static func _reference_is_unmoved() -> Array:
 		"got %.1f g" % build.all_up_weight_g()
 	))
 	out.append(TestResult.new(
-		"the reference build's thrust-to-weight is still 11.43:1",
-		absf(build.thrust_to_weight() - 11.43) < 0.05,
+		"the reference build's thrust-to-weight is still 8.13:1",
+		absf(build.thrust_to_weight() - 8.131) < 0.05,
 		"got %.2f" % build.thrust_to_weight()
 	))
 	out.append(TestResult.new(
 		"the reference build still hovers at 25% throttle",
 		# The oracle's own tolerance, from test_hover.gd:31 — the same 25% figure, so the same band.
-		absf(build.hover_throttle() - 0.25) < 0.02,
+		absf(build.hover_throttle() - 0.3303) < 0.02,
 		"got %.1f%%" % (build.hover_throttle() * 100.0)
 	))
 

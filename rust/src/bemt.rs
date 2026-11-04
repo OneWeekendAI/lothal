@@ -73,6 +73,33 @@ const POLAR_C_D0: f64 = 0.03;
 const POLAR_K: f64 = 0.02;
 const POLAR_C_L_MAX: f64 = 1.0;
 
+/// Low-Reynolds profile-drag correction (added 2026-11-04). Below `LOW_RE_REF` the section drag
+/// rises: C_d0 is scaled by (LOW_RE_REF / Re)^LOW_RE_EXPONENT, never below 1, so props at or above
+/// the reference are unchanged. The exponent 0.5 is the laminar flat-plate skin-friction law
+/// (Blasius, C_f = 1.328 Re^-0.5; Schlichting, Boundary-Layer Theory), which is the regime of
+/// sub-1e5 blades; measured low-Re sections show the same direction and a steeper rise below
+/// Re ~ 5e4 (Selig, Donovan & Fraser, Airfoils at Low Speeds, SoarTech 8, 1989), so this is the
+/// conservative end. Re is built from the local chord and a FIXED reference tip speed
+/// (`LOW_RE_TIP_MPS`), not the commanded rpm: that keeps every static ratio (Q/T, closure
+/// factors, k_t per rpm^2) rpm-invariant, which their self-similarity argument depends on.
+const LOW_RE_REF: f64 = 500_000.0;
+const LOW_RE_EXPONENT: f64 = 0.5;
+const LOW_RE_TIP_MPS: f64 = 150.0;
+const AIR_MU_PAS: f64 = 1.81e-5;
+
+fn low_re_cd0(c_d0: f64, rho: f64, chord_m: f64, r_frac: f64, radius_m: f64) -> f64 {
+    // Re is built at the FIXED sea-level density, not the commanded one: thrust and torque must
+    // stay exactly linear in rho (the closure factors, the Rust/GDScript density cancellation and
+    // every cached sea-level ratio depend on it). The altitude Re effect is ~0.03% of C_d0.
+    let _ = (rho, radius_m);
+    let u = LOW_RE_TIP_MPS * r_frac.max(0.05);
+    let re = AIR_DENSITY_KGM3 * u * chord_m / AIR_MU_PAS;
+    if re >= LOW_RE_REF || re <= 0.0 {
+        return c_d0;
+    }
+    c_d0 * (LOW_RE_REF / re).powf(LOW_RE_EXPONENT)
+}
+
 #[derive(GodotClass)]
 #[class(no_init, base=RefCounted)]
 pub struct BemtModel;
@@ -456,6 +483,81 @@ impl BemtModel {
         PackedFloat64Array::from([closed[0] / base[0], closed[1] / base[1]])
     }
 
+    /// The static torque-to-thrust ratio Q/T of a prop, in metres, from the blade-element
+    /// integral: `solve`'s torque over its thrust at the sea-level reference. This is what
+    /// `PropellerModel::fit_k_q` multiplies k_t by, so k_q = k_t * Q/T follows the prop's own
+    /// diameter, pitch (twist) and blade count (solidity, tip loss) instead of a diameter-only
+    /// rule of thumb.
+    ///
+    /// It is RPM- and rho-invariant (the same self-similarity `static_closure_factors` rests
+    /// on: phi, alpha, C_l, C_d and F do not change when V_i and Omega*r scale together, and
+    /// both integrals are linear in rho and quadratic in Omega), so the reference rpm and rho
+    /// below are a scale for the arithmetic, not modelling constants. Returns 0.0 for a
+    /// degenerate prop the solve refuses (no thrust).
+    ///
+    /// Why it replaced the old 0.02 m x D/5" rule: against the catalog's 11 test props the
+    /// rule is 2.0-2.4x this integral's Q/T (BEMT 0.0031-0.0134 m), and Q/T implied by the
+    /// catalog max_amps (MOTOR_REBASELINE.md, 0.0059-0.0133 m) tracks the integral, not the rule.
+    #[func]
+    pub fn static_torque_to_thrust_m(
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        chord_points_mm: PackedFloat64Array,
+    ) -> f64 {
+        let r = solve_impl(
+            AIR_DENSITY_KGM3, diameter_m, pitch_m, blades, 20_000.0, &chord_points_mm,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0);
+        if r[0] <= 0.0 || r[1] <= 0.0 {
+            return 0.0;
+        }
+        r[1] / r[0]
+    }
+
+    /// The static thrust coefficient of a prop, N per (rad/s)^2 at sea level, from the blade-element
+    /// integral. Same rpm-invariance as `static_torque_to_thrust_m`. This is the k_t the motor
+    /// model flies with: thrust follows the PROP's geometry, not a generic datasheet table.
+    /// Returns 0.0 for a degenerate prop.
+    #[func]
+    pub fn static_k_t(
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        chord_points_mm: PackedFloat64Array,
+    ) -> f64 {
+        let rpm = 20_000.0;
+        let r = solve_impl(
+            AIR_DENSITY_KGM3, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0);
+        if r[0] <= 0.0 {
+            return 0.0;
+        }
+        let omega = rpm * std::f64::consts::TAU / 60.0;
+        r[0] / (omega * omega)
+    }
+
+    /// Hover figure of merit at the static point: momentum-ideal power over the blade-element
+    /// shaft power, both at the thrust the integral gives. Independent of rpm.
+    #[func]
+    pub fn static_figure_of_merit(
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        chord_points_mm: PackedFloat64Array,
+    ) -> f64 {
+        let rpm = 20_000.0;
+        let r = solve_impl(
+            AIR_DENSITY_KGM3, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0);
+        if r[0] <= 0.0 || r[1] <= 0.0 {
+            return 0.0;
+        }
+        let omega = rpm * std::f64::consts::TAU / 60.0;
+        let area = std::f64::consts::PI * diameter_m * diameter_m * 0.25;
+        let ideal = r[0].powf(1.5) / (2.0 * AIR_DENSITY_KGM3 * area).sqrt();
+        ideal / (r[1] * omega)
+    }
+
     /// The thrust half of `static_closure_factors`, for a caller that wants one number. Kept
     /// as its own `#[func]` because `bemt_ratios.rs` caches it on the surface object.
     #[func]
@@ -807,6 +909,7 @@ fn solve_impl_collecting(
             }
             continue;
         }
+        let c_d0 = low_re_cd0(c_d0, rho, chord_m, r_frac, radius_m);
         let beta = (pitch_m / (std::f64::consts::TAU * r)).atan();
 
         let mut v_i = 0.0f64;
@@ -928,6 +1031,7 @@ fn solve_forward_impl(
         if chord_m <= 0.0 {
             continue;
         }
+        let c_d0 = low_re_cd0(c_d0, rho, chord_m, r_frac, radius_m);
         let beta = (pitch_m / (std::f64::consts::TAU * r)).atan();
 
         let mut v_i = 0.0f64;

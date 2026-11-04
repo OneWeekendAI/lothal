@@ -243,16 +243,18 @@ static func _spin_up_for_motor(motor: Dictionary, catalog: PartsCatalog,
 	if test_prop.is_empty():
 		return {}
 	var test_doc := PropellerDocument.from_catalog_prop(test_prop)
-	var fit_voltage: float = float(motor["thrust_test"]["voltage_v"])
-	var fit_rpm: float = float(motor["specs"]["kv"]) * fit_voltage
-	var k_t_at_test_prop := PropellerModel.fit_k_t(float(motor["specs"]["max_thrust_g"]), fit_rpm)
-	var diameter_m: float = test_doc.diameter_mm * 0.001
-	var k_q_at_test_prop := PropellerModel.fit_k_q(k_t_at_test_prop, diameter_m)
+	# The model's own fit (Build.fit_rated_point): k_t and k_q from the test prop's blade-element
+	# integral (prop chapter, 2026-11-04), and the loaded rated rpm the recovery of R is anchored to.
+	# This helper used to re-derive k_t from the DATASHEET thrust at Kv x V, a path the build no
+	# longer flies, which made it disagree with Build.spin_up() (0802 tau 47 ms vs 2808 20 ms).
+	var fit := Build.fit_rated_point(motor, test_prop)
+	var k_q_at_test_prop := float(fit["k_q"])
+	var omega_rated := PropellerModel.rpm_to_rad_s(float(fit["rpm"]))
 	# For the catalog-wide test we use the test prop as the "fitted" prop too — that's the
 	# reference-build convention: the aircraft flies on the prop the motor was measured with.
-	var omega_hover := 0.5 * PropellerModel.rpm_to_rad_s(fit_rpm)
+	var omega_hover := 0.5 * omega_rated
 	return MotorSpinUp.compute(motor, test_doc, materials, k_q_at_test_prop, k_q_at_test_prop,
-		omega_hover)
+		omega_hover, omega_rated)
 
 
 static func _synthetic_motor(diameter_ratio: float) -> Dictionary:

@@ -1013,7 +1013,7 @@ func _recompute() -> void:
 	# steps are needed: fitting from the closed k_t would double the closure into torque with
 	# the wrong sign, and skipping the torque factor would leave a duct's current draw — the
 	# number a duct is actually fitted for — untouched by the duct.
-	k_q = PropellerModel.fit_k_q(k_t_open_rotor, _prop_geometry(propeller).diameter_m) \
+	k_q = PropellerModel.fit_k_q(k_t_open_rotor, PropellerDocument.from_catalog_prop(propeller).torque_to_thrust_m()) \
 		* _static_closure_torque_factor
 
 	var k_q_at_test_prop: float = float(rated_fit["k_q"])
@@ -2047,7 +2047,7 @@ static func fit_rated_point(m: Dictionary, test_prop: Dictionary) -> Dictionary:
 	var key := "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [sp.get("kv"), sp.get("rm_ohm"), sp.get("io_a"),
 		sp.get("io_voltage_v"), sp.get("stator_diameter_mm"), sp.get("stator_height_mm"),
 		sp.get("max_thrust_g"), m.get("thrust_test", {}).get("voltage_v"),
-		test_prop.get("specs", {}).get("diameter_inches"), m.has("specs")]
+		test_prop.get("part_id", test_prop.get("specs", {}).get("diameter_inches")), m.has("specs")]
 	if _rated_fit_cache.has(key):
 		return (_rated_fit_cache[key] as Dictionary).duplicate()
 	var fit := _fit_rated_point_uncached(m, test_prop)
@@ -2056,17 +2056,49 @@ static func fit_rated_point(m: Dictionary, test_prop: Dictionary) -> Dictionary:
 
 
 static func _fit_rated_point_uncached(m: Dictionary, test_prop: Dictionary) -> Dictionary:
-	var thrust_g := float(m["specs"]["max_thrust_g"])
+	# k_t AND k_q come from the same blade-element integral on the test prop (2026-11-04), so they
+	# are consistent: hover figure of merit is an output of the prop, not of a datasheet table.
+	# The datasheet `max_thrust_g` / `thrust_test` stay as a REFERENCE (thrust_validation reports
+	# the gap); they no longer set k_t. `rpm` is the loaded DC operating point flat out at the
+	# test voltage on that prop.
 	var v := float(m["thrust_test"]["voltage_v"])
 	var kv := float(m["specs"]["kv"])
-	var d_m := float(test_prop["specs"]["diameter_inches"]) * INCH_M
+	var doc := PropellerDocument.from_catalog_prop(test_prop)
+	var kt := doc.static_k_t()
+	var q_over_t := doc.torque_to_thrust_m()
+	var kq := PropellerModel.fit_k_q(kt, q_over_t)
+	var rpm := kv * v
+	var p := dc_motor_params(m)
+	if not p.is_empty() and kt > 0.0:
+		var r := float(MotorModel.operating_point(v, p[0], p[1], p[2], p[3], kq)["rpm"])
+		if r > 0.0:
+			rpm = r
+	return {"k_t": kt, "k_q": kq, "rpm": rpm}
+
+
+## What the DATASHEET thrust figure alone would imply, kept as a REFERENCE (2026-11-04). It never
+## drives k_t: `fit_rated_point` takes k_t and k_q from the test prop's blade-element integral.
+## This is the old fit (k_t = datasheet thrust / w^2 at the loaded rated rpm, solved with k_q tied
+## to that k_t) and exists so the typed figure can be compared with the model's own and shown
+## beside it: {k_t, rpm, thrust_g} are the datasheet's; `model_thrust_g` is what the model makes
+## the same prop and motor produce flat out at the test voltage.
+static func datasheet_reference(m: Dictionary, test_prop: Dictionary) -> Dictionary:
+	var thrust_g := float(m.get("specs", {}).get("max_thrust_g", 0.0))
+	var v := float(m.get("thrust_test", {}).get("voltage_v", 0.0))
+	var kv := float(m.get("specs", {}).get("kv", 0.0))
+	var model := fit_rated_point(m, test_prop)
+	var model_g := PropellerModel.thrust_n(float(model["k_t"]), float(model["rpm"])) / GRAVITY_MPS2 * 1000.0
+	var out := {"k_t": 0.0, "rpm": 0.0, "thrust_g": thrust_g, "model_thrust_g": model_g}
+	if thrust_g <= 0.0 or v <= 0.0 or kv <= 0.0:
+		return out
+	var q_over_t := PropellerDocument.from_catalog_prop(test_prop).torque_to_thrust_m()
 	var rpm := kv * v
 	var kt := PropellerModel.fit_k_t(thrust_g, rpm)
 	var p := dc_motor_params(m)
-	if not p.is_empty() and thrust_g > 0.0 and rpm > 0.0:
+	if not p.is_empty():
 		for _i in 100:
 			var r := float(MotorModel.operating_point(v, p[0], p[1], p[2], p[3],
-				PropellerModel.fit_k_q(kt, d_m))["rpm"])
+				PropellerModel.fit_k_q(kt, q_over_t))["rpm"])
 			if r <= 0.0:
 				break
 			var next_kt := PropellerModel.fit_k_t(thrust_g, r)
@@ -2075,7 +2107,9 @@ static func _fit_rated_point_uncached(m: Dictionary, test_prop: Dictionary) -> D
 			kt = next_kt
 			if done:
 				break
-	return {"k_t": kt, "k_q": PropellerModel.fit_k_q(kt, d_m), "rpm": rpm}
+	out["k_t"] = kt
+	out["rpm"] = rpm
+	return out
 
 
 func rpm_at_throttle(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:

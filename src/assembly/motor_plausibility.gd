@@ -237,8 +237,11 @@ static func implied_k_t_on(catalog: PartsCatalog, motor: Dictionary, to_geometry
 		return 0.0
 	if float(motor.get("specs", {}).get("kv", 0.0)) * float(test.get("voltage_v", 0.0)) <= 0.0:
 		return 0.0
-	# Build's own fit: k_t at the LOADED rated point, and that rpm for the geometry move.
-	var fitted := Build.fit_rated_point(motor, fit_prop)
+	# The DATASHEET's k_t at the LOADED rated point (Build.datasheet_reference), and that rpm for the
+	# geometry move. Since 2026-11-04 the typed thrust is a reference only: the build flies on the
+	# prop's blade-element k_t (Build.fit_rated_point), and this is the number that can disagree
+	# with it, which is the whole job of the warning.
+	var fitted := Build.datasheet_reference(motor, fit_prop)
 	var fit_rpm := float(fitted["rpm"])
 	var k_t_at_fit := float(fitted["k_t"])
 	# The cross-prop move is the BEMT geometry ratio (§0, P5) — blade count and twist in the
@@ -267,6 +270,7 @@ static func _thrust_coefficient(catalog: PartsCatalog, motor: Dictionary) -> Arr
 		return out
 
 	var high := k_t > float(band["high"])
+	var model_g := float(Build.datasheet_reference(motor, test_prop)["model_thrust_g"])
 	var edge: float = float(band["observed_high"]) if high else float(band["observed_low"])
 
 	# Names all THREE figures the coefficient was fitted from, and blames none of them. k_t comes
@@ -275,15 +279,15 @@ static func _thrust_coefficient(catalog: PartsCatalog, motor: Dictionary) -> Arr
 	# thrust figure" would send that builder to the one field that was right. Pointing at the
 	# wrong field is worse than pointing at three, because it gets acted on.
 	out.append(BuildWarning.characteristic(&"implausible_thrust_coefficient",
-		"%.0f g at %.0fKV on %.1f V implies a thrust coefficient %.1fx %s than any of the %d motors in the catalog measured on %s. k_t is a property of the PROPELLER — there is no motor term in it — so every motor tested on one prop should fit roughly the same value, and the catalog's own figures already disagree by %.1fx. Being outside that by this much usually means a digit rather than a remarkable motor, and it is fitted from all three of those numbers together: check %.0f g, %.0fKV and %.1f V against the heading of the table you read them from." % [
+		"%.0f g at %.0fKV on %.1f V implies a thrust coefficient %.1fx %s than any of the %d motors in the catalog measured on %s. k_t is a property of the PROPELLER — there is no motor term in it — so every motor tested on one prop should fit roughly the same value, and the catalog's own figures already disagree by %.1fx. Being outside that by this much usually means a digit rather than a remarkable motor, and it is fitted from all three of those numbers together: check %.0f g, %.0fKV and %.1f V against the heading of the table you read them from. The thrust figure is a reference only and does not set the flight model: the model makes this motor on this prop produce %.0f g." % [
 			float(motor["specs"]["max_thrust_g"]), float(motor["specs"]["kv"]),
 			float(motor["thrust_test"]["voltage_v"]),
 			(k_t / edge) if high else (edge / k_t), "higher" if high else "lower",
 			int(band["count"]), test_prop.get("name", test_prop["part_id"]),
 			float(band["observed_high"]) / float(band["observed_low"]),
 			float(motor["specs"]["max_thrust_g"]), float(motor["specs"]["kv"]),
-			float(motor["thrust_test"]["voltage_v"])],
-		{"k_t": k_t, "band_low": float(band["low"]), "band_high": float(band["high"]),
+			float(motor["thrust_test"]["voltage_v"]), model_g],
+		{"k_t": k_t, "datasheet_thrust_g": float(motor["specs"]["max_thrust_g"]), "model_thrust_g": model_g, "band_low": float(band["low"]), "band_high": float(band["high"]),
 			"observed_low": float(band["observed_low"]), "observed_high": float(band["observed_high"]),
 			"test_prop_id": str(test_prop["part_id"])}))
 	return out

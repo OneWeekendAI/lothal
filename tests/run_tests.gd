@@ -39,6 +39,7 @@ func _init() -> void:
 			print("[FAIL] suite \"%s\" produced no results (crashed, or class not registered)" % suite_name)
 			continue
 
+		print("[suite] %s" % suite_name)
 		for result in results:
 			var status: String = "PASS" if result.passed else "FAIL"
 			if not result.passed:

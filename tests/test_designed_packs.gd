@@ -86,15 +86,15 @@ static func _migration() -> Array:
 
 ## Figures of the three v1 fixture packs, FROZEN from the retired v1 custom-pack path (captured the
 ## day before it was deleted): [AUW g, T/W, hover throttle, flight min, top km/h, R ohm, pack mass g].
-## Re-pinned at the DC-law motor re-baseline: hover, flight time, top speed and the non-reference packs' T/W
+## Re-pinned at the DC-law motor re-baseline, and again at the prop chapter (k_t and k_q from BEMT, 2026-11-04): hover, flight time, top speed and the non-reference packs' T/W
 ## moved with the motor law; AUW, R and mass are as captured.
 const V1_GOLDEN := {
-	"custom_shed_4s_1300": [477.480708465516, 12.1470876145751, 0.24145224611675,
-		6.37173955185988, 104.940833999123, 0.0113, 155.0],
-	"custom_long_range_6s": [944.980708465516, 11.2137508218491, 0.27120337187358,
-		13.9011626882155, 147.631172121907, 0.2345, 612.5],
-	"custom_whoop_1s": [327.030708465516, 1.56838210864449, 1.0,
-		0.0, 50.6196012842773, 0.0721, 9.5],
+	"custom_shed_4s_1300": [477.480708465516, 8.64188216420273, 0.31956843668757,
+		8.36114575110346, 104.940833999123, 0.0113, 155.0],
+	"custom_long_range_6s": [944.980708465516, 8.61511446938397, 0.34437748810877,
+		16.0728491537023, 147.631172121907, 0.2345, 612.5],
+	"custom_whoop_1s": [327.030708465516, 0.91282443245776, 1.0,
+		0.0, 46.9173887685779, 0.0721, 9.5],
 }
 const V1_GOLDEN_SPECS := {
 	"custom_shed_4s_1300": {"c_rating": 95.0, "cells": 4.0, "chemistry": "LiPo", "height_mm": 27.0,

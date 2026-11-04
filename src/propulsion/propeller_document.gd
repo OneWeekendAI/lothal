@@ -309,6 +309,31 @@ static func material_id_for_catalog(description: String) -> String:
 	return "polycarbonate"
 
 
+## The prop's static torque-to-thrust ratio Q/T in metres, from the blade-element integral on THIS
+## planform (`BemtModel.static_torque_to_thrust_m`). `PropellerModel.fit_k_q(k_t, this)` is then the
+## prop's k_q: it follows diameter, pitch and blade count, where the old rule followed diameter only.
+## Memoised on the geometry and the planform, because the motor fit asks for it in a loop.
+static var _q_over_t_cache: Dictionary = {}
+
+func torque_to_thrust_m() -> float:
+	var key := "%s|%s|%s|%s" % [diameter_mm, pitch_mm, blades, str(chord).hash()]
+	if not _q_over_t_cache.has(key):
+		_q_over_t_cache[key] = BemtModel.static_torque_to_thrust_m(
+			diameter_mm * 0.001, pitch_mm * 0.001, float(blades), chord)
+	return float(_q_over_t_cache[key])
+
+
+## The prop's static thrust coefficient (N per (rad/s)^2, sea level) and hover figure of merit, both
+## from the blade-element integral on THIS planform. k_t and k_q (via `torque_to_thrust_m`) share
+## one solve, so they are mutually consistent.
+func static_k_t() -> float:
+	return BemtModel.static_k_t(diameter_mm * 0.001, pitch_mm * 0.001, float(blades), chord)
+
+
+func static_figure_of_merit() -> float:
+	return BemtModel.static_figure_of_merit(diameter_mm * 0.001, pitch_mm * 0.001, float(blades), chord)
+
+
 ## A PropellerDocument for one entry of `data/parts/propellers.json`. See the block above for what is
 ## and is not read out of it: diameter, pitch and blade count generate the planform; `mass_g` is
 ## CARRIED as `published_mass_g` and never consulted, so the mass falsification stays a falsification

@@ -93,13 +93,13 @@ static func _the_reference_build_is_unmoved() -> Array:
 		"got %.4f g" % build.all_up_weight_g()
 	))
 	out.append(TestResult.new(
-		"and its thrust-to-weight is still 11.43:1",
-		absf(build.thrust_to_weight() - 11.432) < 0.005,
+		"and its thrust-to-weight is still 8.13:1",
+		absf(build.thrust_to_weight() - 8.131) < 0.005,
 		"got %.4f" % build.thrust_to_weight()
 	))
 	out.append(TestResult.new(
-		"and it still hovers at 25.0%",
-		absf(build.hover_throttle() * 100.0 - 25.00) < 0.05,
+		"and it still hovers at 33.0%",
+		absf(build.hover_throttle() * 100.0 - 33.03) < 0.05,
 		"got %.4f%%" % (build.hover_throttle() * 100.0)
 	))
 

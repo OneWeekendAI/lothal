@@ -605,10 +605,10 @@ static func _the_reference_build_fits_no_guard() -> Array:
 				plain.mass_properties.total_mass_kg, explicit.mass_properties.total_mass_kg,
 				plain.k_t, explicit.k_t]),
 		TestResult.new(
-			"[P10b] and the 507.5 g / 11.43:1 / 25.0% oracles are where they were",
+			"[P10b] and the 507.5 g / 8.13:1 / 33.0% oracles are where they were",
 			absf(explicit.mass_properties.total_mass_kg - 0.5074807) < 1.0e-6
-				and absf(explicit.thrust_to_weight() - 11.4290) < 1.0e-3
-				and absf(explicit.hover_throttle() - 0.24996) < 1.0e-4
+				and absf(explicit.thrust_to_weight() - 8.1310) < 1.0e-3
+				and absf(explicit.hover_throttle() - 0.33031) < 1.0e-4
 				and explicit.guard_closure == 0.0,
 			"%.1f g, %.4f:1, %.5f hover, closure %.1f" % [
 				explicit.mass_properties.total_mass_kg * 1000.0, explicit.thrust_to_weight(),
@@ -705,7 +705,7 @@ static func _a_bumper_moves_mass_and_no_thrust_number() -> Array:
 ## with it. Measured on the reference build with the cinewhoop duct (closure 0.5615):
 ##
 ##     static thrust   x 1.00999
-##     static torque   x 0.99472
+##     static torque   x 0.99559
 ##
 ## The first cut reported `k_q` UP 1.0% where the model says it is DOWN 0.53%, and
 ## `effective_max_amps` — which is a ratio of two `k_q` values — carried the same error the same
@@ -731,7 +731,7 @@ static func _a_duct_saves_current_rather_than_costing_it() -> Array:
 		TestResult.new(
 			"[P10b] and LOWERS k_q, which no multiple of a raised k_t can do — the shortcut is dead",
 			ducted.k_q < plain.k_q
-				and absf(ducted.k_q / plain.k_q - 0.99472) < 5.0e-5,
+				and absf(ducted.k_q / plain.k_q - 0.99559) < 5.0e-5,
 			"k_q ratio %.8f (the k_t-derived shortcut would give %.8f)" % [
 				ducted.k_q / plain.k_q, ducted.k_t / plain.k_t]),
 		TestResult.new(

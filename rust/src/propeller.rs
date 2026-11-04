@@ -11,9 +11,8 @@
 //! the prop-unloading warning quotes to a builder, and never a claim about how much thrust is
 //! lost.
 //!
-//! k_q has no equivalent published-and-fit figure in v1, so it uses a documented
-//! rule-of-thumb ratio to k_t. Only the sign of reaction torque is load-bearing; the
-//! magnitude ratio can be replaced once torque-test tables are authored into the catalog.
+//! k_q has no published-and-fit figure, so it is k_t times the blade-element torque/thrust ratio
+//! of the prop's own planform (`BemtModel::static_torque_to_thrust_m`).
 //!
 //! Every `#[func]` here is receiver-less, which gdext 0.5 registers as a GDScript STATIC
 //! function — so GDScript calls `PropellerModel.fit_k_t(...)` etc. class-level, exactly as
@@ -21,11 +20,6 @@
 //! statically, but receiver-less ones are the design's exact pattern.)
 
 use godot::prelude::*;
-
-/// The ratio is not a constant across prop sizes: Q = C_Q*rho*n^2*D^5 and
-/// T = C_T*rho*n^2*D^4, so Q/T scales with diameter. Anchored at 0.02 for a 5" prop.
-const K_Q_TO_K_T_RATIO_AT_5IN: f64 = 0.02;
-const K_Q_REFERENCE_DIAMETER_M: f64 = 0.127; // 5 inches
 
 /// AIR DENSITY IS NOT THIS FILE'S ANY MORE. `propeller.rs` used to carry its own
 /// `AIR_DENSITY_KGM3` and an `air_density_or_default` guard, because `power_factor` and
@@ -53,9 +47,13 @@ impl PropellerModel {
         max_thrust_n / (max_omega * max_omega)
     }
 
+    /// k_q from k_t and the prop's static torque-to-thrust ratio (metres), which comes from the
+    /// blade-element integral (`BemtModel::static_torque_to_thrust_m`) and so carries the prop's
+    /// diameter, pitch and blade count. It was a diameter-only constant (0.02 m at 5") until
+    /// 2026-11-04; that rule was 2.0-2.4x the BEMT's Q/T on every catalog test prop.
     #[func]
-    pub fn fit_k_q(k_t: f64, diameter_m: f64) -> f64 {
-        k_t * K_Q_TO_K_T_RATIO_AT_5IN * (diameter_m / K_Q_REFERENCE_DIAMETER_M)
+    pub fn fit_k_q(k_t: f64, torque_to_thrust_m: f64) -> f64 {
+        k_t * torque_to_thrust_m
     }
 
     #[func]

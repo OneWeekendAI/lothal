@@ -64,9 +64,9 @@ extends RefCounted
 ##   wiring were budgeted against, no longer the mass of any of them — and it is wrong at both ends
 ##   of the catalog's own span:
 ##
-##       frame_65mm_whoop      AUW   79.9 g | TWR  1.40 | hover 88.8%
+##       frame_65mm_whoop      AUW   79.9 g | TWR  2.56 | hover 66.9%
 ##       frame_5in_freestyle   AUW  496.0 g | TWR 11.69 | hover 29.6%   <- exact
-##       frame_10in_long_range AUW 1251.2 g | TWR  8.48 | hover 26.7%
+##       frame_10in_long_range AUW 1251.2 g | TWR 12.57 | hover 21.0%
 ##
 ##   (Re-measured 2026-09-27. Both "hover" figures were, and the whoop's still is, the PACK'S
 ##   ceiling — neither build could hover inside it. The ceiling is now solved on a fresh pack's
@@ -77,6 +77,10 @@ extends RefCounted
 ##   (Re-measured again at the DC-law motor re-baseline, which refits k_t at the loaded rated rpm: the
 ##   whoop now hovers at 88.8% and the 10" long-range at 26.7%. The 10" TWR moved from 7.02 to 8.48 -
 ##   a k_t-refit consequence on a non-test prop, accepted for these two rows only; AUW is unchanged.)
+##
+##   (Re-measured at the prop chapter, 2026-11-04, k_t and k_q from the blade-element integral of each
+##   build's own prop: the whoop reads 2.56:1 and hovers at 66.9%, the 10" long-range 12.57:1 and 21.0%.
+##   AUW is unchanged. Plain number moves, MOTOR_REBASELINE.md.)
 ##
 ##   A real 65 mm whoop is 20-25 g all-up and hovers near 35%. Lothal is about 3.5x heavy there
 ##   because the lump alone outweighs the aircraft. It is wrong the other way at the top: a

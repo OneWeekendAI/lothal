@@ -96,9 +96,9 @@ static func _test_readouts_equal_the_engine(catalog: PartsCatalog) -> Array:
 		ds.free()
 	var ref := DesignSession.default_for_class("five_inch")
 	var rr := ref.readouts(catalog)
-	results.append(TestResult.new("the 5\" seed reads the oracle: 507.5 g, 11.43:1, 25.0 %",
-		absf(float(rr["auw_g"]) - 507.5) < 0.05 and absf(float(rr["thrust_to_weight"]) - 11.43) < 0.005
-			and absf(float(rr["hover_throttle"]) * 100.0 - 25.0) < 0.05, str(rr)))
+	results.append(TestResult.new("the 5\" seed reads the oracle: 507.5 g, 8.13:1, 33.0 %",
+		absf(float(rr["auw_g"]) - 507.5) < 0.05 and absf(float(rr["thrust_to_weight"]) - 8.131) < 0.005
+			and absf(float(rr["hover_throttle"]) * 100.0 - 33.03) < 0.05, str(rr)))
 	return results
 
 

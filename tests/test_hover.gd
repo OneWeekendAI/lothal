@@ -1,7 +1,7 @@
 class_name TestHover
 extends RefCounted
 ## Tests 5-6 from week1.md Day 2: thrust-to-weight and hover throttle. Test 6 is the
-## smoke test / oracle (physics.md §8) — 29% under the legacy motor law, 25.0% on the DC law
+## smoke test / oracle (physics.md §8) — 29% under the legacy motor law, 33.0% on the DC law
 ## (2026-11-03) — a very specific, very checkable number.
 
 static func run() -> Array:
@@ -41,8 +41,8 @@ static func run() -> Array:
 
 	var twr := max_total_thrust_n / weight_n
 	results.append(TestResult.new(
-		"thrust-to-weight ~= 11.4 : 1 (the oracle), at the loaded flat-out rpm",
-		absf(twr - 11.43) / 11.43 < 0.03 and max_rpm < 0.95 * kv * v,
+		"thrust-to-weight ~= 8.13 : 1 (the oracle), at the loaded flat-out rpm",
+		absf(twr - 8.131) / 8.131 < 0.03 and max_rpm < 0.95 * kv * v,
 		"got %.2f : 1 at %.0f rpm (%.2f of Kv x V)" % [twr, max_rpm, max_rpm / (kv * v)]
 	))
 
@@ -55,8 +55,8 @@ static func run() -> Array:
 	var hover_throttle := (hover_rpm / kv + float(winding_a.call(hover_rpm)) * rm) / v
 
 	results.append(TestResult.new(
-		"hover throttle ~= 25% (the oracle since the DC law)",
-		absf(hover_throttle - 0.25) < 0.02 and absf(hover_throttle - build.hover_throttle()) < 0.01,
+		"hover throttle ~= 33% (the oracle since the prop chapter)",
+		absf(hover_throttle - 0.3303) < 0.02 and absf(hover_throttle - build.hover_throttle()) < 0.01,
 		"got %.1f%% by hand, oracle %.1f%%" % [hover_throttle * 100.0, build.hover_throttle() * 100.0]
 	))
 

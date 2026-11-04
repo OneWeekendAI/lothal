@@ -8,10 +8,8 @@ extends RefCounted
 ## reaction torque is load-bearing this week (week1.md test 7); the magnitude ratio can
 ## be replaced with a fitted value once torque-test tables are authored into the catalog.
 ##
-## The ratio is not a constant across prop sizes: T = C_T*rho*n^2*D^4 and
-## Q = C_Q*rho*n^2*D^5, so Q/T scales with diameter. Anchored at 0.02 for a 5" prop.
-const K_Q_TO_K_T_RATIO_AT_5IN := 0.02
-const K_Q_REFERENCE_DIAMETER_M := 0.127   # 5 inches
+## Q/T is now the blade-element ratio of the prop's own planform (BemtModel.static_torque_to_thrust_m),
+## passed in; fit_k_q is the plain product.
 
 ## P5 DELETED the cross-prop exponent law this file used to mirror. `scale_k_t_to_prop` was
 ## `D^4 * blades^0.8 * pitch^0.5`; it is now the BEMT geometry ratio (propulsion.md §0), which
@@ -26,8 +24,8 @@ static func fit_k_t(max_thrust_g: float, max_rpm: float) -> float:
 	var max_omega := rpm_to_rad_s(max_rpm)
 	return max_thrust_n / (max_omega * max_omega)
 
-static func fit_k_q(k_t: float, diameter_m: float) -> float:
-	return k_t * K_Q_TO_K_T_RATIO_AT_5IN * (diameter_m / K_Q_REFERENCE_DIAMETER_M)
+static func fit_k_q(k_t: float, torque_to_thrust_m: float) -> float:
+	return k_t * torque_to_thrust_m
 
 static func rpm_to_rad_s(rpm: float) -> float:
 	return rpm * TAU / 60.0

@@ -27,8 +27,8 @@ extends RefCounted
 ## leaves them BIT-IDENTICAL, not merely close, because the forward-flight terms short-circuit at
 ## zero velocity rather than evaluating to something that rounds to one.
 const REFERENCE_AUW_G := 507.5
-const REFERENCE_TWR := 11.43
-const REFERENCE_HOVER_THROTTLE := 0.25
+const REFERENCE_TWR := 8.13
+const REFERENCE_HOVER_THROTTLE := 0.330
 
 const CRUISE_MPS := 10.0
 
@@ -93,10 +93,10 @@ static func _the_three_oracles_have_not_moved(build: Build) -> Array:
 		TestResult.new("the reference build still weighs exactly 507.5 g",
 			is_equal_approx(snappedf(build.all_up_weight_g(), 0.1), REFERENCE_AUW_G),
 			"%.4f g" % build.all_up_weight_g()),
-		TestResult.new("thrust-to-weight is still exactly 11.43:1",
+		TestResult.new("thrust-to-weight is still exactly 8.13:1",
 			is_equal_approx(snappedf(build.thrust_to_weight(), 0.01), REFERENCE_TWR),
 			"%.6f:1" % build.thrust_to_weight()),
-		TestResult.new("hover throttle is still exactly 25.0%",
+		TestResult.new("hover throttle is still exactly 33.0%",
 			is_equal_approx(snappedf(build.hover_throttle(), 0.001), REFERENCE_HOVER_THROTTLE),
 			"%.6f%%" % (build.hover_throttle() * 100.0)),
 	]
@@ -277,18 +277,16 @@ static func _flight_time_comes_from_the_profile(build: Build) -> Array:
 	))
 
 	var minutes := build.flight_time_min()
-	results.append(TestResult.new(
-		# UPPER EDGE 6.0 -> 7.0 min IN THE 2026-11-03 RE-BASELINE, and it is an OPEN MODEL ITEM, not a
-		# fix: under the DC motor law the reference build reads 6.98 min, above physics.md's 4-6 band
-		# and the sourced 3.5-5.8 min. Suspects: the freestyle profile's average current, and the
-		# prop k_q (Q/T) being pitch/blade blind, which under-prices torque. Tighten back to 6.0 when
-		# that is resolved (MOTOR_REBASELINE.md, "Re-baseline of the suite 2026-11-03").
-		"the reference build's flight time lands inside physics.md's 4-6 minute band (upper edge 7.0 while the k_q/profile item is open)",
-		minutes > 4.0 and minutes < 7.0,
+	# physics.md's 4-6 minute band, unwidened. The prop chapter's model reads 9.06 min here (forward-
+	# flight loss gap: MOTOR_REBASELINE.md), so this is recorded as a KNOWN GAP and turns red when
+	# the model closes it, rather than carrying a band loosened to admit the number.
+	results.append(TestResult.known_gap(
+		"the reference build's flight time lands inside physics.md's 4-6 minute band",
+		minutes > 4.0 and minutes < 6.0,
 		"%.2f min at %.2f A average (%.2fx its own hover current)" % [minutes,
 			build.average_flight_current_a(),
-			build.average_flight_current_a() / build.hover_current_a(build.hover_throttle())]
-	))
+			build.average_flight_current_a() / build.hover_current_a(build.hover_throttle())],
+		"forward-flight loss gap, MOTOR_REBASELINE"))
 	return results
 
 

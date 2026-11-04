@@ -87,9 +87,8 @@ static func _restore(path: String, previous: String) -> void:
 ## (the pre-DC form) put the "just inside" motor 1.4x over the edge.
 static func _thrust_g_for_k_t(k_t: float, record: Dictionary, test_prop: Dictionary) -> float:
 	var p := Build.dc_motor_params(record)
-	var d_m := float(test_prop["specs"]["diameter_inches"]) * Build.INCH_M
 	var rpm := float(MotorModel.operating_point(float(record["thrust_test"]["voltage_v"]),
-		p[0], p[1], p[2], p[3], PropellerModel.fit_k_q(k_t, d_m))["rpm"])
+		p[0], p[1], p[2], p[3], PropellerModel.fit_k_q(k_t, PropellerDocument.from_catalog_prop(test_prop).torque_to_thrust_m()))["rpm"])
 	var omega := PropellerModel.rpm_to_rad_s(rpm)
 	return k_t * omega * omega / GRAVITY_MPS2 * 1000.0
 
@@ -182,7 +181,7 @@ static func _test_a_custom_motor_does_not_move_the_reference_build() -> TestResu
 
 	_restore(CustomMotors.SAVE_PATH, previous)
 	return TestResult.new(
-		"a defined custom motor does not move the reference build's 507.5 g / 11.43 / 25.0%",
+		"a defined custom motor does not move the reference build's 507.5 g / 8.13 / 33.0%",
 		merged_has_it and pinned and merged_pinned and merged_motors == shipped_motors + 1,
 		"merged sees it=%s, %d shipped vs %d merged motors, shipped build %.2f g / %.2f TWR, merged build %.2f g / %.2f TWR" % [
 			merged_has_it, shipped_motors, merged_motors,
@@ -192,8 +191,8 @@ static func _test_a_custom_motor_does_not_move_the_reference_build() -> TestResu
 
 static func _is_the_oracle(build: Build) -> bool:
 	return absf(build.all_up_weight_g() - 507.48) < EPS \
-		and absf(build.thrust_to_weight() - 11.43) < 0.01 \
-		and absf(build.hover_throttle() - 0.25) < 0.001
+		and absf(build.thrust_to_weight() - 8.131) < 0.01 \
+		and absf(build.hover_throttle() - 0.3303) < 0.001
 
 
 # ---------------------------------------------------------------------------
@@ -610,39 +609,56 @@ static func _test_a_custom_motor_is_selectable_and_flyable() -> TestResult:
 		ReferenceBuild.PROPELLER_ID, "battery_6s_1300", ReferenceBuild.ESC_ID,
 		ReferenceBuild.FC_ID)
 
-	# The same fit, from the record rather than from the build.
+	# The typed thrust is a REFERENCE (2026-11-04): k_t is the test prop's own blade-element value,
+	# moved onto the fitted prop by the BEMT geometry ratio at the loaded rated rpm. Recomputed here
+	# from the record and the prop, with no thrust figure in it.
 	var specs: Dictionary = record["specs"]
 	var test: Dictionary = record["thrust_test"]
-	# Fitted at the LOADED rated rpm (Build.fit_rated_point, 2026-11-03), and that fit must close:
-	# k_t x w_loaded^2 is the record's own thrust figure, at an rpm below Kv x V.
-	var fit := Build.fit_rated_point(record, catalog.get_part(str(test["prop_id"])))
+	var test_prop: Dictionary = catalog.get_part(str(test["prop_id"]))
+	var fit := Build.fit_rated_point(record, test_prop)
 	var fit_rpm := float(fit["rpm"])
-	var expected_at_test := PropellerModel.fit_k_t(float(specs["max_thrust_g"]), fit_rpm)
-	var fit_closes := absf(float(fit["k_t"]) - expected_at_test) < expected_at_test * 1e-6 \
-		and fit_rpm < 0.95 * float(specs["kv"]) * float(test["voltage_v"])
-	# The move to the fitted prop is the BEMT geometry ratio (§0, P5) — the same law
-	# build.gd now uses — computed here from the record's own planforms.
-	var from_doc := PropellerDocument.from_catalog_prop(catalog.get_part(str(test["prop_id"])))
+	var from_doc := PropellerDocument.from_catalog_prop(test_prop)
 	var to_doc := PropellerDocument.from_catalog_prop(build.propeller)
-	var expected := BemtModel.scale_k_t_to_prop(expected_at_test,
+	var expected := BemtModel.scale_k_t_to_prop(from_doc.static_k_t(),
 		from_doc.diameter_mm * 0.001, from_doc.pitch_mm * 0.001, float(from_doc.blades), from_doc.chord,
 		to_doc.diameter_mm * 0.001, to_doc.pitch_mm * 0.001, float(to_doc.blades), to_doc.chord,
 		fit_rpm)
+	var k_t_ok := absf(build.k_t - expected) < expected * 0.001
 
-	var k_t_ok := fit_closes and absf(build.k_t - expected) < expected * 0.001
-	# And it is a DIFFERENT aircraft from the reference build, so this cannot be passing by
-	# quietly having flown the catalog's 2207.
+	# The typed figure drives NOTHING: the same motor typed at twice the thrust flies on the same k_t,
+	# while the reference the bench shows beside the model figure does follow what was typed.
+	var doubled := _record_2810()
+	doubled["specs"]["max_thrust_g"] = float(specs["max_thrust_g"]) * 2.0
+	doubled["part_id"] = "custom_shed_2810_doubled"
+	var doc2 := CustomMotors.new()
+	doc2.add(record)
+	doc2.add(doubled)
+	doc2.save(CustomMotors.SAVE_PATH)
+	var catalog2 := PartsCatalog.load_with_custom()
+	var build2 := Build.from_ids(catalog2, ReferenceBuild.FRAME_ID, str(doubled["part_id"]),
+		ReferenceBuild.PROPELLER_ID, "battery_6s_1300", ReferenceBuild.ESC_ID, ReferenceBuild.FC_ID)
+	var typed_drives_nothing := build2 != null and build2.k_t == build.k_t \
+		and build2.thrust_to_weight() == build.thrust_to_weight()
+	var ref_a := Build.datasheet_reference(record, test_prop)
+	var ref_b := Build.datasheet_reference(doubled, test_prop)
+	var shown_beside := absf(float(ref_a["thrust_g"]) - float(specs["max_thrust_g"])) < 1e-9 \
+		and absf(float(ref_b["thrust_g"]) - 2.0 * float(specs["max_thrust_g"])) < 1e-9 \
+		and float(ref_a["model_thrust_g"]) > 0.0 \
+		and absf(float(ref_a["model_thrust_g"]) - float(ref_b["model_thrust_g"])) < 1e-6 \
+		and float(ref_b["k_t"]) > 1.9 * float(ref_a["k_t"])
+	# It is the same prop the reference build flies, so k_t agrees to the prop's own value: a
+	# different motor on the same prop is NOT a different aircraft in thrust coefficient.
 	var reference_build := ReferenceBuild.build()
-	var differs := absf(build.k_t - reference_build.k_t) > reference_build.k_t * 0.05
 	var flies := build.thrust_to_weight() > 1.0 and build.hover_throttle() > 0.0 \
 		and build.hover_throttle() < 1.0
 
 	_restore(CustomMotors.SAVE_PATH, previous)
 	return TestResult.new(
-		"a 2810 entered off a product page flies, on the k_t its own four figures imply",
-		k_t_ok and differs and flies,
-		"k_t %s (want %s), reference %s, AUW %.0f g, TWR %.2f, hover %.1f%%" % [
-			build.k_t, expected, reference_build.k_t, build.all_up_weight_g(),
+		"a 2810 entered off a product page flies, on its test prop's k_t; the typed thrust is a reference shown beside the model's",
+		k_t_ok and typed_drives_nothing and shown_beside and flies,
+		"k_t %s (want %s), doubled-thrust record k_t %s, reference build %s, datasheet %.0f g vs model %.0f g, AUW %.0f g, TWR %.2f, hover %.1f%%" % [
+			build.k_t, expected, build2.k_t if build2 != null else -1.0, reference_build.k_t,
+			float(ref_a["thrust_g"]), float(ref_a["model_thrust_g"]), build.all_up_weight_g(),
 			build.thrust_to_weight(), build.hover_throttle() * 100.0])
 
 

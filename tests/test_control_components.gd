@@ -51,8 +51,8 @@ const ALPHA_EPS := 1.0e-3
 ## The reference build at `6e1de24`, measured. See the header for why the derived gains are not
 ## among them and `plant_alpha` is.
 const REFERENCE_AUW_G := 507.480708
-const REFERENCE_TWR := 11.429006
-const REFERENCE_HOVER := 0.249957
+const REFERENCE_TWR := 8.131013
+const REFERENCE_HOVER := 0.330306
 const REFERENCE_COM_Y_M := 0.01183166
 const REFERENCE_COM_Z_M := 0.00017882
 const REFERENCE_PLANT_ALPHA := Vector3(422.044342, 393.643250, 58.214161)
@@ -114,7 +114,7 @@ static func _the_reference_build_is_bit_identical() -> Array:
 	))
 
 	out.append(TestResult.new(
-		"and therefore still weighs 507.480708 g at 11.429 : 1, hovering at 25.00%",
+		"and therefore still weighs 507.480708 g at 8.131 : 1, hovering at 33.03%",
 		absf(build.all_up_weight_g() - REFERENCE_AUW_G) < MASS_EPS_G
 			and absf(build.thrust_to_weight() - REFERENCE_TWR) < TWR_EPS
 			and absf(build.hover_throttle() - REFERENCE_HOVER) < THROTTLE_EPS,

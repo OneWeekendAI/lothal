@@ -102,7 +102,7 @@ static func _with_saved(records: Array, body: Callable) -> Variant:
 # The oracles
 # ---------------------------------------------------------------------------
 
-## 507.5 g / 11.43 / 25.0%, asserted here as well as in every other custom-parts suite because THIS
+## 507.5 g / 8.13 / 33.0%, asserted here as well as in every other custom-parts suite because THIS
 ## is the suite that would notice a custom board move it for a custom-ESC reason.
 static func _test_reference_build_is_out_of_reach() -> TestResult:
 	var seen: bool = _with_saved([CustomEscs.make_record("Reference Impostor ESC", 999.0, 1200.0, 4,
@@ -114,10 +114,10 @@ static func _test_reference_build_is_out_of_reach() -> TestResult:
 	var auw := build.all_up_weight_g()
 	var twr := build.thrust_to_weight()
 	var hover := build.hover_throttle()
-	var pinned := absf(auw - 507.48) < EPS and absf(twr - 11.43) < 0.01 and absf(hover - 0.25) < 0.001
+	var pinned := absf(auw - 507.48) < EPS and absf(twr - 8.131) < 0.01 and absf(hover - 0.3303) < 0.001
 
 	return TestResult.new(
-		"a defined custom ESC does not move the reference build's 507.5 g / 11.43 / 25.0%",
+		"a defined custom ESC does not move the reference build's 507.5 g / 8.13 / 33.0%",
 		bool(seen) and pinned,
 		"merged sees it=%s, AUW %.2f g, TWR %.2f, hover %.1f%%" % [
 			seen, auw, twr, hover * 100.0])

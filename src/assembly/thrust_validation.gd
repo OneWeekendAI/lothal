@@ -98,7 +98,7 @@ static func evaluate_motor(catalog: PartsCatalog, motor: Dictionary) -> Array:
 		var predict_rpm := kv * voltage_v
 		if not dc.is_empty():
 			predict_rpm = float(MotorModel.operating_point(voltage_v, dc[0], dc[1], dc[2], dc[3],
-				PropellerModel.fit_k_q(k_t, hold_doc.diameter_mm * 0.001))["rpm"])
+				PropellerModel.fit_k_q(k_t, hold_doc.torque_to_thrust_m()))["rpm"])
 		var predicted_n := PropellerModel.thrust_n(k_t, predict_rpm)
 		var predicted_g := predicted_n / GRAVITY_MPS2 * 1000.0
 

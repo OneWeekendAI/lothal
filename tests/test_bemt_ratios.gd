@@ -492,7 +492,7 @@ static func _the_closure_anchor_is_exact(d_m: float, p_m: float, blades: float,
 ## Measured on the reference `prop_5x43x3` at the reference duct's closure of 0.5615:
 ##
 ##     static thrust   x 1.00999      (+1.0%)
-##     static torque   x 0.99472      (-0.53%)
+##     static torque   x 0.99559      (-0.44%)
 ##
 ## So the thrust rise is 1%, at the small end of the range §4.0 was ready for — but the
 ## INTERESTING motion is in the other channel and it points the other way. Closing the tip leak
@@ -522,8 +522,8 @@ static func _a_duct_raises_thrust_and_lowers_torque(d_m: float, p_m: float, blad
 			thrust_factor > 1.0 and absf(thrust_factor - 1.00999) < 5.0e-5,
 			"thrust factor %.8f at closure %.6f" % [thrust_factor, REFERENCE_DUCT_CLOSURE]),
 		TestResult.new(
-			"[P10b] and LOWERS static torque — less induced velocity, less induced drag, -0.53%",
-			torque_factor < 1.0 and absf(torque_factor - 0.99472) < 5.0e-5,
+			"[P10b] and LOWERS static torque — less induced velocity, less induced drag, -0.44%",
+			torque_factor < 1.0 and absf(torque_factor - 0.99559) < 5.0e-5,
 			"torque factor %.8f at closure %.6f" % [torque_factor, REFERENCE_DUCT_CLOSURE]),
 		TestResult.new(
 			"[P10b] and both are off 1.0 by more than a rounding, so the directions above can fail",

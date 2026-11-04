@@ -220,7 +220,7 @@ func drone_record(cfg: MotorConfigs, catalog: PartsCatalog) -> Dictionary:
 		return {}
 	var v := float(test["voltage_v"])
 	var k_t := float(Build.fit_rated_point(ref, test_prop)["k_t"])
-	var k_q := PropellerModel.fit_k_q(k_t, float(test_prop["specs"]["diameter_inches"]) * Build.INCH_M)
+	var k_q := PropellerModel.fit_k_q(k_t, PropellerDocument.from_catalog_prop(test_prop).torque_to_thrust_m())
 	var op := MotorModel.operating_point(v, kv, float(f.rm_ohm), float(f.io_a), float(f.io_voltage_v), k_q)
 	var rpm := float(op["rpm"])
 	if rpm <= 0.0:

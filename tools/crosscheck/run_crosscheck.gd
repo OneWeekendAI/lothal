@@ -130,10 +130,10 @@ func _check_propeller(motors: Array, props: Array, catalog: PartsCatalog) -> voi
 	# fit_k_q for every (fitted k_t x every prop diameter).
 	for e in k_ts:
 		for p in props:
-			var d: float = _geom(p)["diameter_m"]
+			var d: float = PropellerDocument.from_catalog_prop(p).torque_to_thrust_m()
 			_cmp("PropellerModel.fit_k_q",
 				PropellerModel.fit_k_q(e["k_t"], d), RProp.fit_k_q(e["k_t"], d),
-				"%s -> %s d=%s k_t=%s" % [e["id"], p["part_id"], d, e["k_t"]])
+				"%s -> %s q/t=%s k_t=%s" % [e["id"], p["part_id"], d, e["k_t"]])
 
 	# thrust_n / reaction_torque_n_m over the RPM sweep, for every motor x prop k_t.
 	#
@@ -157,7 +157,7 @@ func _check_propeller(motors: Array, props: Array, catalog: PartsCatalog) -> voi
 				to_doc.diameter_mm * 0.001, to_doc.pitch_mm * 0.001, float(to_doc.blades), to_doc.chord,
 				from_rpm)
 			var tg := _geom(to_p)
-			var k_q := RProp.fit_k_q(k_t, tg["diameter_m"])
+			var k_q := RProp.fit_k_q(k_t, PropellerDocument.from_catalog_prop(to_p).torque_to_thrust_m())
 			for rpm in rpm_sweep:
 				_cmp("PropellerModel.thrust_n",
 					PropellerModel.thrust_n(k_t, rpm), RProp.thrust_n(k_t, rpm),
@@ -330,7 +330,7 @@ func _check_powertrain(motors: Array, props: Array, packs: Array, catalog: Parts
 				p_doc.diameter_mm * 0.001, p_doc.pitch_mm * 0.001, float(p_doc.blades), p_doc.chord,
 				rated_rpm)
 			var tg := _geom(p)
-			var k_q := RProp.fit_k_q(k_t, tg["diameter_m"])
+			var k_q := RProp.fit_k_q(k_t, PropellerDocument.from_catalog_prop(p).torque_to_thrust_m())
 
 			for bp in packs:
 				var sp: Dictionary = bp["specs"]

@@ -5,7 +5,7 @@ extends RefCounted
 ## Four things could go wrong here, and every one of them goes wrong QUIETLY, which is why each
 ## gets a section rather than a line:
 ##
-## **1. The oracle could move.** 507.48 g / 11.43:1 / 25.00% are asserted in half a dozen files,
+## **1. The oracle could move.** 507.48 g / 8.13:1 / 33.03% are asserted in half a dozen files,
 ## and all of them are quoted at standard air. If `compose(default site, Standard)` is anything but
 ## bit-identical to `AirDensity.standard()`, every one of those becomes a statement about this
 ## slice's rounding. §2 and §3 pin it at both ends: the density itself, and the three numbers.
@@ -32,8 +32,8 @@ const COURSES_PATH := "user://test_conditions_courses.json"
 ## Repeated here rather than imported because this section's job is to be a SECOND witness: a
 ## constant read off the file that also computes the build would move with it.
 const INVARIANT_MASS_G := 507.48
-const INVARIANT_TWR := 11.43
-const INVARIANT_HOVER_PCT := 25.00
+const INVARIANT_TWR := 8.131
+const INVARIANT_HOVER_PCT := 33.03
 
 
 static func run() -> Array:
@@ -246,11 +246,11 @@ static func _the_reference_build() -> Array:
 		absf(build.all_up_weight_g() - INVARIANT_MASS_G) < 0.05,
 		"%.2f g" % build.all_up_weight_g()))
 	results.append(TestResult.new(
-		"and thrust-to-weight is still 11.43:1",
+		"and thrust-to-weight is still 8.13:1",
 		absf(build.thrust_to_weight() - INVARIANT_TWR) < 0.01,
 		"%.4f:1" % build.thrust_to_weight()))
 	results.append(TestResult.new(
-		"and hover throttle is still 25.0%",
+		"and hover throttle is still 33.0%",
 		absf(build.hover_throttle() * 100.0 - INVARIANT_HOVER_PCT) < 0.05,
 		"%.2f%%" % (build.hover_throttle() * 100.0)))
 
