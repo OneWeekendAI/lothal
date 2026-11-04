@@ -120,9 +120,14 @@ static func run() -> Array:
 		text0.begins_with("Limited by: pack current") and text0.count(". ") == 1
 		and d.limited_label.text == d.limited_by_text(), text0))
 	d.set_stator("2207")
+	# The drone's own 4S 1500 is no longer over its rating flat out (98% of it, prop chapter 2026-11-04),
+	# so the over-rating sentence is read on a pack that really is: the 4S 650.
+	d.set_pack("battery_4s_650")
+	var text_over := d.limited_by_text()
 	var ratio_over: Dictionary = d._limited.ratios
+	d.set_pack(MotorDesigner.DRONE_PACK)
 	out.append(_t("a pack that is over its rating says so with the numbers",
-		float(ratio_over.pack) > 1.0 and text0.contains(" A of a pack rated for "), text0))
+		float(ratio_over.pack) > 1.0 and text_over.contains(" A of a pack rated for "), text_over))
 
 	# Design a pack round trip.
 	var asked := [0]

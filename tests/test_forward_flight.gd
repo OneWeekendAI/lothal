@@ -347,8 +347,13 @@ static func _the_unloading_cap_binds_on_a_build_that_needs_it() -> TestResult:
 ## which is what a warning source disappearing should look like.
 static func _the_builder_is_told_when_the_prop_is_the_limit(baseline: Build) -> Array:
 	var catalog := PartsCatalog.load_default()
-	var steep := Build.from_ids(catalog, "frame_7in_long_range", "motor_1507_3600kv",
-		"prop_7x4x3", "battery_4s_1500")
+	# PROP CHAPTER (2026-11-04): the old fixture (7" long-range on 1507s, prop_7x4x3) keeps 0.5+ of its
+	# static thrust at top speed once k_t comes from BEMT, so it no longer trips the 0.50 line. Found by
+	# computing forward_ratios().thrust_ratio at the top speed of every hover-capable frame x motor x
+	# prop x pack (1682 builds; 241 under 0.55, 40 clear of every hard warning): a low-KV 2807 1300KV on
+	# a steep 5x4x3 on the 5" frame keeps 42.4 % (the reference keeps far more). The line stays 0.50.
+	var steep := Build.from_ids(catalog, "frame_5in_freestyle", "motor_2807_1300kv",
+		"prop_hq_ethix_s5_5x4x3", "battery_4s_1500")
 
 	var warned: BuildWarning = null
 	for warning in steep.warnings():
@@ -363,8 +368,9 @@ static func _the_builder_is_told_when_the_prop_is_the_limit(baseline: Build) -> 
 		TestResult.new(
 			"a build whose top end is set by its propeller is told so, as a characteristic",
 			warned != null and warned.severity == BuildWarning.Severity.CHARACTERISTIC
-				and warned.message.contains("7x4x3"),
-			"7\" long-range on 1507s: %s" % ("(no warning)" if warned == null else warned.message)),
+				and warned.message.contains(steep.propeller["name"])
+				and float(warned.values["thrust_fraction_at_top_speed"]) < Build.UNLOADING_WORTH_NAMING,
+			"5\" on 2807 1300KVs with a 5x4x3: %s" % ("(no warning)" if warned == null else warned.message)),
 		TestResult.new(
 			"and the reference build, whose props have plenty left at its top speed, is not",
 			quiet,

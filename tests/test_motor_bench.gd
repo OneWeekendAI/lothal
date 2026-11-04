@@ -62,8 +62,10 @@ static func _logic(cfg: MotorConfigs) -> Array:
 		and String(sweep.result).contains(" g/W at hover") and float(sweep.max_thrust_g) > 1000.0, String(sweep.result)))
 
 	# Heat warning follows the magnet's limit (same motor, same run, only the grade differs).
-	var n52 := MotorBench.run("punch", _design(cfg, "2306", 2100.0, "N52"), cfg)
-	var n52h := MotorBench.run("punch", _design(cfg, "2306", 2100.0, "N52H"), cfg)
+	# 2306 at 2700 KV (87 C peak, between N52's 80 C and N52H's 120 C). It was 2100 KV until the prop chapter
+	# (2026-11-04): k_t and k_q from BEMT put the 2100 KV at 69.7 C, under both limits, so neither warned.
+	var n52 := MotorBench.run("punch", _design(cfg, "2306", 2700.0, "N52"), cfg)
+	var n52h := MotorBench.run("punch", _design(cfg, "2306", 2700.0, "N52H"), cfg)
 	var peak := float(n52.peak_temp_c)
 	out.append(_t("a hotter magnet limit removes the heat warning (same run, same temperature)",
 		peak > cfg.magnet_max_c("N52") and peak < cfg.magnet_max_c("N52H")

@@ -24,6 +24,11 @@ static func run() -> Array:
 	var results: Array = []
 	var catalog := PartsCatalog.load_default()
 	var ds := DesignSpace.new(DesignSession.default_for_class(CLASS_ID), catalog)
+	# "SEED" HERE IS THE PACK-LIMITED 5" (2026-11-04, prop chapter). The real seed now carries the 4S 1500
+	# (8.13:1, one issue), so these checks, which are about how TWO amber warnings look beside the six
+	# callouts, run on the same airframe with the 4S 650 that caps and sags (current cap + sag on the
+	# battery), the two-warning state the old seed was in. TestWarningPins covers the real seed's one issue.
+	ds.choose("battery", "battery_4s_650")
 	var home: Dictionary = ds.session.selection.duplicate(true)
 	for sz in SIZES:
 		for angle in ["home", "orbit"]:
@@ -310,6 +315,7 @@ static func _readable(ds: DesignSpace) -> TestResult:
 
 
 static func _expanded_lines(ds: DesignSpace) -> TestResult:
+	var pack_g := roundi(float(PartsCatalog.load_default().get_part(String(ds.session.selection["battery"]))["mass_g"]))
 	ds.callout_focus = "battery"
 	ds.update_callouts()
 	var texts := _ops(ds, "text")
@@ -319,7 +325,7 @@ static func _expanded_lines(ds: DesignSpace) -> TestResult:
 	ds.update_callouts()
 	var ok := why.size() == 1 and num.size() == 1 and _grey(why[0]["color"]) and _grey(num[0]["color"]) \
 		and (num[0]["color"] as Color).get_luminance() > (why[0]["color"] as Color).get_luminance() \
-		and float(why[0]["width"]) > 0.0 and String(num[0]["text"]).contains("185 g")
+		and float(why[0]["width"]) > 0.0 and String(num[0]["text"]).contains("%d g" % pack_g)
 	return TestResult.new("battery expanded: the why line wraps muted, the number line reads brighter",
 		ok, "%s / %s" % [why.map(func(o): return [o["text"], o["color"]]), num.map(func(o): return [o["text"], o["color"]])])
 

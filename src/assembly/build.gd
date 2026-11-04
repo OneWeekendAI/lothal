@@ -1711,7 +1711,13 @@ func spin_up() -> Dictionary:
 	var omega_rated := 0.0 if dc_motor_params(motor).is_empty() \
 		else PropellerModel.rpm_to_rad_s(float(fit["rpm"]))
 	return MotorSpinUp.compute(motor, prop_doc, _spin_up_materials(), k_q, k_q_at_test_prop,
-		omega_ref, omega_rated)
+		omega_ref, omega_rated, _model_rm_ohm())
+
+
+## The winding resistance the flight model drives this motor with; 0 when it has no DC parameters.
+func _model_rm_ohm() -> float:
+	var p := dc_motor_params(motor)
+	return 0.0 if p.is_empty() else float(p[1])
 
 
 func _tau_s() -> float:

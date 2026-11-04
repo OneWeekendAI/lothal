@@ -104,7 +104,8 @@ static func compute(motor: Dictionary,
 		k_q_at_fit_prop: float,
 		k_q_at_test_prop: float,
 		omega_hover_rad_s: float,
-		omega_rated_loaded_rad_s: float = 0.0) -> Dictionary:
+		omega_rated_loaded_rad_s: float = 0.0,
+		r_model_ohm: float = 0.0) -> Dictionary:
 	var specs: Dictionary = motor.get("specs", {})
 	var kv: float = float(specs.get("kv", 0.0))
 	if kv <= 0.0:
@@ -149,6 +150,14 @@ static func compute(motor: Dictionary,
 	var omega_loaded: float = recovery["omega_loaded_rad_s"]
 	var tier: String = recovery["tier"]
 
+	if r_model_ohm > 0.0:
+		# The winding resistance the flight model itself drives the motor with (Build.dc_motor_params).
+		# The datasheet-amps recovery above mixes two sources: datasheet current at the BEMT rated
+		# point, whose model current is 1.5-1.8x the datasheet amps and unevenly so, which overstated R
+		# most on the small motors and inverted the 0802/2808 tau order (56 ms vs 46 ms, 2026-11-04).
+		# The model's own Rm is the one R the plant actually has, so tau and the rate loop agree.
+		r_winding = r_model_ohm
+		tier = "model_rm"
 	if r_winding <= 0.0:
 		# Never a silent zero. The fallback here scales R from stator diameter following the
 		# same rule of thumb bench measurements broadly follow (R falls with stator size): a

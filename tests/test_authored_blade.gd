@@ -27,7 +27,9 @@ extends RefCounted
 const REF_HOVER_THROTTLE := 0.330306057921
 const REF_CHORD_SUM_MM := 416.467705201470
 const REF_TIP_CHORD_MM := 1.920962440934
-const REF_THRUST_RATIO_AXIAL_12 := 0.837473619
+## 0.837473619 -> 0.832619509 at the prop chapter (2026-11-04): the BEMT thrust ratio moved with the
+## low-Re profile drag and the fixed-density Re (rust/src/bemt.rs), not with this slice.
+const REF_THRUST_RATIO_AXIAL_12 := 0.832619509
 
 ## Bit-identity is asserted to the printed precision of the measurement, not to an eyeballed
 ## tolerance: the claim is that nothing moved, and a loose bound would let a re-sampled arch

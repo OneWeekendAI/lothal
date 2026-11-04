@@ -28,7 +28,9 @@ const CINELIFTER := ["frame_7in_cinelifter", "motor_2808_1300kv", "prop_5x43x2",
 	"battery_4s_650", "esc_4in1_80a_30x30"]
 ## A build that genuinely cannot hold itself up: a 700 g 6S Li-ion on a 3" toothpick, through a
 ## whoop's 5 A board. Nothing about this one is a matter of taste.
-const CANNOT_FLY := ["frame_3in_toothpick", "motor_1103_8000kv", "prop_3x3x3",
+## PROP CHAPTER (2026-11-04): the 1103 on a 3x3x3 now makes 5.9:1 and hovers on the 700 g pack, so the
+## fixture's props shrank to a whoop's 1.6x1.2x4 (reachable thrust under the pack's weight, can_hover false).
+const CANNOT_FLY := ["frame_3in_toothpick", "motor_1103_8000kv", "prop_16x12x4",
 	"battery_6s_4000_liion", "esc_aio_5a_whoop"]
 ## THE ALTITUDE CAME DOWN FROM 3500 m TO 3000 m IN PW2, and the reason is the whole slice: the
 ## harness stopped being a flat 14 g lump and became real parts, which put 11.5 g on this aircraft.
@@ -132,8 +134,8 @@ static func _test_what_merely_binds_is_limiting() -> TestResult:
 			limiting.append(String(entry.id))
 
 	return TestResult.new(
-		"the reference build's current cap and pack sag are limiting, and nothing about it is impossible",
-		impossible.is_empty() and limiting.has("current_limit") and limiting.has("pack_sag"),
+		"the reference build's motor current cap is limiting (its pack no longer sags), and nothing about it is impossible",
+		impossible.is_empty() and limiting.has("current_limit") and not limiting.has("pack_sag"),
 		"impossible: %s; limiting: %s" % [str(impossible), str(limiting)]
 	)
 
@@ -257,11 +259,13 @@ static func _test_the_cinelifter_is_described_not_scolded(catalog: PartsCatalog)
 		# The wording is only right if the numbers under it did not move to make it right.
 		TestResult.new(
 			"...and the figures it is described by are the ones the pilot flew",
+			# Re-pinned 2026-11-04 (prop chapter, k_t and k_q from BEMT): 2.575:1 / 62.5% -> 2.82:1 / 59.7%,
+			# parts and AUW unchanged.
 			# Re-pinned 2026-11-03 (DC motor law, k_t fitted at the loaded rated point): 1.504:1 /
 			# 82.2% -> 2.575:1 / 62.5%. The T:W move is the k_t refit on a non-test prop; the parts
 			# and AUW are unchanged, and the tolerances are the same.
-			absf(build.thrust_to_weight() - 2.575) < 0.02
-				and absf(build.hover_throttle() - 0.625) < 0.005
+			absf(build.thrust_to_weight() - 2.82) < 0.02
+				and absf(build.hover_throttle() - 0.597) < 0.005
 				and build.can_hover(),
 			"%.2f:1, hover %.1f%%, can_hover=%s" % [build.thrust_to_weight(),
 				build.hover_throttle() * 100.0, build.can_hover()]
@@ -280,7 +284,7 @@ static func _test_climb_margin_is_the_acceleration_it_actually_has(catalog: Part
 		"climb margin is g(TWR - 1), reported as an acceleration and not as a verdict",
 		entry != null and entry.severity == BuildWarning.Severity.CHARACTERISTIC
 			and absf(float(entry.values.get("climb_accel_mps2", -1.0)) - expected) < 1e-6
-			and absf(expected - 15.45) < 0.05  # was 4.94 before the 2026-11-03 re-baseline
+			and absf(expected - 17.86) < 0.05  # 15.45 before the 2026-11-04 prop chapter, 4.94 before 2026-11-03
 			and entry.message.contains("m/s"),
 		"expected %.2f m/s^2; %s" % [expected, "absent" if entry == null else entry.message]
 	)
@@ -304,7 +308,7 @@ static func _test_manoeuvre_headroom_comes_from_the_mixer(catalog: PartsCatalog)
 		"manoeuvre headroom is the mixer's own clipping point, not a threshold typed into a branch",
 		entry != null and entry.severity == BuildWarning.Severity.CHARACTERISTIC
 			and absf(float(entry.values.get("attitude_demand_fraction", -1.0)) - expected) < 0.005
-			and absf(expected - 0.624) < 0.02,  # was 0.297 before the 2026-11-03 re-baseline
+			and absf(expected - 0.672) < 0.02,  # 0.624 before the 2026-11-04 prop chapter, 0.297 before 2026-11-03
 		"expected %.3f of full demand; %s" % [expected, "absent" if entry == null else entry.message]
 	)
 

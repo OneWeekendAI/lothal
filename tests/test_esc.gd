@@ -220,8 +220,11 @@ static func _test_the_binding_constraint_is_reported(catalog: PartsCatalog) -> A
 static func _test_the_esc_can_be_the_limit(catalog: PartsCatalog) -> Array:
 	var results: Array = []
 
-	var small := _build(catalog, "motor_2207_1960kv", "battery_6s_1300", SMALL_ESC)
-	var big := _build(catalog, "motor_2207_1960kv", "battery_6s_1300", BIG_ESC)
+	# 2207 2400KV since the prop chapter (2026-11-04): the 1960KV on 6S now stops at the MOTORS' 98 A-class
+	# limit (75%) on any board above 45 A, so the 20 A board only costs it 16% (37.0 vs 44.0 N, short
+	# of the 0.8 bound). The 2400KV on 6S is pack-limited at 67% on a big board and the 20 A board costs it far more.
+	var small := _build(catalog, "motor_2207_2400kv", "battery_6s_1300", SMALL_ESC)
+	var big := _build(catalog, "motor_2207_2400kv", "battery_6s_1300", BIG_ESC)
 
 	results.append(TestResult.new(
 		"swapping only the ESC changes what the same motors on the same pack can reach",

@@ -337,10 +337,18 @@ static func _test_it_names_what_runs_out_first(catalog: PartsCatalog) -> Array:
 	))
 	small.free()
 
-	# The reference pack is a 1500 mAh 75C — 112 A — against four 2207s wanting 128 A, so with an
-	# ample board fitted it is the PACK that runs out first. That is the answer that sends a builder
-	# to spend the money in the right place, and it is on the panel in words.
-	var big := _bench(catalog, ADEQUATE_ESC)
+	# The reference pack is a 1500 mAh 75C — 112 A — and since the prop chapter (2026-11-04) the four 2207s
+	# want only 105 A of it, so with an ample board it is the MOTORS that run out first on the reference.
+	# A 650 mAh 4S (61.8 A) against the same motors is the PACK, so the "names the pack" half runs on that:
+	# the answer that sends a builder to spend the money in the right place, on the panel in words.
+	var motors_first := _bench(catalog, ADEQUATE_ESC)
+	results.append(TestResult.new(
+		"with an ample board and the reference pack it is the motors that run out first",
+		motors_first.readings()["binding_component"] == "motors",
+		"binding component: %s" % motors_first.readings()["binding_component"]
+	))
+	motors_first.free()
+	var big := _bench(catalog, ADEQUATE_ESC, ReferenceBuild.MOTOR_ID, ReferenceBuild.PROPELLER_ID, "battery_4s_650")
 	var text := big.instruments.readout_text()
 	results.append(TestResult.new(
 		"with an ample board fitted it names the pack instead, and says so in words",

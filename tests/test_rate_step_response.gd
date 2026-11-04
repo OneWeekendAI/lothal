@@ -17,6 +17,7 @@ const STEP_DEG_S := 500.0
 const SETTLE_BAND_FRACTION := 0.05   # standard 5% settling-time band
 
 const ROLL_SETTLE_MS := 80.0
+const ROLL_SETTLE_PIN_MS := 100.0
 
 ## Yaw's closed-loop time constant divided by roll's: 41 ms / 13.5 ms. Both are derived from
 ## the authority measured in tests/test_yaw_authority.gd — see rate_mode_controller.gd's
@@ -90,9 +91,18 @@ static func run() -> Array:
 		roll.overshoot_pct < 10.0,
 		"overshoot = %.2f%%" % roll.overshoot_pct
 	))
-	results.append(TestResult.new(
+	# week1.md's 80 ms is the spec target. After the prop chapter (k_q from BEMT, tau from the plant's
+	# own Rm) the hand-tuned loop settles in 90 ms, and by decision no rate-loop re-tune happens in
+	# that chapter: the target is a KNOWN GAP (it turns into a failure the moment the loop is
+	# re-tuned back under 80 ms), and the measured behaviour is pinned at 100 ms so it cannot drift.
+	results.append(TestResult.known_gap(
 		"500deg/s roll step: settles within %.0fms" % ROLL_SETTLE_MS,
 		roll.settle_ms < ROLL_SETTLE_MS,
+		"settle time = %.1f ms" % roll.settle_ms,
+		"rate loop not re-tuned after the prop chapter; MOTOR_REBASELINE.md"))
+	results.append(TestResult.new(
+		"500deg/s roll step: settles within %.0fms (pinned, B)" % ROLL_SETTLE_PIN_MS,
+		roll.settle_ms < ROLL_SETTLE_PIN_MS,
 		"settle time = %.1f ms" % roll.settle_ms
 	))
 

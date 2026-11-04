@@ -88,10 +88,17 @@ static func _peak_each_is_below_the_catalogue_on_this_pack(build: Build) -> Test
 
 
 static func _the_ceiling_names_what_binds(build: Build) -> TestResult:
+	# The reference 4S 1500 is limited by its MOTORS since the prop chapter (2026-11-04), by a hair (98%);
+	# a 4S 650 on the same airframe is limited by the PACK. Both names are asserted so the naming is a decision.
 	var ceiling := PropulsionFigures.throttle_ceiling(build)
+	var small := Build.from_ids(PartsCatalog.load_default(), "frame_5in_freestyle", "motor_2207_1960kv",
+		"prop_5x43x3", "battery_4s_650")
+	var small_ceiling := PropulsionFigures.throttle_ceiling(small)
 	return TestResult.new("propulsion figures: the throttle ceiling is the weakest link's, named",
 		is_equal_approx(float(ceiling["fraction"]), build.max_throttle_fraction())
-			and ceiling["limiter"] == "pack", str(ceiling))
+			and ceiling["limiter"] == "motors"
+			and is_equal_approx(float(small_ceiling["fraction"]), small.max_throttle_fraction())
+			and small_ceiling["limiter"] == "pack", "%s / %s" % [ceiling, small_ceiling])
 
 
 static func _the_curve_ends_at_the_ceiling(build: Build) -> TestResult:
@@ -185,7 +192,7 @@ static func _guards_row_fitted_reads_mass_and_roll(guarded: Build) -> TestResult
 static func _motors_page_numbers(build: Build) -> TestResult:
 	var got := SectionRows.page_numbers(&"motors", build)
 	var want := [["Max each, this pack", "%d g" % roundi(PropulsionFigures.peak_each_g(build))],
-		["Throttle ceiling", "%d%% · pack" % roundi(build.max_throttle_fraction() * 100.0)]]
+		["Throttle ceiling", "%d%% · motors" % roundi(build.max_throttle_fraction() * 100.0)]]
 	return TestResult.new("page numbers: Motors shows this pack's peak and the throttle ceiling",
 		got == want, "%s want %s" % [got, want])
 

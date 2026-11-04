@@ -162,8 +162,8 @@ static func run() -> Array:
 	var hrpm := seed5.rpm_at_throttle(ht)
 	var winding_total := 4.0 * seed5.winding_current_at_rpm(hrpm)
 	var pack_total := seed5.hover_current_a(ht)
-	results.append(_t("5\" seed hover: the pack draws duty x winding current, about 5.5 A, not the winding's 22 A",
-		absf(pack_total - ht * winding_total) < 0.01 * pack_total and pack_total > 5.0 and pack_total < 6.0
+	results.append(_t("5\" seed hover: the pack draws duty x winding current, about 4.7 A, not the winding's 14 A",
+		absf(pack_total - ht * winding_total) < 0.01 * pack_total and pack_total > 4.4 and pack_total < 5.0
 		and winding_total > 2.5 * pack_total,
 		"pack %.2f A, winding %.2f A, duty %.3f" % [pack_total, winding_total, ht]))
 	var sv := seed5.resolve_open_circuit_v(Build.AT_NOMINAL)

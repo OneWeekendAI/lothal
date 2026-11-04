@@ -117,9 +117,13 @@ static func _section7(catalog: PartsCatalog) -> Array:
 	var ds := DesignSpace.new(DesignSession.default_for_class(CLASS_ID), catalog)
 	ds.size = Vector2(1280, 720)
 	ds.rig.aspect = 1280.0 / 720.0
+	# The real seed's 4S 1500 no longer caps or sags (prop chapter, 2026-11-04); the two-dots-on-the-pack
+	# check needs the pack-limited 4S 650 (current cap + sag on the battery), as in TestWarningPins.
+	ds.choose("battery", "battery_4s_650")
+	ds.update_callouts()
 	var a := ds.warning_pin_px("part/battery", 0)
 	var b := ds.warning_pin_px("part/battery", 1)
-	out.append(TestResult.new("the seed's two warning dots on the pack are at least 20 px apart",
+	out.append(TestResult.new("the pack-limited build's two warning dots on the pack are at least 20 px apart",
 		ds.warning_pins.size() == 2 and a.distance_to(b) >= 20.0, "%.1f px" % a.distance_to(b)))
 	out.append(TestResult.new("seed: the count is shown", ds.issues_label.visible, ""))
 	ds.select("part/battery")

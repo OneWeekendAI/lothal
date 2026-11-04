@@ -82,8 +82,8 @@ static func _harness_warning_quotes_the_same_draw_as_the_page(build: Build) -> T
 	var w := _warning(build, &"harness_voltage_drop")
 	var long := w.long() if w != null else ""
 	var want := "At %s A " % PowerFigures.amps_text(PowerFigures.worst_draw_a(build))
-	return TestResult.new("harness warning: quotes the page's full-throttle draw (112 A on the reference build)",
-		want == "At 112 A " and long.begins_with(want)
+	return TestResult.new("harness warning: quotes the page's full-throttle draw (105 A on the reference build)",
+		want == "At 105 A " and long.begins_with(want)
 			and float(w.values["peak_a"]) == PowerFigures.worst_draw_a(build),
 		"'%s' want prefix '%s'" % [long.substr(0, 40), want])
 
@@ -160,9 +160,10 @@ static func _harness_drop_is_the_checks_drop(build: Build) -> TestResult:
 
 static func _harness_row_reads_the_lead_drop(build: Build) -> TestResult:
 	var row := _row(SectionRows.rows("Power", build, []), &"harness")
-	# "at 112 A", literally (2026-09-27): the draw at the pack-limited ceiling IS the 112.5 A rating,
-	# and roundi() printed it "113" beside the Battery page's "112 A of 112 A". One formatter now.
-	var want := "~%.2f V lost in leads at 112 A" % PowerFigures.harness_drop_v(build)
+	# "at 105 A", literally. Was 112 A (2026-09-27) while the reference was pack-limited and the draw IS the
+	# 112.5 A rating; since the prop chapter the motors limit first (98 %) and the draw is 105 A, so
+	# the rounding trap (112.5 printed "113") no longer shows here but the one formatter is kept.
+	var want := "~%.2f V lost in leads at 105 A" % PowerFigures.harness_drop_v(build)
 	return TestResult.new("power rows: Harness reads the worst lead drop, marked ~",
 		row.get("number") == want, "'%s' want '%s'" % [row.get("number"), want])
 
@@ -179,7 +180,7 @@ static func _battery_page_numbers(build: Build) -> TestResult:
 	# "of 112 A": the rating as the Pack sheet prints it ("75C (112 A)"), not rounded up to 113.
 	# The draw is printed the same way (2026-09-27): at a binding pack limit it IS the rating, and
 	# "%d" rounded 112.5 up to 113 beside its own rating's 112.
-	var want := [["Full-throttle draw", "112 A of 112 A"],
+	var want := [["Full-throttle draw", "105 A of 112 A"],
 		["Sag at full throttle", "−%.1f V" % PowerFigures.worst_sag_v(build)]]
 	return TestResult.new("page numbers: Battery shows the worst draw against its rating, and the sag",
 		got == want, "%s want %s" % [got, want])
@@ -187,11 +188,13 @@ static func _battery_page_numbers(build: Build) -> TestResult:
 
 static func _esc_page_numbers(build: Build) -> TestResult:
 	var got := SectionRows.page_numbers(&"esc", build)
-	# Was 13 A · 29% / 32 A of 45 A (the 2207's sheet amps). Since the DC motor law (2026-11-03) the
+	# PROP CHAPTER (2026-11-04): k_t and k_q from BEMT; the 2207's flat-out draw is 26 A a channel, headroom
+	# 19 A · 41% (105 A at the motor-limited ceiling, no longer the 112.5 A pack rating).
+	# Was (2026-11-03) -15 A · -33% / 60 A of 45 A, and before the DC motor law 13 A · 29% / 32 A of 45 A (the 2207's sheet amps). Since the DC motor law (2026-11-03) the
 	# motors' ask is Build.motor_rated_draw_a(), the model's own flat-out draw on the rated prop:
 	# 59.7 A, 1.86x the sheet, because the prop k_q is pitch/blade-blind (MOTOR_REBASELINE.md, open
 	# item). So the reference 45 A board reads short on this page until that is fixed.
-	var want := [["Headroom per channel", "-15 A · -33%"], ["Motors' max per channel", "60 A of 45 A"]]
+	var want := [["Headroom per channel", "19 A · 41%"], ["Motors' max per channel", "26 A of 45 A"]]
 	return TestResult.new("page numbers: ESC shows headroom per channel and the motors' ask",
 		got == want, "%s want %s" % [got, want])
 
@@ -199,7 +202,7 @@ static func _esc_page_numbers(build: Build) -> TestResult:
 static func _harness_page_numbers(build: Build) -> TestResult:
 	var got := SectionRows.page_numbers(&"harness", build)
 	# "at 112 A", literally — see _harness_row_reads_the_lead_drop.
-	var want := [["Lead drop, full throttle", "~%.2f V at 112 A" % PowerFigures.harness_drop_v(build)],
+	var want := [["Lead drop, full throttle", "~%.2f V at 105 A" % PowerFigures.harness_drop_v(build)],
 		["Harness mass", "~%.1f g" % PowerFigures.harness_mass_g(build)]]
 	return TestResult.new("page numbers: Harness shows the lead drop and the harness mass, both ~",
 		got == want, "%s want %s" % [got, want])
@@ -255,8 +258,8 @@ static func _pack_chart_worst_draw_label_matches_the_page(build: Build) -> TestR
 	var p := _point(d, "full throttle, fresh")
 	var label := str(p.get("label", ""))
 	d.free()
-	return TestResult.new("power drawing: the fresh full-throttle label reads the page's 112 A",
-		label == "full throttle, fresh 112 A", label)
+	return TestResult.new("power drawing: the fresh full-throttle label reads the page's 105 A",
+		label == "full throttle, fresh 105 A", label)
 
 
 static func _pack_chart_flight_point_carries_flight_time(build: Build) -> TestResult:

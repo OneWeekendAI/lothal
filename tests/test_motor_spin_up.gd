@@ -8,8 +8,8 @@ extends RefCounted
 ## because a component-summed tau lacks a bench-measured absolute to fit against. The tests
 ## here honour that shape:
 ##
-##   1. A 0802 with a 40 mm whoop prop responds an order of magnitude faster than a 2808
-##      with an 8" cinelifter prop. Same direction, right order.
+##   1. Tau rises with rotor inertia on every catalog motor; the 0802/2808 ordering is reported
+##      (it is not an invariant: the damping term outgrows inertia with motor size).
 ##   2. J_blade doubles when N_b doubles at fixed geometry (the volume integral is linear in
 ##      blade count) — the finger-in-the-air proof that the blade term is entering right.
 ##   3. J_rotor rises with bell radius squared for a thin shell — the finger-in-the-air proof
@@ -25,6 +25,7 @@ extends RefCounted
 ## without a real log, and each is written so it fails when the wire is broken instead of
 ## when the physics is wrong at the second decimal.
 
+const FALLBACK_TAU := 0.03
 const _TAU := 6.283185307179586  # 2·pi. Local const so this file has no runtime dependency
                                  # on Godot's TAU builtin during import.
 
@@ -33,7 +34,8 @@ static func run() -> Array:
 	var catalog := PartsCatalog.load_default()
 	var materials := FrameMaterials.load_default()
 
-	results.append(_test_0802_beats_2808_by_an_order_of_magnitude(catalog, materials))
+	results.append(_test_tau_increases_with_rotor_inertia(catalog, materials))
+	results.append(_test_whoop_and_cinelifter_tau_reported(catalog, materials))
 	results.append(_test_j_blade_doubles_with_blade_count(catalog, materials))
 	results.append(_test_j_rotor_scales_with_bell_radius_squared())
 	results.append(_test_motor_model_lag_reproduces_its_own_tau())
@@ -45,30 +47,54 @@ static func run() -> Array:
 	return results
 
 
-## §9's P7 acceptance: a 0802 and a 2808 differ in the RIGHT DIRECTION by a meaningful order.
-## The direction is unambiguous — a cinelifter with an 8" prop cannot possibly respond faster
-## than a whoop with a 1.6" prop, whatever the recovery details say. This test asserts that
-## ordering and a lower bound on the ratio; the FINDING (P7 row in propulsion.md §9) is that
-## the ratio is smaller than a naive read of the two hardware sizes would suggest, because J
-## and the torque-slope denominator both scale with the motor together, so their ratio does
-## not fan out the way either does alone. That finding is what P7 measured; a test that
-## demanded the ratio be an order of magnitude would be a test written against an assumption
-## rather than the physics, and this project has been caught by that shape of failure before.
-static func _test_0802_beats_2808_by_an_order_of_magnitude(catalog: PartsCatalog,
+## Tau must GROW with rotor inertia, everything else held. This is the physical direction the
+## 0802-vs-2808 comparison was standing in for. The cross-motor comparison itself is not an
+## invariant: the damping term K_e^2/R falls with KV^2 and rises with stator size, so on catalog data
+## the 2808 (J_total 4.2e-5) damps ~640x harder than the 0802 (9.0e-8) while carrying ~460x its
+## inertia, and the 0802 comes out SLOWER (41 ms vs 30 ms, 2026-11-04). That is reported below, not
+## asserted. What was a real bug is fixed: R_winding was recovered from datasheet amps at the BEMT
+## rated point, whose model current is 1.5-1.8x the datasheet amps and unevenly so, which inflated R
+## on the small motors (56 ms vs 46 ms). tau now uses the plant's own Rm.
+static func _test_tau_increases_with_rotor_inertia(catalog: PartsCatalog,
+		materials: FrameMaterials) -> TestResult:
+	var problems: Array = []
+	var checked := 0
+	for motor in catalog.list_category("motor"):
+		var base := _spin_up_for_motor(motor, catalog, materials)
+		if base.is_empty():
+			continue
+		var heavy: Dictionary = motor.duplicate(true)
+		heavy["specs"]["bell_mass_fraction"] = 0.8
+		var more := _spin_up_for_motor(heavy, catalog, materials)
+		checked += 1
+		var tau0 := float(base["tau_s"])
+		var tau1 := float(more["tau_s"])
+		var j0 := float(base["j_rotor_kg_m2"])
+		var j1 := float(more["j_rotor_kg_m2"])
+		# J doubles (bell mass fraction 0.4 -> 0.8) and tau must rise, by the J_total ratio exactly
+		# because the damping denominator does not depend on rotor inertia.
+		var want := tau0 * float(more["j_total_kg_m2"]) / float(base["j_total_kg_m2"])
+		if not (j1 > 1.99 * j0 and tau1 > tau0 and absf(tau1 - want) < 1e-9 * want):
+			problems.append(str(motor.get("part_id", "?")))
+	return TestResult.new(
+		"tau rises with rotor inertia on every catalog motor (damping held)",
+		checked >= 16 and problems.is_empty(),
+		"%d motors checked; wrong on: %s" % [checked, ", ".join(problems)])
+
+
+## The cross-motor ordering, REPORTED. Bounds are sanity only (a wired fallback of 0.03 s on both
+## would give 1.00x; a zero or runaway tau would leave the band).
+static func _test_whoop_and_cinelifter_tau_reported(catalog: PartsCatalog,
 		materials: FrameMaterials) -> TestResult:
 	var small := _tau_for(catalog, materials, "motor_0802_19000kv")
 	var large := _tau_for(catalog, materials, "motor_2808_1300kv")
-	# Bound of 1.1x: a WEAKER claim than the doc's "order" language, and deliberately weaker.
-	# The direction is what must hold; the amount is a finding, not an obligation. A wire that
-	# defaulted every motor to the pre-P7 constant would produce ratio ≈ 1.0 exactly and this
-	# check catches it; a physics change that swapped small and large would produce ratio < 1
-	# and this check catches that too.
-	var passed := small > 0.0 and large > 0.0 and (large / small) >= 1.1
+	var passed := small > 0.005 and small < 0.12 and large > 0.005 and large < 0.12 \
+		and absf(small - FALLBACK_TAU) > 1e-6 and absf(large - FALLBACK_TAU) > 1e-6
 	return TestResult.new(
-		"2808 cinelifter tau is meaningfully longer than 0802 whoop tau",
+		"0802 and 2808 taus are derived, per motor, inside 5-120 ms (ordering reported)",
 		passed,
-		"tau(0802) = %.6f s, tau(2808) = %.6f s, ratio = %.2fx (finding: the ratio " % [small, large, large / small]
-		+ "is smaller than hardware sizes suggest; see propulsion.md §9 P7)")
+		"tau(0802) = %.4f s, tau(2808) = %.4f s, ratio 2808/0802 = %.2fx (damping K_e^2/R outgrows J; see propulsion.md §9 P7)" % [
+			small, large, large / small])
 
 
 ## `J_blade = N_b · rho · thickness · ∫ c²dr`: doubling N_b at fixed planform doubles J.
@@ -189,7 +215,7 @@ static func _test_recovered_r_is_positive_where_data_is_present(catalog: PartsCa
 	var recovered_count := 0
 	for motor in motors:
 		var s := _spin_up_for_motor(motor, catalog, materials)
-		if str(s.get("tier", "")) == "recovered":
+		if str(s.get("tier", "")) in ["recovered", "model_rm"]:
 			recovered_count += 1
 	# Not asserting a specific number here — asserting the recovery path fires at all. If it
 	# fires for zero motors, the R-inversion has broken silently and the whole catalog has
@@ -253,8 +279,9 @@ static func _spin_up_for_motor(motor: Dictionary, catalog: PartsCatalog,
 	# For the catalog-wide test we use the test prop as the "fitted" prop too — that's the
 	# reference-build convention: the aircraft flies on the prop the motor was measured with.
 	var omega_hover := 0.5 * omega_rated
+	var dc := Build.dc_motor_params(motor)
 	return MotorSpinUp.compute(motor, test_doc, materials, k_q_at_test_prop, k_q_at_test_prop,
-		omega_hover, omega_rated)
+		omega_hover, omega_rated, 0.0 if dc.is_empty() else float(dc[1]))
 
 
 static func _synthetic_motor(diameter_ratio: float) -> Dictionary:

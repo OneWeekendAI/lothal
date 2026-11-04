@@ -114,10 +114,12 @@ static func _test_the_rating_reaches_the_model(catalog: PartsCatalog) -> Array:
 ## still cannot hover. Both halves are asserted.
 static func _test_a_small_pack_on_big_motors_is_pack_limited(catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var build := _build(catalog, "motor_2207_1960kv", "prop_5x43x3", "battery_1s_300")
+	# 2207 2400KV, not the 1960KV: since the prop chapter (2026-11-04) the 1960KV draws only 7.9 A flat out
+	# on the 1S 300 (under its 9 A) and the pack no longer binds; the 2400KV draws 11.4 A and does.
+	var build := _build(catalog, "motor_2207_2400kv", "prop_5x43x3", "battery_1s_300")
 
 	results.append(TestResult.new(
-		"a whoop pack on 2207s is driven past its own 9 A at 4.2 V, so its rating binds — and it still cannot hover",
+		"a whoop pack on 2207 2400KVs is driven past its own 9 A at 4.2 V, so its rating binds — and it still cannot hover",
 		build.fresh_draw_at_a(1.0) > build.pack_max_amps()
 			and build.pack_throttle_limit() < 1.0 and build.limiting_component()["name"] == "battery"
 			and absf(build.fresh_draw_at_a(build.pack_throttle_limit()) - build.pack_max_amps()) < 0.05
@@ -204,10 +206,11 @@ static func _test_the_bench_figure_is_untouched(_catalog: PartsCatalog) -> Array
 	var build := ReferenceBuild.build()
 
 	results.append(TestResult.new(
-		"the reference build IS mildly pack-limited, which is true of a real 5\" on a 1500",
+		"the reference build is motor-limited by a hair (98%) and its 1500 pack carries it with margin",
 		absf(build.pack_max_amps() - REFERENCE_PACK_AMPS) < 0.1
-			and build.limiting_component()["name"] == "battery"
-			and build.max_throttle_fraction() < 0.99,
+			and build.limiting_component()["name"] == "motors"
+			and build.max_throttle_fraction() < 0.99
+			and PowerFigures.worst_draw_a(build) < build.pack_max_amps(),
 		"%.1f A pack, limited by %s to %.1f%% throttle" % [
 			build.pack_max_amps(), build.limiting_component()["name"],
 			build.max_throttle_fraction() * 100.0]
@@ -215,21 +218,21 @@ static func _test_the_bench_figure_is_untouched(_catalog: PartsCatalog) -> Array
 
 	# ...and the spec-sheet figure is quoted at the motor's limit regardless, so the oracle holds.
 	results.append(TestResult.new(
-		"the 11.7:1 bench figure is quoted at the motor limit and does not move with the pack",
-		absf(build.thrust_to_weight() - 11.7) / 11.7 < 0.03,
+		"the 8.13:1 bench figure is quoted at the motor limit and does not move with the pack",
+		absf(build.thrust_to_weight() - 8.13) / 8.13 < 0.03,
 		"%.2f:1 at the motor's %.0f%% ceiling, while the pack caps flight at %.1f%%" % [
 			build.thrust_to_weight(), build.motor_throttle_limit() * 100.0,
 			build.max_throttle_fraction() * 100.0]
 	))
 
-	# The hover oracle (25.0% since the DC motor law, 2026-11-03; was 29%) is untouched by any
+	# The hover oracle (33.0% since the prop chapter, 2026-11-04; 25.0% from the DC motor law; was 29%) is untouched by any
 	# current limit for a different and stronger reason: hover draws about 5.5 A
 	# on this build, nowhere near the pack's 112 A, so no current limit is anywhere near binding
 	# on the rising branch the hover throttle is bisected on.
 	results.append(TestResult.new(
-		"hover is nowhere near any current limit, so the 25% oracle cannot be moved by one",
+		"hover is nowhere near any current limit, so the 33% oracle cannot be moved by one",
 		build.hover_current_a(build.hover_throttle()) < build.pack_max_amps() * 0.2
-			and absf(build.hover_throttle() - 0.25) < 0.02,
+			and absf(build.hover_throttle() - 0.33) < 0.02,
 		"%.1f A at a %.1f%% hover, against a %.0f A pack" % [
 			build.hover_current_a(build.hover_throttle()), build.hover_throttle() * 100.0,
 			build.pack_max_amps()]
@@ -246,7 +249,8 @@ static func _test_the_bench_figure_is_untouched(_catalog: PartsCatalog) -> Array
 ## 112.5 A rating. Before, the ceiling was solved without sag at the motor's test voltage (94%)
 ## while the draw was a fresh pack's with sag, and the page read "116 A of 112 A".
 static func _test_fresh_pack_draw_at_the_ceiling_is_the_pack_rating() -> TestResult:
-	var build := ReferenceBuild.build()
+	# A pack-limited fixture (the 4S 650): the reference 1500 is no longer pack-limited (prop chapter).
+	var build := _build(PartsCatalog.load_default(), "motor_2207_1960kv", "prop_5x43x3", "battery_4s_650")
 	var draw := PowerFigures.worst_draw_a(build)
 	return TestResult.new("a fresh pack at the pack-limited ceiling draws its rating, not more",
 		build.limiting_component()["name"] == "battery"
@@ -274,7 +278,8 @@ static func _test_supply_limited_draw_never_exceeds_the_supply_rating(catalog: P
 ## The four places the ceiling is said — the Battery row, the Battery page's draw, the Motors page's
 ## ceiling and the warning's sentence — agree on the reference build.
 static func _test_battery_row_page_motors_page_and_warning_agree() -> TestResult:
-	var build := ReferenceBuild.build()
+	# The 4S 650 on the reference airframe: the 1500 is motor-limited since the prop chapter.
+	var build := _build(PartsCatalog.load_default(), "motor_2207_1960kv", "prop_5x43x3", "battery_4s_650")
 	var pct := roundi(build.max_throttle_fraction() * 100.0)
 	var rows := SectionRows.rows("Power", build, build.warnings())
 	var battery_row: Dictionary = {}

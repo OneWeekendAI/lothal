@@ -28,13 +28,23 @@ const READOUT_KEYS := ["auw_g", "thrust_to_weight", "hover_throttle", "flight_ti
 ## pin), and 6S 5600 alone is capped by the 45 A board and no longer overloads a wire. The motor cap
 ## now needs the 80 A board as well, and the wire overload needs the 7" long-range frame with the
 ## 2807 on 6S 5600 (32.6 A sustained on the main lead). Same pins, same anchors.
+##
+## RE-BASELINE 2026-11-04 (k_t and k_q from BEMT; the prop chapter): the 5" seed now flies 8.13:1 and its
+## 4S 1500 pack carries it, so the seed has ONE issue (the motors' 32 A cap) and no pack sag. Every check
+## that needs the pack's two pins (current cap + sag on the battery) runs on PACK_SWAP, the seed with a
+## 4S 650 in place of the 1500, which is pack-limited and sags the way the old seed did. The wire
+## overload moved to the 8" cinelifter with 2808s on 6S 5600, the only hard-warning-free frame x motor x
+## pack that overloads a lead (scanned). The frame and motor cannot be swapped one at a time (each
+## refuses the other's mount), so those two steps are "direct:" selection writes, like _reset's.
+const PACK_SWAP := [["battery", "battery_4s_650"]]
+const SEED_ISSUE := "w:current_limit:motors"
 const CASES := [
-	["seed current cap", "", null, "w:current_limit:battery", "part/battery", "thrust_to_weight", false],
-	["seed sag", "", null, "w:pack_sag:battery", "part/battery", "thrust_to_weight", false],
+	["4S 650 pack, current cap", "", PACK_SWAP, "w:current_limit:battery", "part/battery", "thrust_to_weight", false],
+	["4S 650 pack, sag", "", PACK_SWAP, "w:pack_sag:battery", "part/battery", "thrust_to_weight", false],
 	["6S 5600 + 80 A board, motor current cap", "", [["battery", "battery_6s_5600"], ["esc", "esc_4in1_80a_30x30"]], "w:current_limit:motors", "part/motor/FR", "thrust_to_weight", false],
 	["16\" props, cannot hover", "propeller", "prop_16x12x4", "w:cannot_hover:motors", "part/motor/FR", "thrust_to_weight", true],
 	["2S 300 pack, plug over rating", "battery", "battery_2s_300", "w:connector_rating:harness", "part/wires", "", false],
-	["7\" 2807 on 6S 5600, wire over rating", "", [["frame", "frame_7in_long_range"], ["motor", "motor_2807_1300kv"], ["battery", "battery_6s_5600"]], "w:harness_ampacity:harness", "part/wires", "", false],
+	["8\" cinelifter, 2808 on 6S 5600, wire over rating", "", [["direct:frame", "frame_8in_cinelifter"], ["direct:motor", "motor_2808_1300kv"], ["battery", "battery_6s_5600"]], "w:harness_ampacity:harness", "part/wires", "", false],
 	["no receiver", "receiver", "", "w:no_receiver:receiver", "part/stack", "", false],
 	["FC-powered buzzer", "buzzer", "buzz_passive_pad", "w:buzzer_not_self_powered:receiver", "part/stack", "", false],
 ]
@@ -53,7 +63,10 @@ static func run() -> Array:
 		if c[2] is Array:
 			var refused: Array = []
 			for st in c[2]:
-				if not ds.choose(String(st[0]), String(st[1]))["ok"]:
+				if String(st[0]).begins_with("direct:"):
+					ds.session.selection[String(st[0]).substr(7)] = String(st[1])
+					ds._after_change()
+				elif not ds.choose(String(st[0]), String(st[1]))["ok"]:
 					refused.append(st)
 			results.append(TestResult.new("%s: every swap the case needs is accepted" % c[0],
 				refused.is_empty(), "refused: %s" % [refused]))
@@ -62,6 +75,8 @@ static func run() -> Array:
 		ds.update_callouts()
 		results.append_array(_kind(ds, catalog, c))
 	_reset(ds, home)
+	_apply(ds, PACK_SWAP)
+	results.append_array(_pack_pair(ds, catalog))
 	results.append_array(_mark_opens_both(ds, catalog))
 	_reset(ds, home)
 	results.append_array(_missing_battery(ds))
@@ -74,12 +89,14 @@ static func run() -> Array:
 	_reset(ds, home)
 	results.append(_refusal_clears_on_change(ds, catalog))
 	_reset(ds, home)
+	_apply(ds, PACK_SWAP)
 	results.append(_selecting_closes_warning(ds))
 	_reset(ds, home)
+	_apply(ds, PACK_SWAP)
 	results.append(_orbit_tracks(ds))
 	for sz in SIZES:
 		_set_size(ds, sz)
-		for g in ["seed", "cannot hover", "no battery", "refused drop"]:
+		for g in ["seed", "pack limited", "cannot hover", "no battery", "refused drop"]:
 			_reset(ds, home)
 			_geometry_state(ds, String(g))
 			results.append_array(_geometry(ds, "%dx%d %s" % [sz.x, sz.y, g]))
@@ -91,6 +108,12 @@ static func run() -> Array:
 	results.append(_impossible_is_blocking())
 	results.append(_count_text())
 	return results
+
+
+static func _apply(ds: DesignSpace, steps: Array) -> void:
+	for st in steps:
+		ds.choose(String(st[0]), String(st[1]))
+	ds.update_callouts()
 
 
 static func _set_size(ds: DesignSpace, sz: Vector2) -> void:
@@ -166,10 +189,10 @@ static func _peak_twr(b: Build) -> float:
 static func _seed(ds: DesignSpace, catalog: PartsCatalog) -> Array:
 	var out: Array = []
 	var ids: Array = ds.warning_pins.map(func(p): return String(p["id"]))
-	out.append(TestResult.new("seed: its two issues are the pack's current cap and its sag",
-		ids == ["w:current_limit:battery", "w:pack_sag:battery"], str(ids)))
-	out.append(TestResult.new("seed: the readouts panel says \"2 issues\"",
-		ds.issues_label.visible and ds.issues_label.text == "2 issues", "'%s'" % ds.issues_label.text))
+	out.append(TestResult.new("seed: its one issue is the motors' current cap (the pack carries it)",
+		ids == [SEED_ISSUE], str(ids)))
+	out.append(TestResult.new("seed: the readouts panel says \"1 issue\"",
+		ds.issues_label.visible and ds.issues_label.text == "1 issue", "'%s'" % ds.issues_label.text))
 	var b := _fresh(catalog, ds.session.selection)
 	var mark := ds.mark_buttons["thrust_to_weight"] as Button
 	var want := "▲ %.1f in air" % _peak_twr(b)
@@ -183,12 +206,6 @@ static func _seed(ds: DesignSpace, catalog: PartsCatalog) -> Array:
 		if k != "thrust_to_weight" and (ds.mark_buttons[k] as Button).visible:
 			others.append(k)
 	out.append(TestResult.new("seed: no other readout is marked", others.is_empty(), str(others)))
-	var a := ds.callouts.item("w:current_limit:battery")
-	var c := ds.callouts.item("w:pack_sag:battery")
-	out.append(TestResult.new("seed: the two battery pins are two dots, a pin step apart",
-		not a.is_empty() and not c.is_empty()
-		and is_equal_approx((c["pin"] as Vector2).distance_to(a["pin"]), DesignSpace.WARN_PIN_STEP),
-		"%s %s" % [a.get("pin"), c.get("pin")]))
 	var numbered: Array = TestCallouts._callouts_only(ds.callouts.shown)
 	out.append(TestResult.new("seed at 1280x720 home: all six numbered callouts still shown beside the warnings",
 		numbered.size() == Callouts.TABLE.size(), "%d" % numbered.size()))
@@ -199,6 +216,21 @@ static func _seed(ds: DesignSpace, catalog: PartsCatalog) -> Array:
 	out.append(TestResult.new("seed: a description (climb margin, resonance...) gets no pin",
 		characteristic.is_empty() and b.warnings().size() > 2, str(characteristic)))
 	return out
+
+
+## The pack-limited build (PACK_SWAP): its two issues are the pack's current cap and its sag, and their
+## two pins sit on the battery a pin step apart.
+static func _pack_pair(ds: DesignSpace, _catalog: PartsCatalog) -> Array:
+	var ids: Array = ds.warning_pins.map(func(p): return String(p["id"]))
+	var a := ds.callouts.item("w:current_limit:battery")
+	var c := ds.callouts.item("w:pack_sag:battery")
+	return [
+		TestResult.new("pack-limited: its issues include the pack's current cap and its sag",
+			ids.has("w:current_limit:battery") and ids.has("w:pack_sag:battery"), str(ids)),
+		TestResult.new("pack-limited: the two battery pins are two dots, a pin step apart",
+			not a.is_empty() and not c.is_empty()
+			and is_equal_approx((c["pin"] as Vector2).distance_to(a["pin"]), DesignSpace.WARN_PIN_STEP),
+			"%s %s" % [a.get("pin"), c.get("pin")])]
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +367,7 @@ static func _refused_drop(ds: DesignSpace, catalog: PartsCatalog, part: String, 
 		on.begins_with(prefix) and _on_part(ds, s, on), "%s at %s" % [on, s.get("pin")]))
 	out.append(TestResult.new("%s: blocking, solid dot, the mount tinted, counted as an issue" % case,
 		String(p["severity"]) == WarningPins.BLOCKING and bool(s.get("solid", false)) and ds.tinted_parts().has(on)
-		and ds.issues_label.text == WarningPins.count_text(ds.warning_pins.size()) and ds.warning_pins.size() == 3,
+		and ds.issues_label.text == WarningPins.count_text(ds.warning_pins.size()) and ds.warning_pins.size() == 2,
 		"%s, %s, '%s'" % [p["severity"], ds.tinted_parts(), ds.issues_label.text]))
 	out.append(TestResult.new("%s: clicking it shows the refusing warning's full sentence" % case,
 		ds.open_warning_at(s.get("pin", Vector2(-1, -1))) and ds.inspector_lines().has(by.message), str(ds.inspector_lines())))
@@ -378,6 +410,8 @@ static func _orbit_tracks(ds: DesignSpace) -> TestResult:
 
 static func _geometry_state(ds: DesignSpace, g: String) -> void:
 	match g:
+		"pack limited":
+			_apply(ds, PACK_SWAP)
 		"cannot hover":
 			ds.choose("propeller", "prop_16x12x4")
 		"no battery":

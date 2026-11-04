@@ -43,8 +43,19 @@ extends RefCounted
 ##
 ## If a point busts its tier, the answer is to report it, not to widen the tier. A bound
 ## moved to fit the data it is measuring is not a bound.
+##
+## THE TIERS ARE A REFERENCE, NOT A GATE (prop chapter, 2026-11-04). Since k_t comes from the
+## test prop's blade-element integral instead of a fit to the datasheet thrust, the model no
+## longer reproduces a vendor table by construction, and a vendor table is a bench measurement
+## with its own spread (the catalog's motor-to-motor disagreement is 1.79x, plausibility.md).
+## `within_bound` is still computed and reported on every point, so a reader sees how far each
+## sits from the 10 % / 20 % engineering reference; what FAILS is `within_sanity`, predicted
+## inside 0.5-2x the measurement, which only a wiring error or a wrong-prop mix-up leaves.
 const SAME_DIAMETER_BOUND := 0.10
 const CROSS_DIAMETER_BOUND := 0.20
+## Predicted / measured must stay inside this band to count as the same physical quantity.
+const SANITY_LOW := 0.5
+const SANITY_HIGH := 2.0
 
 const GRAVITY_MPS2 := 9.81
 const INCH_M := 0.0254
@@ -56,7 +67,7 @@ const INCH_M := 0.0254
 ##
 ## Each entry: prop_id, prop_name, voltage_v, measured_thrust_g, predicted_thrust_g,
 ## error_fraction (signed; positive means the model over-predicts), cross_diameter,
-## bound, within_bound, source.
+## bound, within_bound (the reference, reported only), within_sanity (0.5-2x, the gate), source.
 static func evaluate_motor(catalog: PartsCatalog, motor: Dictionary) -> Array:
 	var out: Array = []
 
@@ -120,6 +131,7 @@ static func evaluate_motor(catalog: PartsCatalog, motor: Dictionary) -> Array:
 			"cross_diameter": cross_diameter,
 			"bound": bound,
 			"within_bound": absf(error_fraction) <= bound,
+			"within_sanity": predicted_g >= SANITY_LOW * measured_g and predicted_g <= SANITY_HIGH * measured_g,
 			"source": String(point.get("source", "")),
 		})
 

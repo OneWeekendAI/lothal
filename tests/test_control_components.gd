@@ -55,7 +55,7 @@ const REFERENCE_TWR := 8.131013
 const REFERENCE_HOVER := 0.330306
 const REFERENCE_COM_Y_M := 0.01183166
 const REFERENCE_COM_Z_M := 0.00017882
-const REFERENCE_PLANT_ALPHA := Vector3(422.044342, 393.643250, 58.214161)
+const REFERENCE_PLANT_ALPHA := Vector3(343.550659, 320.511688, 28.343199)
 
 ## The equal-mass pair. The shipped catalog HAS NO SUCH PAIR — C1 authored flats at 4.0/6.5/9.0 g
 ## and masts at 11.0/14.0 g, and no flat and masted entry share a mass — so "a masted GPS raises the
