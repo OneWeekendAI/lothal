@@ -15,10 +15,16 @@ extends DesignerShell
 ## A motor was saved to the shelf (custom_parts.json) under this id.
 signal saved(part_id: String)
 
+## The motor designer asks to open the pack designer; the screen that hosts it opens one and, when
+## a pack is saved, calls `select_pack` with the new id.
+signal design_pack_requested
+
 const LEFT_W := 300.0
 const RIGHT_W := 440.0
 const REVEAL_S := 3.0
 const BENCH_TABS := {"sweep": "Throttle sweep", "soak": "Hover soak", "punch": "Punch-out"}
+const DRONE_PACK := "this_drone"
+const DESIGN_PACK_ITEM := "design_a_pack"
 const BENCH_NOTE := "ideal / model. Current reads high until the prop chapter."
 const FIGURE_ROWS := ["kv", "kt", "rm_ohm", "io_a", "mass_g", "max_current_a", "max_power_w", "magnet_max_c"]
 
@@ -61,6 +67,11 @@ var bench_parts: Dictionary = {}
 var charts: PackCharts
 var bench_result_label: Label
 var bench_warning_label: Label
+var pack_option: OptionButton
+var prop_option: OptionButton
+var limited_label: Label
+var _drone_parts: Dictionary = {}
+var _limited: Dictionary = {}
 var _bench_tabs := {}
 var _bench: Dictionary = {}
 var _bench_tween: Tween
@@ -71,9 +82,44 @@ func _init(p_cfg: MotorConfigs = null, p_catalog: PartsCatalog = null, p_store: 
 	catalog = p_catalog if p_catalog != null else PartsCatalog.load_default()
 	store = p_store if p_store != null else CustomMotors.new()
 	_init_shell("MotorDesigner")
+	theme = mono_theme()
 	design = MotorDesign.default_design(cfg)
 	_build_shell(_build_top_bar(), _build_left(), _build_middle(), _build_right())
+	_fill_pickers()
 	_rederive()
+
+
+# ---------------------------------------------------------------------------
+# Palette: monochrome like the rest of the Design Space; amber only for warnings
+# ---------------------------------------------------------------------------
+
+## The app theme with its blue accent turned into the Design Space's ink (selected tab, chip,
+## focus ring, menu highlight): same alphas, no hue. Amber is left to warnings.
+static func mono_theme() -> Theme:
+	var t := LothalTheme.get_theme().duplicate() as Theme
+	var accent := LothalTheme.ACCENT
+	for cls in t.get_type_list():
+		for sb_name in t.get_stylebox_list(cls):
+			var sb := t.get_stylebox(sb_name, cls)
+			if sb is StyleBoxFlat:
+				var flat := sb.duplicate() as StyleBoxFlat
+				flat.bg_color = _ink_for(flat.bg_color, accent)
+				flat.border_color = _ink_for(flat.border_color, accent)
+				t.set_stylebox(sb_name, cls, flat)
+		for c_name in t.get_color_list(cls):
+			t.set_color(c_name, cls, _ink_for(t.get_color(c_name, cls), accent))
+	return t
+
+
+static func _ink_for(c: Color, accent: Color) -> Color:
+	if absf(c.r - accent.r) < 0.01 and absf(c.g - accent.g) < 0.01 and absf(c.b - accent.b) < 0.01:
+		return Color(DesignSpace.INK, c.a)
+	return c
+
+
+## A chart line: ink, or the one amber accent when this line is what a warning is about.
+static func line_colour(warn: bool) -> Color:
+	return LothalTheme.WARNING if warn else DesignSpace.SELECT_INK
 
 
 # ---------------------------------------------------------------------------
@@ -214,12 +260,124 @@ func set_bench(kind: String) -> void:
 
 ## The prop and pack the bench runs on: the fitted build's frame, prop and pack, if there is one.
 func set_bench_build(b: Build) -> void:
-	bench_parts = {}
+	_drone_parts = {}
 	if b != null:
-		bench_parts = {"frame": String(b.frame.get("part_id", "")),
+		_drone_parts = {"frame": String(b.frame.get("part_id", "")),
 			"propeller": String(b.propeller.get("part_id", "")),
 			"battery": String(b.battery.get("part_id", ""))}
+	bench_parts = _drone_parts.duplicate()
+	_fill_pickers()
 	_rederive()
+
+
+## Runs the bench on another pack: a catalog id, or DRONE_PACK for the one on this drone. Reruns
+## the bench and every figure at once.
+func set_pack(id: String) -> void:
+	if id == DRONE_PACK or id == "":
+		bench_parts["battery"] = _drone_parts.get("battery", ReferenceBuild.BATTERY_ID)
+	else:
+		bench_parts["battery"] = id
+	_select_in(pack_option, DRONE_PACK if id == "" else id, bench_parts["battery"])
+	_rederive()
+
+
+## Runs the bench on another prop (a catalog id: shelf or blade generator). Reruns at once.
+func set_prop(id: String) -> void:
+	bench_parts["propeller"] = id
+	_select_in(prop_option, id, id)
+	_rederive()
+
+
+## "Design a pack…": asks the host to open the pack designer.
+func design_pack() -> void:
+	design_pack_requested.emit()
+	_select_in(pack_option, _pack_pick_id(), "")
+
+
+## Back from the pack designer: the host hands over its fresh catalog and the new pack's id; the
+## list is rebuilt and the new pack is the one the bench runs on.
+func select_pack(id: String, fresh_catalog: PartsCatalog = null) -> void:
+	if fresh_catalog != null:
+		catalog = fresh_catalog
+	_fill_pickers()
+	set_pack(id)
+
+
+## The pack the bench runs on now (a catalog id).
+func pack_id() -> String:
+	return String(bench_parts.get("battery", _drone_parts.get("battery", ReferenceBuild.BATTERY_ID)))
+
+
+func prop_pick_id() -> String:
+	return String(bench_parts.get("propeller", _drone_parts.get("propeller", ReferenceBuild.PROPELLER_ID)))
+
+
+## The sentence under the bench: which of pack current / motor heat / prop load gives out first.
+func limited_by_text() -> String:
+	return String(_limited.get("text", ""))
+
+
+func limited_by_key() -> String:
+	return String(_limited.get("key", ""))
+
+
+func _pack_pick_id() -> String:
+	return DRONE_PACK if pack_id() == String(_drone_parts.get("battery", ReferenceBuild.BATTERY_ID)) else pack_id()
+
+
+func _select_in(opt: OptionButton, id: String, fallback_id: String) -> void:
+	if opt == null:
+		return
+	for i in opt.item_count:
+		if String(opt.get_item_metadata(i)) == id:
+			opt.select(i)
+			return
+	for i in opt.item_count:
+		if String(opt.get_item_metadata(i)) == fallback_id:
+			opt.select(i)
+			return
+
+
+## Pack list: this drone's pack, the shelf packs, the builder's designed packs, then "Design a
+## pack…". Prop list: shelf props, then blade-generator props.
+func _fill_pickers() -> void:
+	if pack_option == null:
+		return
+	var drone_pack := String(_drone_parts.get("battery", ReferenceBuild.BATTERY_ID))
+	pack_option.clear()
+	pack_option.add_item("This drone's pack")
+	pack_option.set_item_metadata(0, DRONE_PACK)
+	for custom in [false, true]:
+		for rec in catalog.list_category("battery"):
+			var id := String(rec.get("part_id", ""))
+			if PartsCatalog.is_custom(id) != custom or id == drone_pack:
+				continue
+			pack_option.add_item(String(rec.get("name", id)))
+			pack_option.set_item_metadata(pack_option.item_count - 1, id)
+	pack_option.add_item("Design a pack…")
+	pack_option.set_item_metadata(pack_option.item_count - 1, DESIGN_PACK_ITEM)
+	prop_option.clear()
+	for custom in [false, true]:
+		for rec in catalog.list_category("propeller"):
+			var id2 := String(rec.get("part_id", ""))
+			if PartsCatalog.is_custom(id2) != custom:
+				continue
+			prop_option.add_item(String(rec.get("name", id2)))
+			prop_option.set_item_metadata(prop_option.item_count - 1, id2)
+	_select_in(pack_option, _pack_pick_id(), "")
+	_select_in(prop_option, prop_pick_id(), "")
+
+
+func _on_pack_picked(index: int) -> void:
+	var id := String(pack_option.get_item_metadata(index))
+	if id == DESIGN_PACK_ITEM:
+		design_pack()
+	else:
+		set_pack(id)
+
+
+func _on_prop_picked(index: int) -> void:
+	set_prop(String(prop_option.get_item_metadata(index)))
 
 
 ## The last bench run (see MotorBench.run), {} if the motor cannot be flown.
@@ -270,6 +428,7 @@ func _rederive() -> void:
 
 func _run_bench() -> void:
 	_bench = MotorBench.run(bench_kind, design, cfg, bench_parts, {}, catalog)
+	_limited = MotorBench.limited_by(design, cfg, bench_parts, {}, catalog)
 
 
 ## The chart draws in over REVEAL_S and then stays. Outside the tree there is no animation to play.
@@ -396,6 +555,14 @@ func _build_right() -> Control:
 	bench_box.add_theme_stylebox_override("panel", edge)
 	var inner := VBoxContainer.new()
 	inner.add_theme_constant_override("separation", LothalTheme.SPACE_1)
+	var pickers := HBoxContainer.new()
+	pickers.name = "Pickers"
+	pickers.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+	pack_option = _picker("PackPicker", "Pack", "The pack the bench runs on", pickers)
+	pack_option.item_selected.connect(_on_pack_picked)
+	prop_option = _picker("PropPicker", "Prop", "The prop the bench runs on", pickers)
+	prop_option.item_selected.connect(_on_prop_picked)
+	inner.add_child(pickers)
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", LothalTheme.SPACE_1)
 	for kind in MotorBench.KINDS:
@@ -422,12 +589,41 @@ func _build_right() -> Control:
 	bench_warning_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	bench_warning_label.add_theme_color_override("font_color", LothalTheme.WARNING)
 	inner.add_child(bench_warning_label)
+	limited_label = Label.new()
+	limited_label.name = "LimitedBy"
+	limited_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	limited_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	limited_label.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
+	inner.add_child(limited_label)
 	var note := _faint(BENCH_NOTE)
 	note.name = "BenchNote"
 	inner.add_child(note)
 	bench_box.add_child(inner)
 	col.add_child(bench_box)
 	return col
+
+
+## "Pack  [dropdown]" in one row cell; the dropdown fills what is left.
+func _picker(node_name: String, label: String, tip: String, row: HBoxContainer) -> OptionButton:
+	var cell := HBoxContainer.new()
+	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cell.add_theme_constant_override("separation", LothalTheme.SPACE_1)
+	var l := Label.new()
+	l.text = label
+	l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	l.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
+	cell.add_child(l)
+	var o := OptionButton.new()
+	o.name = node_name
+	o.tooltip_text = tip
+	o.fit_to_longest_item = false
+	o.clip_text = true
+	o.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	o.custom_minimum_size.x = 60.0
+	o.focus_mode = Control.FOCUS_NONE
+	cell.add_child(o)
+	row.add_child(cell)
+	return o
 
 
 static func _figure_name(key: String) -> String:
@@ -532,11 +728,13 @@ func _refresh_bench() -> void:
 		(_bench_tabs[kind] as Button).set_pressed_no_signal(kind == bench_kind)
 	var r := _bench
 	if r.is_empty():
+		limited_label.text = ""
 		bench_result_label.text = ""
 		bench_warning_label.text = ""
 		charts.set_charts([])
 		return
 	bench_result_label.text = String(r.result)
+	limited_label.text = limited_by_text()
 	bench_warning_label.text = "\n".join(r.warnings)
 	bench_warning_label.visible = not r.warnings.is_empty()
 	var x: PackedFloat64Array = r.x
@@ -544,28 +742,32 @@ func _refresh_bench() -> void:
 		"soak":
 			var ta := _temp_axis(r)
 			charts.set_charts([{"title": "Winding temperature", "x": x, "y": r.temp_c,
-				"y_min": ta.x, "y_max": ta.y, "unit": " °C", "color": LothalTheme.WARNING,
+				"y_min": ta.x, "y_max": ta.y, "unit": " °C", "color": line_colour(_over_heat(r)),
 				"x_max": MotorBench.SOAK_S}])
 		"punch":
 			var ta2 := _temp_axis(r)
 			var floor_v := floorf(float(r.low_v) - 1.0)
 			charts.set_charts([
 				{"title": "Winding temperature", "x": x, "y": r.temp_c, "y_min": ta2.x, "y_max": ta2.y,
-					"unit": " °C", "color": LothalTheme.WARNING, "x_max": MotorBench.PUNCH_S},
+					"unit": " °C", "color": line_colour(_over_heat(r)), "x_max": MotorBench.PUNCH_S},
 				{"title": "Pack voltage", "x": x, "y": r.v_live, "y_min": floor_v,
-					"y_max": ceilf(float(r.start_v) + 0.5), "unit": " V", "color": LothalTheme.ACCENT,
+					"y_max": ceilf(float(r.start_v) + 0.5), "unit": " V", "color": line_colour(false),
 					"x_max": MotorBench.PUNCH_S}])
 		_:
 			charts.set_charts([
 				{"title": "Thrust", "x": x, "y": r.thrust_g, "y_min": 0.0,
-					"y_max": _ceil_nice(float(r.max_thrust_g)), "unit": " g", "color": LothalTheme.ACCENT,
+					"y_max": _ceil_nice(float(r.max_thrust_g)), "unit": " g", "color": line_colour(false),
 					"x_max": 100.0, "x_end_text": "100 %"},
 				{"title": "Current", "x": x, "y": r.current_a, "y_min": 0.0,
-					"y_max": _ceil_nice(float(r.max_current_a)), "unit": " A", "color": LothalTheme.WARNING,
+					"y_max": _ceil_nice(float(r.max_current_a)), "unit": " A", "color": line_colour(float(r.peak_winding_a) > float(_figs.max_current_a)),
 					"x_max": 100.0, "x_end_text": "100 %"},
 				{"title": "g per watt", "x": r.gpw_x, "y": r.gpw.slice(int(r.gpw_from)), "y_min": 0.0,
-					"y_max": _ceil_nice(_max_of(r.gpw)), "unit": " g/W", "color": LothalTheme.SUCCESS,
+					"y_max": _ceil_nice(_max_of(r.gpw)), "unit": " g/W", "color": line_colour(false),
 					"x_max": 100.0, "x_end_text": "100 %"}])
+
+
+func _over_heat(r: Dictionary) -> bool:
+	return float(r.peak_temp_c) > float(_figs.magnet_max_c)
 
 
 ## Temperature chart range: ambient up to the run's peak or the magnet limit, with room above.

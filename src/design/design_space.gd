@@ -2128,12 +2128,26 @@ func open_motor_designer(saved_id: String = "") -> void:
 	designer.set_bench_build(session.build(_catalog))
 	designer.saved.connect(func(_id: String): refresh_catalog())
 	designer.closed.connect(func(): motor_designer = null)
+	designer.design_pack_requested.connect(_design_pack_for_motor)
 	motor_designer = designer
 	add_child(designer)
 	if saved_id != "":
 		designer.open_motor(saved_id)
 	if designer.is_inside_tree():
 		designer.grab_focus()
+
+
+## "Design a pack…" in the motor designer: the pack designer opens over it, and the pack it saves
+## comes back selected on the motor bench (the designer gets the fresh catalog with it).
+func _design_pack_for_motor() -> void:
+	if motor_designer == null:
+		return
+	open_pack_designer()
+	if pack_designer == null:
+		return
+	pack_designer.saved.connect(func(id: String):
+		if motor_designer != null:
+			motor_designer.select_pack(id, _catalog))
 
 
 ## The context menu of a saved motor's card (right-click): "Edit in designer" and "Delete". Delete

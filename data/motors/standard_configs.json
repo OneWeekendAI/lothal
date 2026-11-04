@@ -36,6 +36,11 @@
    "basis": "est.",
    "note": "Share of motor mass that is stator iron; feeds the thermal mass."
   },
+  "bell_mass_fraction": {
+   "value": 0.4,
+   "basis": "est.",
+   "note": "Share of motor mass that is the bell (shell + magnets); the second thermal lump, coupled to the stator by conduction. Matches the 0.40 the spin-up model already uses."
+  },
   "nominal_cell_v": {
    "value": 3.7,
    "basis": "nominal",

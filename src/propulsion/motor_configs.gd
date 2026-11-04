@@ -156,6 +156,7 @@ func derive(size: String, kv: float, poles: int = 0) -> Dictionary:
 		"mass_g": mass,
 		"copper_g": mass * coefficient("copper_mass_fraction"),
 		"stator_g": mass * coefficient("stator_mass_fraction"),
+		"bell_g": mass * coefficient("bell_mass_fraction"),
 		"max_continuous_loss_w": loss_w,
 		"max_current_a": i_max,
 		"max_cells": cells,

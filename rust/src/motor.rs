@@ -257,6 +257,42 @@ impl MotorModel {
         area_m2 * (H_STILL_W_M2K + H_FLOW_W_M2K_PER_MPS * airflow_mps.max(0.0))
     }
 
+    /// Heat capacity of the bell (rotor shell + magnets), J/K, from its mass in grams.
+    #[func]
+    pub fn bell_thermal_mass_j_per_k(bell_g: f64) -> f64 {
+        bell_g.max(0.0) * BELL_J_PER_G_K
+    }
+
+    /// Conductance from the stator and winding to the bell, W/K (airgap, bearings, shaft). The
+    /// path scales with the motor's surface, mass^(2/3). est.: class-typical, not measured.
+    #[func]
+    pub fn bell_conduction_w_per_k(motor_mass_g: f64) -> f64 {
+        BELL_COND_W_PER_K_PER_G23 * motor_mass_g.max(0.0).powf(2.0 / 3.0)
+    }
+
+    /// Conductance from the bell's outer surface to the air, W/K, at `rpm`. Forced convection on
+    /// a rotating cylinder: Nu ~ Re^0.8 (turbulent, Dittus-Boelter; Incropera ch. 7-8), and
+    /// Re ~ surface speed, so the film coefficient is h = h_still + k * (tip speed)^0.8.
+    /// Surface scales as mass^(2/3) and the bell radius as mass^(1/3). est.: coefficients are
+    /// class-typical, not measured.
+    #[func]
+    pub fn air_conductance_w_per_k(motor_mass_g: f64, rpm: f64) -> f64 {
+        let m = motor_mass_g.max(0.0);
+        let area_m2 = AREA_M2_PER_G23 * m.powf(2.0 / 3.0);
+        let tip_mps = rpm.abs() * std::f64::consts::TAU / 60.0 * BELL_RADIUS_M_PER_G13 * m.powf(1.0 / 3.0);
+        area_m2 * (H_STILL_W_M2K + H_TIP_W_M2K * tip_mps.powf(0.8))
+    }
+
+    /// One step of the two-lump model: the stator + winding (x = temperature, C) takes the
+    /// `loss_w`; it conducts to the bell (y), which sheds to the air. Backward Euler in small
+    /// sub-steps, so it is stable at any `dt` and never overshoots the steady state.
+    /// Returns (winding C, bell C).
+    #[func]
+    pub fn bell_temp_step_c(temps: Vector2, loss_w: f64, c_stator: f64, c_bell: f64, g_cond: f64, g_air: f64, dt: f64) -> Vector2 {
+        let (a, b) = two_lump_step(temps.x as f64, temps.y as f64, loss_w, c_stator, c_bell, g_cond, g_air, dt);
+        Vector2::new(a as f32, b as f32)
+    }
+
     /// One step of the lumped winding temperature (C). Exact for a constant loss over `dt`,
     /// so it is stable at any step size and never overshoots the steady state.
     #[func]
@@ -287,6 +323,14 @@ const AREA_M2_PER_G23: f64 = 2.07e-4;
 // est.: film coefficient W/(m^2.K), still air plus a term per m/s of prop wash.
 const H_STILL_W_M2K: f64 = 25.0;
 const H_FLOW_W_M2K_PER_MPS: f64 = 8.0;
+// est.: bell = aluminium/steel shell + NdFeB magnets, J/(g.K) (Al 0.90, steel 0.45, NdFeB 0.50).
+const BELL_J_PER_G_K: f64 = 0.55;
+// est.: stator-to-bell conduction, W/K per g^(2/3) (airgap + bearings; ~3 W/K for a 30 g 2207).
+const BELL_COND_W_PER_K_PER_G23: f64 = 0.6;
+// est.: bell radius per g^(1/3), m (a 30 g 2207 bell is ~14 mm).
+const BELL_RADIUS_M_PER_G13: f64 = 4.5e-3;
+// est.: film coefficient gained per (m/s of tip speed)^0.8, W/(m^2.K^...).
+const H_TIP_W_M2K: f64 = 35.0;
 
 fn kt_impl(kv: f64) -> f64 {
     if kv <= 0.0 { return 0.0; }
@@ -308,6 +352,22 @@ fn temp_step_impl(t: f64, loss: f64, c: f64, h: f64, dt: f64) -> f64 {
     if c <= 0.0 || h <= 0.0 { return t + if c > 0.0 { loss * dt / c } else { 0.0 }; }
     let t_inf = AMBIENT_C + loss / h;
     t_inf + (t - t_inf) * (-dt * h / c).exp()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn two_lump_step(mut tw: f64, mut tb: f64, loss: f64, c1: f64, c2: f64, g: f64, ga: f64, dt: f64) -> (f64, f64) {
+    if c1 <= 0.0 || c2 <= 0.0 { return (tw, tb); }
+    let n = (dt / 0.02).ceil().max(1.0) as usize;
+    let h = dt / n as f64;
+    for _ in 0..n {
+        // (c1/h + g) tw' - g tb' = c1/h tw + loss ;  -g tw' + (c2/h + g + ga) tb' = c2/h tb + ga ambient
+        let (a11, a12, b1) = (c1 / h + g, -g, c1 / h * tw + loss);
+        let (a21, a22, b2) = (-g, c2 / h + g + ga, c2 / h * tb + ga * AMBIENT_C);
+        let det = a11 * a22 - a12 * a21;
+        tw = (b1 * a22 - a12 * b2) / det;
+        tb = (a11 * b2 - a21 * b1) / det;
+    }
+    (tw, tb)
 }
 
 /// Current of one motor at `rpm` driving a prop of torque k_q * omega^2: Io(rpm) + torque / Kt.
@@ -488,6 +548,30 @@ mod tests {
         assert!(thermal_mass(8.0, 14.0) > thermal_mass(4.0, 7.0));
         assert!(cooling(30.0, 8.0) > cooling(30.0, 0.0));
         assert!(cooling(60.0, 0.0) > cooling(30.0, 0.0));
+    }
+
+    #[test]
+    fn two_lump_settles_on_the_series_steady_state_and_the_bell_stays_cooler() {
+        let (c1, c2, g, ga, loss) = (10.0, 6.0, 0.5, 0.3, 12.0);
+        let (mut tw, mut tb) = (AMBIENT_C, AMBIENT_C);
+        for _ in 0..4000 {
+            let (a, b) = two_lump_step(tw, tb, loss, c1, c2, g, ga, 0.5);
+            assert!(a >= tw - 1e-9 && b >= tb - 1e-9 && b <= a + 1e-9);
+            tw = a; tb = b;
+        }
+        assert!((tb - (AMBIENT_C + loss / ga)).abs() < 1e-3, "{tb}");
+        assert!((tw - (AMBIENT_C + loss / ga + loss / g)).abs() < 1e-3, "{tw}");
+        // No loss: stays at ambient.
+        assert_eq!(two_lump_step(AMBIENT_C, AMBIENT_C, 0.0, c1, c2, g, ga, 3.0), (AMBIENT_C, AMBIENT_C));
+    }
+
+    #[test]
+    fn air_conductance_rises_with_rpm_as_a_sublinear_power() {
+        let g = |r: f64| MotorModel::air_conductance_w_per_k(30.0, r);
+        assert!(g(20000.0) > g(10000.0) && g(10000.0) > g(0.0));
+        // Forced-convection part ~ rpm^0.8: doubling rpm less than doubles the gain.
+        assert!((g(20000.0) - g(0.0)) < 2.0 * (g(10000.0) - g(0.0)));
+        assert!((g(20000.0) - g(0.0)) > 1.5 * (g(10000.0) - g(0.0)));
     }
 
     fn thermal_mass(cu: f64, fe: f64) -> f64 { cu * CU_J_PER_G_K + fe * FE_J_PER_G_K }

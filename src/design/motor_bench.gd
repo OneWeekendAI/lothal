@@ -24,9 +24,6 @@ const GPW_FROM_STEP := 4
 const SOAK_S := 300.0
 const PUNCH_S := 15.0
 const DT_S := 0.5
-## est.: prop wash over the motor, m/s, at hover and at full throttle.
-const AIRFLOW_HOVER_MPS := 6.0
-const AIRFLOW_FULL_MPS := 12.0
 ## A prop is "too big" when flat out the motor reaches under this share of its no-load rpm.
 const PROP_LOADED_MIN := 0.6
 const BENCH_MOTOR_ID := "bench_designed_motor"
@@ -132,7 +129,7 @@ static func _soak(b: Build, f: Dictionary) -> Dictionary:
 	var voc := b.resolve_open_circuit_v(Build.AT_NOMINAL)
 	var hover_t := hover_throttle(b)
 	var p := b.uncapped_point(hover_t, voc)
-	var temps := _heat(f, float(p.rpm), float(p.winding_current_a), AIRFLOW_HOVER_MPS, SOAK_S)
+	var temps := _heat(f, float(p.rpm), float(p.winding_current_a), SOAK_S)
 	var end_c := float(temps.y[temps.y.size() - 1])
 	var limit := float(f.magnet_max_c)
 	var gap := limit - end_c
@@ -149,13 +146,11 @@ static func _soak(b: Build, f: Dictionary) -> Dictionary:
 
 static func _punch(b: Build, f: Dictionary) -> Dictionary:
 	var pack := b.battery_model()
-	var loss_mass := MotorModel.thermal_mass_j_per_k(float(f.copper_g), float(f.stator_g))
-	var cool := MotorModel.cooling_w_per_k(float(f.mass_g), AIRFLOW_FULL_MPS)
+	var lumps := Lumps.new(f)
 	var t := PackedFloat64Array()
 	var temp := PackedFloat64Array()
 	var volts := PackedFloat64Array()
 	var rpms := PackedFloat64Array()
-	var temp_c := AMBIENT_C
 	var clock := 0.0
 	var peak_a := 0.0
 	var peak_pack_a := 0.0
@@ -168,14 +163,14 @@ static func _punch(b: Build, f: Dictionary) -> Dictionary:
 		var ia := float(p.pack_current_a)
 		var live := pack.voltage_live(ia)
 		t.append(clock)
-		temp.append(temp_c)
+		temp.append(lumps.winding_c)
 		volts.append(live)
 		rpms.append(rpm)
 		low_v = minf(low_v, live)
 		peak_a = maxf(peak_a, float(p.winding_current_a))
 		peak_pack_a = maxf(peak_pack_a, ia)
 		var loss := _loss_w(f, rpm, float(p.winding_current_a))
-		temp_c = MotorModel.temp_step_c(temp_c, loss, loss_mass, cool, DT_S)
+		lumps.step(loss, rpm, DT_S)
 		pack.drain(ia, DT_S)
 		clock += DT_S
 	var end_c := temp[temp.size() - 1]
@@ -190,20 +185,42 @@ static func _punch(b: Build, f: Dictionary) -> Dictionary:
 
 
 ## Winding temperature from ambient at a constant operating point.
-static func _heat(f: Dictionary, rpm: float, winding_a: float, airflow_mps: float, seconds: float) -> Dictionary:
-	var mass_j := MotorModel.thermal_mass_j_per_k(float(f.copper_g), float(f.stator_g))
-	var cool := MotorModel.cooling_w_per_k(float(f.mass_g), airflow_mps)
+static func _heat(f: Dictionary, rpm: float, winding_a: float, seconds: float) -> Dictionary:
+	var lumps := Lumps.new(f)
 	var loss := _loss_w(f, rpm, winding_a)
 	var x := PackedFloat64Array()
 	var y := PackedFloat64Array()
-	var temp_c := AMBIENT_C
 	var clock := 0.0
 	while clock <= seconds + 1e-9:
 		x.append(clock)
-		y.append(temp_c)
-		temp_c = MotorModel.temp_step_c(temp_c, loss, mass_j, cool, DT_S)
+		y.append(lumps.winding_c)
+		lumps.step(loss, rpm, DT_S)
 		clock += DT_S
 	return {"x": x, "y": y, "loss_w": loss}
+
+
+## The two heat lumps of one motor: the stator + winding (iron + copper) holds the loss and
+## conducts into the bell, and the bell sheds to the air, better the faster it spins (forced
+## convection, `MotorModel.air_conductance_w_per_k`). `winding_c` is the figure the bench shows.
+class Lumps extends RefCounted:
+	var winding_c := AMBIENT_C
+	var bell_c := AMBIENT_C
+	var c_stator: float
+	var c_bell: float
+	var g_cond: float
+	var mass_g: float
+
+	func _init(f: Dictionary) -> void:
+		mass_g = float(f.mass_g)
+		c_stator = MotorModel.thermal_mass_j_per_k(float(f.copper_g), float(f.stator_g))
+		c_bell = MotorModel.bell_thermal_mass_j_per_k(float(f.bell_g))
+		g_cond = MotorModel.bell_conduction_w_per_k(mass_g)
+
+	func step(loss_w: float, rpm: float, dt: float) -> void:
+		var t := MotorModel.bell_temp_step_c(Vector2(winding_c, bell_c), loss_w, c_stator, c_bell,
+			g_cond, MotorModel.air_conductance_w_per_k(mass_g, rpm), dt)
+		winding_c = t.x
+		bell_c = t.y
 
 
 ## Heat the winding and stator shed, W, for ONE motor: I^2 Rm plus the iron and friction loss
@@ -237,6 +254,56 @@ static func warnings(run_: Dictionary, b: Build, f: Dictionary) -> Array[String]
 	if share < PROP_LOADED_MIN:
 		out.append("This prop is too big for the motor: flat out it reaches only %.0f%% of its no-load speed." % (share * 100.0))
 	return out
+
+
+## Which side of the motor + prop + pack combination gives out first, read from a full-throttle
+## run: the pack against its continuous rating, the motor against its current rating and its
+## magnets' heat limit, the prop against how far it drags the motor below its no-load speed. Each
+## is a ratio to its own limit (1.0 = at the limit) and the largest names the limiter. Returns
+## {key: "pack"|"motor"|"prop", ratios: {pack, motor, prop}, text: one sentence "Limited by: ..."}
+## ({} if the motor cannot be flown).
+static func limited_by(design: MotorDesign, cfg: MotorConfigs, parts: Dictionary = {},
+		pack_record: Dictionary = {}, catalog: PartsCatalog = null) -> Dictionary:
+	var b := make_build(design, cfg, parts, pack_record, catalog)
+	if b == null:
+		return {}
+	var f := design.derive(cfg)
+	return limited_from(b, f, _punch(b, f))
+
+
+static func limited_from(b: Build, f: Dictionary, punch: Dictionary) -> Dictionary:
+	var pack_max := maxf(b.pack_max_amps(), 0.001)
+	var peak_pack := float(punch.peak_pack_a)
+	var peak_wind := float(punch.peak_winding_a)
+	var temp := float(punch.peak_temp_c)
+	var limit_c := float(f.magnet_max_c)
+	var share := loaded_share(b, f)
+	var by_current := peak_wind / maxf(float(f.max_current_a), 0.001)
+	var by_heat := (temp - AMBIENT_C) / maxf(limit_c - AMBIENT_C, 1.0)
+	var ratios := {
+		"pack": peak_pack / pack_max,
+		"motor": maxf(by_current, by_heat),
+		"prop": PROP_LOADED_MIN / maxf(share, 0.001),
+	}
+	var key := "pack"
+	for k in ["motor", "prop"]:
+		if float(ratios[k]) > float(ratios[key]):
+			key = k
+	var text := ""
+	match key:
+		"pack":
+			text = "Limited by: pack current. Flat out it asks %.0f A of a pack rated for %.0f A." % [peak_pack, pack_max]
+		"motor":
+			if by_heat >= by_current:
+				text = "Limited by: motor heat. A 15 s punch-out reaches %.0f °C, against the %.0f °C its magnets take." % [temp, limit_c]
+			else:
+				text = "Limited by: motor heat. Flat out it draws %.0f A per motor, against its %.0f A rating." % [peak_wind, float(f.max_current_a)]
+		_:
+			text = "Limited by: prop load. Flat out the motor reaches %.0f%% of its no-load speed." % (share * 100.0)
+	if float(ratios[key]) < 1.0:
+		text = "%s Nothing is over its limit; this is the closest, at %.0f%% of it." % [
+			text.get_slice(". ", 0) + ".", float(ratios[key]) * 100.0]
+	return {"key": key, "ratios": ratios, "text": text}
 
 
 ## Flat-out rpm over the no-load rpm (Kv x pack voltage) on this prop and pack.

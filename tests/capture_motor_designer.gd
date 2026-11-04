@@ -8,8 +8,8 @@ extends SceneTree
 ## state: "" (the default 2207) | "shelf" (no pop-up: the motor shelf with its tile) | "0802" |
 ## "3115" (largest size, two mounts) | "options" (2207, 2750 KV, 9N12P, N52H, 5 mm shaft, a name) |
 ## "saved" (the options motor, saved with the Save button) | "shelf_saved" (saved, the pop-up
-## closed, the motor shelf scrolled to the saved card) | "sweep" | "soak" | "punch" (the default
-## 2207 with that bench run played out; "punch_hot" is a 2507 whose punch-out warns of heat and current)
+## closed, the motor shelf scrolled to the saved card) | "sweep" | "soak" | "pickers" (punch-out on a 6S 5600 pack and a 7x4x3 prop), "punch" (the default
+## 2207 with that bench run played out; "punch_hot" is a 2306 2100 KV whose punch-out warns of heat and current)
 ##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
@@ -47,10 +47,14 @@ func _init() -> void:
 		match state:
 			"0802", "3115":
 				d.set_stator(state)
-			"sweep", "soak", "punch", "punch_hot", "sweep_warn":
+			"sweep", "soak", "punch", "punch_hot", "sweep_warn", "pickers":
+				if state == "pickers":
+					d.set_pack("battery_6s_5600")
+					d.set_prop("prop_7x4x3")
+					state = "punch"
 				if state == "punch_hot":
-					d.set_stator("2507")
-					d.set_kv(1800.0)
+					d.set_stator("2306")
+					d.set_kv(2100.0)
 				elif state == "sweep_warn":
 					d.set_stator("0802")
 				d.set_bench("punch" if state == "punch_hot" else ("sweep" if state == "sweep_warn" else state))

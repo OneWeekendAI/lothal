@@ -6,6 +6,7 @@ extends RefCounted
 ## - thrust strictly rising: flatten the rpm above 70 % throttle in Build.uncapped_point.
 ## - hotter magnet clears the heat warning: delete the temperature test, or hard-code the limit.
 ## - higher-R pack lowers punch-out rpm: drop `pack_record` in make_build.
+## - thermal: bench back on the one-lump MotorModel.temp_step_c / cooling_w_per_k (punch reads 250 C), or air conductance without the rpm term.
 ## - too-big prop warning: raise or drop PROP_LOADED_MIN.
 
 
@@ -61,8 +62,8 @@ static func _logic(cfg: MotorConfigs) -> Array:
 		and String(sweep.result).contains(" g/W at hover") and float(sweep.max_thrust_g) > 1000.0, String(sweep.result)))
 
 	# Heat warning follows the magnet's limit (same motor, same run, only the grade differs).
-	var n52 := MotorBench.run("punch", _design(cfg, "2507", 1800.0, "N52"), cfg)
-	var n52h := MotorBench.run("punch", _design(cfg, "2507", 1800.0, "N52H"), cfg)
+	var n52 := MotorBench.run("punch", _design(cfg, "2306", 2100.0, "N52"), cfg)
+	var n52h := MotorBench.run("punch", _design(cfg, "2306", 2100.0, "N52H"), cfg)
 	var peak := float(n52.peak_temp_c)
 	out.append(_t("a hotter magnet limit removes the heat warning (same run, same temperature)",
 		peak > cfg.magnet_max_c("N52") and peak < cfg.magnet_max_c("N52H")
@@ -88,6 +89,32 @@ static func _logic(cfg: MotorConfigs) -> Array:
 	out.append(_t("soak: winding starts at ambient, rises, ends below the limit with a headroom line; no warnings at hover",
 		temps[0] == MotorBench.AMBIENT_C and temps[temps.size() - 1] > temps[0] + 5.0
 		and String(soak.result).contains("below the 80") and soak.warnings.is_empty(), String(soak.result)))
+
+	# Heat is plausible: a 2207 flat out for 15 s lands in the real range, and a hover soak stays cool.
+	# (The old one-lump model, copper + iron against a still-air film, read 250 C for the punch.)
+	var hot := MotorBench.run("punch", _design(cfg, "2207", 1960.0), cfg)
+	out.append(_t("thermal: 2207 punch-out ends below 130 C (and above 60 C), the hover soak below 70 C",
+		float(hot.end_temp_c) < 130.0 and float(hot.end_temp_c) > 60.0 and float(soak.end_temp_c) < 70.0,
+		"punch %.0f C soak %.0f C" % [hot.end_temp_c, soak.end_temp_c]))
+	# The bell is part of the heat path: more conduction into it, a cooler winding (same loss).
+	var fig := _design(cfg, "2207", 1960.0).derive(cfg)
+	var lumps := MotorBench.Lumps.new(fig)
+	var tight := MotorBench.Lumps.new(fig)
+	tight.g_cond = lumps.g_cond * 4.0
+	for i in 30:
+		lumps.step(150.0, 20000.0, 0.5)
+		tight.step(150.0, 20000.0, 0.5)
+	out.append(_t("thermal: the bell is a second lump (winding hotter than bell; tighter coupling cools the winding)",
+		lumps.winding_c > lumps.bell_c + 5.0 and tight.winding_c < lumps.winding_c - 3.0 and lumps.bell_c > MotorBench.AMBIENT_C + 5.0,
+		"%.0f/%.0f vs %.0f" % [lumps.winding_c, lumps.bell_c, tight.winding_c]))
+	# Faster rpm cools better (forced convection), same loss and lumps.
+	var slow := MotorBench.Lumps.new(fig)
+	var fast := MotorBench.Lumps.new(fig)
+	for i in 60:
+		slow.step(40.0, 2000.0, 0.5)
+		fast.step(40.0, 20000.0, 0.5)
+	out.append(_t("thermal: the same loss runs cooler at high rpm than at low rpm",
+		fast.winding_c < slow.winding_c - 5.0, "%.0f vs %.0f" % [fast.winding_c, slow.winding_c]))
 
 	# Current and prop-size warnings.
 	var small := MotorBench.run("sweep", _design(cfg, "0802", 19000.0 if _design(cfg, "0802", 0.0).kv_choices(cfg).has(19000.0) else _design(cfg, "0802", 0.0).kv_choices(cfg)[0]), cfg)
