@@ -214,3 +214,137 @@ static func peak_chord_mm(doc: PropellerDocument) -> float:
 	for pt in doc.chord_points():
 		best_c = maxf(best_c, pt.y)
 	return best_c
+
+
+## ===========================================================================
+## WHERE THE MASS IS, AND WHAT IT DOES WHEN IT IS NOT QUITE WHERE IT SHOULD BE (Prop Designer PD4)
+## ===========================================================================
+##
+## Solid rectangular section, the same law as the mass above: a section's area is
+## `thickness_ratio·c`·`c`, so section mass goes as c², not c. A real airfoil is lighter than this
+## rectangle, which is why every figure below is an estimate on screen. Nothing here changes mass,
+## inertia or k², so no preset figure moves.
+
+
+## Chord at r/R, mm, by the same straight lines the integrals assume. Zero outside the drawn span:
+## there is no material where nobody drew a blade.
+static func chord_mm_at(doc: PropellerDocument, r_frac: float) -> float:
+	if doc == null:
+		return 0.0
+	var pts := doc.chord_points()
+	for i in pts.size() - 1:
+		var a: Vector2 = pts[i]
+		var b: Vector2 = pts[i + 1]
+		if r_frac >= a.x and r_frac <= b.x and b.x > a.x:
+			return lerpf(a.y, b.y, (r_frac - a.x) / (b.x - a.x))
+	return 0.0
+
+
+## One blade's mass per millimetre of span at r/R, g/mm. Integrates to `single_blade_mass_g`.
+static func section_mass_g_per_mm(doc: PropellerDocument, materials: FrameMaterials,
+		r_frac: float) -> float:
+	if doc == null or materials == null:
+		return 0.0
+	var c := chord_mm_at(doc, r_frac)
+	return materials.density(doc.material_id) * doc.thickness_ratio * c * c * MM3_TO_M3 / G_TO_KG
+
+
+## ∫ c(r)² r dr in mm⁴, the first-moment kernel behind the blade CG. Exact on each straight segment,
+## like the two integrals above.
+static func integral_c2_r_mm4(doc: PropellerDocument) -> float:
+	var pts := doc.chord_points()
+	if pts.size() < 2:
+		return 0.0
+	var radius_mm := doc.radius_mm()
+	var total := 0.0
+	for i in pts.size() - 1:
+		var a: Vector2 = pts[i]
+		var b: Vector2 = pts[i + 1]
+		var dx := b.x - a.x
+		var c0 := a.y
+		var dc := b.y - a.y
+		var x0 := a.x
+		# (c0 + dc·t)²·(x0 + dx·t), integrated over t in [0,1].
+		total += dx * radius_mm * radius_mm * (
+			c0 * c0 * x0
+			+ (c0 * c0 * dx + 2.0 * c0 * dc * x0) / 2.0
+			+ (2.0 * c0 * dc * dx + dc * dc * x0) / 3.0
+			+ dc * dc * dx / 4.0
+		)
+	return total
+
+
+## One blade's mass in grams. `blade_mass_g` is the whole set.
+static func single_blade_mass_g(doc: PropellerDocument, materials: FrameMaterials) -> float:
+	if doc == null or doc.blades <= 0:
+		return 0.0
+	return blade_mass_g(doc, materials) / float(doc.blades)
+
+
+## How far out one blade's centre of mass sits, mm from the axis: ∫c²r dr / ∫c²dr. Shape only.
+## Uniform chord gives R/2, a triangle with its apex at the root 3R/4, apex at the tip R/4.
+static func blade_cg_mm(doc: PropellerDocument) -> float:
+	if doc == null:
+		return 0.0
+	var c2 := integral_c2_mm3(doc)
+	if c2 <= 0.0:
+		return 0.0
+	return integral_c2_r_mm4(doc) / c2
+
+
+## The whole prop's mass from geometry: blades plus a hub, which is a guess the caller holds in a
+## field. This is not `published_mass_g`; a shelf prop's published figure stays what it flies on.
+static func prop_mass_g(doc: PropellerDocument, materials: FrameMaterials, hub_g: float) -> float:
+	return blade_mass_g(doc, materials) + maxf(hub_g, 0.0)
+
+
+## How far the whole prop's CG sits off the axis, mm, when one blade is `heavy_mg` over. A set with
+## no error sits on the axis by symmetry and the hub sits there anyway, so only the error moves it.
+static func prop_cg_offset_mm(doc: PropellerDocument, materials: FrameMaterials, hub_g: float,
+		heavy_mg: float) -> float:
+	var extra_g := heavy_mg * 0.001
+	var total_g := prop_mass_g(doc, materials, hub_g) + extra_g
+	if total_g <= 0.0:
+		return 0.0
+	return extra_g * blade_cg_mm(doc) / total_g
+
+
+## The 1x force of an offset mass: F = m·r·ω², newtons. The law FlightLaw.vibration_rate forces with.
+static func imbalance_force_n(mass_mg: float, arm_mm: float, rpm: float) -> float:
+	var omega := rpm * TAU / 60.0
+	return mass_mg * 1.0e-6 * arm_mm * 0.001 * omega * omega
+
+
+## A blade `heavy_mg` over carries that mass at its CG, while the build's `prop_imbalance_g` means a
+## mass at the blade RADIUS. This converts one to the other at equal force, so a tolerance cannot
+## reach the vibration model overstated by R / r_cg.
+static func imbalance_g_at_radius(doc: PropellerDocument, heavy_mg: float) -> float:
+	if doc == null or doc.radius_mm() <= 0.0:
+		return 0.0
+	return heavy_mg * 0.001 * blade_cg_mm(doc) / doc.radius_mm()
+
+
+## The couple from one blade running out of track, N·m. `tip_error_mm` is what a builder measures
+## at the tip; a blade flapped rigidly about its root has its CG out of the disc plane by
+## tip·r_cg/R, and its centrifugal force m·r_cg·ω² acts at that height.
+static func tracking_couple_nm(doc: PropellerDocument, materials: FrameMaterials,
+		tip_error_mm: float, rpm: float) -> float:
+	if doc == null or doc.radius_mm() <= 0.0:
+		return 0.0
+	var r_cg := blade_cg_mm(doc)
+	var force_n := imbalance_force_n(single_blade_mass_g(doc, materials) * 1000.0, r_cg, rpm)
+	return force_n * tip_error_mm * (r_cg / doc.radius_mm()) * 0.001
+
+
+## The 1x force this BUILD's imbalance makes, read through the same model the gyro shakes with, so
+## the figure and the vibration cannot be two numbers.
+static func build_imbalance_force_n(build: Build, rpm: float) -> float:
+	var model := VibrationModel.for_build(build)
+	return imbalance_force_n(model.imbalance_kg * 1.0e6, model.prop_radius_m * 1000.0, rpm)
+
+
+## Sets the build's imbalance. It stays a build value (see DEFAULT_ASSEMBLY); no prop record learns it.
+static func set_build_imbalance(build: Build, imbalance_g: float) -> void:
+	var resolved := build.assembly.duplicate()
+	resolved["prop_imbalance_g"] = imbalance_g
+	build.set_assembly(resolved)
