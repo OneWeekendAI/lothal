@@ -126,6 +126,15 @@ static func load_default() -> PartsCatalog:
 ## One loop per category rather than one document read: each CustomParts subclass owns its own
 ## array key and refuses records its category cannot use, so a motor with no thrust test is gone
 ## before it reaches here.
+## The saved motors as a dependency check needs them: read against the shipped parts and the custom
+## props only. Handing CustomMotors the full load_with_custom catalog reads zero motors, because
+## each one finds itself already there and is refused as a duplicate.
+static func saved_motors(path: String = CustomParts.SAVE_PATH) -> CustomMotors:
+	var catalog := load_default()
+	catalog._merge_custom(path, CustomPropellers.load_from(path))
+	return CustomMotors.load_from(path, catalog)
+
+
 static func load_with_custom(path: String = CustomParts.SAVE_PATH) -> PartsCatalog:
 	var catalog := load_default()
 	# Propellers FIRST: a custom motor's thrust_test.prop_id may name a custom prop, and

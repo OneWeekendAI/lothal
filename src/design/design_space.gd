@@ -2268,7 +2268,7 @@ func delete_saved_prop(p_part_id: String) -> bool:
 		return false
 	_pending_prop_delete = ""
 	var store := CustomPropellers.load_from(custom_parts_path)
-	if not store.remove_or_refuse(p_part_id, CustomMotors.load_from(custom_parts_path, _catalog)):
+	if not store.remove_or_refuse(p_part_id, PartsCatalog.saved_motors(custom_parts_path)):
 		prop_delete_problem = "A saved motor was tested with this prop"
 		return false
 	if not store.save(custom_parts_path):

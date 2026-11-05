@@ -939,6 +939,9 @@ static func _test_save_shelf_life(catalog: PartsCatalog, mats: FrameMaterials) -
 	var parts := JsonStore.read_document(d.store_path)
 	parts["motors"] = [CustomMotors.make_record("Shed", 32.0, 22.0, 7.0, 1960.0, 1450.0, 32.0, 14, "16x16", copy, 14.8, "t")]
 	JsonStore.write_document(d.store_path, parts)
+	# The app's real state: the saved motor is already in the catalog when the delete is pressed.
+	ds.refresh_catalog()
+	out.append(_t("the motor is on the catalog the delete runs against", not ds._catalog.get_part("custom_shed").is_empty()))
 	ds.delete_saved_prop(copy)
 	var refused := not ds.delete_saved_prop(copy)
 	out.append(_t("a prop a motor was tested with is refused, and says so", refused and ds.prop_delete_problem != ""
