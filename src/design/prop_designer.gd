@@ -39,9 +39,22 @@ const TABS := ["figures", "tunnel", "stand", "structure"]
 const TAB_LABELS := ["Figures", "Wind tunnel", "Thrust stand", "Structure"]
 const RPM_RANGE := Vector2(500.0, 60000.0)
 const STEP_RPM := 500.0
+const SOURCE_DRAWN := "drawn in the prop designer"
+const SOURCE_DRAWN_HUB_EST := "drawn in the prop designer; hub estimated"
+const NOTE_TYPED := "Typed prop: saving makes a new one."
+const NOTE_UNREADABLE := "Blade unreadable: saving makes a new one."
 const PITCH_OFFER_NOTE := "Pitch changed, angles did not: the twist is drawn."
 
+signal saved(part_id: String)
+
 var catalog: PartsCatalog
+## Where saves go, and the id being edited ("" until the first save, and for a typed prop).
+var store_path: String = CustomParts.SAVE_PATH
+var part_id := ""
+var save_as_button: Button
+var status_label: Label
+## True while the hub is still default_hub_g's estimate rather than a value somebody set.
+var hub_assumed := true
 var materials: FrameMaterials
 var doc: PropellerDocument
 ## Not on the document: a blade document holds the blades, and a hub's grams are the prop's.
@@ -120,7 +133,9 @@ func _start_from(build: Build) -> void:
 	doc.id = ""
 	doc.name = "New prop"
 	doc.published_mass_g = 0.0
-	hub_g = default_hub_g(doc, materials)
+	var held: Dictionary = prop.get(CustomPropellers.DESIGN_KEY, {})
+	hub_assumed = bool(held.get("hub_assumed", not held.has("hub_g")))
+	hub_g = float(held["hub_g"]) if held.has("hub_g") else default_hub_g(doc, materials)
 	rpm = Fitting.rated_rpm(float(motor["specs"]["kv"]), float(motor["thrust_test"]["voltage_v"])) \
 		* PropulsionWorkbench.DESIGN_RPM_FRACTION
 
@@ -148,12 +163,23 @@ func _build_top_bar() -> Control:
 	bar.add_child(undo_button)
 	redo_button = _bar_button("Redo", "Redo", redo, "Step forward again (Ctrl-Shift-Z)")
 	bar.add_child(redo_button)
-	bar.add_child(_fill())
+	# One line that fills the gap: it must never wrap, or it stretches the whole bar downward.
+	status_label = _faint("")
+	status_label.name = "SaveStatus"
+	status_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	status_label.clip_text = true
+	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bar.add_child(status_label)
 	copy_button = _bar_button("CopySpecs", "Copy specs", func(): pass, "Not available yet")
 	copy_button.disabled = true
 	bar.add_child(copy_button)
-	save_button = _bar_button("Save", "Save", func(): pass, "Saving is not available yet")
-	save_button.disabled = true
+	var typed := _bar_button("Typed", "Typed", open_typed_dialog, "Enter a prop's published figures by hand; no blade to draw")
+	bar.add_child(typed)
+	save_as_button = _bar_button("SaveAs", "Save as new", func(): save_as(), "A new prop; the one you opened stays as it was")
+	bar.add_child(save_as_button)
+	save_button = _bar_button("Save", "Save", func(): save(), "Save this prop to the shelf")
 	bar.add_child(save_button)
 	return bar
 
@@ -323,6 +349,7 @@ func step_rpm(delta_rpm: float) -> void:
 
 func set_prop_name(text: String) -> void:
 	doc.name = text
+	_clear_save_verdict()
 	_rederive()
 
 
@@ -361,7 +388,9 @@ func set_blades(count: int) -> void:
 
 func set_hub_g(grams: float) -> void:
 	var before := _snapshot()
-	hub_g = clampf(snappedf(grams, STEP_HUB_G), HUB_RANGE_G.x, HUB_RANGE_G.y)
+	var next := clampf(snappedf(grams, STEP_HUB_G), HUB_RANGE_G.x, HUB_RANGE_G.y)
+	hub_assumed = hub_assumed and next == hub_g
+	hub_g = next
 	_commit(before)
 
 
@@ -454,7 +483,7 @@ func _show_caret() -> void:
 func _snapshot() -> Dictionary:
 	var blade := doc.to_dictionary()
 	blade.erase("name")
-	return {"doc": blade, "hub_g": hub_g, "pad_mm": pad_mm}
+	return {"doc": blade, "hub_g": hub_g, "hub_assumed": hub_assumed, "pad_mm": pad_mm}
 
 
 func _push(snapshot: Dictionary) -> void:
@@ -473,6 +502,7 @@ func _record() -> void:
 func _commit(before: Dictionary) -> void:
 	if _snapshot() != before:
 		_push(before)
+		_clear_save_verdict()
 	_rederive()
 
 
@@ -481,6 +511,7 @@ func _restore(snapshot: Dictionary) -> void:
 	doc = PropellerDocument.from_dictionary(snapshot["doc"])
 	doc.name = kept_name
 	hub_g = float(snapshot["hub_g"])
+	hub_assumed = bool(snapshot["hub_assumed"])
 	pad_mm = float(snapshot["pad_mm"])
 	chord_editor.set_document(doc)
 	twist_editor.set_document(doc)
@@ -539,12 +570,109 @@ func figures() -> Dictionary:
 
 
 ## This prop as a part the rest of the app can fly, from a copy: publishing stamps its document.
-func flyable_record(part_id: String) -> Dictionary:
+func flyable_record(p_part_id: String) -> Dictionary:
 	var copy := PropellerDocument.from_dictionary(doc.to_dictionary())
 	var rec := CustomPropellers.record_from_document(copy, materials, "on the prop designer's stand")
-	rec["part_id"] = part_id
+	rec["part_id"] = p_part_id
 	rec["mass_g"] = float(rec.get("mass_g", 0.0)) + hub_g
 	return rec
+
+
+# ---------------------------------------------------------------------------
+# Opening and saving (CustomParts.put_record, as the pack and motor designers do)
+# ---------------------------------------------------------------------------
+
+## A saved prop, to edit. A drawn one reopens under its id. A typed one, or one whose blade cannot be
+## read, opens as a NEW prop with its size, so a save never overwrites what is held.
+func open_prop(p_part_id: String) -> void:
+	var rec := CustomPropellers.load_from(store_path).get_record(p_part_id)
+	if rec.is_empty():
+		return
+	var authored := PropellerDocument.authored_blade_of(rec)
+	doc = authored if authored != null else PropellerDocument.from_catalog_prop(rec)
+	var held: Dictionary = rec.get(CustomPropellers.DESIGN_KEY, {})
+	part_id = p_part_id if authored != null else ""
+	source_name = String(rec.get("name", ""))
+	hub_assumed = bool(held.get("hub_assumed", not held.has("hub_g")))
+	hub_g = float(held["hub_g"]) if held.has("hub_g") else default_hub_g(doc, materials)
+	structure.heavy_mg = float(held.get("heavy_mg", CustomPropellers.DEFAULT_HEAVY_MG))
+	_undo.clear()
+	_redo.clear()
+	name_field.text = doc.name
+	chord_editor.set_document(doc)
+	twist_editor.set_document(doc)
+	pitch_offer_open = false
+	_set_status(_open_note(rec, authored != null), false)
+	_rederive()
+
+
+func _open_note(rec: Dictionary, readable: bool) -> String:
+	if readable:
+		return ""
+	return NOTE_UNREADABLE if PropellerDocument.has_unreadable_blade(rec) else NOTE_TYPED
+
+
+## Saves under the current id (a new prop gets one). "" when refused or not written; the bar says so.
+func save() -> String:
+	return _write(part_id)
+
+
+## A new prop from this one, never touching the one opened. With the name unchanged it is "<name> copy".
+func save_as() -> String:
+	var opened := CustomPropellers.load_from(store_path).get_record(part_id)
+	if not opened.is_empty() and doc.name == String(opened.get("name", "")):
+		doc.name = "%s copy" % doc.name
+		name_field.text = doc.name
+	return _write("")
+
+
+func _write(previous_id: String) -> String:
+	var store := CustomPropellers.load_from(store_path)
+	var rec := flyable_record(previous_id)
+	rec["source"] = SOURCE_DRAWN_HUB_EST if hub_assumed else SOURCE_DRAWN
+	rec[CustomPropellers.DESIGN_KEY] = {"hub_g": hub_g, "hub_assumed": hub_assumed, "heavy_mg": structure.heavy_mg}
+	var id := store.put_record(rec, previous_id)
+	if id == "":
+		_set_status("Not saved: a prop needs a name." if doc.name.strip_edges() == "" else "Not saved: this prop was refused.", true)
+		return ""
+	if not store.save(store_path):
+		_set_status("Not saved: could not write your parts file.", true)
+		return ""
+	part_id = id
+	doc.id = id
+	_set_status("Saved", false)
+	saved.emit(id)
+	return id
+
+
+## "Saved" and "Not saved" describe the last press, so an edit ends them. Notes about the prop stay.
+func _clear_save_verdict() -> void:
+	if status_label.text == "Saved" or status_label.text.begins_with("Not saved"):
+		_set_status("", false)
+
+
+## A problem from outside this prop (old drafts that did not come across), in amber on the bar.
+func show_warning(text: String) -> void:
+	_set_status(text, true)
+
+
+func _set_status(text: String, warn: bool) -> void:
+	status_label.text = text
+	if warn:
+		status_label.add_theme_color_override("font_color", DesignSpace.WARN_INK)
+	else:
+		status_label.remove_theme_color_override("font_color")
+
+
+## The typed path, kept: six fields and a source, for a prop nobody draws.
+func open_typed_dialog() -> CustomPropellerDialog:
+	var dialog := CustomPropellerDialog.new()
+	dialog.store_path = store_path
+	dialog.propeller_saved.connect(func(id: String): saved.emit(id))
+	add_child(dialog)
+	if dialog.is_inside_tree():
+		dialog.popup_centered()
+	return dialog
 
 
 func _set_fig(key: String, text: String, tag: String) -> void:
@@ -559,7 +687,7 @@ func _rederive() -> void:
 	diameter_value.text = "%.1f in" % inches
 	pitch_value.text = "%.1f in" % (doc.pitch_mm / PropellerDocument.INCH_TO_MM)
 	blades_value.text = str(doc.blades)
-	hub_value.text = "%.1f g" % hub_g
+	hub_value.text = ("~%.1f g" if hub_assumed else "%.1f g") % hub_g
 	pad_value.text = "%.1f mm" % pad_mm
 	_mark_chips(material_row, MATERIALS, doc.material_id)
 	var material_name := String(materials.get_material(doc.material_id).get("name", doc.material_id))

@@ -35,6 +35,7 @@ extends RefCounted
 ## rather than approximately.
 
 const SCHEMA_VERSION := 1
+const EXACT_AGREEMENT := 1.0e-9
 
 ## The top-level keys this version reads. Everything else is unknown and is kept verbatim — the
 ## JsonStore.unknown_fields mechanism, unchanged from `airframe.md` §2.
@@ -43,7 +44,7 @@ const KNOWN_KEYS := [
 	"diameter_mm", "pitch_mm", "blades",
 	"chord", "twist_mode", "twist",
 	"material_id", "thickness_ratio", "chord_is_assumed",
-	"published_mass_g",
+	"published_mass_g", "chord_exact", "twist_exact",
 ]
 
 ## §3.2's discriminator. Default is `geometric`: `β(r) = atan(P / 2πr)` derives from pitch, which is
@@ -447,9 +448,9 @@ static func from_dictionary(document: Dictionary) -> PropellerDocument:
 	doc.diameter_mm = float(document.get("diameter_mm", 0.0))
 	doc.pitch_mm = float(document.get("pitch_mm", 0.0))
 	doc.blades = maxi(int(document.get("blades", 2)), 1)
-	doc.chord = _flat_from_json(document.get("chord", []))
+	doc.chord = _exact_or(_flat_from_json(document.get("chord", [])), document.get("chord_exact", ""))
 	doc.twist_mode = str(document.get("twist_mode", TWIST_MODE_GEOMETRIC))
-	doc.twist = _flat_from_json(document.get("twist", []))
+	doc.twist = _exact_or(_flat_from_json(document.get("twist", [])), document.get("twist_exact", ""))
 	doc.material_id = str(document.get("material_id", "polycarbonate"))
 	doc.thickness_ratio = float(document.get("thickness_ratio", DEFAULT_THICKNESS_RATIO))
 	doc.chord_is_assumed = bool(document.get(CHORD_ASSUMED, false))
@@ -476,7 +477,23 @@ func to_dictionary() -> Dictionary:
 	out["thickness_ratio"] = thickness_ratio
 	out[CHORD_ASSUMED] = chord_is_assumed
 	out["published_mass_g"] = published_mass_g
+	out["chord_exact"] = chord.to_byte_array().hex_encode()
+	out["twist_exact"] = twist.to_byte_array().hex_encode()
 	return out
+
+
+## Godot's JSON parser lands about one double in nine a unit in the last place away, whatever the
+## writer prints, so the decimals alone cannot hold a blade bit for bit. `*_exact` is the same list
+## as raw bytes. The decimals stay what a person reads and edits: a hex that no longer agrees with
+## them is stale, and the decimals win.
+static func _exact_or(decimals: PackedFloat64Array, hex: Variant) -> PackedFloat64Array:
+	var exact: PackedFloat64Array = str(hex).hex_decode().to_float64_array()
+	if exact.size() != decimals.size():
+		return decimals
+	for i in exact.size():
+		if absf(exact[i] - decimals[i]) > EXACT_AGREEMENT:
+			return decimals
+	return exact
 
 
 ## A bad file loads as an empty propeller rather than as a crash — json_store.gd's first rule.

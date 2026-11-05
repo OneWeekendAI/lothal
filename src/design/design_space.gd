@@ -2144,16 +2144,38 @@ var prop_designer: PropDesigner
 
 ## Opens the prop designer over the Design Space, starting from this drone's prop. A second call
 ## while it is open does nothing.
-func open_prop_designer() -> void:
+func open_prop_designer(saved_id: String = "") -> void:
 	if prop_designer != null:
 		return
 	cancel_drag()
 	var designer := PropDesigner.new(_catalog, FrameMaterials.load_default(), session.build(_catalog))
+	designer.store_path = custom_parts_path
+	# A saved prop may be on this drone: the catalog is re-read, and session.build resolves from it.
+	designer.saved.connect(func(_id: String): refresh_catalog())
 	designer.closed.connect(func(): prop_designer = null)
 	prop_designer = designer
 	add_child(designer)
+	if saved_id != "":
+		designer.open_prop(saved_id)
+	var draft_problem := CustomPropellers.migration_problem(draft_migration)
+	if draft_problem != "":
+		designer.show_warning(draft_problem)
 	if designer.is_inside_tree():
 		designer.grab_focus()
+
+
+## Where old drafts are read from, and what the last migration reported.
+var blade_drafts_dir: String = BladeLibrary.DIRECTORY
+var draft_migration: Dictionary = {}
+
+
+## Brings old `user://blades` drafts onto the prop shelf. Called by the shell each time it opens the
+## Design Space (a draft already brought over is remembered), not by _ready, so a test's Design Space
+## never reads a drafts folder it did not ask for. Anything that failed shows on the designer's bar.
+func migrate_old_drafts() -> void:
+	draft_migration = CustomPropellers.migrate_drafts(custom_parts_path, blade_drafts_dir, FrameMaterials.load_default())
+	if not (draft_migration["added"] as Array).is_empty():
+		refresh_catalog()
 
 
 ## "Design a pack…" in the motor designer: the pack designer opens over it, and the pack it saves
@@ -2173,10 +2195,12 @@ func _design_pack_for_motor() -> void:
 ## asks twice, in the menu itself: the first press relabels it, the second deletes.
 var card_menu: PopupMenu
 var _card_menu_id := ""
+var _card_menu_category := "motor"
 
 func open_card_menu(category: String, part_id: String) -> void:
-	if category != "motor" or not PartsCatalog.is_custom(part_id):
+	if (category != "motor" and category != "propeller") or not PartsCatalog.is_custom(part_id):
 		return
+	_card_menu_category = category
 	if card_menu == null:
 		card_menu = PopupMenu.new()
 		card_menu.name = "CardMenu"
@@ -2193,11 +2217,17 @@ func open_card_menu(category: String, part_id: String) -> void:
 
 func _on_card_menu(item: int) -> void:
 	var id := _card_menu_id
+	var is_prop := _card_menu_category == "propeller"
 	if item == 0:
 		card_menu.hide()
-		open_motor_designer(id)
-	elif delete_saved_motor(id):
+		if is_prop:
+			open_prop_designer(id)
+		else:
+			open_motor_designer(id)
+	elif delete_saved_prop(id) if is_prop else delete_saved_motor(id):
 		card_menu.hide()
+	elif is_prop and prop_delete_problem != "":
+		card_menu.set_item_text(1, prop_delete_problem)
 	else:
 		card_menu.set_item_text(1, "Press again to delete")
 
@@ -2219,6 +2249,33 @@ func delete_saved_motor(part_id: String) -> bool:
 		return false
 	if String(session.selection.get("motor", "")) == part_id:
 		session.set_part("motor", String(DroneClass.parts_for(session.drone_class).get("motor", "")))
+	refresh_catalog()
+	return true
+
+
+## Deletes a saved prop, arm-then-confirm. Refused, with prop_delete_problem set, when a saved motor
+## names it as its thrust-test prop or the file cannot be written. A prop fitted on this drone goes
+## back to the class's own first.
+var _pending_prop_delete := ""
+var prop_delete_problem := ""
+
+func delete_saved_prop(p_part_id: String) -> bool:
+	prop_delete_problem = ""
+	if not PartsCatalog.is_custom(p_part_id):
+		return false
+	if _pending_prop_delete != p_part_id:
+		_pending_prop_delete = p_part_id
+		return false
+	_pending_prop_delete = ""
+	var store := CustomPropellers.load_from(custom_parts_path)
+	if not store.remove_or_refuse(p_part_id, CustomMotors.load_from(custom_parts_path, _catalog)):
+		prop_delete_problem = "A saved motor was tested with this prop"
+		return false
+	if not store.save(custom_parts_path):
+		prop_delete_problem = "Could not write your parts file"
+		return false
+	if String(session.selection.get("propeller", "")) == p_part_id:
+		session.set_part("propeller", String(DroneClass.parts_for(session.drone_class).get("propeller", "")))
 	refresh_catalog()
 	return true
 

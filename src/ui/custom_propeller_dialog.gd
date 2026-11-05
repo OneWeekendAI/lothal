@@ -92,12 +92,16 @@ func set_fields(part_name: String, mass_g: float, diameter_inches: float, pitch_
 	_source.text = source
 
 
+## Where the record goes. Only the prop designer and tests change it.
+var store_path: String = CustomParts.SAVE_PATH
+
+
 func problems() -> Array[String]:
 	return _last_problems
 
 
 func submit() -> Array[String]:
-	var document := CustomPropellers.load_from()
+	var document := CustomPropellers.load_from(store_path)
 	var record := CustomPropellers.make_record(
 		_name.text.strip_edges(), _mass.value, _diameter.value, _pitch.value,
 		int(_blades.value), MATERIALS[_material.selected], _source.text.strip_edges())
@@ -108,8 +112,13 @@ func submit() -> Array[String]:
 		_problems.visible = true
 		return _last_problems
 
+	if not document.save(store_path):
+		_last_problems = ["your parts file could not be written, so this prop is not saved"] as Array[String]
+		_problems.text = _last_problems[0]
+		_problems.visible = true
+		return _last_problems
+
 	_problems.visible = false
-	document.save()
 	propeller_saved.emit(str(record["part_id"]))
 	hide()
 	return _last_problems

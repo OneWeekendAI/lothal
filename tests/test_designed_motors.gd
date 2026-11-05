@@ -99,8 +99,8 @@ static func _migration() -> Array:
 	var packs := DesignedPacks.load_from(SCRATCH)
 	out.append(_t("the designed pack in the same file loads unchanged",
 		packs.records().size() == 1 and _same(packs.records()[0], raw.batteries[0]), ""))
-	out.append(_t("loading does not rewrite the file; CustomParts is at schema 3",
-		FileAccess.get_file_as_string(SCRATCH) == before and CustomParts.SCHEMA_VERSION == 3, ""))
+	out.append(_t("loading does not rewrite the file; CustomParts is at schema 4",
+		FileAccess.get_file_as_string(SCRATCH) == before and CustomParts.SCHEMA_VERSION == 4, ""))
 	return out
 
 
@@ -133,8 +133,8 @@ static func _save_reload_shelf_drone() -> Array:
 	for r in w.motors:
 		if String(r.part_id) == id:
 			rec = r
-	out.append(_t("Save stores a designer record: choices, derived figures, a thrust test, at schema 3",
-		id == "custom_hill_climber" and int(w.schema) == 3 and not rec.is_empty()
+	out.append(_t("Save stores a designer record: choices, derived figures, a thrust test, at schema 4",
+		id == "custom_hill_climber" and int(w.schema) == 4 and not rec.is_empty()
 		and String(rec.design.size) == "2207" and float(rec.design.kv) == 2400.0
 		and int(rec.design.poles) == 12 and String(rec.design.magnet) == "N52H"
 		and float(rec.design.shaft_mm) == 5.0 and String(rec.mount_pattern) == "16x16"

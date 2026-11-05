@@ -140,7 +140,7 @@ static func _files() -> Array:
 	doc.designs(CellLibrary.load_default())
 	out.append(_t("loading a v1 file does not rewrite it",
 		FileAccess.get_file_as_string(path) == before, ""))
-	out.append(_t("CustomParts is at schema 3", CustomParts.SCHEMA_VERSION == 3, ""))
+	out.append(_t("CustomParts is at schema 4", CustomParts.SCHEMA_VERSION == 4, ""))
 	var charge := PackCharge.new()
 	var d := doc.designs(CellLibrary.load_default())[0]
 	d.name = "Shed 4S 1300 renamed"
@@ -149,8 +149,8 @@ static func _files() -> Array:
 	var ids: Array = []
 	for r in written.batteries:
 		ids.append(r.part_id)
-	out.append(_t("save writes schema 3, keeps ids and other blocks",
-		int(written.schema) == 3 and id == "custom_shed_4s_1300" and ids == CHAIN_IDS
+	out.append(_t("save writes schema 4, keeps ids and other blocks",
+		int(written.schema) == 4 and id == "custom_shed_4s_1300" and ids == CHAIN_IDS
 		and written.has("x_future_block") and written.has("frames"), str(ids)))
 	return out
 

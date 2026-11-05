@@ -59,6 +59,148 @@ static func load_from(path: String = SAVE_PATH) -> CustomPropellers:
 	return doc
 
 
+# ---------------------------------------------------------------------------
+# Schema 4: the prop designer's `design` block, and what came before it
+# ---------------------------------------------------------------------------
+#
+# `design` holds what the blade document does not: hub grams, whether they are still the estimate,
+# and the heavy-blade input. On load, in memory, like CustomMotors: a typed record is marked legacy
+# and a published blade gets hub 0, because its flown mass never counted a hub. Neither moves a
+# number that flies.
+
+const DESIGN_KEY := "design"
+const LEGACY_BASIS := "typed figures"
+const DEFAULT_HEAVY_MG := 10.0
+const DRAFTS_DONE_KEY := "blade_drafts_migrated"
+const DRAFT_SOURCE := "drawn in the Propulsion room, as draft %s"
+
+## Records this file holds that were refused on load, written back as found: the shared rule says a
+## bad line costs the builder that line for this session, not for good.
+var _refused: Array = []
+
+
+func _migrate(document: Dictionary, _from_version: int) -> Dictionary:
+	var stored: Variant = document.get(PROPELLERS_KEY, null)
+	if not (stored is Array):
+		return document
+	var out := document.duplicate(false)
+	var migrated: Array = []
+	for entry: Variant in (stored as Array):
+		if entry is Dictionary and not (entry as Dictionary).has(DESIGN_KEY):
+			migrated.append(migrate_record(entry as Dictionary))
+		else:
+			migrated.append(entry)
+	out[PROPELLERS_KEY] = migrated
+	return out
+
+
+static func migrate_record(rec: Dictionary) -> Dictionary:
+	var out := rec.duplicate(true)
+	if rec.has(PropellerDocument.AUTHORED_BLADE_KEY):
+		out[DESIGN_KEY] = {"hub_g": 0.0, "hub_assumed": false, "heavy_mg": DEFAULT_HEAVY_MG}
+	else:
+		out[DESIGN_KEY] = {"legacy": true, "basis": LEGACY_BASIS}
+	return out
+
+
+static func is_typed(rec: Dictionary) -> bool:
+	return bool((rec.get(DESIGN_KEY, {}) as Dictionary).get("legacy", false))
+
+
+func read_from(path: String, catalog: PartsCatalog = null) -> void:
+	super.read_from(path, catalog)
+	if _rejections.is_empty():
+		return
+	var stored: Variant = JsonStore.read_document(path).get(PROPELLERS_KEY, [])
+	if stored is Array:
+		for entry: Variant in (stored as Array):
+			if entry is Dictionary and get_record(str((entry as Dictionary).get("part_id", ""))).is_empty():
+				_refused.append(entry)
+
+
+func save(path: String = SAVE_PATH) -> bool:
+	var document := _unknown_top.duplicate(true)
+	document["schema"] = SCHEMA_VERSION
+	document[PROPELLERS_KEY] = _records + _refused
+	return JsonStore.write_document(path, document, true)
+
+
+## Old drafts become saved props. The draft files are read and never touched, and the parts file
+## remembers each by its text: a draft is not brought back after its prop is deleted, and one edited
+## later in the old room comes in again rather than being lost. A failed write leaves the memory
+## unwritten too, so the next launch tries again.
+## Returns {added: [ids], skipped: int, unreadable: [file names], refused: [text], write_failed: bool}.
+static func migrate_drafts(path: String, drafts_dir: String, materials: FrameMaterials) -> Dictionary:
+	var report := {"added": [], "skipped": 0, "unreadable": [], "refused": [], "write_failed": false}
+	var directory := DirAccess.open(drafts_dir)
+	if directory == null:
+		return report
+	var store := load_from(path)
+	var done: Dictionary = store._unknown_top.get(DRAFTS_DONE_KEY, {}).duplicate()
+	var changed := false
+	var files := directory.get_files()
+	files.sort()
+	for file_name: String in files:
+		if not file_name.ends_with(BladeLibrary.EXTENSION):
+			continue
+		var full := "%s/%s" % [drafts_dir, file_name]
+		var text := FileAccess.get_file_as_string(full)
+		var stamp := text.md5_text()
+		if String(done.get(file_name, "")) == stamp:
+			continue
+		var draft := PropellerDocument.load_from(full)
+		if not draft.is_readable():
+			report["unreadable"].append(file_name)
+			continue
+		if store._holds_blade(draft):
+			report["skipped"] = int(report["skipped"]) + 1
+		else:
+			if draft.name.strip_edges() == "":
+				draft.name = file_name.trim_suffix(BladeLibrary.EXTENSION)
+			var hub := PropDesigner.default_hub_g(draft, materials)
+			var rec := record_from_document(draft, materials, DRAFT_SOURCE % file_name)
+			rec["mass_g"] = float(rec.get("mass_g", 0.0)) + hub
+			rec[DESIGN_KEY] = {"hub_g": hub, "hub_assumed": true, "heavy_mg": DEFAULT_HEAVY_MG, "draft": file_name}
+			var id := store.put_record(rec)
+			if id == "":
+				report["refused"].append(file_name)
+				continue
+			report["added"].append(id)
+		done[file_name] = stamp
+		changed = true
+	if changed:
+		store._unknown_top[DRAFTS_DONE_KEY] = done
+		if not store.save(path):
+			report["write_failed"] = true
+			report["added"] = []
+	return report
+
+
+## One line for the builder when a migration left something behind, "" when it did not. The draft
+## files are untouched either way, so this is a thing to know, not a loss.
+static func migration_problem(report: Dictionary) -> String:
+	if bool(report.get("write_failed", false)):
+		return "Old drafts not brought over: could not write your parts file."
+	var left := (report.get("unreadable", []) as Array).size() + (report.get("refused", []) as Array).size()
+	if left > 0:
+		return "%d old draft%s could not be brought over; the file%s kept." % [left, "" if left == 1 else "s", " is" if left == 1 else "s are"]
+	return ""
+
+
+## True when a published prop here is this very blade: same shape, whatever mass was stamped on it.
+func _holds_blade(draft: PropellerDocument) -> bool:
+	var want := draft.to_dictionary()
+	want.erase("published_mass_g")
+	for rec: Dictionary in _records:
+		var block: Variant = rec.get(PropellerDocument.AUTHORED_BLADE_KEY, null)
+		if block is Dictionary:
+			var have := PropellerDocument.from_dictionary(block as Dictionary).to_dictionary()
+			have.erase("published_mass_g")
+			if have == want:
+				return true
+	return false
+
+
 ## A catalog-shaped record from the six things a builder reads off a listing. Static, and the ONE
 ## place a prop record's shape is written down — a UI that has drifted cannot produce a record no
 ## reader understands.

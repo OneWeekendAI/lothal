@@ -3414,6 +3414,7 @@ func show_design_space() -> DesignSpace:
 	design_space.dismissed.connect(_close_design_space)
 	design_space.back_requested.connect(back_to_class_picker)
 	_design_space_layer.add_child(design_space)
+	design_space.migrate_old_drafts()
 	return design_space
 
 

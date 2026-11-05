@@ -50,12 +50,12 @@ static func read_document(path: String) -> Dictionary:
 ## Writes `document` to `path`, pretty-printed so the file stays reviewable and hand-editable.
 ## Returns false if it could not be opened — a caller may report that, but nothing in Lab depends
 ## on it, since an unsaveable preference is a lost preference and not a broken workbench.
-static func write_document(path: String, document: Dictionary) -> bool:
+static func write_document(path: String, document: Dictionary, full_precision := false) -> bool:
 	var handle := FileAccess.open(path, FileAccess.WRITE)
 	if handle == null:
 		push_warning("could not write %s (error %d)" % [path, FileAccess.get_open_error()])
 		return false
-	handle.store_string(JSON.stringify(document, "  "))
+	handle.store_string(JSON.stringify(document, "  ", true, full_precision))
 	handle.close()
 	return true
 

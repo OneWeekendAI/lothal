@@ -47,7 +47,7 @@ const SAVE_PATH := "user://custom_parts.json"
 ## unchanged. A document read at an older schema is never rewritten until something saves it.
 ## Schema 3 (motor designer): motor records may carry a `design` block the same way, and
 ## CustomMotors migrates an older hand-typed motor on load by adding a legacy block and nothing else.
-const SCHEMA_VERSION := 3
+const SCHEMA_VERSION := 4
 
 var _records: Array = []
 var _rejections: Array[String] = []
@@ -241,7 +241,8 @@ func save(path: String = SAVE_PATH) -> bool:
 	var document := _unknown_top.duplicate(true)
 	document["schema"] = SCHEMA_VERSION
 	document[array_key()] = _records
-	return JsonStore.write_document(path, document)
+	# Full precision: every category's save rewrites the whole shared file, blades included.
+	return JsonStore.write_document(path, document, true)
 
 
 ## Fills this document from the file. Every failure mode lands in the same place, and a refused

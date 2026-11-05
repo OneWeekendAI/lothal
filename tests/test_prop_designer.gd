@@ -39,6 +39,13 @@ static func run() -> Array:
 	results.append_array(_test_tunnel_colours(catalog, mats))
 	results.append_array(_test_stand(catalog, mats))
 	results.append_array(_test_structure(catalog, mats))
+	results.append_array(_test_save_round_trip(catalog, mats))
+	results.append_array(_test_save_flies())
+	results.append_array(_test_save_shelf_life(catalog, mats))
+	results.append_array(_test_save_failures(catalog, mats))
+	results.append_array(_test_typed_path(catalog, mats))
+	results.append_array(_test_migration(mats))
+	results.append_array(_test_migration_reaches_builder(catalog, mats))
 	return results
 
 
@@ -112,7 +119,7 @@ static func _test_opens_valid(catalog: PartsCatalog, mats: FrameMaterials) -> Ar
 			continue
 		out.append(_t("opens with non-zero %s" % key, _num(d._figs[key]) > 0.0, (d._figs[key] as Label).text))
 	out.append(_t("mount reads a stated value on open", (d._figs["mount"] as Label).text != ""))
-	out.append(_t("Save is disabled until saving exists", d.save_button.disabled))
+	out.append(_t("Save is enabled", not d.save_button.disabled))
 	out.append(_t("Copy specs is disabled until it exists", d.copy_button.disabled))
 	out.append(_t("a new prop has no id to overwrite", d.doc.id == ""))
 	out.append(_t("a new prop claims no vendor mass", d.doc.published_mass_g == 0.0))
@@ -796,3 +803,326 @@ static func _test_structure(catalog: PartsCatalog, mats: FrameMaterials) -> Arra
 	d.free()
 	return out
 
+
+
+# ---------------------------------------------------------------------------
+# PD10: save, shelf, migration. All on scratch files under user://, relocated by the runner.
+# ---------------------------------------------------------------------------
+
+const MOTOR_COUNT := 4
+const SCRATCH_DIR := "user://pd10"
+const BAD_PATH := "user://pd10/no_such_folder/parts.json"
+
+
+static func _scratch(file_name: String) -> String:
+	DirAccess.make_dir_recursive_absolute(SCRATCH_DIR)
+	var path := "%s/%s" % [SCRATCH_DIR, file_name]
+	DirAccess.remove_absolute(path)
+	return path
+
+
+static func _edited(d: PropDesigner) -> void:
+	d.twist_editor.drag_station_to(5, d.twist_editor.to_pixels(0.6, 27.0))
+	d.chord_editor.drag_station_to(24, d.chord_editor.to_pixels(0.6, 15.0))
+
+
+static func _test_save_round_trip(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	d.store_path = _scratch("round.json")
+	_edited(d)
+	d.set_prop_name("Round trip")
+	var est_hub := d.hub_g
+	var hub_text := d.hub_value.text
+	out.append(_t("an untouched hub reads as an estimate", hub_text.begins_with("~")))
+	d.structure.set_heavy(35.0)
+	var id := d.save()
+	out.append(_t("a save returns a custom id", PartsCatalog.is_custom(id)))
+	var other := _designer(catalog, mats)
+	other.store_path = d.store_path
+	other.open_prop(id)
+	out.append(_t("chord comes back bit-exact", other.doc.chord == d.doc.chord and d.doc.chord.size() > 4, "%s | %s" % [str(other.doc.chord).left(120), str(d.doc.chord).left(120)]))
+	out.append(_t("twist comes back bit-exact", other.doc.twist == d.doc.twist and d.doc.twist.size() > 4))
+	out.append(_t("twist mode comes back", other.doc.twist_mode == PropellerDocument.TWIST_MODE_AUTHORED))
+	out.append(_t("hub default is saved and still marked an estimate", is_equal_approx(other.hub_g, est_hub) and other.hub_assumed, "%s %s %s" % [other.hub_g, est_hub, other.hub_assumed]))
+	out.append(_t("heavy-blade input is saved", other.structure.heavy_mg == 35.0))
+	out.append(_t("reopened under its id", other.part_id == id))
+	var rec := CustomPropellers.load_from(d.store_path).get_record(id)
+	out.append(_t("the source says the hub is estimated", String(rec["source"]) == PropDesigner.SOURCE_DRAWN_HUB_EST))
+	var blade_g := BladeGeometry.blade_mass_g(d.doc, mats)
+	out.append(_t("record mass is blades plus hub", is_equal_approx(float(rec["mass_g"]), blade_g + est_hub)))
+	d.set_hub_g(est_hub + 1.0)
+	out.append(_t("a set hub stops being an estimate", not d.hub_assumed and not d.hub_value.text.begins_with("~")))
+	d.undo()
+	out.append(_t("undo brings the estimate mark back", d.hub_assumed))
+	d.set_hub_g(est_hub + 1.0)
+	d.save()
+	rec = CustomPropellers.load_from(d.store_path).get_record(id)
+	out.append(_t("a set hub saves as set", String(rec["source"]) == PropDesigner.SOURCE_DRAWN
+		and is_equal_approx(float(rec["mass_g"]), blade_g + est_hub + 1.0)))
+	var reread := _designer(catalog, mats)
+	reread.store_path = d.store_path
+	reread.open_prop(id)
+	out.append(_t("a set hub comes back as set", is_equal_approx(reread.hub_g, est_hub + 1.0) and not reread.hub_assumed))
+	out.append(_t("saving twice keeps one record", CustomPropellers.load_from(d.store_path).records().size() == 1))
+	var block := PropellerDocument.from_dictionary(d.doc.to_dictionary()).to_dictionary()
+	block["chord"][1] = 3.5
+	out.append(_t("a hand edit to the decimals beats a stale exact copy",
+		PropellerDocument.from_dictionary(block).chord[1] == 3.5))
+	return out
+
+
+static func _test_save_flies() -> Array:
+	var out: Array = []
+	var path := _scratch("flies.json")
+	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"), PartsCatalog.load_with_custom(path))
+	ds.size = SIZE
+	ds.custom_parts_path = path
+	ds.open_prop_designer()
+	var d := ds.prop_designer
+	_edited(d)
+	d.set_prop_name("Flier")
+	var id := d.save()
+	out.append(_t("a saved prop reaches the shelf's catalog", not ds._catalog.get_part(id).is_empty()))
+	if ds._catalog.get_part(id).is_empty():
+		return out
+	ds.session.set_part("propeller", id)
+	var old := ds.session.build(ds._catalog)
+	var old_mass := old.all_up_weight_g()
+	d.set_hub_g(d.hub_g + 5.0)
+	d.step_pitch(0.5)
+	var saved_twist := d.doc.twist
+	d.save()
+	var mine := PropellerDocument.authored_blade_of(ds.session.build(ds._catalog).propeller)
+	out.append(_t("the drone's build has the authored twist", mine != null and mine.twist == saved_twist))
+	out.append(_t("the drone's build has the authored chord", mine != null and mine.chord == d.doc.chord))
+	var after := ds.session.build(ds._catalog)
+	out.append(_t("a re-save reaches the flying mass", is_equal_approx(after.all_up_weight_g(), old_mass + 5.0 * MOTOR_COUNT), "%s %s" % [after.all_up_weight_g(), old_mass]))
+	out.append(_t("a build made before the save keeps its snapshot", is_equal_approx(old.all_up_weight_g(), old_mass)))
+	old.refit_from(ds._catalog)
+	out.append(_t("refit_from takes the saved prop", is_equal_approx(old.all_up_weight_g(), old_mass + 5.0 * MOTOR_COUNT)))
+	return out
+
+
+static func _test_save_shelf_life(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	d.store_path = _scratch("shelf.json")
+	d.set_prop_name("First")
+	var id := d.save()
+	d.set_prop_name("Renamed")
+	var same := d.save()
+	var store := CustomPropellers.load_from(d.store_path)
+	out.append(_t("rename keeps the id", same == id and String(store.get_record(id)["name"]) == "Renamed"))
+	var first_mass := float(store.get_record(id)["mass_g"])
+	d.set_hub_g(d.hub_g + 2.0)
+	var copy := d.save_as()
+	store = CustomPropellers.load_from(d.store_path)
+	out.append(_t("Save as new makes a second prop", copy != id and store.records().size() == 2))
+	out.append(_t("the one opened is untouched", float(store.get_record(id)["mass_g"]) == first_mass))
+	out.append(_t("an unchanged name becomes a copy", String(store.get_record(copy)["name"]) == "Renamed copy"))
+	out.append(_t("the designer moves to the copy", d.part_id == copy))
+
+	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"), PartsCatalog.load_with_custom(d.store_path))
+	ds.custom_parts_path = d.store_path
+	ds.refresh_catalog()
+	var class_prop := String(DroneClass.parts_for("five_inch")["propeller"])
+	ds.session.set_part("propeller", id)
+	out.append(_t("the first delete press only arms", not ds.delete_saved_prop(id)
+		and not CustomPropellers.load_from(d.store_path).get_record(id).is_empty()))
+	out.append(_t("the second press deletes", ds.delete_saved_prop(id)
+		and CustomPropellers.load_from(d.store_path).get_record(id).is_empty()))
+	out.append(_t("a fitted prop falls back to the class's", String(ds.session.selection["propeller"]) == class_prop))
+	out.append(_t("the other prop stays", not CustomPropellers.load_from(d.store_path).get_record(copy).is_empty()))
+	out.append(_t("a shipped prop cannot be deleted", not ds.delete_saved_prop(class_prop) and not ds.delete_saved_prop(class_prop)))
+
+	var parts := JsonStore.read_document(d.store_path)
+	parts["motors"] = [CustomMotors.make_record("Shed", 32.0, 22.0, 7.0, 1960.0, 1450.0, 32.0, 14, "16x16", copy, 14.8, "t")]
+	JsonStore.write_document(d.store_path, parts)
+	ds.delete_saved_prop(copy)
+	var refused := not ds.delete_saved_prop(copy)
+	out.append(_t("a prop a motor was tested with is refused, and says so", refused and ds.prop_delete_problem != ""
+		and not CustomPropellers.load_from(d.store_path).get_record(copy).is_empty()))
+
+	ds.open_card_menu("propeller", copy)
+	out.append(_t("a saved prop's card has the menu", ds.card_menu != null and ds._card_menu_id == copy))
+	ds._on_card_menu(0)
+	out.append(_t("Edit opens the designer on that prop", ds.prop_designer != null and ds.prop_designer.part_id == copy))
+	return out
+
+
+static func _test_save_failures(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	d.store_path = BAD_PATH
+	var heard := [0]
+	d.saved.connect(func(_id: String): heard[0] += 1)
+	var id := d.save()
+	out.append(_t("a failed write returns no id", id == "" and d.part_id == ""))
+	out.append(_t("a failed write says so on the bar", d.status_label.text.begins_with("Not saved")))
+	out.append(_t("a failed write is in amber", d.status_label.get_theme_color("font_color") == DesignSpace.WARN_INK))
+	out.append(_t("a failed write is not announced", heard[0] == 0))
+	d.store_path = _scratch("fail.json")
+	d.set_prop_name("  ")
+	out.append(_t("no name is refused and said", d.save() == "" and d.status_label.text.contains("name")))
+	return out
+
+
+static func _test_typed_path(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var path := _scratch("typed.json")
+	var dialog := CustomPropellerDialog.new()
+	dialog.store_path = BAD_PATH
+	dialog.set_fields("Typed one", 5.5, 5.0, 4.0, 3, "pc", "scale")
+	out.append(_t("the dialog reports a failed write", not dialog.submit().is_empty()))
+	dialog.store_path = path
+	out.append(_t("the dialog saves to its path", dialog.submit().is_empty()))
+	dialog.free()
+	var id := CustomPropellers.id_for("Typed one")
+	var store := CustomPropellers.load_from(path)
+	var rec := store.get_record(id)
+	out.append(_t("a typed prop keeps its typed mass", float(rec.get("mass_g", 0.0)) == 5.5))
+	out.append(_t("and is marked typed", CustomPropellers.is_typed(rec)))
+	var d := _designer(catalog, mats)
+	d.store_path = path
+	d.open_prop(id)
+	out.append(_t("opening one starts a new prop", d.part_id == "" and is_equal_approx(d.doc.diameter_mm, 127.0)))
+	out.append(_t("and the bar says so", d.status_label.text == PropDesigner.NOTE_TYPED))
+	d.set_prop_name("Drawn from typed")
+	var new_id := d.save()
+	store = CustomPropellers.load_from(path)
+	out.append(_t("saving leaves the typed figures alone", new_id != id and float(store.get_record(id)["mass_g"]) == 5.5
+		and not store.get_record(id).has(PropellerDocument.AUTHORED_BLADE_KEY)))
+	var typed_button := d.find_child("Typed", true, false) as BaseButton
+	out.append(_t("the designer has a typed entry", typed_button != null))
+	return out
+
+
+static func _draft(name_text: String, draft_id: String, diameter_mm: float) -> PropellerDocument:
+	var doc := PropellerDocument.new()
+	doc.id = draft_id
+	doc.name = name_text
+	doc.diameter_mm = diameter_mm
+	doc.pitch_mm = 100.0
+	doc.blades = 3
+	doc.chord = PackedFloat64Array([0.15, 9.1234567890123, 0.6, 13.1, 1.0, 4.7])
+	doc.twist_mode = PropellerDocument.TWIST_MODE_AUTHORED
+	doc.twist = PackedFloat64Array([0.15, 0.6123456789012, 1.0, 0.2])
+	return doc
+
+
+static func _test_migration_reaches_builder(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	out.append(_t("a clean migration has nothing to say",
+		CustomPropellers.migration_problem({"added": ["a"], "unreadable": [], "refused": [], "write_failed": false}) == ""))
+	out.append(_t("a failed write is worded as a write",
+		CustomPropellers.migration_problem({"write_failed": true}).contains("could not write")))
+	out.append(_t("unreadable and refused drafts are counted",
+		CustomPropellers.migration_problem({"unreadable": ["a"], "refused": ["b"]}).begins_with("2 old drafts")))
+	# The production paths: the shell runs it, and the designer's bar is where the builder hears.
+	var shell_source := FileAccess.get_file_as_string("res://src/ui/glass_shell.gd")
+	out.append(_t("the shell runs the migration when it opens the Design Space",
+		shell_source.contains("design_space.migrate_old_drafts()")))
+	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"), catalog)
+	ds.custom_parts_path = _scratch("space.json")
+	ds.draft_migration = {"added": [], "unreadable": ["old.blade.json"], "refused": [], "write_failed": false}
+	ds.open_prop_designer()
+	var bar := ds.prop_designer.status_label
+	out.append(_t("a left-behind draft shows on the designer's bar", bar.text.begins_with("1 old draft"), bar.text))
+	out.append(_t("and in amber", bar.get_theme_color("font_color") == DesignSpace.WARN_INK))
+	ds.free()
+
+	# "Saved" must not outlive the edit it described; a note about the prop must.
+	var d := _designer(catalog, mats)
+	d.store_path = _scratch("verdict.json")
+	d.set_prop_name("Verdict")
+	d.save()
+	out.append(_t("a save says Saved", d.status_label.text == "Saved"))
+	d.set_hub_g(d.hub_g + 1.0)
+	out.append(_t("an edit ends Saved", d.status_label.text == ""))
+	d.show_warning("1 old draft could not be brought over; the file is kept.")
+	d.set_hub_g(d.hub_g + 1.0)
+	out.append(_t("an edit leaves a note alone", d.status_label.text.begins_with("1 old draft")))
+	return out
+
+
+static func _test_migration(mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var dir := "%s/blades" % SCRATCH_DIR
+	DirAccess.make_dir_recursive_absolute(dir)
+	for f: String in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute("%s/%s" % [dir, f])
+	var path := _scratch("migrate.json")
+
+	# Already on file, as older versions wrote it: a typed prop, a published one, a neighbour's
+	# motors block and a record that is refused on load.
+	var published := _draft("Published", "blade_pub", 127.0)
+	var pub_rec := CustomPropellers.record_from_document(published, mats, "designed in the Propulsion room")
+	var pub_mass := float(pub_rec["mass_g"])
+	var typed := CustomPropellers.make_record("Typed", 6.25, 5.0, 4.0, 3, "pc", "scale")
+	var broken := {"part_id": "custom_broken", "name": "Broken", "category": "propeller", "mass_g": 3.0}
+	JsonStore.write_document(path, {"schema": 3, "propellers": [typed, pub_rec, broken],
+		"motors": [{"part_id": "custom_keep_me", "x": 1}]}, true)
+
+	var drafts := {"one": _draft("Draft one", "blade_one", 127.0), "two": _draft("Draft two", "blade_two", 76.0)}
+	for key: String in drafts:
+		(drafts[key] as PropellerDocument).save_to("%s/%s%s" % [dir, drafts[key].id, BladeLibrary.EXTENSION])
+	published.save_to("%s/blade_pub%s" % [dir, BladeLibrary.EXTENSION])
+	var bad_file := "%s/garbage%s" % [dir, BladeLibrary.EXTENSION]
+	var f := FileAccess.open(bad_file, FileAccess.WRITE)
+	f.store_string("{ not json")
+	f.close()
+	var draft_text := FileAccess.get_file_as_string("%s/blade_one%s" % [dir, BladeLibrary.EXTENSION])
+
+	var failed := CustomPropellers.migrate_drafts(BAD_PATH, dir, mats)
+	out.append(_t("a failed migration write is reported", bool(failed["write_failed"]) and (failed["added"] as Array).is_empty()))
+
+	var report := CustomPropellers.migrate_drafts(path, dir, mats)
+	out.append(_t("both drafts come across", (report["added"] as Array).size() == 2, str(report)))
+	out.append(_t("a draft already published is not doubled", int(report["skipped"]) == 1))
+	out.append(_t("an unreadable draft is named", report["unreadable"] == ["garbage%s" % BladeLibrary.EXTENSION]))
+	out.append(_t("draft files are left as they were", FileAccess.get_file_as_string(
+		"%s/blade_one%s" % [dir, BladeLibrary.EXTENSION]) == draft_text and FileAccess.file_exists(bad_file)))
+
+	var store := CustomPropellers.load_from(path)
+	var one: Dictionary = store.get_record(CustomPropellers.id_for("Draft one"))
+	var blade := PropellerDocument.authored_blade_of(one)
+	var want: PropellerDocument = drafts["one"]
+	out.append(_t("a migrated draft keeps chord bit-exact", blade != null and blade.chord == want.chord))
+	out.append(_t("a migrated draft keeps twist bit-exact", blade != null and blade.twist == want.twist))
+	var hub := PropDesigner.default_hub_g(want, mats)
+	out.append(_t("a migrated draft carries the estimated hub", is_equal_approx(float(one["design"]["hub_g"]), hub)
+		and bool(one["design"]["hub_assumed"])
+		and is_equal_approx(float(one["mass_g"]), BladeGeometry.blade_mass_g(want, mats) + hub)))
+	var pub: Dictionary = store.get_record(CustomPropellers.id_for("Published"))
+	out.append(_t("a published prop's flown mass does not move", float(pub["mass_g"]) == pub_mass))
+	out.append(_t("a published prop has hub 0, as it flew", float(pub["design"]["hub_g"]) == 0.0))
+	var pub_blade := PropellerDocument.authored_blade_of(pub)
+	out.append(_t("a published prop keeps its blade", pub_blade != null and pub_blade.twist == published.twist))
+	var kept: Dictionary = store.get_record(CustomPropellers.id_for("Typed"))
+	out.append(_t("a typed prop keeps its mass and has no blade", float(kept["mass_g"]) == 6.25
+		and not kept.has(PropellerDocument.AUTHORED_BLADE_KEY)))
+	var file := JsonStore.read_document(path)
+	out.append(_t("the file is at the new schema", int(file["schema"]) == CustomParts.SCHEMA_VERSION))
+	out.append(_t("neighbouring blocks survive", (file["motors"] as Array).size() == 1))
+	var names: Array = []
+	for r: Dictionary in file["propellers"]:
+		names.append(r["part_id"])
+	out.append(_t("a record refused on load is not erased by a save", names.has("custom_broken")))
+
+	var again := CustomPropellers.migrate_drafts(path, dir, mats)
+	out.append(_t("running it twice adds nothing", (again["added"] as Array).is_empty()))
+
+	store = CustomPropellers.load_from(path)
+	store.remove(CustomPropellers.id_for("Draft two"))
+	store.save(path)
+	var after_delete := CustomPropellers.migrate_drafts(path, dir, mats)
+	out.append(_t("a deleted prop does not come back", (after_delete["added"] as Array).is_empty()
+		and CustomPropellers.load_from(path).get_record(CustomPropellers.id_for("Draft two")).is_empty()))
+
+	var edited: PropellerDocument = drafts["two"]
+	edited.pitch_mm = 80.0
+	edited.save_to("%s/blade_two%s" % [dir, BladeLibrary.EXTENSION])
+	var after_edit := CustomPropellers.migrate_drafts(path, dir, mats)
+	out.append(_t("a draft edited later comes in again", (after_edit["added"] as Array).size() == 1))
+	return out

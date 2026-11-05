@@ -7,7 +7,8 @@ extends SceneTree
 ## state: "" (the default) | "shelf" (no pop-up: the shelf and its tile) | "edited" (a 7 in two-blade
 ## on PA6+CF with a pad) | "blade" (drawn chord and twist, pitch offer) | "blade_low" (left column scrolled);
 ## "tunnel", "tunnel_power", "tunnel_eff", "tunnel_mid", "tunnel_edge", "tunnel_refused", "tunnel_measured", "tunnel_mach";
-## "stand", "stand_current", "stand_pack", "structure", "structure_details", "structure_mach".
+## "stand", "stand_current", "stand_pack", "structure", "structure_details", "structure_mach";
+## "saved", "save_failed", "shelf_saved", "card_menu".
 ##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
@@ -80,6 +81,24 @@ func _init() -> void:
 			d.structure.set_details(true)
 		if state == "structure_mach":
 			d.step_rpm(60000.0)
+		if state == "saved" or state == "shelf_saved" or state == "card_menu":
+			d.name_field.text = "Long ranger"
+			d.set_prop_name("Long ranger")
+			d.save()
+		if state == "save_failed":
+			d.store_path = "user://no_such_folder/parts.json"
+			d.save()
+		if state == "shelf_saved" or state == "card_menu":
+			d.close()
+			for i in 6:
+				await process_frame
+			ds.shelf.fill(ds._shelf_groups())
+			ds.shelf.scroll.scroll_vertical = 0
+			for i in 6:
+				await process_frame
+			print("SHELF ", ds.shelf.find_child("Part_custom_long_ranger", true, false) != null)
+		if state == "card_menu":
+			ds.open_card_menu("propeller", "custom_long_ranger")
 		if state == "blade":
 			d.twist_editor.drag_station_to(5, d.twist_editor.to_pixels(0.6, 27.0))
 			d.chord_editor.drag_station_to(24, d.chord_editor.to_pixels(0.6, 15.0))
