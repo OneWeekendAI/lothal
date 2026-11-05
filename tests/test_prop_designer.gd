@@ -26,6 +26,14 @@ static func run() -> Array:
 	results.append_array(_test_no_stress_warning(catalog, mats))
 	results.append_array(_test_preset_untouched(catalog, mats))
 	results.append_array(_test_shelf_tile(catalog))
+	results.append_array(_test_twist_drag(catalog, mats))
+	results.append_array(_test_chord_controls(catalog, mats))
+	results.append_array(_test_undo(catalog, mats))
+	results.append_array(_test_thickness(catalog, mats))
+	results.append_array(_test_pitch_offer(catalog, mats))
+	results.append_array(_test_caret(catalog, mats))
+	results.append_array(_test_monochrome(catalog, mats))
+	results.append_array(_test_no_stress_on_new_text(catalog, mats))
 	return results
 
 
@@ -282,4 +290,209 @@ static func _test_shelf_tile(catalog: PartsCatalog) -> Array:
 		ds.prop_designer.close()
 	out.append(_t("Back closes it and the Design Space forgets it", ds.prop_designer == null))
 	ds.free()
+	return out
+
+
+# ---------------------------------------------------------------------------
+# PD7: chord and twist canvases
+# ---------------------------------------------------------------------------
+
+## Raises one mid-blade station by a real pixel path through the canvas.
+static func _drag_twist(d: PropDesigner, deg_up: float) -> void:
+	var e := d.twist_editor
+	e.size = Vector2(260, 104)
+	var pts := PlanformEdits.points(e.table())
+	var i: int = pts.size() - 2
+	e.drag_station_to(i, e.to_pixels(float(pts[i][0]), rad_to_deg(float(pts[i][1])) + deg_up))
+
+
+static func _j0(d: PropDesigner) -> float:
+	return float(PropTunnel.axial_sweep(PropTunnel.geometry_of(d.doc), d.rpm).get("j0", -1.0))
+
+
+static func _blade_vertices(d: PropDesigner) -> PackedVector3Array:
+	var m := _mesh_of(d)
+	var blade := m.get_node("Blade_0") as MeshInstance3D
+	var v: PackedVector3Array = blade.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	m.free()
+	return v
+
+
+static func _test_twist_drag(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	out.append(_t("opens on the helix", d.doc.flown_twist().is_empty() and d.twist_note.text == PropDesigner.TWIST_HELIX_NOTE))
+	var j0 := _j0(d)
+	var mesh := _blade_vertices(d)
+	var thrust: String = (d._figs["thrust"] as Label).text
+	_drag_twist(d, 6.0)
+	out.append(_t("a drag authors the twist", not d.doc.flown_twist().is_empty()))
+	out.append(_t("and the page says so", d.twist_note.text == PropDesigner.TWIST_DRAWN_NOTE))
+	out.append(_t("twist drag moves tunnel J0", absf(_j0(d) - j0) > 1e-3, "%f -> %f" % [j0, _j0(d)]))
+	out.append(_t("twist drag moves the mesh", _blade_vertices(d) != mesh))
+	out.append(_t("twist drag redraws the thrust figure's source", (d._figs["thrust"] as Label).text
+		== "%.0f g" % (float(PropTunnel.point(PropTunnel.geometry_of(d.doc), d.rpm, 0.0).thrust_n) * 1000.0 / 9.80665), thrust))
+	var count := d.doc.twist.size()
+	d.set_caret(0.33)
+	d.add_twist_station()
+	out.append(_t("+ station adds a pair", d.doc.twist.size() == count + 2))
+	d.remove_twist_station()
+	out.append(_t("- station removes it", d.doc.twist.size() == count))
+	d.free()
+	return out
+
+
+static func _test_chord_controls(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	var e := d.chord_editor
+	e.size = Vector2(260, 104)
+	var count := d.doc.chord.size()
+	d.set_caret(0.333)
+	d.add_chord_station()
+	out.append(_t("chord + station", d.doc.chord.size() == count + 2))
+	d.remove_chord_station()
+	out.append(_t("chord - station", d.doc.chord.size() == count))
+	out.append(_t("generated chord reads assumed", d.doc.chord_is_assumed and not d.measured_toggle.button_pressed))
+	var mass := d.figures()["mass_g"] as float
+	e.drag_station_to(20, e.to_pixels(float(d.doc.chord[40]), d.doc.chord[41] * 1.3))
+	out.append(_t("chord drag moves mass", d.figures()["mass_g"] != mass))
+	out.append(_t("a drawn chord stops being assumed, and the toggle shows it",
+		not d.doc.chord_is_assumed and d.measured_toggle.button_pressed))
+	d.measured_toggle.toggled.emit(false)
+	out.append(_t("toggle sets it back", d.doc.chord_is_assumed and "Chord assumed" in d.summary_label.text))
+	d.free()
+	return out
+
+
+static func _test_undo(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	out.append(_t("nothing to undo on open", d.undo_button.disabled and d.redo_button.disabled))
+	var f0 := d.figures()
+	var j0 := _j0(d)
+	var chord0 := d.doc.chord
+	_drag_twist(d, 6.0)
+	_drag_twist(d, 3.0)
+	out.append(_t("a gesture is one step", d._undo.size() == 1, str(d._undo.size())))
+	var f1 := d.figures()
+	(d.find_child("Undo", true, false) as Button).pressed.emit()
+	out.append(_t("undo restores every figure bit-exact", d.figures() == f0, str(d.figures())))
+	out.append(_t("undo restores J0 bit-exact", _j0(d) == j0))
+	out.append(_t("undo restores the chord", d.doc.chord == chord0))
+	out.append(_t("the canvases hold the restored blade", d.twist_editor.document == d.doc and d.chord_editor.document == d.doc))
+	out.append(_t("the views hold it too", d.section_view.document == d.doc and d.blade_view._document == d.doc))
+	(d.find_child("Redo", true, false) as Button).pressed.emit()
+	out.append(_t("redo restores it bit-exact", d.figures() == f1))
+	d.free()
+
+	d = _designer(catalog, mats)
+	var hub := d.hub_g
+	d.set_hub_g(hub + 1.0)
+	d.set_prop_name("Kept")
+	var key := InputEventKey.new()
+	key.pressed = true
+	key.keycode = KEY_Z
+	key.ctrl_pressed = true
+	d._unhandled_key_input(key)
+	out.append(_t("Ctrl-Z undoes a hub edit", d.hub_g == hub))
+	out.append(_t("and leaves the typed name", d.doc.name == "Kept"))
+	key.shift_pressed = true
+	d._unhandled_key_input(key)
+	out.append(_t("Ctrl-Shift-Z redoes it", d.hub_g == hub + 1.0))
+	d.free()
+
+	d = _designer(catalog, mats)
+	d.step_diameter(100.0)
+	var steps := d._undo.size()
+	d.step_diameter(1.0)
+	out.append(_t("a press at the limit leaves no step", d._undo.size() == steps))
+	d.free()
+	return out
+
+
+static func _test_thickness(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	var f0 := d.figures()
+	var stress0 := PropStructure.assess(d.doc, mats, d.rpm)
+	(d.find_child("ThicknessPlus", true, false) as Button).pressed.emit()
+	var f1 := d.figures()
+	var stress1 := PropStructure.assess(d.doc, mats, d.rpm)
+	out.append(_t("thickness moves mass", f1["mass_g"] != f0["mass_g"]))
+	out.append(_t("thickness moves stress", stress1 != stress0))
+	out.append(_t("thickness leaves thrust bit-exact", f1["thrust_g"] == f0["thrust_g"]))
+	out.append(_t("thickness leaves power bit-exact", f1["power_w"] == f0["power_w"]))
+	var note := d.find_child("ThicknessNote", true, false) as Label
+	out.append(_t("and says so", note != null and note.text == PropDesigner.THICKNESS_NOTE))
+	out.append(_t("thickness shows its value", d.thickness_value.text == "11 %", d.thickness_value.text))
+	d.free()
+	return out
+
+
+static func _test_pitch_offer(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	d.step_pitch(0.5)
+	out.append(_t("a helix blade is not offered anything", not d.pitch_offer.visible))
+	_drag_twist(d, 6.0)
+	var f := d.figures()
+	var j0 := _j0(d)
+	var table := d.doc.twist
+	d.step_pitch(0.5)
+	out.append(_t("on drawn twist, pitch stays authored", d.doc.twist == table and d.figures()["thrust_g"] == f["thrust_g"]))
+	out.append(_t("and the line appears", d.pitch_offer.visible))
+	(d.find_child("PitchKeepDrawn", true, false) as Button).pressed.emit()
+	out.append(_t("Keep drawn closes it, twist kept", not d.pitch_offer.visible and d.doc.twist == table))
+	d.step_pitch(0.5)
+	(d.find_child("PitchUseHelix", true, false) as Button).pressed.emit()
+	out.append(_t("Use helix returns to the helix", d.doc.flown_twist().is_empty() and not d.pitch_offer.visible))
+	out.append(_t("and J0 moves", _j0(d) != j0, "%f" % j0))
+	out.append(_t("the page says hover hides twist", (d.find_child("TwistCapNote", true, false) as Label).text == PropDesigner.TWIST_CAP_NOTE))
+	d.undo()
+	out.append(_t("undo brings the drawing back", d.doc.twist == table))
+	d.free()
+	return out
+
+
+static func _test_caret(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	var f := d.figures()
+	var steps := d._undo.size()
+	d.twist_editor.set_caret(0.4)
+	out.append(_t("the twist canvas moves the chord canvas's caret", is_equal_approx(d.chord_editor.caret_r_frac, 0.4)))
+	out.append(_t("and the section", is_equal_approx(d.section_view.r_frac, 0.4)))
+	out.append(_t("and the ring", is_equal_approx(d.blade_view._caret_r_frac, 0.4)))
+	out.append(_t("and the caption", "40%" in d.section_caption.text, d.section_caption.text))
+	d.chord_editor.set_caret(0.6)
+	out.append(_t("the chord canvas moves the twist canvas's caret", is_equal_approx(d.twist_editor.caret_r_frac, 0.6)))
+	out.append(_t("a caret moves no figure and leaves no step", d.figures() == f and d._undo.size() == steps))
+	d.free()
+	return out
+
+
+## The designers are monochrome; the old room keeps its blue through the same classes.
+static func _test_monochrome(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	var inks := {
+		"ring": d.blade_view.caret_ink, "section": d.section_view.ink, "section chord line": d.section_view.chord_ink,
+		"chord canvas": d.chord_editor.ink, "chord caret": d.chord_editor.caret_ink, "chord hover": d.chord_editor.hover_ink, "twist canvas": d.twist_editor.ink,
+	}
+	for key: String in inks:
+		var c: Color = inks[key]
+		out.append(_t("%s ink is grey" % key, c.r == c.g and c.g == c.b, str(c)))
+	d.free()
+	return out
+
+
+static func _test_no_stress_on_new_text(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	var text := "%s %s %s" % [d.twist_note.text, PropDesigner.PITCH_OFFER_NOTE, PropDesigner.THICKNESS_NOTE]
+	var low := text.to_lower()
+	out.append(_t("no break warning in the blade section's text",
+		not ("factor" in low or "break" in low or "stress" in low or "overspeed" in low), text))
+	d.free()
 	return out

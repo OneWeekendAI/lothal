@@ -37,6 +37,7 @@ extends RefCounted
 
 ## Two points make a line. Below that, `chord_at` degenerates to a constant.
 const MIN_STATIONS := 2
+const HELIX_STATIONS := 10
 
 
 ## The flat table as (r/R, chord_mm) points. Local rather than `PropellerDocument.chord_points()`
@@ -130,6 +131,30 @@ static func insert_station(chord: PackedFloat64Array, r_frac: float,
 
 
 ## Removes one station, unless it is one of the last two.
+## The helix sampled into a [r/R, beta_rad] table: what a blade's twist starts from when first drawn.
+static func helix_table(document: PropellerDocument) -> PackedFloat64Array:
+	var root := float(points(document.chord)[0][0]) if document.chord.size() >= 2 else 0.1
+	var out := PackedFloat64Array()
+	for i in HELIX_STATIONS:
+		var r: float = lerpf(root, 1.0, float(i) / (HELIX_STATIONS - 1))
+		out.append(r)
+		out.append(atan(document.pitch_mm / (TAU * r * document.radius_mm())))
+	return out
+
+
+## A twist station at a radius, at the angle the blade has there, so adding one changes no shape.
+static func insert_twist_station(table: PackedFloat64Array, r_frac: float,
+		document: PropellerDocument) -> PackedFloat64Array:
+	var pts := points(table)
+	for point in pts:
+		if is_equal_approx(float(point[0]), r_frac):
+			return table
+	pts.append([r_frac, document.beta_rad(r_frac)])
+	pts.sort_custom(func(a, b): return float(a[0]) < float(b[0]))
+	var result := flatten(pts)
+	return result if is_valid(result) else table
+
+
 static func remove_station(chord: PackedFloat64Array, index: int) -> PackedFloat64Array:
 	var pts := points(chord)
 	if index < 0 or index >= pts.size():

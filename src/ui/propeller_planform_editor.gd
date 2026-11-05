@@ -58,6 +58,14 @@ const MARGIN_PX := 22.0
 
 var document: PropellerDocument
 
+## The blade's ink and the caret's. Blue and amber in the old room; the designer sets both to its
+## monochrome ink, where amber is kept for warnings.
+var ink := LothalTheme.ACCENT
+var caret_ink := LothalTheme.WARNING
+var hover_ink := LothalTheme.BORDER_FOCUS
+## The designer draws small dots: a generated blade has 40 stations. The grab radius is unchanged.
+var station_radius_px := STATION_RADIUS_PX
+
 ## Which station is hovered and which is being dragged. −1 for none, in both.
 var hovered_station := -1
 var dragging_station := -1
@@ -272,16 +280,16 @@ func _draw() -> void:
 	var outline := PackedVector2Array(upper)
 	for i in range(lower.size() - 1, -1, -1):
 		outline.append(lower[i])
-	draw_colored_polygon(outline, Color(LothalTheme.ACCENT, 0.18))
-	draw_polyline(upper, LothalTheme.ACCENT, 1.5)
-	draw_polyline(lower, LothalTheme.ACCENT, 1.5)
+	draw_colored_polygon(outline, Color(ink, 0.18))
+	draw_polyline(upper, ink, 1.5)
+	draw_polyline(lower, ink, 1.5)
 
 	# The caret: where the section view is looking.
 	var caret_x := to_pixels(caret_r_frac, 0.0).x
 	draw_line(Vector2(caret_x, inner.position.y), Vector2(caret_x, inner.end.y),
-		LothalTheme.WARNING, 1.0)
+		caret_ink, 1.0)
 
 	for i in pts.size():
 		var at := to_pixels(float(pts[i][0]), float(pts[i][1]))
-		var colour := LothalTheme.ACCENT if i != hovered_station else LothalTheme.BORDER_FOCUS
-		draw_circle(at, STATION_RADIUS_PX, colour)
+		var colour := ink if i != hovered_station else hover_ink
+		draw_circle(at, station_radius_px if i != hovered_station else STATION_RADIUS_PX, colour)

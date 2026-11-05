@@ -78,6 +78,10 @@ var _stall_bands := PackedFloat64Array()
 var _dragging := false
 
 
+## The caret ring. The designer sets it to its monochrome ink before the first set_caret.
+var caret_ink := LothalTheme.ACCENT
+
+
 func _init() -> void:
 	custom_minimum_size = Vector2(240, 200)
 	stretch = true
@@ -279,7 +283,7 @@ func _rebuild_markers() -> void:
 		_markers.remove_child(child)
 		child.queue_free()
 
-	_markers.add_child(_ring(_caret_r_frac, LothalTheme.ACCENT, 0.9))
+	_markers.add_child(_ring(_caret_r_frac, caret_ink, 0.9))
 	var i := 0
 	while i + 1 < _stall_bands.size():
 		# Both edges of every stalled stretch, rather than one ring at its middle: the fact worth

@@ -5,7 +5,7 @@ extends SceneTree
 ##   godot --script res://tests/capture_prop_designer.gd -- <out.png> [WxH] [state]
 ##
 ## state: "" (the default) | "shelf" (no pop-up: the shelf and its tile) | "edited" (a 7 in two-blade
-## on PA6+CF with a pad).
+## on PA6+CF with a pad) | "blade" (drawn chord and twist, pitch offer) | "blade_low" (left column scrolled).
 ##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
@@ -46,6 +46,15 @@ func _init() -> void:
 			d.set_pad_mm(2.0)
 			d.name_field.text = "Long ranger"
 			d.set_prop_name("Long ranger")
+		if state == "blade":
+			d.twist_editor.drag_station_to(5, d.twist_editor.to_pixels(0.6, 27.0))
+			d.chord_editor.drag_station_to(24, d.chord_editor.to_pixels(0.6, 15.0))
+			d.step_pitch(0.5)
+			d.set_caret(0.45)
+			d.set_thickness(0.14)
+		if state == "blade_low":
+			d.twist_editor.drag_station_to(5, d.twist_editor.to_pixels(0.6, 30.0))
+			(d.find_child("LeftScroll", true, false) as ScrollContainer).scroll_vertical = 100000
 		for i in 40:
 			await process_frame
 	root.get_texture().get_image().save_png(out_path)

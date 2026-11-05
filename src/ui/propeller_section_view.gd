@@ -33,6 +33,9 @@ const MARGIN_PX := 18.0
 
 var document: PropellerDocument
 var r_frac := 0.7
+## The section and its chord line. The designer sets both to its monochrome ink.
+var ink := LothalTheme.ACCENT
+var chord_ink := LothalTheme.WARNING
 
 
 func _init(p_document: PropellerDocument = null) -> void:
@@ -98,17 +101,17 @@ func _draw() -> void:
 	var corners := corner_pixels()
 	if corners.size() < 4:
 		return
-	draw_colored_polygon(corners, Color(LothalTheme.ACCENT, 0.22))
+	draw_colored_polygon(corners, Color(ink, 0.22))
 	var outline := PackedVector2Array(corners)
 	outline.append(corners[0])
-	draw_polyline(outline, LothalTheme.ACCENT, 1.5)
+	draw_polyline(outline, ink, 1.5)
 
 	# The chord LINE — the section's own long axis, from mid-leading-edge to mid-trailing-edge.
 	# Drawn from the corners rather than re-derived from beta, so it cannot disagree with the shape
 	# it is measuring.
 	var leading := (corners[1] + corners[2]) * 0.5
 	var trailing := (corners[0] + corners[3]) * 0.5
-	draw_line(leading, trailing, LothalTheme.WARNING, 1.0)
+	draw_line(leading, trailing, chord_ink, 1.0)
 
 	var caption := "r/R %.2f   c %.2f mm   beta %.1f deg   t/c %.0f%%" % [
 		r_frac, document.chord_at(r_frac), rad_to_deg(document.beta_rad(r_frac)),
