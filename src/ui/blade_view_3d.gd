@@ -63,6 +63,9 @@ const PITCH_LIMIT := 1.5533
 ## Radians per pixel of drag. Slow enough that a small mouse movement inspects rather than spins.
 const DRAG_SENSITIVITY := 0.008
 
+## The fastest station's arrow, as a share of the radius.
+const INFLOW_ARROW_R := 0.35
+
 var yaw := 0.0
 var pitch := 0.0
 var radius_m := 0.0645
@@ -76,6 +79,9 @@ var _prop: Dictionary = {}
 var _caret_r_frac := 0.7
 var _stall_bands := PackedFloat64Array()
 var _station_shade := PackedFloat64Array()
+var _inflow := PackedFloat64Array()
+## The arrows, set by the designer to its ink.
+var inflow_ink := Color(0.93, 0.93, 0.93)
 var _dragging := false
 
 
@@ -196,6 +202,28 @@ func set_station_shade(table: PackedFloat64Array) -> void:
 	_station_shade = table
 
 
+## The air arriving at each station, as `PropTunnelPanel.inflow_table` gives it: [r/R, phi rad, speed
+## share, ...]. Takes effect on the next `show_propeller`.
+func set_inflow(table: PackedFloat64Array) -> void:
+	_inflow = table
+
+
+## One arrow as [tail, tip] on the +X blade, in the mesh's axes: +Z the way the blade sweeps, +Y up the
+## shaft. The tip sits on the section's leading edge; the air comes from ahead and above at phi, so
+## the angle between arrow and chord is the station's alpha. Length scales with the local speed.
+static func inflow_arrow(doc: PropellerDocument, r_frac: float, phi_rad: float, speed_share: float, p_radius_m: float) -> Array:
+	var beta := doc.beta_rad(r_frac)
+	var half_chord_m := doc.chord_at(r_frac) * 0.0005
+	var tip := Vector3(r_frac * p_radius_m, sin(beta) * half_chord_m, cos(beta) * half_chord_m)
+	var tail := tip + Vector3(0.0, sin(phi_rad), cos(phi_rad)) * p_radius_m * INFLOW_ARROW_R * speed_share
+	return [tail, tip]
+
+
+## How many arrows are on the blade now. Markers are only built inside the tree.
+func inflow_arrow_count() -> int:
+	return floori(_inflow.size() / 3.0)
+
+
 func set_stall_bands(bands: PackedFloat64Array) -> void:
 	_stall_bands = bands
 	if _mesh != null:
@@ -300,7 +328,46 @@ func _rebuild_markers() -> void:
 		_markers.add_child(_ring(_stall_bands[i], LothalTheme.DANGER, 0.8))
 		_markers.add_child(_ring(_stall_bands[i + 1], LothalTheme.DANGER, 0.8))
 		i += 2
+	if _document != null:
+		for k in range(0, _inflow.size() - 2, 3):
+			var ends := inflow_arrow(_document, _inflow[k], _inflow[k + 1], _inflow[k + 2], radius_m)
+			_markers.add_child(_arrow(ends[0], ends[1]))
 	_poke()
+
+
+## A thin shaft and a cone head from `tail` to `tip`, unshaded.
+func _arrow(tail: Vector3, tip: Vector3) -> Node3D:
+	var arrow := Node3D.new()
+	var along := tip - tail
+	var length := along.length()
+	if length <= 0.0:
+		return arrow
+	var y := along / length
+	var x := y.cross(Vector3.RIGHT).normalized()
+	arrow.transform = Transform3D(Basis(x, y, x.cross(y)), tail)
+	var head_h := minf(radius_m * 0.05, length * 0.5)
+	var shaft := CylinderMesh.new()
+	shaft.top_radius = radius_m * 0.004
+	shaft.bottom_radius = radius_m * 0.004
+	shaft.height = length - head_h
+	shaft.radial_segments = 6
+	shaft.rings = 1
+	var head := CylinderMesh.new()
+	head.top_radius = 0.0
+	head.bottom_radius = radius_m * 0.016
+	head.height = head_h
+	head.radial_segments = 8
+	head.rings = 1
+	var ink := StandardMaterial3D.new()
+	ink.albedo_color = inflow_ink
+	ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	for part: Array in [[shaft, (length - head_h) * 0.5], [head, length - head_h * 0.5]]:
+		var m := MeshInstance3D.new()
+		m.mesh = part[0]
+		m.position = Vector3(0.0, part[1], 0.0)
+		m.material_override = ink
+		arrow.add_child(m)
+	return arrow
 
 
 ## A flat ring lying in the disc plane at a fraction of radius.

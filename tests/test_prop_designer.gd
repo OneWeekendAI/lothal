@@ -50,6 +50,12 @@ static func run() -> Array:
 	results.append_array(_test_typed_path(catalog, mats))
 	results.append_array(_test_migration(mats))
 	results.append_array(_test_migration_reaches_builder(catalog, mats))
+	results.append_array(_test_tunnel_details(catalog, mats))
+	results.append_array(_test_gap_table(catalog, mats))
+	results.append_array(_test_inflow(catalog, mats))
+	results.append_array(_test_view_in_tree(catalog, mats))
+	results.append_array(_test_mount_details(catalog, mats))
+	results.append_array(_test_opens_at_rated_rpm(catalog, mats))
 	return results
 
 
@@ -1310,4 +1316,168 @@ static func _test_drone_effect() -> Array:
 	out.append(_t("no drone: no strip, and Fit does nothing", not alone.effect_box.visible and not alone.fit_to_drone()))
 	alone.free()
 	ds.free()
+	return out
+
+
+# PD13: the rows of the capability map that had no home yet.
+static func _test_tunnel_details(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _tunnel(catalog, mats)
+	var t := d.tunnel
+	out.append(_t("details: closed by default, the chart showing", not t.details_box.visible and t.chart.visible))
+	t.details_toggle.button_pressed = true
+	out.append(_t("details: the toggle opens them in the chart's place", t.details_box.visible and not t.chart.visible))
+	out.append(_t("details: sweep-only controls step aside, rpm stays", not t.shade_row.visible and not t.angle_value.get_parent().visible
+		and not t.note_label.visible and t.rpm_value.get_parent().visible))
+	var v := BladeAero.analyse(d.doc, d.rpm)
+	var cells: Array = t.aero_panel.headline_cells()
+	out.append(_t("details: g/W is BladeAero's", cells[0][1] == "%.1f" % float(v.grams_per_watt), str(cells[0])))
+	out.append(_t("details: thrust is BladeAero's", cells[1][1] == "%.0f g" % (float(v.thrust_n) / BladeAero.NEWTON_PER_GRAM_F)))
+	out.append(_t("details: FM is BladeAero's", cells[2][1] == "%.2f" % float(v.figure_of_merit)))
+	out.append(_t("details: capped-to is BladeAero's", cells[3][1] == "%.2f R" % float(v.capped_to_r_frac)))
+	t.aero_panel.size = Vector2(400, 190)
+	out.append(_t("details: the alpha curve has a point per lifting station", t.aero_panel.alpha_curve_px().size() > 10))
+	out.append(_t("details: the curve is monochrome", t.aero_panel.curve_ink == DesignSpace.INK and t.aero_panel.band_ink == DesignSpace.INK_MUTED))
+	d.step_rpm(1000.0)
+	out.append(_t("details: follow the rpm", t.aero_panel.headline_cells()[1][1] != cells[1][1]))
+	d.rpm = 0.0
+	d._rederive()
+	out.append(_t("details: a refusal reaches the panel as a refusal", bool(t.aero_panel.verdict.get("refused", false))))
+	t.set_details(false)
+	out.append(_t("details: closing brings the chart back", t.chart.visible and not t.details_box.visible))
+	d.free()
+	return out
+
+
+static func _test_gap_table(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _tunnel(catalog, mats)
+	out.append(_t("gap table: not solved until asked for", d.tunnel.gap_cells().is_empty()))
+	d.tunnel.set_details(true)
+	var cells := d.tunnel.gap_cells()
+	var all := PropGap.props()
+	for id: String in all:
+		var p: Dictionary = all[id]
+		var m := PropGap.measured_figures(p)
+		var f := PropGap.model_figures(p)
+		var w := PropGap.model_figures(p, PropGap.twist_of(p))
+		var name := String(PropMeasured.NAMES[id])
+		var at := -1
+		for i in cells.size():
+			if cells[i].begins_with(name):
+				at = i
+		out.append(_t("gap table: %s has its row" % id, at >= 0))
+		if at < 0:
+			continue
+		out.append(_t("gap table: %s measured static CT is the table's" % id, cells[at + 1] == "Measured" and cells[at + 2] == "%.3f" % m.ct))
+		out.append(_t("gap table: %s model CP is the real solve" % id, cells[at + 6] == "Model, helix" and cells[at + 8] == "%.3f" % f.cp))
+		out.append(_t("gap table: %s measured-twist J0 is the real solve" % id, cells[at + 11] == "Model, measured twist" and cells[at + 15] == "%.2f" % w.j0))
+	out.append(_t("gap table: filled once", d.tunnel.gap_cells().size() == cells.size()))
+	d.free()
+	return out
+
+
+static func _test_inflow(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _tunnel(catalog, mats)
+	var t := d.tunnel
+	var table := t.inflow_table
+	out.append(_t("inflow: arrows along the blade", table.size() >= 3 * 5, str(table.size())))
+	var g := PropTunnel.geometry_of(d.doc)
+	var tap := PropTunnel.stations(g, d.rpm, float(PropTunnel.speeds_at(g, d.rpm, t.look_j, 0.0).v_axial))
+	var matched := 0
+	for k in range(0, table.size(), 3):
+		for s: Dictionary in tap.stations:
+			if float(s.r_frac) == table[k] and float(s.phi_rad) == table[k + 1]:
+				matched += 1
+	out.append(_t("inflow: each arrow is a station's own phi", matched == floori(table.size() / 3.0), str(matched)))
+	out.append(_t("inflow: the fastest arrow is full length, the inner ones shorter",
+		is_equal_approx(table[table.size() - 1], 1.0) or table[table.size() - 1] > table[2], str(table)))
+	var before := table[1]
+	t.set_look_j(0.5)
+	out.append(_t("inflow: arrows follow the looked-at J", t.inflow_table[1] != before))
+	var phi := deg_to_rad(20.0)
+	var r_frac := 0.7
+	var ends: Array = BladeView3D.inflow_arrow(d.doc, r_frac, phi, 1.0, 0.1)
+	var along: Vector3 = ends[1] - ends[0]
+	out.append(_t("inflow: the tip sits on the leading edge", (ends[1] as Vector3).z > 0.0 and is_equal_approx((ends[1] as Vector3).x, 0.07)))
+	out.append(_t("inflow: the air comes from ahead", along.z < 0.0))
+	out.append(_t("inflow: the air comes from above", along.y < 0.0))
+	var beta := d.doc.beta_rad(r_frac)
+	var chord_dir := Vector3(0.0, sin(beta), cos(beta))
+	var seen := rad_to_deg((-along).angle_to(chord_dir))
+	out.append(_t("inflow: arrow to chord angle is beta minus phi", absf(seen - rad_to_deg(beta - phi)) < 1e-3, str(seen)))
+	var half: Array = BladeView3D.inflow_arrow(d.doc, r_frac, phi, 0.5, 0.1)
+	out.append(_t("inflow: length follows the speed", is_equal_approx((half[1] - half[0]).length() * 2.0, along.length())))
+	t.set_angle(120.0)
+	out.append(_t("inflow: a refusal draws no arrows", t.inflow_table.is_empty() and d.blade_view.inflow_arrow_count() == 0))
+	t.set_angle(0.0)
+	out.append(_t("inflow: the view holds them in the tunnel", d.blade_view.inflow_arrow_count() == floori(t.inflow_table.size() / 3.0) and t.inflow_table.size() > 0))
+	d.show_tab("figures")
+	out.append(_t("inflow: gone outside the tunnel", d.blade_view.inflow_arrow_count() == 0))
+	d.free()
+	return out
+
+
+## The view's mesh and markers are built in `_ready`. The suites run before the tree has a root.
+static func _test_view_in_tree(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _tunnel(catalog, mats)
+	var v := d.blade_view
+	v._ready()
+	d._rederive()
+	out.append(_t("view: the mesh stands still", v._mesh.rate_rad_s() == 0.0))
+	var rings := 0
+	var arrows := 0
+	for c in v._markers.get_children():
+		if c.is_queued_for_deletion():
+			continue
+		if c is MeshInstance3D:
+			rings += 1
+		else:
+			arrows += 1
+	out.append(_t("view: the caret ring is drawn", rings == 1, str(rings)))
+	out.append(_t("view: one arrow on the blade per entry", arrows == floori(d.tunnel.inflow_table.size() / 3.0) and arrows > 0, str(arrows)))
+	var yaw0 := v.yaw
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	v._gui_input(press)
+	var drag := InputEventMouseMotion.new()
+	drag.relative = Vector2(40, 0)
+	v._gui_input(drag)
+	out.append(_t("view: a drag orbits the blade", v.yaw != yaw0))
+	d.free()
+	return out
+
+
+static func _test_mount_details(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	d.show_tab("structure")
+	var s := d.structure
+	out.append(_t("mount: the profile is behind Details", not s.mount_profile.visible))
+	s.set_details(true)
+	d.set_pad_mm(0.0)
+	out.append(_t("mount: no pad says bolted hard", "bolted hard" in s.details_label.text, s.details_label.text))
+	d.set_pad_mm(2.0)
+	var hz := float(d.figures()["mount_hz"])
+	out.append(_t("mount: details give the soft-mount Hz", "%.0f Hz" % hz in s.details_label.text and hz > 0.0, s.details_label.text))
+	out.append(_t("mount: the profile is on screen", s.mount_profile.visible and s.details_box.visible))
+	out.append(_t("mount: details take the figures' place", not s.figures_grid.visible))
+	var names: Array = []
+	for part: Dictionary in s.mount_profile.parts():
+		names.append(String(part.name))
+	out.append(_t("mount: the profile draws the pad", "SoftMount" in names, str(names)))
+	out.append(_t("mount: the profile carries the same Hz", s.mount_profile.mount_f_n_hz == hz))
+	out.append(_t("mount: the profile is monochrome", s.mount_profile.pad_ink == DesignSpace.INK_MUTED))
+	d.free()
+	return out
+
+
+static func _test_opens_at_rated_rpm(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var d := _designer(catalog, mats)
+	var want := Fitting.rated_rpm(float(d.motor["specs"]["kv"]), float(d.motor["thrust_test"]["voltage_v"])) * PropulsionWorkbench.DESIGN_RPM_FRACTION
+	var out: Array = [_t("rpm: opens on the rated rpm at the design fraction", is_equal_approx(d.rpm, want), "%f %f" % [d.rpm, want])]
+	d.free()
 	return out

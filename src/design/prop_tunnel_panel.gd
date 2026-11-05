@@ -17,6 +17,10 @@ const G_PER_N := 1000.0 / 9.80665
 const SHADE_LOW := 0.22
 const SHADE_HIGH := 0.95
 const NOTE_OFF_AXIS := "Off axis: total thrust and power only, no blade asymmetry."
+const GAP_NOTE := "Three props at low rpm, not a survey. The shape is right; the numbers are estimates."
+const DETAILS_RPM_NOTE := "Standing still at %d rpm, model."
+## One arrow in this many stations: the solve has 40, and 40 arrows hide the blade.
+const INFLOW_EVERY := 5
 const NOTE_NO_EFFICIENCY := "Efficiency is only read straight on. Off axis, this model gives thrust and power."
 
 var shell: PropDesigner
@@ -26,6 +30,9 @@ var angle_deg := 0.0
 var look_j := 0.0
 var result: Dictionary = {}
 var shade_table := PackedFloat64Array()
+## [r/R, phi rad, speed as a share of the fastest station, ...], empty on a refusal.
+var inflow_table := PackedFloat64Array()
+var details_open := false
 var measured: Dictionary = {}
 ## The second prop's sweep at the same rpm and flow angle, {} when none is chosen.
 var compare_result: Dictionary = {}
@@ -41,6 +48,11 @@ var shade_row: HFlowContainer
 var rpm_value: Label
 var angle_value: Label
 var look_value: Label
+var details_toggle: CheckButton
+var details_box: ScrollContainer
+var details_rpm_label: Label
+var aero_panel: BladeAeroPanel
+var gap_grid: GridContainer
 
 
 func _init(p_shell: PropDesigner) -> void:
@@ -72,6 +84,97 @@ func _init(p_shell: PropDesigner) -> void:
 	shell._set_chips(shade_row, SHADES, SHADE_LABELS, set_shade)
 	add_child(shade_row)
 	station_label = _line("TunnelStations")
+	details_toggle = CheckButton.new()
+	details_toggle.name = "TunnelDetailsToggle"
+	details_toggle.text = "Details"
+	details_toggle.toggled.connect(set_details)
+	add_child(details_toggle)
+	_build_details()
+
+
+## Takes the chart's place, since the rule is one chart at a time.
+func _build_details() -> void:
+	details_box = ScrollContainer.new()
+	details_box.name = "TunnelDetails"
+	details_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	details_box.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	details_box.visible = false
+	add_child(details_box)
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+	details_box.add_child(col)
+	details_rpm_label = shell._faint("")
+	col.add_child(details_rpm_label)
+	aero_panel = BladeAeroPanel.new()
+	aero_panel.name = "TunnelAero"
+	aero_panel.curve_ink = DesignSpace.INK
+	aero_panel.band_ink = DesignSpace.INK_MUTED
+	aero_panel.cap_warn_ink = DesignSpace.WARN_INK
+	col.add_child(aero_panel)
+	var heading := shell._faint("Model against measured, UIUC wind tunnel")
+	col.add_child(heading)
+	gap_grid = GridContainer.new()
+	gap_grid.name = "TunnelGap"
+	gap_grid.columns = 5
+	gap_grid.add_theme_constant_override("h_separation", LothalTheme.SPACE_2)
+	col.add_child(gap_grid)
+	var note := shell._faint(GAP_NOTE)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(note)
+
+
+func set_details(open: bool) -> void:
+	details_open = open
+	shell._rederive()
+
+
+func _refresh_details(doc: PropellerDocument, rpm: float) -> void:
+	details_toggle.set_pressed_no_signal(details_open)
+	details_box.visible = details_open
+	chart.visible = not details_open
+	metric_row.visible = not details_open
+	# Details are the blade standing still: only the rpm still applies, and the table needs the room.
+	for row: Control in [angle_value.get_parent(), look_value.get_parent(), shade_row]:
+		row.visible = not details_open
+	if not details_open:
+		return
+	details_rpm_label.text = DETAILS_RPM_NOTE % roundi(rpm)
+	aero_panel.show_verdict(BladeAero.analyse(doc, rpm), doc.radius_mm() * 0.001)
+	if gap_grid.get_child_count() == 0:
+		_fill_gap()
+
+
+## From `PropGap`, the real solve against the UIUC tables, so the table cannot drift from the model.
+func _fill_gap() -> void:
+	for head: String in ["", "Static CT", "Static CP", "Peak η at J", "Zero J"]:
+		_gap_cell(head)
+	for prop: Dictionary in PropGap.table():
+		_gap_cell(String(prop.name))
+		for i in 4:
+			gap_grid.add_child(Control.new())
+		for row: Dictionary in prop.rows:
+			var f: Dictionary = row.figures
+			_gap_cell(String(row.label))
+			_gap_cell("%.3f" % float(f.ct))
+			_gap_cell("%.3f" % float(f.cp))
+			_gap_cell("%.2f at %.2f" % [float(f.eta), float(f.eta_j)])
+			_gap_cell("%.2f" % float(f.j0))
+
+
+func _gap_cell(text: String) -> void:
+	var l := shell._faint(text)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	gap_grid.add_child(l)
+
+
+## The grid's text, row by row, as on screen.
+func gap_cells() -> PackedStringArray:
+	var out := PackedStringArray()
+	for c in gap_grid.get_children():
+		if c is Label:
+			out.append((c as Label).text)
+	return out
 
 
 func _line(node_name: String) -> Label:
@@ -111,6 +214,7 @@ func refresh(doc: PropellerDocument, rpm: float) -> void:
 	note_label.text = ""
 	_refresh_compare(rpm)
 	dots_label.text = ""
+	_refresh_details(doc, rpm)
 	shell._mark_chips(metric_row, METRICS, metric)
 	shell._mark_chips(shade_row, SHADES, shade_by)
 	rpm_value.text = "%d rpm" % roundi(rpm)
@@ -210,6 +314,7 @@ func _dots(doc: PropellerDocument, rpm: float) -> PackedVector2Array:
 
 func _clear_stations() -> void:
 	shade_table = PackedFloat64Array()
+	inflow_table = PackedFloat64Array()
 	station_label.text = ""
 
 
@@ -217,7 +322,24 @@ func _clear_stations() -> void:
 ## relative: this shows where on the blade, not how much against another blade.
 func _hide_empty_lines() -> void:
 	for l: Label in [warning_label, note_label, dots_label, station_label]:
-		l.visible = l.text != ""
+		l.visible = l.text != "" and (l == warning_label or not details_open)
+
+
+## Every INFLOW_EVERY-th lifting station. Zero-chord annuli have no blade to arrive at.
+func _inflow_from(rows: Array) -> PackedFloat64Array:
+	var fastest := 0.0
+	var lifting: Array = []
+	for s: Dictionary in rows:
+		if shell.doc.chord_at(float(s.r_frac)) > 0.0 and float(s.u_mps) > 0.0:
+			lifting.append(s)
+			fastest = maxf(fastest, float(s.u_mps))
+	var out := PackedFloat64Array()
+	for i in range(INFLOW_EVERY - 1, lifting.size(), INFLOW_EVERY):
+		var s: Dictionary = lifting[i]
+		out.append(float(s.r_frac))
+		out.append(float(s.phi_rad))
+		out.append(float(s.u_mps) / fastest)
+	return out
 
 
 func _shade_stations(g: Dictionary, rpm: float) -> void:
@@ -238,7 +360,8 @@ func _shade_stations(g: Dictionary, rpm: float) -> void:
 		var t := (float(s[key]) - lo) / (hi - lo) if hi > lo else 0.5
 		table.append(lerpf(SHADE_LOW, SHADE_HIGH, t))
 	shade_table = table
+	inflow_table = _inflow_from(tap.stations)
 	if shade_by == "alpha":
-		station_label.text = "Blade at J %.2f: α %.1f° (dark) to %.1f° (light)." % [look_j, rad_to_deg(lo), rad_to_deg(hi)]
+		station_label.text = "Blade at J %.2f: α %.1f° (dark) to %.1f° (light). Arrows: the air each station meets." % [look_j, rad_to_deg(lo), rad_to_deg(hi)]
 	else:
-		station_label.text = "Blade at J %.2f: light stations make the most thrust." % look_j
+		station_label.text = "Blade at J %.2f: light stations make the most thrust. Arrows: the air each station meets." % look_j

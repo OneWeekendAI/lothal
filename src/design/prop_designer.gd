@@ -982,6 +982,7 @@ func _rederive() -> void:
 	elif make.visible:
 		make.refresh()
 	blade_view.set_station_shade(tunnel.shade_table if in_tunnel else PackedFloat64Array())
+	blade_view.set_inflow(tunnel.inflow_table if in_tunnel else PackedFloat64Array())
 	blade_view.show_propeller({"specs": {"diameter_inches": inches, "blades": doc.blades}}, doc)
 	section_view.set_document(doc)
 	_syncing = false

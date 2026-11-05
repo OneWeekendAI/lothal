@@ -60,6 +60,9 @@ func _init(p_motor_mesh: MotorMesh = null) -> void:
 ## the build's spacer and pad. The frequency is `VibrationModel.for_build(build).mount_hz()`, the
 ## number the vibration overlay and the row read, so the caption cannot be a third answer.
 var _own_motor: MotorMesh
+## Theme colours by default; the prop designer sets its monochrome inks.
+var pad_ink := LothalTheme.WARNING
+var mark_ink := LothalTheme.ACCENT
 var _own_prop: PropellerMesh
 
 
@@ -76,6 +79,20 @@ func show_build(build: Build) -> void:
 	_own_motor.rebuild(build.motor, _own_prop.stack_height_m,
 		float(build.assembly_value("prop_spacer_m")), pad_m)
 	set_stack(_own_motor, pad_m, VibrationModel.for_build(build).mount_hz())
+
+
+## The same picture for a prop on the bench: no Build, so the record, document and pad are handed in.
+func show_design(motor: Dictionary, prop: Dictionary, doc: PropellerDocument, pad_m: float, f_n_hz: float) -> void:
+	if motor.is_empty():
+		set_stack(null, 0.0, INF)
+		return
+	if _own_prop == null:
+		_own_prop = PropellerMesh.new()
+	_own_prop.rebuild(prop, doc)
+	if _own_motor == null:
+		_own_motor = MotorMesh.new()
+	_own_motor.rebuild(motor, _own_prop.stack_height_m, 0.0, pad_m)
+	set_stack(_own_motor, pad_m, f_n_hz)
 
 
 ## The two meshes this view built are never in a tree, so nothing else would free them.
@@ -170,7 +187,7 @@ func _draw() -> void:
 		var part_name := String(part["name"])
 		# The pad is the part this view exists to make arguable, so it is the one that is coloured
 		# rather than outlined. Everything else is the context it sits in.
-		var colour := LothalTheme.WARNING if part_name == "SoftMount" else LothalTheme.TEXT_MUTED
+		var colour := pad_ink if part_name == "SoftMount" else LothalTheme.TEXT_MUTED
 		var rect := part_rect(part)
 		draw_rect(rect, Color(colour, 0.22))
 		draw_rect(rect, colour, false, 1.0)
@@ -182,7 +199,7 @@ func _draw() -> void:
 	# a thing, and it is the number a spacer moves.
 	var seat_y := floor_y - motor_mesh.prop_mount_height_m * scale_px_per_m()
 	draw_line(Vector2(MARGIN_PX * 0.5, seat_y), Vector2(size.x - MARGIN_PX * 0.5, seat_y),
-		LothalTheme.ACCENT, 1.0)
+		mark_ink, 1.0)
 
 	var frequency := "no mount" if not is_finite(mount_f_n_hz) \
 		else "%.0f Hz" % mount_f_n_hz

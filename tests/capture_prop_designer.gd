@@ -69,6 +69,11 @@ func _init() -> void:
 			d.doc.pitch_mm = 4.0 * PropellerDocument.INCH_TO_MM
 			d.set_blades(2)
 			d.step_rpm(8067.0 - d.rpm)
+		if state == "tunnel_details":
+			d.tunnel.set_details(true)
+		if state == "tunnel_details_low":
+			d.tunnel.set_details(true)
+			d.tunnel.details_box.scroll_vertical = 100000
 		if state == "tunnel_mach":
 			d.step_rpm(60000.0)
 		if state.begins_with("stand"):

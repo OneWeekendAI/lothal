@@ -85,3 +85,25 @@ static func measured_figures(p: Dictionary) -> Dictionary:
 	var b: Array = run[run.size() - 1]
 	var j0: float = float(b[0]) + float(b[1]) * (float(b[0]) - float(a[0])) / (float(a[1]) - float(b[1]))
 	return {"ct": float(best[1]), "cp": float(best[2]), "eta": peak, "eta_j": peak_j, "j0": j0}
+
+
+## The table the Wind tunnel's Details shows: one entry per prop, three rows each. Solved once a
+## launch, because the fixture and the solve do not change while the app runs.
+static var _table_cache: Array = []
+
+
+static func table() -> Array:
+	if not _table_cache.is_empty():
+		return _table_cache
+	var all := props()
+	for id: String in all:
+		var p: Dictionary = all[id]
+		_table_cache.append({
+			"name": "%s, %d rpm" % [String(PropMeasured.NAMES.get(id, id)), int(p["run_rpm"])],
+			"rows": [
+				{"label": "Measured", "figures": measured_figures(p)},
+				{"label": "Model, helix", "figures": model_figures(p)},
+				{"label": "Model, measured twist", "figures": model_figures(p, twist_of(p))},
+			],
+		})
+	return _table_cache

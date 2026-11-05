@@ -27,6 +27,9 @@ var note_label: Label
 var warning_label: Label
 var details_label: Label
 var details_toggle: CheckButton
+var mount_profile: PropellerMountProfile
+var details_box: ScrollContainer
+var figures_grid: Control
 var rpm_value: Label
 var heavy_value: Label
 
@@ -38,6 +41,7 @@ func _init(p_shell: PropDesigner) -> void:
 	note_label.text = NEUTRAL_NOTE
 	var grid := shell._figure_grid(ROWS, func(k: String) -> String: return NAMES[k], figs, 110.0)
 	grid.name = "StructureFigures"
+	figures_grid = grid
 	add_child(grid)
 	warning_label = _line("StructureWarning")
 	warning_label.add_theme_color_override("font_color", DesignSpace.WARN_INK)
@@ -50,7 +54,24 @@ func _init(p_shell: PropDesigner) -> void:
 	details_toggle.text = "Details"
 	details_toggle.toggled.connect(set_details)
 	add_child(details_toggle)
+	details_box = ScrollContainer.new()
+	details_box.name = "StructureDetailsBox"
+	details_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	details_box.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	details_box.visible = false
+	add_child(details_box)
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+	details_box.add_child(col)
 	details_label = _line("StructureDetails")
+	details_label.reparent(col)
+	mount_profile = PropellerMountProfile.new()
+	mount_profile.name = "StructureMountProfile"
+	mount_profile.pad_ink = DesignSpace.INK_MUTED
+	mount_profile.mark_ink = DesignSpace.INK
+	mount_profile.visible = false
+	col.add_child(mount_profile)
 
 
 func _line(node_name: String) -> Label:
@@ -106,10 +127,20 @@ func refresh() -> void:
 		_put("flex", "%.1f mm" % float(last.flex_mm), "%.0f %% of radius (est.)" % float(last.flex_pct_radius))
 	details_label.visible = details_open
 	details_label.text = _details() if details_open else ""
+	mount_profile.visible = details_open
+	# In the figures' place: both together overflow the window at 720.
+	details_box.visible = details_open
+	figures_grid.visible = not details_open
+	if details_open:
+		var hz := float(shell.figures()["mount_hz"])
+		mount_profile.show_design(shell.motor, {"specs": {"diameter_inches": doc.diameter_mm / PropellerDocument.INCH_TO_MM, "blades": doc.blades}},
+			doc, shell.pad_mm * 0.001, hz)
 
 
 func _details() -> String:
-	var root := "Root t/c %.2f, from %s." % [PropStructure.root_thickness_ratio(shell.doc), PropStructure.ROOT_THICKNESS_SOURCE]
+	var hz := float(shell.figures()["mount_hz"])
+	var pad := "No soft mount: the motor is bolted hard. " if is_inf(hz) else "Soft mount %.1f mm, %.0f Hz (est.). " % [shell.pad_mm, hz]
+	var root := pad + "Root t/c %.2f, from %s." % [PropStructure.root_thickness_ratio(shell.doc), PropStructure.ROOT_THICKNESS_SOURCE]
 	if not last.ok:
 		return root
 	return "%s Rectangle section, at the first chord station. Pull %.0f MPa, bending %.0f MPa, strength %.0f MPa. Left out: blade pitch, torque bending, centrifugal stiffening, printed layer lines, fatigue. Flex does not reach the aero." % [

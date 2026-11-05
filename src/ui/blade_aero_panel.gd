@@ -62,6 +62,12 @@ var caret_r_frac := 0.7
 
 var _c_l_max := 1.0
 
+## Theme colours by default. The prop designer sets its monochrome inks; a capped stretch is normal,
+## so there it is grey, and only the whole-blade cap is amber.
+var curve_ink := LothalTheme.ACCENT
+var band_ink := LothalTheme.WARNING
+var cap_warn_ink := LothalTheme.DANGER
+
 
 func _init() -> void:
 	custom_minimum_size = Vector2(240, 190)
@@ -169,8 +175,7 @@ func _draw() -> void:
 	for stall_rect in stall_rects_px():
 		# WARNING and not DANGER, for the headline cell's reason: this shading marks the normal
 		# condition of every static rotor's root, and a red band would say otherwise.
-		draw_rect(stall_rect, Color(LothalTheme.WARNING.r, LothalTheme.WARNING.g,
-			LothalTheme.WARNING.b, 0.14))
+		draw_rect(stall_rect, Color(band_ink.r, band_ink.g, band_ink.b, 0.14))
 
 	# The zero-incidence line: where the curve crosses it, the blade has stopped lifting and
 	# started dragging, and a tip that dips below it is the classic over-pitched planform.
@@ -180,7 +185,7 @@ func _draw() -> void:
 
 	var curve := alpha_curve_px()
 	if curve.size() > 1:
-		draw_polyline(curve, LothalTheme.ACCENT, 2.0)
+		draw_polyline(curve, curve_ink, 2.0)
 
 	# The caret, tying this curve to the section the room is showing and the station on the blade.
 	var caret_x := to_pixels(caret_r_frac, 0.0).x
@@ -195,10 +200,11 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, -1, LothalTheme.FONT_SIZE_SMALL, LothalTheme.TEXT_MUTED)
 
 
-func _draw_headline(font: Font) -> void:
+## The headline as drawn: [label, value, colour] per cell.
+func headline_cells() -> Array:
 	var capped: float = verdict["capped_to_r_frac"]
-	var cells := [
-		["g/W", "%.1f" % verdict["grams_per_watt"], LothalTheme.ACCENT],
+	return [
+		["g/W", "%.1f" % verdict["grams_per_watt"], curve_ink],
 		["thrust", "%.0f g" % (verdict["thrust_n"] / BladeAero.NEWTON_PER_GRAM_F),
 			LothalTheme.TEXT_MAIN],
 		["FM", "%.2f" % verdict["figure_of_merit"], LothalTheme.TEXT_MAIN],
@@ -206,8 +212,12 @@ func _draw_headline(font: Font) -> void:
 		# every propeller's normal condition, so colouring it red by default would train a builder
 		# to ignore the one case that is not normal.
 		["capped to", "%.2f R" % capped,
-			LothalTheme.DANGER if capped >= WHOLE_BLADE_CAPPED else LothalTheme.TEXT_MUTED],
+			cap_warn_ink if capped >= WHOLE_BLADE_CAPPED else LothalTheme.TEXT_MUTED],
 	]
+
+
+func _draw_headline(font: Font) -> void:
+	var cells := headline_cells()
 	var step := size.x / float(cells.size())
 	for i in cells.size():
 		var x := i * step + LothalTheme.SPACE_1
