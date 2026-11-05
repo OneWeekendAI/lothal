@@ -404,6 +404,7 @@ static func run(tree: SceneTree) -> Array:
 
 	results.append_array(await _pack_designer_top_bar_is_reachable(tree))
 
+	results.append_array(await TestPropPageFit.run_in_tree(tree))
 	held.restore()
 	return results
 

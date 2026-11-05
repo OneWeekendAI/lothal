@@ -64,6 +64,8 @@ var catalog: PartsCatalog
 var store_path: String = CustomParts.SAVE_PATH
 var part_id := ""
 var save_as_button: Button
+var left_scroll: ScrollContainer
+var left_cue: Label
 var status_label: Label
 ## True while the hub is still default_hub_g's estimate rather than a value somebody set.
 var hub_assumed := true
@@ -215,6 +217,7 @@ func _build_top_bar() -> Control:
 func _build_left() -> Control:
 	var out: Array = []
 	var scroll := _left_column(LEFT_W, out)
+	left_scroll = scroll
 	var col: VBoxContainer = out[0]
 	col.add_child(_section("1 · Size"))
 	diameter_value = _add_stepper(col, "Diameter", "Diameter", "Tip to tip",
@@ -237,7 +240,28 @@ func _build_left() -> Control:
 	material_row = _chip_row("MaterialRow", "Material_")
 	_set_chips(material_row, MATERIALS, MATERIAL_LABELS, set_blade_material)
 	col.add_child(material_row)
-	return scroll
+	# Hub and material sit below this column's fold at every window size, and the scroll bar is 0 px.
+	# The cue keeps its line when faded, so showing it never changes the scroller's height.
+	var holder := VBoxContainer.new()
+	holder.name = "LeftHolder"
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	holder.add_child(scroll)
+	left_cue = _faint("⌄  more below")
+	left_cue.name = "LeftCue"
+	left_cue.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	left_cue.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(left_cue)
+	var bar := scroll.get_v_scroll_bar()
+	bar.value_changed.connect(func(_v: float) -> void: update_left_cue())
+	bar.changed.connect(update_left_cue)
+	update_left_cue()
+	return holder
+
+
+## The cue is up only while the left column runs on below what shows.
+func update_left_cue() -> void:
+	var bar := left_scroll.get_v_scroll_bar()
+	left_cue.modulate.a = 1.0 if bar.value + bar.page < bar.max_value - 1.0 else 0.0
 
 
 func _build_pitch_offer() -> Control:
@@ -368,7 +392,16 @@ func _build_right() -> Control:
 	make.name = "MakePanel"
 	make.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(make)
-	return col
+	# A warning or a measured-dots line can add a row to the tunnel; the page must still end inside the
+	# window, so the column scrolls rather than pushing the whole designer past the bottom edge.
+	var scroller := ScrollContainer.new()
+	scroller.name = "RightScroll"
+	scroller.custom_minimum_size = Vector2(RIGHT_W, 0)
+	scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroller.add_child(col)
+	return scroller
 
 
 # ---------------------------------------------------------------------------

@@ -68,7 +68,7 @@ func _init(p_shell: PropDesigner) -> void:
 	chart = PropTunnelChart.new()
 	chart.name = "TunnelChart"
 	chart.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	chart.custom_minimum_size = Vector2(0, 170)
+	chart.custom_minimum_size = Vector2(0, 140)
 	add_child(chart)
 	warning_label = _line("TunnelWarning")
 	warning_label.add_theme_color_override("font_color", DesignSpace.WARN_INK)
