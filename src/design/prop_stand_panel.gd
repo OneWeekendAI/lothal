@@ -22,6 +22,9 @@ var run_count := 0
 
 var motor_option: OptionButton
 var pack_option: OptionButton
+const FIRST_MOTOR := "This drone's motor"
+const FIRST_PACK := "This drone's pack"
+
 var view_row: HFlowContainer
 var charts: PackCharts
 var result_label: Label
@@ -32,8 +35,8 @@ func _init(p_shell: PropDesigner) -> void:
 	shell = p_shell
 	cfg = MotorConfigs.load_default()
 	add_theme_constant_override("separation", LothalTheme.SPACE_2)
-	motor_option = _picker("StandMotor", "Motor", "motor", "This drone's motor", pick_motor)
-	pack_option = _picker("StandPack", "Pack", "battery", "This drone's pack", pick_pack)
+	motor_option = _picker("StandMotor", "Motor", "motor", FIRST_MOTOR, pick_motor)
+	pack_option = _picker("StandPack", "Pack", "battery", FIRST_PACK, pick_pack)
 	view_row = shell._chip_row("StandView", "View_")
 	shell._set_chips(view_row, VIEWS, VIEW_LABELS, set_view)
 	add_child(view_row)
@@ -63,15 +66,33 @@ func _picker(node_name: String, title: String, category: String, first: String, 
 	opt.name = node_name
 	opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	opt.clip_text = true
+	_fill(opt, category, first)
+	opt.item_selected.connect(func(i: int): on_pick.call(String(opt.get_item_metadata(i))))
+	row.add_child(opt)
+	add_child(row)
+	return opt
+
+
+func _fill(opt: OptionButton, category: String, first: String) -> void:
+	opt.clear()
 	opt.add_item(first)
 	opt.set_item_metadata(0, DRONE)
 	for rec in shell.catalog.list_category(category):
 		opt.add_item(String(rec.get("name", rec.get("part_id", ""))))
 		opt.set_item_metadata(opt.item_count - 1, String(rec.get("part_id", "")))
-	opt.item_selected.connect(func(i: int): on_pick.call(String(opt.get_item_metadata(i))))
-	row.add_child(opt)
-	add_child(row)
-	return opt
+
+
+## The shelf changed (a save): both lists read it again. A pick still on the shelf stays; one that
+## left goes back to this drone's part, so the run never asks for a part that is gone.
+func refill() -> void:
+	_fill(motor_option, "motor", FIRST_MOTOR)
+	_fill(pack_option, "battery", FIRST_PACK)
+	if motor_pick != DRONE and shell.catalog.get_part(motor_pick).is_empty():
+		motor_pick = DRONE
+	if pack_pick != DRONE and shell.catalog.get_part(pack_pick).is_empty():
+		pack_pick = DRONE
+	_show_pick(motor_option, motor_pick)
+	_show_pick(pack_option, pack_pick)
 
 
 func pack_ids() -> Array:

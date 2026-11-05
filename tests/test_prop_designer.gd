@@ -45,6 +45,7 @@ static func run() -> Array:
 	results.append_array(_test_save_failures(catalog, mats))
 	results.append_array(_test_compare_tunnel(catalog, mats))
 	results.append_array(_test_compare_stand(catalog, mats))
+	results.append_array(_test_stand_lists_follow_the_shelf(catalog, mats))
 	results.append_array(_test_drone_effect())
 	results.append_array(_test_typed_path(catalog, mats))
 	results.append_array(_test_migration(mats))
@@ -1181,6 +1182,61 @@ static func _test_compare_tunnel(catalog: PartsCatalog, mats: FrameMaterials) ->
 	out.append(_t("clearing it removes the line and legend", d.tunnel.chart.compare_points.is_empty() and d.tunnel.chart.legend_names.is_empty()))
 	d.free()
 	return out
+
+
+## PD11's leftover: the stand's lists were filled once, in `_init`. Reads the shelf after the change,
+## through the door a save takes (`set_catalog`), on a copy so the shared catalog is left alone.
+static func _test_stand_lists_follow_the_shelf(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var shelf := PartsCatalog.new()
+	shelf.by_id = catalog.by_id.duplicate()
+	shelf.by_category = catalog.by_category.duplicate(true)
+	var d := PropDesigner.new(shelf, mats)
+	d.size = SIZE
+	d.show_tab("stand")
+	var stale_motor: Dictionary = shelf.list_category("motor")[0].duplicate(true)
+	stale_motor["part_id"] = "custom_new_motor"
+	stale_motor["name"] = "New motor"
+	var stale_pack: Dictionary = shelf.list_category("battery")[0].duplicate(true)
+	stale_pack["part_id"] = "custom_new_pack"
+	stale_pack["name"] = "New pack"
+	out.append(_t("stand lists: the new parts are not there before the change",
+		not _option_ids(d.stand.motor_option).has("custom_new_motor") and not d.stand.pack_ids().has("custom_new_pack")))
+	var with_new := PartsCatalog.new()
+	with_new.by_id = shelf.by_id.duplicate()
+	with_new.by_category = shelf.by_category.duplicate(true)
+	with_new.by_id["custom_new_motor"] = stale_motor
+	with_new.by_id["custom_new_pack"] = stale_pack
+	(with_new.by_category["motor"] as Array).append(stale_motor)
+	(with_new.by_category["battery"] as Array).append(stale_pack)
+	d.set_catalog(with_new)
+	out.append(_t("stand lists: a new motor appears after a save", _option_ids(d.stand.motor_option).has("custom_new_motor")))
+	out.append(_t("stand lists: a new pack appears after a save", d.stand.pack_ids().has("custom_new_pack")))
+	d.stand.pick_motor("custom_new_motor")
+	d.stand.pick_pack("custom_new_pack")
+	d.set_catalog(with_new)
+	out.append(_t("stand lists: the pick survives a refill",
+		_option_id(d.stand.motor_option) == "custom_new_motor" and _option_id(d.stand.pack_option) == "custom_new_pack"))
+	d.set_catalog(shelf)
+	out.append(_t("stand lists: a part gone from the shelf is not listed", not _option_ids(d.stand.motor_option).has("custom_new_motor")))
+	out.append(_t("stand lists: a part gone from the shelf is not flown",
+		d.stand.motor_pick == PropStandPanel.DRONE and d.stand.pack_pick == PropStandPanel.DRONE
+		and d.stand.motor_record() == d.motor))
+	out.append(_t("stand lists: the shown pick says so too",
+		_option_id(d.stand.motor_option) == PropStandPanel.DRONE and _option_id(d.stand.pack_option) == PropStandPanel.DRONE))
+	d.free()
+	return out
+
+
+static func _option_ids(opt: OptionButton) -> Array:
+	var ids: Array = []
+	for i in opt.item_count:
+		ids.append(String(opt.get_item_metadata(i)))
+	return ids
+
+
+static func _option_id(opt: OptionButton) -> String:
+	return String(opt.get_item_metadata(opt.selected))
 
 
 static func _test_compare_stand(catalog: PartsCatalog, mats: FrameMaterials) -> Array:

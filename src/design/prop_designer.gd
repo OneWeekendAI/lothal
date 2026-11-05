@@ -413,6 +413,7 @@ func set_catalog(p_catalog: PartsCatalog) -> void:
 	if compare_id != "" and catalog.get_part(compare_id).is_empty():
 		compare_id = ""
 	_fill_compare_list()
+	stand.refill()
 	_rederive()
 
 
