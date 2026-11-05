@@ -124,7 +124,7 @@ static func _test_opens_valid(catalog: PartsCatalog, mats: FrameMaterials) -> Ar
 		out.append(_t("opens with non-zero %s" % key, _num(d._figs[key]) > 0.0, (d._figs[key] as Label).text))
 	out.append(_t("mount reads a stated value on open", (d._figs["mount"] as Label).text != ""))
 	out.append(_t("Save is enabled", not d.save_button.disabled))
-	out.append(_t("Copy specs is disabled until it exists", d.copy_button.disabled))
+	out.append(_t("Copy specs is live", not d.copy_button.disabled))
 	out.append(_t("a new prop has no id to overwrite", d.doc.id == ""))
 	out.append(_t("a new prop claims no vendor mass", d.doc.published_mass_g == 0.0))
 	out.append(_t("hub starts above zero", d.hub_g > 0.0))

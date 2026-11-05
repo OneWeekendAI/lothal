@@ -35,8 +35,11 @@ const THICKNESS_NOTE := "Thickness moves mass and strength. Thrust and power her
 const TWIST_HELIX_NOTE := "Twist follows the pitch."
 const TWIST_DRAWN_NOTE := "Twist is drawn. Pitch does not set the angles."
 const TWIST_CAP_NOTE := "Hover sits on the lift cap, so pitch and twist show mostly at forward speed."
-const TABS := ["figures", "tunnel", "stand", "structure"]
-const TAB_LABELS := ["Figures", "Wind tunnel", "Thrust stand", "Structure"]
+const FALLBACK_SHAFT_MM := 5.0
+const STEP_SHAFT_MM := 0.5
+const SHAFT_RANGE_MM := Vector2(1.0, 8.0)
+const TABS := ["figures", "tunnel", "stand", "structure", "make"]
+const TAB_LABELS := ["Figures", "Wind tunnel", "Thrust stand", "Structure", "Make it"]
 const RPM_RANGE := Vector2(500.0, 60000.0)
 const STEP_RPM := 500.0
 const SOURCE_DRAWN := "drawn in the prop designer"
@@ -114,6 +117,9 @@ var fit_button: Button
 var tunnel: PropTunnelPanel
 var stand: PropStandPanel
 var structure: PropStructurePanel
+var make: PropMakePanel
+## The shaft typed on the Make it tab, mm. 0 means none. Not saved with the prop.
+var shaft_set_mm := 0.0
 ## The drone's parts, for the stand: {frame, propeller, battery, motor} ids.
 var drone_parts: Dictionary = {}
 var figures_box: GridContainer
@@ -191,8 +197,7 @@ func _build_top_bar() -> Control:
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	bar.add_child(status_label)
-	copy_button = _bar_button("CopySpecs", "Copy specs", func(): pass, "Not available yet")
-	copy_button.disabled = true
+	copy_button = _bar_button("CopySpecs", "Copy specs", func(): copy_specs(), "Copy the making sheet for this prop")
 	bar.add_child(copy_button)
 	var typed := _bar_button("Typed", "Typed", open_typed_dialog, "Enter a prop's published figures by hand; no blade to draw")
 	bar.add_child(typed)
@@ -355,6 +360,10 @@ func _build_right() -> Control:
 	structure.name = "StructurePanel"
 	structure.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(structure)
+	make = PropMakePanel.new(self)
+	make.name = "MakePanel"
+	make.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(make)
 	return col
 
 
@@ -738,6 +747,63 @@ func figures() -> Dictionary:
 	}
 
 
+## The shaft the bore fits, mm: one the builder set, else the motor record's, else assumed from the size table.
+func shaft_mm() -> float:
+	if shaft_set_mm > 0.0:
+		return shaft_set_mm
+	var held := float(motor.get("specs", {}).get("shaft_mm", 0.0))
+	return held if held > 0.0 else assumed_shaft_mm(motor)
+
+
+## True when nobody stated this shaft: no record names one, so the sheet and the tab say assumed.
+func shaft_is_assumed() -> bool:
+	return shaft_set_mm <= 0.0 and float(motor.get("specs", {}).get("shaft_mm", 0.0)) <= 0.0
+
+
+## No shelf motor names a shaft, and the picture's stator/9 guess gives 2.4 mm on a 22 mm stator, whose
+## props fit 5 mm. So: the nearest stator in the size table, its largest shaft. Too small can be drilled.
+static func assumed_shaft_mm(p_motor: Dictionary) -> float:
+	var stator := float(p_motor.get("specs", {}).get("stator_diameter_mm", 0.0))
+	var cfg := MotorConfigs.load_default()
+	var best := FALLBACK_SHAFT_MM
+	var gap := INF
+	for s: Dictionary in cfg.sizes():
+		var d := absf(float(s.get("stator_diameter_mm", 0.0)) - stator)
+		var options: Array = s.get("shaft_mm_options", [])
+		if d < gap and not options.is_empty():
+			gap = d
+			best = float(options.max())
+	return best
+
+
+func step_shaft(delta_mm: float) -> void:
+	shaft_set_mm = clampf(snappedf(shaft_mm() + delta_mm, STEP_SHAFT_MM), SHAFT_RANGE_MM.x, SHAFT_RANGE_MM.y)
+	_rederive()
+
+
+## The bore in the file: the shaft plus the app's default printed fit on every side.
+func bore_mm() -> float:
+	return shaft_mm() + 2.0 * PrintSettings.DEFAULT_CLEARANCE_MM
+
+
+## The making sheet (PropSheet), put on the clipboard. Returns the text.
+func copy_specs() -> String:
+	var text := PropSheet.to_text(self)
+	DisplayServer.clipboard_set(text)
+	return text
+
+
+## Writes the same sheet to `path`. True when the file was written, and a failure is on the bar.
+func save_specs(path: String) -> bool:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		_set_status("Not saved: could not write that file.", true)
+		return false
+	f.store_string(PropSheet.to_text(self))
+	f.close()
+	return true
+
+
 ## This prop as a part the rest of the app can fly, from a copy: publishing stamps its document.
 func flyable_record(p_part_id: String) -> Dictionary:
 	var copy := PropellerDocument.from_dictionary(doc.to_dictionary())
@@ -902,6 +968,7 @@ func _rederive() -> void:
 	tunnel.visible = in_tunnel
 	stand.visible = active_tab == "stand"
 	structure.visible = active_tab == "structure"
+	make.visible = active_tab == "make"
 	compare_row.visible = in_tunnel or stand.visible or in_figures
 	compare_tip_label.visible = in_figures and compare_id != ""
 	compare_tip_label.text = compare_tip_text()
@@ -912,6 +979,8 @@ func _rederive() -> void:
 		stand.refresh()
 	elif structure.visible:
 		structure.refresh()
+	elif make.visible:
+		make.refresh()
 	blade_view.set_station_shade(tunnel.shade_table if in_tunnel else PackedFloat64Array())
 	blade_view.show_propeller({"specs": {"diameter_inches": inches, "blades": doc.blades}}, doc)
 	section_view.set_document(doc)

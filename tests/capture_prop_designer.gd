@@ -77,6 +77,12 @@ func _init() -> void:
 			d.stand.set_view("current")
 		if state == "stand_pack":
 			d.stand.pick_pack(d.stand.pack_ids()[1])
+		if state.begins_with("make"):
+			d.show_tab("make")
+		if state == "make_ok":
+			d.doc = PropellerDocument.from_catalog_prop(ds._catalog.get_part("prop_8x45x3"))
+			d.doc.name = "Eight inch"
+			d.set_thickness(0.15)
 		if state.begins_with("structure"):
 			d.show_tab("structure")
 		if state == "structure_details":
