@@ -63,9 +63,7 @@ static func point(g: Dictionary, rpm: float, v_axial: float, v_edge := 0.0) -> D
 	if r[0] == 0.0 and r[1] == 0.0:
 		return _refuse(REASON_BLADE)
 	var omega_r: float = rpm * TAU / 60.0 * float(g.diameter_m) * 0.5
-	# The advancing tip, the fastest air on the disc. Axially this is the helical tip speed.
-	var tangential: float = omega_r + absf(v_edge)
-	var mach: float = sqrt(tangential * tangential + v_axial * v_axial) / SPEED_OF_SOUND_MPS
+	var mach: float = tip_mach(float(g.diameter_m), rpm, v_axial, v_edge)
 	var mu_edge: float = absf(v_edge) / omega_r
 	var flag := ""
 	if mach > MACH_FLAG:
@@ -76,6 +74,15 @@ static func point(g: Dictionary, rpm: float, v_axial: float, v_edge := 0.0) -> D
 		"ok": true, "thrust_n": r[0], "torque_nm": r[1], "power_w": r[1] * rpm * TAU / 60.0,
 		"tip_mach": mach, "mu_edge": mu_edge, "flag": flag,
 	}
+
+
+## The advancing tip, the fastest air on the disc. Axially this is the helical tip speed. `sound_mps`
+## is there for one reason: APC's files use 1100 ft/s (335.28 m/s), and this tunnel uses the 15 C
+## air its density already is, so APC's column is only reproducible by naming its constant.
+static func tip_mach(diameter_m: float, rpm: float, v_axial := 0.0, v_edge := 0.0,
+		sound_mps := SPEED_OF_SOUND_MPS) -> float:
+	var tangential: float = rpm * TAU / 60.0 * diameter_m * 0.5 + absf(v_edge)
+	return sqrt(tangential * tangential + v_axial * v_axial) / sound_mps
 
 
 ## Airspeed sweep straight into the disc at a set rpm: Ct, Cp and efficiency against J, from J = 0
