@@ -255,7 +255,7 @@ impl BemtModel {
         let mut dist: Vec<f64> = Vec::new();
         solve_impl_collecting(
             rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, Some(&mut dist), None, &twist_points);
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, Some(&mut dist), None, None, &twist_points);
         PackedFloat64Array::from(dist.as_slice())
     }
 
@@ -297,8 +297,37 @@ impl BemtModel {
         solve_impl_collecting(
             rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
             POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, None,
-            Some(&mut stations), &twist_points);
+            Some(&mut stations), None, &twist_points);
         PackedFloat64Array::from(stations.as_slice())
+    }
+
+    /// PD3: the forward path's station tap, one row per annulus at stride 8:
+    /// `[r_m, alpha_rad, phi_rad, cl, cd, dT_N, dQ_Nm, U_mps]`. Same fixed point as `solve_forward`,
+    /// including its V = 0 short circuit onto the hover path. A descent is declined with an EMPTY
+    /// array, not the static rows `solve_forward` falls back to: stations with no total to warn
+    /// about them would render as a result.
+    #[func]
+    pub fn forward_stations(
+        rho: f64,
+        diameter_m: f64,
+        pitch_m: f64,
+        blades: f64,
+        rpm: f64,
+        chord_points_mm: PackedFloat64Array,
+        v_axial_mps: f64,
+        v_edge_mps: f64,
+        guard_closure: f64,
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
+    ) -> PackedFloat64Array {
+        if v_axial_mps < 0.0 {
+            return PackedFloat64Array::new();
+        }
+        let mut rows: Vec<f64> = Vec::new();
+        solve_forward_collecting(
+            rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX,
+            v_axial_mps, v_edge_mps, guard_closure, Some(&mut rows), &twist_points);
+        PackedFloat64Array::from(rows.as_slice())
     }
 
     /// P6 — §4.1 with V_ax ≠ 0 and edgewise flow. Extends `solve` with an axial freestream
@@ -846,7 +875,7 @@ fn solve_impl(
     twist_points: &PackedFloat64Array,
 ) -> PackedFloat64Array {
     solve_impl_collecting(rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
-        a0_eff, c_d0, k_polar, c_l_max, guard_closure, None, None, twist_points)
+        a0_eff, c_d0, k_polar, c_l_max, guard_closure, None, None, None, twist_points)
 }
 
 /// `solve_impl` with an optional per-annulus tap (P10e's thrust-distribution overlay).
@@ -874,6 +903,7 @@ fn solve_impl_collecting(
     guard_closure: f64,
     mut dist: Option<&mut Vec<f64>>,
     mut stations: Option<&mut Vec<f64>>,
+    mut rows: Option<&mut Vec<f64>>,
     twist_points: &PackedFloat64Array,
 ) -> PackedFloat64Array {
     let guard_closure = sanitize_closure(guard_closure);
@@ -913,6 +943,9 @@ fn solve_impl_collecting(
                 st.push(0.0);
                 st.push(0.0);
                 st.push(0.0);
+            }
+            if let Some(out) = rows.as_mut() {
+                out.extend_from_slice(&[r, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
             }
             continue;
         }
@@ -964,6 +997,9 @@ fn solve_impl_collecting(
             st.push(cl);
             st.push(cd);
         }
+        if let Some(out) = rows.as_mut() {
+            out.extend_from_slice(&[r, alpha, phi, cl, cd, d_t, d_q, u2.sqrt()]);
+        }
 
         thrust += d_t;
         torque += d_q;
@@ -996,6 +1032,30 @@ fn solve_forward_impl(
     guard_closure: f64,
     twist_points: &PackedFloat64Array,
 ) -> PackedFloat64Array {
+    solve_forward_collecting(
+        rho, diameter_m, pitch_m, blades, rpm, chord_points_mm, a0_eff, c_d0, k_polar, c_l_max,
+        v_axial_mps, v_edge_mps, guard_closure, None, twist_points)
+}
+
+/// `solve_forward_impl` with the PD3 station tap. `None` costs one branch per annulus and moves no
+/// arithmetic. Rows are written from the values that make `thrust`, so a station sum is the total.
+fn solve_forward_collecting(
+    rho: f64,
+    diameter_m: f64,
+    pitch_m: f64,
+    blades: f64,
+    rpm: f64,
+    chord_points_mm: &PackedFloat64Array,
+    a0_eff: f64,
+    c_d0: f64,
+    k_polar: f64,
+    c_l_max: f64,
+    v_axial_mps: f64,
+    v_edge_mps: f64,
+    guard_closure: f64,
+    mut rows: Option<&mut Vec<f64>>,
+    twist_points: &PackedFloat64Array,
+) -> PackedFloat64Array {
     let guard_closure = sanitize_closure(guard_closure);
     if v_axial_mps < 0.0 {
         let mut res = solve_impl(
@@ -1007,9 +1067,9 @@ fn solve_forward_impl(
         return res;
     }
     if v_axial_mps == 0.0 && v_edge_mps == 0.0 {
-        return solve_impl(
+        return solve_impl_collecting(
             rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
-            a0_eff, c_d0, k_polar, c_l_max, guard_closure, twist_points);
+            a0_eff, c_d0, k_polar, c_l_max, guard_closure, None, None, rows, twist_points);
     }
 
     if blades <= 0.0 || diameter_m <= 0.0 || rpm <= 0.0 || chord_points_mm.len() < 4 {
@@ -1037,6 +1097,9 @@ fn solve_forward_impl(
         let r_frac = r / radius_m;
         let chord_m = chord_at_m(chord_points_mm, r_frac);
         if chord_m <= 0.0 {
+            if let Some(out) = rows.as_mut() {
+                out.extend_from_slice(&[r, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+            }
             continue;
         }
         let c_d0 = low_re_cd0(c_d0, rho, chord_m, r_frac, radius_m);
@@ -1085,6 +1148,9 @@ fn solve_forward_impl(
         let d_q = 0.5 * rho * u2 * blades * chord_m * (cl * sin_phi + cd * cos_phi) * r * dr;
         let magnitude = (axial * axial + v_edge_sq).sqrt();
         let d_t_mom = 4.0 * std::f64::consts::PI * rho * r * v_i * magnitude * f * dr;
+        if let Some(out) = rows.as_mut() {
+            out.extend_from_slice(&[r, alpha, phi, cl, cd, d_t, d_q, u2.sqrt()]);
+        }
 
         thrust += d_t;
         torque += d_q;
