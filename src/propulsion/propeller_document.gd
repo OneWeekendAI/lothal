@@ -169,7 +169,7 @@ func chord_at(r_frac: float) -> float:
 ## the mesh already draws and §3.2 says is the default; for `authored` it interpolates the table.
 ## The ONE place the blade angle is defined — mesh, integral and Campbell line all read it here.
 func beta_rad(r_frac: float) -> float:
-	if twist_mode == TWIST_MODE_AUTHORED:
+	if not flown_twist().is_empty():
 		return _twist_at(r_frac, twist)
 	if r_frac <= 0.0 or pitch_mm <= 0.0:
 		return 0.0
@@ -213,6 +213,14 @@ func section_corners_mm(r_frac: float) -> PackedVector2Array:
 	for corner in [Vector2(0.5, 0.5), Vector2(-0.5, 0.5), Vector2(-0.5, -0.5), Vector2(0.5, -0.5)]:
 		out.append(chordwise * (chord_mm * corner.x) + face * (thickness_mm * corner.y))
 	return out
+
+
+## The table the solve flies, or empty for the helix. Empty also for `authored` with no pair to read,
+## so `beta_rad` and `bemt.rs::beta_at` take the helix together and cannot disagree.
+func flown_twist() -> PackedFloat64Array:
+	if twist_mode == TWIST_MODE_AUTHORED and twist.size() >= 2:
+		return twist
+	return PackedFloat64Array()
 
 
 static func _twist_at(r_frac: float, twist_table: PackedFloat64Array) -> float:
@@ -316,10 +324,10 @@ static func material_id_for_catalog(description: String) -> String:
 static var _q_over_t_cache: Dictionary = {}
 
 func torque_to_thrust_m() -> float:
-	var key := "%s|%s|%s|%s" % [diameter_mm, pitch_mm, blades, str(chord).hash()]
+	var key := "%s|%s|%s|%s|%s" % [diameter_mm, pitch_mm, blades, str(chord).hash(), str(flown_twist()).hash()]
 	if not _q_over_t_cache.has(key):
 		_q_over_t_cache[key] = BemtModel.static_torque_to_thrust_m(
-			diameter_mm * 0.001, pitch_mm * 0.001, float(blades), chord)
+			diameter_mm * 0.001, pitch_mm * 0.001, float(blades), chord, flown_twist())
 	return float(_q_over_t_cache[key])
 
 
@@ -327,11 +335,11 @@ func torque_to_thrust_m() -> float:
 ## from the blade-element integral on THIS planform. k_t and k_q (via `torque_to_thrust_m`) share
 ## one solve, so they are mutually consistent.
 func static_k_t() -> float:
-	return BemtModel.static_k_t(diameter_mm * 0.001, pitch_mm * 0.001, float(blades), chord)
+	return BemtModel.static_k_t(diameter_mm * 0.001, pitch_mm * 0.001, float(blades), chord, flown_twist())
 
 
 func static_figure_of_merit() -> float:
-	return BemtModel.static_figure_of_merit(diameter_mm * 0.001, pitch_mm * 0.001, float(blades), chord)
+	return BemtModel.static_figure_of_merit(diameter_mm * 0.001, pitch_mm * 0.001, float(blades), chord, flown_twist())
 
 
 ## A PropellerDocument for one entry of `data/parts/propellers.json`. See the block above for what is

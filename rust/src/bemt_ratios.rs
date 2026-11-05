@@ -122,7 +122,7 @@ impl RatioTable {
 /// (diameter, pitch, blades, guard_closure, chord[]). The closure is a full u64 bit-pattern,
 /// same discipline as the geometry fields: two closures that differ in the last bit are two
 /// different tables, so the cache cannot silently hand the second one the first one's surface.
-type CacheKey = (u64, u64, u64, u64, Vec<u64>);
+type CacheKey = (u64, u64, u64, u64, Vec<u64>, Vec<u64>);
 
 fn cache() -> &'static Mutex<HashMap<CacheKey, Arc<RatioTable>>> {
     static CACHE: OnceLock<Mutex<HashMap<CacheKey, Arc<RatioTable>>>> = OnceLock::new();
@@ -134,13 +134,14 @@ fn cache() -> &'static Mutex<HashMap<CacheKey, Arc<RatioTable>>> {
 /// planforms and a rounded key would quietly hand the second one the first one's surface —
 /// and same for two guards that differ in the last bit of `tip_loss_closure`'s output.
 fn key_of(diameter_m: f64, pitch_m: f64, blades: f64, guard_closure: f64,
-        chord: &PackedFloat64Array) -> CacheKey {
+        chord: &PackedFloat64Array, twist: &PackedFloat64Array) -> CacheKey {
     (
         diameter_m.to_bits(),
         pitch_m.to_bits(),
         blades.to_bits(),
         guard_closure.to_bits(),
         chord.as_slice().iter().map(|v| v.to_bits()).collect(),
+        twist.as_slice().iter().map(|v| v.to_bits()).collect(),
     )
 }
 
@@ -150,6 +151,7 @@ fn build_table(
     blades: f64,
     chord: &PackedFloat64Array,
     guard_closure: f64,
+    twist: &PackedFloat64Array,
 ) -> Arc<RatioTable> {
     let n = MU_AXIAL_NODES * MU_EDGE_NODES;
     let mut thrust = vec![0.0; n];
@@ -172,10 +174,10 @@ fn build_table(
             let idx = RatioTable::index(i, j);
             thrust[idx] = BemtModel::thrust_ratio_forward_with_guard(
                 reference_rho, diameter_m, pitch_m, blades, reference_rpm,
-                chord.clone(), v_ax, v_ed, guard_closure);
+                chord.clone(), v_ax, v_ed, guard_closure, twist.clone());
             power[idx] = BemtModel::power_ratio_forward_with_guard(
                 reference_rho, diameter_m, pitch_m, blades, reference_rpm,
-                chord.clone(), v_ax, v_ed, guard_closure);
+                chord.clone(), v_ax, v_ed, guard_closure, twist.clone());
         }
     }
     Arc::new(RatioTable { thrust, power })
@@ -223,7 +225,7 @@ impl BemtRatios {
     ) -> Gd<Self> {
         // Delegates with guard_closure = 0.0 through the SAME cache lookup — bit-identity is
         // a property of the cache key plus the build path, not a promise the wrapper repeats.
-        Self::for_prop_with_guard(diameter_m, pitch_m, blades, chord_points_mm, 0.0)
+        Self::for_prop_with_guard(diameter_m, pitch_m, blades, chord_points_mm, 0.0, PackedFloat64Array::new())
     }
 
     /// The P10b closure-aware surface (plans/2026-08-26-propulsion-room-design.md §4). Two
@@ -240,6 +242,7 @@ impl BemtRatios {
         blades: f64,
         chord_points_mm: PackedFloat64Array,
         guard_closure: f64,
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> Gd<Self> {
         let radius_m = diameter_m * 0.5;
         if radius_m <= 0.0 || blades <= 0.0 || chord_points_mm.len() < 4 {
@@ -256,7 +259,7 @@ impl BemtRatios {
             });
         }
         let closure = guard_closure.clamp(0.0, 1.0);
-        let key = key_of(diameter_m, pitch_m, blades, closure, &chord_points_mm);
+        let key = key_of(diameter_m, pitch_m, blades, closure, &chord_points_mm, &twist_points);
         let table = {
             let mut guard = cache().lock().expect("bemt ratio cache should not be poisoned");
             if let Some(hit) = guard.get(&key) {
@@ -266,13 +269,13 @@ impl BemtRatios {
                 // practice (one thread builds, the flight tick only reads a built table) and
                 // holding it means two callers asking for the same new prop in the same frame
                 // solve it once rather than twice.
-                let built = build_table(diameter_m, pitch_m, blades, &chord_points_mm, closure);
+                let built = build_table(diameter_m, pitch_m, blades, &chord_points_mm, closure, &twist_points);
                 guard.insert(key, built.clone());
                 built
             }
         };
         let static_factors = BemtModel::static_closure_factors(
-            diameter_m, pitch_m, blades, chord_points_mm.clone(), closure);
+            diameter_m, pitch_m, blades, chord_points_mm.clone(), closure, twist_points.clone());
         Gd::from_object(Self {
             table,
             radius_m,

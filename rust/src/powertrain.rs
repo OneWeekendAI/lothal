@@ -132,10 +132,18 @@ impl Powertrain {
     fn create(motor_model: Gd<MotorModel>, k_t: f64, k_q: f64, battery: Gd<BatteryModel>,
               motor_max_amps: f64, rated_rpm: f64, pole_pairs: f64, blades: f64,
               prop_radius_m: f64, prop_pitch_m: f64, air_density_kgm3: f64,
-              blade_chord_mm: PackedFloat64Array) -> Gd<Self> {
+              blade_chord_mm: PackedFloat64Array,
+              #[opt(default = &PackedFloat64Array::new())] blade_twist: PackedFloat64Array) -> Gd<Self> {
         Self::create_with_guard(motor_model, k_t, k_q, battery, motor_max_amps, rated_rpm,
             pole_pairs, blades, prop_radius_m, prop_pitch_m, air_density_kgm3,
-            blade_chord_mm, 0.0)
+            blade_chord_mm, 0.0, blade_twist)
+    }
+
+    /// What the flight tick reads for thrust at this airspeed, so a test can ask the powertrain
+    /// itself rather than a second surface built beside it.
+    #[func]
+    fn forward_thrust_ratio(&self, rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
+        self.forward_ratios.bind().thrust_ratio(rpm, v_axial_mps, v_edge_mps)
     }
 
     /// The P10b closure-aware form. `guard_closure` is the `PropGuard::tip_loss_closure` value
@@ -147,10 +155,11 @@ impl Powertrain {
     fn create_with_guard(motor_model: Gd<MotorModel>, k_t: f64, k_q: f64, battery: Gd<BatteryModel>,
               motor_max_amps: f64, rated_rpm: f64, pole_pairs: f64, blades: f64,
               prop_radius_m: f64, prop_pitch_m: f64, air_density_kgm3: f64,
-              blade_chord_mm: PackedFloat64Array, guard_closure: f64) -> Gd<Self> {
+              blade_chord_mm: PackedFloat64Array, guard_closure: f64,
+              #[opt(default = &PackedFloat64Array::new())] blade_twist: PackedFloat64Array) -> Gd<Self> {
         let last_voltage_v = battery.bind().nominal_v;
         let forward_ratios = BemtRatios::for_prop_with_guard(
-            prop_radius_m * 2.0, prop_pitch_m, blades, blade_chord_mm, guard_closure);
+            prop_radius_m * 2.0, prop_pitch_m, blades, blade_chord_mm, guard_closure, blade_twist);
         let observables = Self::make_observables();
         let mut pt = Gd::from_object(Self {
             motor_model,

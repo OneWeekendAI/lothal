@@ -7,7 +7,7 @@ extends SceneTree
 ## dumped at the end, so a suite that hangs or crashes names itself instead of leaving
 ## the runner silent.
 
-const SUITES := ["prop pin", "prop gap", "class picker", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
+const SUITES := ["prop pin", "prop gap", "twist flies", "class picker", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "build panel", "details footers",
 	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "field room", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
@@ -367,6 +367,8 @@ func _run_suite(suite_name: String) -> Array:
 		"prop pin": return TestPropPin.run()
 		# PD1: the model against UIUC measurements, as tripwires.
 		"prop gap": return TestPropGap.run()
+		# PD2: authored twist reaches the solve.
+		"twist flies": return TestTwistFlies.run()
 		"motor current": return TestMotorCurrent.run()
 		"pack design": return TestPackDesign.run()
 		"designed packs": return TestDesignedPacks.run()

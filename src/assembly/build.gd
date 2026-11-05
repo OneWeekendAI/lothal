@@ -961,7 +961,7 @@ func _recompute() -> void:
 		k_t_at_test_prop,
 		test_doc.diameter_mm * 0.001, test_doc.pitch_mm * 0.001, float(test_doc.blades), test_doc.chord,
 		prop_doc.diameter_mm * 0.001, prop_doc.pitch_mm * 0.001, float(prop_doc.blades), prop_doc.chord,
-		test_max_rpm)
+		test_max_rpm, test_doc.flown_twist(), prop_doc.flown_twist())
 	# --- And then moved to the AIR THIS BUILD IS FLOWN IN ---
 	# T = C_T * rho * n^2 * D^4, so k_t is linear in density. Without this line the whole air slice
 	# is decoration: thrust_n is k_t * omega^2 with no rho in it, and fit_k_t has none either, so
@@ -1004,7 +1004,7 @@ func _recompute() -> void:
 	if guard_closure > 0.0:
 		var prop_g := prop_geometry()
 		var closure_factors := BemtModel.static_closure_factors(
-			prop_g.diameter_m, prop_g.pitch_m, prop_g.blades, blade_chord(), guard_closure)
+			prop_g.diameter_m, prop_g.pitch_m, prop_g.blades, blade_chord(), guard_closure, blade_twist())
 		_static_closure_factor = closure_factors[0]
 		_static_closure_torque_factor = closure_factors[1]
 		k_t *= _static_closure_factor
@@ -1045,6 +1045,12 @@ func blade_chord() -> PackedFloat64Array:
 	return PropellerDocument.from_catalog_prop(propeller).chord
 
 
+## The fitted blade's authored twist as `bemt.rs` reads it, or empty for the helix. Travels beside
+## `blade_chord()` everywhere that one goes, so a drawn twist is a flown twist.
+func blade_twist() -> PackedFloat64Array:
+	return PropellerDocument.from_catalog_prop(propeller).flown_twist()
+
+
 ## The forward-flight ratio surface for the fitted prop (P6's closure). Cached on the build,
 ## because `BemtRatios.for_prop` costs ~150 ms of BEMT solves the first time a given planform is
 ## asked for and every panel refresh reconstructs a Build.
@@ -1063,7 +1069,7 @@ func forward_ratios() -> BemtRatios:
 		# different surfaces, one solve each, cached forever after.
 		_forward_ratios = BemtRatios.for_prop_with_guard(
 			geometry.diameter_m, geometry.pitch_m, geometry.blades, blade_chord(),
-			guard_closure)
+			guard_closure, blade_twist())
 	return _forward_ratios
 
 
@@ -1766,7 +1772,7 @@ func thrust_distribution() -> PackedFloat64Array:
 	var geometry := prop_geometry()
 	return BemtModel.thrust_distribution(
 		air.kgm3(), geometry.diameter_m, geometry.pitch_m, geometry.blades,
-		operating_rpm(), blade_chord(), guard_closure)
+		operating_rpm(), blade_chord(), guard_closure, blade_twist())
 
 
 ## The per-rev orders the airframe is excited at, name → multiples of one revolution.
@@ -1860,7 +1866,7 @@ func build_drone_core() -> DroneCore:
 	var core := DroneCore.new(mass_properties, lumped_motor_model(), arm_m, lumped_k_t(), lumped_k_q(),
 		battery_model(), lumped_max_amps(), rated_rpm(), drag_coefficient,
 		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m,
-		air.kgm3(), blade_chord(), guard_closure)
+		air.kgm3(), blade_chord(), guard_closure, blade_twist())
 	# The aircraft the sim flies is the aircraft the builder configured, including a spin map
 	# Lothal has warned about: design §5.3 — fly it badly, do not refuse it.
 	core.config = config

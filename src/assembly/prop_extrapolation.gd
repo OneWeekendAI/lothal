@@ -89,7 +89,7 @@ static func warnings_for(build: Build) -> Array[BuildWarning]:
 	var factors: PackedFloat64Array = Plausibility.extrapolation_factors(
 		from_doc.diameter_mm * 0.001, from_doc.pitch_mm * 0.001, float(from_doc.blades), from_doc.chord,
 		to_doc.diameter_mm * 0.001, to_doc.pitch_mm * 0.001, float(to_doc.blades), to_doc.chord,
-		fit_rpm)
+		fit_rpm, from_doc.flown_twist(), to_doc.flown_twist())
 	var ratio := factors[0]
 	var magnitude := factors[1]
 

@@ -24,27 +24,36 @@ static func chord_of(p: Dictionary) -> PackedFloat64Array:
 	return out
 
 
+## [r/R, beta rad, ...] from the measured angle column, as `PropellerDocument.twist` stores it.
+static func twist_of(p: Dictionary) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	for row in p["geom_rR_cR_betaDeg"]:
+		out.append(float(row[0]))
+		out.append(deg_to_rad(float(row[2])))
+	return out
+
+
 ## Ct and Cp at an advance ratio. Solve refusals come back zero, which the sweep reads as no thrust.
-static func model_point(p: Dictionary, j: float) -> Vector2:
+static func model_point(p: Dictionary, j: float, twist := PackedFloat64Array()) -> Vector2:
 	var d: float = float(p["diameter_in"]) * INCH_TO_M
 	var rpm: float = float(p["run_rpm"])
 	var n: float = rpm / 60.0
 	var polar := BemtModel.global_polar()
-	var r := BemtModel.solve_forward(RHO, d, float(p["pitch_in"]) * INCH_TO_M, float(p["blades"]), rpm,
-		chord_of(p), polar[0], polar[1], polar[2], polar[3], j * n * d, 0.0)
+	var r := BemtModel.solve_forward_with_guard(RHO, d, float(p["pitch_in"]) * INCH_TO_M, float(p["blades"]), rpm,
+		chord_of(p), polar[0], polar[1], polar[2], polar[3], j * n * d, 0.0, 0.0, twist)
 	return Vector2(r[0] / (RHO * n * n * pow(d, 4.0)), r[1] * TAU * n / (RHO * pow(n, 3.0) * pow(d, 5.0)))
 
 
 ## The model's four figures: static Ct and Cp, peak efficiency with its J, and the zero-thrust J.
-static func model_figures(p: Dictionary) -> Dictionary:
-	var s := model_point(p, 0.0)
+static func model_figures(p: Dictionary, twist := PackedFloat64Array()) -> Dictionary:
+	var s := model_point(p, 0.0, twist)
 	var peak := 0.0
 	var peak_j := 0.0
 	var j0 := -1.0
 	var prev := s.x
 	var j := J_STEP
 	while j <= J_MAX:
-		var q := model_point(p, j)
+		var q := model_point(p, j, twist)
 		if q.x <= 0.0:
 			j0 = j - J_STEP * q.x / (q.x - prev) if q.x != prev else j
 			break

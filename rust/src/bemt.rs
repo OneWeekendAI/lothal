@@ -192,7 +192,7 @@ impl BemtModel {
         // Delegates with guard_closure = 0.0 through the same code path — bit-identity is a
         // property of the code path, not a promise the wrapper repeats.
         solve_impl(rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            a0_eff, c_d0, k_polar, c_l_max, 0.0)
+            a0_eff, c_d0, k_polar, c_l_max, 0.0, &PackedFloat64Array::new())
     }
 
     /// The P10b closure-aware form. `guard_closure ∈ [0, 1]` post-processes Prandtl's tip-loss
@@ -215,9 +215,11 @@ impl BemtModel {
         k_polar: f64,
         c_l_max: f64,
         guard_closure: f64,
+    
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> PackedFloat64Array {
         solve_impl(rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            a0_eff, c_d0, k_polar, c_l_max, guard_closure)
+            a0_eff, c_d0, k_polar, c_l_max, guard_closure, &twist_points)
     }
 
     /// The per-annulus thrust the static solve integrates — P10e's thrust-distribution overlay.
@@ -247,11 +249,13 @@ impl BemtModel {
         rpm: f64,
         chord_points_mm: PackedFloat64Array,
         guard_closure: f64,
+    
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> PackedFloat64Array {
         let mut dist: Vec<f64> = Vec::new();
         solve_impl_collecting(
             rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, Some(&mut dist), None);
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, Some(&mut dist), None, &twist_points);
         PackedFloat64Array::from(dist.as_slice())
     }
 
@@ -286,12 +290,14 @@ impl BemtModel {
         rpm: f64,
         chord_points_mm: PackedFloat64Array,
         guard_closure: f64,
+    
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> PackedFloat64Array {
         let mut stations: Vec<f64> = Vec::new();
         solve_impl_collecting(
             rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
             POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, None,
-            Some(&mut stations));
+            Some(&mut stations), &twist_points);
         PackedFloat64Array::from(stations.as_slice())
     }
 
@@ -337,7 +343,7 @@ impl BemtModel {
         v_edge_mps: f64,
     ) -> PackedFloat64Array {
         solve_forward_impl(rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            a0_eff, c_d0, k_polar, c_l_max, v_axial_mps, v_edge_mps, 0.0)
+            a0_eff, c_d0, k_polar, c_l_max, v_axial_mps, v_edge_mps, 0.0, &PackedFloat64Array::new())
     }
 
     /// The P10b closure-aware forward solve. See `solve_with_guard` for what `guard_closure`
@@ -358,9 +364,11 @@ impl BemtModel {
         v_axial_mps: f64,
         v_edge_mps: f64,
         guard_closure: f64,
+    
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> PackedFloat64Array {
         solve_forward_impl(rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            a0_eff, c_d0, k_polar, c_l_max, v_axial_mps, v_edge_mps, guard_closure)
+            a0_eff, c_d0, k_polar, c_l_max, v_axial_mps, v_edge_mps, guard_closure, &twist_points)
     }
 
 
@@ -387,7 +395,7 @@ impl BemtModel {
     ) -> f64 {
         Self::thrust_ratio_forward_with_guard(
             rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
-            v_axial_mps, v_edge_mps, 0.0)
+            v_axial_mps, v_edge_mps, 0.0, PackedFloat64Array::new())
     }
 
     /// The P10b closure-aware form. Ratio of forward-flight thrust to STATIC thrust with the
@@ -407,20 +415,22 @@ impl BemtModel {
         v_axial_mps: f64,
         v_edge_mps: f64,
         guard_closure: f64,
+    
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> f64 {
         if (v_axial_mps == 0.0 && v_edge_mps == 0.0) || v_axial_mps < 0.0 {
             return 1.0;
         }
         let static_t = solve_impl(
             rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure)[0];
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, &twist_points)[0];
         if static_t <= 0.0 {
             return 1.0;
         }
         let flight_t = solve_forward_impl(
             rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
             POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX,
-            v_axial_mps, v_edge_mps, guard_closure)[0];
+            v_axial_mps, v_edge_mps, guard_closure, &twist_points)[0];
         (flight_t / static_t).max(0.0).min(1.0)
     }
 
@@ -461,6 +471,8 @@ impl BemtModel {
         blades: f64,
         chord_points_mm: PackedFloat64Array,
         guard_closure: f64,
+    
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> PackedFloat64Array {
         let closure = sanitize_closure(guard_closure);
         if closure <= 0.0 {
@@ -473,13 +485,13 @@ impl BemtModel {
         let reference_rho = AIR_DENSITY_KGM3;
         let base = solve_impl(
             reference_rho, diameter_m, pitch_m, blades, reference_rpm, &chord_points_mm,
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0);
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0, &twist_points);
         if base[0] <= 0.0 || base[1] <= 0.0 {
             return PackedFloat64Array::from([1.0, 1.0]);
         }
         let closed = solve_impl(
             reference_rho, diameter_m, pitch_m, blades, reference_rpm, &chord_points_mm,
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, closure);
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, closure, &twist_points);
         PackedFloat64Array::from([closed[0] / base[0], closed[1] / base[1]])
     }
 
@@ -504,10 +516,12 @@ impl BemtModel {
         pitch_m: f64,
         blades: f64,
         chord_points_mm: PackedFloat64Array,
+    
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> f64 {
         let r = solve_impl(
             AIR_DENSITY_KGM3, diameter_m, pitch_m, blades, 20_000.0, &chord_points_mm,
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0);
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0, &twist_points);
         if r[0] <= 0.0 || r[1] <= 0.0 {
             return 0.0;
         }
@@ -524,11 +538,13 @@ impl BemtModel {
         pitch_m: f64,
         blades: f64,
         chord_points_mm: PackedFloat64Array,
+    
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> f64 {
         let rpm = 20_000.0;
         let r = solve_impl(
             AIR_DENSITY_KGM3, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0);
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0, &twist_points);
         if r[0] <= 0.0 {
             return 0.0;
         }
@@ -544,11 +560,13 @@ impl BemtModel {
         pitch_m: f64,
         blades: f64,
         chord_points_mm: PackedFloat64Array,
+    
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> f64 {
         let rpm = 20_000.0;
         let r = solve_impl(
             AIR_DENSITY_KGM3, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0);
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0, &twist_points);
         if r[0] <= 0.0 || r[1] <= 0.0 {
             return 0.0;
         }
@@ -568,7 +586,7 @@ impl BemtModel {
         chord_points_mm: PackedFloat64Array,
         guard_closure: f64,
     ) -> f64 {
-        Self::static_closure_factors(diameter_m, pitch_m, blades, chord_points_mm, guard_closure)[0]
+        Self::static_closure_factors(diameter_m, pitch_m, blades, chord_points_mm, guard_closure, PackedFloat64Array::new())[0]
     }
 
     /// The BEMT-native replacement for PropellerModel::power_factor. The anchored-at-1 ratio
@@ -593,7 +611,7 @@ impl BemtModel {
     ) -> f64 {
         Self::power_ratio_forward_with_guard(
             rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
-            v_axial_mps, v_edge_mps, 0.0)
+            v_axial_mps, v_edge_mps, 0.0, PackedFloat64Array::new())
     }
 
     /// The P10b closure-aware form of `power_ratio_forward`. Same posture as
@@ -609,13 +627,15 @@ impl BemtModel {
         v_axial_mps: f64,
         v_edge_mps: f64,
         guard_closure: f64,
+    
+        #[opt(default = &PackedFloat64Array::new())] twist_points: PackedFloat64Array,
     ) -> f64 {
         if (v_axial_mps == 0.0 && v_edge_mps == 0.0) || v_axial_mps < 0.0 {
             return 1.0;
         }
         let static_r = solve_impl(
             rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
-            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure);
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, guard_closure, &twist_points);
         let static_p = static_r[2] + static_r[3];
         if static_p <= 0.0 {
             return 1.0;
@@ -623,7 +643,7 @@ impl BemtModel {
         let flight_r = solve_forward_impl(
             rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
             POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX,
-            v_axial_mps, v_edge_mps, guard_closure);
+            v_axial_mps, v_edge_mps, guard_closure, &twist_points);
         // NO REGENERATION, AND NO DISCONTINUITY EITHER. Past the geometric advance the rotor
         // is unloaded and BEMT's INDUCED power term goes negative — the physically correct
         // statement that a windmilling rotor gives energy back, which this powertrain has no
@@ -723,6 +743,8 @@ impl BemtModel {
         to_blades: f64,
         to_chord: PackedFloat64Array,
         rpm: f64,
+        #[opt(default = &PackedFloat64Array::new())] from_twist: PackedFloat64Array,
+        #[opt(default = &PackedFloat64Array::new())] to_twist: PackedFloat64Array,
     ) -> f64 {
         // Identity: same geometry AND same planform. The chord comparison is what makes the
         // short-circuit honest — two props with the same diameter/pitch/blades but different
@@ -731,36 +753,19 @@ impl BemtModel {
             && from_pitch == to_pitch
             && from_blades == to_blades
             && chords_equal(&from_chord, &to_chord)
+            && chords_equal(&from_twist, &to_twist)
         {
             return k_t_from;
         }
-        let from_t = Self::solve(
-            AIR_DENSITY_KGM3,
-            from_d,
-            from_pitch,
-            from_blades,
-            rpm,
-            from_chord,
-            POLAR_A0_EFF,
-            POLAR_C_D0,
-            POLAR_K,
-            POLAR_C_L_MAX,
-        )[0];
+        let from_t = solve_impl(
+            AIR_DENSITY_KGM3, from_d, from_pitch, from_blades, rpm, &from_chord,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0, &from_twist)[0];
         if from_t <= 0.0 {
             return 0.0;
         }
-        let to_t = Self::solve(
-            AIR_DENSITY_KGM3,
-            to_d,
-            to_pitch,
-            to_blades,
-            rpm,
-            to_chord,
-            POLAR_A0_EFF,
-            POLAR_C_D0,
-            POLAR_K,
-            POLAR_C_L_MAX,
-        )[0];
+        let to_t = solve_impl(
+            AIR_DENSITY_KGM3, to_d, to_pitch, to_blades, rpm, &to_chord,
+            POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX, 0.0, &to_twist)[0];
         k_t_from * to_t / from_t
     }
 }
@@ -838,9 +843,10 @@ fn solve_impl(
     k_polar: f64,
     c_l_max: f64,
     guard_closure: f64,
+    twist_points: &PackedFloat64Array,
 ) -> PackedFloat64Array {
     solve_impl_collecting(rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
-        a0_eff, c_d0, k_polar, c_l_max, guard_closure, None, None)
+        a0_eff, c_d0, k_polar, c_l_max, guard_closure, None, None, twist_points)
 }
 
 /// `solve_impl` with an optional per-annulus tap (P10e's thrust-distribution overlay).
@@ -868,6 +874,7 @@ fn solve_impl_collecting(
     guard_closure: f64,
     mut dist: Option<&mut Vec<f64>>,
     mut stations: Option<&mut Vec<f64>>,
+    twist_points: &PackedFloat64Array,
 ) -> PackedFloat64Array {
     let guard_closure = sanitize_closure(guard_closure);
     if blades <= 0.0 || diameter_m <= 0.0 || rpm <= 0.0 || chord_points_mm.len() < 4 {
@@ -910,7 +917,7 @@ fn solve_impl_collecting(
             continue;
         }
         let c_d0 = low_re_cd0(c_d0, rho, chord_m, r_frac, radius_m);
-        let beta = (pitch_m / (std::f64::consts::TAU * r)).atan();
+        let beta = beta_at(pitch_m, r, r_frac, twist_points);
 
         let mut v_i = 0.0f64;
         for _ in 0..iters {
@@ -987,12 +994,13 @@ fn solve_forward_impl(
     v_axial_mps: f64,
     v_edge_mps: f64,
     guard_closure: f64,
+    twist_points: &PackedFloat64Array,
 ) -> PackedFloat64Array {
     let guard_closure = sanitize_closure(guard_closure);
     if v_axial_mps < 0.0 {
         let mut res = solve_impl(
             rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
-            a0_eff, c_d0, k_polar, c_l_max, guard_closure);
+            a0_eff, c_d0, k_polar, c_l_max, guard_closure, twist_points);
         if res.len() == 5 {
             res[4] = -1.0;
         }
@@ -1001,7 +1009,7 @@ fn solve_forward_impl(
     if v_axial_mps == 0.0 && v_edge_mps == 0.0 {
         return solve_impl(
             rho, diameter_m, pitch_m, blades, rpm, chord_points_mm,
-            a0_eff, c_d0, k_polar, c_l_max, guard_closure);
+            a0_eff, c_d0, k_polar, c_l_max, guard_closure, twist_points);
     }
 
     if blades <= 0.0 || diameter_m <= 0.0 || rpm <= 0.0 || chord_points_mm.len() < 4 {
@@ -1032,7 +1040,7 @@ fn solve_forward_impl(
             continue;
         }
         let c_d0 = low_re_cd0(c_d0, rho, chord_m, r_frac, radius_m);
-        let beta = (pitch_m / (std::f64::consts::TAU * r)).atan();
+        let beta = beta_at(pitch_m, r, r_frac, twist_points);
 
         let mut v_i = 0.0f64;
         let a = 4.0 * std::f64::consts::PI * rho * r * dr;
@@ -1088,6 +1096,31 @@ fn solve_forward_impl(
     }
 
     PackedFloat64Array::from([thrust, torque, power_ind, power_prof, max_residual])
+}
+
+/// The blade angle at one annulus. An EMPTY table is the helix, by exactly the expression the solve
+/// has always used, so a blade with no authored twist takes the old path bit for bit. A table is
+/// `[r/R, beta_rad, ...]`, clamped at its ends and linear between, the same reading as
+/// `PropellerDocument._twist_at`, so the mesh and the integral draw and fly one blade.
+fn beta_at(pitch_m: f64, r: f64, r_frac: f64, twist: &PackedFloat64Array) -> f64 {
+    let n = twist.len() / 2;
+    if n == 0 {
+        return (pitch_m / (std::f64::consts::TAU * r)).atan();
+    }
+    if r_frac <= twist[0] {
+        return twist[1];
+    }
+    let last = 2 * (n - 1);
+    if r_frac >= twist[last] {
+        return twist[last + 1];
+    }
+    for i in 0..(n - 1) {
+        let (x0, b0, x1, b1) = (twist[2 * i], twist[2 * i + 1], twist[2 * i + 2], twist[2 * i + 3]);
+        if r_frac >= x0 && r_frac <= x1 {
+            return b0 + (b1 - b0) * (r_frac - x0) / (x1 - x0);
+        }
+    }
+    twist[last + 1]
 }
 
 /// c(r) at a stated fraction of radius, piecewise-linear over the planform, mm → m. Linear

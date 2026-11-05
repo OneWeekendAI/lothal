@@ -252,7 +252,7 @@ static func implied_k_t_on(catalog: PartsCatalog, motor: Dictionary, to_geometry
 		k_t_at_fit,
 		fit_geom.diameter_m, fit_geom.pitch_m, fit_geom.blades, fit_geom.chord,
 		to_geometry.diameter_m, to_geometry.pitch_m, to_geometry.blades, to_geometry.chord,
-		fit_rpm)
+		fit_rpm, fit_geom.twist, to_geometry.get("twist", PackedFloat64Array()))
 
 
 static func _thrust_coefficient(catalog: PartsCatalog, motor: Dictionary) -> Array[BuildWarning]:

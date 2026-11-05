@@ -118,9 +118,9 @@ static func analyse(doc: PropellerDocument, rpm: float,
 
 	var solved: PackedFloat64Array = BemtModel.solve_with_guard(
 		rho, diameter_m, pitch_m, blades, rpm, doc.chord,
-		polar[0], polar[1], polar[2], polar[3], guard_closure)
+		polar[0], polar[1], polar[2], polar[3], guard_closure, doc.flown_twist())
 	var stations: PackedFloat64Array = BemtModel.station_distribution(
-		rho, diameter_m, pitch_m, blades, rpm, doc.chord, guard_closure)
+		rho, diameter_m, pitch_m, blades, rpm, doc.chord, guard_closure, doc.flown_twist())
 	if stations.is_empty() or solved.size() < 5 or solved[0] <= 0.0:
 		return out
 

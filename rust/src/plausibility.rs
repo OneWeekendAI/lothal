@@ -98,12 +98,14 @@ impl Plausibility {
         from_d: f64, from_pitch: f64, from_blades: f64, from_chord: PackedFloat64Array,
         to_d: f64, to_pitch: f64, to_blades: f64, to_chord: PackedFloat64Array,
         rpm: f64,
+        #[opt(default = &PackedFloat64Array::new())] from_twist: PackedFloat64Array,
+        #[opt(default = &PackedFloat64Array::new())] to_twist: PackedFloat64Array,
     ) -> PackedFloat64Array {
         let ratio = BemtModel::scale_k_t_to_prop(
             1.0,
             from_d, from_pitch, from_blades, from_chord,
             to_d, to_pitch, to_blades, to_chord,
-            rpm,
+            rpm, from_twist, to_twist,
         );
         let magnitude = ratio.max(1.0 / ratio);
         PackedFloat64Array::from([ratio, magnitude])

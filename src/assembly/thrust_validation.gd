@@ -102,7 +102,7 @@ static func evaluate_motor(catalog: PartsCatalog, motor: Dictionary) -> Array:
 			k_t_at_fit_prop,
 			fit_doc.diameter_mm * 0.001, fit_doc.pitch_mm * 0.001, float(fit_doc.blades), fit_doc.chord,
 			hold_doc.diameter_mm * 0.001, hold_doc.pitch_mm * 0.001, float(hold_doc.blades), hold_doc.chord,
-			fit_rpm)
+			fit_rpm, fit_doc.flown_twist(), hold_doc.flown_twist())
 		var voltage_v: float = float(point.get("voltage_v", 0.0))
 		# Predicted at the rpm the motor reaches under THAT prop's torque at that voltage, the
 		# same loaded convention the fit used (no-load Kv x V when the motor has no DC data).
@@ -151,6 +151,7 @@ static func geometry_of(prop: Dictionary) -> Dictionary:
 		"pitch_m": float(prop["specs"]["pitch_inches"]) * INCH_M,
 		"blades": float(prop["specs"]["blades"]),
 		"chord": doc.chord,
+		"twist": doc.flown_twist(),
 	}
 
 
