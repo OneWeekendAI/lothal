@@ -151,18 +151,22 @@ func _start_from(build: Build) -> void:
 		prop = catalog.get_part(String(parts["propeller"]))
 		motor = catalog.get_part(String(parts["motor"]))
 		drone_parts = {"frame": String(parts["frame"]), "battery": String(parts["battery"])}
+	_take_prop(prop)
+	rpm = Fitting.rated_rpm(float(motor["specs"]["kv"]), float(motor["thrust_test"]["voltage_v"])) \
+		* PropulsionWorkbench.DESIGN_RPM_FRACTION
+
+
+## Starts a NEW prop from this record: no id to overwrite, and no vendor's weight to claim.
+func _take_prop(prop: Dictionary) -> void:
 	var authored := PropellerDocument.authored_blade_of(prop)
 	doc = authored if authored != null else PropellerDocument.from_catalog_prop(prop)
 	source_name = String(prop.get("name", ""))
-	# A new prop, not the one it started from: no id to overwrite, and no vendor's weight to claim.
 	doc.id = ""
 	doc.name = "New prop"
 	doc.published_mass_g = 0.0
 	var held: Dictionary = prop.get(CustomPropellers.DESIGN_KEY, {})
 	hub_assumed = bool(held.get("hub_assumed", not held.has("hub_g")))
 	hub_g = float(held["hub_g"]) if held.has("hub_g") else default_hub_g(doc, materials)
-	rpm = Fitting.rated_rpm(float(motor["specs"]["kv"]), float(motor["thrust_test"]["voltage_v"])) \
-		* PropulsionWorkbench.DESIGN_RPM_FRACTION
 
 
 ## The boss the mesh draws, as a solid cylinder of the blade's material, to 0.1 g. A starting value
@@ -838,6 +842,26 @@ func open_prop(p_part_id: String) -> void:
 	twist_editor.set_document(doc)
 	pitch_offer_open = false
 	_set_status(_open_note(rec, authored != null), false)
+	_rederive()
+
+
+## The Lab's way in: the part its rail and inspector are looking at. A saved prop opens as `open_prop`
+## does; a shelf prop starts a new one from its figures, so a save never claims to be the vendor's.
+func open_part(prop: Dictionary) -> void:
+	var id := String(prop.get("part_id", ""))
+	if PartsCatalog.is_custom(id) and not CustomPropellers.load_from(store_path).get_record(id).is_empty():
+		open_prop(id)
+		return
+	if prop.is_empty():
+		return
+	_take_prop(prop)
+	part_id = ""
+	_undo.clear()
+	_redo.clear()
+	name_field.text = doc.name
+	chord_editor.set_document(doc)
+	twist_editor.set_document(doc)
+	pitch_offer_open = false
 	_rederive()
 
 

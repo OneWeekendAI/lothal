@@ -292,8 +292,7 @@ func _build_footer(root: VBoxContainer) -> void:
 	# what to do about it, on the same rule every other control in this UI follows.
 	_design_button = Button.new()
 	_design_button.text = "Design this blade…"
-	_design_button.tooltip_text = ("Open the planform editor: the blade's chord distribution, its "
-		+ "section at any radius, and the mount stack it turns on.")
+	_design_button.tooltip_text = "Open the prop designer on this prop."
 	_design_button.pressed.connect(func() -> void: design_blade_requested.emit(_rendered_part))
 	root.add_child(_design_button)
 

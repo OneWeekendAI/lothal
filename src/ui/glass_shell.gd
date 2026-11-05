@@ -436,6 +436,10 @@ var _conditions_picker: OptionButton
 ## The blade designer — Propulsion's room, opened on request rather than with the system. See
 ## `_build_blade_room` for why the two rooms differ in that.
 var _blade_room: PropulsionWorkbench
+
+## The prop designer while the Lab has it up, and the layer it sits on. See `open_prop_designer`.
+var prop_designer: PropDesigner
+var _prop_designer_layer: CanvasLayer
 ## The Power room — the harness designer, PW5. An overlay on the same terms as the blade designer:
 ## Power has two rails and they are still the point, so the room opens on request rather than with
 ## the system. See `_build_power_room`.
@@ -1254,6 +1258,7 @@ func _build_blade_room() -> void:
 	# why it lives in the top bar and not over the room.
 
 	lab.propeller_details.design_blade_requested.connect(_on_design_blade_requested)
+	lab.new_prop_requested.connect(func() -> void: open_prop_designer())
 
 	# P10f'S THREE INSPECTOR DOORS. The thrust stand left the Rooms menu (see `room_menu.gd`'s own
 	# header), and the two exports are here rather than on their panels because a details panel
@@ -1665,10 +1670,55 @@ func power_room() -> PowerWorkbench:
 
 
 func _on_design_blade_requested(prop: Dictionary) -> void:
-	var part_id := str(prop.get("part_id", ""))
-	if part_id != "":
-		_blade_room.open_preset(part_id)
-	set_blade_room_open(true)
+	open_prop_designer(prop)
+
+
+## The prop designer, over the Lab (PD14): every Lab door ends here. The old room stays in code behind
+## `set_blade_room_open`, which no control calls any more, until the owner signs off its removal.
+##
+## The drone it works for is the Lab's as it stands now, synced to the project first. With no project
+## open there is no session: the designer still works, with nothing to fit to. A second call while it
+## is open does nothing.
+func open_prop_designer(prop: Dictionary = {}) -> PropDesigner:
+	if prop_designer != null:
+		return prop_designer
+	var materials := FrameMaterials.load_default()
+	# The old room's drafts are this designer's shelf now, even if the Design Space never opened.
+	var migration := CustomPropellers.migrate_drafts(CustomParts.SAVE_PATH, BladeLibrary.DIRECTORY, materials)
+	if not (migration["added"] as Array).is_empty():
+		lab.reload_catalog()
+	var designer := PropDesigner.new(lab.catalog, materials, lab.current_build())
+	if container != null:
+		_sync_project()
+		designer.set_session(DesignSession.from_project(container.project))
+	designer.saved.connect(func(_id: String) -> void:
+		lab.reload_catalog()
+		designer.set_catalog(lab.catalog))
+	designer.fitted.connect(func(id: String) -> void:
+		lab.propeller_picker.select_id(id)
+		_sync_project())
+	designer.closed.connect(_on_prop_designer_closed)
+	prop_designer = designer
+	_prop_designer_layer = CanvasLayer.new()
+	_prop_designer_layer.name = "PropDesignerLayer"
+	_prop_designer_layer.layer = TOGGLE_LAYER + 5
+	add_child(_prop_designer_layer)
+	_prop_designer_layer.add_child(designer)
+	designer.open_part(prop)
+	var problem := CustomPropellers.migration_problem(migration)
+	if problem != "":
+		designer.show_warning(problem)
+	if designer.is_inside_tree():
+		designer.grab_focus()
+	return designer
+
+
+func _on_prop_designer_closed() -> void:
+	prop_designer = null
+	if _prop_designer_layer != null:
+		remove_child(_prop_designer_layer)
+		_prop_designer_layer.queue_free()
+	_prop_designer_layer = null
 
 
 ## Opens or closes the blade designer, and takes the same three things away from the viewport that
@@ -2740,6 +2790,9 @@ func clear_selection() -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	var key_event := event as InputEventKey
 	if key_event == null or not key_event.pressed or key_event.echo:
+		return
+	# The designer is over the whole Lab: a key must not move the selection hidden beneath it.
+	if prop_designer != null:
 		return
 	if finder_open():
 		match key_event.keycode:

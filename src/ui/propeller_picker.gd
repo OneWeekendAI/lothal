@@ -15,6 +15,9 @@ const FILTER_KEYS := [
 
 signal custom_propellers_changed()
 
+## "New custom propeller…": the prop designer makes it, and the shell opens the designer.
+signal new_prop_requested()
+
 ## A delete this rail turned down, with the sentence saying why. The SIGNAL is the contract and the
 ## popup below is only its default presentation — separated because a refusal that exists solely as
 ## a Window cannot be asserted without standing a real window up, and a test that cannot see the
@@ -32,7 +35,7 @@ func _init(p_catalog: PartsCatalog) -> void:
 	var buttons := HBoxContainer.new()
 	var new_button := Button.new()
 	new_button.text = "New custom propeller…"
-	new_button.pressed.connect(_open_dialog)
+	new_button.pressed.connect(func() -> void: new_prop_requested.emit())
 	buttons.add_child(new_button)
 	_delete_button = Button.new()
 	_delete_button.text = "Delete"
@@ -51,15 +54,6 @@ func _init(p_catalog: PartsCatalog) -> void:
 ## it. The builder presses Delete, and _delete_selected explains.
 func _refresh_delete_button() -> void:
 	_delete_button.disabled = not PartsCatalog.is_custom(str(selected_part().get("part_id", "")))
-
-
-func _open_dialog() -> void:
-	var dialog := CustomPropellerDialog.new()
-	dialog.propeller_saved.connect(func(_part_id: String) -> void:
-		dialog.queue_free()
-		custom_propellers_changed.emit())
-	add_child(dialog)
-	dialog.popup_centered()
 
 
 ## The one delete path on this rail, and the only category whose delete can break a NEIGHBOURING

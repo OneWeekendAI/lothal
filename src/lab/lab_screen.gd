@@ -145,6 +145,9 @@ var _generated_frame: Dictionary = {}
 var _pending_drawn: Dictionary = {}
 ## The document was regenerated because the FITTED frame changed. The shell reopens the designer
 ## on it, so the Frame page is always the frame that is fitted.
+## The rail's "New custom propeller…". Forwarded here because a catalog reload rebuilds the rail.
+signal new_prop_requested()
+
 signal frame_document_replaced(document: AirframeDocument)
 var motor_details: MotorDetails
 var propeller_details: PropellerDetails
@@ -633,6 +636,7 @@ func _build_rails() -> void:
 	# thrust_test may name the prop that just appeared, so the MOTOR list is what a merge changes.
 	# PartsCatalog.load_with_custom merges props before motors precisely so that resolves.
 	propeller_picker.custom_propellers_changed.connect(reload_catalog)
+	propeller_picker.new_prop_requested.connect(func() -> void: new_prop_requested.emit())
 
 	# The two halves of the stack. Neither rail cross-references anything else, so neither needs the
 	# ordering note the prop rail carries — but both reload for the same reason all six do: the

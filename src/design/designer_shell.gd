@@ -307,5 +307,7 @@ func _before_close() -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		# Asked first: close() leaves the tree, and the key must not fall through to whatever is below.
+		var viewport := get_viewport()
 		close()
-		get_viewport().set_input_as_handled()
+		viewport.set_input_as_handled()
