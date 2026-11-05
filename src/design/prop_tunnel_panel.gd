@@ -27,6 +27,8 @@ var look_j := 0.0
 var result: Dictionary = {}
 var shade_table := PackedFloat64Array()
 var measured: Dictionary = {}
+## The second prop's sweep at the same rpm and flow angle, {} when none is chosen.
+var compare_result: Dictionary = {}
 
 var subtitle: Label
 var chart: PropTunnelChart
@@ -107,6 +109,7 @@ func refresh(doc: PropellerDocument, rpm: float) -> void:
 	measured = PropMeasured.match_for(doc) if angle_deg == 0.0 else {}
 	warning_label.text = ""
 	note_label.text = ""
+	_refresh_compare(rpm)
 	dots_label.text = ""
 	shell._mark_chips(metric_row, METRICS, metric)
 	shell._mark_chips(shade_row, SHADES, shade_by)
@@ -132,6 +135,8 @@ func refresh(doc: PropellerDocument, rpm: float) -> void:
 	var notes := PackedStringArray([String(result.end_reason)])
 	if off_axis:
 		notes.append(NOTE_OFF_AXIS)
+	if compare_note() != "":
+		notes.append(compare_note())
 	note_label.text = " ".join(notes)
 	var dots := _dots(doc, rpm) if not series.is_empty() else PackedVector2Array()
 	if not dots.is_empty():
@@ -140,6 +145,24 @@ func refresh(doc: PropellerDocument, rpm: float) -> void:
 	chart.set_data(series, dots, METRIC_UNITS[metric], look_j)
 	_shade_stations(g, rpm)
 	_hide_empty_lines()
+
+
+func _refresh_compare(rpm: float) -> void:
+	compare_result = {}
+	var other := shell.compare_doc()
+	if other == null:
+		chart.set_compare([], PackedStringArray())
+		return
+	compare_result = PropTunnel.sweep(PropTunnel.geometry_of(other), rpm, angle_deg)
+	var line: Array = _series(compare_result.points) if compare_result.ok else []
+	chart.set_compare(line, PackedStringArray([shell.doc.name, shell.compare_name()]))
+
+
+## The note under the chart when the second prop has no line of its own.
+func compare_note() -> String:
+	if shell.compare_doc() == null or (compare_result.get("ok", false) and not chart.compare_points.is_empty()):
+		return ""
+	return "%s has no line here." % shell.compare_name()
 
 
 static func _first_flag(pts: Array) -> String:

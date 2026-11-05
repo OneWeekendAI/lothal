@@ -14,6 +14,9 @@ var points: Array = []
 var dots := PackedVector2Array()
 var unit := ""
 var caret_x := -1.0
+## The second prop's line, the same shape as `points`; [] for none. Legend names go with it.
+var compare_points: Array = []
+var legend_names := PackedStringArray()
 
 
 func set_data(p_points: Array, p_dots: PackedVector2Array, p_unit: String, p_caret_x: float) -> void:
@@ -44,6 +47,10 @@ func data_range() -> Rect2:
 		x_max = maxf(x_max, float(p.x))
 		y_min = minf(y_min, float(p.y))
 		y_max = maxf(y_max, float(p.y))
+	for p: Dictionary in compare_points:
+		x_max = maxf(x_max, float(p.x))
+		y_min = minf(y_min, float(p.y))
+		y_max = maxf(y_max, float(p.y))
 	for d in dots:
 		x_max = maxf(x_max, d.x)
 		y_min = minf(y_min, d.y)
@@ -51,6 +58,12 @@ func data_range() -> Rect2:
 	if y_max <= y_min:
 		y_max = y_min + 1.0
 	return Rect2(0.0, y_min, x_max, y_max - y_min)
+
+
+func set_compare(p_points: Array, names: PackedStringArray) -> void:
+	compare_points = p_points
+	legend_names = names
+	queue_redraw()
 
 
 func _flagged(i: int) -> bool:
@@ -83,13 +96,27 @@ func _draw() -> void:
 	if caret_x >= 0.0:
 		var cx: float = (to_px.call(caret_x, y_min) as Vector2).x
 		draw_line(Vector2(cx, plot.position.y), Vector2(cx, plot.end.y), DesignSpace.INK_FAINT, 1.0)
-	# The dash phase carries across points: dashing each short segment on its own reads as solid.
+	_draw_series(compare_points, MotorDesigner.COMPARE_INK, MotorDesigner.COMPARE_INK, to_px)
+	_draw_series(points, DesignSpace.INK, DesignSpace.INK_MUTED, to_px)
+	if legend_names.size() == 2:
+		# On the title row: any spot inside the plot sits on some metric's curve.
+		var y := plot.position.y - 5
+		var w := (plot.size.x - 140.0) * 0.5
+		draw_string(font, Vector2(plot.position.x + 62, y), legend_names[0], HORIZONTAL_ALIGNMENT_LEFT, w, fs, DesignSpace.INK)
+		draw_string(font, Vector2(plot.position.x + 66 + w, y), legend_names[1], HORIZONTAL_ALIGNMENT_LEFT, w, fs, MotorDesigner.COMPARE_INK)
+	for d in dots:
+		draw_arc(to_px.call(d.x, d.y), DOT_R, 0.0, TAU, 12, DesignSpace.INK, 1.0, true)
+
+
+## One prop's line. The dash phase carries across points: dashing each short segment on its own reads
+## as solid.
+func _draw_series(series: Array, ink: Color, flagged_ink: Color, to_px: Callable) -> void:
 	var walked := 0.0
-	for i in range(1, points.size()):
-		var a: Vector2 = to_px.call(float(points[i - 1].x), float(points[i - 1].y))
-		var b: Vector2 = to_px.call(float(points[i].x), float(points[i].y))
-		if not _flagged(i):
-			draw_line(a, b, DesignSpace.INK, 1.5, true)
+	for i in range(1, series.size()):
+		var a: Vector2 = to_px.call(float(series[i - 1].x), float(series[i - 1].y))
+		var b: Vector2 = to_px.call(float(series[i].x), float(series[i].y))
+		if not (bool(series[i - 1].flagged) or bool(series[i].flagged)):
+			draw_line(a, b, ink, 1.5, true)
 			continue
 		var length := a.distance_to(b)
 		var at := 0.0
@@ -98,11 +125,9 @@ func _draw() -> void:
 			var run := DASH - phase if phase < DASH else DASH + GAP - phase
 			run = minf(run, length - at)
 			if phase < DASH:
-				draw_line(a.lerp(b, at / length), a.lerp(b, (at + run) / length), DesignSpace.INK_MUTED, 1.5, true)
+				draw_line(a.lerp(b, at / length), a.lerp(b, (at + run) / length), flagged_ink, 1.5, true)
 			at += maxf(run, 0.01)
 		walked += length
-	for d in dots:
-		draw_arc(to_px.call(d.x, d.y), DOT_R, 0.0, TAU, 12, DesignSpace.INK, 1.0, true)
 
 
 static func _num(v: float) -> String:

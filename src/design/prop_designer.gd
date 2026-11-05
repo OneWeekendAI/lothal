@@ -46,6 +46,15 @@ const NOTE_UNREADABLE := "Blade unreadable: saving makes a new one."
 const PITCH_OFFER_NOTE := "Pitch changed, angles did not: the twist is drawn."
 
 signal saved(part_id: String)
+signal fitted(part_id: String)
+
+const EFFECT_ROWS := ["thrust_to_weight", "hover_throttle", "flight_time_min", "top_speed_kmh", "roll_inertia"]
+const EFFECT_NAMES := {"thrust_to_weight": "Thrust : weight", "hover_throttle": "Hover throttle", "flight_time_min": "Flight time",
+	"top_speed_kmh": "Top speed", "roll_inertia": "Roll inertia"}
+const EFFECT_FORMATS := {"thrust_to_weight": "%.2f", "hover_throttle": "%.0f", "flight_time_min": "%.1f",
+	"top_speed_kmh": "%.0f", "roll_inertia": "%.0f"}
+const EFFECT_UNITS := {"thrust_to_weight": "", "hover_throttle": "%", "flight_time_min": "min",
+	"top_speed_kmh": "km/h", "roll_inertia": "g·cm²"}
 
 var catalog: PartsCatalog
 ## Where saves go, and the id being edited ("" until the first save, and for a typed prop).
@@ -92,6 +101,16 @@ var _redo: Array = []
 var summary_label: Label
 var tab_row: HFlowContainer
 var active_tab := "figures"
+## The second prop on the tunnel and stand, a part id from the shelf; "" for none.
+var compare_id := ""
+var compare_option: OptionButton
+var compare_row: HBoxContainer
+var compare_tip_label: Label
+## The drone being designed for, when opened from one: what the before-and-after strip measures.
+var session: DesignSession
+var effect_box: VBoxContainer
+var effect_grid: Control
+var fit_button: Button
 var tunnel: PropTunnelPanel
 var stand: PropStandPanel
 var structure: PropStructurePanel
@@ -314,6 +333,12 @@ func _build_right() -> Control:
 	col.add_child(summary_label)
 	figures_box = _figure_grid(FIGURE_ROWS, func(k: String) -> String: return FIGURE_NAMES[k], _figs, 110.0)
 	col.add_child(figures_box)
+	compare_tip_label = _faint("")
+	compare_tip_label.name = "CompareTip"
+	compare_tip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(compare_tip_label)
+	col.add_child(_build_effect())
+	col.add_child(_build_compare_row())
 	tab_row = _chip_row("Tabs", "Tab_")
 	_set_chips(tab_row, TABS, TAB_LABELS, show_tab)
 	col.add_child(tab_row)
@@ -336,6 +361,149 @@ func _build_right() -> Control:
 # ---------------------------------------------------------------------------
 # Choices
 # ---------------------------------------------------------------------------
+
+func _build_compare_row() -> Control:
+	compare_row = HBoxContainer.new()
+	compare_row.name = "CompareRow"
+	compare_row.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+	var l := _faint("Compare")
+	l.custom_minimum_size = Vector2(56, 0)
+	compare_row.add_child(l)
+	compare_option = OptionButton.new()
+	compare_option.name = "CompareProp"
+	compare_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	compare_option.clip_text = true
+	compare_option.item_selected.connect(func(i: int): set_compare(String(compare_option.get_item_metadata(i))))
+	compare_row.add_child(compare_option)
+	_fill_compare_list()
+	return compare_row
+
+
+func _fill_compare_list() -> void:
+	compare_option.clear()
+	compare_option.add_item("None")
+	compare_option.set_item_metadata(0, "")
+	for rec in catalog.list_category("propeller"):
+		compare_option.add_item(String(rec.get("name", rec.get("part_id", ""))))
+		compare_option.set_item_metadata(compare_option.item_count - 1, String(rec.get("part_id", "")))
+	for i in compare_option.item_count:
+		if String(compare_option.get_item_metadata(i)) == compare_id:
+			compare_option.select(i)
+
+
+func _build_effect() -> Control:
+	effect_box = VBoxContainer.new()
+	effect_box.name = "EffectBox"
+	effect_box.add_theme_constant_override("separation", LothalTheme.SPACE_1)
+	effect_box.add_child(_faint("This drone: fitted prop → this prop"))
+	effect_grid = _figure_grid(EFFECT_ROWS, func(k: String) -> String: return EFFECT_NAMES[k], _figs, 110.0)
+	effect_box.add_child(effect_grid)
+	fit_button = Button.new()
+	fit_button.name = "FitToDrone"
+	fit_button.text = "Fit to this drone"
+	fit_button.focus_mode = Control.FOCUS_NONE
+	fit_button.pressed.connect(fit_to_drone)
+	effect_box.add_child(fit_button)
+	return effect_box
+
+
+## The shelf changed (a save): the compare list reads the new one, and drops a prop no longer on it.
+func set_catalog(p_catalog: PartsCatalog) -> void:
+	catalog = p_catalog
+	if compare_id != "" and catalog.get_part(compare_id).is_empty():
+		compare_id = ""
+	_fill_compare_list()
+	_rederive()
+
+
+## The drone this designer works for. Without one there is no strip and nothing to fit to.
+func set_session(p_session: DesignSession) -> void:
+	session = p_session
+	_rederive()
+
+
+func set_compare(id: String) -> void:
+	var rec := catalog.get_part(id) if id != "" else {}
+	compare_id = id if String(rec.get("category", "")) == "propeller" else ""
+	_fill_compare_list()
+	_rederive()
+
+
+func compare_name() -> String:
+	return String(catalog.get_part(compare_id).get("name", compare_id)) if compare_id != "" else ""
+
+
+## The second prop as a document, by the path a fitted prop takes; null when none is chosen.
+func compare_doc() -> PropellerDocument:
+	if compare_id == "":
+		return null
+	var rec := catalog.get_part(compare_id)
+	var authored := PropellerDocument.authored_blade_of(rec)
+	return authored if authored != null else PropellerDocument.from_catalog_prop(rec)
+
+
+## Tip speed against the second prop at this rpm. Relative on purpose: no calibrated noise figure
+## exists, so this is the only loudness hint that is honest.
+func compare_tip_text() -> String:
+	var other := compare_doc()
+	if other == null:
+		return ""
+	var mine := PropStructure.tip_speed_mps(doc, rpm)
+	var theirs := PropStructure.tip_speed_mps(other, rpm)
+	var percent := roundi((mine / theirs - 1.0) * 100.0)
+	if percent == 0:
+		return "Tip speed at this rpm: same as %s." % compare_name()
+	return "Tip speed at this rpm: %d %% %s than %s." % [absi(percent), "higher" if percent > 0 else "lower", compare_name()]
+
+
+## Two real Builds of this drone: as fitted, and with this prop. {} without a drone or if either
+## cannot be built. The designed prop lives only in the bench catalog copy.
+func drone_effect() -> Dictionary:
+	if session == null:
+		return {}
+	var trial := DesignSession.from_selection(session, "propeller", PropStandPanel.BENCH_PROP_ID)
+	var with_this := trial.build(stand.bench_catalog())
+	# Second: from_selection shares the project and build() stamps it, so this puts the drone's parts back.
+	var now := session.build(catalog)
+	if now == null or with_this == null:
+		return {}
+	return {"before": _effect_of(now), "after": _effect_of(with_this)}
+
+
+static func _effect_of(b: Build) -> Dictionary:
+	var r := DesignSession.readouts_of(b)
+	r["roll_inertia"] = b.mass_properties.inertia.z.z * 1e7
+	return r
+
+
+func _show_effect() -> void:
+	var e := drone_effect()
+	effect_box.visible = not e.is_empty() and active_tab == "figures"
+	if e.is_empty():
+		return
+	for k: String in EFFECT_ROWS:
+		var fmt: String = EFFECT_FORMATS[k]
+		var times: float = 100.0 if k == "hover_throttle" else 1.0
+		_set_fig(k, "%s → %s" % [fmt % (float(e.before[k]) * times), fmt % (float(e.after[k]) * times)], EFFECT_UNITS[k])
+
+
+## One action: saved if it needs to be, then fitted through the same judge as a shelf click. A refusal
+## leaves the prop saved, the drone as it was, and says why.
+func fit_to_drone() -> bool:
+	if session == null:
+		return false
+	var id := save()
+	if id == "":
+		return false
+	var verdict := session.swap(catalog, "propeller", id)
+	if not verdict["ok"]:
+		_set_status("Saved, not fitted: %s" % String(verdict.get("reason", "")), true)
+		return false
+	_set_status("Fitted to this drone", false)
+	fitted.emit(id)
+	_rederive()
+	return true
+
 
 func show_tab(tab: Variant) -> void:
 	active_tab = String(tab)
@@ -733,6 +901,10 @@ func _rederive() -> void:
 	tunnel.visible = in_tunnel
 	stand.visible = active_tab == "stand"
 	structure.visible = active_tab == "structure"
+	compare_row.visible = in_tunnel or stand.visible or in_figures
+	compare_tip_label.visible = in_figures and compare_id != ""
+	compare_tip_label.text = compare_tip_text()
+	_show_effect()
 	if in_tunnel:
 		tunnel.refresh(doc, rpm)
 	elif stand.visible:

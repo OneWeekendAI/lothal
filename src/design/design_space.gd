@@ -2151,7 +2151,11 @@ func open_prop_designer(saved_id: String = "") -> void:
 	var designer := PropDesigner.new(_catalog, FrameMaterials.load_default(), session.build(_catalog))
 	designer.store_path = custom_parts_path
 	# A saved prop may be on this drone: the catalog is re-read, and session.build resolves from it.
-	designer.saved.connect(func(_id: String): refresh_catalog())
+	designer.saved.connect(func(_id: String):
+		refresh_catalog()
+		designer.set_catalog(_catalog))
+	designer.fitted.connect(func(_id: String): _after_change())
+	designer.set_session(session)
 	designer.closed.connect(func(): prop_designer = null)
 	prop_designer = designer
 	add_child(designer)

@@ -43,6 +43,9 @@ static func run() -> Array:
 	results.append_array(_test_save_flies())
 	results.append_array(_test_save_shelf_life(catalog, mats))
 	results.append_array(_test_save_failures(catalog, mats))
+	results.append_array(_test_compare_tunnel(catalog, mats))
+	results.append_array(_test_compare_stand(catalog, mats))
+	results.append_array(_test_drone_effect())
 	results.append_array(_test_typed_path(catalog, mats))
 	results.append_array(_test_migration(mats))
 	results.append_array(_test_migration_reaches_builder(catalog, mats))
@@ -1128,4 +1131,127 @@ static func _test_migration(mats: FrameMaterials) -> Array:
 	edited.save_to("%s/blade_two%s" % [dir, BladeLibrary.EXTENSION])
 	var after_edit := CustomPropellers.migrate_drafts(path, dir, mats)
 	out.append(_t("a draft edited later comes in again", (after_edit["added"] as Array).size() == 1))
+	return out
+
+
+# PD11: compare and the drone effect.
+const PD11_OTHER := "prop_3x3x3"
+const PD11_SHELF_5 := "prop_5x43x3"
+
+static func _test_compare_tunnel(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := PropDesigner.new(catalog, mats)
+	d.size = SIZE
+	d.show_tab("tunnel")
+	var solo: Array = d.tunnel.chart.points.duplicate(true)
+	out.append(_t("no compare, no second line", d.tunnel.chart.compare_points.is_empty()))
+	d.set_compare(PD11_OTHER)
+	var other := PropellerDocument.from_catalog_prop(catalog.get_part(PD11_OTHER))
+	var alone := PropTunnel.sweep(PropTunnel.geometry_of(other), d.rpm, 0.0)
+	var line: Array = d.tunnel.chart.compare_points
+	var same: bool = line.size() == (alone.points as Array).size() and line.size() > 2
+	if same:
+		for i in line.size():
+			same = same and is_equal_approx(float(line[i].y), float(alone.points[i].thrust_n) * PropTunnelPanel.G_PER_N)
+	out.append(_t("the compare line equals that prop's solo sweep", same))
+	var main_same: bool = d.tunnel.chart.points.size() == solo.size()
+	if main_same:
+		for i in solo.size():
+			main_same = main_same and float(d.tunnel.chart.points[i].y) == float(solo[i].y)
+	out.append(_t("the designed prop's line does not move", main_same))
+	var differs := false
+	for i in mini(line.size(), solo.size()):
+		differs = differs or absf(float(line[i].y) - float(solo[i].y)) > 1.0
+	out.append(_t("the second line is a different prop's, not the first drawn twice", differs))
+	out.append(_t("a two-item legend names both", d.tunnel.chart.legend_names == PackedStringArray([d.doc.name, d.compare_name()])))
+	d.tunnel.set_metric("power")
+	out.append(_t("the compare line follows the metric", is_equal_approx(float(d.tunnel.chart.compare_points[1].y), float(alone.points[1].power_w))))
+	d.tunnel.set_metric("thrust")
+	d.tunnel.set_angle(30.0)
+	var tilted := PropTunnel.sweep(PropTunnel.geometry_of(other), d.rpm, 30.0)
+	out.append(_t("the compare line follows the flow angle", is_equal_approx(float(d.tunnel.chart.compare_points[1].y), float(tilted.points[1].thrust_n) * PropTunnelPanel.G_PER_N)))
+	d.tunnel.set_angle(0.0)
+	d.show_tab("figures")
+	var ratio := PropStructure.tip_speed_mps(d.doc, d.rpm) / PropStructure.tip_speed_mps(other, d.rpm)
+	out.append(_t("the tip-speed line is the true ratio, and relative", d.compare_tip_label.text.contains("%d %% higher" % roundi((ratio - 1.0) * 100.0))
+		and not d.compare_tip_label.text.contains("dB")))
+	d.set_compare("motor_not_a_prop")
+	out.append(_t("an id that is not a prop clears the compare", d.compare_id == "" and d.compare_tip_label.text == ""))
+	d.show_tab("tunnel")
+	out.append(_t("clearing it removes the line and legend", d.tunnel.chart.compare_points.is_empty() and d.tunnel.chart.legend_names.is_empty()))
+	d.free()
+	return out
+
+
+static func _test_compare_stand(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := PropDesigner.new(catalog, mats)
+	d.size = SIZE
+	# Smaller than the shelf prop: otherwise the default IS that prop, and its lines cannot be told apart.
+	d.step_diameter(-1.0)
+	d.show_tab("stand")
+	var mine: PackedFloat64Array = d.stand.charts.charts[0].y
+	out.append(_t("no compare, no y2 on the stand", not (d.stand.charts.charts[0] as Dictionary).has("y2")))
+	d.set_compare(PD11_SHELF_5)
+	var parts := d.stand.parts()
+	parts["propeller"] = PD11_SHELF_5
+	var alone := MotorBench.sweep_of_record(d.stand.motor_record(), parts, {}, catalog)
+	for v: String in PropStandPanel.VIEWS:
+		d.stand.set_view(v)
+		var c: Dictionary = d.stand.charts.charts[0]
+		var expect := d.stand.compare_line(alone)
+		out.append(_t("stand %s: second line equals that prop's solo run" % v, c.get("y2", PackedFloat64Array()) == expect and expect.size() == (c.y as PackedFloat64Array).size()))
+		out.append(_t("stand %s: the second line is not the first" % v, c.get("y2", PackedFloat64Array()) != c.y))
+		out.append(_t("stand %s: both lines fit the scale" % v, float(c.y_max) >= PropStandPanel._top(expect) and float(c.y_max) >= PropStandPanel._top(c.y)))
+		out.append(_t("stand %s: legend has two items" % v, (c.legend as Array).size() == 2))
+	d.stand.set_view("thrust")
+	out.append(_t("the designed prop's stand line does not move", d.stand.charts.charts[0].y == mine))
+	d.free()
+	return out
+
+
+static func _test_drone_effect() -> Array:
+	var out: Array = []
+	var path := _scratch("effect.json")
+	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"), PartsCatalog.load_with_custom(path))
+	ds.size = SIZE
+	ds.custom_parts_path = path
+	ds.open_prop_designer()
+	var d := ds.prop_designer
+	_edited(d)
+	d.set_prop_name("Effect")
+	var e := d.drone_effect()
+	var real_before := ds.session.build(ds._catalog)
+	var bench := d.stand.bench_catalog()
+	var trial := DesignSession.from_selection(ds.session, "propeller", PropStandPanel.BENCH_PROP_ID)
+	var real_after := trial.build(bench)
+	out.append(_t("before is the fitted drone's real Build", is_equal_approx(float(e.before.thrust_to_weight), real_before.thrust_to_weight())
+		and is_equal_approx(float(e.before.flight_time_min), real_before.flight_time_min())
+		and is_equal_approx(float(e.before.roll_inertia), real_before.mass_properties.inertia.z.z * 1e7)))
+	out.append(_t("after is a real Build with this prop", is_equal_approx(float(e.after.thrust_to_weight), real_after.thrust_to_weight())
+		and is_equal_approx(float(e.after.hover_throttle), real_after.hover_throttle())
+		and is_equal_approx(float(e.after.top_speed_kmh), real_after.top_speed_kmh())
+		and is_equal_approx(float(e.after.roll_inertia), real_after.mass_properties.inertia.z.z * 1e7)))
+	out.append(_t("an edited prop moves the after figures", absf(float(e.after.top_speed_kmh) - float(e.before.top_speed_kmh)) > 0.01
+		and absf(float(e.after.thrust_to_weight) - float(e.before.thrust_to_weight)) > 0.001))
+	d._rederive()
+	var label := d.find_child("Fig_top_speed_kmh", true, false) as Label
+	out.append(_t("the strip shows before and after", label.text == "%.0f → %.0f" % [float(e.before.top_speed_kmh), float(e.after.top_speed_kmh)]))
+	var was := String(ds.session.selection.propeller)
+	out.append(_t("reading the effect changes nothing on the drone", String(ds.session.build(ds._catalog).propeller.part_id) == was))
+	var fit_ok := d.fit_to_drone()
+	var now_id := String(ds.session.selection.propeller)
+	out.append(_t("Fit saves and fits this prop", fit_ok and now_id == d.part_id and now_id != was
+		and not CustomPropellers.load_from(path).get_record(now_id).is_empty()))
+	out.append(_t("the fitted drone flies the after figures", absf(ds.session.build(ds._catalog).top_speed_kmh() - float(e.after.top_speed_kmh)) < 0.5))
+	var settled := d.drone_effect()
+	out.append(_t("once fitted, before equals after", absf(float(settled.before.thrust_to_weight) - float(settled.after.thrust_to_weight)) < 1e-6))
+	out.append(_t("a saved prop can be compared against", d.compare_option.item_count == ds._catalog.list_category("propeller").size() + 1))
+	ds.undo()
+	out.append(_t("fitting is one undo step", String(ds.session.selection.propeller) == was))
+	var alone := PropDesigner.new(PartsCatalog.load_default(), FrameMaterials.load_default())
+	alone.size = SIZE
+	out.append(_t("no drone: no strip, and Fit does nothing", not alone.effect_box.visible and not alone.fit_to_drone()))
+	alone.free()
+	ds.free()
 	return out

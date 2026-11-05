@@ -10,6 +10,8 @@ extends SceneTree
 ## "stand", "stand_current", "stand_pack", "structure", "structure_details", "structure_mach";
 ## "saved", "save_failed", "shelf_saved", "card_menu".
 ##
+## "cmp_figures", "cmp_tunnel", "cmp_stand", "cmp_fit" (PD11).
+##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
 func _init() -> void:
@@ -99,6 +101,15 @@ func _init() -> void:
 			print("SHELF ", ds.shelf.find_child("Part_custom_long_ranger", true, false) != null)
 		if state == "card_menu":
 			ds.open_card_menu("propeller", "custom_long_ranger")
+		if state.begins_with("cmp_"):
+			d.step_pitch(0.5)
+			d.set_compare("prop_5x43x3")
+			if state == "cmp_tunnel":
+				d.show_tab("tunnel")
+			if state == "cmp_stand":
+				d.show_tab("stand")
+			if state == "cmp_fit":
+				d.fit_to_drone()
 		if state == "blade":
 			d.twist_editor.drag_station_to(5, d.twist_editor.to_pixels(0.6, 27.0))
 			d.chord_editor.drag_station_to(24, d.chord_editor.to_pixels(0.6, 15.0))

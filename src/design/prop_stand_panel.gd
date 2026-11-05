@@ -16,6 +16,8 @@ var motor_pick := DRONE
 var pack_pick := DRONE
 var result: Dictionary = {}
 var limited: Dictionary = {}
+## The second prop on the same motor and pack, through its own real Build. {} when none.
+var compare_result: Dictionary = {}
 var run_count := 0
 
 var motor_option: OptionButton
@@ -124,6 +126,7 @@ func bench_catalog() -> PartsCatalog:
 
 func refresh() -> void:
 	run_count += 1
+	compare_result = {}
 	shell._mark_chips(view_row, VIEWS, view)
 	var c := bench_catalog()
 	result = MotorBench.sweep_of_record(motor_record(), parts(), {}, c)
@@ -134,32 +137,57 @@ func refresh() -> void:
 		charts.set_charts([])
 		return
 	limited = MotorBench.limited_of_record(motor_record(), cfg, parts(), {}, c)
+	if shell.compare_id != "":
+		var other := parts()
+		other["propeller"] = shell.compare_id
+		compare_result = MotorBench.sweep_of_record(motor_record(), other, {}, c)
 	result_label.text = String(result.result)
 	limited_label.text = String(limited.get("text", ""))
 	charts.set_charts([_chart()])
 
 
-func _per_motor(key: String) -> PackedFloat64Array:
+func _per_motor(run: Dictionary, key: String) -> PackedFloat64Array:
 	var out := PackedFloat64Array()
-	for v: float in result[key]:
-		out.append(v / float(result.motors))
+	for v: float in run[key]:
+		out.append(v / float(run.motors))
 	return out
 
 
 func _chart() -> Dictionary:
 	var ink := DesignSpace.INK
+	var c: Dictionary
 	match view:
 		"current":
-			return {"title": "Current per motor", "x": result.x, "y": _per_motor("current_a"), "y_min": 0.0,
-				"y_max": ceilf(float(result.motor_current_a) * 1.1), "unit": " A", "color": ink,
+			c = {"title": "Current per motor", "x": result.x, "y": _per_motor(result, "current_a"), "y_min": 0.0,
+				"y_max": float(result.motor_current_a), "unit": " A", "color": ink,
 				"x_max": 100.0, "x_end_text": "100 %"}
 		"efficiency":
-			var y: PackedFloat64Array = (result.gpw as PackedFloat64Array).slice(int(result.gpw_from))
-			var top := 0.0
-			for v in y:
-				top = maxf(top, v)
-			return {"title": "g per watt", "x": result.gpw_x, "y": y, "y_min": 0.0, "y_max": ceilf(top * 1.1),
-				"unit": " g/W", "color": ink, "x_max": 100.0, "x_end_text": "100 %"}
-	return {"title": "Thrust per motor", "x": result.x, "y": _per_motor("thrust_g"), "y_min": 0.0,
-		"y_max": ceilf(float(result.motor_thrust_g) * 1.1), "unit": " g", "color": ink,
-		"x_max": 100.0, "x_end_text": "100 %"}
+			c = {"title": "g per watt", "x": result.gpw_x, "y": (result.gpw as PackedFloat64Array).slice(int(result.gpw_from)),
+				"y_min": 0.0, "y_max": 0.0, "unit": " g/W", "color": ink, "x_max": 100.0, "x_end_text": "100 %"}
+		_:
+			c = {"title": "Thrust per motor", "x": result.x, "y": _per_motor(result, "thrust_g"), "y_min": 0.0,
+				"y_max": float(result.motor_thrust_g), "unit": " g", "color": ink,
+				"x_max": 100.0, "x_end_text": "100 %"}
+	if not compare_result.is_empty():
+		c["y2"] = compare_line(compare_result)
+		c["color2"] = MotorDesigner.COMPARE_INK
+		c["legend"] = [{"name": shell.doc.name, "color": ink}, {"name": shell.compare_name(), "color": MotorDesigner.COMPARE_INK}]
+	c["y_max"] = ceilf(maxf(_top(c["y"]), _top(c.get("y2", PackedFloat64Array()))) * 1.1)
+	return c
+
+
+## The series this view plots, for any one run of the sweep.
+func compare_line(run: Dictionary) -> PackedFloat64Array:
+	match view:
+		"current":
+			return _per_motor(run, "current_a")
+		"efficiency":
+			return (run.gpw as PackedFloat64Array).slice(int(run.gpw_from))
+	return _per_motor(run, "thrust_g")
+
+
+static func _top(values: PackedFloat64Array) -> float:
+	var top := 0.0
+	for v in values:
+		top = maxf(top, v)
+	return top
