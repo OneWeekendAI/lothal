@@ -123,6 +123,10 @@ var _doc: PropellerDocument
 ## `doc` is the PropellerDocument whose beta(r) this mesh draws. It is built from `prop` when
 ## omitted; hand one in for a blade whose twist was AUTHORED, because that shape exists only in
 ## the document (§3.2) and cannot be recovered from a spec line.
+## The wind tunnel's station shading (PD8), [r_frac, grey 0..1, ...]; empty draws the plain blade.
+var station_shade := PackedFloat64Array()
+
+
 func rebuild(prop: Dictionary, doc: PropellerDocument = null) -> void:
 	for child in get_children():
 		remove_child(child)
@@ -169,7 +173,7 @@ func rebuild(prop: Dictionary, doc: PropellerDocument = null) -> void:
 		var blade := MeshInstance3D.new()
 		blade.name = "Blade_%d" % i
 		blade.mesh = blade_mesh
-		blade.material_override = material
+		blade.material_override = _shaded(material) if not station_shade.is_empty() else material
 		blade.rotation = Vector3(0, TAU * float(i) / float(blade_count), 0)
 		add_child(blade)
 
@@ -290,6 +294,26 @@ func _blur_material(base: StandardMaterial3D) -> StandardMaterial3D:
 ## are stitched into four faces, and the two ends are capped, so the blade is a closed solid
 ## that catches light differently on its upper and lower surfaces — which is what makes the
 ## twist legible on screen at all. A single-sided ribbon reads as paper.
+## The blade's material with the station greys as its colour. Hub and blur keep the plain one.
+static func _shaded(base: StandardMaterial3D) -> StandardMaterial3D:
+	var mat := base.duplicate() as StandardMaterial3D
+	mat.albedo_color = Color.WHITE
+	mat.vertex_color_use_as_albedo = true
+	mat.vertex_color_is_srgb = true
+	return mat
+
+
+## Linear between the table's stations, held flat past its ends.
+static func shade_at(table: PackedFloat64Array, r_frac: float) -> float:
+	if r_frac <= table[0]:
+		return table[1]
+	for i in range(2, table.size(), 2):
+		if r_frac <= table[i]:
+			var t := (r_frac - table[i - 2]) / maxf(table[i] - table[i - 2], 1e-9)
+			return lerpf(table[i - 1], table[i + 1], t)
+	return table[table.size() - 1]
+
+
 func _build_blade_mesh(hub_radius: float) -> ArrayMesh:
 	var tool := SurfaceTool.new()
 	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -305,6 +329,8 @@ func _build_blade_mesh(hub_radius: float) -> ArrayMesh:
 		# corners arrive in (tangential, axial) millimetres and in this loop's own winding order,
 		# so all that is left here is the unit and the radial offset.
 		var centre := Vector3(radius, 0.0, 0.0)
+		if not station_shade.is_empty():
+			tool.set_color(Color.from_hsv(0.0, 0.0, shade_at(station_shade, r_frac)))
 		for corner in _doc.section_corners_mm(r_frac):
 			tool.add_vertex(centre + Vector3(0.0, corner.y, corner.x) * 0.001)
 

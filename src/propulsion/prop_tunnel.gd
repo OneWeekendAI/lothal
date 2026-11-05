@@ -89,7 +89,14 @@ static func tip_mach(diameter_m: float, rpm: float, v_axial := 0.0, v_edge := 0.
 ## to the J where thrust reaches zero. `{ok, points, j0, end, end_reason}`; `j0` is -1 if the sweep
 ## stopped first.
 static func axial_sweep(g: Dictionary, rpm: float) -> Dictionary:
-	var first := _axial_point(g, rpm, 0.0)
+	return sweep(g, rpm, 0.0)
+
+
+## The same airspeed sweep with the air arriving at a flow angle, 0 = straight in, 90 = edgewise, so
+## J is built on the whole airspeed. Off axis a point has thrust and power only. Past 90 degrees the
+## axial part is negative, and the solve's own refusal comes back.
+static func sweep(g: Dictionary, rpm: float, angle_deg: float) -> Dictionary:
+	var first := _sweep_point(g, rpm, 0.0, angle_deg)
 	if not first.ok:
 		return first
 	if float(first.thrust_n) <= 0.0:
@@ -98,7 +105,7 @@ static func axial_sweep(g: Dictionary, rpm: float) -> Dictionary:
 	var steps := roundi(J_LIMIT / J_STEP)
 	for i in range(1, steps + 1):
 		var j: float = i * J_STEP
-		var p := _axial_point(g, rpm, j)
+		var p := _sweep_point(g, rpm, j, angle_deg)
 		if not p.ok:
 			return p
 		if float(p.thrust_n) > 0.0:
@@ -108,14 +115,35 @@ static func axial_sweep(g: Dictionary, rpm: float) -> Dictionary:
 		var hi: float = j
 		for _s in CROSSING_STEPS:
 			var mid: float = 0.5 * (lo + hi)
-			if float(_axial_point(g, rpm, mid).thrust_n) > 0.0:
+			if float(_sweep_point(g, rpm, mid, angle_deg).thrust_n) > 0.0:
 				lo = mid
 			else:
 				hi = mid
-		var last := _axial_point(g, rpm, lo)
+		var last := _sweep_point(g, rpm, lo, angle_deg)
 		points.append(last)
 		return {"ok": true, "points": points, "j0": lo, "end": "zero_thrust", "end_reason": END_ZERO_THRUST}
 	return {"ok": true, "points": points, "j0": -1.0, "end": "j_limit", "end_reason": END_J_LIMIT}
+
+
+## The airspeed at `j` split by flow angle: {v_axial, v_edge}. What a sweep point and a station tap
+## must agree on.
+static func speeds_at(g: Dictionary, rpm: float, j: float, angle_deg: float) -> Dictionary:
+	var airspeed: float = j * rpm / 60.0 * float(g.diameter_m)
+	if angle_deg == 0.0:
+		return {"v_axial": airspeed, "v_edge": 0.0}
+	var rad := deg_to_rad(angle_deg)
+	return {"v_axial": 0.0 if angle_deg == 90.0 else airspeed * cos(rad), "v_edge": airspeed * sin(rad)}
+
+
+static func _sweep_point(g: Dictionary, rpm: float, j: float, angle_deg: float) -> Dictionary:
+	if angle_deg == 0.0:
+		return _axial_point(g, rpm, j)
+	var airspeed: float = j * rpm / 60.0 * float(g.diameter_m)
+	var p := _angle_point(g, rpm, airspeed, angle_deg)
+	if p.ok:
+		p["j"] = j
+		p["v_mps"] = airspeed
+	return p
 
 
 ## Flow angle sweep at a set rpm and airspeed, 0 = straight into the disc, 90 = edgewise. Thrust and

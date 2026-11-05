@@ -35,6 +35,10 @@ const THICKNESS_NOTE := "Thickness moves mass and strength. Thrust and power her
 const TWIST_HELIX_NOTE := "Twist follows the pitch."
 const TWIST_DRAWN_NOTE := "Twist is drawn. Pitch does not set the angles."
 const TWIST_CAP_NOTE := "Hover sits on the lift cap, so pitch and twist show mostly at forward speed."
+const TABS := ["figures", "tunnel"]
+const TAB_LABELS := ["Figures", "Wind tunnel"]
+const RPM_RANGE := Vector2(500.0, 60000.0)
+const STEP_RPM := 500.0
 const PITCH_OFFER_NOTE := "Pitch changed, angles did not: the twist is drawn."
 
 var catalog: PartsCatalog
@@ -73,6 +77,9 @@ var caret_r_frac := SECTION_R_FRAC
 var _undo: Array = []
 var _redo: Array = []
 var summary_label: Label
+var tab_row: HFlowContainer
+var active_tab := "figures"
+var tunnel: PropTunnelPanel
 var figures_box: GridContainer
 var _figs: Dictionary = {}
 
@@ -275,12 +282,30 @@ func _build_right() -> Control:
 	col.add_child(summary_label)
 	figures_box = _figure_grid(FIGURE_ROWS, func(k: String) -> String: return FIGURE_NAMES[k], _figs, 110.0)
 	col.add_child(figures_box)
+	tab_row = _chip_row("Tabs", "Tab_")
+	_set_chips(tab_row, TABS, TAB_LABELS, show_tab)
+	col.add_child(tab_row)
+	col.move_child(tab_row, 0)
+	tunnel = PropTunnelPanel.new(self)
+	tunnel.name = "TunnelPanel"
+	tunnel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(tunnel)
 	return col
 
 
 # ---------------------------------------------------------------------------
 # Choices
 # ---------------------------------------------------------------------------
+
+func show_tab(tab: Variant) -> void:
+	active_tab = String(tab)
+	_rederive()
+
+
+func step_rpm(delta_rpm: float) -> void:
+	rpm = clampf(rpm + delta_rpm, RPM_RANGE.x, RPM_RANGE.y)
+	_rederive()
+
 
 func set_prop_name(text: String) -> void:
 	doc.name = text
@@ -549,6 +574,14 @@ func _rederive() -> void:
 	twist_editor.queue_redraw()
 	_show_caret()
 
+	_mark_chips(tab_row, TABS, active_tab)
+	var in_tunnel := active_tab == "tunnel"
+	summary_label.visible = not in_tunnel
+	figures_box.visible = not in_tunnel
+	tunnel.visible = in_tunnel
+	if in_tunnel:
+		tunnel.refresh(doc, rpm)
+	blade_view.set_station_shade(tunnel.shade_table if in_tunnel else PackedFloat64Array())
 	blade_view.show_propeller({"specs": {"diameter_inches": inches, "blades": doc.blades}}, doc)
 	section_view.set_document(doc)
 	_syncing = false

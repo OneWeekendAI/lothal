@@ -3,7 +3,7 @@ extends RefCounted
 ## The model against UIUC wind-tunnel tables, through the shipped Rust solve (spec finding 4). All
 ## figures are unit-free, so density and rpm cancel except where the model has an rpm of its own.
 
-const FIXTURE := "res://tests/fixtures/uiuc_props.json"
+const FIXTURE := "res://data/validation/uiuc_props.json"
 const RHO := 1.225
 const INCH_TO_M := 0.0254
 const J_STEP := 0.01

@@ -34,6 +34,9 @@ static func run() -> Array:
 	results.append_array(_test_caret(catalog, mats))
 	results.append_array(_test_monochrome(catalog, mats))
 	results.append_array(_test_no_stress_on_new_text(catalog, mats))
+	results.append_array(_test_tunnel(catalog, mats))
+	results.append_array(_test_measured_dots(catalog, mats))
+	results.append_array(_test_tunnel_colours(catalog, mats))
 	return results
 
 
@@ -494,5 +497,186 @@ static func _test_no_stress_on_new_text(catalog: PartsCatalog, mats: FrameMateri
 	var low := text.to_lower()
 	out.append(_t("no break warning in the blade section's text",
 		not ("factor" in low or "break" in low or "stress" in low or "overspeed" in low), text))
+	d.free()
+	return out
+
+
+# ---------------------------------------------------------------------------
+# PD8: the wind tunnel tab
+# ---------------------------------------------------------------------------
+
+static func _tunnel(catalog: PartsCatalog, mats: FrameMaterials) -> PropDesigner:
+	var d := _designer(catalog, mats)
+	d.show_tab("tunnel")
+	return d
+
+
+## The designer as a named UIUC size, reached through the real steppers' setters.
+static func _sized(d: PropDesigner, dia_in: float, pitch_in: float, blades: int) -> void:
+	d.doc.diameter_mm = dia_in * PropellerDocument.INCH_TO_MM
+	d.doc.pitch_mm = pitch_in * PropellerDocument.INCH_TO_MM
+	d.set_blades(blades)
+
+
+static func _test_tunnel(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _tunnel(catalog, mats)
+	var t := d.tunnel
+	var g := PropTunnel.geometry_of(d.doc)
+
+	# The subtitle, in every state a user can reach.
+	var check_subtitle := func(state: String) -> void:
+		out.append(_t("subtitle on screen: " + state, t.subtitle.visible and t.visible and t.subtitle.text == PropTunnelPanel.SUBTITLE
+			and t.find_child("TunnelSubtitle", true, false) == t.subtitle, t.subtitle.text))
+	check_subtitle.call("default")
+	for m: String in PropTunnelPanel.METRICS:
+		t.set_metric(m)
+		check_subtitle.call(m)
+	t.set_metric("thrust")
+	t.set_angle(45.0)
+	check_subtitle.call("mid-edgewise")
+	t.set_angle(120.0)
+	check_subtitle.call("refused")
+
+	# A refusal renders as nothing but its reason.
+	out.append(_t("descent is refused, not plotted", t.chart.points.is_empty() and t.warning_label.text == PropTunnel.REASON_DESCENT, t.warning_label.text))
+	out.append(_t("refused: no dots, no shaded blade", t.chart.dots.is_empty() and t.shade_table.is_empty()))
+	t.set_angle(0.0)
+
+	# The curve is the sweep: one point per sweep point, ending where thrust does.
+	var sw := PropTunnel.sweep(g, d.rpm, 0.0)
+	out.append(_t("chart points equal the sweep's", t.chart.points.size() == (sw.points as Array).size(), "%d vs %d" % [t.chart.points.size(), (sw.points as Array).size()]))
+	out.append(_t("sweep at 0 deg is the axial sweep", (sw.points as Array).size() == (PropTunnel.axial_sweep(g, d.rpm).points as Array).size()))
+	out.append(_t("default curve ends at thrust zero", sw.end == "zero_thrust" and t.note_label.text.contains(PropTunnel.END_ZERO_THRUST), t.note_label.text))
+	var all_positive := true
+	for p: Dictionary in t.chart.points:
+		all_positive = all_positive and float(p.y) > 0.0
+		all_positive = all_positive and float(p.x) <= float(sw.j0)
+	out.append(_t("no plotted point past the end", all_positive))
+	var mid: Dictionary = t.chart.points[4]
+	var direct := PropTunnel.point(g, d.rpm, 0.2 * d.rpm / 60.0 * float(g.diameter_m))
+	out.append(_t("a plotted thrust equals the direct solve in g",
+		absf(float(mid.y) - float(direct.thrust_n) * PropTunnelPanel.G_PER_N) < 1e-9, "%f" % float(mid.y)))
+	t.set_metric("power")
+	out.append(_t("power tab plots power", absf(float(t.chart.points[4].y) - float(direct.power_w)) < 1e-9))
+	t.set_metric("efficiency")
+	out.append(_t("efficiency tab plots J T / power form", absf(float(t.chart.points[4].y)
+		- float(direct.thrust_n) * 0.2 * d.rpm / 60.0 * float(g.diameter_m) / float(direct.power_w)) < 1e-9))
+
+	# Off axis: thrust and power only, and the J speeds are split by the angle.
+	t.set_angle(45.0)
+	out.append(_t("off axis has no efficiency curve, and says so", t.chart.points.is_empty() and t.warning_label.text == PropTunnelPanel.NOTE_NO_EFFICIENCY))
+	t.set_metric("thrust")
+	var v: float = 0.2 * d.rpm / 60.0 * float(g.diameter_m)
+	var at45 := PropTunnel.point(g, d.rpm, v * cos(PI / 4.0), v * sin(PI / 4.0))
+	out.append(_t("45 deg point equals the direct solve", absf(float(t.chart.points[4].y) - float(at45.thrust_n) * PropTunnelPanel.G_PER_N) < 1e-6))
+	out.append(_t("off axis says thrust and power only", t.note_label.text.contains(PropTunnelPanel.NOTE_OFF_AXIS), t.note_label.text))
+	t.set_angle(90.0)
+	var flagged := t.chart.segment_counts().y
+	out.append(_t("edgewise past the reach goes dashed with its reason", flagged > 0 and t.warning_label.text != "" , "%d, %s" % [flagged, t.warning_label.text]))
+	var flag_count := 0
+	for p: Dictionary in PropTunnel.sweep(g, d.rpm, 90.0).points:
+		flag_count += 1 if String(p.flag) != "" else 0
+	out.append(_t("every flagged point is on the dashed stretch", flag_count > 0 and flagged >= flag_count - 1, "%d %d" % [flag_count, flagged]))
+	t.set_angle(0.0)
+
+	# Controls.
+	var before := float(t.chart.points[4].y)
+	d.step_rpm(PropDesigner.STEP_RPM)
+	out.append(_t("rpm control moves the curve", float(t.chart.points[4].y) != before))
+	out.append(_t("rpm control moves the figures too", (d._figs["blade_pass"] as Label).text.contains("Hz") and t.rpm_value.text == "%d rpm" % roundi(d.rpm)))
+	var shade_before := t.shade_table
+	t.set_look_j(0.5)
+	out.append(_t("looked-at J moves the shading", t.shade_table != shade_before and t.chart.caret_x == 0.5))
+	var alpha_shade := t.shade_table
+	t.set_shade("thrust")
+	out.append(_t("shade choice moves the shading", t.shade_table != alpha_shade))
+	out.append(_t("shading reaches the blade's own mesh", _mesh_greys(d)))
+	t.set_look_j(99.0)
+	out.append(_t("looked-at J cannot pass the curve's end", t.look_j <= float(t.result.j0)))
+	d.step_diameter(1.0)
+	out.append(_t("a blade change reruns the active tab", absf(float(t.result.points[1].j) - PropTunnel.J_STEP) < 1e-9
+		and t.result == PropTunnel.sweep(PropTunnel.geometry_of(d.doc), d.rpm, 0.0)))
+	d.show_tab("figures")
+	out.append(_t("figures tab clears the shading", _plain_mesh(d) and not t.visible and d.figures_box.visible))
+	d.free()
+	return out
+
+
+## The view's own mesh exists only in the tree, so this builds one from what the view holds. The
+## capture is what sees the view hand it over.
+static func _blade_colors(d: PropDesigner) -> PackedColorArray:
+	var mesh := PropellerMesh.new()
+	mesh.station_shade = d.blade_view._station_shade
+	mesh.rebuild({"specs": {"diameter_inches": d.doc.diameter_mm / PropellerDocument.INCH_TO_MM, "blades": d.doc.blades}}, d.doc)
+	var c: Variant = (mesh.get_node("Blade_0") as MeshInstance3D).mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	mesh.free()
+	return PackedColorArray() if c == null else c
+
+
+static func _mesh_greys(d: PropDesigner) -> bool:
+	var c := _blade_colors(d)
+	if c.is_empty():
+		return false
+	var lo := 1.0
+	var hi := 0.0
+	for x in c:
+		lo = minf(lo, x.v)
+		hi = maxf(hi, x.v)
+		if x.s > 0.001:
+			return false
+	return hi - lo > 0.2
+
+
+static func _plain_mesh(d: PropDesigner) -> bool:
+	return _blade_colors(d).is_empty()
+
+
+static func _test_measured_dots(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _tunnel(catalog, mats)
+	var t := d.tunnel
+	out.append(_t("no dots on a shelf 5 in that matches no table", t.chart.dots.is_empty() and t.dots_label.text == "", t.dots_label.text))
+	for row: Array in [[4.2, 4.0, 2, "APC FF 4.2x4", 8067], [5.0, 3.75, 2, "DA4002 5x3.75", 6045], [9.0, 4.5, 2, "APC E 9x4.5", 6018]]:
+		_sized(d, row[0], row[1], row[2])
+		out.append(_t("dots on %s" % row[3], not t.chart.dots.is_empty() and t.dots_label.text.contains("measured") and t.dots_label.text.contains(row[3]), t.dots_label.text))
+	_sized(d, 4.2, 4.0, 2)
+	d.rpm = 8067.0
+	t.set_metric("efficiency")
+	var table: Array = PropMeasured.match_for(d.doc).rows
+	out.append(_t("a dot is the table's row", absf(t.chart.dots[3].x - float(table[3][0])) < 1e-6 and absf(t.chart.dots[3].y - float(table[3][1 + 2])) < 1e-6))
+	out.append(_t("tested rpm: no scaling claimed", not t.dots_label.text.contains("scaled"), t.dots_label.text))
+	t.set_metric("thrust")
+	var n := 8067.0 / 60.0
+	var want := float(table[3][1]) * 1.225 * n * n * pow(d.doc.diameter_mm * 0.001, 4.0) * PropTunnelPanel.G_PER_N
+	out.append(_t("a thrust dot is Ct in grams", absf(t.chart.dots[3].y - want) < 1e-3, "%f vs %f" % [t.chart.dots[3].y, want]))
+	var fence := t.chart.data_range()
+	var lowest := INF
+	for dot in t.chart.dots:
+		lowest = minf(lowest, dot.y)
+	out.append(_t("the frame holds a measured dot below zero thrust", lowest < 0.0 and fence.position.y <= lowest, "%f, %f" % [lowest, fence.position.y]))
+	d.step_rpm(5000.0)
+	out.append(_t("another rpm says it is scaled", t.dots_label.text.contains("scaled")))
+	t.set_angle(45.0)
+	out.append(_t("no dots off axis: the tables are straight-on", t.chart.dots.is_empty() and t.dots_label.text == ""))
+	t.set_angle(0.0)
+	d.set_blades(3)
+	out.append(_t("no dots on another blade count", t.chart.dots.is_empty()))
+	d.set_blades(2)
+	_sized(d, 4.4, 4.0, 2)
+	out.append(_t("no dots on another diameter", t.chart.dots.is_empty()))
+	_sized(d, 4.2, 4.2, 2)
+	out.append(_t("no dots on another pitch", t.chart.dots.is_empty()))
+	d.free()
+	return out
+
+
+static func _test_tunnel_colours(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _tunnel(catalog, mats)
+	var low := "%s %s %s %s" % [d.tunnel.warning_label.text, d.tunnel.note_label.text, PropTunnelPanel.SUBTITLE, d.tunnel.station_label.text]
+	low = low.to_lower()
+	out.append(_t("no break warning on the tunnel tab", not ("factor" in low or "break" in low or "stress" in low or "overspeed" in low), low))
+	out.append(_t("no flow-field words on the tab", not ("streamline" in low or "smoke" in low or "pressure" in low), low))
 	d.free()
 	return out

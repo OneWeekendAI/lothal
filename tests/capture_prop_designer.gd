@@ -5,7 +5,8 @@ extends SceneTree
 ##   godot --script res://tests/capture_prop_designer.gd -- <out.png> [WxH] [state]
 ##
 ## state: "" (the default) | "shelf" (no pop-up: the shelf and its tile) | "edited" (a 7 in two-blade
-## on PA6+CF with a pad) | "blade" (drawn chord and twist, pitch offer) | "blade_low" (left column scrolled).
+## on PA6+CF with a pad) | "blade" (drawn chord and twist, pitch offer) | "blade_low" (left column scrolled);
+## "tunnel", "tunnel_power", "tunnel_eff", "tunnel_mid", "tunnel_edge", "tunnel_refused", "tunnel_measured", "tunnel_mach".
 ##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
@@ -46,6 +47,26 @@ func _init() -> void:
 			d.set_pad_mm(2.0)
 			d.name_field.text = "Long ranger"
 			d.set_prop_name("Long ranger")
+		if state.begins_with("tunnel"):
+			d.show_tab("tunnel")
+			d.tunnel.set_look_j(0.5)
+		if state == "tunnel_power":
+			d.tunnel.set_metric("power")
+		if state == "tunnel_eff":
+			d.tunnel.set_metric("efficiency")
+		if state == "tunnel_mid":
+			d.tunnel.set_angle(45.0)
+		if state == "tunnel_edge":
+			d.tunnel.set_angle(90.0)
+		if state == "tunnel_refused":
+			d.tunnel.set_angle(120.0)
+		if state == "tunnel_measured":
+			d.doc.diameter_mm = 4.2 * PropellerDocument.INCH_TO_MM
+			d.doc.pitch_mm = 4.0 * PropellerDocument.INCH_TO_MM
+			d.set_blades(2)
+			d.step_rpm(8067.0 - d.rpm)
+		if state == "tunnel_mach":
+			d.step_rpm(60000.0)
 		if state == "blade":
 			d.twist_editor.drag_station_to(5, d.twist_editor.to_pixels(0.6, 27.0))
 			d.chord_editor.drag_station_to(24, d.chord_editor.to_pixels(0.6, 15.0))

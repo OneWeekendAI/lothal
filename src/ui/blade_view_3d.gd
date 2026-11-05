@@ -75,6 +75,7 @@ var _document: PropellerDocument
 var _prop: Dictionary = {}
 var _caret_r_frac := 0.7
 var _stall_bands := PackedFloat64Array()
+var _station_shade := PackedFloat64Array()
 var _dragging := false
 
 
@@ -189,6 +190,12 @@ func set_caret(r_frac: float) -> void:
 ## The same fact in the same place as the panel's shading, on the shape rather than on a graph:
 ## "the inner third is stalled" is a sentence about a region of the blade, and here it is that
 ## region.
+## The tunnel's station shading, drawn on the blade itself. See `PropellerMesh.station_shade`. Takes
+## effect on the next `show_propeller`.
+func set_station_shade(table: PackedFloat64Array) -> void:
+	_station_shade = table
+
+
 func set_stall_bands(bands: PackedFloat64Array) -> void:
 	_stall_bands = bands
 	if _mesh != null:
@@ -268,6 +275,7 @@ func _gui_input(event: InputEvent) -> void:
 # ---------------------------------------------------------------------------
 
 func _rebuild() -> void:
+	_mesh.station_shade = _station_shade
 	_mesh.rebuild(_prop, _document)
 	# Stopped, deliberately — see the header. The rate is set through the same input Lab and Sim
 	# use rather than by reaching into the mesh, so this view has no privileged path.
