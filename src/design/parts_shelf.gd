@@ -23,6 +23,8 @@ signal card_clicked(category: String, part_id: String)
 signal pack_designer_requested
 ## The "Design your own" tile at the end of the motor list was pressed: the motor designer.
 signal motor_designer_requested
+## The "+" tile at the end of the prop list was pressed: the prop designer.
+signal prop_designer_requested
 ## A saved motor's card was right-clicked: its context menu (edit in the designer, delete).
 signal card_menu_requested(category: String, part_id: String)
 
@@ -30,6 +32,7 @@ signal card_menu_requested(category: String, part_id: String)
 const DESIGN_TILES := {
 	"battery": ["AddPack", "New pack", "Design your own battery pack"],
 	"motor": ["AddMotor", "Design your own", "Design your own motor"],
+	"propeller": ["AddProp", "New prop", "Design your own prop"],
 }
 
 const INK := Color(0.93, 0.93, 0.93)
@@ -505,8 +508,10 @@ func _add_design_tile(cat: String) -> void:
 	b.add_child(col)
 	if cat == "battery":
 		b.pressed.connect(func(): pack_designer_requested.emit())
-	else:
+	elif cat == "motor":
 		b.pressed.connect(func(): motor_designer_requested.emit())
+	else:
+		b.pressed.connect(func(): prop_designer_requested.emit())
 	list.add_child(b)
 
 

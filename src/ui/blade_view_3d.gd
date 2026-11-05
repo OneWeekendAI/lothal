@@ -92,6 +92,9 @@ func _init() -> void:
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_viewport.transparent_bg = false
 	_viewport.msaa_3d = Viewport.MSAA_4X
+	# Its own world, or every BladeView3D alive shares one: the prop designer drew the hidden
+	# Propulsion room's blade and stall rings over its own, invisible until the diameters differed.
+	_viewport.own_world_3d = true
 	add_child(_viewport)
 
 	# A poke on every resize, and it is not an optimisation detail. UPDATE_ONCE renders the NEXT

@@ -2034,6 +2034,7 @@ func _build_shelf() -> void:
 	shelf.card_unhovered.connect(func(): if drag_kind == "": clear_preview())
 	shelf.pack_designer_requested.connect(open_pack_designer)
 	shelf.motor_designer_requested.connect(open_motor_designer)
+	shelf.prop_designer_requested.connect(open_prop_designer)
 	shelf.card_menu_requested.connect(open_card_menu)
 	add_child(shelf)
 
@@ -2133,6 +2134,24 @@ func open_motor_designer(saved_id: String = "") -> void:
 	add_child(designer)
 	if saved_id != "":
 		designer.open_motor(saved_id)
+	if designer.is_inside_tree():
+		designer.grab_focus()
+
+
+## The prop designer pop-up, while it is open (null otherwise). Opened by the prop shelf's "+" tile.
+var prop_designer: PropDesigner
+
+
+## Opens the prop designer over the Design Space, starting from this drone's prop. A second call
+## while it is open does nothing.
+func open_prop_designer() -> void:
+	if prop_designer != null:
+		return
+	cancel_drag()
+	var designer := PropDesigner.new(_catalog, FrameMaterials.load_default(), session.build(_catalog))
+	designer.closed.connect(func(): prop_designer = null)
+	prop_designer = designer
+	add_child(designer)
 	if designer.is_inside_tree():
 		designer.grab_focus()
 
