@@ -7,8 +7,8 @@ extends DesignerShell
 ## DERIVED, NOT TYPED. Each figure comes from the code the rest of the app already flies or tests
 ## with (PropTunnel, BladeGeometry, PropStructure, SoftMount); every setter ends in _rederive().
 ##
-## The root safety factor is deliberately NOT a figure here: at a t/c 0.10 root it reads pessimistic
-## on real props (see PropStructure's header), and the Structure tab decides how to show it.
+## The root safety factor stays off this column: it reads pessimistic on real props, so the Structure
+## tab shows it neutrally, for comparing designs, with no warning.
 
 const LEFT_W := 300.0
 const RIGHT_W := 440.0
@@ -35,8 +35,8 @@ const THICKNESS_NOTE := "Thickness moves mass and strength. Thrust and power her
 const TWIST_HELIX_NOTE := "Twist follows the pitch."
 const TWIST_DRAWN_NOTE := "Twist is drawn. Pitch does not set the angles."
 const TWIST_CAP_NOTE := "Hover sits on the lift cap, so pitch and twist show mostly at forward speed."
-const TABS := ["figures", "tunnel"]
-const TAB_LABELS := ["Figures", "Wind tunnel"]
+const TABS := ["figures", "tunnel", "stand", "structure"]
+const TAB_LABELS := ["Figures", "Wind tunnel", "Thrust stand", "Structure"]
 const RPM_RANGE := Vector2(500.0, 60000.0)
 const STEP_RPM := 500.0
 const PITCH_OFFER_NOTE := "Pitch changed, angles did not: the twist is drawn."
@@ -80,6 +80,10 @@ var summary_label: Label
 var tab_row: HFlowContainer
 var active_tab := "figures"
 var tunnel: PropTunnelPanel
+var stand: PropStandPanel
+var structure: PropStructurePanel
+## The drone's parts, for the stand: {frame, propeller, battery, motor} ids.
+var drone_parts: Dictionary = {}
 var figures_box: GridContainer
 var _figs: Dictionary = {}
 
@@ -103,10 +107,12 @@ func _start_from(build: Build) -> void:
 		motor = build.motor
 		mount_spec = VibrationModel.soft_mount_spec_for(build)
 		pad_mm = float(build.assembly_value("soft_mount_m")) * 1000.0
+		drone_parts = {"frame": String(build.frame.get("part_id", "")), "battery": String(build.battery.get("part_id", ""))}
 	else:
 		var parts := DroneClass.parts_for(FALLBACK_CLASS)
 		prop = catalog.get_part(String(parts["propeller"]))
 		motor = catalog.get_part(String(parts["motor"]))
+		drone_parts = {"frame": String(parts["frame"]), "battery": String(parts["battery"])}
 	var authored := PropellerDocument.authored_blade_of(prop)
 	doc = authored if authored != null else PropellerDocument.from_catalog_prop(prop)
 	source_name = String(prop.get("name", ""))
@@ -290,6 +296,14 @@ func _build_right() -> Control:
 	tunnel.name = "TunnelPanel"
 	tunnel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(tunnel)
+	stand = PropStandPanel.new(self)
+	stand.name = "StandPanel"
+	stand.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(stand)
+	structure = PropStructurePanel.new(self)
+	structure.name = "StructurePanel"
+	structure.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(structure)
 	return col
 
 
@@ -524,6 +538,15 @@ func figures() -> Dictionary:
 	}
 
 
+## This prop as a part the rest of the app can fly, from a copy: publishing stamps its document.
+func flyable_record(part_id: String) -> Dictionary:
+	var copy := PropellerDocument.from_dictionary(doc.to_dictionary())
+	var rec := CustomPropellers.record_from_document(copy, materials, "on the prop designer's stand")
+	rec["part_id"] = part_id
+	rec["mass_g"] = float(rec.get("mass_g", 0.0)) + hub_g
+	return rec
+
+
 func _set_fig(key: String, text: String, tag: String) -> void:
 	(_figs[key] as Label).text = text
 	(_figs[key + "_tag"] as Label).text = tag
@@ -576,11 +599,18 @@ func _rederive() -> void:
 
 	_mark_chips(tab_row, TABS, active_tab)
 	var in_tunnel := active_tab == "tunnel"
-	summary_label.visible = not in_tunnel
-	figures_box.visible = not in_tunnel
+	var in_figures := active_tab == "figures"
+	summary_label.visible = in_figures
+	figures_box.visible = in_figures
 	tunnel.visible = in_tunnel
+	stand.visible = active_tab == "stand"
+	structure.visible = active_tab == "structure"
 	if in_tunnel:
 		tunnel.refresh(doc, rpm)
+	elif stand.visible:
+		stand.refresh()
+	elif structure.visible:
+		structure.refresh()
 	blade_view.set_station_shade(tunnel.shade_table if in_tunnel else PackedFloat64Array())
 	blade_view.show_propeller({"specs": {"diameter_inches": inches, "blades": doc.blades}}, doc)
 	section_view.set_document(doc)

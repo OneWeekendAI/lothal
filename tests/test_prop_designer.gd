@@ -37,6 +37,8 @@ static func run() -> Array:
 	results.append_array(_test_tunnel(catalog, mats))
 	results.append_array(_test_measured_dots(catalog, mats))
 	results.append_array(_test_tunnel_colours(catalog, mats))
+	results.append_array(_test_stand(catalog, mats))
+	results.append_array(_test_structure(catalog, mats))
 	return results
 
 
@@ -242,7 +244,7 @@ static func _test_snap_views(catalog: PartsCatalog, mats: FrameMaterials) -> Arr
 	return out
 
 
-## The owner has not decided how the root factor reads; it must not reach this screen.
+## The root factor stays off the figures column; it reads only, neutrally, on the Structure tab.
 static func _test_no_stress_warning(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
 	var out: Array = []
 	var d := _designer(catalog, mats)
@@ -680,3 +682,117 @@ static func _test_tunnel_colours(catalog: PartsCatalog, mats: FrameMaterials) ->
 	out.append(_t("no flow-field words on the tab", not ("streamline" in low or "smoke" in low or "pressure" in low), low))
 	d.free()
 	return out
+
+
+static func _near_eq(a: float, b: float) -> bool:
+	return absf(a - b) <= 1e-9 * maxf(absf(b), 1.0)
+
+
+static func _test_stand(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	d.step_diameter(0.5)
+	d.step_pitch(0.5)
+	d.show_tab("stand")
+	var s := d.stand
+	out.append(_t("stand: shows only on its tab", s.visible and not d.figures_box.visible and not d.tunnel.visible))
+	# The same parts, built the ordinary way.
+	var parts := s.parts()
+	var c := s.bench_catalog()
+	var rec := s.motor_record().duplicate(true)
+	rec["part_id"] = MotorBench.BENCH_MOTOR_ID
+	c.by_id[MotorBench.BENCH_MOTOR_ID] = rec
+	var b := Build.from_ids(c, parts.frame, MotorBench.BENCH_MOTOR_ID, PropStandPanel.BENCH_PROP_ID, parts.battery)
+	var voc := b.resolve_open_circuit_v(Build.AT_NOMINAL)
+	var p := b.uncapped_point(1.0, voc)
+	out.append(_t("stand: full-throttle thrust equals a Build with this prop",
+		_near_eq(float(s.result.max_thrust_g), float(p.thrust_n) / Build.GRAVITY_MPS2 * 1000.0)))
+	out.append(_t("stand: full-throttle current equals a Build with this prop",
+		_near_eq(float(s.result.max_current_a), float(p.pack_current_a))))
+	var with_default := MotorBench.sweep_of_record(s.motor_record(), {"frame": parts.frame, "battery": parts.battery}, {}, catalog)
+	out.append(_t("stand: not the default prop's result",
+		absf(float(s.result.max_thrust_g) - float(with_default.max_thrust_g)) > 1.0,
+		"%s vs %s" % [s.result.max_thrust_g, with_default.max_thrust_g]))
+	out.append(_t("stand: the flown record weighs blades plus hub", _near_eq(float(d.flyable_record("x").mass_g), BladeGeometry.prop_mass_g(d.doc, mats, d.hub_g))))
+	out.append(_t("stand: flying it does not stamp the open document", d.doc.published_mass_g == 0.0))
+	out.append(_t("stand: Limited by line on screen", s.limited_label.text.begins_with("Limited by:"), s.limited_label.text))
+	out.append(_t("stand: the shelf catalog never gets this prop", catalog.get_part(PropStandPanel.BENCH_PROP_ID).is_empty()))
+	# Pack swap reruns, through the picker's own signal.
+	var before_runs := s.run_count
+	var before_a := float(s.result.max_current_a)
+	var before_text := s.result_label.text
+	var moved := false
+	for i in range(1, s.pack_option.item_count):
+		s.pack_option.select(i)
+		s.pack_option.item_selected.emit(i)
+		moved = moved or absf(float(s.result.max_current_a) - before_a) > 0.01
+	out.append(_t("stand: pack picker reruns", s.run_count > before_runs and moved))
+	out.append(_t("stand: screen follows the pack", s.result_label.text != before_text, s.result_label.text))
+	s.pack_option.select(0)
+	s.pack_option.item_selected.emit(0)
+	out.append(_t("stand: back to this drone's pack restores it", _near_eq(float(s.result.max_current_a), before_a)))
+	s.pick_pack(String(s.pack_ids()[1]))
+	out.append(_t("stand: the picker shows the pack in use", String(s.pack_option.get_selected_metadata()) == s.pack_pick))
+	s.pick_pack(PropStandPanel.DRONE)
+	# Motor swap reruns.
+	var moved_m := false
+	for i in range(1, s.motor_option.item_count):
+		s.motor_option.select(i)
+		s.motor_option.item_selected.emit(i)
+		moved_m = moved_m or (not s.result.is_empty() and absf(float(s.result.max_current_a) - before_a) > 0.01)
+	out.append(_t("stand: motor picker reruns", moved_m))
+	s.pick_motor(PropStandPanel.DRONE)
+	# A prop edit reruns; three views, one chart.
+	var t0 := float(s.result.max_thrust_g)
+	d.step_diameter(0.5)
+	out.append(_t("stand: a prop edit reruns", absf(float(s.result.max_thrust_g) - t0) > 0.1))
+	for v: String in PropStandPanel.VIEWS:
+		s.set_view(v)
+		out.append(_t("stand: one chart on view " + v, s.charts.charts.size() == 1))
+	out.append(_t("stand: views differ", String(s.charts.charts[0].title) == "g per watt"))
+	d.free()
+	return out
+
+
+static func _test_structure(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
+	var out: Array = []
+	var d := _designer(catalog, mats)
+	d.show_tab("structure")
+	var s := d.structure
+	var want := PropStructure.assess(d.doc, mats, d.rpm)
+	out.append(_t("structure: factor on screen is PropStructure's", (s.figs["factor"] as Label).text == "%.2f" % float(want.factor)))
+	out.append(_t("structure: stress on screen is PropStructure's", (s.figs["stress"] as Label).text == "%.0f MPa" % float(want.stress_mpa)))
+	out.append(_t("structure: flex on screen is PropStructure's", (s.figs["flex"] as Label).text == "%.1f mm" % float(want.flex_mm)))
+	for key: String in ["stress", "factor", "overspeed", "flex"]:
+		out.append(_t("structure: %s labelled an estimate" % key, "(est.)" in (s.figs[key + "_tag"] as Label).text))
+	out.append(_t("structure: the neutral line is on screen", s.note_label.text == PropStructurePanel.NEUTRAL_NOTE))
+	var f0 := (s.figs["balance"] as Label).text
+	s.set_heavy(50.0)
+	out.append(_t("structure: heavy blade moves the balance", (s.figs["balance"] as Label).text != f0))
+	s.set_details(false)
+	out.append(_t("structure: details closed by default", not s.details_label.visible))
+	s.set_details(true)
+	out.append(_t("structure: details name the root t/c and its source",
+		PropStructure.ROOT_THICKNESS_SOURCE in s.details_label.text, s.details_label.text))
+	# Warning: Mach only, either side of its stated threshold. Factor far under and far over 1: none.
+	var mach_rpm := PropTunnel.MACH_FLAG * 340.3 * 60.0 / (PI * d.doc.diameter_mm * 0.001)
+	d.rpm = mach_rpm * 0.99
+	d._rederive()
+	out.append(_t("structure: no warning just under Mach 0.7", s.warning_label.text == "" and not s.warning_label.visible))
+	d.rpm = mach_rpm * 1.01
+	d._rederive()
+	out.append(_t("structure: warning just over Mach 0.7", s.warning_label.text == PropTunnel.FLAG_MACH and s.warning_label.visible))
+	d.rpm = 2000.0
+	d._rederive()
+	out.append(_t("structure: no warning with factor well over 1", float(s.last.factor) > 1.0 and s.warning_label.text == ""))
+	d.rpm = minf(mach_rpm * 0.99, float(PropStructure.overspeed_rpm(d.doc, mats, 2000.0)) * 1.3)
+	d._rederive()
+	out.append(_t("structure: no warning with factor under 1", float(s.last.factor) < 1.0 and s.warning_label.text == "",
+		"f %s m %s" % [s.last.factor, s.last.tip_mach]))
+	var ink := s.warning_label.get_theme_color("font_color")
+	out.append(_t("structure: warning is amber", ink == DesignSpace.WARN_INK))
+	var low := (s.note_label.text + " " + s.details_label.text).to_lower()
+	out.append(_t("structure: no will-break wording", not ("will break" in low or "unsafe" in low or "fail" in low), low))
+	d.free()
+	return out
+

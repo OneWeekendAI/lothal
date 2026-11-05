@@ -77,6 +77,17 @@ static func sweep_of_record(rec: Dictionary, parts: Dictionary = {}, pack_record
 	return out
 
 
+## The "Limited by" sentence for a catalog motor record flown as it stands. Its limits (current,
+## magnets) come from the nearest grid design, since a shelf record states none. {} if unflyable.
+static func limited_of_record(rec: Dictionary, cfg: MotorConfigs, parts: Dictionary = {},
+		pack_record: Dictionary = {}, catalog: PartsCatalog = null) -> Dictionary:
+	var b := make_build_from_record(rec, parts, pack_record, catalog)
+	if b == null:
+		return {}
+	var f := MotorDesign.from_record(rec, cfg).derive(cfg)
+	return limited_from(b, f, _punch(b, f))
+
+
 ## `parts` with the reference build's ids filling any gap.
 static func resolve_parts(parts: Dictionary) -> Dictionary:
 	var out := DEFAULT_PARTS.duplicate()

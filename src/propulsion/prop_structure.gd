@@ -15,11 +15,16 @@ extends RefCounted
 ##
 ## All of it is *(est.)* and stays so on screen. Left out, and stated here so nobody assumes them:
 ## blade pitch tilting the section's axes, in-plane bending from torque, centrifugal stiffening
-## (δ reads high), a moulded root that is thicker than the mid-blade's t/c (stress reads high), any
+## (δ reads high), an airfoil section having less Z than this rectangle (stress reads low), any
 ## waist narrower than the root, and layer lines in a printed part. Flex does not reach the aero.
 
 ## Midpoint cells along the span. Enough for 1e-4 on the closed forms.
 const SPAN_CELLS := 400
+## The root section's t/c, as a floor under the blade's own. Source: WO2020024488A1, a multirotor UAV
+## propeller patent: maximum relative thickness 11 % +/- 0.5 from hub to 30 % R (7.1 % mid-span). One
+## patent's design for one small UAV prop, not a measured FPV prop: no published FPV figure was found.
+const ROOT_THICKNESS_RATIO := 0.11
+const ROOT_THICKNESS_SOURCE := "UAV prop patent WO2020024488A1, not a measured FPV prop"
 const OVERSPEED_TOLERANCE := 1e-9
 const OVERSPEED_STEPS := 30
 
@@ -99,6 +104,11 @@ static func root_chord_mm(doc: PropellerDocument) -> float:
 	return doc.chord[1] if doc.chord.size() >= 2 else 0.0
 
 
+## The root section's t/c: the blade's own, or the sourced root figure when that is thicker.
+static func root_thickness_ratio(doc: PropellerDocument) -> float:
+	return maxf(doc.thickness_ratio, ROOT_THICKNESS_RATIO)
+
+
 ## Flatwise, the weak axis, mm³.
 static func section_modulus_mm3(chord_mm: float, thickness_ratio: float) -> float:
 	var t := thickness_ratio * chord_mm
@@ -155,10 +165,11 @@ static func _stress(doc: PropellerDocument, materials: FrameMaterials, g: Dictio
 	for row in solved.stations:
 		loads.append([float(row.r_m) * 1000.0, float(row.thrust_n) / float(doc.blades)])
 	var chord := root_chord_mm(doc)
-	var area := doc.thickness_ratio * chord * chord
+	var root_ratio := root_thickness_ratio(doc)
+	var area := root_ratio * chord * chord
 	var centrifugal := centrifugal_force_n(doc, materials.density(doc.material_id), rpm) / area
 	var bending := bending_moment_nmm(loads, root_mm(doc)) \
-		/ section_modulus_mm3(chord, doc.thickness_ratio)
+		/ section_modulus_mm3(chord, root_ratio)
 	return {"ok": true, "centrifugal_mpa": centrifugal, "bending_mpa": bending,
 		"stress_mpa": centrifugal + bending, "loads": loads}
 

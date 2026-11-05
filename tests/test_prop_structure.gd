@@ -85,6 +85,11 @@ static func _beam(results: Array) -> void:
 		PropStructure.tip_flex_mm(doc, 2.4, spread), pow(R_MM, 3.0) / (8.0 * e_mpa * inertia))
 	_near(results, "moment: only the load outboard counts",
 		PropStructure.bending_moment_nmm([[10.0, 5.0], [30.0, 2.0]], 20.0), 20.0, 1e-12)
+	var thin := _uniform(10.0)
+	thin.thickness_ratio = 0.08
+	_near(results, "root: a thinner blade's root reads the sourced figure", PropStructure.root_thickness_ratio(thin), 0.11, 1e-12)
+	thin.thickness_ratio = 0.14
+	_near(results, "root: a thicker blade keeps its own", PropStructure.root_thickness_ratio(thin), 0.14, 1e-12)
 
 
 static func _centrifugal(results: Array, materials: FrameMaterials) -> void:
@@ -126,7 +131,7 @@ static func _stress(results: Array, materials: FrameMaterials) -> void:
 	var moment := 0.0
 	for row in solved.stations:
 		moment += float(row.thrust_n) / 3.0 * (float(row.r_m) * 1000.0 - 6.35)
-	var t := 1.2
+	var t := 12.0 * PropStructure.ROOT_THICKNESS_RATIO
 	_near(results, "stress: bending is the BEMT moment over c·t²/6, across the thin axis",
 		a.bending_mpa, moment / (12.0 * t * t / 6.0))
 	_near(results, "stress: the total is pull plus bending", a.stress_mpa, a.centrifugal_mpa + a.bending_mpa, 1e-12)

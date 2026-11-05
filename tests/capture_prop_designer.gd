@@ -6,7 +6,8 @@ extends SceneTree
 ##
 ## state: "" (the default) | "shelf" (no pop-up: the shelf and its tile) | "edited" (a 7 in two-blade
 ## on PA6+CF with a pad) | "blade" (drawn chord and twist, pitch offer) | "blade_low" (left column scrolled);
-## "tunnel", "tunnel_power", "tunnel_eff", "tunnel_mid", "tunnel_edge", "tunnel_refused", "tunnel_measured", "tunnel_mach".
+## "tunnel", "tunnel_power", "tunnel_eff", "tunnel_mid", "tunnel_edge", "tunnel_refused", "tunnel_measured", "tunnel_mach";
+## "stand", "stand_current", "stand_pack", "structure", "structure_details", "structure_mach".
 ##
 ## Needs a real window; run with HOME pointed at a scratch directory (New drone writes a project).
 
@@ -66,6 +67,18 @@ func _init() -> void:
 			d.set_blades(2)
 			d.step_rpm(8067.0 - d.rpm)
 		if state == "tunnel_mach":
+			d.step_rpm(60000.0)
+		if state.begins_with("stand"):
+			d.show_tab("stand")
+		if state == "stand_current":
+			d.stand.set_view("current")
+		if state == "stand_pack":
+			d.stand.pick_pack(d.stand.pack_ids()[1])
+		if state.begins_with("structure"):
+			d.show_tab("structure")
+		if state == "structure_details":
+			d.structure.set_details(true)
+		if state == "structure_mach":
 			d.step_rpm(60000.0)
 		if state == "blade":
 			d.twist_editor.drag_station_to(5, d.twist_editor.to_pixels(0.6, 27.0))
