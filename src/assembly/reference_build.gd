@@ -73,8 +73,8 @@ static func propeller_k_t() -> float:
 static func propeller_k_q() -> float:
 	return build().k_q
 
-static func build_drone_core() -> DroneCore:
-	return build().build_drone_core()
+static func build_drone_core(field_opts: Dictionary = {}) -> DroneCore:
+	return build().build_drone_core(field_opts)
 
 ## Steady-state hover throttle command (0..1) — the value each motor should sit at, hands-off,
 ## once RPM has settled, ON A FRESH PACK. Solved against the sagged voltage of a full battery,

@@ -7,7 +7,7 @@ extends SceneTree
 ## dumped at the end, so a suite that hangs or crashes names itself instead of leaving
 ## the runner silent.
 
-const SUITES := ["prop page fit", "prop repoint", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop capability", "prop export", "class picker", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
+const SUITES := ["prop page fit", "prop repoint", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop capability", "prop export", "class picker", "bmp classes", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "build panel", "details footers",
 	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "field room", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
@@ -15,7 +15,7 @@ const SUITES := ["prop page fit", "prop repoint", "prop capability", "prop pin",
 	"battery rail", "battery model", "preset pack pin", "cell library", "motor dc", "motor configs", "motor designer", "prop designer", "motor detail mesh", "motor bench", "motor pickers", "motor sheet", "designed motors", "motor presets", "motor current", "pack design", "designed packs", "pack bench", "pack designer", "battery audit", "designed pack flies", "pack sheet", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
 	"yaw authority", "gyro", "wind", "wind numbers", "motor mixer", "control path", "stick release", "warnings", "build warnings", "warning rows", "section list",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio", "spectrum",
-	"custom frames", "custom motors", "custom propellers", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring",
+	"custom frames", "custom motors", "custom propellers", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring", "projects delete",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "fitted frame", "drawn frame persists", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "airframe page", "propulsion page", "power page", "control page", "video page", "config page", "printed page", "field page",
 	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "mount row", "overlay tray", "dock", "camera view", "part finder",
@@ -116,6 +116,19 @@ func _init() -> void:
 		total += 1
 		print("[%s] %s (%s)" % [status, result.name, result.detail])
 
+	var columns_returned: Variant = await _call_columns_run()
+	var columns_results: Array = columns_returned if columns_returned is Array else []
+	if columns_results.is_empty():
+		fail_count += 1
+		total += 1
+		print("[FAIL] suite \"projects columns\" produced no results (crashed, or class not registered)")
+	for result in columns_results:
+		var status: String = "PASS" if result.passed else "FAIL"
+		if not result.passed:
+			fail_count += 1
+		total += 1
+		print("[%s] %s (%s)" % [status, result.name, result.detail])
+
 	print("")
 	if fail_count == 0:
 		print("ALL %d TESTS PASSED" % total)
@@ -148,6 +161,10 @@ func _call_layout_run() -> Variant:
 ## `TestDrawnBuildOpens.run()`, from a helper for the reason `_call_layout_run` gives.
 func _call_drawn_open_run() -> Variant:
 	return await TestDrawnBuildOpens.run(self)
+
+
+func _call_columns_run() -> Variant:
+	return await TestProjectsColumns.run(self)
 
 
 func _call_disk_changes_run() -> Variant:
@@ -439,7 +456,9 @@ func _run_suite(suite_name: String) -> Array:
 		"project menu": return TestProjectMenu.run()
 		"project container": return TestProjectContainer.run()
 		"project wiring": return TestProjectWiring.run()
+		"projects delete": return TestProjectsDelete.run()
 		"class picker": return TestClassPicker.run()
+		"bmp classes": return TestBmpClasses.run()
 		"coaxial build": return TestCoaxialBuild.run()
 		"design space": return TestDesignSpace.run()
 		"design picking": return TestDesignPicking.run()

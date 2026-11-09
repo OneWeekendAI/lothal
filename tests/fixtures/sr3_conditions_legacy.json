@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "selected": "gusty",
+  "conditions": [
+    {"id": "standard", "name": "Standard", "wind_speed_mps": 0.0, "wind_from_deg": 0.0, "gustiness_mps": 0.0, "temperature_c": 15.0},
+    {"id": "gusty", "name": "Gusty 35C", "wind_speed_mps": 6.0, "wind_from_deg": 225.0, "gustiness_mps": 1.5, "temperature_c": 35.0, "gust_tau_s": 3.0, "humidity_pct": 40.0, "roughness_z0_m": 0.1, "wind_ref_height_m": 10.0, "future_field": 7}
+  ]
+}

@@ -88,11 +88,17 @@ static func _migration() -> Array:
 ## day before it was deleted): [AUW g, T/W, hover throttle, flight min, top km/h, R ohm, pack mass g].
 ## Re-pinned at the DC-law motor re-baseline, and again at the prop chapter (k_t and k_q from BEMT, 2026-11-04): hover, flight time, top speed and the non-reference packs' T/W
 ## moved with the motor law; AUW, R and mass are as captured.
+## Flight-time column (index 3) re-pinned a third time at SR1-SR2 (2026-11-09): forward flight now costs rear-rotor interference
+## (up to +9.5 % power in the 5-15 m/s window), directional drag and profile-power growth (1+4.65 mu^2), less the translational lift
+## the old thrust-ratio cap threw away. shed_4s_1300 8.361 -> 6.864 min (-17.9 %, the same cut as battery_4s_1300 in
+## test_preset_pack_pin: 8.363 -> 6.865, and the 0.02 % gap between the two packs is unchanged); long_range_6s 16.073 -> 15.367 (-4.4 %,
+## a high-resistance Li-ion pack, which moves least, as the preset battery_6s_4000_liion does: 15.13 -> 15.02, -0.7 %; mechanism not isolated). Every other column
+## (AUW, T:W, hover throttle, top speed, R, mass) is unchanged to 1e-9, so hover physics did not move.
 const V1_GOLDEN := {
 	"custom_shed_4s_1300": [477.480708465516, 8.64188216420273, 0.31956843668757,
-		8.36114575110346, 104.940833999123, 0.0113, 155.0],
+		6.86398367309389, 104.940833999123, 0.0113, 155.0],
 	"custom_long_range_6s": [944.980708465516, 8.61511446938397, 0.34437748810877,
-		16.0728491537023, 147.631172121907, 0.2345, 612.5],
+		15.3669031649656, 147.631172121907, 0.2345, 612.5],
 	"custom_whoop_1s": [327.030708465516, 0.91282443245776, 1.0,
 		0.0, 46.9173887685779, 0.0721, 9.5],
 }

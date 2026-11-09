@@ -72,8 +72,16 @@ static func run() -> Array:
 ## RE-FROZEN again at the DC-law motor re-baseline (pack current = ESC duty x winding current; k_t fitted at the
 ## loaded rated rpm): average flight current 15.753 -> 10.321 A, flight time 4.5705 -> 6.9757 min, hover current
 ## 11.20 -> 5.485 A. Re-frozen at the prop chapter (2026-11-04): 10.321 -> 7.948 A, 6.9757 -> 9.0584 min, hover 5.485 -> 4.728 A.
-const GOLDEN_AVG_CURRENT := 7.948424800497509  # 17 sig. digits: the 20-digit literal parses one ulp off
-const GOLDEN_FLIGHT_TIME := 9.05839858930204045
+## RE-FROZEN at SR1 (2026-11-09): the forward-flight thrust ratio is uncapped (edgewise flow now buys thrust, i.e.
+## translational lift) and drag is directional (a leaned airframe presents top area): 7.948 -> 8.336 A, 9.0584 -> 8.6371 min.
+## RE-FROZEN at the kappa decision (2026-11-09): kappa 1.15 in hover and forward flight, so the 1.045 forward-over-hover penalty on
+## induced power is gone: average flight current 9.4209 -> 9.3152 A (-1.1 percent), flight time 7.6426 -> 7.7293 min, and the flight
+## times in wind 3/7/12 m/s rise 0.9/0.6/0.4 percent; hover-in-wind currents fall 1.1/1.8/1.5 percent (the breeze gives edgewise flow
+## and the old penalty was applied to it). Hover in still air (HOVER_0) is unchanged.
+## RE-FROZEN AGAIN at SR1 bucket-depth terms (2026-11-09): 8.336 -> 9.421 A, 8.6371 -> 7.6426 min (induced-power factor,
+## profile growth, rear-rotor interference all cost power in forward flight; hover unchanged).
+const GOLDEN_AVG_CURRENT := 9.31523917734718587   # 17 sig. digits: the 20-digit literal parses one ulp off
+const GOLDEN_FLIGHT_TIME := 7.72927013780705785
 
 ## MUTATION THIS CATCHES: the wind term added as `+ wind_mps` with no zero guard, using a non-zero
 ## default. That mutation moves BOTH figures away from the golden literals even at the call sites
@@ -260,10 +268,11 @@ static func _hover_delegates_in_source() -> Array:
 ## needed for check 3: fixing check 5 restores it.
 ## Re-measured 2026-09-27 — see GOLDEN_AVG_CURRENT's note (the ceiling bounds the bisection).
 ## Re-measured 2026-11-04 (prop chapter: k_t and k_q from BEMT; MOTOR_REBASELINE.md).
-const FT_CALM := 9.05839858930204045
-const FT_3 := 7.64968877955128779
-const FT_7 := 5.86248309064232753
-const FT_12 := 3.87584312795206287
+## Re-measured 2026-11-09 (SR1, see GOLDEN_AVG_CURRENT).
+const FT_CALM := 7.72927013780705785
+const FT_3 := 6.03157721952415304
+const FT_7 := 3.96522514168554707
+const FT_12 := 2.18131586257820320
 
 ## MUTATION THIS CATCHES: the wind term applied to one segment only. With only one of five legs
 ## seeing the wind, the weighted average moves far less per m/s of wind than the pinned literals
@@ -297,9 +306,10 @@ static func _flight_time_falls() -> Array:
 
 ## Re-measured 2026-09-27 — see GOLDEN_AVG_CURRENT's note (the ceiling bounds the bisection).
 const HOVER_0 := 4.72773575204462837
-const HOVER_3 := 4.66364065915212667
-const HOVER_7 := 4.44437792997236603
-const HOVER_12 := 4.84202127930106396
+## Re-measured 2026-11-09 (SR1, see GOLDEN_AVG_CURRENT). HOVER_0 is unchanged: still air has no edgewise flow.
+const HOVER_3 := 4.64617526903505684
+const HOVER_7 := 4.58996330567381250
+const HOVER_12 := 4.87021052631011653
 
 ## MUTATION THIS CATCHES: `hover_current_in_wind_a` ignoring its argument. With the argument
 ## ignored, every one of the four pinned values below collapses to HOVER_0 (or whatever constant
@@ -334,9 +344,11 @@ static func _hover_current_measured_shape() -> Array:
 			+ "measured minimum sits at or past 7 m/s for this build",
 		h7 < h0 and h7 < h3, "calm=%.4f, 3 m/s=%.4f, 7 m/s=%.4f" % [h0, h3, h7]))
 	results.append(TestResult.new(
-		"12 m/s of headwind draws MORE hover current than calm — the drag term has overtaken the "
-			+ "lift saved by this point (measured; the crossing sits between 7 and 12 m/s here)",
-		h12 > h0, "calm=%.4f, 12 m/s=%.4f" % [h0, h12]))
+		"22 m/s of headwind draws MORE hover current than calm — the drag term has overtaken the "
+			+ "lift saved by this point (SR1: the crossing moved from between 7 and 12 m/s to between 12 and 22 m/s "
+			+ "once edgewise flow raises thrust and drag is directional; SR1 bucket terms: the induced-power factor, profile growth and rear-rotor interference move it again, to between 7 and 12 m/s: 7 m/s still draws less than calm, 12 m/s more)",
+		build.hover_current_in_wind_a(22.0) > h0 and h12 > h0 and h7 < h0,
+		"calm=%.4f, 12 m/s=%.4f, 22 m/s=%.4f" % [h0, h12, build.hover_current_in_wind_a(22.0)]))
 	results.append(TestResult.new(
 		"the curve is genuinely non-monotonic: it falls from calm to 7 m/s, then rises past it",
 		h7 < h0 and h12 > h7,

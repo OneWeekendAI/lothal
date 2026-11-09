@@ -51,7 +51,10 @@ extends RefCounted
 ## digit. That is the correct direction: the model now uses the number rather than its rounding.
 ##
 ## ---------------------------------------------------------------------------
-## HUMIDITY IS SKIPPED, AND HERE IS THE MEASUREMENT RATHER THAN THE WORD "NEGLIGIBLE"
+## HUMIDITY (SR2: NOW AN OPTIONAL FIELD, DEFAULT 0 = DRY). The text below is the original argument for
+## skipping it, kept because its table is the measurement. Humidity is applied through the virtual
+## temperature (`virtual_temperature_k`), and 0 % reproduces the dry numbers to the bit.
+## ORIGINAL HEADING: HUMIDITY IS SKIPPED, AND HERE IS THE MEASUREMENT RATHER THAN THE WORD "NEGLIGIBLE"
 ## ---------------------------------------------------------------------------
 ##
 ## This models DRY air. Moist air is less dense, and the size of that is measurable rather than
@@ -118,12 +121,40 @@ const MAX_TEMPERATURE_C := 80.0
 
 var elevation_m := STANDARD_ELEVATION_M
 var temperature_c := STANDARD_TEMPERATURE_C
+## Relative humidity, percent 0..100. SR2. 0 (the default) is the dry air everything was quoted in.
+var humidity_pct := 0.0
+## SR3: a measured station pressure in Pa (a world may carry one). 0 = use the standard atmosphere at the elevation.
+var pressure_override_pa := 0.0
+
+## Ratio of the gas constants of dry air and water vapour, Rd/Rv = 0.622 (defined by the molar masses,
+## 28.9644 / 18.01528 g/mol).
+const EPSILON := 0.62198
 
 
 func _init(p_elevation_m: float = STANDARD_ELEVATION_M,
-		p_temperature_c: float = STANDARD_TEMPERATURE_C) -> void:
+		p_temperature_c: float = STANDARD_TEMPERATURE_C, p_humidity_pct: float = 0.0) -> void:
 	elevation_m = clampf(p_elevation_m, MIN_ELEVATION_M, MAX_ELEVATION_M)
 	temperature_c = clampf(p_temperature_c, MIN_TEMPERATURE_C, MAX_TEMPERATURE_C)
+	humidity_pct = clampf(p_humidity_pct, 0.0, 100.0)
+
+
+## Saturation vapour pressure over water, Pa, Bolton (1980), Monthly Weather Review 108, 1046-1053,
+## eq. 10: es = 611.2 exp(17.67 T / (T + 243.5)) with T in C. Good to 0.1 % from -30 to 35 C.
+static func saturation_vapour_pressure_pa(p_temperature_c: float) -> float:
+	return 611.2 * exp(17.67 * p_temperature_c / (p_temperature_c + 243.5))
+
+
+## Vapour pressure e = RH * es(T), Pa.
+func vapour_pressure_pa() -> float:
+	return humidity_pct / 100.0 * saturation_vapour_pressure_pa(temperature_c)
+
+
+## Virtual temperature, K: the temperature dry air would need to have the density of this moist air
+## at the same pressure. Tv = T / (1 - (e/p)(1 - epsilon)); Wallace and Hobbs, Atmospheric Science
+## (2nd ed. 2006) eq. 3.16 / AMS Glossary "virtual temperature".
+func virtual_temperature_k() -> float:
+	var t_k := temperature_c + KELVIN_AT_ZERO_C
+	return t_k / (1.0 - (vapour_pressure_pa() / pressure_pa()) * (1.0 - EPSILON))
 
 
 ## Sea level, 15 C. The oracle's air, and what a course that never said otherwise is flown in.
@@ -148,7 +179,7 @@ static func standard() -> AirDensity:
 static func compose(p_site: Site, p_conditions: Conditions) -> AirDensity:
 	var where := p_site if p_site != null else Site.new()
 	var weather := p_conditions if p_conditions != null else Conditions.standard()
-	return AirDensity.new(where.elevation_m, weather.temperature_c)
+	return AirDensity.new(where.elevation_m, weather.temperature_c, weather.humidity_pct)
 
 
 ## Pressure at this elevation, from the barometric formula on the standard lapse rate.
@@ -159,6 +190,8 @@ static func compose(p_site: Site, p_conditions: Conditions) -> AirDensity:
 ## correct rather than an oversight — see the header. The pressure at a place is what its
 ## elevation makes it; the builder's thermometer describes the air sitting at that pressure.
 func pressure_pa() -> float:
+	if pressure_override_pa > 0.0:
+		return pressure_override_pa
 	var exponent := (STANDARD_GRAVITY_MPS2 * MOLAR_MASS_AIR_KG_PER_MOL) / (
 			UNIVERSAL_GAS_CONSTANT * LAPSE_RATE_K_PER_M)
 	var ratio := 1.0 - (LAPSE_RATE_K_PER_M * elevation_m) / SEA_LEVEL_TEMPERATURE_K
@@ -169,7 +202,7 @@ func pressure_pa() -> float:
 ##
 ##     rho = P / (R_specific * T)
 func kgm3() -> float:
-	return pressure_pa() / (SPECIFIC_GAS_CONSTANT_DRY_AIR * (temperature_c + KELVIN_AT_ZERO_C))
+	return pressure_pa() / (SPECIFIC_GAS_CONSTANT_DRY_AIR * virtual_temperature_k())
 
 
 ## Density at standard conditions. Computed through the same path rather than written as 1.225, so
@@ -207,11 +240,15 @@ static func from_data(data: Variant) -> AirDensity:
 	var temperature: Variant = record.get("temperature_c", STANDARD_TEMPERATURE_C)
 	if not _is_number(elevation) or not _is_number(temperature):
 		return standard()
-	return AirDensity.new(float(elevation), float(temperature))
+	var humidity: Variant = record.get("humidity_pct", 0.0)
+	return AirDensity.new(float(elevation), float(temperature), float(humidity) if _is_number(humidity) else 0.0)
 
 
 func to_data() -> Dictionary:
-	return {"elevation_m": elevation_m, "temperature_c": temperature_c}
+	var d := {"elevation_m": elevation_m, "temperature_c": temperature_c}
+	if humidity_pct > 0.0:
+		d["humidity_pct"] = humidity_pct
+	return d
 
 
 static func _is_number(value: Variant) -> bool:

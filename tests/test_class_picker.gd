@@ -28,6 +28,7 @@ static func run() -> Array:
 	var results: Array = []
 	var catalog := PartsCatalog.load_default()
 	results.append_array(_test_new_lands_on_the_picker())
+	results.append_array(_test_back_leaves_the_picker())
 	results.append_array(_test_arrows_walk_in_size_order(catalog))
 	results.append_array(_test_choosing_writes_the_project(catalog))
 	results.append_array(_test_design_space_default_matches_the_class(catalog))
@@ -167,6 +168,56 @@ static func _test_new_lands_on_the_picker() -> Array:
 				and shell.container.project.drone_class == "",
 			"path=%s class='%s'" % [shell.container.path, shell.container.project.drone_class]))
 		_cleanup(shell)
+	return results
+
+
+const BACK_SCRATCH := "user://test_picker_back_builds"
+
+
+static func _count_builds() -> int:
+	var n := 0
+	for f in DirAccess.get_files_at(BACK_SCRATCH):
+		if f.ends_with("." + ProjectContainer.EXTENSION):
+			n += 1
+	return n
+
+
+## Back and Esc on a new drone's picker: the projects screen shows, the picker is gone, and no
+## build file is left (the scratch library holds none afterwards). Runs in a scratch library.
+static func _test_back_leaves_the_picker() -> Array:
+	var results: Array = []
+	var saved_root := ProjectLibrary.root
+	ProjectLibrary.root = BACK_SCRATCH
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(BACK_SCRATCH))
+	for how in ["Back button", "Esc"]:
+		var shell := GlassShell.new()
+		shell._clear_project()
+		var base := _count_builds()
+		shell.projects_screen.new_requested.emit()
+		var picker := shell.class_picker
+		var has_btn: bool = picker != null and picker.back_button != null \
+			and picker.back_button.is_visible_in_tree() == false  # not in a window tree yet
+		results.append(TestResult.new("%s: the picker has a Back button" % how,
+			picker != null and picker.back_button != null and picker.back_button.visible
+				and picker.back_button.text.contains("Back"), str(has_btn)))
+		results.append(TestResult.new("%s: the new drone is on disk while the picker is up" % how,
+			_count_builds() == base + 1, "%d" % _count_builds()))
+		if how == "Esc":
+			var ev := InputEventAction.new()
+			ev.action = "ui_cancel"
+			ev.pressed = true
+			picker._unhandled_input(ev)
+		else:
+			picker.back_button.pressed.emit()
+		results.append(TestResult.new("%s: shows the projects screen, no picker, no project open" % how,
+			shell.projects_screen.visible and shell.class_picker == null and shell.container == null,
+			"screen=%s picker=%s" % [shell.projects_screen.visible, shell.class_picker]))
+		results.append(TestResult.new("%s: creates no build file" % how,
+			_count_builds() == base, "%d vs %d" % [_count_builds(), base]))
+		shell.free()
+	for f in DirAccess.get_files_at(BACK_SCRATCH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(BACK_SCRATCH + "/" + f))
+	ProjectLibrary.root = saved_root
 	return results
 
 

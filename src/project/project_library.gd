@@ -24,14 +24,33 @@ const DIR := "user://builds"
 ## Where a deleted drone goes. A subdirectory of DIR rather than a sibling, so it is reachable
 ## from the same "Reveal saved files" folder the builder already knows.
 const TRASH_SUBDIR := "trash"
+## The folder actually used. Always DIR in the app; a test points it at a temporary directory so
+## nothing it saves or deletes can touch the builder's real builds.
+static var root := DIR
+
+
+## Renames the drone stored at `path`, in place. The file keeps its name (it is the project id), so
+## every recents entry stays valid and shows the new name the next time its label is read.
+## Returns "" on success, otherwise the reason. A blank name is refused, not defaulted.
+static func rename(path: String, new_name: String, custom_parts_path: String = CustomParts.SAVE_PATH) -> String:
+	var trimmed := new_name.strip_edges()
+	if trimmed == "":
+		return "A drone needs a name."
+	var container := ProjectContainer.open(path)
+	if container == null:
+		return "That drone could not be opened."
+	container.project.name = trimmed
+	if not container.write("", custom_parts_path):
+		return "That drone could not be saved."
+	return ""
 
 
 static func ensure_dir() -> void:
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(DIR))
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(root))
 
 
 static func path_for(project: Project) -> String:
-	return "%s/%s.%s" % [DIR, project.project_id, ProjectContainer.EXTENSION]
+	return "%s/%s.%s" % [root, project.project_id, ProjectContainer.EXTENSION]
 
 
 ## Moves a container into the app's trash — a rename, never a delete (§10 of the projects design).
@@ -47,7 +66,7 @@ static func delete(path: String) -> void:
 	if path == "" or not FileAccess.file_exists(path):
 		return
 	ensure_dir()
-	var trash := "%s/%s" % [DIR, TRASH_SUBDIR]
+	var trash := "%s/%s" % [root, TRASH_SUBDIR]
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(trash))
 	var target := "%s/%s" % [trash, path.get_file()]
 	# A container can only be deleted once, so a collision is near-impossible; if one somehow
@@ -104,7 +123,7 @@ static func starting_project(p_name: String = "") -> Project:
 static func _default_build_name() -> String:
 	ensure_dir()
 	var highest := -1
-	for folder in [DIR, "%s/%s" % [DIR, TRASH_SUBDIR]]:
+	for folder in [root, "%s/%s" % [root, TRASH_SUBDIR]]:
 		var absolute := ProjectSettings.globalize_path(folder)
 		if not DirAccess.dir_exists_absolute(absolute):
 			continue

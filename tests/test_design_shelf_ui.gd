@@ -173,6 +173,8 @@ static func _test_shelf(catalog: PartsCatalog) -> Array:
 		not bad.is_empty() and String(bad["reason"]) != ""
 		and (bad["button"] as Button).get_theme_color("font_color") == PartsShelf.INK_FAINT, "%s" % bad.get("reason", "")))
 	ds.shelf.toggle_category("battery")
+	# 1S-3S packs are made for other classes (ClassFit): held back by default, under "does not fit" when shown.
+	ds.shelf.set_show_misfits("battery", true)
 	var cells: Array = ds.shelf.rows.filter(func(r): return String(r["category"]) == "battery") \
 		.map(func(r): return int(catalog.get_part(String(r["id"])).get("specs", {}).get("cells", 0)))
 	var last_big := -1

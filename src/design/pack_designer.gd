@@ -141,9 +141,10 @@ func _init(p_catalog: PartsCatalog = null, p_lib: CellLibrary = null, p_store: D
 # Opening
 # ---------------------------------------------------------------------------
 
-## A fresh default pack (4S1P of 1500 mAh LiPo cells).
+## A fresh pack: sized like the pack on the drone it is opened from (PackDesign.default_for_pack),
+## else the default (4S1P of 1500 mAh LiPo cells).
 func open_new() -> void:
-	design = PackDesign.default_design(lib)
+	design = PackDesign.default_for_pack(lib, build.battery) if build != null else PackDesign.default_design(lib)
 	part_id = ""
 	read_only = false
 	chemistry_filter = ""

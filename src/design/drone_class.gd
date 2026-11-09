@@ -20,12 +20,15 @@ const DEFAULT_ID := "five_inch"
 
 ## Each entry: id, name, use, and the typical figures as display strings. `wheelbase_mm` is the
 ## wheelbase of the class's Blender model (tools/blender/build_drone.py CFGS), shown as the size cue.
-## `seed` is {project category: catalog id}.
+## `cells` (series count) and `prop_in` (inches) are the same typical line as numbers, read ONLY to
+## decide which catalog parts the shelf offers first (ClassFit); they are never physics. `seed` is
+## {project category: catalog id}.
 const CLASSES: Array[Dictionary] = [
 	{
 		"id": "tiny_whoop", "name": "Tiny Whoop", "use": "Indoor",
 		"props": "31–40 mm", "wheelbase": "65–75 mm", "battery": "1S", "auw": "20–35 g",
 		"wheelbase_mm": 65.0,
+		"cells": Vector2i(1,1), "prop_in": Vector2(1.22,1.57),
 		"seed": {
 			"frame": "frame_65mm_whoop_lite", "motor": "motor_0802_19000kv",
 			"propeller": "prop_16x12x4", "battery": "battery_1s_300",
@@ -38,6 +41,7 @@ const CLASSES: Array[Dictionary] = [
 		"id": "toothpick", "name": "Toothpick", "use": "Light outdoor",
 		"props": "2–2.5\"", "wheelbase": "90–120 mm", "battery": "1–2S", "auw": "40–80 g",
 		"wheelbase_mm": 110.0,
+		"cells": Vector2i(1,2), "prop_in": Vector2(2.0,2.5),
 		"seed": {
 			"frame": "frame_25in_whoop", "motor": "motor_1103_8000kv",
 			"propeller": "prop_25x25x4", "battery": "battery_2s_450",
@@ -50,6 +54,7 @@ const CLASSES: Array[Dictionary] = [
 		"id": "sub250_35", "name": "Sub-250", "use": "Under 250 g",
 		"props": "3.5\"", "wheelbase": "150–160 mm", "battery": "4S", "auw": "≤ 249 g",
 		"wheelbase_mm": 155.0,
+		"cells": Vector2i(4,4), "prop_in": Vector2(3.5,3.5),
 		"seed": {
 			"frame": "frame_35in_freestyle", "motor": "motor_1404_4600kv",
 			"propeller": "prop_35x28x3", "battery": "battery_4s_650",
@@ -62,6 +67,7 @@ const CLASSES: Array[Dictionary] = [
 		"id": "cinewhoop_3", "name": "3\" Cinewhoop", "use": "Smooth video",
 		"props": "3\"", "wheelbase": "130–160 mm", "battery": "4S", "auw": "150–250 g",
 		"wheelbase_mm": 160.0,
+		"cells": Vector2i(4,4), "prop_in": Vector2(3.0,3.0),
 		# Sources are on each catalog part (data/parts/*.json "source"). The frame is the new
 		# class-typical 3" cinewhoop (70 mm arm, 20x20 stack for the 4S 4-in-1); the 1404 3800KV
 		# and 3x3x3 are the catalog's own 3" pair; 4S 650 is the pack the catalog sources to a 3"
@@ -79,6 +85,7 @@ const CLASSES: Array[Dictionary] = [
 		"id": "four_inch", "name": "4\"", "use": "Light freestyle",
 		"props": "4\"", "wheelbase": "170–180 mm", "battery": "4–6S", "auw": "300–450 g",
 		"wheelbase_mm": 175.0,
+		"cells": Vector2i(4,6), "prop_in": Vector2(4.0,4.0),
 		# New class-typical 4" frame and 4x2.5x3 prop (sources on the parts). 1507 3600KV is the
 		# catalog's 4S freestyle motor; 4S 1300 is its 4S pack (155 g); 20 A 4-in-1 and F405 20x20
 		# match the frame's 20x20 stack.
@@ -94,6 +101,7 @@ const CLASSES: Array[Dictionary] = [
 		"id": "five_inch", "name": "5\"", "use": "Freestyle and racing",
 		"props": "5\"", "wheelbase": "210–230 mm", "battery": "4–6S", "auw": "550–750 g",
 		"wheelbase_mm": 220.0,
+		"cells": Vector2i(4,6), "prop_in": Vector2(5.0,5.0),
 		# The reference build. Read from ReferenceBuild rather than copied, so the default class
 		# can never drift from the oracle every other suite pins.
 		"seed": {
@@ -106,6 +114,7 @@ const CLASSES: Array[Dictionary] = [
 		"id": "six_inch", "name": "6\"", "use": "Longer flights",
 		"props": "6\"", "wheelbase": "250 mm", "battery": "6S", "auw": "700–900 g",
 		"wheelbase_mm": 250.0,
+		"cells": Vector2i(6,6), "prop_in": Vector2(6.0,6.0),
 		"seed": {
 			"frame": "frame_6in_long_range", "motor": "motor_2506_1500kv",
 			"propeller": "prop_6x45x3", "battery": "battery_6s_1300",
@@ -116,6 +125,7 @@ const CLASSES: Array[Dictionary] = [
 		"id": "seven_lr", "name": "7\" Long Range", "use": "Long range",
 		"props": "7\"", "wheelbase": "280–300 mm", "battery": "6S", "auw": "0.8–1.2 kg",
 		"wheelbase_mm": 290.0,
+		"cells": Vector2i(6,6), "prop_in": Vector2(7.0,7.0),
 		"seed": {
 			"frame": "frame_7in_long_range", "motor": "motor_2807_1300kv",
 			"propeller": "prop_7x35x2", "battery": "battery_6s_1300",
@@ -127,6 +137,7 @@ const CLASSES: Array[Dictionary] = [
 		"id": "cinelifter", "name": "Cinelifter", "use": "Cinema cameras",
 		"props": "8–10\"", "wheelbase": "350–450 mm", "battery": "6–8S", "auw": "2–4 kg",
 		"wheelbase_mm": 400.0,
+		"cells": Vector2i(6,8), "prop_in": Vector2(8.0,10.0),
 		# SOURCED to one real aircraft: the iFlight Taurus X8 V3 (O4, 6S), a COAXIAL X8 like the
 		# Blender model — 400 mm wheelbase, eight XING2 3110 1250KV on HQ 8043 (8x4.3x3) props, a
 		# BLITZ E80 80 A stack, DJI O4 Pro, the iFlight Fullsend 6S 5600mAh 95C pack, takeoff weight
@@ -147,6 +158,7 @@ const CLASSES: Array[Dictionary] = [
 		"id": "x_class", "name": "X-Class", "use": "Giant racing",
 		"props": "10–13\"", "wheelbase": "600–800 mm", "battery": "8–12S", "auw": "3–6 kg",
 		"wheelbase_mm": 700.0,
+		"cells": Vector2i(8,12), "prop_in": Vector2(10.0,13.0),
 		# No new parts: the catalog has no 8S+ pack and no 13" prop that its BEMT solver converges on
 		# (a trial 13x4.4x2 diverged in four suites). The closest existing preset is the 10" long-range
 		# frame (the top of the class's 10-13" props) on the 10x5x2 bi-blade, the 2808 1300KV and the

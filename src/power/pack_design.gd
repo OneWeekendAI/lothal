@@ -49,6 +49,36 @@ static func default_design(lib: CellLibrary) -> PackDesign:
 	return d
 
 
+## A starting pack for a drone: the cell count of the pack it flies, and the cells (same chemistry)
+## and parallel count whose total mAh come nearest that pack's. A starting point the builder
+## changes, not a copy of the pack. The default design when `battery` is empty or names no cell.
+static func default_for_pack(lib: CellLibrary, battery: Dictionary) -> PackDesign:
+	var specs: Dictionary = battery.get("specs", {})
+	var want_mah := float(specs.get("mah", 0.0))
+	var cells := int(specs.get("cells", 0))
+	if want_mah <= 0.0 or cells <= 0:
+		return default_design(lib)
+	var chem := String(specs.get("chemistry", "LiPo"))
+	var pool := lib.by_chemistry(chem)
+	if pool.is_empty():
+		return default_design(lib)
+	var best: Dictionary = {}
+	var best_p := 1
+	var best_err := INF
+	for c in pool:
+		for np in range(P_RANGE.x, P_RANGE.y + 1):
+			var err := absf(float(c["specs"]["mah"]) * np - want_mah) / want_mah + 0.001 * np
+			if err < best_err:
+				best_err = err
+				best = c
+				best_p = np
+	var d := PackDesign.new()
+	d.cell = best
+	d.series = clampi(cells, S_RANGE.x, S_RANGE.y)
+	d.parallel = best_p
+	return d
+
+
 func is_legacy() -> bool:
 	return not legacy_specs.is_empty()
 

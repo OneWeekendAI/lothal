@@ -85,6 +85,15 @@ var temperature_c := AirDensity.STANDARD_TEMPERATURE_C
 ## why gustiness is left out — it is a noise process whose mean is the steady figure already in
 ## the key — and a time constant of that same process is left out on the identical argument.
 var gust_tau_s := DEFAULT_GUST_TAU_S
+## SR2. Relative humidity, percent (0..100). 0 = dry air, which is what every number quoted before
+## SR2 assumed. A labelled field: nobody can know the humidity of an unspecified future day.
+var humidity_pct := 0.0
+## SR2. Surface roughness length z0, metres (Wieringa class values, see `Wind.ROUGHNESS`). Sets how
+## fast the wind falls toward the ground. Default is open grass, 0.03 m.
+var roughness_z0_m := 0.03
+## SR2. The height above ground `wind_speed_mps` is quoted at, metres. 10 m is the weather-report
+## standard. Old files had no such field and were uniform; at 10 m they read identically.
+var wind_ref_height_m := 10.0
 
 ## Everything the file held that this version does not recognise, kept so that opening an older
 ## build does not silently destroy a newer one's settings.
@@ -123,13 +132,16 @@ func has_steady_wind() -> bool:
 # ---------------------------------------------------------------------------
 
 const KNOWN_KEYS := ["id", "name", "wind_speed_mps", "wind_from_deg", "gustiness_mps",
-	"temperature_c", "gust_tau_s"]
+	"temperature_c", "gust_tau_s", "humidity_pct", "roughness_z0_m", "wind_ref_height_m"]
 
 ## The five the builder authors, as distinct from the two that identify the set. The literal the
 ## suite checks `to_data()` against, kept here rather than in the test so that the design statement
 ## and the code are the same sentence.
 const AUTHORED_KEYS := ["wind_speed_mps", "wind_from_deg", "gustiness_mps", "temperature_c",
 	"gust_tau_s"]
+## SR2 additions. Written ONLY when they differ from their defaults, so a file saved before SR2
+## round-trips byte-for-byte and a file that never set them stays the shape it was.
+const OPTIONAL_KEYS := ["humidity_pct", "roughness_z0_m", "wind_ref_height_m"]
 
 
 ## A set from a record. An unreadable field falls back to its standard value rather than dropping
@@ -158,6 +170,10 @@ static func from_data(data: Variant) -> Conditions:
 	# guess — which is exactly what that file was flown at, so the migration is a no-op in effect.
 	out.gust_tau_s = _number(record.get("gust_tau_s"), DEFAULT_GUST_TAU_S)
 
+	out.humidity_pct = _number(record.get("humidity_pct"), 0.0)
+	out.roughness_z0_m = _number(record.get("roughness_z0_m"), 0.03)
+	out.wind_ref_height_m = _number(record.get("wind_ref_height_m"), 10.0)
+
 	out._unknown = JsonStore.unknown_fields(record, KNOWN_KEYS)
 	return out
 
@@ -180,6 +196,12 @@ func to_data() -> Dictionary:
 	record["gustiness_mps"] = gustiness_mps
 	record["temperature_c"] = temperature_c
 	record["gust_tau_s"] = gust_tau_s
+	if humidity_pct != 0.0:
+		record["humidity_pct"] = humidity_pct
+	if roughness_z0_m != 0.03:
+		record["roughness_z0_m"] = roughness_z0_m
+	if wind_ref_height_m != 10.0:
+		record["wind_ref_height_m"] = wind_ref_height_m
 	return record
 
 

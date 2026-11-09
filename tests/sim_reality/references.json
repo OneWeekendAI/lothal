@@ -1,0 +1,353 @@
+{
+  "_schema": "Harness-owned reference aircraft for the Sim Reality validation harness (SR0). NOT part of the shipped parts catalog: the harness injects these parts in memory (tests/sim_reality/sim_reality_harness.gd), so nothing here can reach a player's catalog. Every numeric field carries a tag in `tags` (published / measured / estimated). `frame_mass_g` of an aircraft with `solve_frame_mass_to_g` is the balancing item: it is solved so the whole aircraft weighs the published all-up mass, and is therefore ESTIMATED by construction. Values were chosen BEFORE the first run and are not to be edited to move an error (SR0 rule: do not tune physics to pass).",
+  "aircraft": [
+    {
+      "id": "mavic_3m",
+      "name": "DJI Mavic 3M",
+      "band_pct": 10.0,
+      "build": {
+        "frame": "ref_mavic3m_body",
+        "motor": "ref_dji_2008",
+        "propeller": "ref_dji_9453f",
+        "battery": "ref_dji_m3_4s_5000",
+        "esc": "esc_4in1_20a_20x20",
+        "fc": "fc_f405_20x20",
+        "components": {
+          "camera": "",
+          "vtx": "",
+          "antenna": "",
+          "receiver": ""
+        }
+      },
+      "solve_frame_mass_to_g": 951.0,
+      "parts": [
+        {
+          "part_id": "ref_mavic3m_body",
+          "name": "Mavic 3M body (lumped)",
+          "category": "frame",
+          "mass_g": 0.0,
+          "specs": {
+            "arm_mm": 190.0,
+            "plate_thickness_mm": 3.0,
+            "arm_thickness_mm": 6.0,
+            "max_prop_inches": 9.4,
+            "motor_mount": "16x16",
+            "stack_mount": "30.5x30.5"
+          },
+          "catalog": {
+            "frame_type": "harness",
+            "material": "carbon fibre",
+            "size_class": "harness"
+          },
+          "source": "DJI Mavic 3M: diagonal 380.1 mm (published) halved for the motor radius, an ESTIMATE because the real frame is not square. Mass is solved so the aircraft weighs the published 951 g."
+        },
+        {
+          "part_id": "ref_dji_2008",
+          "name": "DJI 2008 (Mavic 3M)",
+          "category": "motor",
+          "mass_g": 38.0,
+          "mount_pattern": "16x16",
+          "specs": {
+            "kv": 700.0,
+            "stator_diameter_mm": 20,
+            "stator_height_mm": 8,
+            "max_thrust_g": 700.0,
+            "max_amps": 25.0,
+            "poles": 14,
+            "bell_diameter_ratio": 1.27,
+            "bell_height_ratio": 2.6,
+            "bell_mass_fraction": 0.4,
+            "rm_ohm": 0.1,
+            "io_a": 0.35,
+            "io_voltage_v": 15.4,
+            "rm_io_basis": "est."
+          },
+          "thrust_test": {
+            "prop_id": "ref_dji_9453f",
+            "voltage_v": 15.4
+          },
+          "catalog": {
+            "stator_class": "harness",
+            "kv_class": "harness",
+            "intended_use": "harness"
+          },
+          "source": "DJI publishes only 'Motor Model Number 2008'. kv 700, Rm 0.10 ohm, Io 0.35 A, mass 38 g and max current are ESTIMATES chosen from 20 mm-stator class norms before any run; thrust_test is a placeholder (max_thrust_g is read by no sim path at this commit)."
+        },
+        {
+          "part_id": "ref_dji_9453f",
+          "name": "DJI 9453F Enterprise Edition",
+          "category": "propeller",
+          "mass_g": 9.0,
+          "specs": {
+            "diameter_inches": 9.4,
+            "pitch_inches": 5.3,
+            "blades": 2
+          },
+          "catalog": {
+            "blade_count": "2-blade",
+            "diameter_class": "harness",
+            "intended_use": "harness",
+            "material": "polycarbonate"
+          },
+          "source": "DJI 'Propeller Model Number 9453F Enterprise Edition' (published). 9.4 in diameter and 5.3 in pitch are read from the model number, two blades assumed; mass ESTIMATED."
+        },
+        {
+          "part_id": "ref_dji_m3_4s_5000",
+          "name": "DJI Mavic 3 Intelligent Flight Battery 77 Wh",
+          "category": "battery",
+          "mass_g": 335.0,
+          "mounting": {
+            "attachment": "strap"
+          },
+          "specs": {
+            "cells": 4,
+            "nominal_v": 15.4,
+            "mah": 5000.0,
+            "internal_r_ohm": 0.03,
+            "chemistry": "LiPo HV",
+            "c_rating": 10.0,
+            "length_mm": 100,
+            "width_mm": 50,
+            "height_mm": 45
+          },
+          "catalog": {
+            "cell_class": "4S",
+            "connector": "XT60"
+          },
+          "source": "DJI Mavic 3M spec page: LiPo 4S, 15.4 V standard voltage, 5000 mAh, 77 Wh (published). Mass 335 g, internal resistance 30 mOhm and c-rating are ESTIMATED."
+        }
+      ],
+      "published": {
+        "all_up_mass_g": 951.0,
+        "hover_min": 37.0,
+        "cruise_min": 43.0,
+        "cruise_speed_mps": 10.0
+      },
+      "cases": {
+        "hover": {
+          "published_min": 37.0,
+          "tag": "published",
+          "published_tag": "published (optimistic)",
+          "real_world": {
+            "min_low": 25.0,
+            "min_high": 30.0,
+            "tag": "owner field experience",
+            "note": "owner: the 37 min hover figure is really ~25-30 min of continuous flight; applies to the continuous-flight case, kept on hover as the nearest case."
+          }
+        },
+        "cruise": {
+          "published_min": 43.0,
+          "speed_mps": 10.0,
+          "tag": "published",
+          "published_tag": "published (optimistic)",
+          "real_world": {
+            "min_low": 25.0,
+            "min_high": 30.0,
+            "tag": "owner field experience",
+            "note": "owner: ~25-30 min continuous flight for the Mavic 3M."
+          }
+        }
+      },
+      "source": "https://ag.dji.com/mavic-3-m/specs (fetched 2026-11-09): 'Max Flight Time 43 minutes', 'Max Hover Time 37 minutes', both 'without wind'; footnote 4: measured in a wind-free environment at sea level at a constant speed of 36 kph, ended when the battery reached 0%. Net weight with propellers and RTK module 951 g. Energy 77 Wh, 5000 mAh, LiPo 4S 15.4 V. NOTE the 43 min figure is a 36 km/h (10 m/s) cruise, NOT a hover; hover is 37 min.",
+      "conditions": "calm, sea level, to 0% displayed (DJI figure includes a hidden pack reserve the sim does not model)",
+      "fitted_vs_heldout": "HELD OUT. Nothing in the sim was fitted to Mavic data. But motor kv/Rm/Io, mass split, drag area and battery resistance are all ESTIMATES, so a miss is not evidence about one subsystem.",
+      "payload_w": {
+        "w": 12.0,
+        "tag": "estimated",
+        "note": "gimbal multispectral camera + RTK + O3 link + vision sensors; no measured figure. A FIELD, not a fit: do not tune it to make the Mavic land."
+      }
+    },
+    {
+      "id": "nazgul_evoque_f5_v2_5in",
+      "name": "iFlight Nazgul Evoque F5 V2 O4 6S (5 inch)",
+      "band_pct": 10.0,
+      "build": {
+        "frame": "frame_iflight_evoque_f5_v2_o4",
+        "motor": "motor_xing2_2207_1750kv",
+        "propeller": "prop_nazgul_f5_51x35x3",
+        "battery": "ref_iflight_6s_1550",
+        "esc": "esc_4in1_35a_20x20",
+        "fc": "fc_f405_20x20",
+        "components": {
+          "camera": "cam_dji_o4_pro",
+          "vtx": "vtx_dji_o4_pro",
+          "antenna": "antenna_dji_o4_pro",
+          "receiver": "rx_elrs_2400"
+        }
+      },
+      "parts": [
+        {
+          "part_id": "ref_iflight_6s_1550",
+          "name": "6S 1550 mAh (iFlight hover-time pack)",
+          "category": "battery",
+          "mass_g": 259.0,
+          "mounting": {
+            "attachment": "strap"
+          },
+          "specs": {
+            "cells": 6,
+            "nominal_v": 22.2,
+            "mah": 1550.0,
+            "internal_r_ohm": 0.02,
+            "chemistry": "LiPo",
+            "c_rating": 100.0,
+            "length_mm": 80,
+            "width_mm": 36,
+            "height_mm": 40
+          },
+          "catalog": {
+            "cell_class": "6S",
+            "connector": "XT60"
+          },
+          "source": "iFlight Nazgul Evoque F5 V2 O4 6S HD page (fetched 2026-11-09): hover time is quoted with a 6S 1550mAh battery; takeoff weight approx 695 g is quoted with a 1480 mAh battery; weight without battery 436 g. Pack mass 259 g = 695 - 436 (DERIVED, from the 1480 mAh pack, reused for 1550 mAh: a ~5% capacity difference at near-equal mass is assumed). 22.2 V nominal is 6S. Internal resistance 20 mOhm and c-rating are ESTIMATED."
+        }
+      ],
+      "published": {
+        "all_up_mass_g": 695.0
+      },
+      "cases": {
+        "hover": {
+          "published_min": 11.5,
+          "tag": "published",
+          "published_tag": "published (optimistic)",
+          "real_world": null
+        }
+      },
+      "source": "https://shop.iflight.com/Nazgul-Evoque-F5-V2-6S-O4-HD-Pro2260 (fetched 2026-11-09): 'Max Hover Time: Approx. 11.5 min (No Load with 6S 1550mAh Battery)'; 'Weight: 436+-5g'; 'Takeoff Weight: Approx. 695+-10g (With 1480mAh Battery)'; XING2 2207 1750KV motors, Nazgul F5 propellers. A web-search summary had claimed 7.5 min; the page itself says 11.5, so 11.5 is used. Manufacturer BNF spec, not a review log.",
+      "conditions": "manufacturer figure, 'No Load' hover; cutoff convention unstated",
+      "fitted_vs_heldout": "HELD OUT for time. Motor Rm/Io are catalog estimates; k_t/k_q come from the prop's blade-element integral (Build._fit_rated_point_uncached at this commit), not the XING2 datasheet thrust, so the datasheet fit is not in this number. If a later commit refits k_t to datasheet thrust, this note must change."
+    },
+    {
+      "id": "chimera7_pro_v2_7in",
+      "name": "iFlight Chimera7 Pro V2 6S (7 inch long range)",
+      "band_pct": 10.0,
+      "build": {
+        "frame": "ref_chimera7_frame",
+        "motor": "ref_xing2_2809_1250kv",
+        "propeller": "ref_hq_7537x3",
+        "battery": "ref_6s_3300",
+        "esc": "esc_4in1_60a_30x30",
+        "fc": "fc_f722_30x30",
+        "components": {
+          "camera": "",
+          "vtx": "",
+          "antenna": "",
+          "receiver": "rx_elrs_2400"
+        }
+      },
+      "solve_frame_mass_to_g": 1165.0,
+      "parts": [
+        {
+          "part_id": "ref_chimera7_frame",
+          "name": "Chimera7 Pro V2 body (lumped)",
+          "category": "frame",
+          "mass_g": 0.0,
+          "specs": {
+            "arm_mm": 163.5,
+            "plate_thickness_mm": 3.0,
+            "arm_thickness_mm": 6.0,
+            "max_prop_inches": 7.5,
+            "motor_mount": "16x16",
+            "stack_mount": "30.5x30.5"
+          },
+          "catalog": {
+            "frame_type": "harness",
+            "material": "carbon fibre",
+            "size_class": "harness"
+          },
+          "source": "iFlight: frame wheelbase 327 mm (published) halved. Mass solved so the aircraft weighs 705 g dry + pack."
+        },
+        {
+          "part_id": "ref_xing2_2809_1250kv",
+          "name": "XING2 2809 1250KV",
+          "category": "motor",
+          "mass_g": 60.7,
+          "mount_pattern": "16x16",
+          "specs": {
+            "kv": 1250.0,
+            "stator_diameter_mm": 28,
+            "stator_height_mm": 9,
+            "max_thrust_g": 2400.0,
+            "max_amps": 50.0,
+            "poles": 14,
+            "bell_diameter_ratio": 1.27,
+            "bell_height_ratio": 2.6,
+            "bell_mass_fraction": 0.4,
+            "rm_ohm": 0.06546,
+            "io_a": 1.6,
+            "io_voltage_v": 24.0,
+            "rm_io_basis": "est."
+          },
+          "thrust_test": {
+            "prop_id": "ref_hq_7537x3",
+            "voltage_v": 24.0
+          },
+          "catalog": {
+            "stator_class": "harness",
+            "kv_class": "harness",
+            "intended_use": "harness"
+          },
+          "source": "readymaderc.com product 86752 (fetched 2026-11-09): weight 60.7 g incl. wire, 1250KV, internal resistance 65.46 (mOhm), peak current 50 A, max power 1145 W (all published). No-load current is NOT published: Io 1.6 A at 24 V is ESTIMATED. max_thrust_g is a placeholder (no thrust table published)."
+        },
+        {
+          "part_id": "ref_hq_7537x3",
+          "name": "7.5x3.7x3 prop",
+          "category": "propeller",
+          "mass_g": 9.0,
+          "specs": {
+            "diameter_inches": 7.5,
+            "pitch_inches": 3.7,
+            "blades": 3
+          },
+          "catalog": {
+            "blade_count": "3-blade",
+            "diameter_class": "harness",
+            "intended_use": "harness",
+            "material": "polycarbonate"
+          },
+          "source": "iFlight Chimera7 Pro V2 page: '7.5X3.7X3 propellers / HQ 7.5x3x3 propellers' (ambiguous on the page; 3.7 pitch taken). Mass ESTIMATED."
+        },
+        {
+          "part_id": "ref_6s_3300",
+          "name": "6S 3300 mAh 95C",
+          "category": "battery",
+          "mass_g": 460.0,
+          "mounting": {
+            "attachment": "strap"
+          },
+          "specs": {
+            "cells": 6,
+            "nominal_v": 22.2,
+            "mah": 3300.0,
+            "internal_r_ohm": 0.015,
+            "chemistry": "LiPo",
+            "c_rating": 95.0,
+            "length_mm": 135,
+            "width_mm": 45,
+            "height_mm": 40
+          },
+          "catalog": {
+            "cell_class": "6S",
+            "connector": "XT60"
+          },
+          "source": "iFlight page recommends '6S 3300mAh' pack (published); the iFlight-RC EU store lists the Fullsend 6S 3300mAh 95C. Mass 460 g is DERIVED from a retailer listing quoting takeoff weight approx 1165 g with a 3300 mAh pack (search result, not independently fetched). Internal resistance ESTIMATED."
+        }
+      ],
+      "published": {
+        "all_up_mass_g": 1165.0
+      },
+      "cases": {
+        "hover": {
+          "published_min": 25.0,
+          "tag": "published",
+          "published_tag": "published (optimistic)",
+          "real_world": null
+        }
+      },
+      "source": "iFlight shop product 1947 (shop.iflight.com/Chimera7-Pro-V2-6S-Pro1947, fetched 2026-11-09): 'Max Hover Time: Approx. 25 min' (battery NOT stated on the page; retailer copy quotes 30 min with a 6S 8000 mAh pack), 'Weight: 705g (Without Battery)', XING2 2809 1250KV motors, BLITZ E55 55A ESC, 327 mm wheelbase. The 3300 mAh pack is an ASSUMPTION taken from the page's own battery recommendation. Manufacturer spec, not a review log.",
+      "conditions": "manufacturer figure; battery and cutoff convention unstated, so this reference is LOOSE",
+      "fitted_vs_heldout": "HELD OUT. No thrust table exists for this motor, so nothing was fitted; Io, pack mass, pack resistance, prop mass are estimates."
+    }
+  ],
+  "_validation_basis": "2026-11-09 owner direction: manufacturer flight times are marketing-optimistic, so whole-aircraft figures are sanity CONTEXT, not pass/fail. Validation is per SUBSYSTEM against measured data (tests/sim_reality/measured/). `real_world` carries measured or field-experience figures when known."
+}

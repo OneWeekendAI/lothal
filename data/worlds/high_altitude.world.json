@@ -1,0 +1,105 @@
+{
+	"air": {
+		"humidity_pct": 30.0,
+		"pressure_hpa": 0.0,
+		"temperature_c": 12.0
+	},
+	"description": "A 200 m x 120 m plot at about 3,100 m near Leadville, Colorado: thin cold dry air and a light breeze over short mountain grass. Ground is flat here; import 3DEP for the real slope.",
+	"field": {
+		"polygon": [
+			[
+				39.25,
+				-106.2896525
+			],
+			[
+				39.25,
+				-106.2873355
+			],
+			[
+				39.2510809,
+				-106.2873355
+			],
+			[
+				39.2510809,
+				-106.2896525
+			]
+		]
+	},
+	"format": "lothal.world",
+	"id": "high_altitude",
+	"name": "High altitude, Leadville",
+	"obstacles": [],
+	"origin": {
+		"elevation_m": 3094.0,
+		"lat": 39.25,
+		"lon": -106.29
+	},
+	"sources": {
+		"air.humidity": {
+			"note": "30 % RH, dry mountain air; scenario.",
+			"tag": "estimated"
+		},
+		"air.pressure": {
+			"note": "Blank: ISA pressure at 3,094 m (about 69 kPa).",
+			"tag": "published"
+		},
+		"air.temperature": {
+			"note": "12 C: a plausible July afternoon at 3,100 m; not from a record.",
+			"tag": "estimated"
+		},
+		"field.polygon": {
+			"note": "Illustrative rectangle.",
+			"tag": "estimated"
+		},
+		"origin": {
+			"note": "Leadville, CO elevation 3,094 m (10,152 ft), widely published town elevation (USGS GNIS).",
+			"tag": "published"
+		},
+		"surface.z0": {
+			"note": "Short grass 0.03 m, Davenport-Wieringa class (Wieringa 1992).",
+			"tag": "published"
+		},
+		"terrain": {
+			"note": "Flat placeholder; the real ground slopes. Import 3DEP to replace.",
+			"tag": "estimated"
+		},
+		"time": {
+			"note": "15 July 2026, 19:00 UTC (1 pm MDT), scenario.",
+			"tag": "estimated"
+		},
+		"wind.from": {
+			"note": "West, scenario choice.",
+			"tag": "estimated"
+		},
+		"wind.gust": {
+			"note": "Turbulence intensity 20 %, mountain air; scenario.",
+			"tag": "estimated"
+		},
+		"wind.speed": {
+			"note": "Scenario: 5 mph light breeze at 10 m.",
+			"tag": "estimated"
+		}
+	},
+	"surface": {
+		"name": "short alpine grass",
+		"z0_m": 0.03
+	},
+	"terrain": {
+		"center_x_m": 130.0,
+		"center_z_m": -60.0,
+		"length_m": 160.0,
+		"shape": "flat",
+		"width_m": 260.0
+	},
+	"time": {
+		"utc": "2026-07-15T19:00:00Z"
+	},
+	"version": 1,
+	"wind": {
+		"from_deg": 270.0,
+		"gust_tau_s": 2.5,
+		"gustiness_mps": 0.44704,
+		"ref_height_m": 10.0,
+		"speed_mps": 2.2352
+	}
+}

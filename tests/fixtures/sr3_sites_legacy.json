@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "selected": "club_field",
+  "future_top_key": {"kept": true},
+  "sites": [
+    {"id": "default_site", "name": "Field", "elevation_m": 0.0,
+     "terrain": {"shape": "flat", "width_m": 120.0, "length_m": 120.0}, "obstacles": []},
+    {"id": "club_field", "name": "Club field", "elevation_m": 920.0, "parked_temperature_c": 28.5,
+     "terrain": {"shape": "slope", "width_m": 200.0, "length_m": 150.0, "center_x_m": 12.0, "center_z_m": -30.0, "rise_m": 6.0, "direction_deg": 90.0},
+     "obstacles": [{"kind": "pole", "x": 10.0, "z": 5.0, "dims": {"height_m": 8.0, "radius_m": 0.2}}, {"kind": "box", "x": -20.0, "z": 15.0, "dims": {"width_m": 4.0, "length_m": 6.0, "height_m": 3.0}}],
+     "newer_build_key": "keep me"},
+    {"id": "leh", "name": "Leh", "elevation_m": 3500.0, "terrain": {"shape": "bowl", "width_m": 80.0, "length_m": 80.0, "depth_m": 3.0}}
+  ]
+}

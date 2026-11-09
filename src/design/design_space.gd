@@ -15,6 +15,9 @@ extends Control
 
 signal dismissed
 signal back_requested
+## "Fly it" and "Field": the shell opens the sim / Field room on this design's build.
+signal fly_requested
+signal field_requested
 
 const PANEL_FADE_S := 0.2
 
@@ -791,6 +794,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			save_design()
 	elif command and key == KEY_O:
 		open_open_dialog()
+	elif key == KEY_F and not command and not ke.shift_pressed and not ke.alt_pressed:
+		fly_requested.emit()
 	elif key == KEY_H or key == KEY_HOME:
 		go_home()
 	elif key == KEY_L and not command:
@@ -1377,6 +1382,8 @@ func _build_file_bar() -> void:
 	file_bar.save_pressed.connect(save_design)
 	file_bar.save_as_pressed.connect(open_save_as)
 	file_bar.open_pressed.connect(open_open_dialog)
+	file_bar.fly_pressed.connect(func(): fly_requested.emit())
+	file_bar.field_pressed.connect(func(): field_requested.emit())
 	file_bar.save_as_confirmed.connect(func(n: String): save_design(n))
 	file_bar.open_chosen.connect(func(f: String): open_design(f))
 	file_bar.show_name(design_name)
@@ -2065,6 +2072,13 @@ func _build_shelf() -> void:
 	add_child(drop_label)
 
 
+## The drone the part designers bench against: this selection, built. With a required part taken
+## off (it does not build) the class's own parts stand in for the missing ones, as a drop is judged,
+## so a designer never opens on another class's aircraft.
+func bench_build() -> Build:
+	return PartSnap.judging_session(session, _catalog).build(_catalog)
+
+
 ## The shelf's verdicts for one category: part id -> {ok, reason}, judged as a drop would be (an
 ## empty required slot filled with the class default for judging, PartSnap.judging_session).
 func _shelf_judge(category: String) -> Dictionary:
@@ -2076,7 +2090,15 @@ func _shelf_judge(category: String) -> Dictionary:
 	for opt in PartSwap.options(js, _catalog, category, _shelf_verdicts):
 		var m := float(_catalog.get_part(String(opt["id"])).get("mass_g", 0.0))
 		var rank := absf(log(m / ref)) if m > 0.0 and ref > 0.0 else INF
-		out[String(opt["id"])] = {"ok": opt["ok"], "reason": opt["reason"], "rank": rank}
+		var ok: bool = opt["ok"]
+		var reason: String = opt["reason"]
+		# Mounts, but made for another class: held back with the class reason (a click still swaps).
+		if ok and opt["id"] != "":
+			var fit := ClassFit.verdict(session.drone_class, category, String(opt["id"]), _catalog)
+			if not fit["fits"]:
+				ok = false
+				reason = String(fit["reason"])
+		out[String(opt["id"])] = {"ok": ok, "reason": reason, "rank": rank}
 	return out
 
 
@@ -2095,7 +2117,7 @@ func open_pack_designer() -> void:
 	cancel_drag()
 	var store := DesignedPacks.load_from(custom_parts_path)
 	var charge := PackCharge.load_from(pack_charge_path)
-	var designer := PackDesigner.new(_catalog, CellLibrary.load_default(), store, charge, session.build(_catalog))
+	var designer := PackDesigner.new(_catalog, CellLibrary.load_default(), store, charge, bench_build())
 	designer.store_path = custom_parts_path
 	designer.charge_path = pack_charge_path
 	designer.saved.connect(func(_id: String): refresh_catalog())
@@ -2126,7 +2148,10 @@ func open_motor_designer(saved_id: String = "") -> void:
 		CustomMotors.load_from(custom_parts_path))
 	designer.store_path = custom_parts_path
 	# The bench runs on this drone's frame, prop and pack (the reference build's when there is none).
-	designer.set_bench_build(session.build(_catalog))
+	var drone := bench_build()
+	designer.set_bench_build(drone)
+	if saved_id == "" and drone != null:
+		designer.start_like(drone.motor)
 	designer.saved.connect(func(_id: String): refresh_catalog())
 	designer.closed.connect(func(): motor_designer = null)
 	designer.design_pack_requested.connect(_design_pack_for_motor)
@@ -2148,7 +2173,7 @@ func open_prop_designer(saved_id: String = "") -> void:
 	if prop_designer != null:
 		return
 	cancel_drag()
-	var designer := PropDesigner.new(_catalog, FrameMaterials.load_default(), session.build(_catalog))
+	var designer := PropDesigner.new(_catalog, FrameMaterials.load_default(), bench_build(), session.drone_class)
 	designer.store_path = custom_parts_path
 	# A saved prop may be on this drone: the catalog is re-read, and session.build resolves from it.
 	designer.saved.connect(func(_id: String):

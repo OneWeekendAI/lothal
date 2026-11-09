@@ -16,7 +16,9 @@ extends RefCounted
 ## A part that is "not fitted" is hidden. Receiver and guard have no drawn node on the 5".
 
 const NODES := ["battery", "camera", "stack", "antennas",
-	"motor_FL", "motor_FR", "motor_BL", "motor_BR", "prop_FL", "prop_FR", "prop_BL", "prop_BR"]
+	"motor_FL", "motor_FR", "motor_BL", "motor_BR", "prop_FL", "prop_FR", "prop_BL", "prop_BR",
+	"motor_FL_lo", "motor_FR_lo", "motor_BL_lo", "motor_BR_lo",
+	"prop_FL_lo", "prop_FR_lo", "prop_BL_lo", "prop_BR_lo"]
 
 
 ## `base`: node name -> {xf: Transform3D (as drawn), pivot: Vector3 (local)}. `drawn` and `now` are
@@ -35,7 +37,7 @@ static func transforms(base: Dictionary, drawn: Dictionary, now: Dictionary,
 		var local := Transform3D(Basis.from_scale(r), pivot - pivot * r)
 		var nxf := xf * local
 		if String(node_name).begins_with("prop_"):
-			var corner := String(node_name).substr(5)
+			var corner := String(node_name).substr(5)   # "FL", or "FL_lo" on a coaxial lower rotor
 			var motor_base: Dictionary = base.get("motor_" + corner, {})
 			if not motor_base.is_empty():
 				var my := (motor_base["xf"] as Transform3D).origin.y

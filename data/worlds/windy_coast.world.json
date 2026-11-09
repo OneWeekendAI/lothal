@@ -1,0 +1,105 @@
+{
+	"air": {
+		"humidity_pct": 75.0,
+		"pressure_hpa": 0.0,
+		"temperature_c": 27.0
+	},
+	"description": "A flat 200 m x 120 m beach-front plot near Cape Hatteras, North Carolina: strong onshore wind, warm humid air, very smooth surface.",
+	"field": {
+		"polygon": [
+			[
+				35.25,
+				-75.5296704
+			],
+			[
+				35.25,
+				-75.5274728
+			],
+			[
+				35.2510816,
+				-75.5274728
+			],
+			[
+				35.2510816,
+				-75.5296704
+			]
+		]
+	},
+	"format": "lothal.world",
+	"id": "windy_coast",
+	"name": "Windy coast, 25 mph",
+	"obstacles": [],
+	"origin": {
+		"elevation_m": 2.0,
+		"lat": 35.25,
+		"lon": -75.53
+	},
+	"sources": {
+		"air.humidity": {
+			"note": "75 % RH typical coastal summer; not from a record.",
+			"tag": "estimated"
+		},
+		"air.pressure": {
+			"note": "Blank: ISA pressure at 2 m.",
+			"tag": "published"
+		},
+		"air.temperature": {
+			"note": "27 C typical August afternoon on the Outer Banks; not from a record.",
+			"tag": "estimated"
+		},
+		"field.polygon": {
+			"note": "Illustrative rectangle.",
+			"tag": "estimated"
+		},
+		"origin": {
+			"note": "Real stretch of coast (Hatteras Island, NC); launch spot chosen, elevation approximate.",
+			"tag": "estimated"
+		},
+		"surface.z0": {
+			"note": "Sand / smooth open ground 0.005 m: Davenport-Wieringa class 'sea/sand' 0.0002-0.005, upper end (Wieringa 1992).",
+			"tag": "published"
+		},
+		"terrain": {
+			"note": "Flat; the real dunes (a few metres) are not modelled. Import 3DEP to replace.",
+			"tag": "estimated"
+		},
+		"time": {
+			"note": "15 August 2026, 17:00 UTC, scenario.",
+			"tag": "estimated"
+		},
+		"wind.from": {
+			"note": "East, onshore on the Atlantic side; scenario choice.",
+			"tag": "estimated"
+		},
+		"wind.gust": {
+			"note": "Turbulence intensity 15 %, scenario choice; editable.",
+			"tag": "estimated"
+		},
+		"wind.speed": {
+			"note": "Scenario: 25 mph (11.2 m/s) at 10 m.",
+			"tag": "estimated"
+		}
+	},
+	"surface": {
+		"name": "sand and sea-front scrub",
+		"z0_m": 0.005
+	},
+	"terrain": {
+		"center_x_m": 130.0,
+		"center_z_m": -60.0,
+		"length_m": 160.0,
+		"shape": "flat",
+		"width_m": 260.0
+	},
+	"time": {
+		"utc": "2026-08-15T17:00:00Z"
+	},
+	"version": 1,
+	"wind": {
+		"from_deg": 90.0,
+		"gust_tau_s": 2.5,
+		"gustiness_mps": 1.6764,
+		"ref_height_m": 10.0,
+		"speed_mps": 11.176
+	}
+}

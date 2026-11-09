@@ -409,7 +409,14 @@ const REFERENCE_DUCT_CLOSURE := 0.56152690342056
 ## Where the tabulated ratios move when the closure changes. Measured, not chosen — see
 ## `_the_ratio_surface_moves_enough_to_need_the_closure_in_its_key` for what the number means
 ## and why it is asserted as a FLOOR.
-const RATIO_CLOSURE_SENSITIVITY := 0.012169
+##
+## RE-MEASURED 2026-11-09 at 0.019145 (was 0.012169), at mu = (0.10, 0.40), closure 1.0. TWO things moved, both named:
+##  1. The four ratio reads in this check (and the two in the closure-anchor check) had rpm and velocities in the wrong
+##     ORDER (thrust_ratio takes rpm first); every cell clamped to the table's far corner, so the old 0.012169 was one
+##     corner read and its reported location was just the first loop cell. Fixed; the reads now cover the grid.
+##  2. The surface is no longer clamped to 1.0 (SR1, translational lift), so the closure's effect on edgewise thrust above 1 shows.
+## Direction is unchanged (the closure still moves the surface by well over the 0.01 floor), so the key still needs it.
+const RATIO_CLOSURE_SENSITIVITY := 0.019145
 
 
 ## THE ANCHOR AT CLOSURE = 0.0, and it is the check every P4/P5/P6 oracle in the project now
@@ -458,11 +465,11 @@ static func _the_closure_anchor_is_exact(d_m: float, p_m: float, blades: float,
 	for mu_ax in [0.0, 0.05, 0.2, 0.45]:
 		for mu_ed in [0.0, 0.1, 0.35]:
 			var omega_r: float = (20000.0 * TAU / 60.0) * (d_m * 0.5)
-			if open_surface.thrust_ratio(mu_ax * omega_r, mu_ed * omega_r, 20000.0) \
-					!= zero_surface.thrust_ratio(mu_ax * omega_r, mu_ed * omega_r, 20000.0):
+			if open_surface.thrust_ratio(20000.0, mu_ax * omega_r, mu_ed * omega_r) \
+					!= zero_surface.thrust_ratio(20000.0, mu_ax * omega_r, mu_ed * omega_r):
 				surface_same = false
-			if open_surface.power_ratio(mu_ax * omega_r, mu_ed * omega_r, 20000.0) \
-					!= zero_surface.power_ratio(mu_ax * omega_r, mu_ed * omega_r, 20000.0):
+			if open_surface.power_ratio(20000.0, mu_ax * omega_r, mu_ed * omega_r) \
+					!= zero_surface.power_ratio(20000.0, mu_ax * omega_r, mu_ed * omega_r):
 				surface_same = false
 
 	return [
@@ -619,10 +626,10 @@ static func _the_ratio_surface_moves_enough_to_need_the_closure_in_its_key(d_m: 
 			for mu_ed in [0.0, 0.1, 0.4]:
 				var v_ax: float = mu_ax * omega_r
 				var v_ed: float = mu_ed * omega_r
-				var d_t: float = absf(surface.thrust_ratio(v_ax, v_ed, 20000.0)
-					- open_surface.thrust_ratio(v_ax, v_ed, 20000.0))
-				var d_p: float = absf(surface.power_ratio(v_ax, v_ed, 20000.0)
-					- open_surface.power_ratio(v_ax, v_ed, 20000.0))
+				var d_t: float = absf(surface.thrust_ratio(20000.0, v_ax, v_ed)
+					- open_surface.thrust_ratio(20000.0, v_ax, v_ed))
+				var d_p: float = absf(surface.power_ratio(20000.0, v_ax, v_ed)
+					- open_surface.power_ratio(20000.0, v_ax, v_ed))
 				if maxf(d_t, d_p) > worst:
 					worst = maxf(d_t, d_p)
 					worst_where = "closure %.4f at mu = (%.2f, %.2f)" % [

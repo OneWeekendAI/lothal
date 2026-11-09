@@ -98,10 +98,21 @@ static func _holds_altitude_at_published_hover_throttle() -> Array:
 	# The control: the identical aircraft on a pack whose capacity is large enough that ten
 	# seconds of hover empties none of it. Nothing else about the pack changes — same nominal
 	# voltage, same internal resistance, so the same sag under the same current.
-	var full := ReferenceBuild.build_drone_core()
+	#
+	# SR1 (2026-11-09): this control is built with field physics OFF ({"off": true}), the model the
+	# published hover throttle is solved against. With the avionics load, ESC loss and the pack's
+	# rate/temperature terms ON, the nominal-voltage throttle is about 0.25 % of thrust short (the
+	# extra current sags the pack a little further), which is -1.24 m in 10 s; that is a physical
+	# loss and is pinned separately below with its own bound, not folded into the SoC attribution.
+	var full := ReferenceBuild.build_drone_core({"off": true})
 	full.powertrain.battery.capacity_mah *= 100000.0
 	_fly_hands_off(full, hover, 10.0)
 	var undrained_drift := full.rigid_body.position_m.y
+
+	var full_loss := ReferenceBuild.build_drone_core()
+	full_loss.powertrain.battery.capacity_mah *= 100000.0
+	_fly_hands_off(full_loss, hover, 10.0)
+	var loss_drift := full_loss.rigid_body.position_m.y
 
 	results.append(TestResult.new(
 		"10s hands-off on a pack that cannot empty: holds altitude within 1 m",
@@ -110,11 +121,20 @@ static func _holds_altitude_at_published_hover_throttle() -> Array:
 			undrained_drift, full.observables.voltage_live_v, full.observables.current_total_a]
 	))
 
+	# Avionics (about +0.5 A on a 4.7 A hover) and ESC loss only ever take voltage away, so the sink
+	# has a sign: down. Its size is the 0.25 % thrust shortfall (1.24 m measured); the band is 0.5-2.5 m,
+	# so a sink of 10 cm (loss term gone) or 5 m (loss term doubled) both fail.
+	results.append(TestResult.new(
+		"with avionics and ESC loss on, the published hover throttle on a pack that cannot empty sinks 0.5-2.5 m in 10 s",
+		loss_drift < -0.5 and loss_drift > -2.5,
+		"altitude drift = %.3f m (field-physics-off control: %.3f m)" % [loss_drift, undrained_drift]
+	))
+
 	results.append(TestResult.new(
 		"on a real pack it sinks instead, and the drain is the whole of the difference",
-		drained_drift < -0.5 and drained_drift < undrained_drift - 0.5,
+		drained_drift < -0.5 and drained_drift < loss_drift - 0.5,
 		"%.2f m draining (%.1f%% of the pack used) vs %.2f m on a pack that cannot empty" % [
-			drained_drift, draining.observables.capacity_used_fraction * 100.0, undrained_drift]
+			drained_drift, draining.observables.capacity_used_fraction * 100.0, loss_drift]
 	))
 
 	return results

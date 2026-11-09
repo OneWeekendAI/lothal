@@ -32,6 +32,35 @@ var wind: Wind = null
 var arm_m: float
 ## 0.5 * rho * Cd * A, supplied per build — a 7" airframe presents far more area than a 3".
 var drag_coefficient: float
+## SR1: 0.5*rho*Cd*A per BODY axis (x side, y top/rotor axis, z frontal), or (-1,-1,-1) for "isotropic,
+## use drag_coefficient" (every core built before directional drag, and every test that never heard of it).
+var drag_axes := Vector3(-1.0, -1.0, -1.0)
+
+## SR1 ground effect (Cheeseman-Bennett). OFF by default: every flight written before this had no
+## ground under it, and a hover test that sits at y = 0 would otherwise be flattered by a floor it
+## never had. A caller that has a ground turns it on and says where it is.
+var ground_effect_enabled := false
+## World height of the ground plane, m.
+var ground_y_m := 0.0
+## Rotor radius, m (from the propeller), the length scale the ground effect is measured in.
+var prop_radius_m := 0.0635
+## Height of the rotor plane above the CoM, m. ESTIMATED 0.02 (motors sit just above the plate).
+var rotor_above_com_m := 0.02
+
+## Cheeseman-Bennett thrust gain at constant power for a rotor of radius R with its disc z above the
+## ground:  T/T_inf = 1 / (1 - (R / 4z)^2). The formula is a far-field image-vortex result and has no
+## business below z = R/2, so z is floored there (gain 1.33). ABOVE z = R it is faded to exactly 1.0
+## at z = 2R with a cosine taper (the textbook gain at 2R is still 1.6 percent; a hover test wants a
+## finite effect range, and the measured gain beyond 1 diameter is within the scatter).
+static func ground_effect_gain(height_m: float, radius_m: float) -> float:
+	if radius_m <= 0.0 or height_m >= 2.0 * radius_m:
+		return 1.0
+	var z := maxf(height_m, 0.5 * radius_m)
+	var gain := 1.0 / (1.0 - pow(radius_m / (4.0 * z), 2.0))
+	var fade := 1.0
+	if z > radius_m:
+		fade = 0.5 * (1.0 + cos(PI * (z - radius_m) / radius_m))
+	return 1.0 + (gain - 1.0) * fade
 
 ## The published observables layer — the SAME instance the powertrain fills, so a consumer
 ## cannot tell which half published what. Refilled at the end of every step(); no consumer
@@ -60,6 +89,7 @@ func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m
 	observables = powertrain.observables
 	mass_properties = p_mass_properties
 	arm_m = p_arm_m
+	prop_radius_m = p_prop_radius_m
 	drag_coefficient = p_drag_coefficient
 	gyro = p_gyro if p_gyro != null else Gyro.new()
 	_publish(Vector3.ZERO)
@@ -109,7 +139,7 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# Advanced once per substep, here — the ONE place the gust process steps forward, so a
 	# consumer reading wind.velocity_mps() between substeps (the HUD) sees this tick's value
 	# without itself advancing anything.
-	var wind_mps := wind.update(dt) if wind != null else Vector3.ZERO
+	var wind_mps := wind.update_at(dt, rigid_body.position_m, maxf(rigid_body.position_m.y - ground_y_m, 0.0)) if wind != null else Vector3.ZERO
 	var relative_velocity_mps := rigid_body.velocity_mps - wind_mps
 	powertrain.step_in_flight(cmds, dt, rigid_body.orientation.inverse() * relative_velocity_mps)
 
@@ -119,6 +149,9 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 
 	# Resolved once per step rather than per motor, and from the SAME accessor the mixer reads.
 	var spin_map := MotorLayout.spin_map(config)
+	var ge_gain := 1.0
+	if ground_effect_enabled:
+		ge_gain = ground_effect_gain(rigid_body.position_m.y + rotor_above_com_m - ground_y_m, prop_radius_m)
 
 	for i in MotorLayout.MOTOR_NAMES.size():
 		var name: String = MotorLayout.MOTOR_NAMES[i]
@@ -129,14 +162,14 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 		# the day one of the two was edited.
 		var reaction_n_m: float = powertrain.observables.reaction_torque_n_m[i]
 
-		total_thrust_body_n += thrust_n
+		total_thrust_body_n += thrust_n * ge_gain
 
 		# Arms are measured from the CENTRE OF MASS, not from the frame's origin — the aircraft
 		# rotates about the former, and the inertia tensor this torque is about to be integrated
 		# against is already computed about it too (MassProperties). MotorLayout owns the cross
 		# product; this loop must not grow a second one, which is the duplication that made the
 		# reference point possible to get wrong in only one of two places.
-		var tau := MotorLayout.thrust_torque(name, thrust_n, arm_m, mass_properties.com_m)
+		var tau := MotorLayout.thrust_torque(name, thrust_n * ge_gain, arm_m, mass_properties.com_m)
 		var spin: float = spin_map[name]
 		var reaction_about_y := -spin * reaction_n_m   # Newton's third law: opposes the rotor's own spin
 		total_torque += Vector3(tau.x, reaction_about_y, tau.z)
@@ -153,7 +186,15 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# powertrain sees (check 6's guard: wind reaching one and not the other is the stated mutation).
 	var speed := relative_velocity_mps.length()
 	if speed > 0.0:
-		total_force += -relative_velocity_mps.normalized() * drag_coefficient * speed * speed
+		if drag_axes.x < 0.0:
+			total_force += -relative_velocity_mps.normalized() * drag_coefficient * speed * speed
+		else:
+			# Directional: the air is resolved into the BODY frame, each body axis has its own area, and
+			# the force is rotated back. A leaned aircraft therefore presents a mix of frontal and top
+			# area, which is the body-angle effect the scalar could not carry.
+			var v_body := rigid_body.orientation.inverse() * relative_velocity_mps
+			var f_body := -speed * Vector3(drag_axes.x * v_body.x, drag_axes.y * v_body.y, drag_axes.z * v_body.z)
+			total_force += rigid_body.orientation * f_body
 
 	# Specific force — total force minus gravity — is captured BEFORE integration, while
 	# the force that produced this tick's acceleration is still in hand. Recovering it

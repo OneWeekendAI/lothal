@@ -120,6 +120,13 @@ const WIND_SPEED_STEP_MPS := 0.5
 const WIND_FROM_STEP_DEG := 5.0
 const MAX_GUSTINESS_MPS := 15.0
 const GUSTINESS_STEP_MPS := 0.5
+const HUMIDITY_STEP_PCT := 5.0
+## Roughness length range: open water (0.0002 m) up to dense suburb (2 m), Wieringa 1992 classes (values recalled, not re-fetched).
+const MIN_ROUGHNESS_M := 0.0002
+const MAX_ROUGHNESS_M := 2.0
+const ROUGHNESS_STEP_M := 0.005
+const MIN_REF_HEIGHT_M := 2.0
+const MAX_REF_HEIGHT_M := 50.0
 
 const MIN_GUST_TAU_S := 0.5
 const MAX_GUST_TAU_S := 10.0
@@ -253,6 +260,13 @@ var gust_tau_field: SpinBox
 var wind_speed_field: SpinBox
 var wind_from_field: SpinBox
 var gustiness_field: SpinBox
+## SR3: the controls SR2 left out (humidity, surface roughness, wind reference height) and the world picker.
+var humidity_field: SpinBox
+var roughness_field: SpinBox
+var ref_height_field: SpinBox
+var world_picker: OptionButton
+var worlds: WorldLibrary
+var worlds_dir := WorldLibrary.DEFAULT_DIR
 ## The label a check reads the word "guess" off. The LIVE control's text, not the source file — a
 ## grep for "guess" would also match this file's own comments, which is a check that cannot fail.
 var gust_tau_label: Label
@@ -545,6 +559,7 @@ func _build_field_section(column: VBoxContainer) -> void:
 	title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	column.add_child(title)
 
+	_build_world_picker(column)
 	elevation_field = _add_field(column, "Elevation", "m",
 		AirDensity.MIN_ELEVATION_M, AirDensity.MAX_ELEVATION_M, ELEVATION_STEP_M,
 		func(v: float) -> void: set_field_elevation_m(v))
@@ -570,6 +585,16 @@ func _build_field_section(column: VBoxContainer) -> void:
 	gustiness_field = _add_field(column, "Gustiness", "m/s",
 		0.0, MAX_GUSTINESS_MPS, GUSTINESS_STEP_MPS,
 		func(v: float) -> void: set_field_gustiness_mps(v))
+
+	humidity_field = _add_field(column, "Humidity", "%",
+		0.0, 100.0, HUMIDITY_STEP_PCT,
+		func(v: float) -> void: set_field_humidity_pct(v))
+	roughness_field = _add_field(column, "Surface z0", "m",
+		MIN_ROUGHNESS_M, MAX_ROUGHNESS_M, ROUGHNESS_STEP_M,
+		func(v: float) -> void: set_field_roughness_m(v))
+	ref_height_field = _add_field(column, "Wind at", "m",
+		MIN_REF_HEIGHT_M, MAX_REF_HEIGHT_M, 1.0,
+		func(v: float) -> void: set_field_wind_ref_height_m(v))
 
 	gust_tau_label = Label.new()
 	gust_tau_label.name = "GustGuess"
@@ -1174,6 +1199,74 @@ func set_field_gustiness_mps(gustiness_mps: float) -> void:
 	_changed(true)
 
 
+## SR3: humidity, surface roughness and wind reference height onto the SELECTED conditions, saved like the other weather fields.
+func set_field_humidity_pct(pct: float) -> void:
+	var now := conditions.selected()
+	if now == null:
+		return
+	now.humidity_pct = clampf(pct, 0.0, 100.0)
+	_changed(true)
+
+
+func set_field_roughness_m(z0_m: float) -> void:
+	var now := conditions.selected()
+	if now == null:
+		return
+	now.roughness_z0_m = clampf(z0_m, MIN_ROUGHNESS_M, MAX_ROUGHNESS_M)
+	_changed(true)
+
+
+func set_field_wind_ref_height_m(h_m: float) -> void:
+	var now := conditions.selected()
+	if now == null:
+		return
+	now.wind_ref_height_m = clampf(h_m, MIN_REF_HEIGHT_M, MAX_REF_HEIGHT_M)
+	_changed(true)
+
+
+## SR3 world picker. The worlds live in a directory beside the courses file (`user://worlds` for the real one); presets are seeded
+## in on first use. Choosing one copies its weather (wind, gust, temperature, humidity, z0, reference height) onto the SELECTED
+## conditions and its ground (elevation, terrain, obstacles) onto the SELECTED site, then saves both: the Field room still flies
+## sites and conditions, the world is how a real place and day are loaded into them. The legacy files are backed up first (once).
+func _build_world_picker(column: VBoxContainer) -> void:
+	worlds_dir = WorldLibrary.DEFAULT_DIR if save_path == CourseLibrary.SAVE_PATH else "%s_worlds" % save_path.get_basename()
+	worlds = WorldLibrary.load_dir(worlds_dir)
+	if worlds.count() == 0:
+		worlds.ensure_presets()
+	world_picker = OptionButton.new()
+	world_picker.name = "World"
+	world_picker.add_item("World...")
+	for id in worlds.ids():
+		world_picker.add_item(worlds.world(id).world_name)
+		world_picker.set_item_metadata(world_picker.item_count - 1, id)
+	world_picker.item_selected.connect(func(index: int) -> void:
+		if index > 0:
+			apply_world(String(world_picker.get_item_metadata(index))))
+	column.add_child(world_picker)
+
+
+func apply_world(id: String) -> bool:
+	var w := worlds.world(id) if worlds != null else null
+	var here := site()
+	var now := conditions.selected()
+	if w == null or here == null or now == null:
+		return false
+	var c := w.to_conditions()
+	now.wind_speed_mps = c.wind_speed_mps
+	now.wind_from_deg = c.wind_from_deg
+	now.gustiness_mps = c.gustiness_mps
+	now.gust_tau_s = c.gust_tau_s
+	now.temperature_c = c.temperature_c
+	now.humidity_pct = c.humidity_pct
+	now.roughness_z0_m = c.roughness_z0_m
+	now.wind_ref_height_m = c.wind_ref_height_m
+	here.elevation_m = w.origin_elevation_m
+	here.terrain = w.terrain
+	here.obstacles = w.obstacles
+	_changed(true)
+	return true
+
+
 ## HOW WIDE THE FIELD IS, and the preview redraws from the same description `height_at` answers
 ## over. `Terrain.shaped` rebuilds the block rather than assigning a member, so the shape's own
 ## dims come with it and nothing here has to know which keys a bowl has.
@@ -1265,6 +1358,10 @@ func _render_controls() -> void:
 		wind_speed_field.value = weather.wind_speed_mps
 		wind_from_field.value = weather.wind_from_deg
 		gustiness_field.value = weather.gustiness_mps
+		if humidity_field != null:
+			humidity_field.value = weather.humidity_pct
+			roughness_field.value = clampf(weather.roughness_z0_m, MIN_ROUGHNESS_M, MAX_ROUGHNESS_M)
+			ref_height_field.value = clampf(weather.wind_ref_height_m, MIN_REF_HEIGHT_M, MAX_REF_HEIGHT_M)
 	_updating = false
 
 

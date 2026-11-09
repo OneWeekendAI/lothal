@@ -12,6 +12,8 @@ extends Control
 signal save_pressed
 signal save_as_pressed
 signal open_pressed
+signal fly_pressed
+signal field_pressed
 signal save_as_confirmed(design_name: String)
 signal open_chosen(file_name: String)
 signal dialog_closed
@@ -32,6 +34,8 @@ var status_label: Label
 var save_button: Button
 var save_as_button: Button
 var open_button: Button
+var fly_button: Button
+var field_button: Button
 var dialog: PanelContainer
 var dialog_title: Label
 var name_edit: LineEdit
@@ -53,7 +57,7 @@ func _init() -> void:
 	_row.name = "FileRow"
 	_row.offset_left = ROW_LEFT
 	_row.offset_top = ROW_TOP
-	_row.offset_right = ROW_LEFT + 470.0
+	_row.offset_right = ROW_LEFT + 620.0
 	_row.offset_bottom = ROW_TOP + 32.0
 	_row.add_theme_constant_override("separation", 4)
 	_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -72,6 +76,14 @@ func _init() -> void:
 	open_button = _button("Open")
 	open_button.pressed.connect(func(): open_pressed.emit())
 	_row.add_child(open_button)
+	fly_button = _button("Fly it")
+	fly_button.tooltip_text = "Fly this build in the simulator (F)"
+	fly_button.pressed.connect(func(): fly_pressed.emit())
+	_row.add_child(fly_button)
+	field_button = _button("Field")
+	field_button.tooltip_text = "Open the Field room: courses, sites, weather and worlds"
+	field_button.pressed.connect(func(): field_pressed.emit())
+	_row.add_child(field_button)
 	status_label = _label("", INK_FAINT, LothalTheme.FONT_SIZE_SMALL)
 	status_label.custom_minimum_size = Vector2(150, 0)
 	status_label.clip_text = true

@@ -219,8 +219,11 @@ static func _test_scroll_to_fitted(ds: DesignSpace) -> Array:
 	var out: Array = []
 	ds.select("part/motor/FL")
 	var far: Dictionary = {}
+	# The far card is far down the LONG list: the motors made for other classes are shown too (a click
+	# on one still swaps; only ClassFit holds them back from the default view).
+	ds.shelf.set_show_misfits("motor", true)
 	for r in ds.shelf.rows:
-		if r["ok"] and (far.is_empty() or float(r["y"]) > float(far["y"])):
+		if (r["ok"] or String(r["reason"]).begins_with("Tested on")) and (far.is_empty() or float(r["y"]) > float(far["y"])):
 			far = r
 	ds.click_card("motor", String(far["id"]))
 	var fitted: Array = ds.shelf.rows.filter(func(r): return r["fitted"])

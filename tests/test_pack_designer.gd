@@ -105,6 +105,7 @@ static func _test_tile(catalog: PartsCatalog) -> Array:
 	named.sort()
 	var expected: Array = BEFORE_NAMES.duplicate()
 	expected.append("AddPack")
+	expected.append("MisfitToggle_battery")  # the 5"'s 1S-3S packs are other classes' (ClassFit), held back behind it
 	expected.append("Plug")  # the selected-battery charge chip's plug button (charge_chip.gd)
 	expected.sort()
 	out.append(_t("battery shelf ends with an AddPack tile and no other new button exists",

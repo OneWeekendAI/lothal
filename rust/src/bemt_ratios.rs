@@ -206,6 +206,12 @@ pub struct BemtRatios {
     pitch_m: f64,
     blades: f64,
     chord_points_mm: PackedFloat64Array,
+    /// SR1: rear-rotor thrust loss fraction in forward flight (rotor-rotor interference). 0 = off.
+    /// PUBLISHED: 11% thrust loss on the rear rotors of an X quadcopter at 5-15 m/s, negligible in
+    /// hover and at 25 m/s (CFD, Aerospace 8(11):349, 2021), expressed as wake skew. The Build sets it for aircraft with four
+    /// or more rotors. See `interference_power_factor`.
+    #[var]
+    pub interference_loss: f64,
 }
 
 #[godot_api]
@@ -256,6 +262,7 @@ impl BemtRatios {
                 pitch_m: 0.0,
                 blades: 0.0,
                 chord_points_mm: PackedFloat64Array::new(),
+                interference_loss: 0.0,
             });
         }
         let closure = guard_closure.clamp(0.0, 1.0);
@@ -286,6 +293,7 @@ impl BemtRatios {
             pitch_m,
             blades,
             chord_points_mm,
+            interference_loss: 0.0,
         })
     }
 
@@ -349,7 +357,40 @@ impl BemtRatios {
     /// torque both carry. Same three short circuits as `thrust_ratio`.
     #[func]
     pub fn power_ratio(&self, rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
-        self.read(&self.table.power, rpm, v_axial_mps, v_edge_mps)
+        let base = self.read(&self.table.power, rpm, v_axial_mps, v_edge_mps);
+        base * Self::interference_power_factor(self.interference_loss, v_axial_mps, v_edge_mps, rpm, self.radius_m)
+    }
+
+    /// Mean shaft-power factor for rotor-rotor interference. Half the rotors (the rear pair of an
+    /// X quad) lose `loss` of their thrust, so they must make 1/(1-loss) times the thrust, and shaft
+    /// power goes as thrust^1.5 (momentum theory), so the four-rotor mean is
+    /// 1 + 0.5 * ((1-loss)^-1.5 - 1).
+    ///
+    /// The window is in WAKE-SKEW terms, not metres per second, because what decides whether the front
+    /// wake lands on the rear rotor is how far it is swept back, i.e. airspeed against the rotor's own
+    /// induced velocity. x = V / (0.08 omega R), 0.08 being the typical hover inflow ratio
+    /// (ESTIMATED; CT 0.013 gives 0.081 on the Mavic prop). The published sampling (CFD, X quad:
+    /// negligible in hover, 11% at 5-15 m/s, negligible at 25 m/s) maps to x of about 1 to 3 and 5 for a
+    /// 1.2 kg quad whose v_h is about 5 m/s. Window: zero below x = 0.5 (the wake is still
+    /// falling past the rear rotors: a rotor spacing near 1.5 D with the wake dropping about 1 D
+    /// puts the onset near a 30 degree skew; ESTIMATED geometry), smoothstep to full at x = 1, full to 3,
+    /// linear down to zero at 5 (shapes ESTIMATED). A first version with a plain quadratic from x = 0 made
+    /// a 3 m/s breeze cost the 5 inch freestyle quad 3.7 percent more hover current than calm; the
+    /// translational-lift ruling test caught it, and this onset is the geometry argument, not a fit.
+    #[func]
+    pub fn interference_power_factor(loss: f64, v_axial_mps: f64, v_edge_mps: f64, rpm: f64, radius_m: f64) -> f64 {
+        if loss <= 0.0 {
+            return 1.0;
+        }
+        let v = (v_axial_mps * v_axial_mps + v_edge_mps * v_edge_mps).sqrt();
+        let omega_r = rpm * std::f64::consts::TAU / 60.0 * radius_m;
+        if omega_r <= 0.0 {
+            return 1.0;
+        }
+        let x = v / (0.08 * omega_r);
+        let t = ((x - 0.5) / 0.5).clamp(0.0, 1.0);
+        let w = if x <= 1.0 { t * t * (3.0 - 2.0 * t) } else if x <= 3.0 { 1.0 } else if x < 5.0 { (5.0 - x) / 2.0 } else { 0.0 };
+        1.0 + w * 0.5 * ((1.0 - loss.clamp(0.0, 0.5)).powf(-1.5) - 1.0)
     }
 
     /// The tabulated domain, for a test that wants to prove the flight envelope stays inside it

@@ -26,6 +26,7 @@ static func run() -> Array:
 	results.append_array(_test_back_to_picker())
 	results.append_array(_test_panel_fades())
 	results.append_array(_test_charge_chip(catalog))
+	results.append_array(_test_fly_it_and_back())
 	return results
 
 
@@ -441,4 +442,97 @@ static func _test_charge_chip(catalog: PartsCatalog) -> Array:
 	ds.free()
 	ds0.free()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(CHIP_CHARGE))
+	return results
+
+
+# ---------------------------------------------------------------------------
+# Fly it / Field / Back to the drone (TRACKER section 9)
+# ---------------------------------------------------------------------------
+
+## A scratch ProjectLibrary root, so no test here touches the builder's own builds.
+static func _scratch_open(id: String) -> GlassShell:
+	ProjectLibrary.root = "user://scratch_flyit_%d" % OS.get_process_id()
+	return _open(id)
+
+
+static func _scratch_done(shell: GlassShell) -> void:
+	if shell.container != null and shell.container.path != "":
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(shell.container.path))
+	shell.free()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(ProjectLibrary.root))
+	ProjectLibrary.root = ProjectLibrary.DIR
+
+
+static func _test_fly_it_and_back() -> Array:
+	var results: Array = []
+	var catalog := PartsCatalog.load_default()
+	var shell := _scratch_open("five_inch")
+	var ds := shell.design_space
+	# Change a part in the Design Space only, so the old Lab's rails (still the class default) differ.
+	var other := ""
+	for opt in catalog.list_category("battery"):
+		if String(opt.get("id", opt.get("part_id", ""))) != String(ds.session.selection["battery"]):
+			other = String(opt.get("id", opt.get("part_id", "")))
+			break
+	ds.set_part("battery", other)
+	var want := ds.session.build(catalog)
+	ds.rig.goal_yaw += 0.7
+	ds.rig.goal_distance *= 0.8
+	var cam_before := Vector3(ds.rig.goal_yaw, ds.rig.goal_pitch, ds.rig.goal_distance)
+	var sel_pick := ""
+	for k in ds.pick_registry_addresses() if ds.has_method("pick_registry_addresses") else []:
+		sel_pick = String(k)
+		break
+	ds.select(sel_pick if sel_pick != "" else "motor")
+	var sel_before: String = ds.selected
+
+	ds.file_bar.fly_button.pressed.emit()
+	var sim = shell.rooms.sim
+	var flown_ids: Dictionary = sim.initial_selection if sim != null else {}
+	var parts := {}
+	for c in ["frame", "motor", "propeller", "battery", "esc", "flight_controller"]:
+		parts[c] = flown_ids.get(c, "")
+	var project := Project.from_dict(shell.container.project.to_dict())
+	project.parts.merge(flown_ids, true)
+	var flown := project.to_build(catalog) if sim != null else null
+	results.append(TestResult.new("Fly it shows the sim (Design Space hidden)",
+		sim != null and not ds.visible and shell.away_from_design(), str(sim)))
+	results.append(TestResult.new("Fly it flies the build being edited: same battery and same mass",
+		flown != null and String(flown_ids.get("battery", "")) == other
+			and is_equal_approx(flown.all_up_weight_g(), want.all_up_weight_g()),
+		"flown=%s want=%s" % [flown.all_up_weight_g() if flown != null else -1.0, want.all_up_weight_g()]))
+	results.append(TestResult.new("Fly it flies the same motor count",
+		flown != null and flown.motor_count() == want.motor_count(),
+		"%s vs %s" % [flown.motor_count() if flown != null else -1, want.motor_count()]))
+
+	shell.back_to_drone_from_room()
+	results.append(TestResult.new("Back returns to the same Design Space, project intact",
+		shell.design_space == ds and ds.visible and shell.rooms.sim == null and not shell.away_from_design()
+			and ds.session.selection["battery"] == other and ds.selected == sel_before
+			and Vector3(ds.rig.goal_yaw, ds.rig.goal_pitch, ds.rig.goal_distance).is_equal_approx(cam_before)
+			and String(shell.container.project.parts["battery"]) == other,
+		"visible=%s sel=%s/%s" % [ds.visible, ds.selected, sel_before]))
+
+	# Field: the world picker is on screen and Back returns the same way.
+	shell.design_space.field_requested.emit()
+	results.append(TestResult.new("Field opens the Field room (world picker present), Design Space hidden",
+		not ds.visible and shell.away_from_design() and shell._field != null and shell._field.world_picker != null
+			and shell._field.visible, "ds=%s away=%s field=%s picker=%s vis=%s" % [ds.visible, shell.away_from_design(), shell._field, shell._field.world_picker, shell._field.visible]))
+	ds._unhandled_key_input(_key(KEY_F))
+	shell.back_to_drone_from_room()
+	results.append(TestResult.new("F on the Design Space flies it too, and Esc-path Back restores it",
+		ds.visible and shell.rooms.sim == null, ""))
+	ds._unhandled_key_input(_key(KEY_F))
+	var esc := _key(KEY_ESCAPE)
+	shell._unhandled_key_input(esc)
+	results.append(TestResult.new("Esc in the sim goes back to the Design Space",
+		ds.visible and shell.rooms.sim == null and not shell.away_from_design(), ""))
+
+	# The old shell's own Lab/Sim toggle still works with no Design Space involved.
+	shell.rooms.show_sim()
+	var sim_on: bool = shell.rooms.sim != null
+	shell._lab_button.pressed.emit()
+	results.append(TestResult.new("The old Lab/Sim toggle still switches rooms",
+		sim_on and shell.rooms.sim == null and shell.rooms.showing_lab(), ""))
+	_scratch_done(shell)
 	return results

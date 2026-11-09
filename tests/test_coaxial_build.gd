@@ -84,9 +84,15 @@ static func run() -> Array:
 	return results
 
 
+## SR1 (2026-11-09): the core is built with field physics OFF. The sim now adds a fixed avionics load
+## (watts, so it is a larger share of a small quad's hover current than of an 8-motor cinelifter's) and
+## ESC losses on top of the motors' current; Build.hover_current_a prices the motors alone. This check is
+## about the coaxial LUMP being scaled right (an unscaled lump misses by 30 %+), so it compares motors
+## to motors. With field physics on the two builds read 1.294 vs 1.375, and that gap is the avionics
+## share, not a lump error.
 static func _sim_amps_over_build(b: Build) -> float:
 	var h := b.hover_throttle()
-	var core := b.build_drone_core()
+	var core := b.build_drone_core({"off": true})
 	core.prime_motors(h)
 	var cmds := {}
 	for name in MotorLayout.MOTOR_NAMES:

@@ -42,6 +42,33 @@ use godot::prelude::*;
 /// fallback for a non-positive rho (air_density_or_default's second line).
 const AIR_DENSITY_KGM3: f64 = 1.225;
 
+/// SR1 bucket-depth terms, each a labelled constant (never fitted to any aircraft).
+///
+/// Induced-power factor kappa (non-uniform inflow: induced power = kappa times the ideal). OWNER DECISION 2026-11-09:
+/// kappa = 1.15 in hover AND in forward flight. Sources: Un et al., "Analysis and flight test comparison for hover
+/// performance" (Turkish Aerospace; https://dspace-erf.nlr.nl/bitstreams/390cf546-70b6-4770-a169-09b4c318bb1a/download):
+/// "Leishman states that kappa is between 1.15 and 1.25 for main rotors in hover condition" - 1.15 is the LOW bound;
+/// best fit to their flight test 1.16. Zongo & Wei, arXiv 2604.06093: "kappa = 1.15 captures non-uniform inflow, tip
+/// losses ... in cruise [Johnson, Leishman]". The earlier 1.10 hover / 1.15 forward pair (ratio 1.045) was not
+/// supported by either source and is removed. Bangura & Mahony, arXiv 1601.00733 sec 3.7, say kappa is larger for
+/// high-disc-loading quadrotor blades (no number reachable), so 1.15 is a floor for small props, not a ceiling.
+/// Hover absolute power is anchored to measured prop data (MQTB torque), which already contains whatever kappa
+/// the real prop has, so the hover value is not applied a second time; the BEMT's forward-over-hover power RATIO
+/// is what carries kappa, and with equal hover and forward kappa that ratio is 1.0: the forward induced term gets
+/// no extra penalty over the BEMT's own hover-consistent value.
+pub const KAPPA_HOVER: f64 = 1.15;
+pub const KAPPA_FORWARD: f64 = 1.15;
+pub const KAPPA_FORWARD_OVER_HOVER: f64 = KAPPA_FORWARD / KAPPA_HOVER;
+/// Profile-power growth with advance ratio. PUBLISHED: Leishman (2006) ch. 5 / Johnson, Helicopter
+/// Theory (1980): P_0 = P_0,hover (1 + K mu^2), K = 4.65 with the reverse-flow region (4.5 without,
+/// 3 for a simple blade-element mean). RE-CHECK 2026-11-09: 4.65 confirmed only secondhand, Zongo & Wei arXiv 2604.06093:
+/// "k_mu = 4.65 accounts for advancing blade effects [Johnson, Rotorcraft Aeromechanics]" in P = ... (1 + k_mu mu^2); the 4.5 and 3
+/// variants are unverified. Helicopter-rotor form; no small-propeller source found. The BEMT's own U^2 term already contains (1 + 2 mu^2) (it
+/// adds the full edgewise speed squared to the dynamic pressure), so the correction applied is the
+/// ratio (1 + K mu^2) / (1 + 2 mu^2), exactly 1 at mu = 0.
+pub const PROFILE_MU2_K: f64 = 4.65;
+const PROFILE_MU2_K_IMPLICIT: f64 = 2.0;
+
 /// The fixed induced-velocity iteration count. 20, not 12: see the FINDING in the module docs.
 const BEMT_ITERATIONS: i64 = 20;
 /// The forward-flight iteration count (P6). 40, not 20, and it is a SEPARATE constant rather
@@ -460,7 +487,11 @@ impl BemtModel {
             rho, diameter_m, pitch_m, blades, rpm, &chord_points_mm,
             POLAR_A0_EFF, POLAR_C_D0, POLAR_K, POLAR_C_L_MAX,
             v_axial_mps, v_edge_mps, guard_closure, &twist_points)[0];
-        (flight_t / static_t).max(0.0).min(1.0)
+        // SR1: NOT capped at 1.0 any more. The cap threw away the edgewise term: in forward flight the
+        // momentum flow through the disc grows with airspeed (|V_total|), the induced velocity falls, and
+        // the same rpm makes MORE thrust. That is translational lift, and without it the sim could not show
+        // a cruise cheaper than hover (the power bucket). Axial unloading still takes the ratio below 1.
+        (flight_t / static_t).max(0.0)
     }
 
     /// The P10b static closure factors — what a fitted guard does to STATIC thrust and to
@@ -692,7 +723,24 @@ impl BemtModel {
         // — the blades' own drag — is unconditionally real and stays. So an unloaded rotor
         // costs its blade drag and nothing less, the ratio is continuous through the crossing,
         // and no energy comes back.
-        let flight_p = flight_r[2].max(0.0) + flight_r[3];
+        // SR1 bucket-depth terms (see KAPPA_FORWARD_OVER_HOVER, PROFILE_MU2_K). Both act on POWER only,
+        // after the thrust solve, so no thrust, rpm or hover anchor moves. They are skipped
+        // (factor 1) when the rotor is unloaded or the caller turned them off via the globals.
+        let flight_t_n = flight_r[0];
+        let omega_r = rpm * std::f64::consts::TAU / 60.0 * diameter_m * 0.5;
+        let mu_edge = if omega_r > 0.0 { v_edge_mps / omega_r } else { 0.0 };
+        let profile_factor = (1.0 + PROFILE_MU2_K * mu_edge * mu_edge)
+            / (1.0 + PROFILE_MU2_K_IMPLICIT * mu_edge * mu_edge);
+        let mut induced = flight_r[2].max(0.0);
+        let static_t = static_r[0];
+        if flight_t_n > 0.0 && static_t > 0.0 {
+            let excess = KAPPA_FORWARD_OVER_HOVER - 1.0;
+            let climb = flight_t_n * v_axial_mps;
+            let v_i = ((flight_r[2] - climb) / flight_t_n).max(0.0);
+            let skew_sin = v_edge_mps / ((v_axial_mps + v_i).powi(2) + v_edge_mps * v_edge_mps).sqrt().max(1e-9);
+            induced = climb + (flight_r[2] - climb).max(0.0) * (1.0 + excess * skew_sin);
+        }
+        let flight_p = induced + flight_r[3] * profile_factor;
         if flight_p <= 0.0 {
             return 1.0;
         }

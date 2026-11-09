@@ -82,7 +82,19 @@ pub struct Powertrain {
     /// the duty depends on the supply, so publish() must price each motor's current at this
     /// voltage, not at the post-step sagged `last_voltage_v`, or the per-motor currents stop
     /// summing to the pack current they were drawn as (2026-11-03: 40.9 A vs 39.7 A).
+    #[var]
     pub current_supply_v: f64,
+    /// SR1. True once the pack has been at or under its per-cell cutoff (sag included) for
+    /// `cutoff_hold_s`: the ESC low-voltage cutoff. Latched, and every motor command reads 0 after.
+    /// Only ever set when the battery's `cutoff_enabled` is on (field realism).
+    #[var]
+    pub cutoff_latched: bool,
+    /// SR1. Seconds under cutoff before the latch (a real ESC rides out a punch-out dip).
+    /// ESTIMATED, 0.5 s.
+    #[var]
+    pub cutoff_hold_s: f64,
+    #[var]
+    pub cutoff_low_s: f64,
     /// The aircraft's velocity in the BODY frame as of the last step, kept so publish() can be
     /// idempotent: it recomputes reaction torque and per-motor current from stored state, and
     /// those are now functions of airspeed as well as rpm. Vector3::ZERO on a bench, for ever,
@@ -93,9 +105,83 @@ pub struct Powertrain {
     /// this — exactly one instance per simulation, bench or flight.
     #[var]
     pub observables: Gd<godot::classes::RefCounted>,
+    /// SR1: constant electrical load of everything that is not a motor (flight controller, video
+    /// transmitter, receiver, camera, GPS, payload), watts. Drawn from the pack at the live voltage.
+    /// 0 = the pre-SR1 aircraft. Build sets it from labelled per-part defaults, all estimated.
+    #[var]
+    pub avionics_w: f64,
+    /// SR1: the motor thermal model is in the loop when true (see `set_thermal`).
+    #[var]
+    pub thermal_on: bool,
+    /// Air temperature the motors shed heat into, C.
+    #[var]
+    pub ambient_c: f64,
+    /// Lumped winding + stator temperature and bell temperature, C. One lump for the four motors:
+    /// they carry near-equal loads in steady flight (named simplification).
+    #[var]
+    pub winding_c: f64,
+    #[var]
+    pub bell_c: f64,
+    /// Copper temperature coefficient of resistance, per K. Published: 0.00393 (annealed copper).
+    #[var]
+    pub rm_alpha_per_k: f64,
+    pub th_c_stator: f64,
+    pub th_c_bell: f64,
+    pub th_g_cond: f64,
+    pub th_mass_g: f64,
+    pub th_stator_d_mm: f64,
+    pub th_stator_h_mm: f64,
+    pub th_acc_s: f64,
+    /// Heat shed by one motor's winding at the last thermal update, W (for the panels and tests).
+    #[var]
+    pub last_motor_loss_w: f64,
 }
 
 impl Powertrain {
+    /// Heat the winding and stator shed, W per motor, averaged over the four, then one two-lump
+    /// step every 50 ms (the lumps' time constants are minutes, so 20 Hz is exact enough and keeps
+    /// the 1 kHz tick cheap). Winding resistance follows the winding temperature on the next tick.
+    fn thermal_update(&mut self, thrusts: &[f64; 4], v_axial: f64, v_edge: f64, dt: f64) {
+        self.th_acc_s += dt;
+        if self.th_acc_s < 0.05 {
+            return;
+        }
+        let step_dt = self.th_acc_s;
+        self.th_acc_s = 0.0;
+        let (kv, rm, io, io_v, count, scale) = {
+            let mm = self.motor_model.bind();
+            (mm.kv, mm.dc_rm_ohm, mm.dc_io_a, mm.dc_io_v, mm.dc_count.max(1.0), mm.rm_temp_scale)
+        };
+        if rm <= 0.0 || kv <= 0.0 {
+            return;
+        }
+        let mut loss = 0.0;
+        let mut rpm_sum = 0.0;
+        let mut thrust_sum = 0.0;
+        for i in 0..4 {
+            let rpm = self.motor_rpm[i];
+            let ratio = self.forward_ratios.bind().power_ratio(rpm, v_axial, v_edge);
+            let i_w = self.motor_model.bind().dc_current_at_rpm(rpm) / count * ratio;
+            loss += i_w * i_w * rm * scale
+                + crate::motor::io_impl(io, io_v, kv, rpm) * rpm / kv;
+            rpm_sum += rpm;
+            thrust_sum += thrusts[i];
+        }
+        loss *= 0.25;
+        rpm_sum *= 0.25;
+        thrust_sum *= 0.25;
+        self.last_motor_loss_w = loss;
+        let area = std::f64::consts::PI * self.prop_radius_m * self.prop_radius_m;
+        let wash = (thrust_sum.max(0.0) / (2.0 * self.air_density_kgm3.max(0.1) * area.max(1e-9))).sqrt();
+        let g_air = MotorModel::air_conductance_w_per_k(self.th_mass_g, rpm_sum);
+        let g_stator = MotorModel::stator_air_conductance_w_per_k(self.th_stator_d_mm, self.th_stator_h_mm, wash);
+        let (tw, tb) = crate::motor::two_lump_step_amb(self.winding_c, self.bell_c, loss, self.th_c_stator,
+            self.th_c_bell, self.th_g_cond, g_air, g_stator, step_dt, self.ambient_c);
+        self.winding_c = tw;
+        self.bell_c = tb;
+        self.apply_rm_temperature();
+    }
+
     fn make_observables() -> Gd<godot::classes::RefCounted> {
         let mut loader = godot::classes::ResourceLoader::singleton();
         let resource = loader
@@ -139,8 +225,39 @@ impl Powertrain {
             blade_chord_mm, 0.0, blade_twist)
     }
 
+    /// Switches the motor thermal model on (SR1). Masses in grams, from the motor part record; the
+    /// copper / stator-iron / bell split is ESTIMATED (outrunner class-typical: copper 20 %, stator
+    /// iron 40 % incl. base and shaft, bell `bell_g`), so every figure is a field the caller can
+    /// override by passing different masses. `ambient_c` is the air and the starting temperature.
+    #[func]
+    fn set_thermal(&mut self, motor_mass_g: f64, copper_g: f64, stator_g: f64, bell_g: f64,
+                   stator_d_mm: f64, stator_h_mm: f64, ambient_c: f64) {
+        self.th_c_stator = MotorModel::thermal_mass_j_per_k(copper_g, stator_g);
+        self.th_c_bell = MotorModel::bell_thermal_mass_j_per_k(bell_g);
+        self.th_g_cond = MotorModel::bell_conduction_w_per_k(motor_mass_g);
+        self.th_mass_g = motor_mass_g;
+        self.th_stator_d_mm = stator_d_mm;
+        self.th_stator_h_mm = stator_h_mm;
+        self.ambient_c = ambient_c;
+        self.winding_c = ambient_c;
+        self.bell_c = ambient_c;
+        self.thermal_on = true;
+        self.th_acc_s = 0.0;
+        self.apply_rm_temperature();
+    }
+
+    fn apply_rm_temperature(&mut self) {
+        let scale = 1.0 + self.rm_alpha_per_k * (self.winding_c - 25.0);
+        self.motor_model.bind_mut().rm_temp_scale = scale.max(0.5);
+    }
+
     /// What the flight tick reads for thrust at this airspeed, so a test can ask the powertrain
     /// itself rather than a second surface built beside it.
+    #[func]
+    fn set_interference_loss(&mut self, loss: f64) {
+        self.forward_ratios.bind_mut().interference_loss = loss;
+    }
+
     #[func]
     fn forward_thrust_ratio(&self, rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
         self.forward_ratios.bind().thrust_ratio(rpm, v_axial_mps, v_edge_mps)
@@ -178,8 +295,25 @@ impl Powertrain {
             last_voltage_v,
             last_current_total_a: 0.0,
             current_supply_v: last_voltage_v,
+            cutoff_latched: false,
+            cutoff_hold_s: 0.5,
+            cutoff_low_s: 0.0,
             last_body_velocity_mps: Vector3::ZERO,
             observables,
+            avionics_w: 0.0,
+            thermal_on: false,
+            ambient_c: 25.0,
+            winding_c: 25.0,
+            bell_c: 25.0,
+            rm_alpha_per_k: 0.00393,
+            th_c_stator: 0.0,
+            th_c_bell: 0.0,
+            th_g_cond: 0.0,
+            th_mass_g: 0.0,
+            th_stator_d_mm: 0.0,
+            th_stator_h_mm: 0.0,
+            th_acc_s: 0.0,
+            last_motor_loss_w: 0.0,
         });
         pt.bind_mut().publish();
         pt
@@ -294,7 +428,7 @@ impl Powertrain {
         for i in 0..4 {
             let rpm = self.motor_model.bind().step(
                 self.motor_rpm[i],
-                motor_throttle_cmds[i],
+                if self.cutoff_latched { 0.0 } else { motor_throttle_cmds[i] },
                 self.last_voltage_v,
                 dt,
             );
@@ -315,8 +449,25 @@ impl Powertrain {
         let elapsed = self.observables.get("elapsed_s").try_to::<f64>().expect("elapsed_s should be a float");
         self.observables.set("elapsed_s", &(elapsed + dt).to_variant());
 
+        // SR1: the non-motor load, a constant POWER, so a sagging pack draws more amps for it.
+        if self.avionics_w > 0.0 {
+            total_current_a += self.avionics_w / self.last_voltage_v.max(1.0);
+        }
+        if self.thermal_on {
+            self.thermal_update(&thrusts, v_axial, v_edge, dt);
+        }
         self.battery.bind_mut().drain(total_current_a, dt);
         self.last_current_total_a = total_current_a;
+        if self.battery.bind().cutoff_enabled && !self.cutoff_latched {
+            if self.battery.bind().below_cutoff(total_current_a) {
+                self.cutoff_low_s += dt;
+                if self.cutoff_low_s >= self.cutoff_hold_s {
+                    self.cutoff_latched = true;
+                }
+            } else {
+                self.cutoff_low_s = 0.0;
+            }
+        }
         self.current_supply_v = self.last_voltage_v;
         // The live voltage the NEXT step's RPM ceiling is taken against. This one line is the
         // difference between a bench and a spreadsheet.

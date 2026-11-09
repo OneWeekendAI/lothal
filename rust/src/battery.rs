@@ -144,6 +144,27 @@ fn max_cell_v(chemistry: &str) -> f64 {
     }
 }
 
+/// SR1 field constants per chemistry: (Peukert k, resistance beta in K, capacity loss per C below 25).
+///
+/// Li-ion (the two the data fix):
+/// - k = 1.0166, MEASURED FIT: least squares of ln(Q/Q_1C) on ln(C-rate) over the 1C-and-up points of
+///   Samsung 30Q (15 A lower-bound point dropped), Sony VTC6 and Molicel P42A from lygte-info's
+///   constant-current discharges (tests/sim_reality/measured/battery_discharge.json). Held out:
+///   Molicel P28A and Samsung 40T (worst error 1.2 percent of capacity; see test_sr1_physics.gd).
+/// - beta = 3545 K, MEASURED FIT: mean of ln(R_cold/R_warm) / (1/T_cold - 1/T_warm) over five cells'
+///   5 A DC resistance at ~22 C and ~0 C (budgetlightforum, maukka). The cell-to-cell spread is
+///   2700 to 5500 K, so a pack's cold resistance is good to about +-40 percent. Resistance only.
+/// - capacity loss per C below 25: ESTIMATED 0.006 (about 15 percent at 0 C). No measured
+///   capacity-vs-temperature source was found; datasheet temperature curves are charts.
+/// LiPo and the rest: NO measured data. Every figure is ESTIMATED: k = 1.05, beta borrowed from
+/// Li-ion, cold capacity loss as Li-ion. Replace with a measurement when one exists.
+fn field_constants(chemistry: &str) -> (f64, f64, f64) {
+    match chemistry {
+        "Li-ion" => (1.0166, 3545.0, 0.006),
+        _ => (1.05, 3545.0, 0.006),
+    }
+}
+
 /// Class-typical maximum charge rate, in C. Conservative, label as ideal.
 fn max_charge_c(chemistry: &str) -> f64 {
     match chemistry {
@@ -213,6 +234,29 @@ pub struct BatteryModel {
     /// Selects the curve. See the original header for why chemistry is a spec, not metadata.
     #[var]
     pub chemistry: GString,
+    /// SR1. Pack temperature, C. Moves internal resistance and usable capacity. 25 = the pre-SR1 pack.
+    #[var]
+    pub temp_c: f64,
+    /// SR1. Peukert exponent; 1.0 = no rate effect (pre-SR1). Fitted per chemistry by
+    /// `enable_field_realism` against measured constant-current discharges (tests/sim_reality/measured).
+    #[var]
+    pub peukert_k: f64,
+    /// SR1. Arrhenius-style resistance rise in the cold: R(T) = R25 * exp(beta * (1/T - 1/298.15)), K.
+    /// 0 = no temperature effect on resistance.
+    #[var]
+    pub r_beta_k: f64,
+    /// SR1. Fractional capacity lost per degree C below 25 C (linear, floored). 0 = none.
+    #[var]
+    pub cap_loss_per_c_cold: f64,
+    /// SR1. Capacity lost to cycling, fraction. Default 0, ESTIMATED (a field; no cycle data is wired).
+    #[var]
+    pub fade_fraction: f64,
+    /// SR1. The loaded per-cell voltage that ends the flight. Default is the chemistry's minimum.
+    #[var]
+    pub cutoff_cell_v: f64,
+    /// SR1. True once `enable_field_realism` ran: the powertrain then latches the ESC cutoff.
+    #[var]
+    pub cutoff_enabled: bool,
 }
 
 #[godot_api]
@@ -243,6 +287,13 @@ impl BatteryModel {
             used_mah: 0.0,
             cells,
             chemistry,
+            temp_c: 25.0,
+            peukert_k: 1.0,
+            r_beta_k: 0.0,
+            cap_loss_per_c_cold: 0.0,
+            fade_fraction: 0.0,
+            cutoff_cell_v: 0.0,
+            cutoff_enabled: false,
         })
     }
 
@@ -371,12 +422,84 @@ impl BatteryModel {
 
     #[func]
     pub fn voltage_live(&self, current_total_a: f64) -> f64 {
-        self.resting_voltage_v() - current_total_a * self.internal_r_ohm
+        self.resting_voltage_v() - current_total_a * self.internal_r_ohm * self.r_temp_factor()
+    }
+
+    /// Resistance multiplier from pack temperature (1.0 at 25 C or with beta 0).
+    #[func]
+    pub fn r_temp_factor(&self) -> f64 {
+        if self.r_beta_k == 0.0 {
+            return 1.0;
+        }
+        (self.r_beta_k * (1.0 / (self.temp_c + 273.15) - 1.0 / 298.15)).exp()
+    }
+
+    /// Fraction of rated capacity available at this pack temperature and cycle age (1.0 = full).
+    #[func]
+    pub fn capacity_factor(&self) -> f64 {
+        let cold = (25.0 - self.temp_c).max(0.0);
+        ((1.0 - self.cap_loss_per_c_cold * cold).max(0.2)) * (1.0 - self.fade_fraction).clamp(0.05, 1.0)
+    }
+
+    /// How much faster than coulomb counting the pack empties at this current: the Peukert factor
+    /// (c / 1C)^(k - 1) for c above 1C, never below 1, divided by the temperature and age capacity.
+    #[func]
+    pub fn drain_multiplier(&self, current_total_a: f64) -> f64 {
+        let ah = (self.capacity_mah / 1000.0).max(1e-9);
+        let c = current_total_a.abs() / ah;
+        let peukert = if self.peukert_k > 1.0 && c > 1.0 { c.powf(self.peukert_k - 1.0) } else { 1.0 };
+        peukert / self.capacity_factor()
+    }
+
+    /// True once the LOADED per-cell voltage at this current is at or below the cutoff, or the pack
+    /// is empty. This is what ends a flight: sag can end it before the capacity does.
+    #[func]
+    pub fn below_cutoff(&self, current_total_a: f64) -> bool {
+        let cutoff = if self.cutoff_cell_v > 0.0 {
+            self.cutoff_cell_v
+        } else {
+            min_cell_v(&self.chemistry.to_string())
+        };
+        let cells = self.cells.max(1) as f64;
+        self.voltage_live(current_total_a) / cells <= cutoff || self.remaining_fraction() <= 0.0
+    }
+
+    /// Turns on the SR1 rate, temperature and cutoff behaviour with the per-chemistry constants
+    /// fitted to measured discharge data (see FIELD_* below and tests/sim_reality/measured/).
+    /// `temp_c` is the pack temperature for the flight. Every constant stays a plain field the
+    /// caller can overwrite afterwards.
+    /// Provenance of each SR1 field constant for a chemistry: "measured" or "estimated".
+    #[func]
+    pub fn field_constant_tags(chemistry: GString) -> VarDictionary {
+        let li = chemistry.to_string() == "Li-ion";
+        let rate = if li { "measured" } else { "estimated" };
+        let mut d = VarDictionary::new();
+        d.set("peukert_k", rate);
+        d.set("r_beta_k", rate);
+        d.set("cap_loss_per_c_cold", "estimated");
+        d.set("fade_fraction", "estimated");
+        d.set("cutoff_cell_v", "published");
+        d
+    }
+
+    #[func]
+    pub fn enable_field_realism(&mut self, temp_c: f64) {
+        let (k, beta, cap_cold) = field_constants(&self.chemistry.to_string());
+        self.peukert_k = k;
+        self.r_beta_k = beta;
+        self.cap_loss_per_c_cold = cap_cold;
+        self.temp_c = temp_c;
+        self.cutoff_enabled = true;
     }
 
     #[func]
     pub fn drain(&mut self, current_total_a: f64, dt: f64) {
-        self.used_mah += current_total_a * (dt / 3600.0) * 1000.0;
+        let mult = if self.peukert_k > 1.0 || self.cap_loss_per_c_cold > 0.0 || self.fade_fraction > 0.0 {
+            self.drain_multiplier(current_total_a)
+        } else {
+            1.0
+        };
+        self.used_mah += current_total_a * (dt / 3600.0) * 1000.0 * mult;
     }
 
     #[func]

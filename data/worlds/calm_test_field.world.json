@@ -1,0 +1,105 @@
+{
+	"air": {
+		"humidity_pct": 0.0,
+		"pressure_hpa": 0.0,
+		"temperature_c": 15.0
+	},
+	"description": "Flat 200 m x 120 m field, no wind, International Standard Atmosphere at sea level. The reference for comparing against other worlds.",
+	"field": {
+		"polygon": [
+			[
+				40.06,
+				-88.2296484
+			],
+			[
+				40.06,
+				-88.2273042
+			],
+			[
+				40.0610807,
+				-88.2273042
+			],
+			[
+				40.0610807,
+				-88.2296484
+			]
+		]
+	},
+	"format": "lothal.world",
+	"id": "calm_test_field",
+	"name": "Calm test field",
+	"obstacles": [],
+	"origin": {
+		"elevation_m": 0.0,
+		"lat": 40.06,
+		"lon": -88.23
+	},
+	"sources": {
+		"air.humidity": {
+			"note": "0 %: the dry-air convention of the ISA.",
+			"tag": "published"
+		},
+		"air.pressure": {
+			"note": "Blank: ISA pressure at 0 m, 1013.25 hPa.",
+			"tag": "published"
+		},
+		"air.temperature": {
+			"note": "15 C: the ISA sea-level temperature (ICAO Doc 7488).",
+			"tag": "published"
+		},
+		"field.polygon": {
+			"note": "Illustrative rectangle.",
+			"tag": "estimated"
+		},
+		"origin": {
+			"note": "Position shared with the Illinois preset; elevation set to sea level on purpose, for ISA.",
+			"tag": "estimated"
+		},
+		"surface.z0": {
+			"note": "Short grass 0.03 m, Davenport-Wieringa roughness classification (Wieringa 1992).",
+			"tag": "published"
+		},
+		"terrain": {
+			"note": "Flat by construction.",
+			"tag": "estimated"
+		},
+		"time": {
+			"note": "Summer solstice, 18:00 UTC; a scenario time.",
+			"tag": "estimated"
+		},
+		"wind.from": {
+			"note": "Irrelevant at zero wind.",
+			"tag": "estimated"
+		},
+		"wind.gust": {
+			"note": "Zero turbulence by definition.",
+			"tag": "estimated"
+		},
+		"wind.speed": {
+			"note": "Zero by definition of a calm test.",
+			"tag": "estimated"
+		}
+	},
+	"surface": {
+		"name": "short grass",
+		"z0_m": 0.03
+	},
+	"terrain": {
+		"center_x_m": 130.0,
+		"center_z_m": -60.0,
+		"length_m": 160.0,
+		"shape": "flat",
+		"width_m": 260.0
+	},
+	"time": {
+		"utc": "2026-06-21T18:00:00Z"
+	},
+	"version": 1,
+	"wind": {
+		"from_deg": 0.0,
+		"gust_tau_s": 2.5,
+		"gustiness_mps": 0.0,
+		"ref_height_m": 10.0,
+		"speed_mps": 0.0
+	}
+}

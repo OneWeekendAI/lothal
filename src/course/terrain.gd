@@ -73,7 +73,7 @@ const DIM_DEFAULTS := {
 }
 
 ## The keys this class names itself; everything else in the block is a dim.
-const BLOCK_KEYS := ["shape", "width_m", "length_m", "center_x_m", "center_z_m"]
+const BLOCK_KEYS := ["shape", "width_m", "length_m", "center_x_m", "center_z_m", "heightfield"]
 
 const DEFAULT_WIDTH_M := 120.0
 const DEFAULT_LENGTH_M := 120.0
@@ -91,6 +91,9 @@ var center_x_m := 0.0
 var center_z_m := 0.0
 ## Shape-specific values, plus anything in the block this version does not recognise.
 var dims: Dictionary = {}
+## SR3: real ground (USGS 3DEP) as a grid of heights above the home point. When set it replaces the procedural shape.
+## Serialised by `World` (it is large), not by to_data(): World strips and restores the "heightfield" key around Terrain.from_data / to_data.
+var heightfield: Heightfield = null
 
 ## The record this terrain was read from, kept verbatim so an untouched load writes an untouched
 ## file. Empty for a terrain built in code.
@@ -156,6 +159,8 @@ func half_extent() -> Vector2:
 ## Pure. No caching, no memo, nothing read off the object that a previous call wrote — F4 calls
 ## this per gate per frame and a cache keyed on x alone would answer the previous z.
 func height_at(x: float, z: float) -> float:
+	if heightfield != null:
+		return heightfield.height_at(x, z)
 	# The boundary, not zero. See the header.
 	var half := half_extent()
 	var half_x := half.x
@@ -233,7 +238,7 @@ func _banked_height(dx: float, dz: float, half_x: float, half_z: float) -> float
 ## THE PREDICATE F9 READS, AND THE ONLY ONE IT READS. `shape == FLAT`. See the header for why it
 ## must not grow a second clause.
 func is_flat_at_zero() -> bool:
-	return shape == FLAT
+	return shape == FLAT and heightfield == null
 
 
 ## The terrain's contribution to a lap fingerprint: the shape's name and its rounded dimensions.
@@ -246,6 +251,8 @@ func fingerprint_term() -> String:
 	var parts: Array[String] = [String(shape),
 		"%.2f" % width_m, "%.2f" % length_m,
 		"%.2f" % center_x_m, "%.2f" % center_z_m]
+	if heightfield != null:
+		parts.append(heightfield.fingerprint_term())
 	var keys: Array = DIM_DEFAULTS.get(shape, {}).keys()
 	keys.sort()
 	for key in keys:
@@ -272,7 +279,7 @@ func _num(key: String) -> float:
 ## the file it loaded had a block, because a remembered flag goes stale the moment a builder picks
 ## a shape on a record that never had one — which is precisely the regression this answers.
 func is_default() -> bool:
-	return shape == FLAT and _unknown_shape == "" and dims.is_empty() \
+	return heightfield == null and shape == FLAT and _unknown_shape == "" and dims.is_empty() \
 		and absf(width_m - DEFAULT_WIDTH_M) < 1.0e-9 \
 		and absf(length_m - DEFAULT_LENGTH_M) < 1.0e-9 \
 		and absf(center_x_m) < 1.0e-9 and absf(center_z_m) < 1.0e-9

@@ -86,6 +86,11 @@ static func run() -> Array:
 	results.append(_t("the datasheet outliers are the known ones, listed (%d of %d presets)" % [outliers.size(), motors.size()],
 		outliers.size() <= 12, ", ".join(outliers)))
 
+	# RE-PINNED 2026-11-09 (SR1-SR2): ONLY flight_time_min moved (auw, T:W, hover throttle, top speed are unchanged to 1e-9, so hover physics
+	# did not move). The freestyle profile is forward flight: it now pays rear-rotor interference, directional drag and profile-power
+	# growth and gains the translational lift the old thrust-ratio cap discarded. -24 % .. +2.9 % over the 26 builds; the two rises
+	# (class/cinelifter +2.6 %, motor_2808_1300kv +2.9 %) are the lowest-disc-loading builds, where uncapped lift (ratio 1.25-1.38
+	# at 12 m/s) outweighs the added costs. Old -> new table: sim-reality plan, SR-green section.
 	var expected: Dictionary = JsonStore.read_document(MotorPresetFigures.FIXTURE)
 	var live := MotorPresetFigures.snapshot()
 	results.append(_t("the figures snapshot covers 16 presets and 10 seed builds",

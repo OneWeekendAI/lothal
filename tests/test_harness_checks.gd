@@ -47,6 +47,7 @@ static func run() -> Array:
 	results.append(_test_the_capacitor_rule_speaks_in_the_guess_voice())
 	results.append(_test_every_warning_carries_the_current_it_was_computed_from())
 	results.append(_test_the_current_is_the_powertrains_own_published_figure())
+	results.append(_test_field_losses_add_to_the_published_peak_draw())
 
 	return results
 
@@ -494,7 +495,11 @@ static func _test_every_warning_carries_the_current_it_was_computed_from() -> Te
 ## build.rpm_at_throttle(throttle))` instead of reading `last_current_total_a`.
 static func _test_the_current_is_the_powertrains_own_published_figure() -> TestResult:
 	var build := ReferenceBuild.build()
-	var core := build.build_drone_core()
+	# SR1 (2026-11-09): the core is built with field physics OFF, because Build.fresh_draw_at_a prices the
+	# motors alone. With avionics and ESC loss ON the powertrain also draws their current (106.44 A against
+	# 105.35 A at full throttle on the reference build), which is a different, larger claim and is checked
+	# by _test_field_losses_add_to_the_published_peak_draw below.
+	var core := build.build_drone_core({"off": true})
 	core.prime_motors(build.max_throttle_fraction())
 	var published: float = core.powertrain.last_current_total_a
 	var published_v: float = core.powertrain.last_voltage_v
@@ -515,6 +520,24 @@ static func _test_the_current_is_the_powertrains_own_published_figure() -> TestR
 		passed,
 		"published %.6f A / %.6f V vs read %.6f A / %.6f V" % [
 			published, published_v, reading["peak_a"], reading["terminal_v"]]
+	)
+
+
+## The powertrain the sim flies (avionics + ESC loss on) draws MORE than the motors alone: the extra is the
+## avionics watts over the pack voltage (about 0.5 A) plus the ESC's switching/conduction share, so a band of
+## +0.3 % to +3 % over the motors-only figure (measured +1.03 %). Direction and size are the claim; a draw that
+## fell, or doubled, fails.
+static func _test_field_losses_add_to_the_published_peak_draw() -> TestResult:
+	var build := ReferenceBuild.build()
+	var motors_only := build.fresh_draw_at_a(build.max_throttle_fraction())
+	var core := build.build_drone_core()
+	core.prime_motors(build.max_throttle_fraction())
+	var with_losses: float = core.powertrain.last_current_total_a
+	var extra := with_losses / motors_only - 1.0
+	return TestResult.new(
+		"with avionics and ESC loss on, the powertrain's peak draw is 0.3-3 % above the motors-only figure",
+		extra > 0.003 and extra < 0.03,
+		"%.4f A against %.4f A motors-only (%+.2f %%)" % [with_losses, motors_only, extra * 100.0]
 	)
 
 

@@ -1,0 +1,802 @@
+{
+ "source": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=<n>",
+ "tag": "measured",
+ "fetched": "2026-11-09",
+ "columns_used": {
+  "100%": "thrust_g=Avg Max(g)*; current_a=Avg Max(A)*; volts=Avg Min(V)*; rpm=High RPM Pass Avg Max*; watts, g_per_w as listed. Max(spike) columns NOT used.",
+  "75/50/25/IDLE": "single-value columns Thrust(g), Amps, Volts, RPMs, Watts, G/W as listed"
+ },
+ "notes": [
+  "Current at 25%/IDLE can be slightly negative on some pages (current-sensor offset, raw values kept).",
+  "Plausibility: 2207 4S 100% Avg Max current 29-40 A (spike Max 100+ A discarded).",
+  "Database only covers ~2004-2408 motors, mostly 4S (some 3S); same XRotor 40A ESC, 70-74F."
+ ],
+ "missing": [
+  "No 1-2S whoop-class (0802-1103) motors in MQTB (uid 1-160 scanned)",
+  "No 3-4in 1404-1507 motors; smallest case is 2204 with 4in props",
+  "No 6S data: all tests are 3S/4S (~12V/16V)",
+  "No 7in+/low-kv 2806.5-2812 motors; largest are 2408 and Turnigy D2826-6 on 3S"
+ ],
+ "cases": [
+  {
+   "id": "mqtb_83_HQ_4x4.5BN",
+   "split": "fit",
+   "size_class": "small_4in_2204_4S",
+   "motor": "SunnySky X2204 2300kv",
+   "uid": 83,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=83",
+   "prop": "HQ 4x4.5BN",
+   "prop_diameter_in": 4.0,
+   "prop_pitch_in": 4.5,
+   "prop_blades": null,
+   "cells": "4S",
+   "tested_kv": 2300,
+   "weight_g": 21.0,
+   "stator": "22mm x 4mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 623.0,
+     "current_a": 15.87,
+     "volts": 16.42,
+     "rpm": 27961.0,
+     "watts": 260.0,
+     "g_per_w": 2.4
+    },
+    "75%": {
+     "thrust_g": 429.0,
+     "current_a": 8.37,
+     "volts": 16.5,
+     "rpm": 23231.0,
+     "watts": 138.0,
+     "g_per_w": 3.1
+    },
+    "50%": {
+     "thrust_g": 229.0,
+     "current_a": 2.43,
+     "volts": 16.57,
+     "rpm": 16962.0,
+     "watts": 40.0,
+     "g_per_w": 5.7
+    },
+    "25%": {
+     "thrust_g": 82.0,
+     "current_a": -0.41,
+     "volts": 16.6,
+     "rpm": 10282.0,
+     "watts": -7.0,
+     "g_per_w": -12.1
+    },
+    "IDLE": {
+     "thrust_g": 20.0,
+     "current_a": -1.06,
+     "volts": 16.62,
+     "rpm": 5215.0,
+     "watts": -18.0,
+     "g_per_w": -1.2
+    }
+   }
+  },
+  {
+   "id": "mqtb_83_HQ_5x4x3GF",
+   "split": "heldout",
+   "size_class": "small_4in_2204_4S",
+   "motor": "SunnySky X2204 2300kv",
+   "uid": 83,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=83",
+   "prop": "HQ 5x4x3GF",
+   "prop_diameter_in": 5.0,
+   "prop_pitch_in": 4.0,
+   "prop_blades": 3,
+   "cells": "4S",
+   "tested_kv": 2300,
+   "weight_g": 21.0,
+   "stator": "22mm x 4mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 845.0,
+     "current_a": 21.17,
+     "volts": 16.36,
+     "rpm": 24471.0,
+     "watts": 346.0,
+     "g_per_w": 2.4
+    },
+    "75%": {
+     "thrust_g": 602.0,
+     "current_a": 11.3,
+     "volts": 16.48,
+     "rpm": 20529.0,
+     "watts": 186.0,
+     "g_per_w": 3.2
+    },
+    "50%": {
+     "thrust_g": 350.0,
+     "current_a": 3.93,
+     "volts": 16.56,
+     "rpm": 15655.0,
+     "watts": 65.0,
+     "g_per_w": 5.4
+    },
+    "25%": {
+     "thrust_g": 133.0,
+     "current_a": -0.02,
+     "volts": 16.6,
+     "rpm": 9648.0,
+     "watts": -0.0,
+     "g_per_w": -400.6
+    },
+    "IDLE": {
+     "thrust_g": 36.0,
+     "current_a": -1.06,
+     "volts": 16.61,
+     "rpm": 5040.0,
+     "watts": -18.0,
+     "g_per_w": -2.1
+    }
+   }
+  },
+  {
+   "id": "mqtb_13_Diatone_Ghost_5x3",
+   "split": "fit",
+   "size_class": "small_4in_2204_4S",
+   "motor": "Cobra 2204(5) 2300kv",
+   "uid": 13,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=13",
+   "prop": "Diatone Ghost 5x3",
+   "prop_diameter_in": 5.0,
+   "prop_pitch_in": 3.0,
+   "prop_blades": null,
+   "cells": "4S",
+   "tested_kv": 2270,
+   "weight_g": 26.0,
+   "stator": "22mm x 5mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 819.0,
+     "current_a": 14.44,
+     "volts": 16.41,
+     "rpm": 30606.0,
+     "watts": 237.0,
+     "g_per_w": 3.5
+    },
+    "75%": {
+     "thrust_g": 552.0,
+     "current_a": 7.31,
+     "volts": 16.49,
+     "rpm": 24963.0,
+     "watts": 120.0,
+     "g_per_w": 4.6
+    },
+    "50%": {
+     "thrust_g": 282.0,
+     "current_a": 1.94,
+     "volts": 16.55,
+     "rpm": 17770.0,
+     "watts": 32.0,
+     "g_per_w": 8.8
+    },
+    "25%": {
+     "thrust_g": 80.0,
+     "current_a": -0.5,
+     "volts": 16.58,
+     "rpm": 10419.0,
+     "watts": -8.0,
+     "g_per_w": -9.6
+    },
+    "IDLE": {
+     "thrust_g": 16.0,
+     "current_a": -1.02,
+     "volts": 16.6,
+     "rpm": 5182.0,
+     "watts": -17.0,
+     "g_per_w": -1.0
+    }
+   }
+  },
+  {
+   "id": "mqtb_93_HQ_5x4x3GF",
+   "split": "fit",
+   "size_class": "mid_5in_2207_4S",
+   "motor": "T-Motor F60 2207 2450kv",
+   "uid": 93,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=93",
+   "prop": "HQ 5x4x3GF",
+   "prop_diameter_in": 5.0,
+   "prop_pitch_in": 4.0,
+   "prop_blades": 3,
+   "cells": "4S",
+   "tested_kv": 2450,
+   "weight_g": 35.0,
+   "stator": "22mm x 7mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 1388.0,
+     "current_a": 36.23,
+     "volts": 16.17,
+     "rpm": 30377.0,
+     "watts": 586.0,
+     "g_per_w": 2.4
+    },
+    "75%": {
+     "thrust_g": 898.0,
+     "current_a": 18.83,
+     "volts": 16.45,
+     "rpm": 24693.0,
+     "watts": 310.0,
+     "g_per_w": 2.9
+    },
+    "50%": {
+     "thrust_g": 481.0,
+     "current_a": 8.18,
+     "volts": 16.61,
+     "rpm": 17971.0,
+     "watts": 136.0,
+     "g_per_w": 3.5
+    },
+    "25%": {
+     "thrust_g": 174.0,
+     "current_a": 2.69,
+     "volts": 16.69,
+     "rpm": 10786.0,
+     "watts": 45.0,
+     "g_per_w": 3.9
+    },
+    "IDLE": {
+     "thrust_g": 47.0,
+     "current_a": 1.04,
+     "volts": 16.7,
+     "rpm": 5626.0,
+     "watts": 17.0,
+     "g_per_w": 2.7
+    }
+   }
+  },
+  {
+   "id": "mqtb_93_DAL_5x4.5x3HBN",
+   "split": "heldout",
+   "size_class": "mid_5in_2207_4S",
+   "motor": "T-Motor F60 2207 2450kv",
+   "uid": 93,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=93",
+   "prop": "DAL 5x4.5x3HBN",
+   "prop_diameter_in": 5.0,
+   "prop_pitch_in": 4.5,
+   "prop_blades": 3,
+   "cells": "4S",
+   "tested_kv": 2450,
+   "weight_g": 35.0,
+   "stator": "22mm x 7mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 1453.0,
+     "current_a": 38.52,
+     "volts": 16.22,
+     "rpm": 29832.0,
+     "watts": 625.0,
+     "g_per_w": 2.3
+    },
+    "75%": {
+     "thrust_g": 967.0,
+     "current_a": 20.67,
+     "volts": 16.5,
+     "rpm": 24032.0,
+     "watts": 341.0,
+     "g_per_w": 2.8
+    },
+    "50%": {
+     "thrust_g": 518.0,
+     "current_a": 8.89,
+     "volts": 16.66,
+     "rpm": 17675.0,
+     "watts": 148.0,
+     "g_per_w": 3.5
+    },
+    "25%": {
+     "thrust_g": 179.0,
+     "current_a": 2.91,
+     "volts": 16.75,
+     "rpm": 10587.0,
+     "watts": 49.0,
+     "g_per_w": 3.7
+    },
+    "IDLE": {
+     "thrust_g": 48.0,
+     "current_a": 1.04,
+     "volts": 16.77,
+     "rpm": 5646.0,
+     "watts": 17.0,
+     "g_per_w": 2.8
+    }
+   }
+  },
+  {
+   "id": "mqtb_93_KingKong_6x4",
+   "split": "fit",
+   "size_class": "mid_5in_2207_4S",
+   "motor": "T-Motor F60 2207 2450kv",
+   "uid": 93,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=93",
+   "prop": "KingKong 6x4",
+   "prop_diameter_in": 6.0,
+   "prop_pitch_in": 4.0,
+   "prop_blades": null,
+   "cells": "4S",
+   "tested_kv": 2450,
+   "weight_g": 35.0,
+   "stator": "22mm x 7mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 1716.0,
+     "current_a": 44.06,
+     "volts": 16.07,
+     "rpm": 27757.0,
+     "watts": 708.0,
+     "g_per_w": 2.4
+    },
+    "75%": {
+     "thrust_g": 1129.0,
+     "current_a": 22.88,
+     "volts": 16.39,
+     "rpm": 23135.0,
+     "watts": 375.0,
+     "g_per_w": 3.0
+    },
+    "50%": {
+     "thrust_g": 587.0,
+     "current_a": 9.38,
+     "volts": 16.55,
+     "rpm": 17226.0,
+     "watts": 155.0,
+     "g_per_w": 3.8
+    },
+    "25%": {
+     "thrust_g": 202.0,
+     "current_a": 2.94,
+     "volts": 16.64,
+     "rpm": 10532.0,
+     "watts": 49.0,
+     "g_per_w": 4.1
+    },
+    "IDLE": {
+     "thrust_g": 53.0,
+     "current_a": 1.07,
+     "volts": 16.66,
+     "rpm": 5553.0,
+     "watts": 18.0,
+     "g_per_w": 3.0
+    }
+   }
+  },
+  {
+   "id": "mqtb_84_GemFan_5x4.5x3",
+   "split": "fit",
+   "size_class": "mid_5in_2306_4S",
+   "motor": "TBS \"Steele\" 2306 2345kv",
+   "uid": 84,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=84",
+   "prop": "GemFan 5x4.5x3",
+   "prop_diameter_in": 5.0,
+   "prop_pitch_in": 4.5,
+   "prop_blades": 3,
+   "cells": "4S",
+   "tested_kv": 2345,
+   "weight_g": 30.0,
+   "stator": "23mm x 6mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 1126.0,
+     "current_a": 30.72,
+     "volts": 15.54,
+     "rpm": 28155.0,
+     "watts": 478.0,
+     "g_per_w": 2.4
+    },
+    "75%": {
+     "thrust_g": 754.0,
+     "current_a": 15.92,
+     "volts": 15.83,
+     "rpm": 23076.0,
+     "watts": 252.0,
+     "g_per_w": 3.0
+    },
+    "50%": {
+     "thrust_g": 390.0,
+     "current_a": 6.25,
+     "volts": 15.98,
+     "rpm": 16654.0,
+     "watts": 100.0,
+     "g_per_w": 3.9
+    },
+    "25%": {
+     "thrust_g": 131.0,
+     "current_a": 2.01,
+     "volts": 16.06,
+     "rpm": 9809.0,
+     "watts": 32.0,
+     "g_per_w": 4.0
+    },
+    "IDLE": {
+     "thrust_g": 32.0,
+     "current_a": 0.63,
+     "volts": 16.09,
+     "rpm": 5126.0,
+     "watts": 10.0,
+     "g_per_w": 3.1
+    }
+   }
+  },
+  {
+   "id": "mqtb_84_KingKong_6x4",
+   "split": "heldout",
+   "size_class": "mid_5in_2306_4S",
+   "motor": "TBS \"Steele\" 2306 2345kv",
+   "uid": 84,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=84",
+   "prop": "KingKong 6x4",
+   "prop_diameter_in": 6.0,
+   "prop_pitch_in": 4.0,
+   "prop_blades": null,
+   "cells": "4S",
+   "tested_kv": 2345,
+   "weight_g": 30.0,
+   "stator": "23mm x 6mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 1357.0,
+     "current_a": 38.75,
+     "volts": 15.48,
+     "rpm": 24639.0,
+     "watts": 600.0,
+     "g_per_w": 2.3
+    },
+    "75%": {
+     "thrust_g": 975.0,
+     "current_a": 19.58,
+     "volts": 15.79,
+     "rpm": 21296.0,
+     "watts": 309.0,
+     "g_per_w": 3.2
+    },
+    "50%": {
+     "thrust_g": 505.0,
+     "current_a": 7.79,
+     "volts": 15.98,
+     "rpm": 15907.0,
+     "watts": 124.0,
+     "g_per_w": 4.1
+    },
+    "25%": {
+     "thrust_g": 173.0,
+     "current_a": 2.19,
+     "volts": 16.07,
+     "rpm": 9685.0,
+     "watts": 35.0,
+     "g_per_w": 4.9
+    },
+    "IDLE": {
+     "thrust_g": 43.0,
+     "current_a": 0.75,
+     "volts": 16.09,
+     "rpm": 5033.0,
+     "watts": 12.0,
+     "g_per_w": 3.5
+    }
+   }
+  },
+  {
+   "id": "mqtb_95_HQ_6x4.5x3",
+   "split": "fit",
+   "size_class": "large_2408_4S",
+   "motor": "T-Motor F80 2408 2200kv 4S",
+   "uid": 95,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=95",
+   "prop": "HQ 6x4.5x3",
+   "prop_diameter_in": 6.0,
+   "prop_pitch_in": 4.5,
+   "prop_blades": 3,
+   "cells": "4S",
+   "tested_kv": 2135,
+   "weight_g": 42.0,
+   "stator": "24mm x 8mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 1887.0,
+     "current_a": 48.3,
+     "volts": 15.21,
+     "rpm": 24343.0,
+     "watts": 734.0,
+     "g_per_w": 2.6
+    },
+    "75%": {
+     "thrust_g": 1242.0,
+     "current_a": 25.02,
+     "volts": 15.63,
+     "rpm": 20047.0,
+     "watts": 391.0,
+     "g_per_w": 3.2
+    },
+    "50%": {
+     "thrust_g": 661.0,
+     "current_a": 10.29,
+     "volts": 15.9,
+     "rpm": 14611.0,
+     "watts": 164.0,
+     "g_per_w": 4.0
+    },
+    "25%": {
+     "thrust_g": 235.0,
+     "current_a": 3.21,
+     "volts": 16.02,
+     "rpm": 8915.0,
+     "watts": 51.0,
+     "g_per_w": 4.6
+    },
+    "IDLE": {
+     "thrust_g": 58.0,
+     "current_a": 1.19,
+     "volts": 16.06,
+     "rpm": 4669.0,
+     "watts": 19.0,
+     "g_per_w": 3.0
+    }
+   }
+  },
+  {
+   "id": "mqtb_95_DAL_5x4.5x3HBN",
+   "split": "heldout",
+   "size_class": "large_2408_4S",
+   "motor": "T-Motor F80 2408 2200kv 4S",
+   "uid": 95,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=95",
+   "prop": "DAL 5x4.5x3HBN",
+   "prop_diameter_in": 5.0,
+   "prop_pitch_in": 4.5,
+   "prop_blades": 3,
+   "cells": "4S",
+   "tested_kv": 2135,
+   "weight_g": 42.0,
+   "stator": "24mm x 8mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 1317.0,
+     "current_a": 31.42,
+     "volts": 15.48,
+     "rpm": 27896.0,
+     "watts": 486.0,
+     "g_per_w": 2.7
+    },
+    "75%": {
+     "thrust_g": 837.0,
+     "current_a": 16.49,
+     "volts": 15.76,
+     "rpm": 22210.0,
+     "watts": 260.0,
+     "g_per_w": 3.2
+    },
+    "50%": {
+     "thrust_g": 432.0,
+     "current_a": 7.21,
+     "volts": 15.94,
+     "rpm": 16000.0,
+     "watts": 115.0,
+     "g_per_w": 3.8
+    },
+    "25%": {
+     "thrust_g": 144.0,
+     "current_a": 2.41,
+     "volts": 16.02,
+     "rpm": 9420.0,
+     "watts": 39.0,
+     "g_per_w": 3.7
+    },
+    "IDLE": {
+     "thrust_g": 35.0,
+     "current_a": 0.99,
+     "volts": 16.05,
+     "rpm": 4808.0,
+     "watts": 16.0,
+     "g_per_w": 2.2
+    }
+   }
+  },
+  {
+   "id": "mqtb_94_HQ_6x4.5",
+   "split": "fit",
+   "size_class": "large_2408_3S",
+   "motor": "T-Motor F80 2408 2200kv 3S",
+   "uid": 94,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=94",
+   "prop": "HQ 6x4.5",
+   "prop_diameter_in": 6.0,
+   "prop_pitch_in": 4.5,
+   "prop_blades": null,
+   "cells": "3S",
+   "tested_kv": 2135,
+   "weight_g": 42.0,
+   "stator": "24mm x 8mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 1044.0,
+     "current_a": 26.38,
+     "volts": 11.62,
+     "rpm": 20872.0,
+     "watts": 307.0,
+     "g_per_w": 3.4
+    },
+    "75%": {
+     "thrust_g": 656.0,
+     "current_a": 13.61,
+     "volts": 11.85,
+     "rpm": 16728.0,
+     "watts": 161.0,
+     "g_per_w": 4.1
+    },
+    "50%": {
+     "thrust_g": 339.0,
+     "current_a": 5.93,
+     "volts": 11.98,
+     "rpm": 12046.0,
+     "watts": 71.0,
+     "g_per_w": 4.8
+    },
+    "25%": {
+     "thrust_g": 116.0,
+     "current_a": 2.04,
+     "volts": 12.04,
+     "rpm": 7120.0,
+     "watts": 25.0,
+     "g_per_w": 4.7
+    },
+    "IDLE": {
+     "thrust_g": 27.0,
+     "current_a": 0.96,
+     "volts": 12.06,
+     "rpm": 3624.0,
+     "watts": 12.0,
+     "g_per_w": 2.3
+    }
+   }
+  },
+  {
+   "id": "mqtb_102_APC_Electric_6x5.5E",
+   "split": "heldout",
+   "size_class": "large_2826_3S",
+   "motor": "Turnigy D2826-6 2200kv 3S",
+   "uid": 102,
+   "url": "https://www.miniquadtestbench.com/assets/components/motordata/motorinfo.php?uid=102",
+   "prop": "APC Electric 6x5.5E",
+   "prop_diameter_in": 6.0,
+   "prop_pitch_in": 5.5,
+   "prop_blades": null,
+   "cells": "3S",
+   "tested_kv": 2140,
+   "weight_g": 45.0,
+   "stator": "22mm x 12mm",
+   "test_conditions": {
+    "esc": "XRotor 40A ESC",
+    "ambient": "70-74 deg F",
+    "baro": "29-30 in",
+    "humidity": "50-60%",
+    "supply": "Venom 60A power supply, 2F caps x2 in series"
+   },
+   "throttle_rows": {
+    "100%": {
+     "thrust_g": 886.0,
+     "current_a": 28.46,
+     "volts": 11.68,
+     "rpm": 19261.0,
+     "watts": 332.0,
+     "g_per_w": 2.7
+    },
+    "75%": {
+     "thrust_g": 589.0,
+     "current_a": 14.97,
+     "volts": 11.86,
+     "rpm": 15864.0,
+     "watts": 178.0,
+     "g_per_w": 3.3
+    },
+    "50%": {
+     "thrust_g": 307.0,
+     "current_a": 6.79,
+     "volts": 12.01,
+     "rpm": 11596.0,
+     "watts": 82.0,
+     "g_per_w": 3.8
+    },
+    "25%": {
+     "thrust_g": 101.0,
+     "current_a": 2.2,
+     "volts": 12.1,
+     "rpm": 6898.0,
+     "watts": 27.0,
+     "g_per_w": 3.8
+    },
+    "IDLE": {
+     "thrust_g": 24.0,
+     "current_a": 0.73,
+     "volts": 12.12,
+     "rpm": 3565.0,
+     "watts": 9.0,
+     "g_per_w": 2.7
+    }
+   }
+  }
+ ]
+}

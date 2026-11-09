@@ -152,6 +152,16 @@ func open_new() -> void:
 	_rederive()
 
 
+## A new design shaped like `motor` (a catalog record): nearest grid size, KV and bolt pattern.
+## An empty record leaves the default design. Not a saved motor: it has no id until it is saved.
+func start_like(motor: Dictionary) -> void:
+	if motor.is_empty():
+		return
+	design = MotorDesign.like(motor, cfg)
+	part_id = ""
+	_rederive()
+
+
 ## A saved motor, to edit. A designed one reopens under its id; a migrated hand-typed one opens on
 ## the nearest grid point as a NEW design, so saving never overwrites the figures that were typed.
 func open_motor(p_part_id: String) -> void:

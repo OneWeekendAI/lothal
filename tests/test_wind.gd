@@ -38,14 +38,26 @@ const DT := 0.001   # 1 kHz, matching physics.md §6
 ## live code. The pre-F7 claim now reads "identical to the code as of the motor re-baseline".
 ## RE-FROZEN again at the prop chapter (k_t and k_q from BEMT, 2026-11-04), same capture; MOTOR_REBASELINE.md.
 ## And once more the same day when R_winding became the plant's own Rm (tau 0802/2808 fixed): ~1e-5 relative moves.
-const GOLDEN_POS := Vector3(0.00000000000000000, -48.68544006347656250, 21.98760414123535156)
-const GOLDEN_VEL := Vector3(0.00000000000000000, -21.26440620422363281, -1.35641980171203613)
-const GOLDEN_ANGVEL := Vector3(2.49702429771423340, 0.00000000000000000, 0.00000000000000000)
-const GOLDEN_ORIENT := Quaternion(-0.12546962499618530, 0.00000000000000000, 0.00000000000000000,
-	-0.99209743738174438)
-const GOLDEN_GFORCE := 1.49518546708133226
-const GOLDEN_CURRENT := 4.15263172773698752
-const GOLDEN_AIRSPEED := 21.30762290954589844
+## RE-FROZEN at SR1 bucket-depth terms (2026-11-09): the 17 m/s forward pass now pays the published induced-power
+## factor, profile growth with advance ratio and rear-rotor interference (more current: 4.152 -> 4.440 A), so it
+## decelerates and sinks a little differently (z 18.319 -> 18.317).
+const GOLDEN_POS := Vector3(0.00000000000000000, -44.71457672119140625, 18.31675529479980469)
+const GOLDEN_VEL := Vector3(0.00000000000000000, -16.95837974548339844, -2.64327812194824219)
+const GOLDEN_ANGVEL := Vector3(2.65769743919372559, 0.00000000000000000, 0.00000000000000000)
+const GOLDEN_ORIENT := Quaternion(-0.25129219889640808, 0.00000000000000000, 0.00000000000000000,
+	-0.96791130304336548)
+const GOLDEN_GFORCE := 1.7821054332239303
+const GOLDEN_CURRENT := 4.43964138413308262
+const GOLDEN_AIRSPEED := 17.16314506530761719
+## RE-FROZEN at the kappa decision (2026-11-09): induced-power factor 1.15 in hover AND forward flight (was 1.10 / 1.15), so the
+## open-loop tumble no longer pays the 1.045 forward-over-hover penalty on its induced power in the sheared flow. The trajectory
+## shifts by under 0.01 percent (z 18.31693 -> 18.31676, current 4.439589 -> 4.439641 A, airspeed 17.1637 -> 17.1631 m/s); the
+## current moved UP by 1e-5 relative because the slightly different trajectory has a slightly different airspeed history, not
+## because of the penalty (which can only lower it): the pin is on the trajectory, and this is the trajectory the new physics flies.
+## RE-FROZEN a fourth time at SR1 (2026-11-09), same capture, for two physical changes: the forward-flight
+## thrust ratio is no longer capped at 1.0 (edgewise flow now raises thrust at a fixed rpm, which is the
+## translational-lift term the cap had removed) and drag is directional (the tumbling airframe presents
+## its top area to the air). The tumble is a different, equally calm, trajectory.
 
 static func run() -> Array:
 	var results: Array = []
@@ -87,7 +99,7 @@ static func run() -> Array:
 ## comparison below is exact equality against full-precision literals, not `is_equal_approx`.
 static func _calm_bit_identity() -> Array:
 	var results: Array = []
-	var core := ReferenceBuild.build_drone_core()
+	var core := ReferenceBuild.build_drone_core({"off": true})
 	var calm := Conditions.new()   # wind_speed_mps, wind_from_deg, gustiness_mps all 0.0 by default
 	core.wind = Wind.new(calm)
 	var hover := ReferenceBuild.hover_throttle()
@@ -126,7 +138,7 @@ static func _calm_bit_identity() -> Array:
 		"got %.17f, want %.17f" % [core.observables.airspeed_mps, GOLDEN_AIRSPEED]))
 	# A core nobody ever hands a Wind to (wind == null, every caller before F7 and most tests
 	# after it) must be the SAME calm flight, not a different code path that happens to agree.
-	var bare_core := ReferenceBuild.build_drone_core()
+	var bare_core := ReferenceBuild.build_drone_core({"off": true})
 	bare_core.prime_motors(hover)
 	for _i in int(5.0 / DT):
 		bare_core.step(cmds, DT)
@@ -223,7 +235,7 @@ static func _holding_station_in_wind() -> Array:
 
 	# Check 4: stationary, level, 7 m/s headwind — the powertrain must read exactly 7 m/s.
 	var core := ReferenceBuild.build_drone_core()
-	core.wind = Wind.new(_headwind_conditions(7.0))
+	core.wind = Wind.new(_headwind_conditions(7.0), Wind.DEFAULT_GUST_TAU_S, Wind.DEFAULT_SEED, Wind.Model.FIRST_ORDER)
 	core.rigid_body.velocity_mps = Vector3.ZERO
 	core.prime_motors(hover)
 	core.step(cmds, DT)
@@ -236,7 +248,7 @@ static func _holding_station_in_wind() -> Array:
 	# Check 5: moving downwind at exactly the wind's own speed — zero airspeed.
 	var downwind_vec := Wind.steady_vector(7.0, 0.0)   # the direction and speed the air moves
 	var core2 := ReferenceBuild.build_drone_core()
-	core2.wind = Wind.new(_headwind_conditions(7.0))
+	core2.wind = Wind.new(_headwind_conditions(7.0), Wind.DEFAULT_GUST_TAU_S, Wind.DEFAULT_SEED, Wind.Model.FIRST_ORDER)
 	core2.rigid_body.velocity_mps = downwind_vec
 	core2.prime_motors(hover)
 	core2.step(cmds, DT)
@@ -307,12 +319,13 @@ static func _holding_station_in_wind() -> Array:
 static func _trimmed_current_holding_station(build: Build, wind_speed: float,
 		throttle_ceiling: float) -> float:
 	var weight_n := build.weight_n()
-	var drag_n: float = build.drag_coefficient * wind_speed * wind_speed
+	# SR1: the lean and thrust come from the build's own directional trim (the oracle's decomposition).
+	var trim := build.trim_lean(wind_speed, weight_n)
 	# Negative: this codebase's lean-right-of-north sign for a Vector3(1,0,0)-axis rotation cancels
 	# a +Z drag force (the direction a from_deg = 0 wind blows an object) rather than adding to it
 	# — checked by hand against a probe run, not derived here a second time.
-	var lean_rad: float = -atan2(drag_n, weight_n)
-	var target_n: float = sqrt(weight_n * weight_n + drag_n * drag_n)
+	var lean_rad: float = -float(trim["lean_rad"])
+	var target_n: float = trim["thrust_n"]
 
 	var conditions := _headwind_conditions(wind_speed)
 	var cmds_at := func(throttle: float) -> Dictionary:
@@ -323,8 +336,8 @@ static func _trimmed_current_holding_station(build: Build, wind_speed: float,
 	var current := 0.0
 	for _i in 30:
 		var mid := (low + high) * 0.5
-		var core := ReferenceBuild.build_drone_core()
-		core.wind = Wind.new(conditions)
+		var core := ReferenceBuild.build_drone_core({"off": true})
+		core.wind = Wind.new(conditions, Wind.DEFAULT_GUST_TAU_S, Wind.DEFAULT_SEED, Wind.Model.FIRST_ORDER)
 		core.rigid_body.orientation = Quaternion(Vector3(1, 0, 0), lean_rad)
 		core.rigid_body.velocity_mps = Vector3.ZERO
 		core.prime_motors(mid)
@@ -404,7 +417,7 @@ static func _gust_statistics() -> Array:
 ## separate sample arrays — [xs, ys, zs].
 static func _sample_axes(conditions: Conditions, gust_tau_s: float, dt: float,
 		steps: int) -> Array:
-	var wind := Wind.new(conditions, gust_tau_s)
+	var wind := Wind.new(conditions, gust_tau_s, Wind.DEFAULT_SEED, Wind.Model.FIRST_ORDER)
 	var xs: Array[float] = []
 	var ys: Array[float] = []
 	var zs: Array[float] = []

@@ -4,6 +4,15 @@ extends RefCounted
 ## fixture was written; within 1e-9 elsewhere, because CI's Linux and Windows libm round atan and pow
 ## differently in the last place and that is not a physics change.
 ##
+## RE-PINNED 2026-11-09 (SR1-SR2 forward-flight physics; hover and every static/direct solve are bit-identical, so nothing about
+## hover moved). Only three groups of keys moved, each for a named reason:
+##  - power_ratio_*: rear-rotor interference (rpm-independent window in wake skew; +1.49 % at mu 0.05, +9.55 % at mu 0.1-0.2, +5.97 % at
+##    mu 0.3, identical on every prop: exactly 1 + w * 0.5 * (0.89^-1.5 - 1)) and, at edgewise mu 0.2, profile-power growth
+##    (1 + 4.65 mu^2)/(1 + 2 mu^2), which lifts the edgewise points to +15.0..+16.3 %.
+##  - thrust_ratio_0.00_0.20 (+12..+54 %), _0.05_0.00 and _0.10_0.10 (<= 0.3 %): the ratio is no longer clamped to 1.0, so the edgewise
+##    term (translational lift) now shows.
+##  - flight_time_min: the freestyle profile is forward flight, so it pays the interference and profile terms and the directional drag
+##    and gains the translational lift. -24 % .. +2.6 %; the table is in the sim-reality plan (SR-green section).
 ## TO MAKE THIS FAIL: change POLAR_C_D0 in rust/src/bemt.rs by 1 %. Every prop goes red.
 
 const OTHER_OS_RELATIVE := 1e-9

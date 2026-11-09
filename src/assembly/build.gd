@@ -406,6 +406,14 @@ const FRAME_PLATE_THICKNESS_M := 0.010
 ## the previous hard-coded lumped coefficient capped it at ~56 km/h.
 const REFERENCE_DRAG_AREA_M2 := 0.009
 const REFERENCE_ARM_M := 0.110
+## SR1 directional drag (all ESTIMATED): a shelled body presents 0.4 of an open frame's frontal Cd*A;
+## the centre stack adds 30 mm of body height over pack + plate; the smallest body box is 40 mm; an arm
+## is 16 mm wide seen from above; flat-ish top Cd is 1.1 against 1.0 for the front.
+const DRAG_STREAMLINED_FRONT := 0.4
+const DRAG_STACK_HEIGHT_M := 0.030
+const DRAG_MIN_BODY_M := 0.040
+const DRAG_ARM_WIDTH_M := 0.016
+const DRAG_TOP_CD_RATIO := 1.1
 
 ## Top speed is quoted at a sustained 45-degree lean: the lean a speed run actually sits at.
 ##
@@ -580,6 +588,12 @@ var mass_properties: MassProperties
 ## new surface rather than flying the previous fit's, which would be a silent regression the
 ## Rust-side cache key alone cannot save.
 var _forward_ratios: BemtRatios = null
+
+## SR1 (PUBLISHED, editable field): fraction of thrust the REAR rotors of an X quadcopter lose to the
+## front rotors' wake in forward flight, 0.11 at 5-15 m/s and negligible in hover and at 25 m/s
+## (CFD, Aerospace 8(11):349, 2021). Costs shaft power, not thrust: see BemtRatios.interference_power_factor.
+## 0 turns it off. Applied when the aircraft has 4 or more rotors; read when forward_ratios() is built.
+var rotor_interference_loss: float = 0.11
 ## The tip-loss suppression the fitted guard earns (§4.0). 0.0 when no guard is fitted, positive
 ## when a duct's `tip_gap_mm` is small compared with the blade's tip chord. Derived once in
 ## `_recompute` from `PropellerDocument.chord_at(1.0)` — the physics's own length scale, per
@@ -610,6 +624,16 @@ var effective_max_amps: float
 ## measured on. `motor_rated_draw_a` reads it.
 var _k_q_at_test_prop: float = 0.0
 var drag_coefficient: float
+## SR1 directional drag. 0.5 * rho * Cd * A per BODY axis, in m^2 * kg/m^3 (so F = k * |v| * v_axis):
+## x = side-on (flow across the aircraft, along body X), y = top (flow along the rotor axis, body Y),
+## z = frontal (flow along the nose, body Z). `drag_coefficient` is the frontal one, kept because
+## level head-on flight (top-speed, wind, the harness trim) reads it.
+var drag_axes: Vector3
+## Cd*A per axis (m^2), x side, y top, z frontal: the same numbers before the 0.5*rho.
+var drag_cda_m2: Vector3
+## The FIELD: a component > 0 replaces the derived Cd*A on that axis (m^2); zero keeps the default.
+## Labelled ESTIMATED until a wind-tunnel or coast-down number replaces it.
+var drag_field_m2: Vector3 = Vector3.ZERO
 
 ## How this builder assembled the aircraft, in the same resolved form AssemblyTweaks hands the
 ## geometry (AssemblyTweaks.resolved_m) and AirframeModel draws from. Empty means "whatever the
@@ -1023,10 +1047,61 @@ func _recompute() -> void:
 	_throttle_limits.clear()
 	_bench_limits.clear()
 
-	var drag_area_m2: float = REFERENCE_DRAG_AREA_M2 * pow(arm_m / REFERENCE_ARM_M, 2.0)
-	drag_coefficient = 0.5 * air.kgm3() * drag_area_m2
+	drag_cda_m2 = _derived_drag_cda_m2()
+	# The frontal value is also kept as a plain double: a Vector3 holds single floats, and every figure
+	# written before directional drag (flight time, wind numbers, preset pins) read this one at full precision.
+	var front_cda: float = _derived_front_cda_m2()
+	for axis in 3:
+		if drag_field_m2[axis] > 0.0:
+			drag_cda_m2[axis] = drag_field_m2[axis]
+	if drag_field_m2.z > 0.0:
+		front_cda = drag_field_m2.z
+	drag_axes = 0.5 * air.kgm3() * drag_cda_m2
+	drag_coefficient = 0.5 * air.kgm3() * front_cda
 
 	mass_properties = MassProperties.compute(mass_parts())
+
+
+## SR1 directional drag, DEFAULT. The frontal Cd*A is the legacy calibrated value (REFERENCE_DRAG_AREA_M2
+## scaled by arm length squared, calibrated to physics.md section 8's top speed) for a bare frame,
+## and DRAG_STREAMLINED_FRONT of it for a shelled airframe (frame_type "harness": a Mavic-style
+## body, not an open quad). The side and top values scale that frontal one by the ratio of the
+## PROJECTED SOLID AREAS of the build's own bounding geometry (pack box, centre stack, four arms and
+## motors), so a longer pack or longer arms moves them. Every constant here is ESTIMATED.
+func drag_projected_areas_m2() -> Vector3:
+	var pack := battery_size_m()
+	var motor_d := float(motor["specs"]["stator_diameter_mm"]) / 1000.0 * 1.15
+	var motor_h := float(motor["specs"]["stator_height_mm"]) / 1000.0 * 1.6
+	var arm_t := float(frame["specs"].get("arm_thickness_mm", 4.0)) / 1000.0
+	var body_h := pack.y + FRAME_PLATE_THICKNESS_M + DRAG_STACK_HEIGHT_M
+	var body_w := maxf(pack.x, DRAG_MIN_BODY_M)
+	var body_l := maxf(pack.z, DRAG_MIN_BODY_M)
+	var arm_run := arm_m * 0.7071
+	# front view (looking along -Z): body, four arms seen end-on at their thickness, two motor columns
+	var a_front := body_w * body_h + 4.0 * arm_run * arm_t + 2.0 * motor_d * motor_h
+	var a_side := body_l * body_h + 4.0 * arm_run * arm_t + 2.0 * motor_d * motor_h
+	# top view (looking down the rotor axis): body footprint, four arms, four motor bells
+	var a_top := body_w * body_l + 4.0 * arm_m * DRAG_ARM_WIDTH_M + 4.0 * PI * 0.25 * motor_d * motor_d
+	return Vector3(a_side, a_top, a_front)
+
+
+func drag_class() -> String:
+	return "streamlined" if String(frame.get("catalog", {}).get("frame_type", "")) == "harness" else "open frame"
+
+
+func _derived_front_cda_m2() -> float:
+	var front := REFERENCE_DRAG_AREA_M2 * pow(arm_m / REFERENCE_ARM_M, 2.0)
+	if drag_class() == "streamlined":
+		front *= DRAG_STREAMLINED_FRONT
+	return front
+
+
+func _derived_drag_cda_m2() -> Vector3:
+	var front := _derived_front_cda_m2()
+	var a := drag_projected_areas_m2()
+	var side := clampf(a.x / a.z, 0.5, 4.0)
+	var top := clampf(DRAG_TOP_CD_RATIO * a.y / a.z, 0.5, 6.0)
+	return Vector3(front * side, front * top, front)
 
 
 ## The FITTED prop's geometry in SI. Public because anything assembling a powertrain needs
@@ -1070,6 +1145,8 @@ func forward_ratios() -> BemtRatios:
 		_forward_ratios = BemtRatios.for_prop_with_guard(
 			geometry.diameter_m, geometry.pitch_m, geometry.blades, blade_chord(),
 			guard_closure, blade_twist())
+		# SR1: rotor-rotor interference applies to a multirotor with a rear rank (4 or more rotors).
+		_forward_ratios.interference_loss = rotor_interference_loss if motor_count() >= 4 else 0.0
 	return _forward_ratios
 
 
@@ -1857,7 +1934,106 @@ func lumped_motor_model() -> MotorModel:
 	return mm
 
 
-func build_drone_core() -> DroneCore:
+## SR1 FIELD PHYSICS: what the sim adds to a core so a long flight is believable. Every number here
+## is tagged: "estimated" until a measurement replaces it, and every one is a plain field or key a
+## caller can override. Items are switchable one by one (option keys below) so each can be shown to
+## matter: a test that turns an item off must see the flight change.
+##
+## Avionics: constant electrical power of everything that is not a motor, by size class of the
+## aircraft (prop diameter) and by what is fitted. Estimated from typical board and module
+## consumption (flight controller 3.3-5 V at 100-300 mA; analogue VTX 0.6-3 W; HD VTX 5-9 W);
+## no measured per-part table is in the repo.
+const AVIONICS_W := {
+	"small": {"fc": 0.8, "receiver": 0.3, "vtx": 1.5, "camera": 0.8, "gps": 0.4},    # prop <= 3 in
+	"mid":   {"fc": 1.2, "receiver": 0.5, "vtx": 5.0, "camera": 1.5, "gps": 0.5},    # 3-6 in
+	"large": {"fc": 1.5, "receiver": 0.5, "vtx": 6.0, "camera": 2.0, "gps": 0.6},    # > 6 in
+}
+## Extra constant payload power (gimbal camera, RTK, radios, vision sensors), W. A FIELD, default 0.
+var payload_w := 0.0
+
+func avionics_size_class() -> String:
+	var d_in := float(propeller["specs"]["diameter_inches"])
+	return "small" if d_in <= 3.0 else ("mid" if d_in <= 6.0 else "large")
+
+
+## The non-motor load by part, W, each tagged. A part's own `specs.power_w` wins over the class default.
+func avionics_breakdown() -> Dictionary:
+	var table: Dictionary = AVIONICS_W[avionics_size_class()]
+	var out := {}
+	out["fc"] = {"w": float(fc.get("specs", {}).get("power_w", table["fc"])), "tag": "estimated"}
+	for cat in ["receiver", "vtx", "camera", "gps"]:
+		if not components.has(cat):
+			continue
+		var c: Variant = components[cat]
+		if (c is String and c == "") or (c is Dictionary and c.is_empty()):
+			continue
+		var specs: Dictionary = c.get("specs", {}) if c is Dictionary else {}
+		out[cat] = {"w": float(specs.get("power_w", table[cat])), "tag": "estimated"}
+	if payload_w > 0.0:
+		out["payload"] = {"w": payload_w, "tag": "estimated"}
+	return out
+
+
+func avionics_w() -> float:
+	var total := 0.0
+	for k in avionics_breakdown():
+		total += float(avionics_breakdown()[k]["w"])
+	return total
+
+
+## ESC conduction resistance (ohm) and switching loss fraction. Estimated: Rds(on) scales inversely
+## with the board's continuous rating (about 4 mohm at 35 A per channel: two FETs plus traces); the
+## switching loss is a flat fraction of motor input power. `specs.r_on_ohm` / `specs.sw_loss_frac`
+## on the part win. Not measured; the MQTB held-out test bounds the sum of ESC and motor error.
+const ESC_R_OHM_AMP := 0.14
+const ESC_SW_LOSS_FRAC := 0.015
+
+func esc_r_ohm() -> float:
+	var specs: Dictionary = esc.get("specs", {})
+	if specs.has("r_on_ohm"):
+		return float(specs["r_on_ohm"])
+	return ESC_R_OHM_AMP / maxf(esc_continuous_a(), 5.0)
+
+
+func esc_sw_loss_frac() -> float:
+	return float(esc.get("specs", {}).get("sw_loss_frac", ESC_SW_LOSS_FRAC))
+
+
+## Copper / stator-iron / bell split of a catalog motor's mass, ESTIMATED (outrunner class-typical):
+## copper 20 %, stator iron incl. base and shaft 40 %, bell from the part's own bell_mass_fraction.
+func motor_thermal_masses_g() -> Dictionary:
+	var m := float(motor.get("mass_g", 30.0))
+	var specs: Dictionary = motor.get("specs", {})
+	return {
+		"mass_g": m, "copper_g": 0.20 * m, "stator_g": 0.40 * m,
+		"bell_g": float(specs.get("bell_mass_fraction", 0.4)) * m,
+		"stator_d_mm": float(specs.get("stator_diameter_mm", 22.0)),
+		"stator_h_mm": float(specs.get("stator_height_mm", 7.0)),
+	}
+
+
+## Applies the field-physics items to a core. `opts` keys (all default true unless stated):
+## avionics, esc, thermal, battery; pack_temp_c (default 25), ambient_c (default: the air's).
+func apply_field_physics(core: DroneCore, opts: Dictionary = {}) -> void:
+	var pt := core.powertrain
+	# SR1 ground effect: off unless a caller that has a ground asks for it ("ground_effect": true).
+	core.ground_effect_enabled = bool(opts.get("ground_effect", false))
+	core.ground_y_m = float(opts.get("ground_y_m", 0.0))
+	if opts.get("avionics", true):
+		pt.avionics_w = avionics_w()
+	if opts.get("esc", true):
+		var mm := pt.motor_model
+		mm.esc_r_ohm = esc_r_ohm()
+		mm.esc_sw_frac = esc_sw_loss_frac()
+	if opts.get("battery", true):
+		pt.battery.enable_field_realism(float(opts.get("pack_temp_c", 25.0)))
+	if opts.get("thermal", true) and dc_motor_params(motor).size() > 0:
+		var f := motor_thermal_masses_g()
+		pt.set_thermal(f["mass_g"], f["copper_g"], f["stator_g"], f["bell_g"], f["stator_d_mm"],
+			f["stator_h_mm"], float(opts.get("ambient_c", air.temperature_c)))
+
+
+func build_drone_core(field_opts: Dictionary = {}) -> DroneCore:
 	var geometry := _prop_geometry(propeller)
 	# A coaxial pair is flown as ONE thruster at its plan position (the sim has four): see
 	# lumped_k_t / lumped_k_q / lumped_max_amps. FrameBench and RateTune's plant read the SAME
@@ -1867,9 +2043,13 @@ func build_drone_core() -> DroneCore:
 		battery_model(), lumped_max_amps(), rated_rpm(), drag_coefficient,
 		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m,
 		air.kgm3(), blade_chord(), guard_closure, blade_twist())
+	core.drag_axes = drag_axes
 	# The aircraft the sim flies is the aircraft the builder configured, including a spin map
 	# Lothal has warned about: design §5.3 — fly it badly, do not refuse it.
 	core.config = config
+	core.powertrain.set_interference_loss(rotor_interference_loss if motor_count() >= 4 else 0.0)
+	if not field_opts.get("off", false):
+		apply_field_physics(core, field_opts)
 	return core
 
 ## Electrical frequency is per POLE PAIR, not per pole — a 14-pole motor turns through
@@ -2377,6 +2557,18 @@ func hover_current_a(throttle: float, open_circuit_v: float = AT_NOMINAL) -> flo
 func hover_throttle_for(pack: BatteryModel) -> float:
 	return hover_throttle(pack.resting_voltage_v())
 
+
+## Electrical power a hovering aircraft draws from THIS pack in its present state, from the same powertrain model
+## the flying sim steps: the motors' pack current at the hover throttle AND the resting voltage that throttle was
+## solved at (hover_current_a(thr) alone prices the current at the NOMINAL voltage, a different supply from the one
+## the throttle was found on, and reads 20 percent low on a fresh pack), plus the avionics load the sim adds
+## (avionics_w / V), then the terminal power V_rest*I - R*I^2 with the pack's own internal resistance.
+func hover_power_w(pack: BatteryModel) -> float:
+	var v := pack.resting_voltage_v()
+	var i_motors := hover_current_a(hover_throttle(v), v)
+	var i_total := i_motors + avionics_w() / maxf(v, 1.0)
+	return v * i_total - pack.internal_r_ohm * i_total * i_total
+
 ## Total pack current holding a trimmed flight at one airspeed and load factor.
 ##
 ## The aircraft leans until the horizontal component of thrust balances drag, so both the lean and
@@ -2390,15 +2582,15 @@ func hover_throttle_for(pack: BatteryModel) -> float:
 ## the airspeed unloads the prop and how much of it is the edgewise flow that makes the rotor
 ## cheaper. Both come out of the one angle; neither is a separate assumption.
 func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceiling: float,
-		open_circuit_v: float = AT_NOMINAL) -> float:
+		open_circuit_v: float = AT_NOMINAL, side_on: bool = false) -> float:
 	var ratios := forward_ratios()
 
 	var lift_n := load_factor * weight_n()
-	var drag_n := drag_coefficient * airspeed_mps * airspeed_mps
-	var lean_rad := atan2(drag_n, lift_n)
+	var trim := trim_lean(airspeed_mps, lift_n, side_on)
+	var lean_rad: float = trim["lean_rad"]
 	var v_axial := airspeed_mps * sin(lean_rad)
 	var v_edge := airspeed_mps * cos(lean_rad)
-	var target_n := sqrt(lift_n * lift_n + drag_n * drag_n)
+	var target_n: float = trim["thrust_n"]
 
 	var low := 0.0
 	var high := throttle_ceiling
@@ -2421,6 +2613,37 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 	var duty := clampf(high, 0.0, max_throttle_fraction())
 	return float(motor_count()) * duty * winding_current_at_rpm(rpm) \
 		* ratios.power_ratio(rpm, v_axial, v_edge)
+
+
+## SR1: the steady lean for level flight at one airspeed, with DIRECTIONAL drag. The body is leaned
+## by `lean_rad` about its lateral axis, so the air arrives with a component along the rotor axis
+## (v sin lean, which meets the TOP area) and one along the nose (v cos lean, FRONTAL area). With
+## k = 0.5 rho V, ay/az the top/frontal Cd*A halves:
+##   horizontal drag  D_h = k V (ay sin^2 + az cos^2)
+##   vertical  drag   D_v = k V (ay - az) sin cos          (up is negative: it presses down if ay > az)
+## and the thrust T balances  T sin = D_h,  T cos = W + D_v.  Fixed-point on the lean (it converges in
+## a few passes: the drag terms are small beside the weight at the leans a mapper flies).
+## `side_on` flies the same speed with the SIDE area in the frontal role (a crab or a beam wind).
+func trim_lean(airspeed_mps: float, lift_n: float, side_on: bool = false) -> Dictionary:
+	var az := drag_axes.x if side_on else drag_axes.z
+	var ay := drag_axes.y
+	var v2 := airspeed_mps * airspeed_mps
+	var lean := atan2(az * v2, lift_n)
+	for _i in 30:
+		var s := sin(lean)
+		var c := cos(lean)
+		var d_h := v2 * (ay * s * s + az * c * c)
+		var d_v := v2 * (ay - az) * s * c
+		var next := atan2(d_h, maxf(lift_n + d_v, 1e-6))
+		if absf(next - lean) < 1e-9:
+			lean = next
+			break
+		lean = next
+	var s2 := sin(lean)
+	var c2 := cos(lean)
+	var d_h2 := v2 * (ay * s2 * s2 + az * c2 * c2)
+	var d_v2 := v2 * (ay - az) * s2 * c2
+	return {"lean_rad": lean, "thrust_n": sqrt(d_h2 * d_h2 + (lift_n + d_v2) * (lift_n + d_v2)), "drag_h_n": d_h2}
 
 
 ## The current a pack actually sees over a flight: the model's answer at each row of

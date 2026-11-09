@@ -53,6 +53,17 @@ pub struct MotorModel {
     /// except a coaxial pair lumped into one thruster (2). Scales the CURRENT only -- each motor
     /// in the pair still turns the rpm one motor solves to.
     pub dc_count: f64,
+    /// SR1 ESC loss, estimated (no measured ESC loss table is in the repo; the MQTB held-out test
+    /// bounds the sum). Series resistance of the ESC's conduction path (two FETs plus traces), ohm.
+    /// 0 = ideal ESC, the pre-SR1 behaviour.
+    #[var]
+    pub esc_r_ohm: f64,
+    /// Switching loss as a fraction of the motor input power (gate drive + commutation), estimated.
+    #[var]
+    pub esc_sw_frac: f64,
+    /// Copper resistance multiplier from winding temperature, 1.0 at 25 C. Set by the thermal model.
+    #[var]
+    pub rm_temp_scale: f64,
 }
 
 #[godot_api]
@@ -80,6 +91,9 @@ impl MotorModel {
             dc_io_v: 0.0,
             dc_k_q: 0.0,
             dc_count: 1.0,
+            esc_r_ohm: 0.0,
+            esc_sw_frac: 0.0,
+            rm_temp_scale: 1.0,
         })
     }
 
@@ -100,6 +114,13 @@ impl MotorModel {
         self.dc_count = n.max(1.0);
     }
 
+    /// Winding resistance at its current temperature plus the ESC's conduction path: what the supply
+    /// sees in series with the back-EMF.
+    #[func]
+    pub fn series_r_ohm(&self) -> f64 {
+        self.dc_rm_ohm * self.rm_temp_scale + self.esc_r_ohm
+    }
+
     #[func]
     pub fn uses_dc(&self) -> bool {
         self.dc_rm_ohm > 0.0 && self.dc_k_q > 0.0
@@ -113,7 +134,7 @@ impl MotorModel {
     pub fn target_rpm(&self, throttle_cmd: f64, voltage_v: f64) -> f64 {
         let t = throttle_cmd.clamp(0.0, self.max_throttle);
         if self.uses_dc() {
-            solve_point(t * voltage_v, self.kv, self.dc_rm_ohm, self.dc_io_a, self.dc_io_v,
+            solve_point(t * voltage_v, self.kv, self.series_r_ohm(), self.dc_io_a, self.dc_io_v,
                 self.dc_k_q).rpm
         } else {
             t * self.max_rpm(voltage_v)
@@ -131,8 +152,8 @@ impl MotorModel {
     /// winding current; see `dc_pack_current_impl`). What a battery drains by.
     #[func]
     pub fn dc_pack_current_at_rpm(&self, rpm: f64, v_supply: f64) -> f64 {
-        self.dc_count * dc_pack_current_impl(rpm, v_supply, self.kv, self.dc_rm_ohm, self.dc_io_a,
-            self.dc_io_v, self.dc_k_q)
+        self.dc_count * (1.0 + self.esc_sw_frac) * dc_pack_current_impl(rpm, v_supply, self.kv,
+            self.series_r_ohm(), self.dc_io_a, self.dc_io_v, self.dc_k_q)
     }
 
     #[func]
@@ -388,7 +409,7 @@ fn current_impl(v: f64, rpm: f64, kv: f64, rm: f64) -> f64 {
     (v - rpm / kv) / rm
 }
 
-fn io_impl(io: f64, io_v: f64, kv: f64, rpm: f64) -> f64 {
+pub(crate) fn io_impl(io: f64, io_v: f64, kv: f64, rpm: f64) -> f64 {
     let ref_rpm = kv * io_v;
     if ref_rpm <= 0.0 { return io; }
     io * (rpm / ref_rpm)
@@ -401,14 +422,20 @@ fn temp_step_impl(t: f64, loss: f64, c: f64, h: f64, dt: f64) -> f64 {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn two_lump_step(mut tw: f64, mut tb: f64, loss: f64, c1: f64, c2: f64, g: f64, ga: f64, gs: f64, dt: f64) -> (f64, f64) {
+fn two_lump_step(tw: f64, tb: f64, loss: f64, c1: f64, c2: f64, g: f64, ga: f64, gs: f64, dt: f64) -> (f64, f64) {
+    two_lump_step_amb(tw, tb, loss, c1, c2, g, ga, gs, dt, AMBIENT_C)
+}
+
+/// `two_lump_step` against a stated ambient (SR1: a flight on a cold day cools the motor from 0 C air).
+#[allow(clippy::too_many_arguments)]
+pub fn two_lump_step_amb(mut tw: f64, mut tb: f64, loss: f64, c1: f64, c2: f64, g: f64, ga: f64, gs: f64, dt: f64, ambient: f64) -> (f64, f64) {
     if c1 <= 0.0 || c2 <= 0.0 { return (tw, tb); }
     let n = (dt / 0.02).ceil().max(1.0) as usize;
     let h = dt / n as f64;
     for _ in 0..n {
         // (c1/h + g + gs) tw' - g tb' = c1/h tw + loss + gs ambient ;  -g tw' + (c2/h + g + ga) tb' = c2/h tb + ga ambient
-        let (a11, a12, b1) = (c1 / h + g + gs, -g, c1 / h * tw + loss + gs * AMBIENT_C);
-        let (a21, a22, b2) = (-g, c2 / h + g + ga, c2 / h * tb + ga * AMBIENT_C);
+        let (a11, a12, b1) = (c1 / h + g + gs, -g, c1 / h * tw + loss + gs * ambient);
+        let (a21, a22, b2) = (-g, c2 / h + g + ga, c2 / h * tb + ga * ambient);
         let det = a11 * a22 - a12 * a21;
         tw = (b1 * a22 - a12 * b2) / det;
         tb = (a11 * b2 - a21 * b1) / det;
@@ -676,7 +703,7 @@ mod tests {
     #[test]
     fn a_lumped_coaxial_thruster_draws_every_motors_current_at_the_same_rpm() {
         let mut m = MotorModel { kv: KV, max_throttle: 1.0, tau_s: 0.03, dc_rm_ohm: RM, dc_io_a: IO,
-                                 dc_io_v: IOV, dc_k_q: KQ, dc_count: 1.0 };
+                                 dc_io_v: IOV, dc_k_q: KQ, dc_count: 1.0, esc_r_ohm: 0.0, esc_sw_frac: 0.0, rm_temp_scale: 1.0 };
         let one = m.dc_current_at_rpm(15000.0);
         let rpm_one = m.target_rpm(0.6, 22.2);
         m.set_dc_count(2.0);
@@ -699,7 +726,7 @@ mod tests {
     #[test]
     fn legacy_motor_target_is_throttle_kv_voltage() {
         let m = MotorModel { kv: KV, max_throttle: 0.9, tau_s: 0.03, dc_rm_ohm: 0.0, dc_io_a: 0.0,
-                             dc_io_v: 0.0, dc_k_q: 0.0, dc_count: 1.0 };
+                             dc_io_v: 0.0, dc_k_q: 0.0, dc_count: 1.0, esc_r_ohm: 0.0, esc_sw_frac: 0.0, rm_temp_scale: 1.0 };
         assert!(!m.uses_dc());
         assert!((m.target_rpm(1.0, 20.0) - 0.9 * KV * 20.0).abs() < 1e-9);
     }

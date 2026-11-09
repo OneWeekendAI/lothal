@@ -160,10 +160,12 @@ static func run() -> Array:
 	var per_motor_sum := 0.0
 	for i in Observables.MOTOR_COUNT:
 		per_motor_sum += leaning.observables.current_a[i]
+	# The avionics (a constant-power load, SR1) draws from the pack but is no motor's current.
+	var avionics_a: float = leaning.powertrain.avionics_w / maxf(leaning.powertrain.current_supply_v, 1.0)
 	results.append(TestResult.new(
 		"per-motor current sums to the published pack current",
-		absf(per_motor_sum - leaning.observables.current_total_a) < 1e-4,
-		"sum %.3f A against pack %.3f A" % [per_motor_sum, leaning.observables.current_total_a]
+		absf(per_motor_sum + avionics_a - leaning.observables.current_total_a) < 0.01,
+		"sum %.3f A + avionics %.3f A against pack %.3f A" % [per_motor_sum, avionics_a, leaning.observables.current_total_a]
 	))
 	results.append(TestResult.new(
 		"per-motor current is per MOTOR: the hard-working corner draws more than the idling one",

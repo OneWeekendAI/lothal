@@ -24,6 +24,9 @@ extends Control
 signal class_chosen(class_id: String)
 signal dismissed
 
+## Top-left way out; emits `dismissed`, as Esc does.
+var back_button: Button
+
 ## Turntable speed. Slow: a model that spins fast reads as a loading indicator.
 const TURN_RAD_S := 0.30
 ## Camera pitch below the horizon.
@@ -466,6 +469,23 @@ func _build_layout() -> void:
 	title.offset_top = 32
 	title.offset_bottom = 60
 	add_child(title)
+
+	# Back: top-left on the title's row, well clear of the big ‹ arrow at mid-height. The same
+	# signal as Esc, so the shell has one place that decides where "back" goes.
+	back_button = Button.new()
+	back_button.name = "Back"
+	back_button.text = "‹ Back"
+	back_button.flat = true
+	back_button.focus_mode = Control.FOCUS_NONE
+	back_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	back_button.position = Vector2(32, 28)
+	back_button.custom_minimum_size = Vector2(0, 32)
+	back_button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
+	back_button.add_theme_color_override("font_color", INK_MUTED)
+	back_button.add_theme_color_override("font_hover_color", INK)
+	back_button.add_theme_color_override("font_pressed_color", INK)
+	back_button.pressed.connect(func() -> void: dismissed.emit())
+	add_child(back_button)
 
 	prev_button = _arrow_button("‹", -1)
 	prev_button.anchor_left = 0.0

@@ -379,6 +379,8 @@ var projects_screen: ProjectsScreen
 ## otherwise. Built per use and freed on close, so its turntable viewport costs nothing after.
 var class_picker: ClassPicker
 var _class_picker_layer: CanvasLayer
+## Path of the file `new_project` just wrote, while its picker is up and no class is chosen.
+var _picker_new_path := ""
 var design_space: DesignSpace
 var _design_space_layer: CanvasLayer
 var settings: AppSettings
@@ -2810,6 +2812,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	# Esc returns from a page to the drone (§2). With the drone already on the stage there is
 	# nothing to back out of: the section stays selected, because the list always shows one.
+	if key_event.keycode == KEY_ESCAPE and _away_layer != null and design_space != null:
+		back_to_drone_from_room()
+		accept_event()
+		return
 	if key_event.keycode == KEY_ESCAPE and page_open():
 		back_to_drone()
 		accept_event()
@@ -2827,6 +2833,9 @@ func _build_empty_state() -> void:
 	projects_screen.new_requested.connect(new_project)
 	projects_screen.open_requested.connect(func() -> void: _open_dialog.popup_centered_ratio(0.6))
 	projects_screen.project_chosen.connect(open_project)
+	projects_screen.project_deleted.connect(func(gone: String) -> void:
+		settings.forget_project(gone)
+		settings.save())
 	add_child(projects_screen)
 	_empty_state = projects_screen
 
@@ -3397,6 +3406,7 @@ func _on_project_action(action_id: String) -> void:
 ## is exactly one new file, and no window of time in which the new drone exists only in memory.
 func new_project() -> void:
 	adopt(ProjectLibrary.starting_project())
+	_picker_new_path = container.path
 	show_class_picker()
 
 
@@ -3416,8 +3426,20 @@ func show_class_picker() -> ClassPicker:
 
 
 ## Esc on the picker: it closes, and a Design Space waiting behind it comes back as it was.
+##
+## Back / Esc on the picker of a NEW drone (no class chosen yet) abandons it: the just-written
+## starting file is removed, not trashed (nothing in it was ever the builder's work), and the
+## projects screen comes back. Over a Design Space it just returns there.
 func _on_picker_dismissed() -> void:
 	_close_class_picker()
+	if _picker_new_path != "" and container != null and container.path == _picker_new_path \
+			and container.project.drone_class == "":
+		var gone := _picker_new_path
+		_picker_new_path = ""
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(gone))
+		_clear_project()
+		return
+	_picker_new_path = ""
 	_set_design_space_shown(true)
 
 
@@ -3449,6 +3471,7 @@ func choose_class(class_id: String) -> bool:
 	container.write(container.path)
 	chip.set_project(container.project, container.path)
 	_refresh_status()
+	_picker_new_path = ""
 	_close_class_picker()
 	show_design_space()
 	return true
@@ -3466,12 +3489,15 @@ func show_design_space() -> DesignSpace:
 	design_space = DesignSpace.new(DesignSession.from_project(container.project), rooms.catalog_for_lab())
 	design_space.dismissed.connect(_close_design_space)
 	design_space.back_requested.connect(back_to_class_picker)
+	design_space.fly_requested.connect(fly_it)
+	design_space.field_requested.connect(open_field_from_design)
 	_design_space_layer.add_child(design_space)
 	design_space.migrate_old_drafts()
 	return design_space
 
 
 func _close_design_space() -> void:
+	_close_away_bar()
 	if _design_space_layer != null:
 		remove_child(_design_space_layer)
 		_design_space_layer.queue_free()
@@ -3884,3 +3910,114 @@ class CompletenessRing extends Control:
 		# From twelve o'clock, clockwise — the direction a fraction of a whole is read in.
 		draw_arc(centre, radius, -PI * 0.5, -PI * 0.5 + TAU * fraction, 48,
 			LothalTheme.ACCENT, 3.0, true)
+
+
+# ---------------------------------------------------------------------------
+# Design Space -> Sim / Field and back (TRACKER section 9)
+# ---------------------------------------------------------------------------
+
+## The bar over the sim and Field while the Design Space is hidden behind them.
+var _away_layer: CanvasLayer
+var _away_return_system := 0
+
+
+## "Fly it": the build being edited in the Design Space, flown. The sim reads the old Lab's rails,
+## so the design's selection (and an edited frame) is pushed into the open project, fitted on the
+## rails (`apply_project`, the path Open uses) and autosaved first; then the same `rooms.show_sim()`
+## the old Sim button calls. The Design Space is only hidden, so Back finds it exactly as left.
+func fly_it() -> bool:
+	if not _sync_design_to_lab():
+		return false
+	_enter_away()
+	rooms.show_sim()
+	return true
+
+
+## "Field": the Field system of the old shell (courses, sites, weather and the SR3 world picker).
+func open_field_from_design() -> bool:
+	if not _sync_design_to_lab():
+		return false
+	_enter_away()
+	rooms.show_lab()
+	if not select_system_by_name("Field"):
+		return false
+	# The Field room is the page of a Field row (design section 4): the course row puts the site,
+	# the course and the SR3 world picker on screen.
+	open_row(&"course")
+	return _field != null and _field.visible
+
+
+func _sync_design_to_lab() -> bool:
+	if design_space == null or container == null:
+		return false
+	var session := design_space.session
+	var project := container.project
+	project.parts = session.selection.duplicate(true)
+	var edit := session.frame_edit(rooms.catalog_for_lab())
+	if not edit.is_empty() and session.frame_document() != null:
+		project.airframe = session.frame_document().to_dictionary()
+	apply_project(project)
+	container.project.touch()
+	container.write(container.path)
+	return true
+
+
+func _enter_away() -> void:
+	if _away_layer == null:
+		_away_return_system = _focused_index
+		_away_layer = CanvasLayer.new()
+		_away_layer.name = "AwayLayer"
+		_away_layer.layer = TOGGLE_LAYER + 6
+		add_child(_away_layer)
+		var back := Button.new()
+		back.name = "BackToDrone"
+		back.text = "\u2039 Back to the drone"
+		back.focus_mode = Control.FOCUS_NONE
+		# Just right of the centred Lab/Sim toggle, clear of the sim's build panel and HUD.
+		back.anchor_left = 0.5
+		back.anchor_right = 0.5
+		back.offset_left = 145
+		back.offset_top = 10
+		back.grow_horizontal = Control.GROW_DIRECTION_END
+		back.custom_minimum_size = Vector2(0, 32)
+		back.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+		back.add_theme_color_override("font_color", Color(0.78, 0.78, 0.78))
+		back.add_theme_color_override("font_hover_color", Color(0.96, 0.96, 0.96))
+		var flat := StyleBoxFlat.new()
+		flat.bg_color = Color(0.05, 0.055, 0.065, 0.85)
+		flat.border_color = Color(1, 1, 1, 0.16)
+		flat.set_border_width_all(1)
+		flat.set_corner_radius_all(LothalTheme.RADIUS_CONTROL)
+		flat.content_margin_left = 12
+		flat.content_margin_right = 12
+		flat.content_margin_top = 6
+		flat.content_margin_bottom = 6
+		back.add_theme_stylebox_override("normal", flat)
+		var hover := flat.duplicate() as StyleBoxFlat
+		hover.bg_color = Color(0.16, 0.17, 0.19, 0.95)
+		back.add_theme_stylebox_override("hover", hover)
+		back.add_theme_stylebox_override("pressed", hover)
+		back.pressed.connect(back_to_drone_from_room)
+		_away_layer.add_child(back)
+	_set_design_space_shown(false)
+
+
+## Back from the sim or Field: the Design Space layer is shown again, untouched.
+func back_to_drone_from_room() -> void:
+	if design_space == null:
+		return
+	rooms.show_lab()
+	_select_system(_away_return_system)
+	_close_away_bar()
+	_set_design_space_shown(true)
+
+
+func _close_away_bar() -> void:
+	if _away_layer != null:
+		remove_child(_away_layer)
+		_away_layer.queue_free()
+	_away_layer = null
+
+
+func away_from_design() -> bool:
+	return _away_layer != null

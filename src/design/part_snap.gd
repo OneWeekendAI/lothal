@@ -24,9 +24,14 @@ extends RefCounted
 ## export wrote; DesignSpace offsets that root to stand the drone on y=0, so a stage point p is
 ## `root.transform.affine_inverse() * p` here). `mount_map` reads it from the instantiated GLB.
 
-## Beyond the drone's drawn bounds by this much (metres) a drop is "nothing". The 5" is ~0.27 m
-## across its props; 6 cm is a thumb's width on screen at the default zoom.
+## Beyond the drone's drawn bounds by this much (metres) a drop is "nothing". The 5" is ~0.277 m
+## across its props; 6 cm is a thumb's width on screen at the default zoom. That is the reach AT
+## REF_SPAN_M; every other model's reach is this scaled by its own span (`reach_of`), because the
+## camera frames each model to the same size on screen: 6 cm is most of a whoop and a sliver of an X-Class.
 const CAPTURE_M := 0.06
+const REF_SPAN_M := 0.277
+## The coaxial lower motors and props of a model that has them (the Cinelifter's `motor_FL_lo`).
+const LOWER := "_lo"
 const CORNERS := ["FL", "FR", "BL", "BR"]
 ## Catalog category -> the drawn nodes (GLB mesh names) it can be mounted on. Receiver and guard have
 ## no node of their own: the receiver rides the stack, a guard rings the props.
@@ -64,6 +69,8 @@ static func mount_map(root: Node) -> Dictionary:
 	for cat in MOUNTS_BY_CATEGORY:
 		for n in MOUNTS_BY_CATEGORY[cat]:
 			wanted[n] = true
+			if String(n).begins_with("motor_") or String(n).begins_with("prop_"):
+				wanted[String(n) + LOWER] = true
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mi := node as MeshInstance3D
 		var nm := String(mi.name)
@@ -76,7 +83,14 @@ static func mount_map(root: Node) -> Dictionary:
 		if wanted.has(nm):
 			mounts[PickRegistry.address_of(nm)] = {"node": nm, "xf": xf, "centre": box.get_center()}
 	var bounds := AABB(lo, hi - lo) if lo.x < INF else AABB()
-	return {"mounts": mounts, "bounds": bounds}
+	return {"mounts": mounts, "bounds": bounds, "reach": reach_of(bounds)}
+
+
+## How far beyond the drawn bounds a drop still counts, metres: CAPTURE_M at the 5"'s span, scaled
+## by this model's own (the longer horizontal side of its bounds).
+static func reach_of(bounds: AABB) -> float:
+	var span := maxf(bounds.size.x, bounds.size.z)
+	return CAPTURE_M if span <= 0.0 else CAPTURE_M * span / REF_SPAN_M
 
 
 static func _xform_in(node: Node, root: Node) -> Transform3D:
@@ -94,7 +108,7 @@ static func in_reach(map: Dictionary, point: Vector3) -> bool:
 	var b: AABB = map.get("bounds", AABB())
 	if b.size == Vector3.ZERO:
 		return false
-	return b.grow(CAPTURE_M).has_point(point)
+	return b.grow(float(map.get("reach", CAPTURE_M))).has_point(point)
 
 
 ## The mount addresses a category goes on, on this model (for lighting every corner a motor fills).
@@ -102,9 +116,10 @@ static func mounts_for(map: Dictionary, category: String) -> Array:
 	var out: Array = []
 	var mounts: Dictionary = map.get("mounts", {})
 	for n in MOUNTS_BY_CATEGORY.get(category, []):
-		var address := PickRegistry.address_of(String(n))
-		if mounts.has(address):
-			out.append(address)
+		for node_name in [String(n), String(n) + LOWER]:
+			var address := PickRegistry.address_of(node_name)
+			if mounts.has(address):
+				out.append(address)
 	return out
 
 

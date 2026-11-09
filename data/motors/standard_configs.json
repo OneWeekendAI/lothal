@@ -104,7 +104,8 @@
    ],
    "mount_options": [
     "6.6 mm, M1.4"
-   ]
+   , "9 x 9 mm, M2"],
+      "mount_note": "2026-11-09: 9 x 9 added because the catalog's own motor_1103_8000kv is drilled 9x9 (data/parts/motors.json); the designer must offer the pattern of the catalog motor it starts from."
   },
   {
    "size": "1204",
@@ -153,7 +154,8 @@
    ],
    "mount_options": [
     "9 x 9 mm, M2"
-   ],
+   , "12 x 12 mm, M2"],
+      "mount_note": "2026-11-09: 12 x 12 added because the catalog's own motor_1404_3800kv and motor_1404_4600kv are drilled 12x12 (data/parts/motors.json); the designer must offer the pattern of the catalog motor it starts from.",
    "kv_note": "2026-11-03 (MOTOR_RM_IO_CHECK.md): added KVs seen in shop listings; removed 5500 (not sold). Added values from search-result titles are unverified; kept values not seen in any listing remain est."
   },
   {

@@ -33,6 +33,19 @@ static func default_design(cfg: MotorConfigs) -> MotorDesign:
 	return d
 
 
+## A starting design shaped like a catalog motor: the grid size nearest its stator, its KV, and the
+## mount option that has its bolt pattern (a motor that does not fit the frame is no starting point).
+## A start the builder changes, never a claim that the grid motor IS that motor.
+static func like(rec: Dictionary, cfg: MotorConfigs) -> MotorDesign:
+	var d := from_record(rec, cfg)
+	var want := String(rec.get("mount_pattern", ""))
+	for o in cfg.mount_options(d.size):
+		if catalog_mount(String(o)) == want:
+			d.mount = String(o)
+			break
+	return d
+
+
 ## The KV values this size is sold in: the only values set_kv() accepts.
 func kv_choices(cfg: MotorConfigs) -> Array:
 	return cfg.kv_options(size)

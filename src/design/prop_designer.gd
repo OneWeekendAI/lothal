@@ -129,18 +129,19 @@ var _figs: Dictionary = {}
 
 
 ## `build` is the drone on the bench: its prop is the starting blade and its motor sets the rpm and
-## the pad's limit. With none, the five-inch class's parts stand in.
-func _init(p_catalog: PartsCatalog = null, p_materials: FrameMaterials = null, build: Build = null) -> void:
+## the pad's limit. With none, `fallback_class`'s parts stand in (the five-inch by default).
+func _init(p_catalog: PartsCatalog = null, p_materials: FrameMaterials = null, build: Build = null,
+		fallback_class: String = FALLBACK_CLASS) -> void:
 	catalog = p_catalog if p_catalog != null else PartsCatalog.load_default()
 	materials = p_materials if p_materials != null else FrameMaterials.load_default()
 	_init_shell("PropDesigner")
 	theme = MotorDesigner.mono_theme()
-	_start_from(build)
+	_start_from(build, fallback_class)
 	_build_shell(_build_top_bar(), _build_left(), _build_middle(), _build_right())
 	_rederive()
 
 
-func _start_from(build: Build) -> void:
+func _start_from(build: Build, fallback_class: String = FALLBACK_CLASS) -> void:
 	var prop: Dictionary
 	if build != null:
 		prop = build.propeller
@@ -149,7 +150,7 @@ func _start_from(build: Build) -> void:
 		pad_mm = float(build.assembly_value("soft_mount_m")) * 1000.0
 		drone_parts = {"frame": String(build.frame.get("part_id", "")), "battery": String(build.battery.get("part_id", ""))}
 	else:
-		var parts := DroneClass.parts_for(FALLBACK_CLASS)
+		var parts := DroneClass.parts_for(fallback_class if DroneClass.is_available(fallback_class) else FALLBACK_CLASS)
 		prop = catalog.get_part(String(parts["propeller"]))
 		motor = catalog.get_part(String(parts["motor"]))
 		drone_parts = {"frame": String(parts["frame"]), "battery": String(parts["battery"])}
@@ -171,12 +172,15 @@ func _take_prop(prop: Dictionary) -> void:
 	hub_g = float(held["hub_g"]) if held.has("hub_g") else default_hub_g(doc, materials)
 
 
-## The boss the mesh draws, as a solid cylinder of the blade's material, to 0.1 g. A starting value
+## The boss the mesh draws, as a solid cylinder of the blade's material, to 0.1 g (0.01 g when that would be zero). A starting value
 ## the builder can change, not a measurement.
 static func default_hub_g(p_doc: PropellerDocument, p_materials: FrameMaterials) -> float:
 	var r := p_doc.radius_mm() * PropellerDocument.HUB_RADIUS_TO_RADIUS
 	var h := p_doc.radius_mm() * PropellerMesh.HUB_HEIGHT_TO_RADIUS
-	return snappedf(PI * r * r * h * p_materials.density(p_doc.material_id) * 1e-6, STEP_HUB_G)
+	var grams := PI * r * r * h * p_materials.density(p_doc.material_id) * 1e-6
+	var snapped_g := snappedf(grams, STEP_HUB_G)
+	# A whoop's boss weighs under 0.05 g: snapped to 0.1 it would read as no hub at all.
+	return snapped_g if snapped_g > 0.0 else snappedf(grams, 0.01)
 
 
 func pad_limit_mm() -> float:
