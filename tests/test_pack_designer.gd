@@ -21,7 +21,11 @@ const BEFORE_NAMES := ["Back", "Cat_antenna", "Cat_battery", "Cat_camera", "Cat_
 	"Chip_cells_n6", "Chip_cells_n7", "Chip_cells_n8", "Home", "LabelsToggle", "ShelfHeader", "mark_auw_g", "mark_flight_time_min",
 	"mark_hover_throttle", "mark_thrust_to_weight", "mark_top_speed_kmh"]
 ## And its unnamed ("@Button@N") buttons.
-const BEFORE_UNNAMED := 15
+## 17 = 15 plus the design file bar's "Fly it" and "Field" buttons (src/design/design_file_bar.gd,
+## covered by tests/test_design_space.gd). They are deliberate and unrelated to the pack tile; the
+## check was red at 15 (counted 17) and is green at 17, and still goes red if a further unnamed
+## button appears (SR-B, 2026-11-10).
+const BEFORE_UNNAMED := 17
 
 ## Figure keys that are derived from cells; none may be reachable by typing.
 const DERIVED := ["nominal_v", "full_v", "empty_v", "mah", "wh", "mass_g", "dims_mm", "cont_a",
