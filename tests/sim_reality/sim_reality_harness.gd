@@ -166,8 +166,36 @@ static func row(ref: Dictionary, case_name: String, capacity_scale: float = 1.0)
 		"tag": c.get("published_tag", c.get("tag", "published")), "result": res,
 		"real_world": c.get("real_world", null),
 		"fitted": ref.get("fitted_vs_heldout", ""),
+		# SR0.1 (owner decision 2026-11-10): a row whose reference is a published whole-aircraft time
+		# ("published (optimistic)") is CONTEXT. Out of band is a flagged warning, never a failure,
+		# unless the harness runs with --gate. A measured/held-out row is not context.
+		"context": String(c.get("published_tag", c.get("tag", "published"))).contains("optimistic"),
 		"published_auw_g": float(ref.get("published", {}).get("all_up_mass_g", 0.0)),
 	}
+
+
+## Flagged warnings for context rows that are out of band (valid flights only: an invalid flight is a
+## failure, not a context warning). Printed by the runner; never turns the exit code red by itself.
+static func context_warnings(rows: Array) -> PackedStringArray:
+	var out: PackedStringArray = []
+	for r in rows:
+		if bool(r.get("context", false)) and not bool(r["in_band"]) and bool(r["result"]["valid"]):
+			out.append("[WARN] context row out of band: %s %s sim %.1f min vs published(optimistic) %.1f min (%+.1f%%, band %.0f%%) - published whole-aircraft times are optimistic context, not a failure" % [
+				r["id"], r["case"], r["sim_min"], r["published_min"], r["err_pct"], r["band_pct"]])
+	return out
+
+
+## The process exit code. 1 for an invalid flight or a failed test, always. A row out of band is a
+## failure when it is NOT context, or when `gate` is set (the strict mode the fail-proofs use).
+static func exit_code(rows: Array, failed_tests: int, gate: bool) -> int:
+	if failed_tests > 0:
+		return 1
+	for r in rows:
+		if not bool(r["result"]["valid"]):
+			return 1
+		if not bool(r["in_band"]) and (gate or not bool(r.get("context", false))):
+			return 1
+	return 0
 
 
 static func all_rows(capacity_scale: float = 1.0) -> Array:
@@ -180,12 +208,15 @@ static func all_rows(capacity_scale: float = 1.0) -> Array:
 
 static func format_table(rows: Array) -> String:
 	var lines: PackedStringArray = []
-	lines.append("%-26s %-6s %9s %8s %8s %6s %-8s %-9s %6s %6s  %s" % [
-		"aircraft", "case", "published", "sim_min", "err_%", "band", "verdict", "src_tag", "AUW_g", "pubAUW", "ended_by / note"])
+	lines.append("%-26s %-6s %14s %11s %8s %8s %6s %-8s %-22s %6s %6s  %s" % [
+		"aircraft", "case", "published(opt)", "real_world", "sim_min", "err_%", "band", "verdict", "src_tag", "AUW_g", "pubAUW", "ended_by / note"])
 	for r in rows:
 		var res: Dictionary = r["result"]
-		lines.append("%-26s %-6s %9.1f %8.1f %+8.1f %5.0f%% %-8s %-9s %6.0f %6.0f  %s" % [
-			String(r["id"]), r["case"], r["published_min"], r["sim_min"], r["err_pct"], r["band_pct"],
+		var rw_col := "-"
+		if r.get("real_world", null) is Dictionary:
+			rw_col = "%.0f-%.0f" % [float(r["real_world"]["min_low"]), float(r["real_world"]["min_high"])]
+		lines.append("%-26s %-6s %14.1f %11s %8.1f %+8.1f %5.0f%% %-8s %-22s %6.0f %6.0f  %s" % [
+			String(r["id"]), r["case"], r["published_min"], rw_col, r["sim_min"], r["err_pct"], r["band_pct"],
 			"IN BAND" if r["in_band"] else "OUT", r["tag"], res["auw_g"], r["published_auw_g"], res["ended_by"]])
 		lines.append("    mean %.0f W / %.1f A, 80%%-used at %.1f min, wall %.0f s. fitted-vs-held-out: %s" % [
 			res["mean_power_w"], res["mean_current_a"], res["t80_min"], res["wall_s"], r["fitted"]])

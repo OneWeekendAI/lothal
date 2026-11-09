@@ -7,7 +7,14 @@ extends RefCounted
 ## out-of-band number from a flight that lost control or hit the time cap is a controller finding,
 ## not a physics one.
 
-static func run() -> Array:
+## `gate` false (default): a published-time band check is context, so only its flight-validity test is
+## asserted here (the out-of-band row is printed as a [WARN] by the runner). `gate` true: the band
+## tests are asserted too.
+static var gate := false
+
+
+static func run(p_gate: bool = false) -> Array:
+	gate = p_gate
 	var out: Array = []
 	out.append_array(_mavic_hover())
 	out.append_array(_mavic_cruise())
@@ -21,12 +28,15 @@ static func _check(id: String, case_name: String) -> Array:
 	var row := SimRealityHarness.row(SimRealityHarness.find_reference(id), case_name)
 	var res: Dictionary = row["result"]
 	var label := "%s %s" % [id, case_name]
-	return [
+	var checks: Array = [
 		TestResult.new("%s: flight ends in a battery cutoff" % label, bool(res["valid"]),
-			"ended by: %s after %.1f min, max tilt %.1f deg" % [res["ended_by"], res["time_min"], res["max_tilt_deg"]]),
+			"ended by: %s after %.1f min, max tilt %.1f deg" % [res["ended_by"], res["time_min"], res["max_tilt_deg"]])]
+	if bool(row["context"]) and not gate:
+		return checks
+	checks.append(
 		TestResult.new("%s: sim time within %.0f%% of published" % [label, row["band_pct"]], bool(row["in_band"]),
-			"sim %.1f min vs published %.1f min (%+.1f%%)" % [row["sim_min"], row["published_min"], row["err_pct"]]),
-	]
+			"sim %.1f min vs published %.1f min (%+.1f%%)" % [row["sim_min"], row["published_min"], row["err_pct"]]))
+	return checks
 
 
 static func _mavic_hover() -> Array:

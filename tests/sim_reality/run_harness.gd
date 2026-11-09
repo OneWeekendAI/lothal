@@ -9,6 +9,7 @@ extends SceneTree
 func _init() -> void:
 	var scale := 1.0
 	var only := ""
+	var gate := false
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--capacity-scale="):
 			scale = float(a.get_slice("=", 1))
@@ -22,6 +23,8 @@ func _init() -> void:
 				SimRealityHarness.field_opts = {}
 				for k in ["avionics", "esc", "thermal", "battery"]:
 					SimRealityHarness.field_opts[k] = k in on
+		elif a == "--gate":
+			gate = true   # strict exit: ANY row out of band fails, context rows included (fail-proofs)
 		elif a.begins_with("--only="):
 			only = a.get_slice("=", 1)
 	var rows: Array = []
@@ -33,21 +36,27 @@ func _init() -> void:
 	print("")
 	print("SIM REALITY HARNESS (SR0)  capacity_scale=%.2f  dt=%.4f s  cutoff=loaded cell V below min for %.1f s or capacity used" % [scale, SimRealityHarness.DT, SimRealityHarness.CUTOFF_HOLD_S])
 	print(SimRealityHarness.format_table(rows))
-	# Owner direction 2026-11-09: published whole-aircraft times are marketing-optimistic CONTEXT, so
-	# the exit code no longer depends on them. It depends on the flight being valid and the tests.
-	var bad := 0
+	# Owner direction 2026-11-09/10: published whole-aircraft times are marketing-optimistic CONTEXT.
+	# Out of band is a flagged warning and does not fail the run; --gate makes it fail.
 	var in_band := 0
+	var invalid := 0
 	for r in rows:
 		if not bool(r["result"]["valid"]):
-			bad += 1
+			invalid += 1
 		if r["in_band"]:
 			in_band += 1
 	print("")
-	print("%d of %d cases within the optimistic published band (context only); %d invalid flights" % [in_band, rows.size(), bad])
+	for w in SimRealityHarness.context_warnings(rows):
+		print(w)
+	print("%d of %d cases within the optimistic published band (context only unless --gate); %d invalid flights" % [in_band, rows.size(), invalid])
 	var failed_tests := 0
 	if scale == 1.0 and only == "":
-		for result in TestSimReality.run():
+		for result in TestSimReality.run(gate):
 			if not result.passed:
 				failed_tests += 1
 			print("[%s] %s (%s)" % ["PASS" if result.passed else "FAIL", result.name, result.detail])
-	quit(1 if (bad > 0 or failed_tests > 0) else 0)
+		for result in TestSimRealityLogic.run():
+			if not result.passed:
+				failed_tests += 1
+			print("[%s] %s (%s)" % ["PASS" if result.passed else "FAIL", result.name, result.detail])
+	quit(SimRealityHarness.exit_code(rows, failed_tests, gate))
