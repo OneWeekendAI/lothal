@@ -35,6 +35,7 @@ static func run() -> Array:
 	results.append_array(_test_sizes_are_true_and_monotonic(catalog))
 	results.append_array(_test_packs_match_the_catalogue(catalog))
 	results.append_array(_test_seed_label_and_model_agree(catalog))
+	results.append_array(_test_idle_frames_do_no_work())
 	return results
 
 
@@ -473,4 +474,28 @@ static func _test_packs_match_the_catalogue(catalog: PartsCatalog) -> Array:
 				and absf(e.y - want_lo) <= 2.0, detail))
 		results.append(TestResult.new("%s: the pack lies flat, long axis front-to-back (height < width < length)" % id,
 			e != Vector3.ZERO and e.y < e.x and e.x <= e.z, detail))
+	return results
+
+
+## SR_PERF_FINDINGS #2: idle frames neither refit the camera nor rescan the class list, and the
+## stage only renders while visible.
+static func _test_idle_frames_do_no_work() -> Array:
+	var results: Array = []
+	var picker := ClassPicker.new()
+	results.append(TestResult.new("picker stage updates only when visible",
+		picker.viewport.render_target_update_mode == SubViewport.UPDATE_WHEN_VISIBLE,
+		str(picker.viewport.render_target_update_mode)))
+	picker.show_class("five_inch")
+	for i in 5:
+		picker._process(0.016)  # lets the neighbour preload finish
+	var scans := picker.rescan_count
+	for i in 60:
+		picker._process(0.016)
+	results.append(TestResult.new("60 idle frames do no class-list rescan",
+		picker.rescan_count == scans, str(picker.rescan_count - scans)))
+	picker.show_class("six_inch")
+	picker._process(0.016)
+	results.append(TestResult.new("changing class triggers a rescan again",
+		picker.rescan_count > scans, str(picker.rescan_count)))
+	picker.free()
 	return results

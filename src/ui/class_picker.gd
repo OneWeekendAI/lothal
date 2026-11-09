@@ -92,6 +92,10 @@ var _radius: Dictionary = {}
 var _m_per_px := 0.0
 var _distance := 3.0
 var _turn := 0.0
+var _fitted_px := Vector2i.ZERO
+var _preloaded_for := ""
+## How many class-list rescans the frame loop did (tests read this).
+var rescan_count := 0
 
 
 func _init(p_catalog: PartsCatalog = null) -> void:
@@ -171,15 +175,23 @@ func _process(delta: float) -> void:
 		var px := Vector2i(maxi(int(size.x * sc.x), 16), maxi(int(size.y * sc.y), 16))
 		if viewport.size != px:
 			viewport.size = px
-		fit_camera(Vector2(px))
+		if px != _fitted_px:
+			_fitted_px = px
+			fit_camera(Vector2(px))
 	# Pre-load the neighbours, one per frame, so the arrows never stall on a parse.
-	var order := DroneClass.ids()
-	var i := order.find(current_id)
-	for j in [i + 1, i - 1]:
-		if j >= 0 and j < order.size() and not models.has(order[j]):
-			_ensure_model(order[j])
-			(models[order[j]] as Node3D).visible = false
-			break
+	if _preloaded_for != current_id:
+		rescan_count += 1
+		var order := DroneClass.ids()
+		var i := order.find(current_id)
+		var pending := false
+		for j in [i + 1, i - 1]:
+			if j >= 0 and j < order.size() and not models.has(order[j]):
+				_ensure_model(order[j])
+				(models[order[j]] as Node3D).visible = false
+				pending = true
+				break
+		if not pending:
+			_preloaded_for = current_id
 
 
 ## Sets the camera for a viewport of `vp_size` pixels, fitted to the class on show.
@@ -257,7 +269,7 @@ func _build_stage() -> void:
 	viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 	viewport.use_taa = false
 	viewport.anisotropic_filtering_level = Viewport.ANISOTROPY_16X
-	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	add_child(viewport)
 
 	_tex = TextureRect.new()

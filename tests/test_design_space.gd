@@ -26,6 +26,8 @@ static func run() -> Array:
 	results.append_array(_test_back_to_picker())
 	results.append_array(_test_panel_fades())
 	results.append_array(_test_charge_chip(catalog))
+	results.append_array(_test_hidden_does_no_3d_work())
+	results.append_array(_test_redraws_only_on_change())
 	results.append_array(_test_fly_it_and_back())
 	return results
 
@@ -535,4 +537,54 @@ static func _test_fly_it_and_back() -> Array:
 	results.append(TestResult.new("The old Lab/Sim toggle still switches rooms",
 		sim_on and shell.rooms.sim == null and shell.rooms.showing_lab(), ""))
 	_scratch_done(shell)
+	return results
+
+
+## SR_PERF_FINDINGS #1: a hidden Design Space must not keep rendering a second 3D world.
+static func _test_hidden_does_no_3d_work() -> Array:
+	var results: Array = []
+	var shell := _scratch_open("five_inch")
+	var ds := shell.design_space
+	results.append(TestResult.new("shown: the stage renders and the frame loop runs",
+		ds.viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS and ds.can_process()
+			or not ds.is_inside_tree(), str(ds.viewport.render_target_update_mode)))
+	ds.file_bar.fly_button.pressed.emit()
+	results.append(TestResult.new("flying: the hidden Design Space stage is UPDATE_DISABLED",
+		ds.viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED,
+		str(ds.viewport.render_target_update_mode)))
+	results.append(TestResult.new("flying: the hidden Design Space frame loop is off",
+		ds.process_mode == Node.PROCESS_MODE_DISABLED, str(ds.process_mode)))
+	shell.back_to_drone_from_room()
+	results.append(TestResult.new("back: the stage renders and the loop runs again",
+		ds.viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS
+			and ds.process_mode != Node.PROCESS_MODE_DISABLED, str(ds.viewport.render_target_update_mode)))
+	shell.back_to_class_picker()
+	results.append(TestResult.new("picker over it: the Design Space stage is off too",
+		ds.viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED, ""))
+	_scratch_done(shell)
+	return results
+
+
+## SR_PERF_FINDINGS minor: idle widgets request no redraw.
+static func _test_redraws_only_on_change() -> Array:
+	var results: Array = []
+	var chip := ChargeChip.new()
+	chip.set_pack("x", "4S 1500mAh", 1500.0, 930.0)
+	var before := chip.redraw_requests
+	for i in 60:
+		chip._process(0.016)
+	results.append(TestResult.new("charge chip: 60 idle frames request no plug redraw",
+		chip.redraw_requests == before, str(chip.redraw_requests - before)))
+	chip.free()
+	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"), PartsCatalog.load_default())
+	ds.step_labels(0.0)
+	var base := ds.redraw_requests
+	for i in 60:
+		ds.step_labels(0.016)
+	results.append(TestResult.new("design space: steady label alpha requests no eye redraw",
+		ds.redraw_requests == base, str(ds.redraw_requests - base)))
+	ds.set_labels_hidden(true)
+	results.append(TestResult.new("design space: hiding the labels does request one",
+		ds.redraw_requests > base, str(ds.redraw_requests - base)))
+	ds.free()
 	return results

@@ -20,6 +20,8 @@ var label: Label
 var plug: PlugButton
 
 var _charging := false
+## How many plug redraws were requested (tests read this).
+var redraw_requests := 0
 var _t := 0.0
 var _from_frac := 0.0
 
@@ -94,7 +96,9 @@ func start_charge() -> void:
 
 func _process(delta: float) -> void:
 	step(delta)
-	plug.queue_redraw()
+	if _charging:
+		redraw_requests += 1
+		plug.queue_redraw()
 
 
 func step(delta: float) -> void:

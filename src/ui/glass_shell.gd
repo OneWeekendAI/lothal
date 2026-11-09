@@ -3448,6 +3448,7 @@ func _set_design_space_shown(shown: bool) -> void:
 		_design_space_layer.visible = shown
 	if design_space != null:
 		design_space.visible = shown
+		design_space.set_active(shown)
 
 
 ## Back from the Design Space: the picker goes up over it with the current class on show. The

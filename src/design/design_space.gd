@@ -85,6 +85,9 @@ var labels_button: Button            ## the eye: hides or shows every label and 
 ## The eye hides (true) or shows the labels; it beats idle. `label_alpha` is what is drawn now.
 var labels_hidden := false
 var label_alpha := 1.0
+var _drawn_label_alpha := -1.0
+## How many times the eye button was asked to redraw (tests read this).
+var redraw_requests := 0
 var _idle_s := 0.0
 var back_button: Button
 var panel: VBoxContainer
@@ -883,7 +886,9 @@ func _apply_label_alpha() -> void:
 		return
 	callouts.modulate.a = label_alpha
 	callouts.visible = label_alpha > 0.0
-	if labels_button != null:
+	if labels_button != null and not is_equal_approx(label_alpha, _drawn_label_alpha):
+		_drawn_label_alpha = label_alpha
+		redraw_requests += 1
 		labels_button.queue_redraw()
 
 
@@ -897,6 +902,15 @@ func apply_camera() -> void:
 # ---------------------------------------------------------------------------
 # The stage (the picker's look)
 # ---------------------------------------------------------------------------
+
+## The Design Space is only hidden while the sim/Field/picker is up, never freed: stop its 3D
+## world rendering and its frame loop while hidden, restore both on return.
+func set_active(on: bool) -> void:
+	process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
+	if viewport != null:
+		viewport.render_target_update_mode = \
+			SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
+
 
 func _build_stage() -> void:
 	viewport = SubViewport.new()
