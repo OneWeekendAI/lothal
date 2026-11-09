@@ -51,6 +51,7 @@
 ## USAGE
 ##   tools/run_tests_safe.sh                              # full suite (tests/run_tests.gd)
 ##   tools/run_tests_safe.sh --suite TestSomeSuite         # one suite (tools/run_one_suite.gd)
+##   tools/run_tests_safe.sh --sr                          # only the SR suites (tests/sim_reality/run_suites.gd prefix=sr)
 ##   tools/run_tests_safe.sh --layout                      # the shell-layout suite (tools/run_layout_suite.gd)
 ##
 ## RULING 71 — `--suite TestShellLayout` USED TO HANG FOR EVER, and it is the spelling everybody
@@ -148,6 +149,8 @@ mode="full"
 target=""
 if [[ "${1:-}" == "--layout" ]]; then
 	mode="layout"
+elif [[ "${1:-}" == "--sr" ]]; then
+	mode="sr"
 elif [[ "${1:-}" == "--suite" ]]; then
 	if [[ -z "${2:-}" ]]; then
 		echo "usage: tools/run_tests_safe.sh --suite <SuiteClass>" >&2
@@ -175,8 +178,16 @@ case "$mode" in
 	suite)
 		run_bounded "$WATCHDOG_SECONDS" env HOME="$scratch_home" godot --headless --script res://tools/run_one_suite.gd -- "$target" || status=$?
 		;;
+	sr)
+		run_bounded "$WATCHDOG_SECONDS" env HOME="$scratch_home" godot --headless --script res://tests/sim_reality/run_suites.gd -- prefix=sr || status=$?
+		;;
 	*)
 		run_bounded "$WATCHDOG_SECONDS" env HOME="$scratch_home" godot --headless --script res://tests/run_tests.gd || status=$?
+		# SR-C: the Sim Reality suites (sr1 physics, sr4 mission, ...) are not in run_tests.gd; run just
+		# those after it, so a full run covers them without repeating the suites both runners share.
+		sr_status=0
+		run_bounded "$WATCHDOG_SECONDS" env HOME="$scratch_home" godot --headless --script res://tests/sim_reality/run_suites.gd -- prefix=sr || sr_status=$?
+		if [[ "$sr_status" -ne 0 ]]; then status="$sr_status"; fi
 		;;
 esac
 exit "$status"

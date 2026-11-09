@@ -4,9 +4,15 @@ extends SceneTree
 ##   godot --headless --script res://tests/sim_reality/run_suites.gd [-- only=<name>]
 func _init() -> void:
 	var only := ""
+	var prefix := ""
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("only="):
 			only = a.get_slice("=", 1)
+		elif a.begins_with("prefix="):
+			## prefix=sr runs just the SR-only suites ("sr1 physics", "sr4 mission", ...). The rest of
+			## this list is also in tests/run_tests.gd, so tools/run_tests_safe.sh runs only these
+			## after the full run instead of doing the shared ones twice.
+			prefix = a.get_slice("=", 1)
 	var suites := {
 		"powertrain": TestPowertrain, "battery model": TestBatteryModel, "forward flight": TestForwardFlight,
 		"hover": TestHover, "hover at charge": TestHoverAtCharge, "validation": TestValidation,
@@ -22,6 +28,8 @@ func _init() -> void:
 	for name in suites:
 		if only != "" and name != only:
 			continue
+		if prefix != "" and not String(name).begins_with(prefix):
+			continue
 		var results: Array = suites[name].run()
 		var bad := 0
 		for r in results:
@@ -32,4 +40,6 @@ func _init() -> void:
 				print("  [FAIL] %s: %s (%s)" % [name, r.name, r.detail])
 		print("%-22s %4d checks  %s" % [name, results.size(), "ok" if bad == 0 and results.size() > 0 else "FAILED %d" % bad])
 	print("TOTAL %d checks, %d failed" % [total, failed])
-	quit(1 if failed > 0 else 0)
+	if total == 0:
+		print("[FAIL] no suite matched only=%s prefix=%s - a run that checked nothing is not a pass" % [only, prefix])
+	quit(1 if failed > 0 or total == 0 else 0)
