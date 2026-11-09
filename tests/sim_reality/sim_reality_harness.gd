@@ -152,6 +152,48 @@ static func _fly_uncached(ref: Dictionary, case_name: String, capacity_scale: fl
 	}
 
 
+## SR0.2 (P2): the input trail of a row. Everything a reader needs to reproduce the number: the build
+## (six part ids), the app and Rust model versions, the git commit, the field-physics flags actually in
+## force (defaults resolved, so "unset" and "true" print the same), and the capacity scale. Empty values
+## are shown as "unknown", never omitted.
+static func input_trail(ref: Dictionary, capacity_scale: float = 1.0, opts: Dictionary = field_opts) -> Dictionary:
+	var flags := {}
+	for k in ["avionics", "esc", "thermal", "battery", "ground_effect"]:
+		flags[k] = false if bool(opts.get("off", false)) else bool(opts.get(k, k != "ground_effect"))
+	return {
+		"build": build_for(ref, capacity_scale).fingerprint(),
+		"version": LothalVersion.CURRENT,
+		"rust_model": _rust_version(),
+		"git_sha": _git_sha(),
+		"field_flags": JSON.stringify(flags),
+		"capacity_scale": capacity_scale,
+	}
+
+
+static func _rust_version() -> String:
+	var text := FileAccess.get_file_as_string("res://rust/Cargo.toml")
+	for line in text.split("\n"):
+		if line.begins_with("version"):
+			return line.get_slice("\"", 1)
+	return "unknown"
+
+
+static func _git_sha() -> String:
+	var out: Array = []
+	var code := OS.execute("git", ["-C", ProjectSettings.globalize_path("res://"), "rev-parse", "--short", "HEAD"], out)
+	var sha := String(out[0]).strip_edges() if code == 0 and out.size() > 0 else ""
+	return sha if sha != "" else "unknown"
+
+
+## One printed line for a trail dictionary.
+static func format_trail(t: Dictionary) -> String:
+	var parts: PackedStringArray = []
+	for k in ["build", "version", "rust_model", "git_sha", "field_flags", "capacity_scale"]:
+		var v := str(t.get(k, ""))
+		parts.append("%s=%s" % [k, v if v != "" else "unknown"])
+	return "    input trail: " + " ".join(parts)
+
+
 ## One table row for a (reference, case).
 static func row(ref: Dictionary, case_name: String, capacity_scale: float = 1.0) -> Dictionary:
 	var c: Dictionary = ref["cases"][case_name]
@@ -171,6 +213,7 @@ static func row(ref: Dictionary, case_name: String, capacity_scale: float = 1.0)
 		# unless the harness runs with --gate. A measured/held-out row is not context.
 		"context": String(c.get("published_tag", c.get("tag", "published"))).contains("optimistic"),
 		"published_auw_g": float(ref.get("published", {}).get("all_up_mass_g", 0.0)),
+		"trail": input_trail(ref, capacity_scale),
 	}
 
 
@@ -218,8 +261,9 @@ static func format_table(rows: Array) -> String:
 		lines.append("%-26s %-6s %14.1f %11s %8.1f %+8.1f %5.0f%% %-8s %-22s %6.0f %6.0f  %s" % [
 			String(r["id"]), r["case"], r["published_min"], rw_col, r["sim_min"], r["err_pct"], r["band_pct"],
 			"IN BAND" if r["in_band"] else "OUT", r["tag"], res["auw_g"], r["published_auw_g"], res["ended_by"]])
-		lines.append("    mean %.0f W / %.1f A, 80%%-used at %.1f min, wall %.0f s. fitted-vs-held-out: %s" % [
-			res["mean_power_w"], res["mean_current_a"], res["t80_min"], res["wall_s"], r["fitted"]])
+		lines.append("    mean %.0f W / %.1f A, time-to-empty %.1f min (cutoff); 80%%-used convention (usable capacity) at %.1f min, wall %.0f s. fitted-vs-held-out: %s" % [
+			res["mean_power_w"], res["mean_current_a"], r["sim_min"], res["t80_min"], res["wall_s"], r["fitted"]])
+		lines.append(format_trail(r.get("trail", {})))
 		var rw: Variant = r.get("real_world", null)
 		if rw is Dictionary:
 			var m := float(r["sim_min"])

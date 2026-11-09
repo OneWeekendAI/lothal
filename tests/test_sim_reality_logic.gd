@@ -9,6 +9,7 @@ extends RefCounted
 ##   - exit_code ignoring `gate`                                        -> "gate makes a context row fail" red
 ##   - exit_code skipping the non-context test                          -> "a non-context row out of band fails" red
 ##   - format_table header without the real_world / published(opt) text -> the two column tests red
+##   - SR0.2: version blanked / field_flags constant / capacity_scale constant / 80%-used text dropped / trail line not printed -> one red each (5/5)
 ##   - context_warnings returning nothing                               -> "context row out of band is flagged" red
 
 
@@ -35,7 +36,51 @@ static func run() -> Array:
 	out.append(_non_context_fails())
 	out.append(_invalid_flight_fails())
 	out.append(_failed_test_fails())
+	out.append(_trail_printed())
+	out.append(_trail_keys_nonempty())
+	out.append(_trail_follows_field_flag())
+	out.append(_trail_follows_capacity())
+	out.append(_convention_printed())
 	return out
+
+
+static func _trail() -> Dictionary:
+	return SimRealityHarness.input_trail(SimRealityHarness.find_reference("mavic_3m"), 1.0, {})
+
+
+static func _trail_printed() -> TestResult:
+	var r := _row(true, false)
+	r["trail"] = _trail()
+	var txt := SimRealityHarness.format_table([r])
+	return TestResult.new("table prints an input trail line per row", txt.contains("input trail:") and txt.contains("git_sha="), txt)
+
+
+static func _trail_keys_nonempty() -> TestResult:
+	var t := _trail()
+	var empty: PackedStringArray = []
+	for k in ["build", "version", "rust_model", "git_sha", "field_flags"]:
+		if str(t.get(k, "")) == "" or str(t.get(k)) == "unknown":
+			empty.append(k)
+	return TestResult.new("trail keys build/version/rust_model/git_sha/field_flags are all known", empty.is_empty(), "empty: %s" % ", ".join(empty))
+
+
+static func _trail_follows_field_flag() -> TestResult:
+	var ref := SimRealityHarness.find_reference("mavic_3m")
+	var a := SimRealityHarness.input_trail(ref, 1.0, {})
+	var b := SimRealityHarness.input_trail(ref, 1.0, {"avionics": false})
+	return TestResult.new("changing a field-physics flag changes the trail", a["field_flags"] != b["field_flags"], "%s vs %s" % [a["field_flags"], b["field_flags"]])
+
+
+static func _trail_follows_capacity() -> TestResult:
+	var ref := SimRealityHarness.find_reference("mavic_3m")
+	var a := SimRealityHarness.input_trail(ref, 1.0, {})
+	var b := SimRealityHarness.input_trail(ref, 0.7, {})
+	return TestResult.new("changing the capacity scale changes the trail", a["capacity_scale"] != b["capacity_scale"], "")
+
+
+static func _convention_printed() -> TestResult:
+	var txt := SimRealityHarness.format_table([_row(true, false)])
+	return TestResult.new("80 percent-used convention printed beside time-to-empty", txt.contains("time-to-empty") and txt.contains("80%-used convention"), txt)
 
 
 static func _header() -> String:
