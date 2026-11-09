@@ -58,9 +58,7 @@ static func run() -> Array:
 	if files.size() <= 50:
 		return results
 
-	var offenders: Array = []
-	for file in files:
-		offenders.append_array(_warnings_in(file))
+	var offenders: Array = _warnings_in_all(files)
 
 	results.append(TestResult.new(
 		"the project reports zero GDScript warnings",
@@ -89,6 +87,45 @@ static func _collect(dir: String, out: Array) -> void:
 			out.append(dir.path_join(file))
 
 
+## How many `--check-only` processes run at once. Measured 2026-11-10: one process per file, run
+## one after another, took over 15 minutes for ~670 files (each now loads a lot of the class
+## table), and the suite printed nothing meanwhile, which looked exactly like a hang and tripped the
+## run_tests_safe.sh watchdog (task SR-A). Eight at a time brings it to a couple of minutes.
+const PARALLEL := 8
+
+
+## Same job as `_warnings_in` for a whole list, with PARALLEL processes at a time. Each process
+## writes its own output file (so two processes' lines can never interleave inside a pair), and the
+## files are read back one at a time and parsed exactly as before.
+static func _warnings_in_all(files: Array) -> Array:
+	var dir := ProjectSettings.globalize_path("user://warnings_sweep")
+	DirAccess.make_dir_recursive_absolute(dir)
+	for old in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(dir.path_join(old))
+	var list_path := dir.path_join("files.list")
+	var list := FileAccess.open(list_path, FileAccess.WRITE)
+	for file in files:
+		list.store_line(file)
+	list.close()
+
+	# The script goes in a file: OS.execute on macOS expanded `$1` in a `-c` string before sh saw it.
+	var script_path := dir.path_join("sweep.sh")
+	var script := FileAccess.open(script_path, FileAccess.WRITE)
+	script.store_string("#!/bin/sh\nexport D=\"$1\" G=\"$2\" P=\"$3\"\n"
+		+ "xargs -P %d -I{} sh -c 'o=\"$D/$(printf %%s \"$1\" | cksum | cut -d\" \" -f1).out\"; " % PARALLEL
+		+ "\"$G\" --headless --path \"$P\" --check-only --script \"$1\" > \"$o\" 2>&1' _ {} < \"$4\"\n")
+	script.close()
+	var output: Array = []
+	OS.execute("/bin/sh", [script_path, dir, OS.get_executable_path(),
+		ProjectSettings.globalize_path("res://"), list_path], output, true)
+
+	var found: Array = []
+	for name in DirAccess.get_files_at(dir):
+		if name.ends_with(".out"):
+			found.append_array(_parse(FileAccess.get_file_as_string(dir.path_join(name))))
+	return found
+
+
 ## Runs one file through a fresh `--check-only` and returns whatever it complained about, as
 ## "file:line — message" strings.
 ##
@@ -107,7 +144,11 @@ static func _warnings_in(path: String) -> Array:
 		"--script", path,
 	]
 	OS.execute(OS.get_executable_path(), args, output, true)
+	return _parse("\n".join(PackedStringArray(output)))
 
+
+static func _parse(text_in: String) -> Array:
+	var output: Array = [text_in]
 	var found: Array = []
 	# The message and the site it came from arrive on consecutive lines, and the site is what makes
 	# a report actionable — "integer division somewhere" is the report that produced three copies

@@ -111,7 +111,10 @@ cd "$REPO_ROOT"
 # Overridable from the environment ONLY so that the watchdog can be TRIPPED on purpose: a guard
 # nobody has fired is a claim, not evidence. `WATCHDOG_SECONDS=20 tools/run_tests_safe.sh ...` is
 # how this was proven to fire (see the F12 report). It is not a knob for routine use.
-WATCHDOG_SECONDS="${WATCHDOG_SECONDS:-1200}"
+# 2026-11-10 (SR-A): the full run is now ~7000 checks and took ~13 min before the warnings sweep was
+# parallelised; the old 1200 s bound was tripping on a slow-but-alive run, with no output, which read
+# as a hang. Raised to 3000 s; the real fix is in tests/test_warnings.gd.
+WATCHDOG_SECONDS="${WATCHDOG_SECONDS:-3000}"
 
 run_bounded() {
 	local limit="$1"
