@@ -390,7 +390,7 @@
         "mah": 10000.0,
         "internal_r_ohm": 0.053,
         "chemistry": "Li-ion",
-        "c_rating": 3.0,
+        "c_rating": 5.0,
         "length_mm": 100.0,
         "width_mm": 60.0,
         "height_mm": 50.0
@@ -399,7 +399,7 @@
         "cell_class": "4S",
         "connector": "XT60"
       },
-      "source": "ESTIMATED survey pack for the mapper (L4.1), no published product: 4S2P Li-ion of 21700 cells (3.6 V/cell nominal = 14.4 V), 10000 mAh = 144 Wh. MASS 580 g ESTIMATED (range 530-650 g) = 248 Wh/kg at pack level (range 220-272): 8 cells of the Samsung 50S class (5000 mAh, about 69 g, about 260 Wh/kg at cell level; maker figures, cell mass from memory and unchecked) = 552 g plus holder, nickel strip, BMS and wrap at roughly 5 percent. HISTORY: L4.1 shipped this slot as a 20000 mAh / 288 Wh pack at 520 g (554 Wh/kg, impossible; a real 288 Wh pack is about 1.15 kg). Re-massed to 1.15 kg on 2026-11-10 it made the Mavic-sized 2008 motors hover at throttle 0.88 (T:W 1.3, the sim lost control after 45 s), so the capacity was halved instead, keeping the class in the Mavic 3M airframe class (see tests/test_battery_density.gd). Internal resistance 53 mOhm ESTIMATED by scaling battery_6s_4000_liion (33 mOhm/cell at 4 Ah) to 2 parallel 5 Ah groups x 4 series. C-rating 3 and 100 x 60 x 50 mm ESTIMATED. The pack is 4S; the old id said 6S."
+      "source": "ESTIMATED survey pack for the mapper (L4.1), no published product: 4S2P Li-ion of 21700 cells (3.6 V/cell nominal = 14.4 V), 10000 mAh = 144 Wh. MASS 580 g ESTIMATED (range 530-650 g) = 248 Wh/kg at pack level (range 220-272): 8 cells of the Samsung 50S class (5000 mAh, about 69 g, about 260 Wh/kg at cell level; maker figures, cell mass from memory and unchecked) = 552 g plus holder, nickel strip, BMS and wrap at roughly 5 percent. HISTORY: L4.1 shipped this slot as a 20000 mAh / 288 Wh pack at 520 g (554 Wh/kg, impossible; a real 288 Wh pack is about 1.15 kg). Re-massed to 1.15 kg on 2026-11-10 it made the Mavic-sized 2008 motors hover at throttle 0.88 (T:W 1.3, the sim lost control after 45 s), so the capacity was halved instead, keeping the class in the Mavic 3M airframe class (see tests/test_battery_density.gd). Internal resistance 53 mOhm ESTIMATED by scaling battery_6s_4000_liion (33 mOhm/cell at 4 Ah) to 2 parallel 5 Ah groups x 4 series. C-rating 5 (was 3, which capped the 4-motor draw at 30 A and left T:W 1.07 at 14 V): the 50S-class cell is rated about 25 A continuous (maker figure, from memory and unchecked), two in parallel = 50 A = 5C; ESTIMATED. 100 x 60 x 50 mm ESTIMATED. The pack is 4S; the old id said 6S."
     }
   ]
 }

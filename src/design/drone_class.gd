@@ -166,7 +166,8 @@ const CLASSES: Array[Dictionary] = [
 		# the RedEdge-class multispectral camera and the RTK GPS. PAYLOAD: 20 W ESTIMATED (sunlight sensor +
 		# RTK, over the camera and GPS already in the parts list) and 40 g for the sunlight sensor.
 		"seed": {
-			"frame": "mapper_frame_380", "motor": "mapper_motor_2008", "propeller": "mapper_prop_94x53",
+			# MOTOR 2026-11-10: the 2008 (mapper_motor_2008, sized for the 951 g Mavic 3M) gave T:W 1.07 at 14 V on this 1.66 kg class and lost control after 3 min; the 2807 gives 1.5.
+			"frame": "mapper_frame_380", "motor": "motor_2807_1300kv", "propeller": "mapper_prop_94x53",
 			"battery": "mapper_battery_4s_10000_liion", "esc": "esc_4in1_45a_30x30", "flight_controller": "fc_f405_30x30",
 			"camera": "mapper_cam_multispectral_rededge", "gps": "mapper_gps_rtk",
 		},

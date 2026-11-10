@@ -15,6 +15,11 @@ extends RefCounted
 ## only its own case): MT8 Mission.TABLE "mapper" row removed -> defaults_for falls to the derived 20 m default, the table case FAILS.
 ## MT9 cropmerge_example class_id forced back to five_inch -> the class_id case FAILS. Both observed RED (1 fail each, only the named case: height 20/speed 5 derived; class_id five_inch) and GREEN after restoring (22/22).
 
+## HOVER TO EMPTY (2026-11-10): the class hovered ~3 min then lost control with 90 percent of the pack left (2008 motors sized for the 951 g Mavic
+## body, class AUW 1.66 kg: sagged T:W 1.15, hover throttle 0.89 at 14 V, the rear motor hit the throttle cap and the mixer then cut collective).
+## RED run (motor mapper_motor_2008, c_rating 3): reserve_left 68 percent at loss of control, static T:W 1.07 at 14 V, both cases FAIL.
+## GREEN: motor_2807_1300kv + c_rating 5, reserve_left 0.5 percent, T:W 1.5 at 14 V.
+
 ## L5.2 (observed 2026-11-10): row cases (5) first RED with no "row" in cropmerge_example (all 5 fail), then GREEN. MT10 row low set to the high
 ## percentile (low==high): only the range case FAILS. MT11 published tag blanked: the tag case and the published-beside case FAIL (2), the rest pass.
 
@@ -36,6 +41,7 @@ static func run() -> Array:
 	out.append(_payload_applies())
 	out.append_array(_class_cases())
 	out.append_array(_row_cases())
+	out.append_array(_endurance_cases())
 	return out
 
 
@@ -180,3 +186,19 @@ static func _mass() -> TestResult:
 	var b := Build.from_ids(catalog, IDS[0], IDS[1], IDS[2], IDS[4], "esc_4in1_20a_20x20", "fc_f405_20x20")
 	var g := b.all_up_weight_g()
 	return TestResult.new("sr9 mapper: Build from the mapper ids weighs 1000-1500 g all-up", g >= 1000.0 and g <= 1500.0, "%.1f g" % g)
+
+
+## The class on the 4S pack at 14 V resting (about 2.5 V per cell under hover load, near the end of the usable range): peak thrust must be 1.3 x weight.
+static func _endurance_cases() -> Array:
+	var out: Array = []
+	var s := DesignSession.default_for_class("mapper")
+	var b := s.build(PartsCatalog.load_default())
+	var tw := float(b.peak_thrust(14.0)["thrust_n"]) / b.weight_n()
+	out.append(TestResult.new("sr9 mapper: the class build keeps 1.3x thrust-to-weight at 14 V resting, current cap and sag included", tw >= 1.3, "T:W %.2f" % tw))
+	# Hover to empty on a 0.2-scale pack (same voltage-vs-used curve, 6 min instead of 29): it must use the pack, not lose control early.
+	var r := MissionRunner.run({"class_id": "mapper", "mission": Mission.HOVER_ENDURANCE, "seed": 1, "capacity_scale": 0.2, "max_sim_min": 30.0})
+	var left := float(r.get("reserve_left_pct", 100.0))
+	var early := String(r.get("ended_by", "")) == "lost_control" and left > 5.0
+	out.append(TestResult.new("sr9 mapper: hover endurance uses the pack down to 5 percent left before it ends (no early loss of control)", not early and left <= 5.0,
+		"ended_by %s, %.1f percent left, %.0f s" % [str(r.get("ended_by")), left, float(r.get("flight_time_s", 0.0))]))
+	return out

@@ -40,9 +40,9 @@ const CLASS_ENVELOPE := {
 ## Classes whose catalog offers NO second class-fit part that mounts, per section. These are catalog
 ## gaps (no part to invent), listed so the swap check says so instead of passing on nothing; a part
 ## added to the catalog makes the matching "still a gap" check fail and this table shrink.
-## mapper (L4.4) is a gap in both: the catalog has exactly one mapper_motor and one mapper_prop (9.4"), and no other 9.4" prop or small 20xx motor fits it.
+## mapper (L4.4) is a gap in props only: one mapper_prop (9.4"), no other 9.4" prop fits. Its motor stopped being a gap 2026-11-10 (class seed is motor_2807_1300kv, mapper_motor_2008 is the second).
 const CATALOG_GAPS := {
-	"motor": ["tiny_whoop", "toothpick", "cinelifter", "mapper", "x_class"],
+	"motor": ["tiny_whoop", "toothpick", "cinelifter", "x_class"],
 	"propeller": ["tiny_whoop", "cinelifter", "mapper", "x_class"],
 }
 ## L4.4: classes whose GLB is a labelled STAND-IN (a byte copy of another class's), so its drawn motor count (8) is the copy's and not the build's (4).
