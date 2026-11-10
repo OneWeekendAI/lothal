@@ -1,0 +1,17 @@
+{
+  "id": "mavic_3m_multispectral",
+  "name": "DJI Mavic 3 Multispectral (multispectral camera)",
+  "retrieved": "2026-11-10",
+  "source_url": "https://ag.dji.com/mavic-3-m/specs",
+  "fields": {
+    "px_w": {"value": 2592, "tag": "published", "source": "Max Image Size 2592x1944 (5 MP), https://ag.dji.com/mavic-3-m/specs"},
+    "px_h": {"value": 1944, "tag": "published", "source": "Max Image Size 2592x1944 (5 MP), https://ag.dji.com/mavic-3-m/specs"},
+    "fov_h_deg": {"value": 61.2, "tag": "published", "source": "Lens FOV 73.91 deg (61.2 x 48.10), https://ag.dji.com/mavic-3-m/specs"},
+    "fov_v_deg": {"value": 48.1, "tag": "published", "source": "Lens FOV 73.91 deg (61.2 x 48.10), https://ag.dji.com/mavic-3-m/specs"},
+    "pixel_pitch_um": {"value": 2.2, "tag": "estimated", "source": "not published; typical for a 1/2.8 inch 5 MP sensor (2592 x 2.2 um = 5.7 mm wide). Footprint and GSD use the published FOV and pixel count, so this only sets the derived focal length"},
+    "focal_mm": {"value": 4.82, "tag": "estimated", "source": "derived: sensor width (px_w x pitch) / (2 tan(fov_h/2)); the published 25 mm is a 35 mm EQUIVALENT, not the lens focal length"},
+    "shutter_min_s": {"value": 0.00007812, "tag": "published", "source": "Electronic shutter 1/30 to 1/12800 s, https://ag.dji.com/mavic-3-m/specs (fastest = 1/12800)"},
+    "exposure_s": {"value": 0.0005, "tag": "estimated", "source": "typical daylight exposure for the blur check (1/2000 s); auto-exposure value is not published; editable"},
+    "trigger_min_interval_s": {"value": 2.0, "tag": "published", "source": "Photo Shooting Mode, Timelapse TIFF intervals 2/3/5/7/10/15/20/30/60 s, https://ag.dji.com/mavic-3-m/specs"}
+  }
+}

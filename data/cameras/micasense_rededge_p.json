@@ -1,0 +1,15 @@
+{
+  "id": "micasense_rededge_p",
+  "name": "MicaSense RedEdge-P (multispectral channels)",
+  "retrieved": "2026-11-10",
+  "source_url": "https://micasense.com/rededge-p/ (NOT fetchable from the build machine on 2026-11-10: HTTP 403)",
+  "fields": {
+    "px_w": {"value": 1456, "tag": "estimated", "source": "from memory of the vendor datasheet (1.6 MP multispectral, 1456 x 1088); not re-checked against the page, which returned 403"},
+    "px_h": {"value": 1088, "tag": "estimated", "source": "from memory of the vendor datasheet (1456 x 1088); not re-checked, page returned 403"},
+    "pixel_pitch_um": {"value": 3.45, "tag": "estimated", "source": "from memory of the vendor datasheet; not re-checked, page returned 403"},
+    "focal_mm": {"value": 5.5, "tag": "estimated", "source": "from memory of the vendor datasheet; not re-checked, page returned 403"},
+    "shutter_min_s": {"value": 0.0001, "tag": "estimated", "source": "global shutter, fastest exposure not known; stand-in"},
+    "exposure_s": {"value": 0.0005, "tag": "estimated", "source": "typical daylight exposure for the blur check (1/2000 s); editable"},
+    "trigger_min_interval_s": {"value": 1.0, "tag": "estimated", "source": "from memory of the vendor datasheet (1 capture per second); not re-checked, page returned 403"}
+  }
+}
