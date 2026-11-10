@@ -24,7 +24,7 @@ func _init() -> void:
 		cat.by_category["battery"].append(src)
 		a["battery"] = "search_pack"
 	var ds := DesignSession.default_for_class("mapper")
-	for pair in [["motor", "motor"], ["prop", "propeller"], ["battery", "battery"], ["esc", "esc"], ["frame", "frame"]]:
+	for pair in [["frame", "frame"], ["motor", "motor"], ["prop", "propeller"], ["battery", "battery"], ["esc", "esc"]]:
 		if a.has(pair[0]):
 			var res := ds.swap(cat, pair[1], String(a[pair[0]]))
 			if not bool(res.get("ok", true)):
