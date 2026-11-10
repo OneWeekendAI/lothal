@@ -35,6 +35,11 @@ static func run() -> Array:
 		_footprint_hill(),
 		_footprint_horizon(),
 		_footprint_heightfield(),
+		_cov_grid_area(),
+		_cov_grid_overlap2(),
+		_cov_skipped_line(),
+		_cov_count_at_cell(),
+		_cov_units(),
 	]
 
 
@@ -155,3 +160,89 @@ static func _footprint_heightfield() -> TestResult:
 	var r := Footprint.project(_cam(), Vector3(0, 60, 0), Quaternion.IDENTITY, Footprint.ground_of(hf))
 	return TestResult.new("sr5 footprint through a Heightfield (20 percent plane): same 3909 m2 within 1.5 percent",
 		hf.is_valid() and absf(float(r["area_m2"]) / 3909.2 - 1.0) < 0.015, "valid %s, area %.1f m2" % [str(hf.is_valid()), r["area_m2"]])
+
+
+# ---------------------------------------------------------------- SR5.3 coverage raster
+## Grid helpers: lines run along +Z, spaced `side` x footprint width apart in X; shots every 0.25 x footprint length along Z (75 percent
+## front overlap). Footprints come from Footprint.project (level, Mavic 3M camera, 60 m), never from a swath formula.
+## FAIL-PROOFS (observed): CV1 add_footprint marking only the cell under the first corner: grid area FAILS (a few cells instead of 100 percent),
+## the 5-photo case FAILS. CV2 skipped line not skipped (grid built with all lines): the skipped-line case FAILS (hole 0 m2 vs 5649). CV3 acres factor
+## 4046.8564224 -> 4000: the units case FAILS.
+const CELL := 1.0
+
+static func _shots(lines: Array, side_gap: float, z_end: float) -> CoverageMap:
+	var cam := _cam()
+	var fp := cam.footprint_m(60.0)
+	var map := CoverageMap.covering(Rect2(-20.0, -40.0, fp.x * 8.0, z_end + 80.0), CELL)
+	for k in lines:
+		var x: float = fp.x * 0.5 + float(k) * fp.x * (1.0 - side_gap)
+		var z := 0.0
+		while z <= z_end + fp.y * 0.5:
+			var r := Footprint.project(cam, Vector3(x, 60.0, z), Quaternion.IDENTITY)
+			map.add_footprint(r["corners"])
+			z += fp.y * 0.25
+	return map
+
+
+static func _field(side_gap: float, n_lines: int, z_end: float) -> PackedVector2Array:
+	var fp := _cam().footprint_m(60.0)
+	var w := fp.x + float(n_lines - 1) * fp.x * (1.0 - side_gap)
+	return PackedVector2Array([Vector2(0.3, 0.3), Vector2(w - 0.4, 0.3), Vector2(w - 0.4, z_end - 0.2), Vector2(0.3, z_end - 0.2)])
+
+
+static func _cov_grid_area() -> TestResult:
+	var poly := _field(0.35, 5, 100.0)
+	var map := _shots([0, 1, 2, 3, 4], 0.35, 100.0)
+	var area := float(map.mapped_area(1, poly)["m2"])
+	var truth := _poly_area(poly)
+	return TestResult.new("sr5 coverage perfect grid over a flat field: mapped area within 1 percent of the polygon area",
+		absf(area / truth - 1.0) < 0.01, "mapped %.1f m2, polygon %.1f m2, images %d" % [area, truth, map.images])
+
+
+static func _cov_grid_overlap2() -> TestResult:
+	# Front overlap 75 percent puts every cell in 4 photos of ONE line; a cell in the side-overlap strip is in 8. Requiring 5 photos keeps only the
+	# overlap strips: 4 strips of 0.35 w in a field 3.6 w wide, so 1.4 / 3.6 = 0.389 of the field (hand calculation).
+	var poly := _field(0.35, 5, 100.0)
+	var map := _shots([0, 1, 2, 3, 4], 0.35, 100.0)
+	var one := float(map.mapped_area(1, poly)["m2"])
+	var five := float(map.mapped_area(5, poly)["m2"])
+	return TestResult.new("sr5 coverage same grid, 5 photos required: only the side-overlap strips remain, 1.4 / 3.6 = 39 percent of the field (35-43 percent)",
+		five / one > 0.35 and five / one < 0.43, "required 1: %.1f m2, required 5: %.1f m2, ratio %.3f" % [one, five, five / one])
+
+
+static func _cov_skipped_line() -> TestResult:
+	# 10 percent side overlap, so a skipped line leaves a real gap: 2s - w = 0.8 w wide (w = footprint width), 100 m long.
+	var gap := 0.10
+	var poly := _field(gap, 5, 100.0)
+	var map := _shots([0, 1, 3, 4], gap, 100.0)
+	var fp := _cam().footprint_m(60.0)
+	var expect := (2.0 * (1.0 - gap) - 1.0) * fp.x * (100.0 - 0.5)
+	var hole := float(map.hole_area(1, poly)["m2"])
+	return TestResult.new("sr5 coverage skipped middle line (10 percent side overlap): the hole is 0.8 footprint widths x field length, within one cell row (one column of 100 m)",
+		absf(hole - expect) <= 100.0 * CELL, "hole %.1f m2, expected %.1f m2" % [hole, expect])
+
+
+static func _cov_count_at_cell() -> TestResult:
+	var map := _shots([0, 1], 0.35, 100.0)
+	var fp := _cam().footprint_m(60.0)
+	# A point under the overlap of line 0 and line 1 (side overlap 35 percent) and between shots (75 percent front overlap: 4 photos at a time).
+	var x := fp.x * 0.5 + 0.5 * fp.x * 0.65
+	var n := map.overlap_at(x, 50.0)
+	return TestResult.new("sr5 coverage: a cell in the side-overlap strip is seen by about 8 photos (2 lines x 4 shots at 75 percent front overlap)",
+		n >= 7 and n <= 9, "count %d" % n)
+
+
+static func _cov_units() -> TestResult:
+	var map := CoverageMap.covering(Rect2(0, 0, 100, 100), 1.0)
+	map.add_footprint(PackedVector2Array([Vector2(0, 0), Vector2(100, 0), Vector2(100, 100), Vector2(0, 100)]))
+	var a := map.mapped_area(1)
+	return TestResult.new("sr5 coverage units: 100 x 100 m is 10000 m2, 1 ha and 2.4711 acres",
+		is_equal_approx(float(a["m2"]), 10000.0) and is_equal_approx(float(a["hectares"]), 1.0) and absf(float(a["acres"]) - 2.47105) < 0.0001, str(a))
+
+
+static func _poly_area(p: PackedVector2Array) -> float:
+	var a := 0.0
+	for i in p.size():
+		var q := p[(i + 1) % p.size()]
+		a += p[i].x * q.y - q.x * p[i].y
+	return absf(a) * 0.5
