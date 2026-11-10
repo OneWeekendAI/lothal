@@ -9,6 +9,7 @@ extends RefCounted
 ## fields {height_m, speed_mps, front_overlap, side_overlap, reserve_pct}, polygon, path, capacity_scale (default 1),
 ## max_sorties, camera (CameraParams), dt (default 1/500), camera_on (non-survey), hover_s, laps, range_heading_deg,
 ## end ("land"|"rth", follow_path), max_sim_min (default 120), debug_skip_line (survey, test only).
+## build (Build, optional; MissionFlow passes a saved design's build): flown instead of make_build(class_id); capacity_scale then scales its pack.
 ## SR8 tolerance hooks (all default 1 / unset, then bit-identical to before): mass_scale (mass and inertia), drag_scale (Cd*A, every axis),
 ## esc_loss_scale (ESC resistance and switching loss), pack_temp_c (pack temperature; default 25).
 ##
@@ -198,6 +199,13 @@ static func make_build(cls: String, capacity_scale: float) -> Build:
 	return DesignSession.default_for_class(cls).build(_catalog_shared())
 
 
+## The error-shaped result for `params` (no flight): what a caller that cannot build gets back.
+static func refuse(params: Dictionary, msg: String) -> Dictionary:
+	var r := MissionRunner.new()
+	r.params_in = params
+	return r._error(msg)
+
+
 func _error(msg: String) -> Dictionary:
 	var r := {"schema_version": MissionResult.SCHEMA_VERSION, "mission": String(params_in.get("mission", "")),
 		"class_id": String(params_in.get("class_id", "")), "seed": int(params_in.get("seed", 1)),
@@ -218,7 +226,8 @@ func _run(params: Dictionary) -> Dictionary:
 	var base := Mission.defaults_for(class_id, mission)
 	if not bool(base["ok"]):
 		return _error(String(base["error"]))
-	var build := make_build(class_id, scale)
+	var given := params.get("build") as Build
+	var build := given if given != null else make_build(class_id, scale)
 	var mass_scale := float(params.get("mass_scale", 1.0))
 	if mass_scale != 1.0:
 		build.mass_properties.total_mass_kg *= mass_scale
@@ -278,7 +287,7 @@ func _run(params: Dictionary) -> Dictionary:
 		rig.core.powertrain.motor_model.esc_r_ohm *= esc_scale
 		rig.core.powertrain.motor_model.esc_sw_frac *= esc_scale
 	bat = rig.core.powertrain.battery
-	if SimRealityHarness.find_reference(class_id).is_empty():
+	if given != null or SimRealityHarness.find_reference(class_id).is_empty():
 		bat.capacity_mah = bat.capacity_mah * scale
 	rig.nav.heading_mode = NavPilot.HeadingMode.CRAB
 	nominal_pack_wh = bat.capacity_mah / 1000.0 * bat.nominal_v
