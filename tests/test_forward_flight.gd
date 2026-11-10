@@ -352,8 +352,11 @@ static func _the_builder_is_told_when_the_prop_is_the_limit(baseline: Build) -> 
 	# computing forward_ratios().thrust_ratio at the top speed of every hover-capable frame x motor x
 	# prop x pack (1682 builds; 241 under 0.55, 40 clear of every hard warning): a low-KV 2807 1300KV on
 	# a steep 5x4x3 on the 5" frame keeps 42.4 % (the reference keeps far more). The line stays 0.50.
-	var steep := Build.from_ids(catalog, "frame_5in_freestyle", "motor_2807_1300kv",
-		"prop_hq_ethix_s5_5x4x3", "battery_4s_1500")
+	# SR1.3 (2026-11-10): top_speed_kmh() now uses the real trim lean (not a fixed 45 degrees), so the old
+	# fixture keeps 64 % at its top speed and no longer trips. Re-swept (every frame x motor x prop x pack, hover-capable,
+	# clear of every non-characteristic warning): the only builds under 0.60 are two on the 7" cinelifter; this one keeps 46 %.
+	var steep := Build.from_ids(catalog, "frame_7in_cinelifter", "motor_2808_1300kv",
+		"prop_7x35x2", "battery_4s_1500")
 
 	var warned: BuildWarning = null
 	for warning in steep.warnings():
@@ -370,7 +373,7 @@ static func _the_builder_is_told_when_the_prop_is_the_limit(baseline: Build) -> 
 			warned != null and warned.severity == BuildWarning.Severity.CHARACTERISTIC
 				and warned.message.contains(steep.propeller["name"])
 				and float(warned.values["thrust_fraction_at_top_speed"]) < Build.UNLOADING_WORTH_NAMING,
-			"5\" on 2807 1300KVs with a 5x4x3: %s" % ("(no warning)" if warned == null else warned.message)),
+			"7\" cinelifter on 2808 1300KVs with a 7x3.5x2: %s" % ("(no warning)" if warned == null else warned.message)),
 		TestResult.new(
 			"and the reference build, whose props have plenty left at its top speed, is not",
 			quiet,

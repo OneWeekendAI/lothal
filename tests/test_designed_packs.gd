@@ -100,7 +100,7 @@ const V1_GOLDEN := {
 	"custom_long_range_6s": [944.980708465516, 8.61511446938397, 0.34437748810877,
 		15.3669031649656, 147.631172121907, 0.2345, 612.5],
 	"custom_whoop_1s": [327.030708465516, 0.91282443245776, 1.0,
-		0.0, 46.9173887685779, 0.0721, 9.5],
+		0.0, 0.0, 0.0721, 9.5],   # top speed 46.9 -> 0.0 at SR1.3 (T:W 0.91 cannot hover; see test_preset_pack_pin.gd)
 }
 const V1_GOLDEN_SPECS := {
 	"custom_shed_4s_1300": {"c_rating": 95.0, "cells": 4.0, "chemistry": "LiPo", "height_mm": 27.0,

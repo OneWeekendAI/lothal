@@ -18,10 +18,11 @@ static func run() -> Array:
 	out.append_array(_bucket_depth_terms())
 	out.append_array(_ground_effect_curve())
 	out.append_array(_ground_effect_in_the_sim())
+	out.append_array(_top_speed_top_area())
 	return out
 
 
-static func mapper_build() -> Build:
+static func mapper_build(frame_g: float = 1200.0) -> Build:
 	var ref: Dictionary = SimRealityHarness.find_reference("mavic_3m").duplicate(true)
 	for part in ref["parts"]:
 		if part["category"] == "battery":
@@ -36,7 +37,7 @@ static func mapper_build() -> Build:
 			part["specs"]["width_mm"] = 70
 			part["specs"]["height_mm"] = 60
 	ref["build"]["battery"] = "ref_mapper_20ah"
-	ref["solve_frame_mass_to_g"] = 1200.0
+	ref["solve_frame_mass_to_g"] = frame_g
 	ref["id"] = "mapper_1p2kg"
 	return SimRealityHarness.build_for(ref)
 
@@ -247,4 +248,39 @@ static func _bucket_depth_terms() -> Array:
 	results.append(TestResult.new("bucket term 3, rotor-rotor interference (11 percent rear-rotor thrust loss, 5-15 m/s only): at 11.5 m/s the build draws at least 5 percent more than with the field at 0; hover identical; factor exactly 1 at 25 m/s on the mapper; and a 5 inch quad in a 3 m/s breeze takes under 1 percent",
 		(p_on - p_off) / p_off > 0.05 and absf(h_on - h_off) < 1e-9 and f25 == 1.0 and f10 > 1.05 and f_breeze < 1.01,
 		"11.5 m/s %.1f W on vs %.1f W off; hover %.2f vs %.2f; factor at 10 m/s %.4f, at 25 m/s %.4f, 5in 3 m/s %.4f" % [p_on, p_off, h_on, h_off, f10, f25, f_breeze]))
+	return results
+
+
+## SR1.3: top_speed_kmh() includes the top-area drag term at the trim lean. At the fixed 45 degree cap that
+## term cancels exactly (so a lean-capped build is blind to it, by physics, not by omission); it bites where
+## thrust binds, so the cases use a deliberately overloaded build (frame mass 2400 g on the mapper parts).
+## Mutation record: with top_speed_kmh() restored to the frontal-only, fixed-45-degree form, the "doubling
+## top area lowers the thrust-limited top speed" case went red (speeds equal).
+static func _thrust_limited() -> Build:
+	return mapper_build(2400.0)
+
+
+static func _top_speed_top_area() -> Array:
+	var results: Array = []
+	var b := _thrust_limited()
+	var capped := ReferenceBuild.build()
+	var cap_speed := sqrt(b.weight_n() * tan(Build.TOP_SPEED_LEAN_RAD) / b.drag_coefficient) * 3.6
+	var base := b.top_speed_kmh()
+	var dbl := _thrust_limited()
+	dbl.drag_field_m2 = Vector3(0.0, dbl.drag_cda_m2.y * 2.0, 0.0)
+	dbl._recompute()
+	var doubled := dbl.top_speed_kmh()
+	results.append(TestResult.new("top speed: the overloaded build is thrust-limited (below its 45 degree lean-capped speed), so this regime tests what the plain cap cannot",
+		base < cap_speed * 0.98, "top speed %.2f km/h, lean-capped %.2f km/h" % [base, cap_speed]))
+	results.append(TestResult.new("top speed: doubling the top-area Cd*A lowers the thrust-limited top speed (the top-area term is in the figure)",
+		doubled < base - 0.05, "base %.3f km/h, top area x2 %.3f km/h" % [base, doubled]))
+	var c2 := ReferenceBuild.build()
+	c2.drag_field_m2 = Vector3(0.0, c2.drag_cda_m2.y * 2.0, 0.0)
+	c2._recompute()
+	results.append(TestResult.new("top speed: the reference FPV build is lean-capped (its figure equals sqrt(W / front Cd*A halves) within 0.1 percent)",
+		absf(capped.top_speed_kmh() - sqrt(capped.weight_n() / capped.drag_coefficient) * 3.6) < 0.001 * capped.top_speed_kmh(),
+		"top speed %.3f km/h" % capped.top_speed_kmh()))
+	results.append(TestResult.new("top speed: on a lean-capped build the top-area term cancels exactly at 45 degrees (doubling it moves the figure by under 0.1 percent), the physics the note records",
+		absf(c2.top_speed_kmh() - capped.top_speed_kmh()) < 0.001 * capped.top_speed_kmh(),
+		"lean-capped %.3f km/h, top area x2 %.3f km/h" % [capped.top_speed_kmh(), c2.top_speed_kmh()]))
 	return results

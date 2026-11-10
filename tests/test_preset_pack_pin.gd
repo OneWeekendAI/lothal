@@ -13,11 +13,18 @@ const REL_TOL := 1e-9
 ## interference): every freestyle-profile pack draws 8 to 13 percent more in forward flight, hover (col 2) unchanged. Earlier note:
 ## drag; every other column is unchanged to 1e-9, which is the check that hover physics did not move.
 
+## Column 4 (top speed) RE-PINNED at SR1.3 (2026-11-10) for the four thrust-limited packs (1S x2, 2S x2) only; the other
+## ten (lean-capped at 45 degrees, where the top-area drag cancels) are unchanged to 1e-9. top_speed_kmh() now trims the lean
+## with directional drag (top area included) and asks whether the rotors, evaluated at that lean and speed, can make the thrust
+## it needs. 1S packs (T:W 0.9, cannot hover): 46.9 -> 0.0, the old figure came from a 45 degree lean the aircraft could not hold
+## (flight time col 3 is already 0 for them). 2S 300: 88.09 -> 80.85; 2S 450: 89.35 -> 80.67 (the real lean is shallower than the
+## fixed 45, so more of the airflow is edgewise, which costs these builds thrust).
+
 const GOLDEN := {
-	"battery_1s_300": [325.530708465516, 0.91703059984253, 1.0, 0.0, 46.9173887686143, 0.09, 8.0],
-	"battery_1s_550": [330.530708465516, 0.90315850601954, 1.0, 0.0, 46.917388768577, 0.07, 13.0],
-	"battery_2s_300": [336.480708465516, 3.36801861838821, 0.54349555896071, 1.20094941005569, 88.0940712825803, 0.03, 19.0],
-	"battery_2s_450": [346.180708465516, 3.27364657569647, 0.54525169384672, 1.36017622669237, 89.3548289421305, 0.014, 28.0],
+	"battery_1s_300": [325.530708465516, 0.91703059984253, 1.0, 0.0, 0.0, 0.09, 8.0],
+	"battery_1s_550": [330.530708465516, 0.90315850601954, 1.0, 0.0, 0.0, 0.07, 13.0],
+	"battery_2s_300": [336.480708465516, 3.36801861838821, 0.54349555896071, 1.20094941005569, 80.8450779436652, 0.03, 19.0],
+	"battery_2s_450": [346.180708465516, 3.27364657569647, 0.54525169384672, 1.36017622669237, 80.6653165380215, 0.014, 28.0],
 	"battery_3s_650": [382.480708465516, 6.35048269952925, 0.38159046055765, 2.82149331298291, 93.9228720094946, 0.02, 62.0],
 	"battery_4s_1300": [477.480708465516, 8.64188216420273, 0.31954025173841, 6.86541730027774, 104.940833999123, 0.011, 155.0],
 	"battery_4s_1500": [507.480708465516, 8.13101256738593, 0.33030605792066, 7.72927013780706, 108.1873206628, 0.015, 185.0],

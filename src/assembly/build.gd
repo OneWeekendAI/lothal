@@ -2778,20 +2778,23 @@ func remaining_flight_time_min(pack: BatteryModel) -> float:
 ## aircraft, or a high-pitch prop whose thrust runs out early, is where the cap actually binds, and
 ## for those the previous figure was an over-estimate.
 func top_speed_kmh() -> float:
-	var lean_horizontal_n := weight_n() * tan(TOP_SPEED_LEAN_RAD)
+	var weight := weight_n()
 	var max_rpm := max_rpm_at_nominal()
 	var ratios := forward_ratios()
 
-	# The drag-only answer, which is an upper bound: unloading can only ever take thrust away.
-	var high := sqrt(lean_horizontal_n / drag_coefficient)
+	# SR1.3: the lean-capped answer, which is an upper bound. At the 45 degree cap the top-area term
+	# cancels exactly (see trim_lean), so only the frontal Cd*A sets it: v = sqrt(W tan(cap) / front).
+	var high := sqrt(weight * tan(TOP_SPEED_LEAN_RAD) / drag_coefficient)
 	var low := 0.0
 	for _i in 40:
 		var mid := (low + high) * 0.5
+		# The lean the aircraft actually settles at (directional drag, so the top area enters), and
+		# the thrust that lean needs, against what the rotors make at that lean and that speed.
+		var trim := trim_lean(mid, weight)
+		var lean: float = trim["lean_rad"]
 		var available_n := thrust_rotor_equivalents() * PropellerModel.thrust_n(k_t, max_rpm) \
-			* ratios.thrust_ratio(max_rpm, mid * sin(TOP_SPEED_LEAN_RAD),
-				mid * cos(TOP_SPEED_LEAN_RAD))
-		var horizontal_n := minf(lean_horizontal_n, available_n * sin(TOP_SPEED_LEAN_RAD))
-		if drag_coefficient * mid * mid < horizontal_n:
+			* ratios.thrust_ratio(max_rpm, mid * sin(lean), mid * cos(lean))
+		if lean <= TOP_SPEED_LEAN_RAD and float(trim["thrust_n"]) <= available_n:
 			low = mid
 		else:
 			high = mid
@@ -3130,9 +3133,11 @@ func _prop_unloading() -> Array[BuildWarning]:
 
 	var geometry := prop_geometry()
 	var top_mps := top_speed_kmh() / 3.6
-	var v_axial := top_mps * sin(TOP_SPEED_LEAN_RAD)
+	# SR1.3: the lean the aircraft actually flies at its top speed (45 degrees only when lean-capped).
+	var top_lean: float = trim_lean(top_mps, weight_n())["lean_rad"]
+	var v_axial := top_mps * sin(top_lean)
 	var max_rpm := max_rpm_at_nominal()
-	var v_edge := top_mps * cos(TOP_SPEED_LEAN_RAD)
+	var v_edge := top_mps * cos(top_lean)
 	var remaining := forward_ratios().thrust_ratio(max_rpm, v_axial, v_edge)
 
 	if remaining >= UNLOADING_WORTH_NAMING:
