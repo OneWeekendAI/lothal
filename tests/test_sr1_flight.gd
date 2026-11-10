@@ -19,6 +19,7 @@ static func run() -> Array:
 	out.append_array(_ground_effect_curve())
 	out.append_array(_ground_effect_in_the_sim())
 	out.append_array(_top_speed_top_area())
+	out.append_array(_distributed_payload())
 	return out
 
 
@@ -248,6 +249,48 @@ static func _bucket_depth_terms() -> Array:
 	results.append(TestResult.new("bucket term 3, rotor-rotor interference (11 percent rear-rotor thrust loss, 5-15 m/s only): at 11.5 m/s the build draws at least 5 percent more than with the field at 0; hover identical; factor exactly 1 at 25 m/s on the mapper; and a 5 inch quad in a 3 m/s breeze takes under 1 percent",
 		(p_on - p_off) / p_off > 0.05 and absf(h_on - h_off) < 1e-9 and f25 == 1.0 and f10 > 1.05 and f_breeze < 1.01,
 		"11.5 m/s %.1f W on vs %.1f W off; hover %.2f vs %.2f; factor at 10 m/s %.4f, at 25 m/s %.4f, 5in 3 m/s %.4f" % [p_on, p_off, h_on, h_off, f10, f25, f_breeze]))
+	return results
+
+
+## SR1.4: payload mass at a real position. Mutation record: with the payload part left out of mass_parts()
+## (or appended at the origin) the "centre of mass moves forward", "hover pitch trim" and "inertia differs from
+## the origin version" cases all went red.
+static func _with_payload(g: float, pos: Vector3 = Vector3.INF) -> Build:
+	var b := mapper_build()
+	b.payload_mass_g = g
+	b.payload_position_m = pos
+	b._recompute()
+	return b
+
+
+static func _distributed_payload() -> Array:
+	var results: Array = []
+	var base := mapper_build()
+	var nose := _with_payload(200.0)
+	var seat: Vector3 = nose.payload_seat_m()
+	var dz: float = nose.mass_properties.com_m.z - base.mass_properties.com_m.z
+	var expect: float = 0.2 * (seat.z - base.mass_properties.com_m.z) / (base.mass_properties.total_mass_kg + 0.2)
+	results.append(TestResult.new("distributed mass: a 200 g nose payload moves the centre of mass forward (-Z) by m*d/M within 1 percent, and adds 200 g to the weight",
+		dz < 0.0 and absf(dz - expect) < 0.01 * absf(expect)
+		and absf(nose.all_up_weight_g() - base.all_up_weight_g() - 200.0) < 0.01,
+		"com shift %.5f m, expected %.5f m, AUW +%.2f g" % [dz, expect, nose.all_up_weight_g() - base.all_up_weight_g()]))
+	var off := base.hover_pitch_trim_nm()
+	var trim := nose.hover_pitch_trim_nm()
+	var want: float = nose.weight_n() * nose.mass_properties.com_m.z
+	results.append(TestResult.new("distributed mass: the balanced build needs no hover pitch trim (under 1 percent of weight x arm) and the nose payload needs a non-zero trim equal to weight x com offset within 1 percent",
+		absf(off) < 0.01 * base.weight_n() * base.arm_m and absf(trim) > 0.05 * absf(off) + 1e-4 and absf(trim - want) < 0.01 * absf(want),
+		"balanced %.5f N*m, nose %.5f N*m, W*com %.5f N*m" % [off, trim, want]))
+	results.append(TestResult.new("distributed mass: the front/rear thrust difference that cancels the trim is non-zero for the nose payload, and cancelling it brings the torque to zero",
+		absf(nose.hover_pitch_trim_thrust_delta_n()) > 0.001 and absf(nose.hover_pitch_trim_thrust_delta_n() * 2.0 * absf(MotorLayout.motor_position("M2", nose.arm_m).z) + trim) < 1e-9,
+		"delta %.4f N per motor" % nose.hover_pitch_trim_thrust_delta_n()))
+	var origin := _with_payload(200.0, Vector3.ZERO)
+	var i_nose: float = nose.mass_properties.inertia.x.x
+	var i_origin: float = origin.mass_properties.inertia.x.x
+	results.append(TestResult.new("distributed mass: pitch inertia with the payload at its nose seat differs from the same mass at the origin by at least 1 percent (the point-mass version is not the same tensor)",
+		absf(i_nose - i_origin) > 0.01 * i_origin, "nose %.6f, origin %.6f kg m^2" % [i_nose, i_origin]))
+	var tag: Dictionary = nose.payload_mass_breakdown()
+	results.append(TestResult.new("distributed mass: the payload mass is a labelled field (estimated, edited flag set), unedited default is 0 g and not edited",
+		tag["tag"] == "estimated" and tag["edited"] and not base.payload_mass_breakdown()["edited"] and base.payload_mass_g == 0.0, str(tag)))
 	return results
 
 

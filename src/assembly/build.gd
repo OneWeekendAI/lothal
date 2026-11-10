@@ -1284,6 +1284,12 @@ func mass_parts() -> Array:
 			InertiaPrimitives.box(component_mass_kg, component_size),
 			str(component.get("name", category))))
 
+	# The payload (SR1.4): a box at its own seat, omitted at 0 g so default builds are bit-for-bit unchanged.
+	if payload_mass_g > 0.0:
+		var payload_kg := payload_mass_g / 1000.0
+		parts.append(PartMass.new(payload_kg, payload_seat_m(),
+			InertiaPrimitives.box(payload_kg, PAYLOAD_SIZE_M), "Payload"))
+
 	# THE HARNESS, and this is the block PW2 exists for. It was ONE 14 g lump at the origin — the
 	# budget's remainder, standing for wiring, connector, capacitor, solder, heat-shrink and straps,
 	# put at the origin because a harness is everywhere on the aircraft by definition. That was
@@ -1956,6 +1962,45 @@ const AVIONICS_W := {
 ## draws more amps for it.
 const PAYLOAD_W_DEFAULT := {"small": 0.0, "mid": 0.0, "large": 0.0}
 var payload_w := 0.0
+
+## Payload MASS and POSITION (a nose gimbal, a belly sensor), fields beside the electrical load. Default 0 g, so
+## nothing moves unless the builder fits one. Tagged ESTIMATED: the catalog has no payload part, so mass, size
+## and seat are the builder's numbers. Position is body frame metres from the frame origin (nose = -Z, up = +Y);
+## the default seat is on the nose, half an arm length forward and slightly below the plate. The part goes into
+## `mass_parts()` as a box, so the centre of mass, the weight and the inertia tensor all move through the one
+## parallel-axis step (no second copy of the arithmetic).
+const PAYLOAD_SIZE_M := Vector3(0.05, 0.05, 0.05)
+var payload_mass_g := 0.0
+var payload_position_m := Vector3.INF   # INF = "use the nose seat"
+
+func payload_seat_m() -> Vector3:
+	if payload_position_m.is_finite():
+		return payload_position_m
+	return Vector3(0.0, -0.02, -0.5 * arm_m)
+
+
+func payload_mass_breakdown() -> Dictionary:
+	return {"g": payload_mass_g, "position_m": payload_seat_m(), "tag": "estimated", "edited": payload_mass_g != 0.0 or payload_position_m.is_finite()}
+
+
+## Pitch torque about the centre of mass if all four motors share the hover thrust equally, N*m about +X (positive
+## = nose-up by the physics.md convention, so a nose-heavy aircraft reads negative). A balanced build reads 0. The
+## mixer has to cancel this with a front/rear thrust difference; `hover_pitch_trim_thrust_delta_n` is that difference.
+## Uses MotorLayout.thrust_torque with the composite centre of mass, the same call the sim makes.
+func hover_pitch_trim_nm() -> float:
+	var each := weight_n() / 4.0
+	var tau := Vector3.ZERO
+	for name in MotorLayout.MOTOR_NAMES:
+		tau += MotorLayout.thrust_torque(name, each, arm_m, mass_properties.com_m)
+	return tau.x
+
+
+## Front-minus-rear thrust difference per motor (N) that cancels `hover_pitch_trim_nm`: front motors carry +delta/2,
+## rear -delta/2, so the extra torque about +X is 2 * d * delta with d the motor's fore/aft distance.
+func hover_pitch_trim_thrust_delta_n() -> float:
+	var d: float = absf(MotorLayout.motor_position("M2", arm_m).z)
+	return -hover_pitch_trim_nm() / (2.0 * d)
+
 
 ## The payload load as a labelled field: value, source tag, class default and whether it was edited.
 func payload_breakdown() -> Dictionary:
