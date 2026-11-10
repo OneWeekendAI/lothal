@@ -1,7 +1,7 @@
 extends SceneTree
 ## SR4 CLI: see tools/run_mission.sh. Exit 0 = mission completed, 1 = failed / aborted, 2 = usage error.
 
-const USAGE := "usage: tools/run_mission.sh --class=<id> --mission=<hover_endurance|cruise_loop|range_test|survey|follow_path|test_pack> [--seed=N --height=M --speed=M/S --front=0.75 --side=0.65 --reserve=PCT --wind=MPS --wind-from=DEG --gust=MPS --capacity-scale=X --rate-hz=500 --out=path.json --record=record.json --csv=out.csv] | tools/run_mission.sh --replay=record.json [--allow-version-mismatch=1]"
+const USAGE := "usage: tools/run_mission.sh --class=<id> --mission=<hover_endurance|cruise_loop|range_test|survey|follow_path|test_pack> [--seed=N --height=M --speed=M/S --front=0.75 --side=0.65 --reserve=PCT --wind=MPS --wind-from=DEG --gust=MPS --capacity-scale=X --rate-hz=500 --out=path.json --record=record.json --csv=out.csv] | tools/run_mission.sh --class=.. --mission=.. --mc=N [--master-seed=S --metric=flight_time_s --tol-capacity_pct=5 ... --dominant=1] | tools/run_mission.sh --replay=record.json [--allow-version-mismatch=1]"
 
 
 func _init() -> void:
@@ -12,9 +12,9 @@ func _init() -> void:
 			quit(2)
 			return
 		a[arg.substr(2).get_slice("=", 0)] = arg.get_slice("=", 1)
-	var known := ["class", "mission", "seed", "height", "speed", "front", "side", "reserve", "wind", "wind-from", "gust", "capacity-scale", "rate-hz", "out", "record", "csv", "replay", "allow-version-mismatch"]
+	var known := ["class", "mission", "seed", "height", "speed", "front", "side", "reserve", "wind", "wind-from", "gust", "capacity-scale", "rate-hz", "out", "record", "csv", "replay", "allow-version-mismatch", "mc", "master-seed", "metric", "dominant"]
 	for k in a:
-		if not k in known:
+		if not k in known and not (String(k).begins_with("tol-") and String(k).substr(4) in Tolerances.NAMES):
 			print("unknown option --%s\n%s" % [k, USAGE])
 			quit(2)
 			return
@@ -41,6 +41,9 @@ func _init() -> void:
 		"wind_speed_mps": float(a.get("wind", "0")), "wind_from_deg": float(a.get("wind-from", "0")),
 		"gust_mps": float(a.get("gust", "0")), "capacity_scale": float(a.get("capacity-scale", "1")),
 		"dt": 1.0 / float(a.get("rate-hz", "500"))}
+	if a.has("mc") or a.has("dominant"):
+		_uncertainty(params, a)
+		return
 	var t0 := Time.get_ticks_msec()
 	var r := MissionRunner.run(params)
 	var out_path: String = a.get("out", "/tmp/lothal_missions/%s_%s_%d.json" % [params["class_id"], params["mission"], params["seed"]])
@@ -94,3 +97,28 @@ func _replay(path: String, allow: bool) -> void:
 	for d in rp["diffs"]:
 		print("  differs: %s" % str(d))
 	quit(0 if rp["status"] == "identical" else (3 if rp["status"] == "refused" else 1))
+
+
+## SR8.2 / SR8.3: --mc=N (Monte Carlo range of --metric over the tolerances) and/or --dominant=1 (one-at-a-time ranking). Tolerances are the
+## defaults (all ESTIMATED) unless --tol-<name>=<half-width> edits one. Exit 0.
+func _uncertainty(params: Dictionary, a: Dictionary) -> void:
+	var tol := Tolerances.defaults()
+	for k in a:
+		if String(k).begins_with("tol-"):
+			tol = tol.with_half(String(k).substr(4), float(a[k]))
+	var metric := String(a.get("metric", "flight_time_s"))
+	print("")
+	print("UNCERTAINTY  class %s  mission %s  metric %s  (tolerances ESTIMATED unless edited)" % [params["class_id"], params["mission"], metric])
+	for n in Tolerances.NAMES:
+		var f: Dictionary = tol.fields[n]
+		print("  tolerance %-15s +-%g %s  [%s%s]" % [n, f["half"], f["unit"], f["tag"], ", edited" if bool(f["edited"]) else ""])
+	if a.has("mc"):
+		var mc := MonteCarlo.run(params, tol, int(a["mc"]), int(a.get("master-seed", "1")), metric)
+		print("  range  low %.4f   mid %.4f   high %.4f   (min %.4f, max %.4f)" % [mc["low"], mc["mid"], mc["high"], mc["min"], mc["max"]])
+		print("  %s" % mc["range"])
+	if a.has("dominant"):
+		var d := Sensitivity.one_at_a_time(params, tol, metric)
+		print("  nominal %.4f; dominant input: %s" % [d["nominal"], d["dominant"] if d["dominant"] != "" else "none (nothing varies)"])
+		for e in d["entries"]:
+			print("    %-15s spread %.4f  share %.0f %%  (%d flights)" % [e["input"], e["spread"], e["share"] * 100.0, e["flights"]])
+	quit(0)
