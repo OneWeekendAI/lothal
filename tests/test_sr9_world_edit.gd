@@ -5,6 +5,7 @@ extends RefCounted
 ## MT2 _mark_user removed from set_obstacle_field: 4 cases FAIL (height user tag, pole radius, tag shift, tag survives save/load).
 ## MT3 constructor keeps the caller's World instead of a duplicate: the original-not-mutated case FAILS (plus add_obstacle, as the shared base is polluted).
 ## MT4 World.from_data drops gustiness_mps (a round trip losing one field): the set_wind case FAILS (the gust it stored is gone from result()).
+## L2.4 editor: ME1 wind handler stops calling model.set_wind (control not wired): 4 cases FAIL (wind speed, direction+gust, wind tag, changed signal). ME2 tag labels made static (text "estimated"): 2 cases FAIL (wind tag, obstacle height tag). Both restored, 32/32 green. Editor cases run free-standing (no SceneTree): see _put.
 
 const PRESET := "calm_test_field"
 
@@ -141,4 +142,120 @@ static func run() -> Array:
 	var wm := WorldEditModel.new(loaded2)
 	out.append(TestResult.new("sr9 world edit: a user tag survives save/load",
 		wm.field_tag("obstacle.0.h") == "user" and wm.default_tag("obstacle.0.h") == "estimated", wm.field_tag("obstacle.0.h")))
+	out.append_array(_editor_cases(base))
+	return out
+
+
+## L2.4 WorldEditor, one case each. NOTE: the suite runner has no SceneTree, so the editor is built free-standing (never added to a
+## tree); signals and button presses are driven by hand (value = x / pressed.emit()), which runs the same callbacks.
+## Free-standing SpinBoxes queue value_changed for the tree (verified: it never fires without one), so the test sets the value and
+## emits the signal itself; in a tree the handler runs the same way.
+static func _put(sb: SpinBox, v: float) -> void:
+	sb.value = v
+	sb.value_changed.emit(sb.value)
+
+
+static func _editor() -> WorldEditor:
+	return WorldEditor.new(_model())
+
+
+static func _editor_cases(base: World) -> Array:
+	var out: Array = []
+	var fp0 := base.fingerprint()
+	var e := _editor()
+	out.append(TestResult.new("sr9 world edit: editor has preset, sun, wind, vertex and obstacle controls",
+		e.preset_option != null and e.sun_lat != null and e.sun_lon != null and e.sun_time != null and e.wind_speed != null
+		and e.wind_from != null and e.wind_gust != null and e.vertex_list != null and e.add_vertex_button != null
+		and e.delete_vertex_button != null and e.obstacle_list != null and e.add_obstacle_button != null
+		and e.remove_obstacle_button != null and e.vertex_list.item_count == 4, ""))
+
+	e = _editor()
+	e.preset_option.item_selected.emit(WorldPresets.IDS.find("windy_coast"))
+	out.append(TestResult.new("sr9 world edit: preset control switches the model to that preset",
+		e.model.result().fingerprint() == WorldPresets.by_id("windy_coast").fingerprint()
+		and absf(e.wind_speed.value - WorldPresets.by_id("windy_coast").wind_speed_mps) < 0.001, ""))
+
+	e = _editor()
+	_put(e.sun_lat, base.origin_lat + 1.0)
+	out.append(TestResult.new("sr9 world edit: sun latitude field changes the model fingerprint",
+		e.model.result().fingerprint() != fp0 and is_equal_approx(e.model.result().origin_lat, base.origin_lat + 1.0), ""))
+
+	e = _editor()
+	e.sun_time.text = "2026-12-21T17:00:00Z"
+	e.sun_time.text_submitted.emit(e.sun_time.text)
+	out.append(TestResult.new("sr9 world edit: sun time field changes the model fingerprint",
+		e.model.result().fingerprint() != fp0 and e.model.result().utc == "2026-12-21T17:00:00Z", ""))
+
+	e = _editor()
+	_put(e.wind_speed, 9.0)
+	out.append(TestResult.new("sr9 world edit: wind speed field changes the model fingerprint",
+		e.model.result().fingerprint() != fp0 and is_equal_approx(e.model.result().wind_speed_mps, 9.0), ""))
+
+	e = _editor()
+	_put(e.wind_from, 123.0)
+	_put(e.wind_gust, 2.0)
+	out.append(TestResult.new("sr9 world edit: wind direction and gust fields reach the model",
+		is_equal_approx(e.model.result().wind_from_deg, 123.0) and is_equal_approx(e.model.result().gustiness_mps, 2.0), ""))
+
+	e = _editor()
+	e.add_vertex_button.pressed.emit()
+	out.append(TestResult.new("sr9 world edit: add-vertex button adds a vertex, list shows 5",
+		e.model.vertex_count() == 5 and e.vertex_list.item_count == 5 and e.model.result().fingerprint() != fp0, ""))
+
+	e = _editor()
+	_put(e.vertex_lat, base.polygon[0] + 0.001)
+	out.append(TestResult.new("sr9 world edit: vertex latitude field moves the selected vertex",
+		absf(e.model.result().polygon[0] - (base.polygon[0] + 0.001)) < 1.0e-5 and e.model.result().fingerprint() != fp0, ""))
+
+	e = _editor()
+	e.delete_vertex_button.pressed.emit()
+	out.append(TestResult.new("sr9 world edit: delete-vertex button removes a vertex (4 -> 3)",
+		e.model.vertex_count() == 3 and e.vertex_list.item_count == 3, ""))
+
+	e = _editor()
+	e.delete_vertex_button.pressed.emit()
+	var fp3 := e.model.result().fingerprint()
+	var disabled3 := e.delete_vertex_button.disabled
+	e.delete_vertex_button.pressed.emit()
+	out.append(TestResult.new("sr9 world edit: at 3 vertices the delete button is disabled and pressing it changes nothing",
+		disabled3 and e.model.vertex_count() == 3 and e.model.result().fingerprint() == fp3, ""))
+
+	e = _editor()
+	e.add_obstacle_button.pressed.emit()
+	out.append(TestResult.new("sr9 world edit: add-obstacle button adds one, with editable fields",
+		e.model.result().obstacles.size() == 1 and e.obstacle_list.item_count == 1 and e.obstacle_fields.has("x")
+		and e.obstacle_fields.size() == 6 and e.model.result().fingerprint() != fp0, str(e.obstacle_fields.size())))
+
+	e = _editor()
+	e.add_obstacle_button.pressed.emit()
+	var fp1 := e.model.result().fingerprint()
+	_put(e.obstacle_fields["h"], 7.5)
+	out.append(TestResult.new("sr9 world edit: obstacle field changes the model fingerprint and value",
+		e.model.result().fingerprint() != fp1 and is_equal_approx(float(e.model.result().obstacles[0].dims["h"]), 7.5), ""))
+
+	e = _editor()
+	e.add_obstacle_button.pressed.emit()
+	e.remove_obstacle_button.pressed.emit()
+	out.append(TestResult.new("sr9 world edit: remove-obstacle button restores the original fingerprint",
+		e.model.result().fingerprint() == fp0 and e.remove_obstacle_button.disabled, ""))
+
+	e = _editor()
+	var before := (e.tag_labels["wind.speed"] as Label).text
+	_put(e.wind_speed, 9.0)
+	out.append(TestResult.new("sr9 world edit: wind tag label shows user after an edit (was not user before)",
+		before != "user" and (e.tag_labels["wind.speed"] as Label).text == "user", "before=" + before))
+
+	e = _editor()
+	e.add_obstacle_button.pressed.emit()
+	var h_before := (e.tag_labels["obstacle.0.h"] as Label).text
+	_put(e.obstacle_fields["h"], 7.5)
+	out.append(TestResult.new("sr9 world edit: obstacle height tag label estimated -> user after an edit",
+		h_before == "estimated" and (e.tag_labels["obstacle.0.h"] as Label).text == "user", "before=" + h_before))
+
+	e = _editor()
+	var seen: Array = []
+	e.changed.connect(func(w: World) -> void: seen.append(w))
+	_put(e.wind_speed, 9.0)
+	out.append(TestResult.new("sr9 world edit: changed(world) fires once per edit with the edited world",
+		seen.size() == 1 and is_equal_approx((seen[0] as World).wind_speed_mps, 9.0), str(seen.size())))
 	return out

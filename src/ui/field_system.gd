@@ -265,6 +265,7 @@ var humidity_field: SpinBox
 var roughness_field: SpinBox
 var ref_height_field: SpinBox
 var world_picker: OptionButton
+var edit_world_button: Button
 ## SR3.3: the world last applied (its id), the button that re-imports its ground from USGS 3DEP, and the last result.
 var applied_world_id := ""
 var reimport_button: Button
@@ -321,6 +322,9 @@ signal course_changed
 ## air in step — the whole of §5.3's "every quoted number names its conditions" depends on the
 ## garage hearing about it.
 signal selection_changed
+
+## L2.5: the builder pressed Edit world; the shell opens a WorldEditor for this world id (the room does not build one itself).
+signal edit_world_requested(world_id: String)
 
 
 func _init(p_sites: SiteLibrary, p_courses: CourseLibrary, p_conditions: ConditionsLibrary,
@@ -1247,6 +1251,11 @@ func _build_world_picker(column: VBoxContainer) -> void:
 		if index > 0:
 			apply_world(String(world_picker.get_item_metadata(index))))
 	column.add_child(world_picker)
+	edit_world_button = Button.new()
+	edit_world_button.name = "EditWorld"
+	edit_world_button.text = "Edit world"
+	edit_world_button.pressed.connect(func() -> void: edit_world_requested.emit(applied_world_id))
+	column.add_child(edit_world_button)
 	reimport_button = Button.new()
 	reimport_button.name = "ReimportElevation"
 	reimport_button.text = "Re-import elevation"
