@@ -111,7 +111,7 @@ func _uncertainty(params: Dictionary, a: Dictionary) -> void:
 	print("UNCERTAINTY  class %s  mission %s  metric %s  (tolerances ESTIMATED unless edited)" % [params["class_id"], params["mission"], metric])
 	for n in Tolerances.NAMES:
 		var f: Dictionary = tol.fields[n]
-		print("  tolerance %-15s +-%g %s  [%s%s]" % [n, f["half"], f["unit"], f["tag"], ", edited" if bool(f["edited"]) else ""])
+		print("  tolerance %-15s +-%s %s  [%s%s]" % [n, f["half"], f["unit"], f["tag"], ", edited" if bool(f["edited"]) else ""])
 	if a.has("mc"):
 		var mc := MonteCarlo.run(params, tol, int(a["mc"]), int(a.get("master-seed", "1")), metric)
 		print("  range  low %.4f   mid %.4f   high %.4f   (min %.4f, max %.4f)" % [mc["low"], mc["mid"], mc["high"], mc["min"], mc["max"]])
