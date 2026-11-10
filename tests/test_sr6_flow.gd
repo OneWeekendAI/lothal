@@ -8,12 +8,18 @@ extends RefCounted
 ## FAIL-PROOFS observed 2026-11-10: RED A: MissionFlow drops opts.fields -> only the reserve_pct case FAILS (reserve 0 -> 0, flight_time 271.5 -> 271.5 s). RED B: MissionFlow does not pass the session build (class seed flown) -> only the saved-build case FAILS (identical fingerprints). Both GREEN after restoring (4/4). First run at capacity_scale 0.05 was not_flown (reserve exceeds usable energy), hence 0.3.
 ## L1.2-L1.4 FAIL-PROOFS observed 2026-11-10: RED watch: one extra rig.step() per 8-tick chunk in watch_stepped -> only the watch case FAILS (flight_time_s 271.48 vs 271.51, distance differs); merely advancing chunk-1 only shortens chunks and is invisible, so not used. RED edited: result fields' edited flag forced false -> only the edited-note case FAILS (note 'reserve 15 % (default, user)'). RED trail: seed key dropped from inputs_trail -> only the trail case FAILS (missing ["seed"]). RED margin: sign flipped -> both endurance cases FAIL (35 min gives -5.0 fails; flown 0.3x pack gives +25.5 passes). All restored, 11/11 green. The 0.3x five_inch pack flies 4.5 min.
 
+## L1.5/L1.6 UI cases (headless, free-standing controls): picker mission count, 5 prefilled field controls, an edited field reaching the flight, env list size,
+## the file bar's existing Fly it button emitting fly_pressed (DesignSpace turns that into fly_requested; unchanged), ResultsPanel text vs the dict.
+## UI FAIL-PROOFS observed 2026-11-10: RED panel: set_result keeps a duplicate(true) -> only the same-dict case FAILS (12345 not shown). RED picker: options() sends the defaults not the box values -> the edit-reaches-flight case and the Watch-emits-edited-opts case FAIL (reserve 0, edited false). Both restored, 23/23 green. Fly it already existed on DesignFileBar (fly_pressed, wired to DesignSpace.fly_requested); only a test was added.
+
 const SCALE := 0.3
 
 
 static func run() -> Array:
 	return [_default_flight(), _field_override(), _saved_build_flown(), _unknown_mission(),
-		_watch_equal(), _edited_flagged(), _trail_present(), _presets_listed(), _saved_world_listed(), _endurance_passes(), _endurance_fails_small_pack()]
+		_watch_equal(), _edited_flagged(), _trail_present(), _presets_listed(), _saved_world_listed(), _endurance_passes(), _endurance_fails_small_pack(),
+		_picker_missions(), _picker_field("height_m"), _picker_field("speed_mps"), _picker_field("front_overlap"), _picker_field("side_overlap"), _picker_field("reserve_pct"),
+		_picker_edit_reaches_flight(), _picker_envs(), _picker_watch_emits(), _fly_button_emits(), _panel_text(), _panel_reads_same_dict()]
 
 
 static func _session(cls: String) -> DesignSession:
@@ -167,3 +173,103 @@ static func _endurance_fails_small_pack() -> TestResult:
 	var r: Dictionary = MissionFlow.run(_session("five_inch"), _opts())["result"]
 	var c := MissionFlow.endurance_check(r)
 	return TestResult.new("sr6 flow L1.4: a flown 0.3x pack fails the 30 min check with a negative margin", not c["passes"] and c["margin_min"] < 0.0 and c["flight_min"] > 0.0 and String(c["line"]).contains("(fails)"), str(c["line"]))
+
+
+## The suite runner builds the suites inside SceneTree._init, where no tree exists to add to (Engine.get_main_loop() is null), so
+## Controls are built free-standing like the other Design Space UI tests; none of these controls needs the tree.
+static func _gone(n: Node) -> void:
+	n.free()
+
+
+static func _picker() -> MissionPicker:
+	var p := MissionPicker.new()
+	p.set_session(_session("five_inch"))
+	p.extra_opts = {"capacity_scale": SCALE}
+	return p
+
+
+static func _picker_missions() -> TestResult:
+	var p := _picker()
+	var n := p.mission_list.item_count
+	_gone(p)
+	return TestResult.new("sr6 flow L1.5: the picker lists every mission but the test pack", n == Mission.IDS.size() - 1 and n == 5, "items %d of %d ids" % [n, Mission.IDS.size()])
+
+
+static func _picker_field(key: String) -> TestResult:
+	var p := _picker()
+	var d: Dictionary = Mission.defaults_for("five_inch", p.mission_id())["fields"][key]
+	var box: SpinBox = p.field_boxes.get(key)
+	var tag := (p.tag_labels[key] as Label).text if box != null else ""
+	var ok: bool = box != null and is_equal_approx(box.value, float(d["value"])) and tag == String(d["tag"])
+	var got := box.value if box != null else -1.0
+	_gone(p)
+	return TestResult.new("sr6 flow L1.5: field %s is present, prefilled with the default and shows its tag" % key, ok, "value %s default %s tag '%s'" % [got, d["value"], tag])
+
+
+static func _picker_edit_reaches_flight() -> TestResult:
+	var p := _picker()
+	(p.field_boxes["reserve_pct"] as SpinBox).value = 15.0
+	var r := p.run_headless()
+	var f: Dictionary = r["result"]["params"]["fields"]["reserve_pct"] if not r.is_empty() else {}
+	var ok: bool = not f.is_empty() and float(f["value"]) == 15.0 and bool(f["edited"]) and p.results.text().contains("edited by user")
+	_gone(p)
+	return TestResult.new("sr6 flow L1.5: editing a field then Headless flies the edited value and the result slot says so", ok, str(f))
+
+
+static func _picker_envs() -> TestResult:
+	var p := _picker()
+	var n := p.env_option.item_count
+	_gone(p)
+	return TestResult.new("sr6 flow L1.5: the environment list is MissionFlow.environments()", n == MissionFlow.environments().size() and n >= 4, "items %d" % n)
+
+
+static func _picker_watch_emits() -> TestResult:
+	var p := _picker()
+	var got := []
+	p.watch_requested.connect(func(o: Dictionary): got.append(o))
+	(p.field_boxes["speed_mps"] as SpinBox).value = 9.0
+	p.watch_button.pressed.emit()
+	var ok := got.size() == 1 and float(got[0]["fields"]["speed_mps"]) == 9.0 and p.last.is_empty()
+	_gone(p)
+	return TestResult.new("sr6 flow L1.5: Watch only emits watch_requested with the edited opts and flies nothing", ok, str(got.size()))
+
+
+static func _fly_button_emits() -> TestResult:
+	var bar := DesignFileBar.new()
+	var n := [0]
+	bar.fly_pressed.connect(func(): n[0] += 1)
+	var has := bar.fly_button != null and bar.fly_button.text == "Fly it"
+	bar.fly_button.pressed.emit()
+	bar.free()
+	return TestResult.new("sr6 flow L1.5: the file bar has a Fly it button and it emits fly_pressed", has and n[0] == 1, "emits %d" % n[0])
+
+
+static func _flown(seed_n: int) -> Dictionary:
+	return MissionFlow.run(_session("five_inch"), _opts({"seed": seed_n}))["result"]
+
+
+static func _panel_text() -> TestResult:
+	var r := _flown(7)
+	var panel := ResultsPanel.new()
+	panel.set_result(r)
+	var t := panel.text()
+	var missing: Array[String] = []
+	for k in r["figures"]:
+		if not t.contains(k) or not t.contains("[%s]" % r["figures"][k]["tag"]) or not t.contains(String(r["figures"][k]["unit"])):
+			missing.append(k)
+	var ok: bool = missing.is_empty() and r["figures"].size() > 0 and t.contains("seed 7") and t.contains(MissionFlow.endurance_check(r)["line"])
+	_gone(panel)
+	return TestResult.new("sr6 flow L1.6: the panel shows every figure with unit and tag, the endurance line and the trail seed", ok, "missing %s" % str(missing))
+
+
+static func _panel_reads_same_dict() -> TestResult:
+	var r := _flown(7)
+	var panel := ResultsPanel.new()
+	panel.set_result(r)
+	var before := panel.text()
+	r["figures"]["flight_time_s"]["value"] = 12345.0
+	panel.render()
+	var ok := not before.contains("12345.00") and panel.text().contains("12345.00")
+	var shown := panel.text().left(120)
+	_gone(panel)
+	return TestResult.new("sr6 flow L1.6: the panel reads the dict it was given (a changed value shows after render)", ok, shown)
