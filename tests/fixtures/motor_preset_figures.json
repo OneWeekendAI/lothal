@@ -189,10 +189,10 @@
 		"top_speed_kmh": 88.7818003050731
 	},
 	"class/mapper": {
-		"auw_g": 1145.8988851578,
-		"flight_time_min": 67.7659884366521,
-		"hover_throttle": 0.651773673189544,
-		"thrust_to_weight": 2.07010915046205,
-		"top_speed_kmh": 97.7818782195084
+		"auw_g": 1261.8988851578,
+		"flight_time_min": 32.9884879180051,
+		"hover_throttle": 0.32943679799603,
+		"thrust_to_weight": 4.58962161533415,
+		"top_speed_kmh": 127.145743018951
 	}
 }

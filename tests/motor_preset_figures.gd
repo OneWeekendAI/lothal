@@ -7,6 +7,8 @@ extends RefCounted
 ## Two sets: (1) each of the 16 shelf motors on the reference airframe with its own thrust-test
 ## prop and a pack of the same cell count as its test voltage; (2) every drone-class seed build.
 
+## RE-PINNED 2026-11-11 (SR9 mapper class change, commits 477e2dc, 9bbea87): class/mapper only. The class now flies motor_2807_1300kv on a 4S2P 10Ah 580 g pack
+## at c_rating 5, so AUW 1145.9 -> 1261.9 g, T:W 2.07 -> 4.59, hover 0.652 -> 0.329, flight 67.8 -> 33.0 min, top speed 97.8 -> 127.1 km/h. Every other entry unmoved.
 ## RE-PINNED at SR1.3 (2026-11-10): top_speed_kmh for class/tiny_whoop (111.646 -> 111.209) and motor/motor_2807_1300kv
 ## (118.173 -> 116.642) only. Both are thrust-limited builds (the tiny whoop's reachable T:W is 1.2), so the new top speed,
 ## trimmed at the real lean with directional drag, is lower than the old fixed-45-degree figure. Every other figure unmoved.

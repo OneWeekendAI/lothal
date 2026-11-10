@@ -4,6 +4,8 @@ extends RefCounted
 ## fixture was written; within 1e-9 elsewhere, because CI's Linux and Windows libm round atan and pow
 ## differently in the last place and that is not a physics change.
 ##
+## RE-PINNED 2026-11-11 (SR9 mapper class change, commits 477e2dc, 9bbea87): mapper_prop_94x53 on mapper only (figures and bits). The mapper class now flies
+## motor_2807_1300kv on a 4S2P 10Ah 580 g pack at c_rating 5: AUW 1145.9 -> 1261.9 g, hover 0.652 -> 0.329, flight 67.8 -> 33.0 min, T:W 4.59; props' aero unchanged.
 ## RE-PINNED 2026-11-10 (SR1.3): prop_16x12x4 on tiny_whoop top_speed_kmh 111.6456 -> 111.2094 (figures and bits). The tiny whoop is
 ## thrust-limited (reachable T:W 1.2) and top_speed_kmh() now trims the real lean with directional drag; nothing else moved.
 ## RE-PINNED 2026-11-09 (SR1-SR2 forward-flight physics; hover and every static/direct solve are bit-identical, so nothing about

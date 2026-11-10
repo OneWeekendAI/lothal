@@ -25,7 +25,10 @@ const BEFORE_NAMES := ["Back", "Cat_antenna", "Cat_battery", "Cat_camera", "Cat_
 ## covered by tests/test_design_space.gd). They are deliberate and unrelated to the pack tile; the
 ## check was red at 15 (counted 17) and is green at 17, and still goes red if a further unnamed
 ## button appears (SR-B, 2026-11-10).
-const BEFORE_UNNAMED := 17
+## 18 = 17 plus the file bar's "Mission" button (mission_button, design_file_bar.gd; wired to the
+## MissionPicker in ca68647, 2026-11-11). Deliberate and unrelated to the pack tile; red at 17
+## (counted 18), green at 18, and still red if a further unnamed button appears.
+const BEFORE_UNNAMED := 18
 
 ## Figure keys that are derived from cells; none may be reachable by typing.
 const DERIVED := ["nominal_v", "full_v", "empty_v", "mah", "wh", "mass_g", "dims_mm", "cont_a",
