@@ -15,6 +15,9 @@ extends RefCounted
 ## only its own case): MT8 Mission.TABLE "mapper" row removed -> defaults_for falls to the derived 20 m default, the table case FAILS.
 ## MT9 cropmerge_example class_id forced back to five_inch -> the class_id case FAILS. Both observed RED (1 fail each, only the named case: height 20/speed 5 derived; class_id five_inch) and GREEN after restoring (22/22).
 
+## L5.2 (observed 2026-11-10): row cases (5) first RED with no "row" in cropmerge_example (all 5 fail), then GREEN. MT10 row low set to the high
+## percentile (low==high): only the range case FAILS. MT11 published tag blanked: the tag case and the published-beside case FAIL (2), the rest pass.
+
 const NEW_IDS := ["mapper_cam_multispectral_rededge", "mapper_gps_rtk"]
 const IDS := ["mapper_frame_380", "mapper_motor_2008", "mapper_prop_94x53", "mapper_battery_4s_5000", "mapper_battery_6s_20000_liion"]
 
@@ -32,6 +35,42 @@ static func run() -> Array:
 	out.append(_payload_lookup())
 	out.append(_payload_applies())
 	out.append_array(_class_cases())
+	out.append_array(_row_cases())
+	return out
+
+
+## L5.2: the CropMerge row (Sensitivity.cropmerge_example(...)["row"]) on a small fast field, n = 3.
+static func _row() -> Dictionary:
+	var field := PackedVector2Array([Vector2(0, 0), Vector2(175, 0), Vector2(175, 100), Vector2(0, 100)])
+	return Sensitivity.cropmerge_example("mapper", field, 100.0, 3, 1).get("row", {})
+
+
+static func _row_cases() -> Array:
+	var out: Array = []
+	var row := _row()
+	var ab: Dictionary = row.get("acres_per_battery", {})
+	out.append(TestResult.new("sr9 mapper row: acres per battery is a range (low < high, both positive), not a single point",
+		float(ab.get("low", 0.0)) > 0.0 and float(ab.get("low", 0.0)) < float(ab.get("high", 0.0)), "%s-%s" % [str(ab.get("low")), str(ab.get("high"))]))
+	var tags_ok := true
+	var bad := ""
+	for k in ["acres_per_battery", "published", "area", "batteries_used", "flight_time"]:
+		var tg := String((row.get(k, {}) as Dictionary).get("tag", ""))
+		if not tg in ["measured", "published", "estimated"]:
+			tags_ok = false
+			bad += k + " "
+	out.append(TestResult.new("sr9 mapper row: every figure carries a source tag (measured/published/estimated)", tags_ok, "untagged: " + bad))
+	var pub: Dictionary = row.get("published", {})
+	out.append(TestResult.new("sr9 mapper row: the published 100-125 acres/battery sits beside the range, tagged published and kept apart from the simulated range",
+		pub.get("low") == 100.0 and pub.get("high") == 125.0 and pub.get("tag") == "published" and String(pub.get("note", "")).contains("optimistic")
+		and ab.get("tag") == "estimated", str(pub)))
+	var basis := String((row.get("area", {}) as Dictionary).get("basis", ""))
+	out.append(TestResult.new("sr9 mapper row: the area basis says photo-mapped track and names not-swath, and the area is positive",
+		basis.contains("photo-mapped track") and basis.contains("not field area") and basis.contains("swath") and float((row.get("area", {}) as Dictionary).get("mapped_acres", 0.0)) > 0.0, basis.left(90)))
+	var trail: Dictionary = row.get("trail", {})
+	var trail_ok := true
+	for k in ["build_fingerprint", "seed", "master_seed", "model_version", "mission"]:
+		trail_ok = trail_ok and trail.has(k) and str(trail[k]) != ""
+	out.append(TestResult.new("sr9 mapper row: the input trail carries build fingerprint, seed, master seed, model version and mission", trail_ok, str(trail)))
 	return out
 
 

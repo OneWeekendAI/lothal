@@ -13,6 +13,10 @@ extends RefCounted
 const MPH := 0.44704
 const WIND_MIN_MPH := 10.0
 const WIND_MAX_MPH := 20.0
+## L5: the vendor's claim for the Mavic 3M, kept beside the simulated range as context only. Optimistic by nature (a datasheet-style claim, no stated field, wind or reserve).
+const PUBLISHED_ACRES_PER_BATTERY_LOW := 100.0
+const PUBLISHED_ACRES_PER_BATTERY_HIGH := 125.0
+const AREA_BASIS := "photo-mapped track: acres covered by photos the flown track actually took (CoverageMap/SurveyPhotos), not field area and not line length x swath"
 
 
 static func one_at_a_time(base: Dictionary, tol: Tolerances, metric: String) -> Dictionary:
@@ -57,6 +61,22 @@ static func cropmerge_example(class_id: String, field: PackedVector2Array, farm_
 	var dom := one_at_a_time(base, tol, "acres_per_battery.value")
 	var batteries := {"value": farm_acres / float(mc["mid"]), "low": farm_acres / float(mc["high"]), "high": farm_acres / float(mc["low"]), "tag": "estimated",
 		"unit": "batteries", "farm_acres": farm_acres}
+	var nom := MissionRunner.run(base)
+	var ab: Dictionary = nom.get("acres_per_battery", {})
+	var photos: Dictionary = nom.get("photos", {})
+	var nominal := {"mapped_acres": float(photos.get("mapped_acres", 0.0)), "batteries_used": float(ab.get("batteries_used", 0.0)), "flight_time_s": float(nom.get("flight_time_s", 0.0)),
+		"completed": bool(nom.get("completed", false)), "ended_by": String(nom.get("ended_by", "")), "sorties": int(nom.get("sorties", 0)),
+		"extrapolated": bool(ab.get("extrapolated", false))}
+	var row := {"class_id": class_id,
+		"acres_per_battery": {"low": float(mc["low"]), "mid": float(mc["mid"]), "high": float(mc["high"]), "tag": "estimated", "unit": "acres/battery", "n": n, "range": String(mc["range"])},
+		"published": {"low": PUBLISHED_ACRES_PER_BATTERY_LOW, "high": PUBLISHED_ACRES_PER_BATTERY_HIGH, "tag": "published", "unit": "acres/battery",
+			"note": "vendor claim for the Mavic 3M; optimistic, context only, not a result of this simulator"},
+		"area": {"mapped_acres": nominal["mapped_acres"], "tag": "estimated", "basis": AREA_BASIS},
+		"batteries_used": {"value": nominal["batteries_used"], "tag": "estimated"},
+		"flight_time": {"value_s": nominal["flight_time_s"], "tag": "estimated"},
+		"trail": {"build_fingerprint": String(nom.get("build_fingerprint", "")), "seed": run_seed, "master_seed": master_seed,
+			"model_version": String(nom.get("versions", {}).get("model", "")), "mission": Mission.SURVEY}}
 	var cls := "Class 'mapper' is built from ESTIMATED parts (not a sourced aircraft)" if class_id == "mapper" else "Class '%s' is a STAND-IN for the mapper class" % class_id
 	return {"label": "CropMerge worked example: capacity +-5 percent, wind 10-20 mph (15 +- 5). %s; a field smaller than the farm is flown, so acres per battery is EXTRAPOLATED from a part pack" % cls,
-		"class_id": class_id, "wind_mph": [WIND_MIN_MPH, WIND_MAX_MPH], "capacity_pct": 5.0, "acres_per_battery": mc, "batteries_per_farm": batteries, "dominant": dom}
+		"class_id": class_id, "wind_mph": [WIND_MIN_MPH, WIND_MAX_MPH], "capacity_pct": 5.0, "acres_per_battery": mc, "batteries_per_farm": batteries, "dominant": dom,
+		"nominal": nominal, "row": row}
