@@ -365,7 +365,7 @@ static func _json_round_trip() -> TestResult:
 	var detail := ""
 	if ok:
 		var d: Dictionary = back
-		ok = int(d["seed"]) == SEED and int(d["schema_version"]) == 1 and String(d["versions"]["model"]) == "sr4-1" \
+		ok = int(d["seed"]) == SEED and int(d["schema_version"]) == 1 and String(d["versions"]["model"]) == "sr5-1" \
 			and String(d["build_fingerprint"]) != "" and not d.has("_track")
 		var fields: Dictionary = d["params"]["fields"]
 		for k in Mission.FIELDS:

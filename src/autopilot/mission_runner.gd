@@ -36,6 +36,8 @@ extends RefCounted
 
 const FAST_HZ := 50.0
 const SLOW_HZ := 5.0
+const TRACK_STRIDE := 7              # x, z, y, heading, camera_on, roll, pitch (roll / pitch in rad, Euler YXZ of the true body attitude; +roll = right wing up about the forward axis)
+const BLUR_LIMIT_PX := SurveyPhotos.BLUR_LIMIT_PX
 const GRID_M := 0.5
 const HOLE_MIN_M2 := 25.0
 const TILT_LIMIT_DEG := 75.0
@@ -95,7 +97,13 @@ var mission_done := false
 var alt_goal := 0.0
 var alt_cmd := 0.0
 var cam_on := false
-var track := PackedFloat64Array()     # x, z, y, heading, camera_on per sample
+var track := PackedFloat64Array()     # TRACK_STRIDE floats per 5 Hz sample: x, z, y, heading, camera_on, roll, pitch
+var photos: Array = []                # one entry per camera trigger: {t, pos, q, vg}  (SR5.4)
+var next_trigger_t := 0.0
+var trigger_interval_s := 0.0
+var gimbal_stabilised := false        # false = camera fixed to the airframe (tilts with it); true = ideal 3-axis gimbal (nadir, yaw follows the body)
+var required_photos := 2
+var blur_limit_px := BLUR_LIMIT_PX
 var pw := PackedFloat64Array()
 var pv := PackedFloat64Array()
 var pn := 0
@@ -225,6 +233,10 @@ func _run(params: Dictionary) -> Dictionary:
 	cruise_mps = float(Mission.defaults_for(class_id, Mission.CRUISE_LOOP, build)["fields"]["speed_mps"]["value"])
 	rth_mps = float(p["speed_mps"]) if mission != Mission.SURVEY else cruise_mps
 	camera = params.get("camera", CameraParams.generic_1inch())
+	trigger_interval_s = float(params.get("trigger_interval_s", camera.min_shot_interval_s))
+	gimbal_stabilised = bool(params.get("gimbal_stabilised", false))
+	required_photos = int(params.get("required_photos", 2))
+	blur_limit_px = float(params.get("blur_limit_px", BLUR_LIMIT_PX))
 	max_sorties = int(params.get("max_sorties", int(extras["max_sorties"]["value"])))
 	hover_s = float(params.get("hover_s", 0.0))
 	laps = int(params.get("laps", 0))
@@ -492,7 +504,10 @@ func _slow(slow_dt: float) -> void:
 	max_home = maxf(max_home, home_d)
 	# track sample (camera flag is the one decided by the previous tick's state)
 	var yaw: float = rig.nav.estimate()["yaw"]
-	track.append_array(PackedFloat64Array([pos.x, pos.z, pos.y, yaw, 1.0 if cam_on else 0.0]))
+	var eul := Basis(rb.orientation).get_euler(EULER_ORDER_YXZ)     # x pitch, y yaw, z roll
+	track.append_array(PackedFloat64Array([pos.x, pos.z, pos.y, yaw, 1.0 if cam_on else 0.0, eul.z, eul.x]))
+	if cam_on and _now() >= next_trigger_t - 0.01:
+		_trigger(rb, eul)
 	match phase:
 		"takeoff":
 			if _reserve_tripped(pos, home_d):
@@ -655,6 +670,18 @@ func _mission_tick(pos: Vector3) -> void:
 			_survey_tick(pos)
 
 
+## SR5.4: one camera trigger. Records the pose; the footprint is projected at the end of the run (see SurveyPhotos). The trigger
+## clock is the 5 Hz tick, so a shot lands up to 0.2 s (1.6 m at 8 m/s) away from its ideal instant (ESTIMATED effect, stated).
+func _trigger(rb: RigidBodyState, eul: Vector3) -> void:
+	var q := rb.orientation
+	if gimbal_stabilised:
+		q = Quaternion(Basis.from_euler(Vector3(0.0, eul.y, 0.0), EULER_ORDER_YXZ))
+	photos.append({"t": _now(), "pos": rb.position_m, "q": q, "vg": Vector2(rb.velocity_mps.x, rb.velocity_mps.z).length()})
+	next_trigger_t = _now() + maxf(trigger_interval_s, 0.0)
+	if next_trigger_t <= _now():
+		next_trigger_t = _now() + 1.0 / SLOW_HZ
+
+
 # ---------------------------------------------------------------- survey
 func _prepare_survey() -> void:
 	plan = SurveyPlanner.plan(polygon, camera, float(p["height_m"]), float(p["front_overlap"]),
@@ -664,6 +691,8 @@ func _prepare_survey() -> void:
 	if bool(plan["error"]):
 		ended_by = "error"
 		return
+	if not params_in.has("trigger_interval_s"):
+		trigger_interval_s = maxf(float(plan["shot_interval_s"]), camera.min_shot_interval_s)
 	var wps: Array = plan["waypoints"]
 	var cur: Array = []
 	var lines_seen := 0
@@ -787,11 +816,11 @@ func _survey_tick(pos: Vector3) -> void:
 
 
 # ---------------------------------------------------------------- coverage
-## Rasterises the swept camera footprint. track = 5 floats per sample (x, z, y, heading, camera_on).
+## Rasterises the swept camera footprint. track = TRACK_STRIDE floats per sample (x, z, y, heading, camera_on, roll, pitch).
 ## Returns {area_flown_m2, polygon_cells_m2, coverage_fraction, holes:[{area_m2, x, z}], hole_total_m2}.
 static func coverage(trk: PackedFloat64Array, cam: CameraParams, poly: PackedVector2Array) -> Dictionary:
 	var g := GRID_M
-	var n := int(trk.size() / 5.0)
+	var n := int(trk.size() / float(TRACK_STRIDE))
 	var rects: Array = []
 	var bmin := Vector2(INF, INF)
 	var bmax := Vector2(-INF, -INF)
@@ -801,12 +830,12 @@ static func coverage(trk: PackedFloat64Array, cam: CameraParams, poly: PackedVec
 			bmax = Vector2(maxf(bmax.x, q.x), maxf(bmax.y, q.y))
 	var any_cam := false
 	for i in n:
-		if trk[i * 5 + 4] < 0.5:
+		if trk[i * TRACK_STRIDE + 4] < 0.5:
 			continue
 		any_cam = true
-		var c := Vector2(trk[i * 5], trk[i * 5 + 1])
-		var h := trk[i * 5 + 3]
-		var fp := cam.footprint_m(trk[i * 5 + 2])
+		var c := Vector2(trk[i * TRACK_STRIDE], trk[i * TRACK_STRIDE + 1])
+		var h := trk[i * TRACK_STRIDE + 3]
+		var fp := cam.footprint_m(trk[i * TRACK_STRIDE + 2])
 		var fwd := Vector2(-sin(h), -cos(h)) * (fp.y * 0.5)
 		var rgt := Vector2(cos(h), -sin(h)) * (fp.x * 0.5)
 		var cs := [c - rgt - fwd, c + rgt - fwd, c + rgt + fwd, c - rgt + fwd]
@@ -978,30 +1007,30 @@ func _obstacle_warnings() -> void:
 	if world != null:
 		for m in world.world_warnings():
 			warnings.append(m)
-	if world == null or world.obstacles.is_empty() or track.size() < 5:
+	if world == null or world.obstacles.is_empty() or track.size() < TRACK_STRIDE:
 		return
-	var n := int(track.size() / 5.0)
+	var n := int(track.size() / float(TRACK_STRIDE))
 	var oi := 0
 	for ob in world.obstacles:
 		var hit_at := -1
 		var near_at := -1
 		for i in n:
-			var c := Vector3(track[i * 5], track[i * 5 + 2], track[i * 5 + 1])   # track is x, z, y, yaw, cam
+			var c := Vector3(track[i * TRACK_STRIDE], track[i * TRACK_STRIDE + 2], track[i * TRACK_STRIDE + 1])   # track is x, z, y, yaw, cam
 			if hit_at < 0 and ob.intersects_sphere(c, COLLISION_RADIUS_M):
 				hit_at = i
 				break
 			if near_at < 0 and ob.intersects_sphere(c, CLEARANCE_M):
 				near_at = i
 		if hit_at >= 0:
-			warnings.append("obstacle collision: the flown path comes within %.1f m of obstacle %d (%s) at (%.0f, %.0f), height %.0f m (thresholds ESTIMATED)" % [COLLISION_RADIUS_M, oi, String(ob.kind), track[hit_at * 5], track[hit_at * 5 + 1], track[hit_at * 5 + 2]])
+			warnings.append("obstacle collision: the flown path comes within %.1f m of obstacle %d (%s) at (%.0f, %.0f), height %.0f m (thresholds ESTIMATED)" % [COLLISION_RADIUS_M, oi, String(ob.kind), track[hit_at * TRACK_STRIDE], track[hit_at * TRACK_STRIDE + 1], track[hit_at * TRACK_STRIDE + 2]])
 		elif near_at >= 0:
-			warnings.append("obstacle clearance: the flown path comes within %.0f m of obstacle %d (%s) at (%.0f, %.0f), height %.0f m (threshold ESTIMATED)" % [CLEARANCE_M, oi, String(ob.kind), track[near_at * 5], track[near_at * 5 + 1], track[near_at * 5 + 2]])
+			warnings.append("obstacle clearance: the flown path comes within %.0f m of obstacle %d (%s) at (%.0f, %.0f), height %.0f m (threshold ESTIMATED)" % [CLEARANCE_M, oi, String(ob.kind), track[near_at * TRACK_STRIDE], track[near_at * TRACK_STRIDE + 1], track[near_at * TRACK_STRIDE + 2]])
 		oi += 1
 
 
 func _result(field_out: Dictionary, build: Build, scale: float, cond: Conditions) -> Dictionary:
 	_obstacle_warnings()
-	var n := int(track.size() / 5.0)
+	var n := int(track.size() / float(TRACK_STRIDE))
 	var cov := coverage(track, camera, polygon if mission == Mission.SURVEY else PackedVector2Array())
 	var flight_t := _now() if ended_by != "not_flown" else 0.0
 	var holes_out: Array = []
@@ -1013,6 +1042,10 @@ func _result(field_out: Dictionary, build: Build, scale: float, cond: Conditions
 			warnings.append("coverage hole: %d uncovered cluster(s) of at least %.0f m2, total %.0f m2, largest %.0f m2 near (%.0f, %.0f)" % [ph.size(), HOLE_MIN_M2, cov["hole_total_m2"], ph[0]["area_m2"], ph[0]["x"], ph[0]["z"]])
 		for h in plan.get("holes", []):
 			holes_out.append(h)
+	var shots_rep := SurveyPhotos.report(photos, camera, polygon if mission == Mission.SURVEY else PackedVector2Array(), agl_fn, required_photos, blur_limit_px, maxf(trigger_interval_s, 0.2))
+	var blur: Dictionary = shots_rep["blur"]
+	if int(blur["flagged"]) > 0:
+		warnings.append("motion blur: %d of %d photos blur by more than %.2f px (worst %.2f px at %.2f s exposure; limit ESTIMATED, model ignores rotation)" % [blur["flagged"], shots_rep["images"], blur["limit_px"], blur["max_px"], blur["exposure_s"]])
 	var energy_wh := energy_ws / 3600.0
 	var ok: bool = ended_by in NORMAL_ENDINGS and not (mission == Mission.SURVEY and next_chunk < chunks.size())
 	var polygon_area := SurveyPlanner.polygon_area(polygon) if mission == Mission.SURVEY else 0.0
@@ -1036,8 +1069,8 @@ func _result(field_out: Dictionary, build: Build, scale: float, cond: Conditions
 		"home_error_m": home_error, "max_distance_from_home_m": max_home,
 		"sorties": sorties if ended_by != "not_flown" else 0,
 		"warnings": warnings, "ended_by": ended_by, "completed": ok, "track_samples": n,
-		"holes": holes_out, "sortie_reports": sortie_reports,
-		"_track": track,
+		"holes": holes_out, "sortie_reports": sortie_reports, "photos": shots_rep,
+		"_track": track, "_photos": photos,
 	}
 	if mission == Mission.RANGE_TEST:
 		r["distance_out_m"] = max_home

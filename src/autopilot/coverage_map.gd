@@ -98,3 +98,15 @@ func hole_area(required: int, polygon: PackedVector2Array) -> Dictionary:
 				inside += 1
 	var cells := inside - mapped_cells(required, polygon)
 	return {"m2": float(cells) * cell_m * cell_m, "cells": cells}
+
+
+## Mean number of photos per cell over the cells whose centre is inside `polygon` (an empty polygon means all cells). 0 when there are none.
+func mean_count(polygon: PackedVector2Array = PackedVector2Array()) -> float:
+	var total := 0
+	var cells := 0
+	for r in rows:
+		for c in cols:
+			if polygon.size() < 3 or Geometry2D.is_point_in_polygon(_centre(c, r), polygon):
+				total += count[r * cols + c]
+				cells += 1
+	return float(total) / float(cells) if cells > 0 else 0.0

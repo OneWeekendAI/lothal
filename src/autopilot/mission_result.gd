@@ -10,12 +10,17 @@ extends RefCounted
 ## to_json: sorted keys, floats snapped to 6 decimals (so the text compares byte for byte), NaN / INF -> null.
 
 const SCHEMA_VERSION := 1
-const MODEL_VERSION := "sr4-1"
+const MODEL_VERSION := "sr5-1"
 const FLOAT_DECIMALS := 6.0
 
 
 static func figure(value: float, unit: String, tag: String = "estimated") -> Dictionary:
 	return {"value": value, "low": value, "high": value, "tag": tag, "unit": unit, "range": "pending SR8"}
+
+
+## A figure whose low / high are a real spread (not a pending SR8 range).
+static func range_figure(value: float, low: float, high: float, unit: String, tag: String, why: String) -> Dictionary:
+	return {"value": value, "low": low, "high": high, "tag": tag, "unit": unit, "range": why}
 
 
 static func param(value: float, default: Dictionary, edited: bool) -> Dictionary:
@@ -34,6 +39,12 @@ static func add_figures(r: Dictionary) -> void:
 	for k in units:
 		if r.has(k):
 			f[k] = figure(float(r[k]), units[k])
+	if r.has("photos") and int((r["photos"] as Dictionary).get("images", 0)) > 0:
+		var ph: Dictionary = r["photos"]
+		var g: Dictionary = ph["gsd_cm"]
+		f["gsd_cm"] = range_figure(float(g["mean"]), float(g["min"]), float(g["max"]), "cm/px", String(g["tag"]), "min / max over the photos flown")
+		f["mapped_m2"] = figure(float(ph["mapped_m2"]), "m2")
+		f["blur_px"] = range_figure(float(ph["blur"]["mean_px"]), 0.0, float(ph["blur"]["max_px"]), "px", "estimated", "mean / worst photo")
 	r["figures"] = f
 
 
