@@ -47,6 +47,7 @@ static func run() -> Array:
 	results.append(_the_domain_covers_the_flight_envelope())
 	results.append_array(_beyond_the_domain_it_clamps_rather_than_extrapolates(ratios))
 	results.append(_descent_is_declined(ratios))
+	results.append_array(_a_gentle_descent_in_fast_flight_is_continuous(ratios))
 	results.append(_a_stopped_rotor_is_not_a_division(ratios))
 	results.append(_the_cache_returns_the_same_surface(d_m, p_m, blades, doc.chord))
 
@@ -338,16 +339,51 @@ static func _beyond_the_domain_it_clamps_rather_than_extrapolates(ratios: BemtRa
 ## clamps to mu = 0 and the descent silently reads as a hover — the same number, arrived at without
 ## the refusal, which is the difference between declining and guessing.
 static func _descent_is_declined(ratios: BemtRatios) -> TestResult:
+	# Pure vertical descent (no edgewise flow) and fast descent (any edgewise flow) are out of domain and read 1.0.
+	# A gentle descent component in fast edgewise flight is NOT out of domain: see _a_gentle_descent_in_fast_flight_is_continuous.
 	var worst_thrust := 1.0
 	var worst_power := 1.0
+	var worst_edge := 1.0
 	for i in range(1, 61):
-		worst_thrust = minf(worst_thrust, ratios.thrust_ratio(8500.0, -float(i), 5.0))
-		worst_power = minf(worst_power, ratios.power_ratio(8500.0, -float(i), 5.0))
+		worst_thrust = minf(worst_thrust, ratios.thrust_ratio(8500.0, -float(i), 0.0))
+		worst_power = minf(worst_power, ratios.power_ratio(8500.0, -float(i), 0.0))
+		if i >= 12:
+			worst_edge = minf(worst_edge, ratios.power_ratio(8500.0, -float(i), 5.0))
+			worst_edge = minf(worst_edge, ratios.thrust_ratio(8500.0, -float(i), 5.0))
 	return TestResult.new(
-		"no descent, however fast and whatever the edgewise flow, moves either ratio off 1.0",
-		worst_thrust == 1.0 and worst_power == 1.0,
-		"1-60 m/s descent with 5 m/s edgewise: worst thrust %.6f, worst power %.6f" % [
-			worst_thrust, worst_power])
+		"no pure descent, and no fast descent whatever the edgewise flow, moves either ratio off 1.0",
+		worst_thrust == 1.0 and worst_power == 1.0 and worst_edge == 1.0,
+		"1-60 m/s pure descent: worst thrust %.6f, worst power %.6f; 12-60 m/s descent with 5 m/s edgewise: worst %.6f" % [
+			worst_thrust, worst_power, worst_edge])
+
+
+## DIAGNOSED 2026-11-11 (CropMerge, mapper at 20 mph with gusts): the body-frame axial velocity of an aircraft in fast
+## forward flight wanders either side of zero (a few degrees of lean, a vertical gust). `read` returned the static 1.0
+## for ANY negative axial velocity, so at 18 m/s edgewise the thrust ratio jumped from about 1.8 to exactly 1.0 as the
+## axial component crossed zero: 45 percent of the thrust gone in one tick, the altitude loop answered, the attitude
+## loop lost authority and the aircraft flipped. The descent refusal exists for vortex ring and windmill brake, which
+## need a descent speed comparable to the hover inflow; a descent of 0.1 m/s is the same flow as a climb of 0.1 m/s.
+## The ratio is now continuous through zero and fades to the static answer once the descent speed reaches the hover
+## inflow (0.08 omega R, ESTIMATED, the same figure the rotor-rotor interference window uses).
+##
+## TO MAKE THESE FAIL: restore `|| v_axial_mps < 0.0` in the first guard of `BemtRatios::read` (red observed 2026-11-11).
+static func _a_gentle_descent_in_fast_flight_is_continuous(ratios: BemtRatios) -> Array:
+	var rpm := 4300.0
+	var up_t := ratios.thrust_ratio(rpm, 0.02, 18.0)
+	var down_t := ratios.thrust_ratio(rpm, -0.02, 18.0)
+	var up_p := ratios.power_ratio(rpm, 0.02, 18.0)
+	var down_p := ratios.power_ratio(rpm, -0.02, 18.0)
+	var fast := ratios.thrust_ratio(rpm, -60.0, 18.0)
+	return [
+		TestResult.new("a 0.02 m/s climb and a 0.02 m/s descent at 18 m/s edgewise give the same thrust ratio (no step through zero axial)",
+			up_t > 1.1 and absf(up_t - down_t) < 0.02,
+			"+0.02: %.4f  -0.02: %.4f" % [up_t, down_t]),
+		TestResult.new("and the same power ratio",
+			absf(up_p - down_p) < 0.02,
+			"+0.02: %.4f  -0.02: %.4f" % [up_p, down_p]),
+		TestResult.new("a 60 m/s descent in the same edgewise flow still reads the static 1.0",
+			fast == 1.0, "thrust ratio %.4f" % fast),
+	]
 
 
 ## A rotor that has stopped has no inflow ratio — mu is a division by Omega. It reads 1.0, which

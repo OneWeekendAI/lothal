@@ -45,6 +45,12 @@ const VZ_I_TAU_S := 1.5
 const YAW_TAU_S := 0.5
 const MAX_YAW_RATE_RAD_S := 2.0
 const FF_REFRESH_S := 1.0
+## Thrust-margin tilt cap (ESTIMATED shape): above THR_SOFT of the commanded collective the allowed tilt fades linearly to zero at
+## THR_HARD, so attitude control keeps differential headroom. The mapper flipped in 20 mph gusts: at a line-end run-out it leaned
+## 25 degrees into a 17 m/s headwind, the rotors unloaded, the aircraft sank, the altitude loop pushed the collective to the stops
+## and the pitch loop lost its differential (CropMerge, 2026-11-11). Never binds below 0.55, which no ordinary flight reaches.
+const THR_SOFT := 0.55
+const THR_HARD := 0.85
 const CRAB_MIN_AIRSPEED := 1.0
 const XTRACK_TAU_S := 1.2               # cross-track error -> lateral velocity, same as POS_TAU_S
 
@@ -264,7 +270,9 @@ func command(dt: float) -> Dictionary:
 		v_target = v_target.normalized() * speed_limit_mps
 
 	# --- velocity loop -> horizontal acceleration
-	var a_max := G * tan(deg_to_rad(tilt_limit_deg))
+	# Thrust-margin cap on the tilt, from the collective this loop commanded on the previous tick.
+	var thr_room := clampf((THR_HARD - float(last_rc["throttle"])) / (THR_HARD - THR_SOFT), 0.0, 1.0)
+	var a_max := G * tan(deg_to_rad(tilt_limit_deg) * thr_room)
 	var verr := v_target - v2
 	if wind_correction:
 		var i_max := 0.6 * a_max

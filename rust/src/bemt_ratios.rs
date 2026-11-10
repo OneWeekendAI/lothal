@@ -441,15 +441,30 @@ impl BemtRatios {
         if values.is_empty() {
             return 1.0;
         }
-        if (v_axial_mps == 0.0 && v_edge_mps == 0.0) || v_axial_mps < 0.0 {
+        if v_axial_mps == 0.0 && v_edge_mps == 0.0 {
             return 1.0;
         }
         let omega_r = (rpm * std::f64::consts::TAU / 60.0) * self.radius_m;
         if omega_r <= 0.0 {
             return 1.0;
         }
-        let mu_ax = (v_axial_mps / omega_r).clamp(0.0, MU_MAX);
         let mu_ed = (v_edge_mps.abs() / omega_r).clamp(0.0, MU_MAX);
+        if v_axial_mps < 0.0 {
+            // DESCENT. Vortex ring and windmill brake are out of domain and read the static 1.0, but they need a descent
+            // speed comparable to the hover inflow. A descent component of 0.1 m/s in 18 m/s of edgewise flow is the same
+            // flow as a climb of 0.1 m/s, and returning 1.0 for it made the thrust ratio step from ~1.8 to 1.0 as the body
+            // axial velocity of a fast-flying aircraft crossed zero (the CropMerge mapper flip, 2026-11-11). So the edgewise
+            // answer at zero axial flow fades out linearly to 1.0 as the descent speed rises to the hover inflow
+            // 0.08 omega R (ESTIMATED; the figure the rotor-rotor interference window uses). Pure descent stays exactly 1.0.
+            let x = -v_axial_mps / (0.08 * omega_r);
+            let w = (1.0 - x).clamp(0.0, 1.0);
+            if w == 0.0 {
+                return 1.0;
+            }
+            let edge = RatioTable::sample(values, 0.0, mu_ed);
+            return 1.0 + w * (edge - 1.0);
+        }
+        let mu_ax = (v_axial_mps / omega_r).clamp(0.0, MU_MAX);
         RatioTable::sample(values, mu_ax, mu_ed)
     }
 }

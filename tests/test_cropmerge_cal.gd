@@ -13,6 +13,8 @@ static func run() -> Array:
 	out.append(_cam_mavic())
 	out.append(_cam_mapper())
 	out.append(_cam_other_stays_generic())
+	out.append(_mapper_gust_flight(2))
+	out.append(_mapper_gust_flight(3))
 	return out
 
 
@@ -58,3 +60,19 @@ static func _high_climb_not_priced_as_cruise() -> TestResult:
 	return TestResult.new("cropmerge cal: a 120 m climb is not priced as cruise: the first survey line is flown (not no_progress) and covers more than 30 percent",
 		String(r["ended_by"]) != "no_progress" and float(r["coverage_fraction"]) > 0.3,
 		"ended %s, coverage %.2f, flight %.0f s" % [r["ended_by"], r["coverage_fraction"], r["flight_time_s"]])
+
+
+## DIAGNOSED 2026-11-11: the mapper flipped at 20 mph with gusts (seeds 2 and 3). At a line end the velocity loop commanded the full
+## 25 degree tilt back to reverse, into a 17 m/s relative wind: the disc then sees axial inflow, the thrust ratio falls to about 0.65,
+## the four rotors pin at the rpm ceiling and the attitude loop has no differential left. The nav had no idea of its thrust margin.
+## Also fixed first: BemtRatios::read returned the static 1.0 for ANY negative axial velocity, a 45 percent thrust step as the body axial velocity crossed zero in fast flight (test_bemt_ratios).
+## Fix: NavPilot fades the tilt limit to zero as the commanded collective rises from THR_SOFT to THR_HARD.
+## FAIL-PROOF (observed): with the cap removed both flights end lost_control (tilt above 75 deg at t = 854 s and 700 s).
+static func _mapper_gust_flight(seed_value: int) -> TestResult:
+	var r := MissionRunner.run({"class_id": "mapper", "mission": Mission.SURVEY, "seed": seed_value, "camera": CameraParams.from_preset("micasense_rededge_p"),
+		"fields": {"height_m": 60.0, "front_overlap": 0.75, "side_overlap": 0.65, "reserve_pct": 25.0, "speed_mps": 9.75},
+		"polygon": _field(1500, 500), "wind_speed_mps": 8.94, "wind_from_deg": 90.0, "gust_mps": 1.79, "max_sorties": 1})
+	return TestResult.new("cropmerge cal: the mapper at 60 m in 20 mph with gusts (seed %d) does not lose control" % seed_value,
+		String(r["ended_by"]) != "lost_control" and float(r["flight_time_s"]) > 600.0,
+		"ended %s after %.1f min" % [r["ended_by"], float(r["flight_time_s"]) / 60.0])
+
