@@ -33,7 +33,8 @@ const VOLTAGE_CRITICAL_FRACTION := 0.75
 const COLOR_OK := LothalTheme.TEXT_MAIN
 const COLOR_WARN := LothalTheme.WARNING
 const COLOR_CRITICAL := LothalTheme.DANGER
-const COLOR_ACCENT := LothalTheme.ACCENT
+## The highlight (gate label, banners) is Design Space's selection white, not the old blue accent.
+const COLOR_ACCENT := DesignSpace.SELECT_INK
 const COLOR_DIM := LothalTheme.TEXT_MUTED
 
 ## How much of the bottom-left corner the flight readouts claim. Stated rather than measured

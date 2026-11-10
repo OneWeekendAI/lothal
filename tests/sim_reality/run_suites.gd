@@ -21,7 +21,7 @@ func _init() -> void:
 		"bemt forward": TestBemtForward, "esc": TestEsc, "motor dc": TestMotorDc, "observables": TestObservables,
 		"pack current limit": TestPackCurrentLimit, "rust constants": TestRustConstants, "bmp classes": TestBmpClasses,
 		"motor current": TestMotorCurrent, "designed pack flies": TestDesignedPackFlies, "bench": TestBench,
-		"hover stability": TestHoverStability, "sr0 harness": TestSimRealityLogic, "sr1 physics": TestSr1Physics, "sr1 flight": TestSr1Flight, "sr4 nav": TestSr4Nav, "sr4 survey": TestSr4Survey, "sr4 mission": TestSr4Mission, "sr4 watch": TestSr4Watch, "sr5 survey": TestSr5Survey, "sr7 runlog": TestSr7Runlog, "sr8 range": TestSr8Range, "sr9 mapper": TestSr9Mapper, "sr6 flow": TestSr6Flow, "sr2 wind": TestSr2Wind, "sr3 world": TestSr3World, "sr9 world edit": TestSr9WorldEdit,
+		"hover stability": TestHoverStability, "sr0 harness": TestSimRealityLogic, "sr1 physics": TestSr1Physics, "sr1 flight": TestSr1Flight, "sr4 nav": TestSr4Nav, "sr4 survey": TestSr4Survey, "sr4 mission": TestSr4Mission, "sr4 watch": TestSr4Watch, "sr5 survey": TestSr5Survey, "sr7 runlog": TestSr7Runlog, "sr8 range": TestSr8Range, "sr9 mapper": TestSr9Mapper, "sr6 flow": TestSr6Flow, "sr6 sim style": TestSr6SimStyle, "sr2 wind": TestSr2Wind, "sr3 world": TestSr3World, "sr9 world edit": TestSr9WorldEdit,
 	}
 	var total := 0
 	var failed := 0
