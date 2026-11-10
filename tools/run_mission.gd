@@ -1,7 +1,7 @@
 extends SceneTree
 ## SR4 CLI: see tools/run_mission.sh. Exit 0 = mission completed, 1 = failed / aborted, 2 = usage error.
 
-const USAGE := "usage: tools/run_mission.sh --class=<id> --mission=<hover_endurance|cruise_loop|range_test|survey|follow_path|test_pack> [--seed=N --height=M --speed=M/S --front=0.75 --side=0.65 --reserve=PCT --wind=MPS --wind-from=DEG --gust=MPS --capacity-scale=X --rate-hz=500 --out=path.json]"
+const USAGE := "usage: tools/run_mission.sh --class=<id> --mission=<hover_endurance|cruise_loop|range_test|survey|follow_path|test_pack> [--seed=N --height=M --speed=M/S --front=0.75 --side=0.65 --reserve=PCT --wind=MPS --wind-from=DEG --gust=MPS --capacity-scale=X --rate-hz=500 --out=path.json --record=record.json] | tools/run_mission.sh --replay=record.json [--allow-version-mismatch=1]"
 
 
 func _init() -> void:
@@ -12,12 +12,15 @@ func _init() -> void:
 			quit(2)
 			return
 		a[arg.substr(2).get_slice("=", 0)] = arg.get_slice("=", 1)
-	var known := ["class", "mission", "seed", "height", "speed", "front", "side", "reserve", "wind", "wind-from", "gust", "capacity-scale", "rate-hz", "out"]
+	var known := ["class", "mission", "seed", "height", "speed", "front", "side", "reserve", "wind", "wind-from", "gust", "capacity-scale", "rate-hz", "out", "record", "replay", "allow-version-mismatch"]
 	for k in a:
 		if not k in known:
 			print("unknown option --%s\n%s" % [k, USAGE])
 			quit(2)
 			return
+	if a.has("replay"):
+		_replay(String(a["replay"]), String(a.get("allow-version-mismatch", "0")) == "1")
+		return
 	if not a.has("class") or not a.has("mission"):
 		print("--class and --mission are required\n" + USAGE)
 		quit(2)
@@ -46,6 +49,12 @@ func _init() -> void:
 	if f != null:
 		f.store_string(MissionResult.to_json(r))
 		f.close()
+	if a.has("record"):
+		DirAccess.make_dir_recursive_absolute(String(a["record"]).get_base_dir())
+		var rf := FileAccess.open(String(a["record"]), FileAccess.WRITE)
+		if rf != null:
+			rf.store_string(RunRecord.to_json(RunRecord.make(params, r)))
+			rf.close()
 	print("")
 	print("MISSION %s  class %s  seed %d  capacity_scale %.2f  (model %s)" % [r["mission"], r["class_id"], r["seed"], params["capacity_scale"], MissionResult.MODEL_VERSION])
 	print("  ended by      %s%s" % [r["ended_by"], "" if r["completed"] else "   (NOT COMPLETED)"])
@@ -59,4 +68,26 @@ func _init() -> void:
 		print("  warning: %s" % w)
 	print("  wall time     %.1f s" % ((Time.get_ticks_msec() - t0) / 1000.0))
 	print("  json          %s" % out_path)
+	if a.has("record"):
+		print("  record        %s" % a["record"])
 	quit(0 if bool(r["completed"]) else 1)
+
+
+## SR7.2: --replay=record.json. Exit 0 identical, 1 differs, 3 refused (nothing flown), 2 unreadable file.
+func _replay(path: String, allow: bool) -> void:
+	var text := FileAccess.get_file_as_string(path)
+	var rec := RunRecord.from_json(text)
+	if rec.is_empty():
+		print("cannot read a run record from '%s'" % path)
+		quit(2)
+		return
+	var rp := RunReplay.replay(rec, allow)
+	print("")
+	print("REPLAY %s  status %s" % [path, String(rp["status"]).to_upper()])
+	for m in rp["reasons"]:
+		print("  refused: %s" % m)
+	for m in rp["flags"]:
+		print("  flag: %s" % m)
+	for d in rp["diffs"]:
+		print("  differs: %s" % str(d))
+	quit(0 if rp["status"] == "identical" else (3 if rp["status"] == "refused" else 1))

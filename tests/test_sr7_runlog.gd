@@ -11,6 +11,9 @@ extends RefCounted
 ## RL3 build fingerprint not copied: the whole-record case and the trail case FAIL.
 ## RL4 mission fields not copied (fixed stand-in): the edited-field case FAILS.
 ## RL5 world section dropped: the world case FAILS (section null).
+## SR7.2 replay (observed 2026-11-10): RP1 version checks removed (model, schema, Rust): 4 FAIL (the three refusals and the allow-mismatch flag; flown silently, status identical).
+## RP2 build fingerprint check removed: the build refusal FAILS. RP3 world fingerprint check removed: the world-changed refusal FAILS.
+## RP4 compare never reports a difference: the tampered-output and edited-input cases FAIL (status identical, 0 diffs). RP5 world not passed to the run: the world replay FAILS (status differs).
 
 const SEED := 11
 static var _cache: Dictionary = {}
@@ -45,6 +48,19 @@ static func run() -> Array:
 		_no_world(),
 		_deterministic_text(),
 		_real_world_room(),
+		_replay_identical(),
+		_replay_world_identical(),
+		_refuse_model(),
+		_refuse_schema(),
+		_refuse_rust(),
+		_refuse_build(),
+		_refuse_world_changed(),
+		_refuse_world_missing(),
+		_refuse_incomplete(),
+		_flag_app_version(),
+		_allow_mismatch_flags(),
+		_tampered_output_differs(),
+		_edited_input_differs(),
 	]
 
 
@@ -133,3 +149,116 @@ static func _real_world_room() -> TestResult:
 	var rec: Dictionary = _fly()[2]
 	return TestResult.new("sr7 record: real_world is present and empty (room for a measured result), harness status says it was not evaluated",
 		rec.has("real_world") and rec["real_world"] == null and rec["harness"]["status"] == "not evaluated", str(rec["harness"]["status"]))
+
+
+# ---------------------------------------------------------------- SR7.2 replay
+## A record goes through its JSON text first (what a saved file is), then is edited as a plain dictionary.
+static func _saved(extra: Dictionary = {}) -> Dictionary:
+	return RunRecord.from_json(RunRecord.to_json(_fly(extra)[2]))
+
+
+static func _replay_identical() -> TestResult:
+	var rp := RunReplay.replay(_saved())
+	return TestResult.new("sr7 replay: a saved hover record flown again gives identical outputs (no diffs, no flags)",
+		rp["status"] == "identical" and not rp["refused"] and (rp["diffs"] as Array).is_empty() and (rp["flags"] as Array).is_empty(),
+		"status %s, diffs %s, flags %s" % [rp["status"], str(rp["diffs"]), str(rp["flags"])])
+
+
+static func _replay_world_identical() -> TestResult:
+	var w := WorldPresets.by_id("calm_test_field")
+	var p := _params({"world": w})
+	var rec := RunRecord.from_json(RunRecord.to_json(RunRecord.make(p, MissionRunner.run(p))))
+	var rp := RunReplay.replay(rec)
+	return TestResult.new("sr7 replay: a run in the shipped calm_test_field world replays identically (the world is found by id and its fingerprint checked)",
+		rp["status"] == "identical" and rec["world"] != null, "status %s, reasons %s, diffs %s" % [rp["status"], str(rp["reasons"]), str(rp["diffs"])])
+
+
+static func _refused(rp: Dictionary, word: String) -> bool:
+	return rp["status"] == "refused" and rp["refused"] and (rp["result"] as Dictionary).is_empty() and "\n".join(rp["reasons"]).contains(word)
+
+
+static func _refuse_model() -> TestResult:
+	var rec := _saved()
+	rec["versions"]["model"] = "sr4-1"
+	var rp := RunReplay.replay(rec)
+	return TestResult.new("sr7 replay: an edited model version is REFUSED (nothing flown, the reason names the model)", _refused(rp, "model version"), str(rp["reasons"]) + " / status " + str(rp["status"]))
+
+
+static func _refuse_schema() -> TestResult:
+	var rec := _saved()
+	rec["versions"]["result_schema"] = 99
+	var rp := RunReplay.replay(rec)
+	return TestResult.new("sr7 replay: an edited result schema is REFUSED", _refused(rp, "schema"), str(rp["reasons"]) + " / status " + str(rp["status"]))
+
+
+static func _refuse_rust() -> TestResult:
+	var rec := _saved()
+	rec["versions"]["rust_model"] = "0.0.1"
+	var rp := RunReplay.replay(rec)
+	return TestResult.new("sr7 replay: an edited Rust model version is REFUSED", _refused(rp, "Rust model"), str(rp["reasons"]) + " / status " + str(rp["status"]))
+
+
+static func _refuse_build() -> TestResult:
+	var rec := _saved()
+	rec["build"]["fingerprint"] = "deadbeef"
+	var rp := RunReplay.replay(rec)
+	return TestResult.new("sr7 replay: a build fingerprint that no longer matches the class is REFUSED", _refused(rp, "build fingerprint"), str(rp["reasons"]) + " / status " + str(rp["status"]))
+
+
+static func _refuse_world_changed() -> TestResult:
+	var w := WorldPresets.by_id("calm_test_field")
+	var p := _params({"world": w})
+	var rec := RunRecord.from_json(RunRecord.to_json(RunRecord.make(p, MissionRunner.run(p))))
+	rec["world"]["fingerprint"] = "changed"
+	var rp := RunReplay.replay(rec)
+	return TestResult.new("sr7 replay: a world whose fingerprint changed is REFUSED", _refused(rp, "changed"), str(rp["reasons"]) + " / status " + str(rp["status"]))
+
+
+static func _refuse_world_missing() -> TestResult:
+	var w := WorldPresets.by_id("calm_test_field")
+	var p := _params({"world": w})
+	var rec := RunRecord.from_json(RunRecord.to_json(RunRecord.make(p, MissionRunner.run(p))))
+	rec["world"]["id"] = "no_such_world_anywhere"
+	var rp := RunReplay.replay(rec)
+	return TestResult.new("sr7 replay: a world that is not available here is REFUSED", _refused(rp, "not available"), str(rp["reasons"]) + " / status " + str(rp["status"]))
+
+
+static func _refuse_incomplete() -> TestResult:
+	var rec := _saved()
+	rec.erase("versions")
+	var rp := RunReplay.replay(rec)
+	return TestResult.new("sr7 replay: a record without its versions section is REFUSED as not whole", _refused(rp, "not whole"), str(rp["reasons"]))
+
+
+static func _flag_app_version() -> TestResult:
+	var rec := _saved()
+	rec["versions"]["app"] = "0.0.1"
+	var rp := RunReplay.replay(rec)
+	var flagged := "\n".join(rp["flags"]).contains("app version")
+	return TestResult.new("sr7 replay: a different app version is flown and FLAGGED (not refused); the figures still match", flagged and rp["status"] == "identical", str(rp["flags"]) + " / " + str(rp["status"]))
+
+
+static func _allow_mismatch_flags() -> TestResult:
+	var rec := _saved()
+	rec["versions"]["model"] = "sr4-1"
+	var rp := RunReplay.replay(rec, true)
+	return TestResult.new("sr7 replay: with allow_version_mismatch a model difference is flown and flagged 'version mismatch'",
+		not rp["refused"] and "\n".join(rp["flags"]).contains("version mismatch"), str(rp["flags"]) + " / " + str(rp["status"]))
+
+
+static func _tampered_output_differs() -> TestResult:
+	var rec := _saved()
+	rec["outputs"]["flight_time_s"]["value"] = float(rec["outputs"]["flight_time_s"]["value"]) + 5.0
+	var rp := RunReplay.replay(rec)
+	var named := false
+	for d in rp["diffs"]:
+		named = named or d["output"] == "flight_time_s"
+	return TestResult.new("sr7 replay: a record whose stored flight time was altered by 5 s replays as 'differs' and names flight_time_s", rp["status"] == "differs" and named, str(rp["diffs"]))
+
+
+static func _edited_input_differs() -> TestResult:
+	var rec := _saved()
+	rec["inputs"]["wind_speed_mps"] = 9.0
+	var rp := RunReplay.replay(rec)
+	return TestResult.new("sr7 replay: an input changed behind the record's back (wind 3 -> 9 m/s) replays as 'differs'", rp["status"] == "differs" and (rp["diffs"] as Array).size() > 0,
+		"status %s, %d diffs" % [rp["status"], (rp["diffs"] as Array).size()])
