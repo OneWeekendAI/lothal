@@ -23,6 +23,7 @@ static func run(p_gate: bool = false) -> Array:
 	out.append_array(_capacity_cut_leaves_band())
 	out.append_array(_quick_matches_full())
 	out.append_array(_quick_sees_capacity_cut())
+	out.append_array(_reserve_range())
 	return out
 
 
@@ -99,3 +100,21 @@ static func _capacity_cut_leaves_band() -> Array:
 			details.append("%s/%s %+.0f%% -> %+.0f%%" % [ref["id"], case_name, full["err_pct"], cut["err_pct"]])
 	return [TestResult.new("harness is not blind: a 30% capacity cut moves at least two cases by more than the band",
 		moved >= 2, "%d moved: %s" % [moved, "; ".join(details)])]
+
+
+## SR1.2: flying to 15 percent left is 12-18 percent shorter than flying to empty on the Mavic hover. Flown
+## at the quick step (the hover figure is step-independent to 0.1 percent, see above).
+## MUTATION (2026-11-10): reserve fraction 15 read as 5 (t_res key 15 -> 95 percent used) -> about 5 percent shorter -> red.
+static func _reserve_range() -> Array:
+	var saved := SimRealityHarness.step_dt
+	SimRealityHarness.step_dt = SimRealityHarness.QUICK_DT
+	var res := SimRealityHarness.fly(SimRealityHarness.find_reference("mavic_3m"), "hover")
+	SimRealityHarness.step_dt = saved
+	var rm: Dictionary = res["reserve_min"]
+	var short := (1.0 - float(rm[15]) / float(rm[0])) * 100.0
+	return [
+		TestResult.new("15% landing reserve shortens the Mavic hover by 12-18% (range column)", short >= 12.0 and short <= 18.0,
+			"to empty %.2f min, 15%% left %.2f min (%.1f%% shorter)" % [rm[0], rm[15], short]),
+		TestResult.new("reserve times are ordered 0% >= 10% >= 15%", rm[0] >= rm[10] and rm[10] >= rm[15], str(rm)),
+		TestResult.new("reserve range is printed in the table", SimRealityHarness.format_reserve(res).contains("landing reserve range"), SimRealityHarness.format_reserve(res)),
+	]

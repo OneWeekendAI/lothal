@@ -120,6 +120,8 @@ static func _fly_uncached(ref: Dictionary, case_name: String, capacity_scale: fl
 	var t := 0.0
 	var low_for := 0.0
 	var t80 := -1.0
+	# SR1.2: the landing-reserve convention. Time at which 10 / 15 percent of the pack is still unused.
+	var t_res := {10: -1.0, 15: -1.0}
 	var energy_wh := 0.0
 	var ended_by := "time cap"
 	var dt := step_dt
@@ -132,6 +134,9 @@ static func _fly_uncached(ref: Dictionary, case_name: String, capacity_scale: fl
 		energy_wh += o.voltage_live_v * o.current_total_a * dt / 3600.0
 		if t80 < 0.0 and core.powertrain.battery.used_mah >= 0.8 * capacity_mah:
 			t80 = t
+		for pct in t_res:
+			if t_res[pct] < 0.0 and core.powertrain.battery.used_mah >= (1.0 - pct / 100.0) * capacity_mah:
+				t_res[pct] = t
 		var tilt := rad_to_deg(acos(clampf((core.rigid_body.orientation * Vector3.UP).y, -1.0, 1.0)))
 		worst_tilt_deg = maxf(worst_tilt_deg, tilt)
 		if tilt > 75.0 or absf(core.rigid_body.position_m.y) > 50.0:
@@ -150,6 +155,7 @@ static func _fly_uncached(ref: Dictionary, case_name: String, capacity_scale: fl
 	return {
 		"time_min": t / 60.0,
 		"t80_min": (t80 / 60.0) if t80 >= 0.0 else t / 60.0,
+		"reserve_min": {0: t / 60.0, 10: (t_res[10] if t_res[10] >= 0.0 else t) / 60.0, 15: (t_res[15] if t_res[15] >= 0.0 else t) / 60.0},
 		"ended_by": ended_by,
 		"valid": ended_by == "cell voltage cutoff" or ended_by == "capacity exhausted",
 		"mean_power_w": energy_wh / maxf(t / 3600.0, 1e-9),
@@ -191,6 +197,16 @@ static func _git_sha() -> String:
 	var code := OS.execute("git", ["-C", ProjectSettings.globalize_path("res://"), "rev-parse", "--short", "HEAD"], out)
 	var sha := String(out[0]).strip_edges() if code == 0 and out.size() > 0 else ""
 	return sha if sha != "" else "unknown"
+
+
+## SR1.2: flight time under three landing-reserve conventions, as a range (flown to 0 / 10 / 15 percent left).
+## A published time is usually "to 0 percent"; a pilot lands at 10 to 20 percent.
+static func format_reserve(res: Dictionary) -> String:
+	var rm: Variant = res.get("reserve_min", null)
+	if not (rm is Dictionary):
+		return "    landing reserve: not measured"
+	return "    landing reserve range: %.1f-%.1f min (to 0%% left %.1f, 10%% left %.1f, 15%% left %.1f)" % [
+		rm[15], rm[0], rm[0], rm[10], rm[15]]
 
 
 ## One printed line for a trail dictionary.
@@ -271,6 +287,7 @@ static func format_table(rows: Array) -> String:
 			"IN BAND" if r["in_band"] else "OUT", r["tag"], res["auw_g"], r["published_auw_g"], res["ended_by"]])
 		lines.append("    mean %.0f W / %.1f A, time-to-empty %.1f min (cutoff); 80%%-used convention (usable capacity) at %.1f min, wall %.0f s. fitted-vs-held-out: %s" % [
 			res["mean_power_w"], res["mean_current_a"], r["sim_min"], res["t80_min"], res["wall_s"], r["fitted"]])
+		lines.append(format_reserve(res))
 		lines.append(format_trail(r.get("trail", {})))
 		var rw: Variant = r.get("real_world", null)
 		if rw is Dictionary:
