@@ -155,6 +155,24 @@ const CLASSES: Array[Dictionary] = [
 		},
 	},
 	{
+		"id": "mapper", "name": "Mapper", "use": "Multispectral survey",
+		"props": "9.4\"", "wheelbase": "380–400 mm", "battery": "4S", "auw": "1.0–1.5 kg",
+		"wheelbase_mm": 400.0,
+		"cells": Vector2i(4,4), "prop_in": Vector2(9.4,9.4),
+		# MODEL: a labelled STAND-IN. mapper.glb is a byte copy of cinelifter.glb (a 400 mm coaxial-X8 body); a
+		# survey quad has no model of its own yet. The size cue (400 mm) matches that model, so it ties the
+		# Cinelifter and is placed right after it. SEED: the mapper_* catalog parts (SR9 L4.1, Mavic 3M-like
+		# survey airframe, ESTIMATED), the 20 Ah Li-ion survey pack (4S despite its id), the 45 A 4-in-1 and F405 30x30 stack (the frame is drilled 30.5x30.5; the 20x20 boards are refused),
+		# the RedEdge-class multispectral camera and the RTK GPS. PAYLOAD: 20 W ESTIMATED (sunlight sensor +
+		# RTK, over the camera and GPS already in the parts list) and 40 g for the sunlight sensor.
+		"seed": {
+			"frame": "mapper_frame_380", "motor": "mapper_motor_2008", "propeller": "mapper_prop_94x53",
+			"battery": "mapper_battery_6s_20000_liion", "esc": "esc_4in1_45a_30x30", "flight_controller": "fc_f405_30x30",
+			"camera": "mapper_cam_multispectral_rededge", "gps": "mapper_gps_rtk",
+		},
+		"payload": {"w": 20.0, "mass_g": 40.0, "note": "ESTIMATED: sunlight sensor + RTK link; 40 g is the sunlight sensor"},
+	},
+	{
 		"id": "x_class", "name": "X-Class", "use": "Giant racing",
 		"props": "10–13\"", "wheelbase": "600–800 mm", "battery": "8–12S", "auw": "3–6 kg",
 		"wheelbase_mm": 700.0,

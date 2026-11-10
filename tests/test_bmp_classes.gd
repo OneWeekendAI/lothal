@@ -33,15 +33,21 @@ const CLASS_ENVELOPE := {
 	"six_inch": {"cells": [6, 6], "prop": [6.0, 6.0]},
 	"seven_lr": {"cells": [6, 6], "prop": [7.0, 7.0]},
 	"cinelifter": {"cells": [6, 8], "prop": [8.0, 10.0]},
+	# mapper (L4.4): typical line "4S", 9.4" props (typed again from DroneClass: the seed pack is 4S Li-ion despite its id, on the 9.4x5.3 mapper prop).
+	"mapper": {"cells": [4, 4], "prop": [9.4, 9.4]},
 	"x_class": {"cells": [8, 12], "prop": [10.0, 13.0]},
 }
 ## Classes whose catalog offers NO second class-fit part that mounts, per section. These are catalog
 ## gaps (no part to invent), listed so the swap check says so instead of passing on nothing; a part
 ## added to the catalog makes the matching "still a gap" check fail and this table shrink.
+## mapper (L4.4) is a gap in both: the catalog has exactly one mapper_motor and one mapper_prop (9.4"), and no other 9.4" prop or small 20xx motor fits it.
 const CATALOG_GAPS := {
-	"motor": ["tiny_whoop", "toothpick", "cinelifter", "x_class"],
-	"propeller": ["tiny_whoop", "cinelifter", "x_class"],
+	"motor": ["tiny_whoop", "toothpick", "cinelifter", "mapper", "x_class"],
+	"propeller": ["tiny_whoop", "cinelifter", "mapper", "x_class"],
 }
+## L4.4: classes whose GLB is a labelled STAND-IN (a byte copy of another class's), so its drawn motor count (8) is the copy's and not the build's (4).
+## The two count checks then assert the mismatch still holds AND the file is still the copy; a real model fails that and the entry must be deleted.
+const STAND_IN_MODELS := {"mapper": "cinelifter"}
 const PROP_SLACK_IN := 0.5
 const MOTOR_TEST_SLACK_IN := 1.0
 ## The 5" is 0.277 m across and its reach is 6 cm.
@@ -303,7 +309,9 @@ static func _motor(id: String, catalog: PartsCatalog) -> Array:
 	var nodes: Array = boxes.keys().filter(func(k): return String(k).begins_with("motor_"))
 	var b := ds.session.build(catalog)
 	var count_ok := b != null and b.motor_count() == nodes.size()
-	out.append(_t(p + "the build's motor count equals the drawn motors", count_ok, "build=%d drawn=%d" % [b.motor_count() if b != null else -1, nodes.size()]))
+	if STAND_IN_MODELS.has(id):
+		count_ok = not count_ok and _still_copy(id)
+	out.append(_t(p + "the build's motor count equals the drawn motors" + (" (stand-in: differs while the model is a copy)" if STAND_IN_MODELS.has(id) else ""), count_ok, "build=%d drawn=%d" % [b.motor_count() if b != null else -1, nodes.size()]))
 
 	# Snap on every motor mount.
 	var mounts_ok := true
@@ -383,7 +391,10 @@ static func _prop(id: String, catalog: PartsCatalog) -> Array:
 	out.append(_t(p + "a drop on each drawn prop snaps to that prop", mounts_ok, detail))
 	var b := ds.session.build(catalog)
 	var fill := PartSnap.mounts_for(ds._mount_map, "propeller").size()
-	out.append(_t(p + "a prop fills one mount per motor", b != null and fill == b.motor_count(), "fills=%d motors=%d" % [fill, b.motor_count() if b != null else -1]))
+	var fill_ok: bool = b != null and fill == b.motor_count()
+	if STAND_IN_MODELS.has(id):
+		fill_ok = b != null and fill != b.motor_count() and fill == nodes.size() and _still_copy(id)  # one prop per DRAWN mount while it is a copy
+	out.append(_t(p + "a prop fills one mount per motor" + (" (stand-in: one per drawn mount while the model is a copy)" if STAND_IN_MODELS.has(id) else ""), fill_ok, "fills=%d motors=%d" % [fill, b.motor_count() if b != null else -1]))
 	out.append(_t(p + "a drop just inside the class reach lands", _reach_case(ds, id, seed_id, boxes, 0.8) == "snap"))
 	out.append(_t(p + "a drop beyond the class reach is nothing", _reach_case(ds, id, seed_id, boxes, 1.3) == "nothing"))
 
@@ -424,3 +435,8 @@ static func _prop(id: String, catalog: PartsCatalog) -> Array:
 	out.append(_t(p + "save and reopen round-trips", rt == "", rt))
 	_done(ds)
 	return out
+
+
+static func _still_copy(id: String) -> bool:
+	var a := FileAccess.get_file_as_bytes(DroneClass.model_path(id))
+	return not a.is_empty() and a == FileAccess.get_file_as_bytes(DroneClass.model_path(String(STAND_IN_MODELS[id])))

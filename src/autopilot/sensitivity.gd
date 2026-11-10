@@ -7,8 +7,8 @@ extends RefCounted
 ## why Monte Carlo (MonteCarlo) gives the joint range and this gives the reading order. Tag estimated: it is only as good as the tolerances.
 ##
 ## cropmerge_example: the owner's worked example: pack capacity +-5 percent, wind 10-20 mph (15 mph +- 5), every other tolerance off, on a
-## survey mission, metric acres per battery. The class is whatever the caller passes: the mapping class (L4) does not exist yet, so the default is
-## a STAND-IN (five_inch) and the result says so. Batteries per farm = farm acres / acres per battery, range inverted.
+## survey mission, metric acres per battery. The class is whatever the caller passes; the intended one is "mapper" (L4: estimated parts, a real class). Any other class is a STAND-IN and the
+## label says so. Batteries per farm = farm acres / acres per battery, range inverted.
 
 const MPH := 0.44704
 const WIND_MIN_MPH := 10.0
@@ -57,5 +57,6 @@ static func cropmerge_example(class_id: String, field: PackedVector2Array, farm_
 	var dom := one_at_a_time(base, tol, "acres_per_battery.value")
 	var batteries := {"value": farm_acres / float(mc["mid"]), "low": farm_acres / float(mc["high"]), "high": farm_acres / float(mc["low"]), "tag": "estimated",
 		"unit": "batteries", "farm_acres": farm_acres}
-	return {"label": "CropMerge worked example: capacity +-5 percent, wind 10-20 mph (15 +- 5). Class '%s' is a STAND-IN until the mapping class (L4) exists; the field is a short stand-in survey, so acres per battery is EXTRAPOLATED from a part pack" % class_id,
+	var cls := "Class 'mapper' is built from ESTIMATED parts (not a sourced aircraft)" if class_id == "mapper" else "Class '%s' is a STAND-IN for the mapper class" % class_id
+	return {"label": "CropMerge worked example: capacity +-5 percent, wind 10-20 mph (15 +- 5). %s; a field smaller than the farm is flown, so acres per battery is EXTRAPOLATED from a part pack" % cls,
 		"class_id": class_id, "wind_mph": [WIND_MIN_MPH, WIND_MAX_MPH], "capacity_pct": 5.0, "acres_per_battery": mc, "batteries_per_farm": batteries, "dominant": dom}

@@ -43,6 +43,7 @@ const TABLE := {
 	"five_inch": {"height_m": 20.0, "speed_mps": 12.0, "reserve_pct": 25.0, "survey_height_m": 25.0, "survey_field_m": Vector2(120, 80)},
 	"seven_lr": {"height_m": 30.0, "speed_mps": 12.0, "reserve_pct": 20.0, "survey_height_m": 40.0, "survey_field_m": Vector2(200, 120)},
 	"cinelifter": {"height_m": 30.0, "speed_mps": 8.0, "reserve_pct": 25.0, "survey_height_m": 40.0, "survey_field_m": Vector2(160, 100)},
+	"mapper": {"height_m": 60.0, "speed_mps": 8.0, "reserve_pct": 25.0, "survey_height_m": 60.0, "survey_field_m": Vector2(700, 400)},  # copy of mavic_3m, estimated
 	"mavic_3m": {"height_m": 60.0, "speed_mps": 8.0, "reserve_pct": 25.0, "survey_height_m": 60.0, "survey_field_m": Vector2(700, 400)},
 }
 

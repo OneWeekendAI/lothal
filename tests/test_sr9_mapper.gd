@@ -11,6 +11,10 @@ extends RefCounted
 ## total current unchanged). MT6 `payload_w` line removed: only the apply case FAILS (dI 0.000). MT7 payload_from_entry ignores the entry's
 ## values: only the lookup case FAILS.
 
+## L4.4/L4.5 (observed 2026-11-10): RED run (no class, no table row, example on the caller's class) = 6 fails of 6 new cases. MUTATIONS (each fails
+## only its own case): MT8 Mission.TABLE "mapper" row removed -> defaults_for falls to the derived 20 m default, the table case FAILS.
+## MT9 cropmerge_example class_id forced back to five_inch -> the class_id case FAILS. Both observed RED (1 fail each, only the named case: height 20/speed 5 derived; class_id five_inch) and GREEN after restoring (22/22).
+
 const NEW_IDS := ["mapper_cam_multispectral_rededge", "mapper_gps_rtk"]
 const IDS := ["mapper_frame_380", "mapper_motor_2008", "mapper_prop_94x53", "mapper_battery_4s_5000", "mapper_battery_6s_20000_liion"]
 
@@ -27,6 +31,53 @@ static func run() -> Array:
 	out.append(_payload_zero())
 	out.append(_payload_lookup())
 	out.append(_payload_applies())
+	out.append_array(_class_cases())
+	return out
+
+
+static func _class_build() -> Build:
+	var catalog := PartsCatalog.load_default()
+	var parts := DroneClass.parts_for("mapper")
+	var b := Build.from_ids(catalog, String(parts["frame"]), String(parts["motor"]), String(parts["propeller"]), String(parts["battery"]),
+		String(parts["esc"]), String(parts["flight_controller"]))
+	b.apply_class_payload(DroneClass.payload_for("mapper"))
+	return b
+
+
+static func _class_cases() -> Array:
+	var out: Array = []
+	out.append(TestResult.new("sr9 mapper: class 'mapper' is available", DroneClass.is_available("mapper") and DroneClass.ids().has("mapper"), str(DroneClass.ids())))
+	var catalog := PartsCatalog.load_default()
+	var parts := DroneClass.parts_for("mapper")
+	var ok := not parts.is_empty()
+	var bad := ""
+	for cat in ["frame", "motor", "propeller", "battery", "esc", "flight_controller", "camera", "gps"]:
+		if String(parts.get(cat, "")) == "" or catalog.get_part(String(parts.get(cat, ""))).is_empty():
+			ok = false
+			bad += cat + " "
+	out.append(TestResult.new("sr9 mapper: parts_for('mapper') names frame/motor/prop/battery/esc/fc/camera/gps and every id resolves in the catalog", ok, "unresolved: " + bad))
+	var g := 0.0
+	var ft := NAN
+	if DroneClass.is_available("mapper"):
+		var b := _class_build()
+		g = b.all_up_weight_g()
+		ft = b.flight_time_min()
+	out.append(TestResult.new("sr9 mapper: a Build from the class (payload applied) weighs 1000-1500 g and has a finite positive hover flight time",
+		g >= 1000.0 and g <= 1500.0 and is_finite(ft) and ft > 0.0, "%.1f g, %s min" % [g, str(ft)]))
+	var p := DroneClass.payload_for("mapper")
+	out.append(TestResult.new("sr9 mapper: the class payload is 20 W / 40 g tagged estimated", p["w"] == 20.0 and p["mass_g"] == 40.0 and p["tag"] == "estimated", str(p)))
+	var d := Mission.defaults_for("mapper", Mission.SURVEY)
+	var row: Dictionary = Mission.TABLE.get("mapper", {})
+	var fl: Dictionary = d.get("fields", {})
+	var dh := float((fl.get("height_m", {}) as Dictionary).get("value", -1.0))
+	# The survey mission's own speed is min(cruise, camera interval cap) = 7.15 m/s, so the table's 8 m/s is read from the cruise loop.
+	var ds := float(((Mission.defaults_for("mapper", Mission.CRUISE_LOOP).get("fields", {}) as Dictionary).get("speed_mps", {}) as Dictionary).get("value", -1.0))
+	out.append(TestResult.new("sr9 mapper: Mission.defaults_for('mapper','survey') reads survey height 60 m and the table cruise speed (8 m/s)",
+		not row.is_empty() and dh == 60.0 and ds == float(row.get("speed_mps", -2.0)) and ds == 8.0, "height %s speed %s" % [str(dh), str(ds)]))
+	var field := PackedVector2Array([Vector2(0, 0), Vector2(175, 0), Vector2(175, 100), Vector2(0, 100)])
+	var c := Sensitivity.cropmerge_example("mapper", field, 100.0, 4, 1)
+	out.append(TestResult.new("sr9 mapper: cropmerge_example(mapper) reports class_id mapper and a label that does not call it a stand-in class",
+		c.get("class_id", "") == "mapper" and not String(c.get("label", "")).contains("STAND-IN"), String(c.get("label", "")).left(100)))
 	return out
 
 
@@ -45,9 +96,11 @@ static func _new_part(id: String) -> TestResult:
 static func _payload_zero() -> TestResult:
 	var ok := true
 	for id in DroneClass.ids():
+		if DroneClass.by_id(id).has("payload"):
+			continue  # the mapper (L4.4) is the one class that carries a payload; its figures are asserted in _class_cases
 		var p := DroneClass.payload_for(id)
 		ok = ok and p["w"] == 0.0 and p["mass_g"] == 0.0 and p["tag"] == "estimated" and p.has("note")
-	return TestResult.new("sr9 mapper: payload_for is all zeros (tag estimated) for every existing class", ok, str(DroneClass.payload_for("five_inch")))
+	return TestResult.new("sr9 mapper: payload_for is all zeros (tag estimated) for every class without a payload key", ok, str(DroneClass.payload_for("five_inch")))
 
 
 static func _payload_lookup() -> TestResult:

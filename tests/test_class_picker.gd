@@ -21,7 +21,7 @@ extends RefCounted
 ## Size order, smallest first. Written out rather than read from DroneClass, so a reordered table
 ## is a failure here rather than a new truth.
 const SIZE_ORDER := ["tiny_whoop", "toothpick", "sub250_35", "cinewhoop_3", "four_inch", "five_inch",
-	"six_inch", "seven_lr", "cinelifter", "x_class"]
+	"six_inch", "seven_lr", "cinelifter", "mapper", "x_class"]  # mapper (L4.4): 400 mm like the Cinelifter, drawn right after it
 
 
 static func run() -> Array:
@@ -54,6 +54,19 @@ static func model_motor_count(id: String) -> int:
 	return names.size()
 
 
+## L4.4: classes whose Blender model is a labelled STAND-IN (a byte copy of another class's GLB), and which model. Every check that compares a
+## model with its class's seed (size tie, pack label/size/part, motor count) cannot hold for a copy, so for these ids it asserts instead that the
+## file IS STILL that copy: a real model makes that fail, and the entry (and this exemption) has to be deleted so the full checks run.
+const STAND_IN_MODELS := {"mapper": "cinelifter"}
+
+
+static func _is_still_copy(id: String) -> bool:
+	if not STAND_IN_MODELS.has(id):
+		return false
+	var a := FileAccess.get_file_as_bytes(DroneClass.model_path(id))
+	return not a.is_empty() and a == FileAccess.get_file_as_bytes(DroneClass.model_path(String(STAND_IN_MODELS[id])))
+
+
 ## Classes whose seed pack is knowingly outside the typical cell range, and why.
 const KNOWN_CELL_GAPS := {"x_class": "the catalog has no 8S+ pack; the seed is the 6S 4000 Li-ion placeholder"}
 
@@ -77,8 +90,12 @@ static func _test_seed_label_and_model_agree(catalog: PartsCatalog) -> Array:
 		var seed_id := String(DroneClass.parts_for(id).get("battery", ""))
 		var cfg_start := script.find('    "%s": dict(' % id)
 		var cfg := script.substr(cfg_start, script.find("zmin=", cfg_start) - cfg_start)
-		results.append(TestResult.new("%s: the model's pack is the seed's own catalogue part (%s)" % [id, seed_id],
-			cfg.contains('seed="%s"' % seed_id), cfg.get_slice("seed=", 1).get_slice(",", 0)))
+		if STAND_IN_MODELS.has(id):
+			results.append(TestResult.new("%s: stand-in model, it has no build_drone.py pack of its own (still a copy of %s)" % [id, STAND_IN_MODELS[id]],
+				_is_still_copy(id), ""))
+		else:
+			results.append(TestResult.new("%s: the model's pack is the seed's own catalogue part (%s)" % [id, seed_id],
+				cfg.contains('seed="%s"' % seed_id), cfg.get_slice("seed=", 1).get_slice(",", 0)))
 		var cells := int(catalog.get_part(seed_id)["specs"]["cells"])
 		var band := typical_cells(String(DroneClass.by_id(id)["battery"]))
 		var inside := cells >= band.x and cells <= band.y
@@ -92,8 +109,12 @@ static func _test_seed_label_and_model_agree(catalog: PartsCatalog) -> Array:
 				inside, ""))
 		var b := DesignSession.default_for_class(id).build(catalog)
 		var drawn := model_motor_count(id)
-		results.append(TestResult.new("%s: the model draws as many motors as Build flies (%d)" % [id, b.motor_count()],
-			drawn == b.motor_count(), "model %d, build %d" % [drawn, b.motor_count()]))
+		if STAND_IN_MODELS.has(id):
+			results.append(TestResult.new("%s: stand-in model draws %d motors, Build flies %d (not compared while it is a copy of %s)" % [id, drawn, b.motor_count(), STAND_IN_MODELS[id]],
+				_is_still_copy(id) and drawn != b.motor_count(), "model %d, build %d" % [drawn, b.motor_count()]))
+		else:
+			results.append(TestResult.new("%s: the model draws as many motors as Build flies (%d)" % [id, b.motor_count()],
+				drawn == b.motor_count(), "model %d, build %d" % [drawn, b.motor_count()]))
 	var lifter := DesignSession.default_for_class("cinelifter").build(catalog)
 	var sp: Dictionary = lifter.battery["specs"]
 	results.append(TestResult.new("the Cinelifter seeds a 6S LiPo (not a Li-ion)",
@@ -271,7 +292,7 @@ static func _test_arrows_walk_in_size_order(catalog: PartsCatalog) -> Array:
 	for id in SIZE_ORDER:
 		picker.show_class(id)
 		all_choosable = all_choosable and not picker.choose_button.disabled and picker.choose()
-	results.append(TestResult.new("all ten classes are selectable, none is 'coming soon'",
+	results.append(TestResult.new("every class is selectable, none is 'coming soon'",
 		all_choosable and chosen == SIZE_ORDER, str(chosen)))
 	picker.free()
 	return results
@@ -387,6 +408,12 @@ static func _test_sizes_are_true_and_monotonic(catalog: PartsCatalog) -> Array:
 	for i in range(1, SIZE_ORDER.size()):
 		var r_small := picker.radius_m(SIZE_ORDER[i - 1])
 		var r_big := picker.radius_m(SIZE_ORDER[i])
+		if STAND_IN_MODELS.has(SIZE_ORDER[i]):
+			# The stand-in ties the class it copies (400 mm wheelbase), so "bigger" cannot hold; it must be the same size and still a copy.
+			results.append(TestResult.new("%s ties %s in drawn size (stand-in model, a copy)" % [SIZE_ORDER[i], SIZE_ORDER[i - 1]],
+				absf(r_big - r_small) <= 0.002 and _is_still_copy(SIZE_ORDER[i]) and String(STAND_IN_MODELS[SIZE_ORDER[i]]) == SIZE_ORDER[i - 1],
+				"%.1f mm vs %.1f mm" % [r_big * 1000.0, r_small * 1000.0]))
+			continue
 		results.append(TestResult.new(
 			"%s is drawn bigger than %s" % [SIZE_ORDER[i], SIZE_ORDER[i - 1]],
 			r_big > r_small + 0.002,
@@ -410,9 +437,13 @@ static func _test_sizes_are_true_and_monotonic(catalog: PartsCatalog) -> Array:
 	for i in row.size():
 		if bool(row[i]["current"]):
 			lit.append(row[i]["id"])
-		if i > 0 and not (float(row[i]["diameter_px"]) > float(row[i - 1]["diameter_px"])):
+		if i > 0 and STAND_IN_MODELS.has(String(row[i]["id"])):
+			# a stand-in ties the wheelbase of the class before it: equal, never smaller
+			if not is_equal_approx(float(row[i]["diameter_px"]), float(row[i - 1]["diameter_px"])):
+				row_ok = false
+		elif i > 0 and not (float(row[i]["diameter_px"]) > float(row[i - 1]["diameter_px"])):
 			row_ok = false
-	results.append(TestResult.new("the size row has ten discs, strictly growing, one lit (the shown class)",
+	results.append(TestResult.new("the size row has one disc per class, strictly growing (a stand-in model ties its original), one lit (the shown class)",
 		row_ok and lit == ["five_inch"], "%s" % [lit]))
 	var ratio_ok := true
 	for entry in row:
@@ -434,6 +465,10 @@ static func _test_sizes_are_true_and_monotonic(catalog: PartsCatalog) -> Array:
 		var cfg := script.substr(cfg_start, cfg_end - cfg_start)
 		var liion := String(seed_battery["specs"].get("chemistry", "")) == "Li-ion"
 		var label_mah := "LI-ION" if liion else str(mah)
+		if STAND_IN_MODELS.has(id):
+			results.append(TestResult.new("%s: stand-in model, its pack label is not checked against the seed (still a copy of %s)" % [id, STAND_IN_MODELS[id]],
+				_is_still_copy(id), ""))
+			continue
 		results.append(TestResult.new(
 			"%s: the model's pack label matches its seed battery (%dS %s)" % [id, cells, label_mah],
 			cfg.contains('cells="%dS", mah="%s"' % [cells, label_mah]), seed_battery["name"]))
@@ -469,9 +504,13 @@ static func _test_packs_match_the_catalogue(catalog: PartsCatalog) -> Array:
 		var e := pack_extents_mm(id)
 		var detail := "pack across %.1f up %.1f long %.1f mm; catalogue %s %.1f x %.1f x %.1f" % [
 			e.x, e.y, e.z, seed_battery["part_id"], want_hi, want_lo, want_l]
-		results.append(TestResult.new("%s: pack length, width and height are within 2 mm of the seed battery" % id,
-			e != Vector3.ZERO and absf(e.z - want_l) <= 2.0 and absf(e.x - want_hi) <= 2.0
-				and absf(e.y - want_lo) <= 2.0, detail))
+		if STAND_IN_MODELS.has(id):
+			results.append(TestResult.new("%s: stand-in model, its pack size is not checked against the seed (still a copy of %s)" % [id, STAND_IN_MODELS[id]],
+				_is_still_copy(id), detail))
+		else:
+			results.append(TestResult.new("%s: pack length, width and height are within 2 mm of the seed battery" % id,
+				e != Vector3.ZERO and absf(e.z - want_l) <= 2.0 and absf(e.x - want_hi) <= 2.0
+					and absf(e.y - want_lo) <= 2.0, detail))
 		results.append(TestResult.new("%s: the pack lies flat, long axis front-to-back (height < width < length)" % id,
 			e != Vector3.ZERO and e.y < e.x and e.x <= e.z, detail))
 	return results
