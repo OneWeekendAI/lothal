@@ -538,8 +538,41 @@ func persist_pack_charge() -> void:
 		pack_charge.record_from(build.battery["part_id"], core.powertrain.battery)
 
 
+## SR4.3 WATCH MODE. `watch_mission(params)` starts a MissionRunner flight that this scene steps and draws instead of the
+## pilot's own aircraft; the figures come from the SAME runner code as a headless `MissionRunner.run(params)` (begin /
+## advance / finish), so with the same params and seed the result is identical field by field. Each physics frame advances
+## round(delta / runner.dt) ticks, none skipped. `watch_result` is filled when the flight ends. tests/test_sr4_watch.gd.
+var watch_runner: MissionRunner = null
+var watch_result: Dictionary = {}
+
+
+func watch_mission(params: Dictionary) -> bool:
+	watch_result = {}
+	var runner := MissionRunner.new()
+	if not runner.begin(params):
+		watch_result = runner.finish()
+		return false
+	watch_runner = runner
+	return true
+
+
+func _watch_frame(delta: float) -> void:
+	var runner := watch_runner
+	runner.advance(maxi(1, int(round(delta / runner.dt))))
+	var rb := runner.rig.core.rigid_body
+	drone.position = rb.position_m
+	drone.quaternion = rb.orientation
+	airframe.set_rates_rpm(runner.rig.core.observables.rpm)
+	if runner.is_done():
+		watch_result = runner.finish()
+		watch_runner = null
+
+
 func _physics_process(delta: float) -> void:
 	if core == null:
+		return
+	if watch_runner != null:
+		_watch_frame(delta)
 		return
 	if Input.is_key_pressed(KEY_TAB) != _tab_was_pressed:
 		_tab_was_pressed = Input.is_key_pressed(KEY_TAB)

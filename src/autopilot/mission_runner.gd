@@ -129,10 +129,50 @@ var path_chunk0 := 0
 var hover_t0 := 0.0
 var lap_path_made := false
 var mission_started_t := 0.0
+# stepping state (SR4.3)
+var _final: Dictionary = {}
+var _flying := false
+var _ctx: Dictionary = {}
+var _ticks := 0
+var _slow_every := 1
+var _fast_every := 1
+var _fast_dt := 0.0
 
 
 static func run(params: Dictionary) -> Dictionary:
-	return MissionRunner.new()._run(params)
+	var runner := MissionRunner.new()
+	if runner.begin(params):
+		runner.advance(0x7fffffff)
+	return runner.finish()
+
+
+## SR4.3 stepping API. `run()` above and a watched flight (src/scenes/main.gd `watch_mission`) both go through
+## begin / advance / finish, and advance(n) is n times the SAME single-tick body, so any chunking (one render frame
+## = several ticks) gives the same result as a headless run with the same params and seed.
+## begin(): true when a flight is ready to step; false when the result is already final (error, not flown, test_pack,
+## which runs its parts as separate flights and is not watchable).
+func begin(params: Dictionary) -> bool:
+	_final = _run(params)
+	return _flying
+
+
+func advance(ticks: int) -> void:
+	var n := 0
+	while _flying and ended_by == "" and n < ticks:
+		_tick_once()
+		n += 1
+
+
+func is_done() -> bool:
+	return not _flying or ended_by != ""
+
+
+func finish() -> Dictionary:
+	if not _flying:
+		return _final
+	t = _ticks * dt
+	_flying = false
+	return _result(_ctx["field_out"], _ctx["build"], _ctx["scale"], _ctx["cond"])
 
 
 static func _catalog_shared() -> PartsCatalog:
@@ -178,15 +218,10 @@ func _run(params: Dictionary) -> Dictionary:
 		return _run_pack(params, base)
 	# ---- resolve fields
 	var over: Dictionary = params.get("fields", {})
-	var fields: Dictionary = base["fields"]
 	extras = base["extras"]
-	var field_out := {}
+	var field_out := Mission.resolve_fields(base, over)
 	for k in Mission.FIELDS:
-		var d: Dictionary = fields[k]
-		var v := float(over.get(k, d["value"]))
-		var edited: bool = over.has(k) and not is_equal_approx(v, float(d["value"]))
-		p[k] = v
-		field_out[k] = MissionResult.param(v, d, edited)
+		p[k] = float(field_out[k]["value"])
 	cruise_mps = float(Mission.defaults_for(class_id, Mission.CRUISE_LOOP, build)["fields"]["speed_mps"]["value"])
 	rth_mps = float(p["speed_mps"]) if mission != Mission.SURVEY else cruise_mps
 	camera = params.get("camera", CameraParams.generic_1inch())
@@ -228,32 +263,35 @@ func _run(params: Dictionary) -> Dictionary:
 	if _remaining_wh() - reserve_wh < need_wh:
 		warnings.append("reserve exceeds usable energy; mission not flown")
 		ended_by = "not_flown"
-	else:
-		_fly()
-	return _result(field_out, build, scale, cond)
+		return _result(field_out, build, scale, cond)
+	_ctx = {"field_out": field_out, "build": build, "scale": scale, "cond": cond}
+	_prepare_fly()
+	_flying = true
+	return {}
 
 
 # ---------------------------------------------------------------- the flight loop
-func _fly() -> void:
-	var slow_every := int(round(1.0 / (SLOW_HZ * dt)))
-	var fast_every := int(round(1.0 / (FAST_HZ * dt)))
-	var fast_dt := fast_every * dt
-	var tick := 0
-	var core := rig.core
-	var o := core.observables
+func _prepare_fly() -> void:
+	_slow_every = int(round(1.0 / (SLOW_HZ * dt)))
+	_fast_every = int(round(1.0 / (FAST_HZ * dt)))
+	_fast_dt = _fast_every * dt
+	_ticks = 0
 	_begin_sortie()
-	while ended_by == "":
-		rig.step()
-		energy_ws += o.voltage_live_v * o.current_total_a * dt
-		tick += 1
-		if tick % fast_every == 0:
-			_fast(fast_dt)
-			if ended_by != "":
-				break
-		if tick % slow_every == 0:
-			t_phase += slow_every * dt
-			_slow(slow_every * dt)
-	t = tick * dt
+
+
+## One tick of the flight loop (the body the headless run and a watched run both use).
+func _tick_once() -> void:
+	var o := rig.core.observables
+	rig.step()
+	energy_ws += o.voltage_live_v * o.current_total_a * dt
+	_ticks += 1
+	if _ticks % _fast_every == 0:
+		_fast(_fast_dt)
+		if ended_by != "":
+			return
+	if _ticks % _slow_every == 0:
+		t_phase += _slow_every * dt
+		_slow(_slow_every * dt)
 
 
 func _begin_sortie() -> void:

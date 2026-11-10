@@ -57,7 +57,19 @@ static func is_known_class(class_id: String) -> bool:
 
 
 static func _f(value: float, note: String) -> Dictionary:
-	return {"value": value, "tag": "estimated", "note": note}
+	return {"value": value, "tag": "estimated", "note": note, "edited": false}
+
+
+## SR4.2: the defaults table resolved against user overrides (name -> number). Returns, for every name in FIELDS,
+## {value, default, edited, tag, default_tag, note}: edited is true only when the override differs from the default;
+## an edited field's tag is 'user' (the value is the user's, not an estimate). The mission runner reports exactly these.
+static func resolve_fields(defaults: Dictionary, overrides: Dictionary) -> Dictionary:
+	var out := {}
+	for k in FIELDS:
+		var d: Dictionary = defaults["fields"][k]
+		var v := float(overrides.get(k, d["value"]))
+		out[k] = MissionResult.param(v, d, overrides.has(k) and not is_equal_approx(v, float(d["value"])))
+	return out
 
 
 ## Defaults for a class and mission. {ok:false, error:"..."} for an unknown class or mission. `build`

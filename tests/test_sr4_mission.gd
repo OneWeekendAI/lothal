@@ -102,6 +102,15 @@ static func run() -> Array:
 		"worked": func() -> TestResult: return _worked_example(),
 		"json": func() -> TestResult: return _json_round_trip(),
 		"survey_suite": func() -> TestResult: return _survey_suite_still_passes(),
+		"tag_hover_endurance": func() -> TestResult: return _every_default_tagged(Mission.HOVER_ENDURANCE),
+		"tag_cruise_loop": func() -> TestResult: return _every_default_tagged(Mission.CRUISE_LOOP),
+		"tag_range_test": func() -> TestResult: return _every_default_tagged(Mission.RANGE_TEST),
+		"tag_survey": func() -> TestResult: return _every_default_tagged(Mission.SURVEY),
+		"tag_follow_path": func() -> TestResult: return _every_default_tagged(Mission.FOLLOW_PATH),
+		"tag_test_pack": func() -> TestResult: return _every_default_tagged(Mission.TEST_PACK),
+		"edit_resolve": func() -> TestResult: return _edit_resolve(),
+		"edit_equal": func() -> TestResult: return _edit_to_default_is_not_edited(),
+		"edit_run": func() -> TestResult: return _edited_reserve_changes_result(),
 		"unknown": func() -> TestResult: return _unknown_class(),
 	}
 	var keys: PackedStringArray = only.split(",") if only != "" else PackedStringArray()
@@ -382,3 +391,55 @@ static func _unknown_class() -> TestResult:
 	var r := MissionRunner.run({"class_id": "no_such_class", "mission": Mission.SURVEY})
 	var ok: bool = not bool(d["ok"]) and String(d["error"]).contains("unknown class") and String(r["ended_by"]) == "error" and not bool(r["completed"])
 	return TestResult.new("sr4 mission unknown class: a clear error from defaults_for and from the runner, no flight", ok, String(d["error"]))
+
+
+# ---------------------------------------------------------------- SR4.2 per-field default tags and the edited flag
+## FAIL-PROOFS (SR4.2, 2026-11-10, SR4_ONLY=tag_*,edit_*): _f() returning tag "" -> all six tag cases FAIL (first untagged
+## field height_m); resolve_fields never setting edited (edited always false) -> edit_resolve and edit_run FAIL;
+## runner ignoring override (p[k] from default) -> edit_run FAIL (reserve left unchanged).
+static func _every_default_tagged(mission: String) -> TestResult:
+	var bad: Array = []
+	for cls in ["five_inch", "seven_lr", "cinelifter", "mavic_3m"]:
+		var d := Mission.defaults_for(cls, mission)
+		for group in ["fields", "extras"]:
+			for k in d[group]:
+				var e = d[group][k]
+				if e is Dictionary:
+					if not (String(e.get("tag", "")) in ["estimated", "published", "measured"]) or String(e.get("note", "")) == "" or bool(e.get("edited", true)):
+						bad.append("%s.%s.%s" % [cls, group, k])
+		for k in Mission.FIELDS:
+			if not d["fields"].has(k):
+				bad.append("%s missing %s" % [cls, k])
+	return TestResult.new("sr4 mission defaults %s: every field and extra of every class carries a tag (estimated/published/measured), a note and edited=false" % mission,
+		bad.is_empty(), "untagged or unedited-flag problems: %s" % str(bad.slice(0, 6)))
+
+
+static func _edit_resolve() -> TestResult:
+	var d := Mission.defaults_for("five_inch", Mission.CRUISE_LOOP)
+	var f := Mission.resolve_fields(d, {"reserve_pct": 40.0})
+	var res: Dictionary = f["reserve_pct"]
+	var hgt: Dictionary = f["height_m"]
+	var ok: bool = bool(res["edited"]) and float(res["value"]) == 40.0 and float(res["default"]) == 25.0 and String(res["tag"]) == "user" \
+		and String(res["default_tag"]) == "estimated" and not bool(hgt["edited"]) and String(hgt["tag"]) == "estimated"
+	return TestResult.new("sr4 mission edit: overriding reserve marks only reserve edited (tag user, default 25 kept), height stays an estimated default", ok,
+		"reserve %s, height %s" % [str(res), str(hgt)])
+
+
+static func _edit_to_default_is_not_edited() -> TestResult:
+	var d := Mission.defaults_for("five_inch", Mission.CRUISE_LOOP)
+	var f := Mission.resolve_fields(d, {"reserve_pct": 25.0})
+	return TestResult.new("sr4 mission edit: setting reserve to its default value is not an edit", not bool(f["reserve_pct"]["edited"]) and String(f["reserve_pct"]["tag"]) == "estimated",
+		str(f["reserve_pct"]))
+
+
+static func _edited_reserve_changes_result() -> TestResult:
+	var base := _fly(_params("five_inch", Mission.CRUISE_LOOP))
+	var p := _params("five_inch", Mission.CRUISE_LOOP)
+	p["fields"] = {"reserve_pct": 40.0}
+	var r := _fly(p)
+	var fr: Dictionary = r["params"]["fields"]["reserve_pct"]
+	var fb: Dictionary = base["params"]["fields"]["reserve_pct"]
+	var ok: bool = bool(fr["edited"]) and String(fr["tag"]) == "user" and not bool(fb["edited"]) and float(r["reserve_left_pct"]) > float(base["reserve_left_pct"]) + 5.0 \
+		and float(r["flight_time_s"]) < float(base["flight_time_s"])
+	return TestResult.new("sr4 mission edit: reserve 40 instead of the 25 default shows edited in the result and the pack lands with more left, sooner",
+		ok, "left %.1f vs %.1f %%, time %.0f vs %.0f s, edited %s" % [r["reserve_left_pct"], base["reserve_left_pct"], r["flight_time_s"], base["flight_time_s"], str(fr["edited"])])
