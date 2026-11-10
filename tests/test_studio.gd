@@ -83,6 +83,29 @@ static func _write_log(name: String, rows: int, jumps: int = 0) -> String:
 	return path
 
 
+const MAX_TIMING_ROUNDS := 4
+
+
+## Up to MAX_TIMING_ROUNDS rounds of best-of-7 interleaved timings of `two` columns against `all`; stops at the first round where
+## two*2 < all. Returns {ok, two_us, all_us, round} of the deciding round (the last one when none passes).
+static func _two_vs_all(path: String, all_names: PackedStringArray, two: PackedStringArray) -> Dictionary:
+	var out := {"ok": false, "two_us": 0, "all_us": 0, "round": 0}
+	for round_i in MAX_TIMING_ROUNDS:
+		var all_us := 1 << 62
+		var two_us := 1 << 62
+		for _trial in 7:
+			var t0 := Time.get_ticks_usec()
+			LogReader.read_columns(path, all_names)
+			all_us = mini(all_us, Time.get_ticks_usec() - t0)
+			var t1 := Time.get_ticks_usec()
+			LogReader.read_columns(path, two)
+			two_us = mini(two_us, Time.get_ticks_usec() - t1)
+		out = {"ok": two_us * 2 < all_us, "two_us": two_us, "all_us": all_us, "round": round_i + 1}
+		if bool(out["ok"]):
+			break
+	return out
+
+
 static func run() -> Array:
 	var results: Array = []
 	results.append_array(_test_listing_is_cheap())
@@ -807,23 +830,18 @@ static func _test_log_reader() -> Array:
 	for column_name in FlightRecorder.COLUMNS:
 		all_names.append(str(column_name))
 
-	# Best of 5, interleaved: one sample each flaked on a shared Windows CI runner (3746 us vs
-	# 7065 us). The minimum drops scheduler noise; parsing every column still gives a ratio near 1.
-	var all_us := 1 << 62
-	var two_us := 1 << 62
-	for _trial in 5:
-		var all_start := Time.get_ticks_usec()
-		LogReader.read_columns(wide, all_names)
-		all_us = mini(all_us, Time.get_ticks_usec() - all_start)
-		var two_start := Time.get_ticks_usec()
-		LogReader.read_columns(wide, PackedStringArray(["t_s", "gyro_x_rad_s"]))
-		two_us = mini(two_us, Time.get_ticks_usec() - two_start)
-
+	# Ratio check, robust to a loaded machine. One round is best-of-7 interleaved samples (the minimum drops scheduler noise);
+	# under heavy load (the SR suite, a second godot, CI) a whole round can still be skewed, because a stall during the
+	# two-column samples only inflates them. A real regression (every column parsed) gives a ratio near 1 in EVERY round, so
+	# the check passes on the first round that shows the saving and fails only if none of 4 rounds does. Measured by mutation:
+	# asking for all columns on the "two" side fails all 4 rounds (ratio ~1.0).
+	var two_names := PackedStringArray(["t_s", "gyro_x_rad_s"])
+	var best := _two_vs_all(wide, all_names, two_names)
 	results.append(TestResult.new(
 		"reading two columns costs less than half of reading all %d" % all_names.size(),
-		two_us * 2 < all_us,
-		"2 columns in %d us against %d columns in %d us" % [
-			two_us, all_names.size(), all_us]))
+		bool(best["ok"]),
+		"2 columns in %d us against %d columns in %d us (round %d of up to %d)" % [
+			best["two_us"], all_names.size(), best["all_us"], best["round"], MAX_TIMING_ROUNDS]))
 
 	# The §7 rule reaches Rust too. The GDScript readers are grepped by
 	# tests/test_flight_recorder.gd; this file is not GDScript, so it is checked here.
