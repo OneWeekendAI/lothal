@@ -16,6 +16,10 @@ const WIND_MAX_MPH := 20.0
 ## L5: the vendor's claim for the Mavic 3M, kept beside the simulated range as context only. Optimistic by nature (a datasheet-style claim, no stated field, wind or reserve).
 const PUBLISHED_ACRES_PER_BATTERY_LOW := 100.0
 const PUBLISHED_ACRES_PER_BATTERY_HIGH := 125.0
+## CropMerge calibration: the survey camera a class carries. The runner's own default is the generic 1 inch camera, which is NOT what the
+## Mavic 3M or a RedEdge mapper carries (generic footprint 1.5 h x 1.0 h, 3M multispectral 1.18 h x 0.89 h), so an example flown with the default
+## camera mis-sized swath, line count and camera-interval speed cap. Classes not listed keep the generic camera.
+const CAMERA_FOR := {"mavic_3m": "mavic_3m_multispectral", "mapper": "micasense_rededge_p"}
 const AREA_BASIS := "photo-mapped track: acres covered by photos the flown track actually took (CoverageMap/SurveyPhotos), not field area and not line length x swath"
 
 
@@ -51,12 +55,17 @@ static func one_at_a_time(base: Dictionary, tol: Tolerances, metric: String) -> 
 
 
 ## The CropMerge worked example. `field` is the polygon flown (a small stand-in field keeps the run short); farm_acres the farm the batteries are for.
-static func cropmerge_example(class_id: String, field: PackedVector2Array, farm_acres: float, n: int, master_seed: int, run_seed: int = 1) -> Dictionary:
+static func cropmerge_example(class_id: String, field: PackedVector2Array, farm_acres: float, n: int, master_seed: int, run_seed: int = 1, camera_id: String = "") -> Dictionary:
 	var mean_mps := 0.5 * (WIND_MIN_MPH + WIND_MAX_MPH) * MPH
 	var span_mps := 0.5 * (WIND_MAX_MPH - WIND_MIN_MPH) * MPH
 	var tol := Tolerances.defaults().zeroed().with_half("capacity_pct", 5.0).with_half("wind_speed_mps", span_mps)
 	var base := {"class_id": class_id, "mission": Mission.SURVEY, "seed": run_seed, "capacity_scale": 1.0, "polygon": field,
 		"wind_speed_mps": mean_mps, "wind_from_deg": 90.0, "gust_mps": 0.2 * mean_mps, "farm_acres": farm_acres}
+	var cam_id := camera_id if camera_id != "" else String(CAMERA_FOR.get(class_id, ""))
+	if cam_id != "":
+		var cam := CameraParams.from_preset(cam_id)
+		if cam != null:
+			base["camera"] = cam
 	var mc := MonteCarlo.run(base, tol, n, master_seed, "acres_per_battery.value")
 	var dom := one_at_a_time(base, tol, "acres_per_battery.value")
 	var batteries := {"value": farm_acres / float(mc["mid"]), "low": farm_acres / float(mc["high"]), "high": farm_acres / float(mc["low"]), "tag": "estimated",
@@ -75,7 +84,8 @@ static func cropmerge_example(class_id: String, field: PackedVector2Array, farm_
 		"batteries_used": {"value": nominal["batteries_used"], "tag": "estimated"},
 		"flight_time": {"value_s": nominal["flight_time_s"], "tag": "estimated"},
 		"trail": {"build_fingerprint": String(nom.get("build_fingerprint", "")), "seed": run_seed, "master_seed": master_seed,
-			"model_version": String(nom.get("versions", {}).get("model", "")), "mission": Mission.SURVEY}}
+			"model_version": String(nom.get("versions", {}).get("model", "")), "mission": Mission.SURVEY,
+			"camera_preset": (base["camera"] as CameraParams).preset_id if base.has("camera") else "generic_1inch"}}
 	var cls := "Class 'mapper' is built from ESTIMATED parts (not a sourced aircraft)" if class_id == "mapper" else "Class '%s' is a STAND-IN for the mapper class" % class_id
 	return {"label": "CropMerge worked example: capacity +-5 percent, wind 10-20 mph (15 +- 5). %s; a field smaller than the farm is flown, so acres per battery is EXTRAPOLATED from a part pack" % cls,
 		"class_id": class_id, "wind_mph": [WIND_MIN_MPH, WIND_MAX_MPH], "capacity_pct": 5.0, "acres_per_battery": mc, "batteries_per_farm": batteries, "dominant": dom,

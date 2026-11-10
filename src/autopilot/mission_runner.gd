@@ -109,6 +109,7 @@ var required_photos := 2
 var blur_limit_px := BLUR_LIMIT_PX
 var pw := PackedFloat64Array()
 var pv := PackedFloat64Array()
+var hsp := PackedFloat64Array()       # horizontal ground speed, same slots: a CLIMB (vertical speed only) is not "moving" for the energy-per-metre estimate
 var pn := 0
 var low_for := 0.0
 var pack_wh := 1.0                    # effective Wh per full pack: nominal at first, then measured (see _slow)
@@ -377,6 +378,9 @@ func _fast(fast_dt: float) -> void:
 		var hover_hold := mission == Mission.HOVER_ENDURANCE and phase == "mission"
 		ended_by = "battery_cutoff" if hover_hold else "battery_empty_in_flight"
 		if not hover_hold:
+			# a sortie that ends flat in the air still drew the whole pack: without a report acres per battery divided by a drawn fraction of 0
+			sortie_reports.append({"sortie": sorties, "flight_time_s": _now() - sortie_t0, "reserve_left_pct": 0.0, "pack_used_pct": 100.0, "home_error_m": -1.0,
+				"rth_predicted_wh": rth_pred_wh, "rth_actual_wh": 0.0, "ended": "battery_empty_in_flight"})
 			warnings.append("battery cutoff before landing (phase %s, pack %.0f %% left, loaded %.2f V/cell)" % [phase, bat.remaining_fraction() * 100.0, o.voltage_live_v / float(bat.cells)])
 		return
 	if _now() >= max_sim_s:
@@ -392,7 +396,7 @@ func _mean_power(motion: bool) -> float:
 	var s := 0.0
 	var n := 0
 	for i in mini(pn, WINDOW_N):
-		var moving := pv[i] >= 2.0
+		var moving := hsp[i] >= 2.0
 		if motion and moving or (not motion and pv[i] < 1.0):
 			s += pw[i]
 			n += 1
@@ -452,9 +456,9 @@ func _return_wind_factor(height: float, from_xz: Vector2) -> float:
 	var vg := 0.0
 	var n := 0
 	for i in mini(pn, WINDOW_N):
-		if pv[i] >= 2.0:
+		if hsp[i] >= 2.0:
 			va3 += pa[i] * pa[i]
-			vg += pv[i]
+			vg += hsp[i]
 			n += 1
 	if n == 0 or va3 <= 0.0:
 		return 1.0
@@ -496,9 +500,9 @@ func _motion_j_per_m() -> float:
 	var e := 0.0
 	var d := 0.0
 	for i in mini(pn, WINDOW_N):
-		if pv[i] >= 2.0:
+		if hsp[i] >= 2.0:
 			e += pw[i]
-			d += pv[i]
+			d += hsp[i]
 	return e / d if d > 0.0 else -1.0
 
 
@@ -514,12 +518,14 @@ func _slow(slow_dt: float) -> void:
 	if pw.size() < WINDOW_N:
 		pw.resize(WINDOW_N)
 		pv.resize(WINDOW_N)
+		hsp.resize(WINDOW_N)
 		pa.resize(WINDOW_N)
 	if rf.size() < WINDOW_N:
 		rf.resize(WINDOW_N)
 	slow_dt_s = slow_dt
 	pw[slot] = pw_now
 	pv[slot] = vel.length()
+	hsp[slot] = sp_h
 	pa[slot] = (vel - _wind_at(pos)).length()
 	rf[slot] = bat.remaining_fraction()
 	pn += 1
