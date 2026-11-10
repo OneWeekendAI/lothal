@@ -116,6 +116,19 @@ func _init() -> void:
 		total += 1
 		print("[%s] %s (%s)" % [status, result.name, result.detail])
 
+	var pickers_returned: Variant = await _call_pickers_run()
+	var pickers_results: Array = pickers_returned if pickers_returned is Array else []
+	if pickers_results.is_empty():
+		fail_count += 1
+		total += 1
+		print("[FAIL] suite \"shell pickers\" produced no results (crashed, or class not registered)")
+	for result in pickers_results:
+		var status: String = "PASS" if result.passed else "FAIL"
+		if not result.passed:
+			fail_count += 1
+		total += 1
+		print("[%s] %s (%s)" % [status, result.name, result.detail])
+
 	var columns_returned: Variant = await _call_columns_run()
 	var columns_results: Array = columns_returned if columns_returned is Array else []
 	if columns_results.is_empty():
@@ -161,6 +174,10 @@ func _call_layout_run() -> Variant:
 ## `TestDrawnBuildOpens.run()`, from a helper for the reason `_call_layout_run` gives.
 func _call_drawn_open_run() -> Variant:
 	return await TestDrawnBuildOpens.run(self)
+
+
+func _call_pickers_run() -> Variant:
+	return await TestShellPickers.run(self)
 
 
 func _call_columns_run() -> Variant:

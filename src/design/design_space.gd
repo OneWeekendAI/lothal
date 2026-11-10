@@ -18,6 +18,8 @@ signal back_requested
 ## "Fly it" and "Field": the shell opens the sim / Field room on this design's build.
 signal fly_requested
 signal field_requested
+## The Mission button: the shell opens a MissionPicker for this design.
+signal mission_requested
 
 const PANEL_FADE_S := 0.2
 
@@ -1398,6 +1400,7 @@ func _build_file_bar() -> void:
 	file_bar.open_pressed.connect(open_open_dialog)
 	file_bar.fly_pressed.connect(func(): fly_requested.emit())
 	file_bar.field_pressed.connect(func(): field_requested.emit())
+	file_bar.mission_pressed.connect(func(): mission_requested.emit())
 	file_bar.save_as_confirmed.connect(func(n: String): save_design(n))
 	file_bar.open_chosen.connect(func(f: String): open_design(f))
 	file_bar.show_name(design_name)

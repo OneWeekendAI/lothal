@@ -1131,6 +1131,7 @@ func _build_field() -> void:
 	# thrust-to-weight for a place they are not. The old field editor carried this wiring on
 	# `RoomHost`; the authoring moved, so the wiring moved with it rather than being left behind.
 	_field.course_changed.connect(_on_field_course_changed)
+	_field.edit_world_requested.connect(open_world_editor)
 	add_child(_field)
 
 
@@ -3492,9 +3493,67 @@ func show_design_space() -> DesignSpace:
 	design_space.back_requested.connect(back_to_class_picker)
 	design_space.fly_requested.connect(fly_it)
 	design_space.field_requested.connect(open_field_from_design)
+	design_space.mission_requested.connect(open_mission_picker)
 	_design_space_layer.add_child(design_space)
 	design_space.migrate_old_drafts()
 	return design_space
+
+
+## The Mission picker's Watch is NOT wired to Main.watch_mission (no clean path from the shell to
+## the main scene); the shell re-emits it for whoever owns the main scene.
+signal mission_watch_requested(opts: Dictionary)
+
+var world_editor: WorldEditor
+var mission_picker: MissionPicker
+var _pickers_layer: CanvasLayer
+
+
+## One overlay layer for the Mission picker and World editor, made on first use.
+func _pickers_overlay() -> CanvasLayer:
+	if _pickers_layer == null:
+		_pickers_layer = CanvasLayer.new()
+		_pickers_layer.name = "PickersLayer"
+		_pickers_layer.layer = TOGGLE_LAYER + 8
+		add_child(_pickers_layer)
+	return _pickers_layer
+
+
+## Field room's Edit world: one WorldEditor, reused, loaded with that world (a copy; saved back on change).
+func open_world_editor(world_id: String) -> bool:
+	if _field == null or _field.worlds == null:
+		return false
+	var w := _field.worlds.world(world_id)
+	if w == null:
+		return false
+	if world_editor != null:
+		_pickers_overlay().remove_child(world_editor)
+		world_editor.queue_free()
+	world_editor = WorldEditor.new(WorldEditModel.new(w))
+	world_editor.set_meta("world_id", world_id)
+	world_editor.changed.connect(func(edited: World) -> void:
+		_field.worlds.put(edited))
+	var layer := _pickers_overlay()
+	layer.add_child(world_editor)
+	world_editor.position = Vector2(40, 60)
+	world_editor.size = Vector2(420, 560)
+	world_editor.show()
+	return true
+
+
+## The Design Space's Mission button: one MissionPicker for the open design, reused.
+func open_mission_picker() -> bool:
+	if design_space == null:
+		return false
+	if mission_picker == null:
+		mission_picker = MissionPicker.new()
+		mission_picker.watch_requested.connect(func(opts: Dictionary) -> void:
+			mission_watch_requested.emit(opts))
+		var layer := _pickers_overlay()
+		layer.add_child(mission_picker)
+		mission_picker.position = Vector2(480, 60)
+	mission_picker.set_session(design_space.session)
+	mission_picker.show()
+	return true
 
 
 func _close_design_space() -> void:
