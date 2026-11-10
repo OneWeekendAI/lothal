@@ -249,7 +249,13 @@ func _run(params: Dictionary) -> Dictionary:
 		p[k] = float(field_out[k]["value"])
 	cruise_mps = float(Mission.defaults_for(class_id, Mission.CRUISE_LOOP, build)["fields"]["speed_mps"]["value"])
 	rth_mps = float(p["speed_mps"]) if mission != Mission.SURVEY else cruise_mps
-	camera = params.get("camera", CameraParams.generic_1inch())
+	camera = params.get("camera") as CameraParams
+	if camera == null:
+		# The mapper carries the RedEdge-P payload (Sensitivity.CAMERA_FOR); an explicit camera param always wins, other classes stay generic.
+		if class_id == "mapper":
+			camera = CameraParams.from_preset(String(Sensitivity.CAMERA_FOR["mapper"]))
+		if camera == null:
+			camera = CameraParams.generic_1inch()
 	trigger_interval_s = float(params.get("trigger_interval_s", camera.min_shot_interval_s))
 	gimbal_stabilised = bool(params.get("gimbal_stabilised", false))
 	required_photos = int(params.get("required_photos", 2))
@@ -1093,7 +1099,7 @@ func _result(field_out: Dictionary, build: Build, scale: float, cond: Conditions
 		"hover_s": hover_s, "laps": laps, "loop_side_m": loop_side, "camera_on": camera_on_always,
 		"rth_speed_mps": rth_mps, "nominal_pack_wh": nominal_pack_wh, "effective_pack_wh": pack_wh, "climb_rate_mps": Mission.CLIMB_RATE_MPS, "descent_rate_mps": Mission.DESCENT_RATE_MPS,
 		"reserve_rule": "remaining_Wh <= reserve_pct/100*pack_Wh + energy_to_home (x1.1); reserve_pct 0 = no RTH",
-		"camera": {"sensor_w_mm": camera.sensor_w_mm, "sensor_h_mm": camera.sensor_h_mm, "focal_mm": camera.focal_mm, "tag": camera.tag}}
+		"camera": {"sensor_w_mm": camera.sensor_w_mm, "sensor_h_mm": camera.sensor_h_mm, "focal_mm": camera.focal_mm, "tag": camera.tag, "preset_id": camera.preset_id if camera.preset_id != "" else "generic_1inch"}}
 	var r := {
 		"schema_version": MissionResult.SCHEMA_VERSION, "mission": mission, "class_id": class_id,
 		"build_fingerprint": build.fingerprint(), "seed": seed_value,

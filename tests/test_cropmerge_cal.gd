@@ -13,6 +13,9 @@ static func run() -> Array:
 	out.append(_cam_mavic())
 	out.append(_cam_mapper())
 	out.append(_cam_other_stays_generic())
+	out.append(_runner_default_camera_mapper())
+	out.append(_runner_default_camera_other())
+	out.append(_runner_explicit_camera_wins())
 	out.append(_mapper_gust_flight(2))
 	out.append(_mapper_gust_flight(3))
 	return out
@@ -50,6 +53,29 @@ static func _cam_mapper() -> TestResult:
 static func _cam_other_stays_generic() -> TestResult:
 	var id := _preset("five_inch")
 	return TestResult.new("cropmerge cal: a class with no listed camera keeps the generic camera and says so", id == "generic_1inch", "preset " + id)
+
+
+## The runner itself defaults the mapper (it carries the RedEdge-P payload) to the RedEdge-P camera; any other class stays generic;
+## an explicit camera param always wins. FAIL-PROOF: with the default line reverted the mapper case reads generic_1inch.
+static func _quick(cls: String, extra: Dictionary) -> Dictionary:
+	var p := {"class_id": cls, "mission": Mission.SURVEY, "seed": 1, "polygon": _field(60, 40), "max_sorties": 1}
+	p.merge(extra)
+	return MissionRunner.run(p)
+
+
+static func _runner_default_camera_mapper() -> TestResult:
+	var id := String(_quick("mapper", {})["params"]["camera"].get("preset_id", "?"))
+	return TestResult.new("cropmerge cal: MissionRunner flies the RedEdge-P camera for the mapper when none is given", id == "micasense_rededge_p", "preset " + id)
+
+
+static func _runner_default_camera_other() -> TestResult:
+	var id := String(_quick("five_inch", {})["params"]["camera"].get("preset_id", "?"))
+	return TestResult.new("cropmerge cal: MissionRunner keeps the generic camera for a class with no listed camera", id == "generic_1inch", "preset " + id)
+
+
+static func _runner_explicit_camera_wins() -> TestResult:
+	var id := String(_quick("mapper", {"camera": CameraParams.generic_1inch()})["params"]["camera"].get("preset_id", "?"))
+	return TestResult.new("cropmerge cal: an explicit camera param beats the class default", id == "generic_1inch", "preset " + id)
 
 
 ## A 120 m climb (48 s at 2.5 m/s) fills the 20 s power window with climbing samples. Counting those as "moving" priced the way home at climb
