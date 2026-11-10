@@ -1,5 +1,5 @@
 class_name WorldEditor
-extends Control
+extends DsDrawer
 ## L2.4 the world editor: controls bound to a WorldEditModel, built in code like MissionPicker. Every control only calls a model
 ## op and then re-reads the model (no second copy of the data); a tag label beside each field shows model.field_tag(path), so a
 ## field reads "user" once edited. `changed(world)` carries model.result() after each edit. Vertices and obstacles are chosen in a
@@ -16,123 +16,128 @@ const NEW_DIMS := {
 }
 
 var model: WorldEditModel
-var preset_option: OptionButton
+var preset_option: DsList
 var sun_time: LineEdit
-var sun_lat: SpinBox
-var sun_lon: SpinBox
-var wind_speed: SpinBox
-var wind_from: SpinBox
-var wind_gust: SpinBox
-var vertex_list: ItemList
-var vertex_lat: SpinBox
-var vertex_lon: SpinBox
+var sun_lat: DsStepper
+var sun_lon: DsStepper
+var wind_speed: DsStepper
+var wind_from: DsStepper
+var wind_gust: DsStepper
+var vertex_list: DsList
+var vertex_lat: DsStepper
+var vertex_lon: DsStepper
 var add_vertex_button: Button
 var delete_vertex_button: Button
-var obstacle_list: ItemList
-var obstacle_kind: OptionButton
+var obstacle_list: DsList
+var obstacle_kind: DsList
 var add_obstacle_button: Button
 var remove_obstacle_button: Button
-var obstacle_fields := {}     ## key -> SpinBox for the selected obstacle
+var obstacle_fields := {}     ## key -> DsStepper for the selected obstacle
 var tag_labels := {}          ## path -> Label (every field)
 var _obstacle_box: VBoxContainer
 var _busy := false
 
 
 func _init(p_model: WorldEditModel) -> void:
+	super("World")
 	name = "WorldEditor"
+	# The Field room keeps its list down the left edge; the editor sits just right of it, over the map.
+	offset_left = 364.0
+	offset_right = 364.0 + WIDTH
+	offset_top = 84.0
+	offset_bottom = 84.0
 	model = p_model
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 6)
-	add_child(v)
-	preset_option = OptionButton.new()
+	var v := content
+	v.add_child(DsUi.section("Starting point"))
+	preset_option = DsList.new(true)
 	for id in WorldPresets.IDS:
-		preset_option.add_item(id.replace("_", " "))
+		preset_option.add_item(String(id).replace("_", " ").capitalize())
 	preset_option.select(-1)
 	preset_option.item_selected.connect(_on_preset)
 	v.add_child(preset_option)
+	v.add_child(DsUi.section("Sun"))
 	sun_time = LineEdit.new()
+	DsUi.style_field(sun_time)
 	sun_time.text_submitted.connect(func(_t: String) -> void: _on_sun())
-	v.add_child(_row("sun time (UTC)", sun_time, "sun.time"))
+	v.add_child(_row("Time (UTC)", sun_time, "sun.time"))
 	sun_lat = _spin(-90.0, 90.0, 0.0001)
 	sun_lon = _spin(-180.0, 180.0, 0.0001)
-	v.add_child(_row("sun lat", sun_lat, "sun.origin"))
-	v.add_child(_row("sun lon", sun_lon, ""))
+	v.add_child(_row("Latitude", sun_lat, "sun.origin"))
+	v.add_child(_row("Longitude", sun_lon, ""))
+	v.add_child(DsUi.section("Wind"))
 	wind_speed = _spin(0.0, 60.0, 0.001)
 	wind_from = _spin(0.0, 360.0, 0.001)
 	wind_gust = _spin(0.0, 30.0, 0.001)
-	v.add_child(_row("wind m/s", wind_speed, "wind.speed"))
-	v.add_child(_row("wind from deg", wind_from, "wind.from"))
-	v.add_child(_row("gust m/s", wind_gust, "wind.gust"))
+	v.add_child(_row("Speed (m/s)", wind_speed, "wind.speed"))
+	v.add_child(_row("From (deg)", wind_from, "wind.from"))
+	v.add_child(_row("Gust (m/s)", wind_gust, "wind.gust"))
 	for sb in [sun_lat, sun_lon]:
 		sb.value_changed.connect(func(_x: float) -> void: _on_sun())
 	for sb in [wind_speed, wind_from, wind_gust]:
 		sb.value_changed.connect(func(_x: float) -> void: _on_wind())
-	vertex_list = ItemList.new()
-	vertex_list.custom_minimum_size = Vector2(0, 80)
+	v.add_child(DsUi.section("Field outline"))
+	vertex_list = DsList.new(true)
 	vertex_list.item_selected.connect(func(_i: int) -> void: _refresh_vertex_fields())
 	v.add_child(vertex_list)
 	vertex_lat = _spin(-90.0, 90.0, 0.00001)
 	vertex_lon = _spin(-180.0, 180.0, 0.00001)
 	vertex_lat.value_changed.connect(func(_x: float) -> void: _on_vertex())
 	vertex_lon.value_changed.connect(func(_x: float) -> void: _on_vertex())
-	v.add_child(_row("vertex lat", vertex_lat, "field.polygon"))
-	v.add_child(_row("vertex lon", vertex_lon, ""))
+	v.add_child(_row("Latitude", vertex_lat, "field.polygon"))
+	v.add_child(_row("Longitude", vertex_lon, ""))
 	var vb := HBoxContainer.new()
-	add_vertex_button = Button.new()
-	add_vertex_button.text = "Add vertex"
+	vb.add_theme_constant_override("separation", 6)
+	add_vertex_button = DsUi.button("Add vertex")
 	add_vertex_button.pressed.connect(_on_add_vertex)
 	vb.add_child(add_vertex_button)
-	delete_vertex_button = Button.new()
-	delete_vertex_button.text = "Delete vertex"
+	delete_vertex_button = DsUi.button("Delete vertex")
 	delete_vertex_button.pressed.connect(_on_delete_vertex)
 	vb.add_child(delete_vertex_button)
 	v.add_child(vb)
-	obstacle_list = ItemList.new()
-	obstacle_list.custom_minimum_size = Vector2(0, 80)
+	v.add_child(DsUi.section("Obstacles"))
+	obstacle_list = DsList.new(true)
 	obstacle_list.item_selected.connect(func(_i: int) -> void: _rebuild_obstacle_fields())
 	v.add_child(obstacle_list)
 	_obstacle_box = VBoxContainer.new()
+	_obstacle_box.add_theme_constant_override("separation", 6)
 	v.add_child(_obstacle_box)
-	var ob := HBoxContainer.new()
-	obstacle_kind = OptionButton.new()
+	v.add_child(DsUi.label("New obstacle", DsUi.INK_FAINT))
+	obstacle_kind = DsList.new(true)
 	for k in NEW_DIMS:
 		obstacle_kind.add_item(k)
-	ob.add_child(obstacle_kind)
-	add_obstacle_button = Button.new()
-	add_obstacle_button.text = "Add obstacle"
+	obstacle_kind.select(0)
+	v.add_child(obstacle_kind)
+	var ob := HBoxContainer.new()
+	ob.add_theme_constant_override("separation", 6)
+	add_obstacle_button = DsUi.button("Add obstacle")
 	add_obstacle_button.pressed.connect(_on_add_obstacle)
 	ob.add_child(add_obstacle_button)
-	remove_obstacle_button = Button.new()
-	remove_obstacle_button.text = "Remove obstacle"
+	remove_obstacle_button = DsUi.button("Remove obstacle")
 	remove_obstacle_button.pressed.connect(_on_remove_obstacle)
 	ob.add_child(remove_obstacle_button)
 	v.add_child(ob)
 	refresh()
 
 
-func _spin(lo: float, hi: float, step: float) -> SpinBox:
-	var sb := SpinBox.new()
-	sb.min_value = lo
-	sb.max_value = hi
-	sb.step = step
-	sb.allow_greater = true
-	sb.allow_lesser = true
-	return sb
+func _spin(lo: float, hi: float, step: float) -> DsStepper:
+	return DsStepper.new(lo, hi, step)
 
 
-## One labelled row; `path` ("" = no tag label of its own) names the tag shown beside the control.
+## One labelled row; `path` ("" = no tag chip of its own) names the tag shown beside the control.
 func _row(label: String, control: Control, path: String) -> HBoxContainer:
 	var row := HBoxContainer.new()
-	var l := Label.new()
-	l.text = label
-	l.custom_minimum_size = Vector2(110, 0)
+	row.add_theme_constant_override("separation", 6)
+	var l := DsUi.label(label, DsUi.INK_MUTED)
+	l.custom_minimum_size = Vector2(76, 0)
 	row.add_child(l)
+	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(control)
+	var t := DsUi.tag("")
+	t[0].custom_minimum_size = Vector2(66, 0)
+	t[0].modulate.a = 1.0 if path != "" else 0.0
 	if path != "":
-		var t := Label.new()
-		t.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-		row.add_child(t)
-		tag_labels[path] = t
+		tag_labels[path] = t[1]
+	row.add_child(t[0])
 	return row
 
 
@@ -149,13 +154,13 @@ func refresh() -> void:
 	var keep := _selected(vertex_list)
 	vertex_list.clear()
 	for i in model.vertex_count():
-		vertex_list.add_item("%d: %.5f, %.5f" % [i, w.polygon[2 * i], w.polygon[2 * i + 1]])
+		vertex_list.add_item("%d" % (i + 1))
 	if model.vertex_count() > 0:
 		vertex_list.select(clampi(keep, 0, model.vertex_count() - 1))
 	var keep_o := _selected(obstacle_list)
 	obstacle_list.clear()
 	for i in w.obstacles.size():
-		obstacle_list.add_item("%d: %s" % [i, String(w.obstacles[i].kind)])
+		obstacle_list.add_item("%d  %s" % [i + 1, String(w.obstacles[i].kind)])
 	if w.obstacles.size() > 0:
 		obstacle_list.select(clampi(keep_o, 0, w.obstacles.size() - 1))
 	_busy = false
@@ -163,7 +168,7 @@ func refresh() -> void:
 	_rebuild_obstacle_fields()
 
 
-func _selected(list: ItemList) -> int:
+func _selected(list: DsList) -> int:
 	var s := list.get_selected_items()
 	return s[0] if s.size() > 0 else 0
 
@@ -197,11 +202,12 @@ func _rebuild_obstacle_fields() -> void:
 		keys.append_array(o.dims.keys())
 		for k in keys:
 			var sb := _spin(-10000.0, 10000.0, 0.001)
+			var unit := " (deg)" if String(k).ends_with("deg") else " (m)"
 			sb.set_value_no_signal(o.position.x if k == "x" else (o.position.z if k == "z" else float(o.dims[k])))
 			var key: String = k
 			sb.value_changed.connect(func(x: float) -> void: _on_obstacle_field(key, x))
 			obstacle_fields[key] = sb
-			_obstacle_box.add_child(_row("obstacle " + key, sb, "obstacle.%d.%s" % [i, key]))
+			_obstacle_box.add_child(_row(String(key).replace("_deg", "").replace("_", " ").capitalize() + unit, sb, "obstacle.%d.%s" % [i, key]))
 	_update_tags()
 
 
@@ -241,7 +247,7 @@ func _on_vertex() -> void:
 	var i := _selected(vertex_list)
 	if model.move_vertex(i, Vector2(vertex_lat.value, vertex_lon.value)):
 		_busy = true
-		vertex_list.set_item_text(i, "%d: %.5f, %.5f" % [i, vertex_lat.value, vertex_lon.value])
+		pass
 		_busy = false
 		_done()
 
@@ -264,7 +270,7 @@ func _on_delete_vertex() -> void:
 
 
 func _on_add_obstacle() -> void:
-	var kind := obstacle_kind.get_item_text(maxi(obstacle_kind.selected, 0))
+	var kind: String = NEW_DIMS.keys()[maxi(obstacle_kind.selected, 0)]
 	if model.add_obstacle({"kind": kind, "x": 0.0, "z": 0.0, "dims": (NEW_DIMS[kind] as Dictionary).duplicate()}):
 		refresh()
 		obstacle_list.select(obstacle_list.item_count - 1)

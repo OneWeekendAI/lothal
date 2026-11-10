@@ -148,9 +148,9 @@ static func run() -> Array:
 
 ## L2.4 WorldEditor, one case each. NOTE: the suite runner has no SceneTree, so the editor is built free-standing (never added to a
 ## tree); signals and button presses are driven by hand (value = x / pressed.emit()), which runs the same callbacks.
-## Free-standing SpinBoxes queue value_changed for the tree (verified: it never fires without one), so the test sets the value and
+## Free-standing SpinBoxes (as DsStepper does not) queue value_changed for the tree (verified: it never fires without one), so the test sets the value and
 ## emits the signal itself; in a tree the handler runs the same way.
-static func _put(sb: SpinBox, v: float) -> void:
+static func _put(sb: DsStepper, v: float) -> void:
 	sb.value = v
 	sb.value_changed.emit(sb.value)
 

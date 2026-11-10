@@ -3534,8 +3534,6 @@ func open_world_editor(world_id: String) -> bool:
 		_field.worlds.put(edited))
 	var layer := _pickers_overlay()
 	layer.add_child(world_editor)
-	world_editor.position = Vector2(40, 60)
-	world_editor.size = Vector2(420, 560)
 	world_editor.show()
 	return true
 
@@ -3550,14 +3548,25 @@ func open_mission_picker() -> bool:
 			mission_watch_requested.emit(opts))
 		var layer := _pickers_overlay()
 		layer.add_child(mission_picker)
-		mission_picker.position = Vector2(480, 60)
 	mission_picker.set_session(design_space.session)
+	# One left drawer at a time: the Parts list closes, and opening Parts closes the drawer.
+	design_space.shelf.set_open(false)
+	if not design_space.shelf.toggled.is_connected(_hide_mission_picker):
+		design_space.shelf.toggled.connect(_hide_mission_picker)
+	design_space.side_drawer = mission_picker
 	mission_picker.show()
 	return true
 
 
+func _hide_mission_picker(shelf_open: bool) -> void:
+	if shelf_open and mission_picker != null:
+		mission_picker.hide()
+
+
 func _close_design_space() -> void:
 	_close_away_bar()
+	if mission_picker != null:
+		mission_picker.hide()
 	if _design_space_layer != null:
 		remove_child(_design_space_layer)
 		_design_space_layer.queue_free()

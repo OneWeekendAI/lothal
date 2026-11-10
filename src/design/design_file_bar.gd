@@ -26,6 +26,7 @@ const WARN_INK := LothalTheme.WARNING
 const ROW_LEFT := 150.0
 const ROW_TOP := 20.0
 const DIALOG_W := 360.0
+const MENU_W := 130.0
 const DIALOG_TOP := 60.0
 ## How many recent designs the open dialog lists.
 const MAX_RECENT := 8
@@ -38,6 +39,8 @@ var open_button: Button
 var fly_button: Button
 var field_button: Button
 var mission_button: Button
+var menu_button: Button
+var menu: PanelContainer
 var dialog: PanelContainer
 var dialog_title: Label
 var name_edit: LineEdit
@@ -59,7 +62,7 @@ func _init() -> void:
 	_row.name = "FileRow"
 	_row.offset_left = ROW_LEFT
 	_row.offset_top = ROW_TOP
-	_row.offset_right = ROW_LEFT + 700.0
+	_row.offset_right = ROW_LEFT + 420.0
 	_row.offset_bottom = ROW_TOP + 32.0
 	_row.add_theme_constant_override("separation", 4)
 	_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -69,33 +72,85 @@ func _init() -> void:
 	name_label.clip_text = true
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_row.add_child(name_label)
-	save_button = _button("Save")
-	save_button.pressed.connect(func(): save_pressed.emit())
-	_row.add_child(save_button)
-	save_as_button = _button("Save as")
-	save_as_button.pressed.connect(func(): save_as_pressed.emit())
-	_row.add_child(save_as_button)
-	open_button = _button("Open")
-	open_button.pressed.connect(func(): open_pressed.emit())
-	_row.add_child(open_button)
-	fly_button = _button("Fly it")
+	fly_button = DsUi.button("Fly it", false, true)
 	fly_button.tooltip_text = "Fly this build in the simulator (F)"
 	fly_button.pressed.connect(func(): fly_pressed.emit())
 	_row.add_child(fly_button)
-	field_button = _button("Field")
-	field_button.tooltip_text = "Open the Field room: courses, sites, weather and worlds"
-	field_button.pressed.connect(func(): field_pressed.emit())
-	_row.add_child(field_button)
-	mission_button = _button("Mission")
-	mission_button.tooltip_text = "Pick a mission and an environment, then watch or run this design"
-	mission_button.pressed.connect(func(): mission_pressed.emit())
-	_row.add_child(mission_button)
+	menu_button = _button("⋯")
+	menu_button.name = "MenuButton"
+	menu_button.tooltip_text = "Save, Open, Field, Mission"
+	menu_button.pressed.connect(func(): set_menu_open(not menu.visible))
+	_row.add_child(menu_button)
+	_build_menu()
 	status_label = _label("", INK_FAINT, LothalTheme.FONT_SIZE_SMALL)
 	status_label.custom_minimum_size = Vector2(150, 0)
 	status_label.clip_text = true
 	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_row.add_child(status_label)
 	_build_dialog()
+
+
+## The one menu behind the dots: every action that is not the primary one, each still a button of its own.
+func _build_menu() -> void:
+	menu = PanelContainer.new()
+	menu.name = "FileMenu"
+	menu.visible = false
+	menu.offset_left = ROW_LEFT + 120.0 + 4.0 + 72.0 + 4.0 + 34.0 - MENU_W
+	menu.offset_top = ROW_TOP + 36.0
+	menu.offset_right = menu.offset_left + MENU_W
+	menu.mouse_filter = Control.MOUSE_FILTER_STOP
+	var box := DsUi.panel_style()
+	box.content_margin_left = 6
+	box.content_margin_right = 6
+	box.content_margin_top = 6
+	box.content_margin_bottom = 6
+	menu.add_theme_stylebox_override("panel", box)
+	add_child(menu)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 2)
+	menu.add_child(v)
+	var items := [["Save", "save_button", "save_pressed", ""], ["Save as", "save_as_button", "save_as_pressed", ""],
+		["Open", "open_button", "open_pressed", ""], ["Field", "field_button", "field_pressed", "Open the Field room: courses, sites, weather and worlds"],
+		["Mission", "mission_button", "mission_pressed", "Pick a mission and an environment, then watch or run this design"]]
+	for it in items:
+		if it[0] == "Field":
+			v.add_child(DsUi.rule())
+		var b := _button(String(it[0]))
+		b.flat = true
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.tooltip_text = String(it[3])
+		var which := String(it[2])
+		b.pressed.connect(_menu_item.bind(which))
+		set(StringName(it[1]), b)
+		v.add_child(b)
+
+
+func _menu_item(which: String) -> void:
+	set_menu_open(false)
+	if which == "save_pressed":
+		save_pressed.emit()
+	elif which == "save_as_pressed":
+		save_as_pressed.emit()
+	elif which == "open_pressed":
+		open_pressed.emit()
+	elif which == "field_pressed":
+		field_pressed.emit()
+	else:
+		mission_pressed.emit()
+
+
+func set_menu_open(want: bool) -> void:
+	if want and menu_button.size.x > 0.0:
+		menu.offset_left = _row.offset_left + menu_button.position.x + menu_button.size.x - MENU_W
+		menu.offset_right = menu.offset_left + MENU_W
+	menu.visible = want
+
+
+func _input(event: InputEvent) -> void:
+	if menu != null and menu.visible and event is InputEventMouseButton and event.pressed:
+		var p := (event as InputEventMouseButton).position
+		if not menu.get_global_rect().has_point(p) and not menu_button.get_global_rect().has_point(p):
+			set_menu_open(false)
 
 
 func _build_dialog() -> void:
@@ -240,6 +295,8 @@ func dialog_open() -> bool:
 ## the row, and the dialog while it shows.
 func rects(view_size: Vector2) -> Array:
 	var out: Array = [Rect2(_row.offset_left, _row.offset_top, _row.offset_right - _row.offset_left, 32.0)]
+	if menu.visible:
+		out.append(Rect2(menu.offset_left, menu.offset_top, MENU_W, 5 * 30.0 + 20.0))
 	if dialog.visible:
 		var m := dialog.get_combined_minimum_size()
 		var w := maxf(DIALOG_W, m.x)
@@ -261,26 +318,4 @@ func _label(text: String, color: Color, font_size: int) -> Label:
 
 
 func _button(text: String) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.focus_mode = Control.FOCUS_NONE
-	b.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	b.add_theme_color_override("font_color", INK_MUTED)
-	b.add_theme_color_override("font_hover_color", INK)
-	b.add_theme_color_override("font_pressed_color", INK)
-	b.add_theme_color_override("font_disabled_color", INK_FAINT)
-	var flat := StyleBoxFlat.new()
-	flat.bg_color = Color(1, 1, 1, 0.05)
-	flat.border_color = Color(1, 1, 1, 0.12)
-	flat.set_border_width_all(1)
-	flat.set_corner_radius_all(LothalTheme.RADIUS_CONTROL)
-	flat.content_margin_left = LothalTheme.SPACE_3
-	flat.content_margin_right = LothalTheme.SPACE_3
-	flat.content_margin_top = LothalTheme.SPACE_2
-	flat.content_margin_bottom = LothalTheme.SPACE_2
-	b.add_theme_stylebox_override("normal", flat)
-	var hover := flat.duplicate() as StyleBoxFlat
-	hover.bg_color = Color(1, 1, 1, 0.12)
-	b.add_theme_stylebox_override("hover", hover)
-	b.add_theme_stylebox_override("pressed", hover)
-	return b
+	return DsUi.button(text)

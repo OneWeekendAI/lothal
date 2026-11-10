@@ -198,7 +198,7 @@ static func _picker_missions() -> TestResult:
 static func _picker_field(key: String) -> TestResult:
 	var p := _picker()
 	var d: Dictionary = Mission.defaults_for("five_inch", p.mission_id())["fields"][key]
-	var box: SpinBox = p.field_boxes.get(key)
+	var box: DsSlider = p.field_boxes.get(key)
 	var tag := (p.tag_labels[key] as Label).text if box != null else ""
 	var ok: bool = box != null and is_equal_approx(box.value, float(d["value"])) and tag == String(d["tag"])
 	var got := box.value if box != null else -1.0
@@ -208,7 +208,7 @@ static func _picker_field(key: String) -> TestResult:
 
 static func _picker_edit_reaches_flight() -> TestResult:
 	var p := _picker()
-	(p.field_boxes["reserve_pct"] as SpinBox).value = 15.0
+	(p.field_boxes["reserve_pct"] as DsSlider).value = 15.0
 	var r := p.run_headless()
 	var f: Dictionary = r["result"]["params"]["fields"]["reserve_pct"] if not r.is_empty() else {}
 	var ok: bool = not f.is_empty() and float(f["value"]) == 15.0 and bool(f["edited"]) and p.results.text().contains("edited by user")
@@ -227,7 +227,7 @@ static func _picker_watch_emits() -> TestResult:
 	var p := _picker()
 	var got := []
 	p.watch_requested.connect(func(o: Dictionary): got.append(o))
-	(p.field_boxes["speed_mps"] as SpinBox).value = 9.0
+	(p.field_boxes["speed_mps"] as DsSlider).value = 9.0
 	p.watch_button.pressed.emit()
 	var ok := got.size() == 1 and float(got[0]["fields"]["speed_mps"]) == 9.0 and p.last.is_empty()
 	_gone(p)
@@ -255,7 +255,7 @@ static func _panel_text() -> TestResult:
 	var t := panel.text()
 	var missing: Array[String] = []
 	for k in r["figures"]:
-		if not t.contains(k) or not t.contains("[%s]" % r["figures"][k]["tag"]) or not t.contains(String(r["figures"][k]["unit"])):
+		if not t.contains(ResultsPanel.figure_name(k)) or not t.contains("[%s]" % r["figures"][k]["tag"]) or not t.contains(ResultsPanel.unit_text(r["figures"][k]["unit"])):
 			missing.append(k)
 	var ok: bool = missing.is_empty() and r["figures"].size() > 0 and t.contains("seed 7") and t.contains(MissionFlow.endurance_check(r)["line"])
 	_gone(panel)
@@ -269,7 +269,7 @@ static func _panel_reads_same_dict() -> TestResult:
 	var before := panel.text()
 	r["figures"]["flight_time_s"]["value"] = 12345.0
 	panel.render()
-	var ok := not before.contains("12345.00") and panel.text().contains("12345.00")
+	var ok := not before.contains("12345") and panel.text().contains("12345")
 	var shown := panel.text().left(120)
 	_gone(panel)
 	return TestResult.new("sr6 flow L1.6: the panel reads the dict it was given (a changed value shows after render)", ok, shown)

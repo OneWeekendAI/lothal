@@ -147,6 +147,8 @@ var _plain_wrap: StandardMaterial3D
 ## Frame edits (Section 4): the tool row, the active tool, and what the plates were as drawn.
 var tool_row: FrameToolRow
 var file_bar: DesignFileBar
+## A drawer another layer shows at the left (the shell's Mission picker): callouts keep clear of it.
+var side_drawer: DsDrawer
 ## The name this design is saved under ("" until first saved or opened).
 var design_name := ""
 ## "", "drill", "pocket" or "fill".
@@ -2657,6 +2659,8 @@ func callout_avoid_rects() -> Array:
 		out.append(Rect2(size.x + inspector.offset_left, size.y + inspector.offset_bottom - ih,
 			inspector.offset_right - inspector.offset_left, ih))
 	out.append_array(file_bar.rects(size))
+	if side_drawer != null and is_instance_valid(side_drawer) and side_drawer.visible:
+		out.append(side_drawer.avoid_rect())
 	if tool_row.visible:
 		var tm := tool_row.get_combined_minimum_size()
 		out.append(Rect2(tool_row.offset_left, tool_row.offset_top, maxf(tool_row.offset_right - tool_row.offset_left, tm.x),
@@ -2672,7 +2676,8 @@ func callout_avoid_rects() -> Array:
 ## about 5 ms; a still frame costs a comparison.
 func _update_callouts_if_moved() -> void:
 	var inputs := [rig.yaw, rig.pitch, rig.distance, rig.target, size, hovered, selected, callout_focus,
-		drag_kind, _callout_version, shelf.visible,
+		drag_kind, _callout_version, shelf.visible, side_drawer != null and is_instance_valid(side_drawer) and side_drawer.visible,
+		file_bar.menu.visible,
 		shelf.open, shelf.size, file_bar.dialog_open(), tool_row.visible, tool_row.size, inspector.visible, inspector.size,
 		panel.size]
 	if inputs == _callout_inputs:
