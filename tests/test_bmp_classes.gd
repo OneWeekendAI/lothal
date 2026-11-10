@@ -18,7 +18,10 @@ extends RefCounted
 ## - Everything is written under SCRATCH; the real parts store, designs folder and project library
 ##   are never named.
 
-const SCRATCH := "user://test_bmp"
+## One scratch folder PER PROCESS. A shared folder let two godot runs (the SR suite beside run_tests, or a second terminal)
+## wipe each other's designs mid-test: "Could not replace bmp toothpick.lothaldesign" and a script abort in _motor/_prop
+## (reproduced 2026-11-11 by starting two runs together; red before this, green after).
+static var SCRATCH := "user://test_bmp_%d" % OS.get_process_id()
 const SIZE := Vector2(1280, 720)
 const KEYS := ["auw_g", "thrust_to_weight", "hover_throttle", "flight_time_min", "top_speed_kmh"]
 ## cells lo..hi and prop inches lo..hi, from the picker's typical line (display text in
