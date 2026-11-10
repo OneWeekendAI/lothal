@@ -6,12 +6,14 @@ extends RefCounted
 ## build_fingerprint than the class default (the saved build is flown, not the class seed). (4) an unknown mission returns the runner's
 ## error shape (ended_by "error", error text), no crash.
 ## FAIL-PROOFS observed 2026-11-10: RED A: MissionFlow drops opts.fields -> only the reserve_pct case FAILS (reserve 0 -> 0, flight_time 271.5 -> 271.5 s). RED B: MissionFlow does not pass the session build (class seed flown) -> only the saved-build case FAILS (identical fingerprints). Both GREEN after restoring (4/4). First run at capacity_scale 0.05 was not_flown (reserve exceeds usable energy), hence 0.3.
+## L1.2-L1.4 FAIL-PROOFS observed 2026-11-10: RED watch: one extra rig.step() per 8-tick chunk in watch_stepped -> only the watch case FAILS (flight_time_s 271.48 vs 271.51, distance differs); merely advancing chunk-1 only shortens chunks and is invisible, so not used. RED edited: result fields' edited flag forced false -> only the edited-note case FAILS (note 'reserve 15 % (default, user)'). RED trail: seed key dropped from inputs_trail -> only the trail case FAILS (missing ["seed"]). RED margin: sign flipped -> both endurance cases FAIL (35 min gives -5.0 fails; flown 0.3x pack gives +25.5 passes). All restored, 11/11 green. The 0.3x five_inch pack flies 4.5 min.
 
 const SCALE := 0.3
 
 
 static func run() -> Array:
-	return [_default_flight(), _field_override(), _saved_build_flown(), _unknown_mission()]
+	return [_default_flight(), _field_override(), _saved_build_flown(), _unknown_mission(),
+		_watch_equal(), _edited_flagged(), _trail_present(), _presets_listed(), _saved_world_listed(), _endurance_passes(), _endurance_fails_small_pack()]
 
 
 static func _session(cls: String) -> DesignSession:
@@ -70,3 +72,98 @@ static func _unknown_mission() -> TestResult:
 	var res: Dictionary = r["result"]
 	return TestResult.new("sr6 flow: an unknown mission returns the runner's error shape, not a crash", String(res.get("ended_by", "")) == "error" and String(res.get("error", "")) != "" and not bool(res["completed"]),
 		"ended_by=%s error=%s" % [res.get("ended_by", ""), String(res.get("error", "")).left(60)])
+
+
+const SCALAR_KEYS: Array[String] = ["flight_time_s", "distance_m", "energy_wh", "reserve_left_pct", "ended_by", "sorties", "track_samples", "build_fingerprint"]
+
+
+static func _watch_equal() -> TestResult:
+	var s := _session("five_inch")
+	var a: Dictionary = MissionFlow.run(s, _opts())["result"]
+	var b: Dictionary = MissionFlow.watch_stepped(s, _opts(), 8)["result"]
+	var bad: Array[String] = []
+	for k in SCALAR_KEYS:
+		if a[k] != b[k]:
+			bad.append("%s %s vs %s" % [k, a[k], b[k]])
+	return TestResult.new("sr6 flow L1.2: a flight watched in 8-tick chunks equals the headless run on every scalar field", bad.is_empty(), "differ: %s; flight_time_s=%.2f" % [str(bad), float(a["flight_time_s"])])
+
+
+static func _edited_flagged() -> TestResult:
+	var s := _session("five_inch")
+	var r: Dictionary = MissionFlow.run(s, _opts({"fields": {"reserve_pct": 15.0}}))["result"]
+	var base: Dictionary = MissionFlow.run(s, _opts())["result"]
+	var f: Dictionary = r["params"]["fields"]["reserve_pct"]
+	var notes := MissionFlow.figure_notes(r)
+	var line := ""
+	for n in notes:
+		if n.begins_with("reserve"):
+			line = n
+	var base_line := ""
+	for n in MissionFlow.figure_notes(base):
+		if n.begins_with("reserve"):
+			base_line = n
+	var ok := bool(f["edited"]) and line.contains("edited by user") and line.contains("15 %") and line.contains("estimated") and not base_line.contains("edited by user")
+	return TestResult.new("sr6 flow L1.3: a reserve override is flagged edited and the figure note says so (default and tag shown)", ok, "note='%s' base='%s'" % [line, base_line])
+
+
+static func _trail_present() -> TestResult:
+	var w := WorldPresets.by_id("calm_test_field")
+	var r: Dictionary = MissionFlow.run(_session("five_inch"), _opts({"world": w, "seed": 7}))["result"]
+	var t: Dictionary = r.get("inputs_trail", {})
+	var missing: Array[String] = []
+	for k in ["build_fingerprint", "class_id", "world", "seed", "versions"]:
+		if not t.has(k) or t[k] == null or str(t[k]) == "":
+			missing.append(k)
+	var v: Dictionary = t.get("versions", {})
+	for k in ["model", "app", "rust_model"]:
+		if str(v.get(k, "")) == "":
+			missing.append("versions." + k)
+	var wd: Dictionary = t.get("world", {}) if t.get("world") is Dictionary else {}
+	for k in ["id", "fingerprint"]:
+		if str(wd.get(k, "")) == "":
+			missing.append("world." + k)
+	return TestResult.new("sr6 flow L1.3: the result carries an inputs trail with every key non-empty", missing.is_empty() and int(t.get("seed", 0)) == 7, "missing %s" % str(missing))
+
+
+static func _presets_listed() -> TestResult:
+	var envs := MissionFlow.environments()
+	var ids: Array[String] = []
+	var presets := 0
+	for e in envs:
+		ids.append(String(e["id"]))
+		if e["kind"] == "preset":
+			presets += 1
+	var ok := presets == 4 and ids.has("illinois_corn_july") and ids.has("calm_test_field") and ids.has("windy_coast") and ids.has("high_altitude")
+	return TestResult.new("sr6 flow L1.4: the four shipped presets are listed", ok, "ids %s" % str(ids))
+
+
+static func _saved_world_listed() -> TestResult:
+	var lib := WorldLibrary.new()
+	var mine := World.new()
+	mine.world_id = "my_back_field"
+	mine.world_name = "My back field"
+	lib.put(mine, false)
+	lib.put(WorldPresets.by_id("windy_coast"), false)
+	var envs := MissionFlow.environments(lib)
+	var saved := 0
+	var coast := 0
+	var kind := ""
+	for e in envs:
+		if e["id"] == "my_back_field":
+			kind = String(e["kind"])
+		if e["kind"] == "saved":
+			saved += 1
+		if e["id"] == "windy_coast":
+			coast += 1
+	return TestResult.new("sr6 flow L1.4: a saved-only world is listed as saved; a saved copy of a preset is not duplicated", kind == "saved" and saved == 1 and coast == 1 and envs.size() == 5, "kind=%s saved=%d coast=%d total=%d" % [kind, saved, coast, envs.size()])
+
+
+static func _endurance_passes() -> TestResult:
+	var c := MissionFlow.endurance_check({"flight_time_s": 2100.0})
+	return TestResult.new("sr6 flow L1.4: a 35 min result passes the 30 min check with a positive margin", c["passes"] and is_equal_approx(c["margin_min"], 5.0) and String(c["line"]).contains("+5.0 min (passes)"), str(c["line"]))
+
+
+static func _endurance_fails_small_pack() -> TestResult:
+	var r: Dictionary = MissionFlow.run(_session("five_inch"), _opts())["result"]
+	var c := MissionFlow.endurance_check(r)
+	return TestResult.new("sr6 flow L1.4: a flown 0.3x pack fails the 30 min check with a negative margin", not c["passes"] and c["margin_min"] < 0.0 and c["flight_min"] > 0.0 and String(c["line"]).contains("(fails)"), str(c["line"]))
