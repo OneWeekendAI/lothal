@@ -1093,6 +1093,26 @@ func drag_class() -> String:
 	return "streamlined" if String(frame.get("catalog", {}).get("frame_type", "")) == "harness" else "open frame"
 
 
+## Drag-area range for the frontal Cd*A (SR drag item, 2026-11-10). A streamlined (shelled) body has a SOURCED upper
+## bound and an ESTIMATED lower one; an open frame has no range data and returns the single calibrated value.
+## Upper bound: NASA Ames, Russell et al., AHS 72nd Forum 2016, paper 72-2016-374, Fig. 30: DJI Phantom 3 bare airframe
+## (rotors off) drag/q about 0.21-0.22 ft2 = 0.020 m2 at 0 deg pitch, read off a plot, tunnel-mount drag not subtracted,
+## and it includes legs, arms, motors and a gimbal that a Mavic 3-class body does not have. So it is a ceiling, not the body.
+## Lower bound: half the nominal (ESTIMATED, no source). Nominal is unchanged (REFERENCE_DRAG_AREA_M2 scaled by arm^2 x 0.4).
+const DRAG_FRONT_CEILING_M2 := 0.020
+const DRAG_FRONT_FLOOR_RATIO := 0.5
+
+
+func drag_front_range_m2() -> Dictionary:
+	var nominal := _derived_front_cda_m2()
+	if drag_class() != "streamlined":
+		return {"low": nominal, "nominal": nominal, "high": nominal, "tag": "estimated", "source": "calibrated to physics.md section 8 top speed; no range data"}
+	return {
+		"low": nominal * DRAG_FRONT_FLOOR_RATIO, "nominal": nominal, "high": maxf(DRAG_FRONT_CEILING_M2, nominal), "tag": "estimated",
+		"source": "high: NASA Ames AHS 72-2016-374 Fig. 30, Phantom 3 airframe 0.020 m2 (published plot, whole airframe, a ceiling); low: half nominal (estimated)",
+	}
+
+
 func _derived_front_cda_m2() -> float:
 	var front := REFERENCE_DRAG_AREA_M2 * pow(arm_m / REFERENCE_ARM_M, 2.0)
 	if drag_class() == "streamlined":
