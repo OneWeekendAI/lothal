@@ -120,7 +120,7 @@ static func _test_inertia_is_mass_times_k2_times_R2(
 			if problems.is_empty() else "; ".join(problems))
 
 
-## The 19 catalog planforms share ONE generated shape, so their k² is a single degenerate value —
+## The catalog planforms (21 now) share ONE generated shape, so their k² is a single degenerate value —
 ## which is exactly why the BAND in the next test is the honest error bar and this value is not.
 ## Reported, not asserted, because the value is a property of the current generator's shape; if that
 ## shape is ever changed to sit inside the plausible band, this number moves with it.
@@ -143,7 +143,7 @@ static func _test_catalog_planforms_sit_in_a_reported_band(catalog: PartsCatalog
 	var degenerate := max_k2 / min_k2 < 1.0 + 1e-6
 	return TestResult.new(
 		"catalog planforms share one generated shape, so their k² is one number",
-		degenerate and values.size() == 20,
+		degenerate and values.size() == 21,  # 20 -> 21: mapper_prop_94x53 joined (L4.1); spread stays ~1e-8 float32 noise, under the 1e-6 bar
 		"%d presets, k² = %.4f (relative spread %.8f)" % [
 			values.size(), min_k2, max_k2 / min_k2 - 1.0])
 

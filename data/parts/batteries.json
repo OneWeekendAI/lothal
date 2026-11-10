@@ -353,7 +353,7 @@
     },
     {
       "part_id": "mapper_battery_4s_5000",
-      "name": "Mapper 4S 5000mAh (Mavic 3-like 77 Wh)",
+      "name": "Mapper 4S 5000mAh LiPo",
       "category": "battery",
       "mass_g": 335.0,
       "mounting": {
@@ -378,7 +378,7 @@
     },
     {
       "part_id": "mapper_battery_6s_20000_liion",
-      "name": "Mapper 4S 20000mAh Li-ion survey pack",
+      "name": "Mapper 4S 20000mAh Li-ion",
       "category": "battery",
       "mass_g": 520.0,
       "mounting": {

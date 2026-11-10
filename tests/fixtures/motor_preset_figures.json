@@ -187,5 +187,12 @@
 		"hover_throttle": 0.405498529216028,
 		"thrust_to_weight": 4.50801771486444,
 		"top_speed_kmh": 88.7818003050731
+	},
+	"class/mapper": {
+		"auw_g": 1145.8988851578,
+		"flight_time_min": 67.7659884366521,
+		"hover_throttle": 0.651773673189544,
+		"thrust_to_weight": 2.07010915046205,
+		"top_speed_kmh": 97.7818782195084
 	}
 }

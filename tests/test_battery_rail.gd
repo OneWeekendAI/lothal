@@ -147,6 +147,11 @@ static func _test_the_catalog_spans_what_the_frames_need(catalog: PartsCatalog) 
 	var liion_count := 0
 	var comparisons: Array = []
 	var trade_holds := true
+	# EXEMPT from the 5x-resistance half (capacity half still applies): the mapper's 20 Ah survey pack is
+	# 5 parallel 4 Ah groups, and paralleling divides resistance, so 27 mOhm vs the 30 mOhm 4S 5000 LiPo
+	# is the physics of a big parallel pack, not a missing trade. The small-cell trade is already proven
+	# by the two packs above.
+	var parallel_pack_ids := ["mapper_battery_6s_20000_liion"]
 	for pack in packs:
 		if str(pack["specs"]["chemistry"]) != "Li-ion":
 			continue
@@ -167,7 +172,8 @@ static func _test_the_catalog_spans_what_the_frames_need(catalog: PartsCatalog) 
 
 		var r := float(pack["specs"]["internal_r_ohm"])
 		var mah := float(pack["specs"]["mah"])
-		if worst_peer_r <= 0.0 or r < worst_peer_r * 5.0 or mah < biggest_peer_mah * 2.0:
+		var r_exempt: bool = str(pack["part_id"]) in parallel_pack_ids
+		if worst_peer_r <= 0.0 or (r < worst_peer_r * 5.0 and not r_exempt) or mah < biggest_peer_mah * 2.0:
 			trade_holds = false
 		comparisons.append("%s: %.0f mΩ vs %.0f mΩ and %.0f mAh vs %.0f mAh at %dS" % [
 			pack["name"], r * 1000.0, worst_peer_r * 1000.0, mah, biggest_peer_mah, cells])

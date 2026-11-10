@@ -93,8 +93,8 @@ static func run() -> Array:
 	# at 12 m/s) outweighs the added costs. Old -> new table: sim-reality plan, SR-green section.
 	var expected: Dictionary = JsonStore.read_document(MotorPresetFigures.FIXTURE)
 	var live := MotorPresetFigures.snapshot()
-	results.append(_t("the figures snapshot covers 17 presets and 10 seed builds",
-		expected.size() == 27 and live.size() == 27, "%d / %d" % [expected.size(), live.size()]))
+	results.append(_t("the figures snapshot covers 17 presets and 11 seed builds",
+		expected.size() == 28 and live.size() == 28, "%d / %d" % [expected.size(), live.size()]))
 	for key in expected:
 		var e: Dictionary = expected[key]
 		var l: Dictionary = live.get(key, {})

@@ -36,6 +36,7 @@ const REFERENCE_CLASS := {
 	"prop_7x4x3": "seven_lr",
 	"prop_8x45x3": "cinelifter",
 	"prop_10x5x2": "x_class",
+	"mapper_prop_94x53": "mapper",  # L4.1: the mapper class's own seed prop
 }
 
 ## Where on the forward surface the ratios are read: [mu_axial, mu_edge]. Axial-only points are where

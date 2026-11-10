@@ -24,8 +24,8 @@ static func run() -> Array:
 	var results: Array = []
 	var fixture: Dictionary = JsonStore.read_document(PropPresetFigures.FIXTURE)
 	var shelf := PropPresetFigures.shelf_ids()
-	results.append(TestResult.new("prop pin: covers exactly the 20 shelf props",
-		shelf.size() == 20 and fixture.size() == 20 and _same_ids(shelf, fixture),
+	results.append(TestResult.new("prop pin: covers exactly the 21 shelf props",
+		shelf.size() == 21 and fixture.size() == 21 and _same_ids(shelf, fixture),
 		"shelf %d, fixture %d" % [shelf.size(), fixture.size()]))
 	results.append(_comparator_can_fail())
 	var catalog := PartsCatalog.load_default()
