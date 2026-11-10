@@ -26,6 +26,9 @@ var world_id := "world"
 var world_name := "World"
 var description := ""
 var origin_lat := 40.0
+## True when lat/lon is NOT a real place (a migrated old Site / weather set has none). Written to the file only
+## when true, so every real-location world serialises exactly as before.
+var location_placeholder := false
 var origin_lon := -88.0
 var origin_elevation_m := 0.0
 var polygon := PackedFloat64Array()                ## flat lat0, lon0, lat1, lon1, ... (degrees, 64-bit; Vector2 is only 32-bit)
@@ -45,6 +48,20 @@ var utc := "2026-07-15T18:00:00Z"
 var sources: Dictionary = {}
 var legacy: Dictionary = {}
 var _unknown: Dictionary = {}
+
+
+## Source tag of the location (measured / published / estimated); "" when unlabelled.
+func location_tag() -> String:
+	var s: Variant = sources.get("origin")
+	return String((s as Dictionary).get("tag", "")) if s is Dictionary else ""
+
+
+## Warnings the world itself raises, carried into every mission result that flies it.
+func world_warnings() -> Array[String]:
+	var out: Array[String] = []
+	if location_placeholder:
+		out.append("placeholder location: this world has no real latitude/longitude (migrated from the old Field room), so sun position and date-dependent figures use a stand-in place (tag %s)" % location_tag())
+	return out
 
 
 func set_source(key: String, tag: String, note: String) -> void:
@@ -135,6 +152,8 @@ func to_data() -> Dictionary:
 	rec["name"] = world_name
 	rec["description"] = description
 	rec["origin"] = {"lat": origin_lat, "lon": origin_lon, "elevation_m": origin_elevation_m}
+	if location_placeholder:
+		rec["origin"]["placeholder"] = true
 	var poly: Array = []
 	for i in floori(polygon.size() * 0.5):
 		poly.append([polygon[2 * i], polygon[2 * i + 1]])
@@ -174,6 +193,7 @@ static func from_data(data: Variant) -> World:
 	w.origin_lat = float(o.get("lat", w.origin_lat))
 	w.origin_lon = float(o.get("lon", w.origin_lon))
 	w.origin_elevation_m = float(o.get("elevation_m", 0.0))
+	w.location_placeholder = bool(o.get("placeholder", false))
 	var f: Dictionary = d.get("field", {}) if d.get("field") is Dictionary else {}
 	var pts: Variant = f.get("polygon", [])
 	if pts is Array:

@@ -64,6 +64,12 @@ static func run() -> Array:
 		"agl": func() -> TestResult: return _terrain_follow_band(),
 		"wind_world": func() -> TestResult: return _wind_from_world(),
 		"determinism": func() -> TestResult: return _determinism(),
+		"reimport_ok": func() -> TestResult: return _reimport_case(true),
+		"reimport_fail": func() -> TestResult: return _reimport_case(false),
+		"loc_placeholder": func() -> TestResult: return _placeholder_location(),
+		"obs_hit": func() -> TestResult: return _obstacle_case(0.0, "obstacle collision", "a pole on the loop line raises a collision warning"),
+		"obs_near": func() -> TestResult: return _obstacle_case(3.0, "obstacle clearance", "a pole 3 m off the loop line raises a clearance warning and no collision"),
+		"obs_far": func() -> TestResult: return _obstacle_case(60.0, "", "a pole 60 m off the line raises no obstacle warning"),
 		"survey": func() -> TestResult: return _survey_illinois(),
 	}
 	for k in cases:
@@ -456,3 +462,92 @@ static func _survey_illinois() -> TestResult:
 		print("SURVEY ", r["area_flown_m2"], " ", poly, " ", r["sorties"], " ", r["ended_by"], " ", tf["agl_min_m"], " ", tf["agl_max_m"], " ", r["flight_time_s"], " ", r["warnings"])
 	return TestResult.new("sr3 integration: a seven_lr survey over the Illinois preset (15 mph wind, 3DEP ground) flies within 2 %% of the polygon's geodesic area", ok,
 		"flown %.0f of %.0f m2 (miss %.2f %%), %d sorties, ended_by %s, AGL %.1f..%.1f, wind %.2f m/s, northmost z %.0f" % [r["area_flown_m2"], poly, miss * 100.0, r["sorties"], r["ended_by"], tf["agl_min_m"], tf["agl_max_m"], r["conditions"]["wind_speed_mps"], min_z])
+
+
+## SR3.1: obstacles carried by the world are checked against the flown track. Mutation record: with the
+## `_obstacle_warnings()` call removed from MissionRunner._result the collision and clearance cases went red
+## (no warning); the far case stays green by design (it is the control that the warning is not unconditional).
+static func _obstacle_case(x_offset: float, want: String, what: String) -> TestResult:
+	var w := WorldPresets.calm_test_field()
+	w.world_id = "obstacle_test"
+	w.obstacles.append(Obstacle.place(Obstacle.POLE, x_offset, -45.0, {"radius": 0.5, "height": 200.0}, w.terrain))
+	var r := _fly({"class_id": "five_inch", "mission": Mission.CRUISE_LOOP, "seed": 1, "capacity_scale": 0.3, "world": w})
+	var hit := false
+	var near := false
+	for m in r["warnings"]:
+		hit = hit or String(m).begins_with("obstacle collision")
+		near = near or String(m).begins_with("obstacle clearance")
+	var ok := false
+	match want:
+		"obstacle collision":
+			ok = hit
+		"obstacle clearance":
+			ok = near and not hit
+		_:
+			ok = not hit and not near
+	return TestResult.new("sr3 obstacles in missions: %s" % what, ok, "warnings %s, ended_by %s" % [str(r["warnings"]), r["ended_by"]])
+
+
+## SR3.2: a migrated world has no real location. It says so in the world (location_tag estimated, placeholder flag
+## that survives a save/load) and in a mission result; a preset with a real place carries neither. Mutation record:
+## with `location_placeholder = true` removed from _label_migrated the case went red.
+static func _placeholder_location() -> TestResult:
+	var m := _migrate()
+	var lib := WorldLibrary.load_dir((m["lib"] as WorldLibrary).dir)
+	var migrated: World = null
+	for id in lib.ids():
+		migrated = lib.world(id)
+		break
+	var real := WorldPresets.calm_test_field()
+	var rt := World.from_data(JSON.parse_string(migrated.to_json())) if migrated != null else null
+	var r := _fly({"class_id": "five_inch", "mission": Mission.HOVER_ENDURANCE, "seed": 1, "capacity_scale": 0.05, "world": rt})
+	var in_result := false
+	for w in r["warnings"]:
+		in_result = in_result or String(w).begins_with("placeholder location")
+	var ok := migrated != null and migrated.location_placeholder and migrated.location_tag() == "estimated" and rt.location_placeholder \
+		and not migrated.world_warnings().is_empty() and real.world_warnings().is_empty() and not real.location_placeholder and in_result
+	var flag: bool = migrated != null and migrated.location_placeholder
+	var tag: String = migrated.location_tag() if migrated != null else ""
+	return TestResult.new("sr3 migrated worlds: location_tag is estimated, the placeholder flag survives save/load, the world and a mission result both carry the warning, and a real-place preset carries neither", ok,
+		"migrated flag %s tag %s, real warnings %d, in result %s" % [str(flag), tag, real.world_warnings().size(), str(in_result)])
+
+
+## SR3.3: the Field room's "Re-import elevation" button. No network: the elevation cache is seeded for the exact URL the
+## call asks for (ElevationImport.request_url), with the 3DEP fixture (good case) or junk bytes (failure case). Mutation
+## record: with `apply_bytes` skipped in the success path the heightfield case went red; with the failure path writing
+## the half-built terrain the failure case went red.
+static func _reimport_case(good: bool) -> TestResult:
+	var base := "user://sr3_test/reimport_courses.json"
+	for f in [base, SiteLibrary.path_beside(base), ConditionsLibrary.path_beside(base)]:
+		if FileAccess.file_exists(f):
+			DirAccess.remove_absolute(f)
+	var room := FieldSystem.new(SiteLibrary.load_from(SiteLibrary.path_beside(base)), CourseLibrary.load_from(base), ConditionsLibrary.load_from(ConditionsLibrary.path_beside(base)), ReferenceBuild.build(), base)
+	var flat := WorldPresets.illinois_corn_july()
+	flat.world_id = "reimport_probe"
+	flat.world_name = "Reimport probe"
+	flat.terrain = Terrain.flat(200.0, 300.0, 0.0, 0.0)
+	flat.origin_elevation_m = 0.0
+	room.worlds.put(flat, false)
+	room.apply_world("reimport_probe")
+	var url := ElevationImport.request_url(flat)
+	var had_cache := FileAccess.file_exists(ElevationImport.cache_path(url))
+	ElevationImport.write_cache(url, FileAccess.get_file_as_bytes(FIXTURE_TIF) if good else PackedByteArray([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
+	var terrain_before := room.site().terrain
+	var elev_before := room.site().elevation_m
+	var res: Dictionary = room.finish_reimport(room.worlds.world("reimport_probe"), {"ok": true, "bytes": ElevationImport.read_cache(url), "error": ""})
+	if not had_cache:
+		DirAccess.remove_absolute(ElevationImport.cache_path(url))
+	var site := room.site()
+	var w2 := room.worlds.world("reimport_probe")
+	var ok := false
+	var detail := ""
+	if good:
+		ok = bool(res["ok"]) and site.terrain.heightfield != null and absf(site.elevation_m - 215.84) < 0.3 and w2.terrain.heightfield != null \
+			and room.reimport_status.text.begins_with("Ground updated") and room.reimport_button != null
+		detail = "ok %s, site elevation %.2f, heightfield %s, status '%s'" % [str(res["ok"]), site.elevation_m, str(site.terrain.heightfield != null), room.reimport_status.text]
+	else:
+		ok = not bool(res["ok"]) and site.terrain == terrain_before and site.terrain.heightfield == null and site.elevation_m == elev_before \
+			and w2.terrain.heightfield == null and room.reimport_status.text.contains("flat ground kept")
+		detail = "error '%s', site elevation %.2f, status '%s'" % [String(res["error"]), site.elevation_m, room.reimport_status.text]
+	var title := "Re-import elevation replaces the world's and the site's ground with the 3DEP heightfield (no network, cache seeded)" if good else "a failed Re-import leaves the flat ground and elevation untouched and shows the reason"
+	return TestResult.new("sr3 field room: %s" % title, ok, detail)

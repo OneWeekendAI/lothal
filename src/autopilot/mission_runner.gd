@@ -929,7 +929,40 @@ static func coverage(trk: PackedFloat64Array, cam: CameraParams, poly: PackedVec
 
 
 # ---------------------------------------------------------------- result
+## SR3.1: the world's obstacles against the FLOWN track. Two thresholds, both ESTIMATED and in the result's
+## warnings (not hidden): the aircraft counts as touching an obstacle inside COLLISION_RADIUS_M of its solid
+## (a body of about a 5 inch quad plus prop), and as "close" inside CLEARANCE_M (a common 5 m visual-line rule of
+## thumb, not a regulation). One warning per obstacle per kind, with the closest sample's position.
+const COLLISION_RADIUS_M := 0.3
+const CLEARANCE_M := 5.0
+
+func _obstacle_warnings() -> void:
+	if world != null:
+		for m in world.world_warnings():
+			warnings.append(m)
+	if world == null or world.obstacles.is_empty() or track.size() < 5:
+		return
+	var n := int(track.size() / 5.0)
+	var oi := 0
+	for ob in world.obstacles:
+		var hit_at := -1
+		var near_at := -1
+		for i in n:
+			var c := Vector3(track[i * 5], track[i * 5 + 2], track[i * 5 + 1])   # track is x, z, y, yaw, cam
+			if hit_at < 0 and ob.intersects_sphere(c, COLLISION_RADIUS_M):
+				hit_at = i
+				break
+			if near_at < 0 and ob.intersects_sphere(c, CLEARANCE_M):
+				near_at = i
+		if hit_at >= 0:
+			warnings.append("obstacle collision: the flown path comes within %.1f m of obstacle %d (%s) at (%.0f, %.0f), height %.0f m (thresholds ESTIMATED)" % [COLLISION_RADIUS_M, oi, String(ob.kind), track[hit_at * 5], track[hit_at * 5 + 1], track[hit_at * 5 + 2]])
+		elif near_at >= 0:
+			warnings.append("obstacle clearance: the flown path comes within %.0f m of obstacle %d (%s) at (%.0f, %.0f), height %.0f m (threshold ESTIMATED)" % [CLEARANCE_M, oi, String(ob.kind), track[near_at * 5], track[near_at * 5 + 1], track[near_at * 5 + 2]])
+		oi += 1
+
+
 func _result(field_out: Dictionary, build: Build, scale: float, cond: Conditions) -> Dictionary:
+	_obstacle_warnings()
 	var n := int(track.size() / 5.0)
 	var cov := coverage(track, camera, polygon if mission == Mission.SURVEY else PackedVector2Array())
 	var flight_t := _now() if ended_by != "not_flown" else 0.0

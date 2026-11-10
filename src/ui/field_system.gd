@@ -265,6 +265,10 @@ var humidity_field: SpinBox
 var roughness_field: SpinBox
 var ref_height_field: SpinBox
 var world_picker: OptionButton
+## SR3.3: the world last applied (its id), the button that re-imports its ground from USGS 3DEP, and the last result.
+var applied_world_id := ""
+var reimport_button: Button
+var reimport_status: Label
 var worlds: WorldLibrary
 var worlds_dir := WorldLibrary.DEFAULT_DIR
 ## The label a check reads the word "guess" off. The LIVE control's text, not the source file — a
@@ -1243,6 +1247,47 @@ func _build_world_picker(column: VBoxContainer) -> void:
 		if index > 0:
 			apply_world(String(world_picker.get_item_metadata(index))))
 	column.add_child(world_picker)
+	reimport_button = Button.new()
+	reimport_button.name = "ReimportElevation"
+	reimport_button.text = "Re-import elevation"
+	reimport_button.pressed.connect(func() -> void: reimport_elevation())
+	column.add_child(reimport_button)
+	reimport_status = Label.new()
+	reimport_status.name = "ReimportStatus"
+	reimport_status.text = ""
+	column.add_child(reimport_status)
+
+
+## SR3.3. Coroutine (`await room.reimport_elevation()`): fetches the applied world's ground (cache first, then USGS 3DEP),
+## replaces the world's heightfield and the selected site's ground with it. On any failure the world and the site are left
+## exactly as they were (the flat fallback stays) and the reason is shown in `reimport_status`.
+func reimport_elevation() -> Dictionary:
+	var w := worlds.world(applied_world_id) if worlds != null and applied_world_id != "" else null
+	if w == null:
+		return _reimport_result({"ok": false, "error": "pick a world first"})
+	var got: Dictionary = await ElevationImport.fetch(self, ElevationImport.request_url(w))
+	return finish_reimport(w, got)
+
+
+## The synchronous half of `reimport_elevation`, split out so a test can hand it a fetch result (cache bytes) with no network:
+## applies the bytes to the world, then pushes the world's ground to the selected site. A failed fetch or a tile that does not
+## parse leaves the world and the site exactly as they were.
+func finish_reimport(w: World, got: Dictionary) -> Dictionary:
+	if not bool(got.get("ok", false)):
+		return _reimport_result({"ok": false, "error": String(got.get("error", "fetch failed"))})
+	var res := ElevationImport.apply_bytes(w, got["bytes"], ElevationImport.DEFAULT_STEP_M, ElevationImport.DEFAULT_PAD_M,
+		"re-imported from the Field room")
+	if not bool(res["ok"]):
+		return _reimport_result(res)
+	worlds.put(w)
+	apply_world(w.world_id)
+	return _reimport_result(res)
+
+
+func _reimport_result(res: Dictionary) -> Dictionary:
+	if reimport_status != null:
+		reimport_status.text = "Ground updated from USGS 3DEP" if bool(res["ok"]) else "Elevation import failed: %s (flat ground kept)" % String(res["error"])
+	return res
 
 
 func apply_world(id: String) -> bool:
@@ -1263,6 +1308,7 @@ func apply_world(id: String) -> bool:
 	here.elevation_m = w.origin_elevation_m
 	here.terrain = w.terrain
 	here.obstacles = w.obstacles
+	applied_world_id = id
 	_changed(true)
 	return true
 

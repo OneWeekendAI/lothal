@@ -101,6 +101,10 @@ pub struct Powertrain {
     /// which is the static path exactly (PropellerModel's forward-flight block).
     #[var]
     pub last_body_velocity_mps: Vector3,
+    /// SR1.5: thrust fraction lost by the rear rotor pair at equal rpm in forward flight (0 = off). The pair
+    /// downstream is decided by the body velocity: flying nose-first (-Z) the rear pair is M1 and M3.
+    #[var]
+    pub rear_thrust_loss: f64,
     /// The published observables layer. Created here and shared with DroneCore when one wraps
     /// this — exactly one instance per simulation, bench or flight.
     #[var]
@@ -204,6 +208,14 @@ impl Powertrain {
     /// velocity at each rotor and in a fast roll that difference is real; carrying it would need
     /// the rotor POSITIONS in here, which are the mass model's business and not the electrical
     /// model's. Named as a simplification rather than left to be discovered.
+    /// Motor index (M1..M4 = 0..3) sits in the wake of the pair ahead of it. Nose is -Z; M1 and M3 are the rear
+    /// pair (+Z). Flying forward (body velocity -Z) the rear pair is downstream; backwards, the front pair.
+    fn is_downstream(&self, i: usize) -> bool {
+        let rear = i == 0 || i == 2;
+        let vz = self.last_body_velocity_mps.z;
+        if rear { vz < 0.0 } else { vz > 0.0 }
+    }
+
     fn airspeed_components(&self) -> (f64, f64) {
         let v = self.last_body_velocity_mps;
         let axial = v.y as f64;
@@ -258,6 +270,15 @@ impl Powertrain {
         self.forward_ratios.bind_mut().interference_loss = loss;
     }
 
+    /// SR1.5 (OPT-IN, not the default: see SR_TRACKER). The rear-rotor loss as a per-rotor THRUST loss at equal rpm.
+    /// The mean power factor is switched OFF here so the loss is not counted twice (the controller's extra rpm on
+    /// the rear pair already costs the power).
+    #[func]
+    fn apply_rear_thrust_loss(&mut self, loss: f64) {
+        self.rear_thrust_loss = loss;
+        self.forward_ratios.bind_mut().interference_loss = 0.0;
+    }
+
     #[func]
     fn forward_thrust_ratio(&self, rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
         self.forward_ratios.bind().thrust_ratio(rpm, v_axial_mps, v_edge_mps)
@@ -299,6 +320,7 @@ impl Powertrain {
             cutoff_hold_s: 0.5,
             cutoff_low_s: 0.0,
             last_body_velocity_mps: Vector3::ZERO,
+            rear_thrust_loss: 0.0,
             observables,
             avionics_w: 0.0,
             thermal_on: false,
@@ -433,8 +455,11 @@ impl Powertrain {
                 dt,
             );
             self.motor_rpm[i] = rpm;
-            let thrust = PropellerModel::thrust_n(self.k_t, rpm)
+            let mut thrust = PropellerModel::thrust_n(self.k_t, rpm)
                 * self.forward_ratios.bind().thrust_ratio(rpm, v_axial, v_edge);
+            if self.rear_thrust_loss > 0.0 && self.is_downstream(i) {
+                thrust *= BemtRatios::interference_thrust_factor(self.rear_thrust_loss, v_axial, v_edge, rpm, self.prop_radius_m);
+            }
             thrusts[i] = thrust;
             total_current_a += self.current_in_flight_at_rpm(rpm, v_axial, v_edge);
         }

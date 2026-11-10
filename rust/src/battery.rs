@@ -158,6 +158,9 @@ fn max_cell_v(chemistry: &str) -> f64 {
 ///   capacity-vs-temperature source was found; datasheet temperature curves are charts.
 /// LiPo and the rest: NO measured data. Every figure is ESTIMATED: k = 1.05, beta borrowed from
 /// Li-ion, cold capacity loss as Li-ion. Replace with a measurement when one exists.
+/// Li-ion delivered/rated capacity at 1C, mean of the three FIT cells (0.951, 0.977, 0.932), tests/sim_reality/measured.
+const LIION_DELIVERED_1C: f64 = 0.953;
+
 fn field_constants(chemistry: &str) -> (f64, f64, f64) {
     match chemistry {
         "Li-ion" => (1.0166, 3545.0, 0.006),
@@ -251,6 +254,11 @@ pub struct BatteryModel {
     /// SR1. Capacity lost to cycling, fraction. Default 0, ESTIMATED (a field; no cycle data is wired).
     #[var]
     pub fade_fraction: f64,
+    /// SR1.7. Delivered over rated capacity at a 1C discharge (1.0 = the rating is delivered, the pre-SR1.7
+    /// pack). Li-ion MEASURED (lygte-info 1C interpolation: fit cells 0.932-0.977, mean 0.953); other
+    /// chemistries 1.0, ESTIMATED (no data). A pack part can override it with a published per-cell value.
+    #[var]
+    pub delivered_1c_factor: f64,
     /// SR1. The loaded per-cell voltage that ends the flight. Default is the chemistry's minimum.
     #[var]
     pub cutoff_cell_v: f64,
@@ -292,6 +300,7 @@ impl BatteryModel {
             r_beta_k: 0.0,
             cap_loss_per_c_cold: 0.0,
             fade_fraction: 0.0,
+            delivered_1c_factor: 1.0,
             cutoff_cell_v: 0.0,
             cutoff_enabled: false,
         })
@@ -439,6 +448,7 @@ impl BatteryModel {
     pub fn capacity_factor(&self) -> f64 {
         let cold = (25.0 - self.temp_c).max(0.0);
         ((1.0 - self.cap_loss_per_c_cold * cold).max(0.2)) * (1.0 - self.fade_fraction).clamp(0.05, 1.0)
+            * self.delivered_1c_factor.clamp(0.5, 1.0)
     }
 
     /// How much faster than coulomb counting the pack empties at this current: the Peukert factor
@@ -478,6 +488,7 @@ impl BatteryModel {
         d.set("r_beta_k", rate);
         d.set("cap_loss_per_c_cold", "estimated");
         d.set("fade_fraction", "estimated");
+        d.set("delivered_1c_factor", if li { "measured" } else { "estimated" });
         d.set("cutoff_cell_v", "published");
         d
     }
@@ -488,13 +499,14 @@ impl BatteryModel {
         self.peukert_k = k;
         self.r_beta_k = beta;
         self.cap_loss_per_c_cold = cap_cold;
+        self.delivered_1c_factor = if self.chemistry.to_string() == "Li-ion" { LIION_DELIVERED_1C } else { 1.0 };
         self.temp_c = temp_c;
         self.cutoff_enabled = true;
     }
 
     #[func]
     pub fn drain(&mut self, current_total_a: f64, dt: f64) {
-        let mult = if self.peukert_k > 1.0 || self.cap_loss_per_c_cold > 0.0 || self.fade_fraction > 0.0 {
+        let mult = if self.peukert_k > 1.0 || self.cap_loss_per_c_cold > 0.0 || self.fade_fraction > 0.0 || self.delivered_1c_factor < 1.0 {
             self.drain_multiplier(current_total_a)
         } else {
             1.0
@@ -575,5 +587,11 @@ mod tests {
         assert_ne!(nominal_cell("LiFePO4"), nominal_cell("LiPo"));
         assert_ne!(nominal_cell("LiPo HV"), nominal_cell("LiPo"));
         assert_ne!(curve("LiFePO4")[5].1, curve("LiPo")[5].1);
+    }
+
+    // SR1.7: the Li-ion delivered/rated constant sits inside the measured spread of the three fit cells.
+    #[test]
+    fn liion_delivered_1c_inside_measured_fit_spread() {
+        assert!(LIION_DELIVERED_1C > 0.932 && LIION_DELIVERED_1C < 0.977);
     }
 }

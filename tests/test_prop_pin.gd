@@ -4,6 +4,8 @@ extends RefCounted
 ## fixture was written; within 1e-9 elsewhere, because CI's Linux and Windows libm round atan and pow
 ## differently in the last place and that is not a physics change.
 ##
+## RE-PINNED 2026-11-10 (SR1.3): prop_16x12x4 on tiny_whoop top_speed_kmh 111.6456 -> 111.2094 (figures and bits). The tiny whoop is
+## thrust-limited (reachable T:W 1.2) and top_speed_kmh() now trims the real lean with directional drag; nothing else moved.
 ## RE-PINNED 2026-11-09 (SR1-SR2 forward-flight physics; hover and every static/direct solve are bit-identical, so nothing about
 ## hover moved). Only three groups of keys moved, each for a named reason:
 ##  - power_ratio_*: rear-rotor interference (rpm-independent window in wake skew; +1.49 % at mu 0.05, +9.55 % at mu 0.1-0.2, +5.97 % at

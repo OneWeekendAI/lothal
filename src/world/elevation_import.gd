@@ -125,12 +125,18 @@ static func apply_bytes(w: World, bytes: PackedByteArray, step_m: float, pad_m: 
 
 
 ## Coroutine: fetch (cache or network) then apply. Failure leaves the terrain untouched and says why.
-static func import_world(host: Node, w: World, step_m: float = DEFAULT_STEP_M, pad_m: float = DEFAULT_PAD_M, note: String = "") -> Dictionary:
+## The tile request `import_world` makes for this world: {"url": String}. One place, so a test can seed the cache for
+## exactly the URL the real call will ask for.
+static func request_url(w: World, step_m: float = DEFAULT_STEP_M, pad_m: float = DEFAULT_PAD_M) -> String:
 	var rect := sim_rect(w, pad_m)
 	var bbox := latlon_bbox(w, rect, 2.0 * step_m)
 	var cols := clampi(int(ceil(rect.size.x / step_m)) + 6, 8, MAX_PIXELS)
 	var rows := clampi(int(ceil(rect.size.y / step_m)) + 6, 8, MAX_PIXELS)
-	var got: Dictionary = await fetch(host, tile_url(bbox, cols, rows))
+	return tile_url(bbox, cols, rows)
+
+
+static func import_world(host: Node, w: World, step_m: float = DEFAULT_STEP_M, pad_m: float = DEFAULT_PAD_M, note: String = "") -> Dictionary:
+	var got: Dictionary = await fetch(host, request_url(w, step_m, pad_m))
 	if not bool(got["ok"]):
 		return {"ok": false, "error": String(got["error"]), "from_cache": false}
 	var out := apply_bytes(w, got["bytes"], step_m, pad_m, note)

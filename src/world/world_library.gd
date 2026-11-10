@@ -178,6 +178,7 @@ static func _label_migrated(w: World) -> void:
 	for k in World.SOURCE_KEYS:
 		w.set_source(k, "estimated", note)
 	w.set_source("origin", "estimated", "no geographic position in the old files; lat/lon is a placeholder")
+	w.location_placeholder = true
 
 
 ## The legacy record a migrated world was made from, rebuilt as the old object - used by the migration test to show nothing is lost.

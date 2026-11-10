@@ -7,6 +7,9 @@ extends RefCounted
 ## Two sets: (1) each of the 16 shelf motors on the reference airframe with its own thrust-test
 ## prop and a pack of the same cell count as its test voltage; (2) every drone-class seed build.
 
+## RE-PINNED at SR1.3 (2026-11-10): top_speed_kmh for class/tiny_whoop (111.646 -> 111.209) and motor/motor_2807_1300kv
+## (118.173 -> 116.642) only. Both are thrust-limited builds (the tiny whoop's reachable T:W is 1.2), so the new top speed,
+## trimmed at the real lean with directional drag, is lower than the old fixed-45-degree figure. Every other figure unmoved.
 const FIXTURE := "res://tests/fixtures/motor_preset_figures.json"
 const FIELDS := ["auw_g", "thrust_to_weight", "hover_throttle", "flight_time_min", "top_speed_kmh"]
 

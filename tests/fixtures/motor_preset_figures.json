@@ -53,7 +53,7 @@
 		"flight_time_min": 2.64842226904217,
 		"hover_throttle": 0.547649450370223,
 		"thrust_to_weight": 3.30748420708421,
-		"top_speed_kmh": 111.645550252729
+		"top_speed_kmh": 111.209382123205
 	},
 	"class/toothpick": {
 		"auw_g": 123.190528401202,
@@ -144,7 +144,7 @@
 		"flight_time_min": 7.579340000433476,
 		"hover_throttle": 0.331581833857665,
 		"thrust_to_weight": 8.03739260148398,
-		"top_speed_kmh": 118.172589365265
+		"top_speed_kmh": 116.64235056322
 	},
 	"motor/motor_2808_1300kv": {
 		"auw_g": 641.480708465516,

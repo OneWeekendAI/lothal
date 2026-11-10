@@ -594,6 +594,10 @@ var _forward_ratios: BemtRatios = null
 ## (CFD, Aerospace 8(11):349, 2021). Costs shaft power, not thrust: see BemtRatios.interference_power_factor.
 ## 0 turns it off. Applied when the aircraft has 4 or more rotors; read when forward_ratios() is built.
 var rotor_interference_loss: float = 0.11
+## SR1.5, OPT-IN (default false): fly the rear-rotor loss as a per-rotor thrust loss at equal rpm instead of the mean
+## power factor. Off by default because turning it on moves the open-loop wind goldens (tests/test_wind.gd) and the
+## DroneCore-vs-oracle current cross-check to 1.8 percent; see SR_TRACKER SR1.5 for what must be decided first.
+var rear_thrust_loss_in_sim := false
 ## The tip-loss suppression the fitted guard earns (§4.0). 0.0 when no guard is fitted, positive
 ## when a duct's `tip_gap_mm` is small compared with the blade's tip chord. Derived once in
 ## `_recompute` from `PropellerDocument.chord_at(1.0)` — the physics's own length scale, per
@@ -1963,6 +1967,10 @@ const AVIONICS_W := {
 const PAYLOAD_W_DEFAULT := {"small": 0.0, "mid": 0.0, "large": 0.0}
 var payload_w := 0.0
 
+## SR1.8. Capacity lost to cycling, fraction of rated (0 = a new pack). A FIELD, default 0, tagged ESTIMATED: no
+## cycle data is wired, so the builder states the age. Reaches the pack through `apply_field_physics`.
+var pack_fade_fraction := 0.0
+
 ## Payload MASS and POSITION (a nose gimbal, a belly sensor), fields beside the electrical load. Default 0 g, so
 ## nothing moves unless the builder fits one. Tagged ESTIMATED: the catalog has no payload part, so mass, size
 ## and seat are the builder's numbers. Position is body frame metres from the frame origin (nose = -Z, up = +Y);
@@ -2092,6 +2100,10 @@ func apply_field_physics(core: DroneCore, opts: Dictionary = {}) -> void:
 		mm.esc_sw_frac = esc_sw_loss_frac()
 	if opts.get("battery", true):
 		pt.battery.enable_field_realism(float(opts.get("pack_temp_c", 25.0)))
+		pt.battery.fade_fraction = clampf(pack_fade_fraction, 0.0, 0.95)
+		# A pack part may publish its own delivered/rated capacity at 1C (SR1.7); it replaces the chemistry constant.
+		if battery["specs"].has("delivered_1c_factor"):
+			pt.battery.delivered_1c_factor = float(battery["specs"]["delivered_1c_factor"])
 	if opts.get("thermal", true) and dc_motor_params(motor).size() > 0:
 		var f := motor_thermal_masses_g()
 		pt.set_thermal(f["mass_g"], f["copper_g"], f["stator_g"], f["bell_g"], f["stator_d_mm"],
@@ -2112,7 +2124,10 @@ func build_drone_core(field_opts: Dictionary = {}) -> DroneCore:
 	# The aircraft the sim flies is the aircraft the builder configured, including a spin map
 	# Lothal has warned about: design §5.3 — fly it badly, do not refuse it.
 	core.config = config
-	core.powertrain.set_interference_loss(rotor_interference_loss if motor_count() >= 4 else 0.0)
+	if rear_thrust_loss_in_sim:
+		core.powertrain.apply_rear_thrust_loss(rotor_interference_loss if motor_count() >= 4 else 0.0)
+	else:
+		core.powertrain.set_interference_loss(rotor_interference_loss if motor_count() >= 4 else 0.0)
 	if not field_opts.get("off", false):
 		apply_field_physics(core, field_opts)
 	return core

@@ -49,6 +49,9 @@ static func run() -> Array:
 	out.append_array(_battery_cutoff_latch())
 	out.append_array(_lipo_is_labelled_estimate())
 	out.append_array(_mqtb())
+	out.append_array(_mqtb_motor_fit())
+	out.append_array(_delivered_1c())
+	out.append_array(_capacity_fade())
 	out.append_array(_esc_loss())
 	out.append_array(_avionics_load())
 	out.append_array(_payload_load())
@@ -240,7 +243,7 @@ static func _lipo_is_labelled_estimate() -> Array:
 # ---------------------------------------------------------------------------
 
 ## Blade count is absent from MQTB for several props; 2 is ESTIMATED for those.
-static func _mqtb_case(c: Dictionary) -> Dictionary:
+static func _mqtb_case(c: Dictionary, rm_scale: float = 1.0, io_scale: float = 1.0) -> Dictionary:
 	var parts: PackedStringArray = str(c["prop"]).split(" ")
 	var dims := parts[parts.size() - 1].to_lower().replace("gf", "").replace("hbn", "").replace("bn", "").replace("e", "")
 	var f := dims.split("x")
@@ -261,7 +264,7 @@ static func _mqtb_case(c: Dictionary) -> Dictionary:
 			"thrust_test": {"voltage_v": 3.7 * cells}}
 		var p := Build.dc_motor_params(motor)
 		var mm := MotorModel.create(float(c["tested_kv"]), 1.0)
-		mm.set_dc(p[1], p[2], p[3], s[1] / (w * w))
+		mm.set_dc(p[1] * rm_scale, p[2] * io_scale, p[3], s[1] / (w * w))
 		mm.esc_r_ohm = Build.ESC_R_OHM_AMP / 40.0
 		mm.esc_sw_frac = Build.ESC_SW_LOSS_FRAC
 		rows[row] = {
@@ -296,6 +299,170 @@ static func _mqtb() -> Array:
 		results.append(TestResult.new("MQTB hover power, %s: blade-element shaft power is physically reachable (shaft/electrical between 0.55 and 0.95 at 75%%; above 1 means the prop model burns more than the wall supplied)" % tag,
 			eta >= 0.55 and eta <= 0.95, "shaft/electrical %.2f" % eta))
 	return results
+
+## SR1.6: a global Io multiplier (applied on top of the stator-derived value; Rm is held at x1 because fitting it
+## ran to the grid edge, x0.1, on this data, so it is not identifiable from these rows) fitted on the
+## "fit" split ONLY, then scored on each held-out case separately. The fit is a test-side grid search over
+## ln-error of pack current at the 100 and 75 percent rows; nothing is written back to production (the shipped
+## model stays unfitted, the fitted pair is a measurement of how far the stator-derived motor is off).
+## FITTED on: cases with split "fit". HELD-OUT: cases with split "heldout" (never read by the fit; asserted by id).
+## Mutation record: letting the fit also read the held-out rows trips the "fit never read a held-out row" case.
+static var _fit_cache: Dictionary = {}
+
+static func _fit_motor_scales() -> Dictionary:
+	if not _fit_cache.is_empty():
+		return _fit_cache
+	var read_ids: Array = []
+	var best := {"rm": 1.0, "io": 1.0, "sse": INF}
+	var fit_cases: Array = []
+	for c in _json(MQTB_JSON)["cases"]:
+		if c["split"] == "fit":
+			fit_cases.append(c)
+			read_ids.append(c["id"])
+	for rm_i in range(0, 1):
+		for io_i in range(0, 17):
+			var rm_s: float = 1.0   # held at the derived value: fitting it ran to the grid edge (x0.1) on this data, i.e. not identifiable
+			var io_s: float = 0.4 + 0.2 * io_i
+			var sse := 0.0
+			for c in fit_cases:
+				var rows: Dictionary = _mqtb_case(c, rm_s, io_s)["rows"]
+				for k in ["100%", "75%"]:
+					var e: float = log(maxf(float(rows[k]["current_ratio"]), 1e-3))
+					sse += e * e
+			if sse < best["sse"]:
+				best = {"rm": rm_s, "io": io_s, "sse": sse}
+	best["read_ids"] = read_ids
+	_fit_cache = best
+	return best
+
+
+static func _mqtb_motor_fit() -> Array:
+	var results: Array = []
+	var f := _fit_motor_scales()
+	var held_read := false
+	for id in f["read_ids"]:
+		for c in _json(MQTB_JSON)["cases"]:
+			if c["id"] == id and c["split"] != "fit":
+				held_read = true
+	results.append(TestResult.new("MQTB motor fit: the Rm/Io fit read only split=fit cases (%d cases) and no held-out row; fitted Rm x%.2f, Io x%.1f (FITTED, test-side only)" % [f["read_ids"].size(), f["rm"], f["io"]],
+		not held_read and f["read_ids"].size() >= 5, "read %s" % [f["read_ids"]]))
+	for c in _json(MQTB_JSON)["cases"]:
+		if c["split"] != "heldout" or KNOWN_GAPS.has(c["id"]):
+			continue
+		var raw: float = _mqtb_case(c)["rows"]["75%"]["current_ratio"]
+		var fitted: float = _mqtb_case(c, f["rm"], f["io"])["rows"]["75%"]["current_ratio"]
+		results.append(TestResult.new("MQTB motor fit, HELD-OUT %s (%s): pack current at 75%% within %.0f%% of measured with the fitted Rm/Io" % [c["id"], c["motor"], CURRENT_BAND * 100.0],
+			absf(fitted - 1.0) <= CURRENT_BAND,
+			"model/measured current: unfitted %.2f, fitted %.2f (Rm x%.2f, Io x%.1f from fit cases only)" % [raw, fitted, f["rm"], f["io"]]))
+	return results
+
+
+## SR1.7: delivered over rated capacity at 1C. MEASURED for Li-ion (lygte-info, tests/sim_reality/measured): the
+## measured 1C value is the log-current interpolation of each cell's capacity-vs-current points at its nominal
+## current. The model constant is the mean of the FIT cells; the held-out cells are scored. One factor cannot
+## hit 1 percent on every cell (the cells themselves spread 0.93 to 0.98), so the band for a generic default is
+## 3 percent (the spread), and a per-cell PUBLISHED value (the field) is held to 1 percent.
+## Mutation record: with delivered_1c_factor forced to 1 the held-out cases went red (errors 4-7 percent).
+const DELIVERED_BAND := 0.03
+const DELIVERED_BAND_PER_CELL := 0.01
+
+static func _measured_1c_ratio(cell: String) -> Dictionary:
+	var pts: Array = []
+	var nominal := 0.0
+	var split := ""
+	for p in _json(BATTERY_JSON)["chemistries"]["liion"]["capacity_vs_current"]:
+		if p["cell"] == cell:
+			pts.append(p)
+			nominal = float(p["nominal_mah"])
+			split = str(p["split"])
+	pts.sort_custom(func(a, b): return a["current_a"] < b["current_a"])
+	var i1 := nominal / 1000.0
+	var ratio := 0.0
+	for k in range(pts.size() - 1):
+		var a: Dictionary = pts[k]
+		var b: Dictionary = pts[k + 1]
+		if i1 >= float(a["current_a"]) and i1 <= float(b["current_a"]):
+			var t: float = (log(i1) - log(float(a["current_a"]))) / (log(float(b["current_a"])) - log(float(a["current_a"])))
+			ratio = lerpf(float(a["delivered_mah"]), float(b["delivered_mah"]), t) / nominal
+	return {"ratio": ratio, "nominal": nominal, "split": split}
+
+
+static func _delivered_at_1c(nominal_mah: float, factor: float) -> float:
+	var pack := BatteryModel.create(3.6, 0.02, nominal_mah, 1, "Li-ion")
+	pack.enable_field_realism(25.0)
+	pack.delivered_1c_factor = factor
+	var amps := nominal_mah / 1000.0
+	var delivered := 0.0
+	while pack.remaining_fraction() > 0.0 and delivered < nominal_mah * 2.0:
+		pack.drain(amps, 1.0)
+		delivered += amps * 1000.0 / 3600.0
+	return delivered / nominal_mah
+
+
+static func _delivered_1c() -> Array:
+	var results: Array = []
+	var fresh := BatteryModel.create(3.6, 0.02, 3000.0, 1, "Li-ion")
+	fresh.enable_field_realism(25.0)
+	var generic: float = fresh.delivered_1c_factor
+	var tags := BatteryModel.field_constant_tags("Li-ion")
+	var lp_tags := BatteryModel.field_constant_tags("LiPo")
+	results.append(TestResult.new("delivered 1C: the Li-ion constant is tagged measured, the LiPo one estimated (and 1.0), and the Li-ion value lies inside the fit cells' spread 0.93-0.98",
+		tags["delivered_1c_factor"] == "measured" and lp_tags["delivered_1c_factor"] == "estimated" and generic > 0.93 and generic < 0.98,
+		"Li-ion %.3f, tags %s / %s" % [generic, tags["delivered_1c_factor"], lp_tags["delivered_1c_factor"]]))
+	for cell in ["Molicel INR18650-P28A", "Samsung INR21700-40T"]:
+		var m := _measured_1c_ratio(cell)
+		var model := _delivered_at_1c(m["nominal"], generic)
+		var rated := _delivered_at_1c(m["nominal"], 1.0)
+		var published := _delivered_at_1c(m["nominal"], m["ratio"])
+		results.append(TestResult.new("delivered 1C, HELD-OUT %s: the generic Li-ion factor predicts the measured 1C delivery within %.0f%%, and a pack that delivers its rating (factor 1) misses by more" % [cell, DELIVERED_BAND * 100.0],
+			m["split"] == "heldout" and absf(model / m["ratio"] - 1.0) <= DELIVERED_BAND and absf(rated / m["ratio"] - 1.0) > DELIVERED_BAND,
+			"measured %.3f, generic factor %.3f, rated-delivered %.3f" % [m["ratio"], model, rated]))
+		results.append(TestResult.new("delivered 1C, %s: a per-cell published value in the field reproduces the measured 1C delivery within %.0f%%" % [cell, DELIVERED_BAND_PER_CELL * 100.0],
+			absf(published / m["ratio"] - 1.0) <= DELIVERED_BAND_PER_CELL, "measured %.3f, with field %.3f" % [m["ratio"], published]))
+	return results
+
+
+## SR1.8: capacity fade with cycles, a field (default 0, ESTIMATED). 20 percent fade shortens a constant-current
+## hover by 15-25 percent; the default is bit-for-bit the unfaded pack. Mutation record: with the fade term removed
+## from capacity_factor() the shortening case read 0 percent and went red.
+static func _capacity_fade() -> Array:
+	var amps := 10.0
+	var base := _fade_endurance_s(0.0, amps)
+	var faded := _fade_endurance_s(0.2, amps)
+	var plain := BatteryModel.create(14.8, 0.025, 5000.0, 4, "Li-ion")
+	plain.enable_field_realism(25.0)
+	var explicit := BatteryModel.create(14.8, 0.025, 5000.0, 4, "Li-ion")
+	explicit.enable_field_realism(25.0)
+	explicit.fade_fraction = 0.0
+	var b := ReferenceBuild.build()
+	var core := b.build_drone_core({})
+	b.pack_fade_fraction = 0.2
+	var core_faded := b.build_drone_core({})
+	var short: float = 1.0 - faded / base
+	return [
+		TestResult.new("capacity fade (ESTIMATED): 20 percent fade shortens a 10 A hover by 15-25 percent",
+			short >= 0.15 and short <= 0.25, "fresh %.0f s, 20%% faded %.0f s (-%.1f%%)" % [base, faded, short * 100.0]),
+		TestResult.new("capacity fade: the default is bit-for-bit the unfaded pack (capacity factor and drain multiplier identical)",
+			plain.capacity_factor() == explicit.capacity_factor() and plain.drain_multiplier(10.0) == explicit.drain_multiplier(10.0) and plain.fade_fraction == 0.0,
+			"factor %.6f vs %.6f" % [plain.capacity_factor(), explicit.capacity_factor()]),
+		TestResult.new("capacity fade: the Build field reaches the flown pack (0 by default, 0.2 when set)",
+			core.powertrain.battery.fade_fraction == 0.0 and absf(core_faded.powertrain.battery.fade_fraction - 0.2) < 1e-12,
+			"default %.3f, set %.3f" % [core.powertrain.battery.fade_fraction, core_faded.powertrain.battery.fade_fraction]),
+	]
+
+
+static func _fade_endurance_s(fade: float, amps: float) -> float:
+	var pack := BatteryModel.create(14.8, 0.025, 5000.0, 4, "Li-ion")
+	pack.enable_field_realism(25.0)
+	pack.fade_fraction = fade
+	var t := 0.0
+	while t < 3.0e4:
+		if pack.below_cutoff(amps):
+			break
+		pack.drain(amps, 1.0)
+		t += 1.0
+	return t
+
 
 static func _all_within(rows: Dictionary, key: String, band: float) -> bool:
 	for k in rows:

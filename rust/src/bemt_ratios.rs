@@ -361,6 +361,31 @@ impl BemtRatios {
         base * Self::interference_power_factor(self.interference_loss, v_axial_mps, v_edge_mps, rpm, self.radius_m)
     }
 
+    /// The wake-skew window of the rear-rotor interference, 0 to 1 (see `interference_power_factor` for the
+    /// derivation and the ESTIMATED shapes). Shared by the power factor and the thrust factor so the two cannot
+    /// drift apart.
+    #[func]
+    pub fn interference_weight(v_axial_mps: f64, v_edge_mps: f64, rpm: f64, radius_m: f64) -> f64 {
+        let v = (v_axial_mps * v_axial_mps + v_edge_mps * v_edge_mps).sqrt();
+        let omega_r = rpm * std::f64::consts::TAU / 60.0 * radius_m;
+        if omega_r <= 0.0 {
+            return 0.0;
+        }
+        let x = v / (0.08 * omega_r);
+        let t = ((x - 0.5) / 0.5).clamp(0.0, 1.0);
+        if x <= 1.0 { t * t * (3.0 - 2.0 * t) } else if x <= 3.0 { 1.0 } else if x < 5.0 { (5.0 - x) / 2.0 } else { 0.0 }
+    }
+
+    /// Thrust factor of a REAR rotor at equal rpm: 1 - loss * window. 1.0 in hover and at 25 m/s, 1 - loss at
+    /// 5-15 m/s (PUBLISHED: 11 percent, CFD, Aerospace 8(11):349, 2021). Front rotors are not touched.
+    #[func]
+    pub fn interference_thrust_factor(loss: f64, v_axial_mps: f64, v_edge_mps: f64, rpm: f64, radius_m: f64) -> f64 {
+        if loss <= 0.0 {
+            return 1.0;
+        }
+        1.0 - loss.clamp(0.0, 0.5) * Self::interference_weight(v_axial_mps, v_edge_mps, rpm, radius_m)
+    }
+
     /// Mean shaft-power factor for rotor-rotor interference. Half the rotors (the rear pair of an
     /// X quad) lose `loss` of their thrust, so they must make 1/(1-loss) times the thrust, and shaft
     /// power goes as thrust^1.5 (momentum theory), so the four-rotor mean is
@@ -382,14 +407,7 @@ impl BemtRatios {
         if loss <= 0.0 {
             return 1.0;
         }
-        let v = (v_axial_mps * v_axial_mps + v_edge_mps * v_edge_mps).sqrt();
-        let omega_r = rpm * std::f64::consts::TAU / 60.0 * radius_m;
-        if omega_r <= 0.0 {
-            return 1.0;
-        }
-        let x = v / (0.08 * omega_r);
-        let t = ((x - 0.5) / 0.5).clamp(0.0, 1.0);
-        let w = if x <= 1.0 { t * t * (3.0 - 2.0 * t) } else if x <= 3.0 { 1.0 } else if x < 5.0 { (5.0 - x) / 2.0 } else { 0.0 };
+        let w = Self::interference_weight(v_axial_mps, v_edge_mps, rpm, radius_m);
         1.0 + w * 0.5 * ((1.0 - loss.clamp(0.0, 0.5)).powf(-1.5) - 1.0)
     }
 
@@ -433,5 +451,22 @@ impl BemtRatios {
         let mu_ax = (v_axial_mps / omega_r).clamp(0.0, MU_MAX);
         let mu_ed = (v_edge_mps.abs() / omega_r).clamp(0.0, MU_MAX);
         RatioTable::sample(values, mu_ax, mu_ed)
+    }
+}
+
+#[cfg(test)]
+mod interference_tests {
+    use super::BemtRatios;
+
+    // SR1.5. Mapper-like prop: 0.119 m radius, 4430 rpm. Red-run was done on the Godot side (thrust factor skipped in powertrain.rs, tests/test_sr1_flight.gd); this unit test pins the factor.
+    #[test]
+    fn rear_thrust_loss_is_eleven_percent_in_the_published_window_and_zero_elsewhere() {
+        let r = 0.119;
+        let rpm = 4430.0;
+        let mid = BemtRatios::interference_thrust_factor(0.11, 0.0, 11.5, rpm, r);
+        assert!((mid - 0.89).abs() < 1e-9, "11.5 m/s factor {mid}");
+        assert_eq!(BemtRatios::interference_thrust_factor(0.11, 0.0, 0.0, rpm, r), 1.0);
+        assert_eq!(BemtRatios::interference_thrust_factor(0.11, 0.0, 25.0, rpm, r), 1.0);
+        assert_eq!(BemtRatios::interference_thrust_factor(0.0, 0.0, 11.5, rpm, r), 1.0);
     }
 }

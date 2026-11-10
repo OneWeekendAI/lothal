@@ -62,11 +62,14 @@ extends RefCounted
 
 enum Model { DRYDEN, FIRST_ORDER }
 
-## Surface roughness length z0, metres. Wieringa (1992), "Updating the Davenport roughness
-## classification", J. Wind Eng. Ind. Aerodyn. 41-44: class 3 smooth 0.005, class 4 open 0.03,
-## class 5 roughly open (low crops) 0.10, class 6 rough (high crops, scattered obstacles) 0.25,
-## class 7 very rough 0.5. Sea 0.0002 (class 2). Values are published CLASS values; a real field
-## sits somewhere in a class, so the field is editable (`Conditions.roughness_z0_m`).
+## Surface roughness length z0, metres. Davenport-Wieringa classification, Wieringa (1992), "Updating the
+## Davenport roughness classification", J. Wind Eng. Ind. Aerodyn. 41-44: class 1 sea 0.0002, class 2 smooth
+## (mud flats, snow, beaches) 0.005, class 3 open (flat, grass, few obstacles) 0.03, class 4 roughly open (low
+## crops) 0.10, class 5 rough (high crops, scattered obstacles) 0.25, class 6 very rough (parkland, bushes,
+## orchards) 0.5. RE-VERIFIED 2026-11-10 (SR2.1) against the table reproduced at
+## https://en.wikipedia.org/wiki/Roughness_length (values unchanged; an earlier version of this comment had the
+## class NUMBERS shifted by one, the values were right). Values are published CLASS values; a real field sits
+## somewhere in a class, so the field is editable (`Conditions.roughness_z0_m`). Tag: published.
 const ROUGHNESS := {
 	"sea": 0.0002, "bare": 0.005, "grass": 0.03, "short_crops": 0.10,
 	"tall_crops": 0.25, "scattered_trees": 0.5,

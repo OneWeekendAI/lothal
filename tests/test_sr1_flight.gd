@@ -20,6 +20,7 @@ static func run() -> Array:
 	out.append_array(_ground_effect_in_the_sim())
 	out.append_array(_top_speed_top_area())
 	out.append_array(_distributed_payload())
+	out.append_array(_rear_rotor_thrust_loss())
 	return out
 
 
@@ -292,6 +293,52 @@ static func _distributed_payload() -> Array:
 	results.append(TestResult.new("distributed mass: the payload mass is a labelled field (estimated, edited flag set), unedited default is 0 g and not edited",
 		tag["tag"] == "estimated" and tag["edited"] and not base.payload_mass_breakdown()["edited"] and base.payload_mass_g == 0.0, str(tag)))
 	return results
+
+
+## SR1.5 (opt-in via Build.rear_thrust_loss_in_sim): the rear-rotor interference is a THRUST loss at equal rpm (PUBLISHED: 11 percent at 5-15 m/s, CFD,
+## Aerospace 8(11):349, 2021; the wake-skew window shape is ESTIMATED), no longer a mean power factor. Mutation
+## record: with the thrust factor removed in powertrain.rs (rear_thrust_loss ignored) the "rear pair makes 11
+## percent less thrust" and "pitch torque" cases went red; with the loss field at 0 the ratio is exactly 1.
+static func _thrusts_at(b: Build, v_forward: float, loss_override: float = -1.0) -> PackedFloat32Array:
+	b.rear_thrust_loss_in_sim = true   # SR1.5 is opt-in
+	var core := b.build_drone_core({"off": true})
+	if loss_override >= 0.0:
+		core.powertrain.apply_rear_thrust_loss(loss_override)
+	core.rigid_body.velocity_mps = Vector3(0, 0, -v_forward)
+	for i in 400:
+		core.rigid_body.position_m = Vector3(0, 50, 0)
+		core.rigid_body.velocity_mps = Vector3(0, 0, -v_forward)
+		core.step({"M1": 0.5, "M2": 0.5, "M3": 0.5, "M4": 0.5}, 0.001)
+	return core.powertrain.observables.thrust_n
+
+
+static func _pitch_torque(b: Build, thrusts: PackedFloat32Array) -> float:
+	var tau := 0.0
+	for i in 4:
+		tau += MotorLayout.thrust_torque(MotorLayout.MOTOR_NAMES[i], thrusts[i], b.arm_m, Vector3.ZERO).x
+	return tau
+
+
+static func _rear_rotor_thrust_loss() -> Array:
+	var b := mapper_build()
+	var fwd := _thrusts_at(b, 11.5)
+	var hov := _thrusts_at(b, 0.0)
+	var off := _thrusts_at(b, 11.5, 0.0)
+	var r_fwd: float = fwd[0] / fwd[1]
+	var r_hov: float = hov[0] / hov[1]
+	var r_off: float = off[0] / off[1]
+	var r_left: float = fwd[2] / fwd[3]
+	return [
+		TestResult.new("rear-rotor interference: at 11.5 m/s and equal rpm the rear pair (M1, M3) makes 11 percent less thrust than the front pair (ratio 0.89 within 0.5 percent)",
+			absf(r_fwd - 0.89) < 0.005 and absf(r_left - 0.89) < 0.005, "M1/M2 %.4f, M3/M4 %.4f" % [r_fwd, r_left]),
+		TestResult.new("rear-rotor interference: no loss in hover (rear/front ratio 1 within 0.1 percent)",
+			absf(r_hov - 1.0) < 0.001, "M1/M2 %.4f" % r_hov),
+		TestResult.new("rear-rotor interference: with the loss field at 0 the rear/front ratio at 11.5 m/s is 1 within 0.1 percent (the effect is the field, not geometry)",
+			absf(r_off - 1.0) < 0.001, "M1/M2 %.4f" % r_off),
+		TestResult.new("rear-rotor interference: the thrust difference makes a nose-down pitch torque at 11.5 m/s (at least 0.5 percent of weight x arm) and none in hover",
+			absf(_pitch_torque(b, fwd)) > 0.005 * b.weight_n() * b.arm_m * 0.25 and absf(_pitch_torque(b, hov)) < 1e-4 * b.weight_n() * b.arm_m,
+			"forward %.5f N*m, hover %.6f N*m" % [_pitch_torque(b, fwd), _pitch_torque(b, hov)]),
+	]
 
 
 ## SR1.3: top_speed_kmh() includes the top-area drag term at the trim lean. At the fixed 45 degree cap that

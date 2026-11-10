@@ -84,7 +84,7 @@
 			"thrust_ratio_0.20_0.00": "72392b8993f6c63f",
 			"thrust_ratio_0.30_0.00": "0000000000000000",
 			"thrust_to_weight": "9eb4ab47ba750a40",
-			"top_speed_kmh": "6ed901b250e95b40",
+			"top_speed_kmh": "f6e1468466cd5b40",
 			"torque_to_thrust_m": "a4117e510d60753f"
 		},
 		"class": "tiny_whoop",
@@ -113,7 +113,7 @@
 			"thrust_ratio_0.20_0.00": 0.17939991185853504,
 			"thrust_ratio_0.30_0.00": 0.0,
 			"thrust_to_weight": 3.3074842070842143,
-			"top_speed_kmh": 111.64555025272941,
+			"top_speed_kmh": 111.20938212320456,
 			"torque_to_thrust_m": 0.005218555474020201
 		}
 	},
