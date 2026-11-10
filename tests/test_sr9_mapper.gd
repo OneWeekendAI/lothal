@@ -4,7 +4,7 @@ extends RefCounted
 ## One TestResult per case: each id loads and is non-empty, each carries a source naming ESTIMATED or published, and a Build from them
 ## weighs 1000-1500 g all-up (the plan's ~1.2 kg mapper; the Mavic-like body alone solves to 951 g, the survey pack adds the rest).
 ## FAIL-PROOFS (observed 2026-11-10): MT1 parts not yet in the data files: every load case FAILS (RED run). MT2 one source blanked in
-## batteries.json (mapper_battery_6s_20000_liion): its source case FAILS and nothing else. MT3 frame mass_g set to 0: the mass case FAILS.
+## batteries.json (mapper_battery_4s_10000_liion): its source case FAILS and nothing else. MT3 frame mass_g set to 0: the mass case FAILS.
 
 ## L4.2/L4.3 (observed 2026-11-10): RED run (parts absent, wiring present) = 3 fails (rededge, rtk, and the apply case before
 ## apply_class_payload recomputed). MT5 `payload_mass_g` line removed from Build.apply_class_payload: only the apply case FAILS (dm 0.00 g,
@@ -19,7 +19,7 @@ extends RefCounted
 ## percentile (low==high): only the range case FAILS. MT11 published tag blanked: the tag case and the published-beside case FAIL (2), the rest pass.
 
 const NEW_IDS := ["mapper_cam_multispectral_rededge", "mapper_gps_rtk"]
-const IDS := ["mapper_frame_380", "mapper_motor_2008", "mapper_prop_94x53", "mapper_battery_4s_5000", "mapper_battery_6s_20000_liion"]
+const IDS := ["mapper_frame_380", "mapper_motor_2008", "mapper_prop_94x53", "mapper_battery_4s_5000", "mapper_battery_4s_10000_liion"]
 
 
 static func run() -> Array:
