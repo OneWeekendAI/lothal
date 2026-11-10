@@ -51,6 +51,7 @@ static func run() -> Array:
 	out.append_array(_mqtb())
 	out.append_array(_esc_loss())
 	out.append_array(_avionics_load())
+	out.append_array(_payload_load())
 	out.append_array(_motor_thermal())
 	return out
 
@@ -326,6 +327,30 @@ static func _avionics_load() -> Array:
 	return [TestResult.new("avionics load (ESTIMATED): hover pack current rises by the non-motor power over the pack voltage (identical when off)",
 		w > 0.0 and with > none and absf((with - none) - w / 16.0) < w / 16.0 * 0.15 + 0.02,
 		"without %.3f A, with %.3f A, avionics %.2f W (about %.3f A at 16 V)" % [none, with, w, w / 16.0])]
+
+## SR1.1 payload load (ESTIMATED): its own field, separate from avionics. 12 W (the Mavic reference's figure)
+## must raise the hover pack current by 12 W over the live pack voltage, within 2 percent of that rise.
+## MUTATION (2026-11-10): removing the `pt.avionics_w += payload_load_w()` wiring in Build.apply_field_physics
+## leaves current unchanged -> this case red.
+static func _payload_load() -> Array:
+	var off := {"esc": false, "thermal": false, "avionics": false}
+	var base := ReferenceBuild.build()
+	var loaded := ReferenceBuild.build()
+	loaded.payload_w = 12.0
+	var core0 := base.build_drone_core(off)
+	_fly_until(core0, 1.0)
+	var core1 := loaded.build_drone_core(off)
+	_fly_until(core1, 1.0)
+	var rise: float = core1.observables.current_total_a - core0.observables.current_total_a
+	var expect: float = 12.0 / core1.observables.voltage_live_v
+	return [
+		TestResult.new("payload load (ESTIMATED): 12 W raises hover pack current by 12 W / V within 2 percent",
+			absf(rise - expect) <= 0.02 * expect, "rise %.4f A, expected %.4f A" % [rise, expect]),
+		TestResult.new("payload is a labelled field separate from avionics: tag estimated, edited flag, avionics unchanged",
+			loaded.payload_breakdown()["tag"] == "estimated" and loaded.payload_breakdown()["edited"] == true
+			and base.payload_breakdown()["edited"] == false and is_equal_approx(loaded.avionics_w(), base.avionics_w()),
+			str(loaded.payload_breakdown())),
+	]
 
 static func _thrust_per_watt(core: DroneCore) -> float:
 	var t: PackedFloat32Array = core.powertrain.observables.thrust_n

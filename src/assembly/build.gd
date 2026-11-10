@@ -1949,7 +1949,27 @@ const AVIONICS_W := {
 	"large": {"fc": 1.5, "receiver": 0.5, "vtx": 6.0, "camera": 2.0, "gps": 0.6},    # > 6 in
 }
 ## Extra constant payload power (gimbal camera, RTK, radios, vision sensors), W. A FIELD, default 0.
+## SR1.1: separate from the avionics table (it is not a board or a VTX; it is whatever is bolted on), editable,
+## tagged ESTIMATED. The default is 0 W for every size class because the catalog has no payload part to read a
+## figure from; a reference or a user sets it (the Mavic 3M reference carries 12 W, an estimate, not tuned to
+## its published flight time). Reaches the powertrain as constant power beside avionics, so a sagging pack
+## draws more amps for it.
+const PAYLOAD_W_DEFAULT := {"small": 0.0, "mid": 0.0, "large": 0.0}
 var payload_w := 0.0
+
+## The payload load as a labelled field: value, source tag, class default and whether it was edited.
+func payload_breakdown() -> Dictionary:
+	var default_w: float = PAYLOAD_W_DEFAULT[avionics_size_class()]
+	return {"w": payload_w, "tag": "estimated", "default_w": default_w, "edited": not is_equal_approx(payload_w, default_w)}
+
+
+func payload_load_w() -> float:
+	return maxf(payload_w, 0.0)
+
+
+## Everything that draws power and is not a motor: the avionics parts plus the payload.
+func non_motor_load_w() -> float:
+	return avionics_w() + payload_load_w()
 
 func avionics_size_class() -> String:
 	var d_in := float(propeller["specs"]["diameter_inches"])
@@ -1969,8 +1989,6 @@ func avionics_breakdown() -> Dictionary:
 			continue
 		var specs: Dictionary = c.get("specs", {}) if c is Dictionary else {}
 		out[cat] = {"w": float(specs.get("power_w", table[cat])), "tag": "estimated"}
-	if payload_w > 0.0:
-		out["payload"] = {"w": payload_w, "tag": "estimated"}
 	return out
 
 
@@ -2021,6 +2039,8 @@ func apply_field_physics(core: DroneCore, opts: Dictionary = {}) -> void:
 	core.ground_y_m = float(opts.get("ground_y_m", 0.0))
 	if opts.get("avionics", true):
 		pt.avionics_w = avionics_w()
+	if opts.get("payload", true):
+		pt.avionics_w += payload_load_w()
 	if opts.get("esc", true):
 		var mm := pt.motor_model
 		mm.esc_r_ohm = esc_r_ohm()
@@ -2566,7 +2586,7 @@ func hover_throttle_for(pack: BatteryModel) -> float:
 func hover_power_w(pack: BatteryModel) -> float:
 	var v := pack.resting_voltage_v()
 	var i_motors := hover_current_a(hover_throttle(v), v)
-	var i_total := i_motors + avionics_w() / maxf(v, 1.0)
+	var i_total := i_motors + non_motor_load_w() / maxf(v, 1.0)
 	return v * i_total - pack.internal_r_ohm * i_total * i_total
 
 ## Total pack current holding a trimmed flight at one airspeed and load factor.
