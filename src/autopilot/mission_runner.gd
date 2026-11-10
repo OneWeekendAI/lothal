@@ -9,6 +9,8 @@ extends RefCounted
 ## fields {height_m, speed_mps, front_overlap, side_overlap, reserve_pct}, polygon, path, capacity_scale (default 1),
 ## max_sorties, camera (CameraParams), dt (default 1/500), camera_on (non-survey), hover_s, laps, range_heading_deg,
 ## end ("land"|"rth", follow_path), max_sim_min (default 120), debug_skip_line (survey, test only).
+## SR8 tolerance hooks (all default 1 / unset, then bit-identical to before): mass_scale (mass and inertia), drag_scale (Cd*A, every axis),
+## esc_loss_scale (ESC resistance and switching loss), pack_temp_c (pack temperature; default 25).
 ##
 ## FLIGHT: take-off at 2.5 m/s to the mission height (start = home = origin, on the ground), fly the mission, return to
 ## home at the mission height and descend at 1.5 m/s. Phases: takeoff -> mission -> rth -> descend -> landed.
@@ -217,6 +219,11 @@ func _run(params: Dictionary) -> Dictionary:
 	if not bool(base["ok"]):
 		return _error(String(base["error"]))
 	var build := make_build(class_id, scale)
+	var mass_scale := float(params.get("mass_scale", 1.0))
+	if mass_scale != 1.0:
+		build.mass_properties.total_mass_kg *= mass_scale
+		build.mass_properties.inertia = build.mass_properties.inertia * mass_scale
+		build.mass_properties.inertia_inverse = build.mass_properties.inertia_inverse * (1.0 / mass_scale)
 	world = params.get("world") as World
 	if world != null:
 		build.air = world.to_air()
@@ -257,7 +264,19 @@ func _run(params: Dictionary) -> Dictionary:
 		agl_fn = world.ground_fn()
 		if bool(params.get("terrain_follow", true)):
 			terrain_fn = agl_fn
-	rig = FlightRig.new(build, cond, seed_value, Vector3.ZERO, dt)
+	var field_opts := {}
+	if params.has("pack_temp_c"):
+		field_opts["pack_temp_c"] = float(params["pack_temp_c"])
+	rig = FlightRig.new(build, cond, seed_value, Vector3.ZERO, dt, field_opts)
+	var drag_scale := float(params.get("drag_scale", 1.0))
+	if drag_scale != 1.0:
+		rig.core.drag_coefficient *= drag_scale
+		if rig.core.drag_axes.x >= 0.0:
+			rig.core.drag_axes *= drag_scale
+	var esc_scale := float(params.get("esc_loss_scale", 1.0))
+	if esc_scale != 1.0:
+		rig.core.powertrain.motor_model.esc_r_ohm *= esc_scale
+		rig.core.powertrain.motor_model.esc_sw_frac *= esc_scale
 	bat = rig.core.powertrain.battery
 	if SimRealityHarness.find_reference(class_id).is_empty():
 		bat.capacity_mah = bat.capacity_mah * scale
