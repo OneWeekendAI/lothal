@@ -360,6 +360,24 @@
         "material": "polycarbonate"
       },
       "source": "representative 4\" tri-blade spec sheet; class-typical, not a specific product. Mass 2.6 g interpolates the catalog's 3.5x2.8x3 (2.2 g) and 5x4.5x3 (4.6 g) by diameter."
+    },
+    {
+      "part_id": "mapper_prop_94x53",
+      "name": "Mapper prop 9.4x5.3 (9453F-like)",
+      "category": "propeller",
+      "mass_g": 9.0,
+      "specs": {
+        "diameter_inches": 9.4,
+        "pitch_inches": 5.3,
+        "blades": 2
+      },
+      "catalog": {
+        "blade_count": "2-blade",
+        "diameter_class": "harness",
+        "intended_use": "harness",
+        "material": "polycarbonate"
+      },
+      "source": "DJI 'Propeller Model Number 9453F Enterprise Edition' (published). 9.4 in diameter and 5.3 in pitch are read from the model number, two blades assumed; mass ESTIMATED. Promoted from the SR0 reference ref_dji_9453f."
     }
   ]
 }

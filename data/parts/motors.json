@@ -534,6 +534,38 @@
         "intended_use": "cinelifter"
       },
       "source": "representative 2808 cinelifter thrust table, 8x4.5x3 on 6S; class-typical, not a specific product"
+    },
+    {
+      "part_id": "mapper_motor_2008",
+      "name": "Mapper motor 2008 (Mavic 3M-like)",
+      "category": "motor",
+      "mass_g": 38.0,
+      "mount_pattern": "16x16",
+      "specs": {
+        "kv": 700.0,
+        "stator_diameter_mm": 20,
+        "stator_height_mm": 8,
+        "max_thrust_g": 700.0,
+        "max_amps": 14.0,
+        "poles": 14,
+        "bell_diameter_ratio": 1.27,
+        "bell_height_ratio": 2.6,
+        "bell_mass_fraction": 0.4,
+        "rm_ohm": 0.4955,
+        "io_a": 0.5825,
+        "io_voltage_v": 15.4,
+        "rm_io_basis": "est."
+      },
+      "thrust_test": {
+        "prop_id": "mapper_prop_94x53",
+        "voltage_v": 15.4
+      },
+      "catalog": {
+        "stator_class": "harness",
+        "kv_class": "harness",
+        "intended_use": "harness"
+      },
+      "source": "DJI publishes only 'Motor Model Number 2008'. kv 700, Rm 0.10 ohm, Io 0.35 A, mass 38 g and max current are ESTIMATES chosen from 20 mm-stator class norms before any run; thrust_test is a placeholder (max_thrust_g is read by no sim path at this commit). Model number 2008 is published; kv, mass and max current (14 A) are ESTIMATED; Rm 0.4955 ohm and Io 0.5825 A are the codebase's M2 stator formula values for this stator and kv (ESTIMATED, not DJI figures). Promoted from the SR0 reference ref_dji_2008."
     }
   ]
 }

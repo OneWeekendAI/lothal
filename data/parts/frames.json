@@ -376,6 +376,26 @@
         "size_class": "65mm"
       },
       "source": "representative lightweight 65mm whoop frame; class-typical, not a specific product. Same geometry as frame_65mm_whoop; the 22 g of that entry is the heavy end (its harness-included figure), while a bare moulded 65mm whoop frame with ducts is a few grams. 4.0 g is a recalled class figure (BetaFPV Meteor65-class frames), NOT re-checked against a spec sheet. NO PLATE GEOMETRY: one-piece moulded nylon, so plate_thickness_mm, arm_width_mm and arm_thickness_mm are absent by construction."
+    },
+    {
+      "part_id": "mapper_frame_380",
+      "name": "Mapper frame 380 (Mavic 3M-like)",
+      "category": "frame",
+      "mass_g": 362.0,
+      "specs": {
+        "arm_mm": 190.0,
+        "plate_thickness_mm": 3.0,
+        "arm_thickness_mm": 6.0,
+        "max_prop_inches": 9.4,
+        "motor_mount": "16x16",
+        "stack_mount": "30.5x30.5"
+      },
+      "catalog": {
+        "frame_type": "harness",
+        "material": "carbon fibre",
+        "size_class": "harness"
+      },
+      "source": "Mavic 3M-like body (L4.1): 380.1 mm diagonal (published) halved for the motor radius, an ESTIMATE as the real frame is not square. Other dimensions ESTIMATED. Mass 362 g is ESTIMATED: the lumped frame mass that makes the mapper_ build (with esc_4in1_20a_20x20, fc_f405_20x20, mapper_battery_4s_5000) weigh the published 951 g all-up, rounded."
     }
   ]
 }

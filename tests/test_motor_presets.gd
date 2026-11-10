@@ -24,7 +24,7 @@ static func run() -> Array:
 	var results: Array = []
 	var cfg := MotorConfigs.load_default()
 	var motors: Array = JsonStore.read_document("res://data/parts/motors.json").get("parts", [])
-	results.append(_t("the shelf still has its 16 presets", motors.size() == 16, str(motors.size())))
+	results.append(_t("the shelf still has its 17 presets", motors.size() == 17, str(motors.size())))
 
 	for m in motors:
 		var id := String(m["part_id"])
@@ -93,8 +93,8 @@ static func run() -> Array:
 	# at 12 m/s) outweighs the added costs. Old -> new table: sim-reality plan, SR-green section.
 	var expected: Dictionary = JsonStore.read_document(MotorPresetFigures.FIXTURE)
 	var live := MotorPresetFigures.snapshot()
-	results.append(_t("the figures snapshot covers 16 presets and 10 seed builds",
-		expected.size() == 26 and live.size() == 26, "%d / %d" % [expected.size(), live.size()]))
+	results.append(_t("the figures snapshot covers 17 presets and 10 seed builds",
+		expected.size() == 27 and live.size() == 27, "%d / %d" % [expected.size(), live.size()]))
 	for key in expected:
 		var e: Dictionary = expected[key]
 		var l: Dictionary = live.get(key, {})

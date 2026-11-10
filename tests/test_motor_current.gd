@@ -46,7 +46,7 @@ static func run() -> Array:
 
 	# No motor takes the legacy path. Every preset, and a motor that carries no Rm/Io at all.
 	var ids := _preset_ids()
-	results.append(_t("the shelf still has its 16 presets", ids.size() == 16, str(ids.size())))
+	results.append(_t("the shelf still has its 17 presets", ids.size() == 17, str(ids.size())))
 	for id in ids:
 		var b := _on_own_prop(id)
 		var a := b._dc_args()

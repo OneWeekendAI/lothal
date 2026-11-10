@@ -180,5 +180,12 @@
 		"hover_throttle": 0.382084172818591,
 		"thrust_to_weight": 6.25374761270933,
 		"top_speed_kmh": 107.288207147391
+	},
+	"motor/mapper_motor_2008": {
+		"auw_g": 549.480708465516,
+		"flight_time_min": 9.201403306514,
+		"hover_throttle": 0.405498529216028,
+		"thrust_to_weight": 4.50801771486444,
+		"top_speed_kmh": 88.7818003050731
 	}
 }

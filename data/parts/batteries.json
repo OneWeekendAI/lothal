@@ -350,6 +350,56 @@
         "connector": "XT90"
       },
       "source": "iFlight Fullsend 6S 5600mAh 95C (XT90), the pack iFlight ships with the Taurus X8 V3 cinelifter. Dimensions 160 x 50 x 50 mm as published by RobotShop (uk.robotshop.com/products/iflight-fullsend-fpv-5600mah-95c-6s-xt90); mass 892 g as published by Unmanned Tech Shop (unmannedtechshop.co.uk/products/iflight-fullsend-6s-5600mah-battery-xt90). internal_r_ohm is NOT published: 6.5 mOhm (~1.1 mOhm per cell) is a class-typical figure for a 5000-6000 mAh high-C LiPo, inside the catalog K-constant band (derived 3.8 mOhm, band 1.8x)"
+    },
+    {
+      "part_id": "mapper_battery_4s_5000",
+      "name": "Mapper 4S 5000mAh (Mavic 3-like 77 Wh)",
+      "category": "battery",
+      "mass_g": 335.0,
+      "mounting": {
+        "attachment": "strap"
+      },
+      "specs": {
+        "cells": 4,
+        "nominal_v": 15.4,
+        "mah": 5000.0,
+        "internal_r_ohm": 0.03,
+        "chemistry": "LiPo HV",
+        "c_rating": 10.0,
+        "length_mm": 100,
+        "width_mm": 50,
+        "height_mm": 44
+      },
+      "catalog": {
+        "cell_class": "4S",
+        "connector": "XT60"
+      },
+      "source": "DJI Mavic 3M spec page: LiPo 4S, 15.4 V standard voltage, 5000 mAh, 77 Wh (published). Mass 335 g, dimensions (100 x 50 x 44 mm), internal resistance 30 mOhm and c-rating are ESTIMATED. Promoted from the SR0 reference ref_dji_m3_4s_5000."
+    },
+    {
+      "part_id": "mapper_battery_6s_20000_liion",
+      "name": "Mapper 4S 20000mAh Li-ion survey pack",
+      "category": "battery",
+      "mass_g": 520.0,
+      "mounting": {
+        "attachment": "strap"
+      },
+      "specs": {
+        "cells": 4,
+        "nominal_v": 14.4,
+        "mah": 20000.0,
+        "internal_r_ohm": 0.027,
+        "chemistry": "Li-ion",
+        "c_rating": 3.0,
+        "length_mm": 100.0,
+        "width_mm": 60.0,
+        "height_mm": 50.0
+      },
+      "catalog": {
+        "cell_class": "4S",
+        "connector": "XT60"
+      },
+      "source": "ESTIMATED survey pack for the mapper (L4.1), no published product: 4S Li-ion (3.6 V/cell nominal = 14.4 V), 20000 mAh = 288 Wh, mass 520 g taken from the plan's mapper example (ESTIMATED; 288 Wh in 520 g is 554 Wh/kg, well above real 21700 packs at ~250 Wh/kg, so this is optimistic). Internal resistance 27 mOhm ESTIMATED by scaling battery_6s_4000_liion (33 mOhm/cell at 4 Ah) to 5 parallel 4 Ah groups x 4 series. C-rating 3 and 100 x 60 x 50 mm ESTIMATED (sized to a believable cell density for the 520 g mass). The id says 6S for the plan's name; the pack is 4S."
     }
   ]
 }
