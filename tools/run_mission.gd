@@ -1,7 +1,7 @@
 extends SceneTree
 ## SR4 CLI: see tools/run_mission.sh. Exit 0 = mission completed, 1 = failed / aborted, 2 = usage error.
 
-const USAGE := "usage: tools/run_mission.sh --class=<id> --mission=<hover_endurance|cruise_loop|range_test|survey|follow_path|test_pack> [--seed=N --height=M --speed=M/S --front=0.75 --side=0.65 --reserve=PCT --wind=MPS --wind-from=DEG --gust=MPS --capacity-scale=X --rate-hz=500 --out=path.json --record=record.json] | tools/run_mission.sh --replay=record.json [--allow-version-mismatch=1]"
+const USAGE := "usage: tools/run_mission.sh --class=<id> --mission=<hover_endurance|cruise_loop|range_test|survey|follow_path|test_pack> [--seed=N --height=M --speed=M/S --front=0.75 --side=0.65 --reserve=PCT --wind=MPS --wind-from=DEG --gust=MPS --capacity-scale=X --rate-hz=500 --out=path.json --record=record.json --csv=out.csv] | tools/run_mission.sh --replay=record.json [--allow-version-mismatch=1]"
 
 
 func _init() -> void:
@@ -12,7 +12,7 @@ func _init() -> void:
 			quit(2)
 			return
 		a[arg.substr(2).get_slice("=", 0)] = arg.get_slice("=", 1)
-	var known := ["class", "mission", "seed", "height", "speed", "front", "side", "reserve", "wind", "wind-from", "gust", "capacity-scale", "rate-hz", "out", "record", "replay", "allow-version-mismatch"]
+	var known := ["class", "mission", "seed", "height", "speed", "front", "side", "reserve", "wind", "wind-from", "gust", "capacity-scale", "rate-hz", "out", "record", "csv", "replay", "allow-version-mismatch"]
 	for k in a:
 		if not k in known:
 			print("unknown option --%s\n%s" % [k, USAGE])
@@ -49,12 +49,13 @@ func _init() -> void:
 	if f != null:
 		f.store_string(MissionResult.to_json(r))
 		f.close()
-	if a.has("record"):
-		DirAccess.make_dir_recursive_absolute(String(a["record"]).get_base_dir())
-		var rf := FileAccess.open(String(a["record"]), FileAccess.WRITE)
-		if rf != null:
-			rf.store_string(RunRecord.to_json(RunRecord.make(params, r)))
-			rf.close()
+	var rec_made := {}
+	if a.has("record") or a.has("csv"):
+		rec_made = RunRecord.make(params, r)
+	if a.has("record") and not RunRecord.save_json(rec_made, String(a["record"])):
+		print("cannot write the record to %s" % a["record"])
+	if a.has("csv") and not RunRecord.save_csv(rec_made, String(a["csv"])):
+		print("cannot write the csv to %s" % a["csv"])
 	print("")
 	print("MISSION %s  class %s  seed %d  capacity_scale %.2f  (model %s)" % [r["mission"], r["class_id"], r["seed"], params["capacity_scale"], MissionResult.MODEL_VERSION])
 	print("  ended by      %s%s" % [r["ended_by"], "" if r["completed"] else "   (NOT COMPLETED)"])
@@ -70,6 +71,8 @@ func _init() -> void:
 	print("  json          %s" % out_path)
 	if a.has("record"):
 		print("  record        %s" % a["record"])
+	if a.has("csv"):
+		print("  csv           %s" % a["csv"])
 	quit(0 if bool(r["completed"]) else 1)
 
 

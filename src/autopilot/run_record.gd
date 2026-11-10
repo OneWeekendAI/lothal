@@ -118,6 +118,69 @@ static func _norm(v: Variant) -> Variant:
 	return v
 
 
+## SR7.3. CSV: one row per input field and per output, a tag on EVERY row.
+## Columns: section (input | output), name, value, low, high, unit, tag, note, trail. `tag` is always measured / published / estimated;
+## an edited input keeps its DEFAULT's tag and says "edited by user (default X)" in note (the user's number is a choice, not a source).
+## `trail` repeats on every row: build fingerprint | model | seed | world id (or none), so a row cut out of the file still says what made it.
+## Cells are RFC 4180 quoted when they hold a comma, quote or line break; NaN / INF leave the cell empty.
+const CSV_HEADER: Array[String] = ["section", "name", "value", "low", "high", "unit", "tag", "note", "trail"]
+
+
+static func to_csv(rec: Dictionary) -> String:
+	var trail := "%s | %s | seed %s | world %s" % [rec["build"]["fingerprint"], rec["versions"]["model"], str(int(rec["seed"])),
+		rec["world"]["id"] if rec["world"] != null else "none"]
+	var lines: Array[String] = [",".join(CSV_HEADER)]
+	var fields: Dictionary = rec["mission"]["fields"]
+	for name in fields:
+		var f: Dictionary = fields[name]
+		var note := "edited by user (default %s)" % _num(f.get("default")) if bool(f.get("edited", false)) else String(f.get("note", ""))
+		lines.append(_row(["input", name, _num(f.get("value")), "", "", "", String(f.get("default_tag", f.get("tag", ""))), note, trail]))
+	for name in rec["outputs"]:
+		var o: Dictionary = rec["outputs"][name]
+		lines.append(_row(["output", name, _num(o.get("value")), _num(o.get("low")), _num(o.get("high")), String(o.get("unit", "")), String(o.get("tag", "")), String(o.get("range", "")), trail]))
+	return "\n".join(lines) + "\n"
+
+
+static func _num(v: Variant) -> String:
+	if v == null:
+		return ""
+	var x := float(v)
+	if is_nan(x) or is_inf(x):
+		return ""
+	var t := String.num(snappedf(x, 1e-6), 6)
+	if t.contains("."):
+		t = t.rstrip("0").rstrip(".")
+	return t
+
+
+static func _row(cells: Array) -> String:
+	var out: Array[String] = []
+	for c in cells:
+		var t := String(c)
+		if t.contains(",") or t.contains("\"") or t.contains("\n"):
+			t = "\"" + t.replace("\"", "\"\"") + "\""
+		out.append(t)
+	return ",".join(out)
+
+
+static func save_json(rec: Dictionary, path: String) -> bool:
+	return _save(path, to_json(rec))
+
+
+static func save_csv(rec: Dictionary, path: String) -> bool:
+	return _save(path, to_csv(rec))
+
+
+static func _save(path: String, text: String) -> bool:
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string(text)
+	f.close()
+	return true
+
+
 static func from_json(text: String) -> Dictionary:
 	var d: Variant = JSON.parse_string(text)
 	return d if d is Dictionary else {}

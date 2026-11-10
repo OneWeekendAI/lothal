@@ -95,7 +95,7 @@ static func defaults_for(class_id: String, mission_id: String, build: Build = nu
 	var fields := {
 		"height_m": _f(row["height_m"], "%s (estimated)" % src),
 		"speed_mps": _f(row["speed_mps"], "%s (estimated)" % src),
-		"front_overlap": _f(0.75, "mapping convention 75 %% front overlap (estimated)"),
+		"front_overlap": _f(0.75, "mapping convention 75 percent front overlap (estimated)"),
 		"side_overlap": _f(0.65, "mapping convention 65 %% side overlap (estimated)"),
 		"reserve_pct": _f(row["reserve_pct"], "%s (estimated)" % src),
 	}

@@ -61,6 +61,13 @@ static func run() -> Array:
 		_allow_mismatch_flags(),
 		_tampered_output_differs(),
 		_edited_input_differs(),
+		_csv_every_row_tagged(),
+		_csv_row_count(),
+		_csv_values_match(),
+		_csv_edited_note(),
+		_csv_quoting_round_trip(),
+		_csv_trail_every_row(),
+		_json_file_matches(),
 	]
 
 
@@ -262,3 +269,103 @@ static func _edited_input_differs() -> TestResult:
 	var rp := RunReplay.replay(rec)
 	return TestResult.new("sr7 replay: an input changed behind the record's back (wind 3 -> 9 m/s) replays as 'differs'", rp["status"] == "differs" and (rp["diffs"] as Array).size() > 0,
 		"status %s, %d diffs" % [rp["status"], (rp["diffs"] as Array).size()])
+
+
+# ---------------------------------------------------------------- SR7.3 export
+## CSV is parsed back with FileAccess.get_csv_line (a real RFC 4180 reader), not by splitting on commas.
+## FAIL-PROOFS (observed 2026-11-10): CS1 output tag written empty: the tag case FAILS (15 of 21 rows). CS2 quoting removed: the quoting and trail cases FAIL.
+## CS3 trail column dropped from output rows: the trail case FAILS (15 rows). CS4 edited note dropped: the edited case FAILS. CS5 save_json writing other text: the json file case FAILS.
+const CSV_PATH := "user://sr7_export_test.csv"
+const JSON_PATH := "user://sr7_export_test.json"
+
+
+static func _read_csv(path: String) -> Array:
+	var f := FileAccess.open(path, FileAccess.READ)
+	var rows: Array = []
+	if f == null:
+		return rows
+	while not f.eof_reached():
+		var line := f.get_csv_line()
+		if line.size() > 1 or (line.size() == 1 and line[0] != ""):
+			rows.append(line)
+	return rows
+
+
+static func _csv_rows(rec: Dictionary) -> Array:
+	RunRecord.save_csv(rec, CSV_PATH)
+	return _read_csv(CSV_PATH)
+
+
+static func _survey_record() -> Dictionary:
+	return RunRecord.make({"class_id": "five_inch", "mission": "survey", "seed": 11}, TestSr5Survey._survey54(0.0, 0.0))
+
+
+static func _csv_every_row_tagged() -> TestResult:
+	var rows := _csv_rows(_survey_record())
+	var bad := 0
+	for i in range(1, rows.size()):
+		if String(rows[i][6]) not in RunRecord.TAGS:
+			bad += 1
+	return TestResult.new("sr7 csv: every data row of a survey export has a tag in {measured, published, estimated}", bad == 0 and rows.size() > 12 and rows[0] == PackedStringArray(RunRecord.CSV_HEADER),
+		"%d rows, %d bad tags, header %s" % [rows.size(), bad, str(rows[0] if rows.size() > 0 else [])])
+
+
+static func _csv_row_count() -> TestResult:
+	var rec := _survey_record()
+	var rows := _csv_rows(rec)
+	var want := 1 + (rec["mission"]["fields"] as Dictionary).size() + (rec["outputs"] as Dictionary).size()
+	return TestResult.new("sr7 csv: one header + one row per input field + one row per output (no row lost to quoting)", rows.size() == want, "%d rows, expected %d" % [rows.size(), want])
+
+
+static func _csv_values_match() -> TestResult:
+	var rec := _survey_record()
+	var rows := _csv_rows(rec)
+	var ok := false
+	var detail := ""
+	for r in rows:
+		if r[0] == "output" and r[1] == "acres_per_battery":
+			var o: Dictionary = rec["outputs"]["acres_per_battery"]
+			ok = absf(float(r[2]) - float(o["value"])) < 1e-5 and absf(float(r[3]) - float(o["low"])) < 1e-5 and absf(float(r[4]) - float(o["high"])) < 1e-5 and r[5] == "acres/battery"
+			detail = str(r)
+	return TestResult.new("sr7 csv: the acres_per_battery row carries the record's value, low, high and unit", ok, detail)
+
+
+static func _csv_edited_note() -> TestResult:
+	var rec: Dictionary = _fly({"fields": {"reserve_pct": 40.0}})[2]
+	var rows := _csv_rows(rec)
+	var ok := false
+	var detail := ""
+	for r in rows:
+		if r[0] == "input" and r[1] == "reserve_pct":
+			ok = r[7].contains("edited by user") and float(r[2]) == 40.0 and r[6] in RunRecord.TAGS
+			detail = str(r)
+	return TestResult.new("sr7 csv: an edited reserve is exported as an input row with value 40, the default's tag and 'edited by user' in the note", ok, detail)
+
+
+static func _csv_quoting_round_trip() -> TestResult:
+	var rec := _survey_record()
+	var want := String(rec["outputs"]["acres_per_battery"]["range"])
+	var got := ""
+	for r in _csv_rows(rec):
+		if r[0] == "output" and r[1] == "acres_per_battery":
+			got = r[7]
+	return TestResult.new("sr7 csv: a range text holding commas survives quoting and parsing unchanged", want.contains(",") and got == want, "want [%s] got [%s]" % [want, got])
+
+
+static func _csv_trail_every_row() -> TestResult:
+	var rec := _survey_record()
+	var want := "%s | %s | seed %d | world none" % [rec["build"]["fingerprint"], rec["versions"]["model"], int(rec["seed"])]
+	var rows := _csv_rows(rec)
+	var bad := 0
+	for i in range(1, rows.size()):
+		if rows[i][8] != want:
+			bad += 1
+	return TestResult.new("sr7 csv: every row repeats the trail (build fingerprint | model | seed | world)", bad == 0 and String(rec["build"]["fingerprint"]) != "", "%d rows differ; want [%s]" % [bad, want])
+
+
+static func _json_file_matches() -> TestResult:
+	var rec: Dictionary = _fly()[2]
+	var ok := RunRecord.save_json(rec, JSON_PATH)
+	var text := FileAccess.get_file_as_string(JSON_PATH)
+	return TestResult.new("sr7 json export: the file holds exactly the record text and parses back to a whole record", ok and text == RunRecord.to_json(rec) and RunRecord.problems(RunRecord.from_json(text)).is_empty(),
+		"%d bytes" % text.length())
