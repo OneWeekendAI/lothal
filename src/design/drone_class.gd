@@ -174,6 +174,17 @@ const CLASSES: Array[Dictionary] = [
 ]
 
 
+## Default payload of a class (L4.3): {"w", "mass_g", "tag", "note"}. Zero for every class without a `payload` key
+## on its CLASSES entry. ESTIMATED always: no catalog part carries a payload figure.
+static func payload_for(id: String) -> Dictionary:
+	return payload_from_entry(by_id(id))
+
+
+static func payload_from_entry(entry: Dictionary) -> Dictionary:
+	var src: Dictionary = entry.get("payload", {})
+	return {"w": float(src.get("w", 0.0)), "mass_g": float(src.get("mass_g", 0.0)), "tag": "estimated", "note": String(src.get("note", ""))}
+
+
 static func ids() -> Array[String]:
 	var out: Array[String] = []
 	for entry in CLASSES:

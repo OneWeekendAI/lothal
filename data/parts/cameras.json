@@ -100,6 +100,26 @@
         "sensor": "CMOS 1/1.3\""
       },
       "source": "DJI 'O4 Air Unit Series' specifications page (dji.com/o4-air-unit/specs), O4 Air Unit Pro column. THE MASS IS A DIFFERENCE OF TWO PUBLISHED FIGURES, NOT A FIGURE: DJI publishes 'Air Unit (camera module included): Approx. 32 g' and 'Air Unit (camera module excluded): Approx. 15.6 g', and 32 - 15.6 = 16.4 g is the camera module with its coaxial cable. The subtraction is stated here rather than done silently because the split between this entry and vtx_dji_o4_pro is derived while their SUM (32 g) is what DJI actually published — an aircraft carrying both is right to the gram, and either one alone inherits the split's uncertainty. Dimensions are the published camera module L x W x H. The antennas are NOT in the 32 g: DJI lists them separately at 2.1 g each, and they are antenna_dji_o4_pro. First entry in this file sourced from a named product rather than a class."
+    },
+    {
+      "part_id": "mapper_cam_multispectral_rededge",
+      "name": "Multispectral mapping camera (RedEdge-P class)",
+      "category": "camera",
+      "mass_g": 430.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 112.0,
+        "width_mm": 87.0,
+        "height_mm": 74.0
+      },
+      "catalog": {
+        "signal": "none (onboard storage)",
+        "size_class": "payload",
+        "sensor": "5-band multispectral + panchromatic"
+      },
+      "source": "MicaSense RedEdge-P class multispectral mapping camera. Mass 430 g and 112 x 87 x 74 mm are recalled from the manufacturer's published spec sheet and are UNVERIFIED against it (not re-checked this session); treat as ESTIMATED. The sunlight sensor (DLS 2) is not in this mass; it rides as the class payload (DroneClass.payload_for)."
     }
   ]
 }

@@ -105,6 +105,27 @@
         "protocol": "NMEA"
       },
       "source": "class-typical long-range module on a tall stalk, the heaviest thing in this file and deliberately so: 14 g at 70 mm above the top plate is the case design §2.3 exists to make visible. Mass and mast height are both ROUGH class-typical figures, not a specific product."
+    },
+    {
+      "part_id": "mapper_gps_rtk",
+      "name": "RTK GNSS module, mast-mounted",
+      "category": "gps",
+      "mass_g": 30.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 50.0,
+        "width_mm": 50.0,
+        "height_mm": 15.0,
+        "mast_height_mm": 40.0
+      },
+      "catalog": {
+        "constellations": "GPS + GLONASS + Galileo + BeiDou",
+        "compass": true,
+        "protocol": "UBX"
+      },
+      "source": "class-typical multi-band RTK GNSS receiver with patch antenna of the kind fitted to survey multirotors, not a specific product. Mass, box and 40 mm mast are ESTIMATED / unverified class figures; no manufacturer sheet was consulted."
     }
   ]
 }

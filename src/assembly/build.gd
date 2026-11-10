@@ -1981,6 +1981,13 @@ const PAYLOAD_SIZE_M := Vector3(0.05, 0.05, 0.05)
 var payload_mass_g := 0.0
 var payload_position_m := Vector3.INF   # INF = "use the nose seat"
 
+## Apply a class payload (DroneClass.payload_for): sets the electrical load and the mass fields.
+func apply_class_payload(payload: Dictionary) -> void:
+	payload_w = float(payload.get("w", 0.0))
+	payload_mass_g = float(payload.get("mass_g", 0.0))
+	_recompute()
+
+
 func payload_seat_m() -> Vector3:
 	if payload_position_m.is_finite():
 		return payload_position_m
