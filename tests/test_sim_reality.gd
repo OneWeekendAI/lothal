@@ -21,7 +21,37 @@ static func run(p_gate: bool = false) -> Array:
 	out.append_array(_evoque_hover())
 	out.append_array(_chimera_hover())
 	out.append_array(_capacity_cut_leaves_band())
+	out.append_array(_quick_matches_full())
+	out.append_array(_quick_sees_capacity_cut())
 	return out
+
+
+## SR0.3 (--quick): the coarse-step Mavic hover figure equals the full-rate one to 0.1 percent. Flown at the
+## quick step and restored afterwards (the flight cache is keyed on the step, so the two never mix).
+## MUTATION (2026-11-10): QUICK_DT = 1/1.5 s moved the Mavic hover 43.3 -> 29.4 min (32%) -> match test red;
+## the capacity scale ignored in catalog_for (cut == base, 0% move) -> not-blind test red.
+static func _quick_time(scale: float) -> float:
+	var saved := SimRealityHarness.step_dt
+	SimRealityHarness.step_dt = SimRealityHarness.QUICK_DT
+	var ref := SimRealityHarness.find_reference("mavic_3m")
+	var t := float(SimRealityHarness.fly(ref, "hover", scale)["time_min"])
+	SimRealityHarness.step_dt = saved
+	return t
+
+
+static func _quick_matches_full() -> Array:
+	var full := float(SimRealityHarness.fly(SimRealityHarness.find_reference("mavic_3m"), "hover")["time_min"])
+	var quick := _quick_time(1.0)
+	var err := absf(quick - full) / full * 100.0
+	return [TestResult.new("quick Mavic hover within 0.1% of the full-rate figure", err <= 0.1,
+		"quick %.3f min vs full %.3f min (%.3f%%)" % [quick, full, err])]
+
+
+static func _quick_sees_capacity_cut() -> Array:
+	var base := _quick_time(1.0)
+	var cut := _quick_time(0.7)
+	return [TestResult.new("quick mode is not blind: a 30% capacity cut moves the figure by more than 20%",
+		absf(cut - base) / base > 0.2, "%.2f -> %.2f min" % [base, cut])]
 
 
 static func _check(id: String, case_name: String) -> Array:

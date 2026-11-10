@@ -10,6 +10,7 @@ func _init() -> void:
 	var scale := 1.0
 	var only := ""
 	var gate := false
+	var quick := false
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--capacity-scale="):
 			scale = float(a.get_slice("=", 1))
@@ -23,6 +24,13 @@ func _init() -> void:
 				SimRealityHarness.field_opts = {}
 				for k in ["avionics", "esc", "thermal", "battery"]:
 					SimRealityHarness.field_opts[k] = k in on
+		elif a == "--quick":
+			# SR0.3: Mavic hover only at a 100 Hz step. Per-change gate, not a validation run.
+			quick = true
+			only = "mavic_3m"
+			SimRealityHarness.step_dt = SimRealityHarness.QUICK_DT
+		elif a.begins_with("--dt="):
+			SimRealityHarness.step_dt = float(a.get_slice("=", 1))
 		elif a == "--gate":
 			gate = true   # strict exit: ANY row out of band fails, context rows included (fail-proofs)
 		elif a.begins_with("--only="):
@@ -32,9 +40,11 @@ func _init() -> void:
 		if only != "" and String(ref["id"]) != only:
 			continue
 		for case_name in ref["cases"]:
+			if quick and case_name != "hover":
+				continue
 			rows.append(SimRealityHarness.row(ref, case_name, scale))
 	print("")
-	print("SIM REALITY HARNESS (SR0)  capacity_scale=%.2f  dt=%.4f s  cutoff=loaded cell V below min for %.1f s or capacity used" % [scale, SimRealityHarness.DT, SimRealityHarness.CUTOFF_HOLD_S])
+	print("SIM REALITY HARNESS (SR0)  capacity_scale=%.2f  dt=%.4f s  cutoff=loaded cell V below min for %.1f s or capacity used" % [scale, SimRealityHarness.step_dt, SimRealityHarness.CUTOFF_HOLD_S])
 	print(SimRealityHarness.format_table(rows))
 	# Owner direction 2026-11-09/10: published whole-aircraft times are marketing-optimistic CONTEXT.
 	# Out of band is a flagged warning and does not fail the run; --gate makes it fail.

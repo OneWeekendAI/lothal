@@ -31,6 +31,13 @@ const DT := 1.0 / 500.0
 const CUTOFF_HOLD_S := 0.5
 const MAX_FLIGHT_MIN := 120.0
 
+## SR0.3: the step actually used. DT is the full-fidelity default; `--quick` raises it to QUICK_DT.
+## 25 Hz: the fixed-cost part of a step is the battery/BEMT call, the pilot is a smooth 8 rad/s loop, and the
+## hover figure is set by the energy drawn, so it is insensitive to dt (checked: 0.01, 0.02, 0.04 all give
+## 43.3 min for the Mavic hover, the same as 0.002). The test below holds that to 0.1 percent.
+const QUICK_DT := 1.0 / 25.0
+static var step_dt := DT
+
 static var _flight_cache: Dictionary = {}
 ## SR1: which field-physics items the harness flies with (Build.apply_field_physics keys). Default all
 ## on. `--field=none` flies the pre-SR1 aircraft; `--field=avionics,esc` turns on only those.
@@ -93,7 +100,7 @@ static func build_for(ref: Dictionary, capacity_scale: float = 1.0) -> Build:
 ## Flies one case ("hover" or "cruise") and returns the result dictionary. Memoised on
 ## (id, case, capacity_scale) so the table and the per-aircraft tests never fly twice.
 static func fly(ref: Dictionary, case_name: String, capacity_scale: float = 1.0) -> Dictionary:
-	var key := "%s|%s|%.4f|%s" % [ref["id"], case_name, capacity_scale, JSON.stringify(field_opts)]
+	var key := "%s|%s|%.4f|%s|%.5f" % [ref["id"], case_name, capacity_scale, JSON.stringify(field_opts), step_dt]
 	if _flight_cache.has(key):
 		return _flight_cache[key]
 	var result := _fly_uncached(ref, case_name, capacity_scale)
@@ -115,13 +122,14 @@ static func _fly_uncached(ref: Dictionary, case_name: String, capacity_scale: fl
 	var t80 := -1.0
 	var energy_wh := 0.0
 	var ended_by := "time cap"
-	var max_steps := int(MAX_FLIGHT_MIN * 60.0 / DT)
+	var dt := step_dt
+	var max_steps := int(MAX_FLIGHT_MIN * 60.0 / dt)
 	var worst_tilt_deg := 0.0
 	for _i in max_steps:
-		core.step(pilot.commands(DT), DT)
-		t += DT
+		core.step(pilot.commands(dt), dt)
+		t += dt
 		var o := core.observables
-		energy_wh += o.voltage_live_v * o.current_total_a * DT / 3600.0
+		energy_wh += o.voltage_live_v * o.current_total_a * dt / 3600.0
 		if t80 < 0.0 and core.powertrain.battery.used_mah >= 0.8 * capacity_mah:
 			t80 = t
 		var tilt := rad_to_deg(acos(clampf((core.rigid_body.orientation * Vector3.UP).y, -1.0, 1.0)))
@@ -130,7 +138,7 @@ static func _fly_uncached(ref: Dictionary, case_name: String, capacity_scale: fl
 			ended_by = "LOST CONTROL (tilt %.0f deg, height %.1f m)" % [tilt, core.rigid_body.position_m.y]
 			break
 		if core.powertrain.battery.below_cutoff(o.current_total_a) and core.powertrain.battery.remaining_fraction() > 0.0:
-			low_for += DT
+			low_for += dt
 		else:
 			low_for = 0.0
 		if low_for >= CUTOFF_HOLD_S:
