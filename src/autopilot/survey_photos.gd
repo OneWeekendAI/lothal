@@ -12,6 +12,7 @@ extends RefCounted
 
 const BLUR_LIMIT_PX := 0.5
 const MAX_CELLS := 400000
+const HOLE_MIN_M2 := 25.0       # smallest unmapped cluster listed as a hole (same as MissionRunner.HOLE_MIN_M2)
 
 
 static func report(photos: Array, cam: CameraParams, poly: PackedVector2Array, ground: Callable, required: int, blur_limit_px: float, interval_s: float = 2.0) -> Dictionary:
@@ -35,7 +36,7 @@ static func report(photos: Array, cam: CameraParams, poly: PackedVector2Array, g
 				hi = Vector2(maxf(hi.x, c.x), maxf(hi.y, c.y))
 	var out := {"triggers": photos.size(), "images": shots.size(), "rejected_no_ground": rejected, "required_photos": required,
 		"required_photos_tag": "estimated", "mapped_m2": 0.0, "mapped_acres": 0.0, "mapped_hectares": 0.0, "mapped_fraction": 0.0,
-		"mean_photos_per_cell": 0.0, "unmapped_in_polygon_m2": 0.0, "cell_m": 0.0,
+		"mean_photos_per_cell": 0.0, "unmapped_in_polygon_m2": 0.0, "cell_m": 0.0, "holes": [],
 		"front_overlap": {"min": 0.0, "mean": 0.0, "max": 0.0, "pairs": 0, "tag": "estimated", "rule": "overlap area / footprint area of consecutive triggers closer than interval + 0.5 s (same line)"},
 		"gsd_cm": {"min": 0.0, "mean": 0.0, "max": 0.0, "tag": cam.tag},
 		"blur": {"limit_px": blur_limit_px, "limit_tag": "estimated", "exposure_s": cam.exposure_s, "max_px": 0.0, "mean_px": 0.0, "flagged": 0,
@@ -93,6 +94,10 @@ static func report(photos: Array, cam: CameraParams, poly: PackedVector2Array, g
 	if poly.size() >= 3:
 		var holes := map.hole_area(required, poly)
 		out["unmapped_in_polygon_m2"] = holes["m2"]
+		for h in map.unmapped_clusters(required, poly, HOLE_MIN_M2):
+			h["kind"] = "photo"
+			h["source"] = "cells inside the field seen by fewer than the required photos"
+			out["holes"].append(h)
 		var tot := float(area["m2"]) + float(holes["m2"])
 		out["mapped_fraction"] = float(area["m2"]) / tot if tot > 0.0 else 0.0
 	out["gsd_cm"] = {"min": g_min * 100.0, "mean": g_sum / n * 100.0, "max": g_max * 100.0, "tag": cam.tag}

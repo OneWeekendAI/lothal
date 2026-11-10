@@ -55,6 +55,12 @@ static func run() -> Array:
 		_gimbal_wired(),
 		_photos_block_tagged(),
 		_photos_deterministic(),
+		_econ_holes_listed(),
+		_econ_acres_per_battery(),
+		_econ_range_order(),
+		_econ_swath_is_cross_check(),
+		_econ_batteries_per_farm(),
+		_econ_json(),
 	]
 
 
@@ -288,7 +294,7 @@ static func _survey54(wind: float, gust: float, extra: Dictionary = {}) -> Dicti
 	var p := {"class_id": "five_inch", "mission": "survey", "seed": SEED54, "capacity_scale": 0.5, "camera": cam,
 		"polygon": PackedVector2Array([Vector2(30, 0), Vector2(100, 0), Vector2(100, 50), Vector2(30, 50)]),
 		"wind_speed_mps": wind, "gust_mps": gust, "fields": fields}
-	for k in ["debug_skip_line", "gimbal_stabilised"]:
+	for k in ["debug_skip_line", "gimbal_stabilised", "farm_acres"]:
 		if extra.has(k):
 			p[k] = extra[k]
 	var key := var_to_str([wind, gust, extra])
@@ -463,3 +469,84 @@ static func _photos_deterministic() -> TestResult:
 	var b := MissionRunner.run(p2)
 	return TestResult.new("sr5 photos: the same run twice gives byte-identical result text",
 		MissionResult.to_json(a) == MissionResult.to_json(b), "photos equal %s" % str(JSON.stringify(a["photos"]) == JSON.stringify(b["photos"])))
+
+
+# ---------------------------------------------------------------- SR5.5 holes and per-battery figures
+## Flights as SR5.4. The 10 percent side overlap pair (intact vs line 1 skipped) gives the hole case.
+## FAIL-PROOFS (observed 2026-11-10, fix removed by a temporary edit, then restored):
+## EC1 photo holes not appended to holes[]: the holes case FAILS (intact 0 m2).
+## EC2 acres per battery computed from the swath area instead of the mapped area: the by-hand case FAILS (4.34 vs 2.15 acres/battery).
+## EC3 reserve convention ignored in the range (low = high = value): the range case and the farm case FAIL (2.15 / 2.15 / 2.15).
+## EC4 batteries_per_farm range not inverted: the farm case FAILS (53.62-34.86).
+static func _side10_pair() -> Array:
+	return [_survey54(0.0, 0.0, {"fields": {"side_overlap": 0.1}}), _survey54(0.0, 0.0, {"fields": {"side_overlap": 0.1}, "debug_skip_line": 1})]
+
+
+static func _largest_photo_hole(r: Dictionary) -> float:
+	var m := 0.0
+	for h in r["holes"]:
+		if String(h.get("kind", "")) == "photo":
+			m = maxf(m, float(h["area_m2"]))
+	return m
+
+
+static func _econ_holes_listed() -> TestResult:
+	var pair := _side10_pair()
+	var a := _largest_photo_hole(pair[0])
+	var b := _largest_photo_hole(pair[1])
+	var warn := false
+	for w in pair[1]["warnings"]:
+		if String(w).contains("photo gaps"):
+			warn = true
+	return TestResult.new("sr5 holes[]: a skipped line lists a photo-gap hole of 500+ m2 (a line is about 700 m2) in holes[] with its size, the intact run's is smaller, and a 'photo gaps' warning appears",
+		b > 500.0 and b > 2.0 * a and warn, "intact largest %.0f m2, skipped largest %.0f m2, warning %s" % [a, b, str(warn)])
+
+
+static func _econ_acres_per_battery() -> TestResult:
+	var r := _survey54(0.0, 0.0)
+	var ab: Dictionary = r["acres_per_battery"]
+	var drawn := 0.0
+	for s in r["sortie_reports"]:
+		drawn += float(s["pack_used_pct"]) / 100.0
+	var reserve := float(r["params"]["fields"]["reserve_pct"]["value"])
+	var hand := float(r["photos"]["mapped_acres"]) / (drawn / (1.0 - reserve / 100.0))
+	return TestResult.new("sr5 acres per battery = photo-mapped acres / (pack fraction drawn / usable fraction), by hand; tagged estimated, flagged extrapolated for a part pack",
+		drawn > 0.0 and absf(float(ab["value"]) / hand - 1.0) < 1e-9 and String(ab["tag"]) == "estimated" and bool(ab["extrapolated"]),
+		"value %.2f, hand %.2f acres/battery, drawn %.3f, reserve %.0f %%, extrapolated %s" % [ab["value"], hand, drawn, reserve, str(ab["extrapolated"])])
+
+
+static func _econ_range_order() -> TestResult:
+	var ab: Dictionary = _survey54(0.0, 0.0)["acres_per_battery"]
+	return TestResult.new("sr5 acres per battery is a range: low < value < high (reserve convention, stated + 10 points to 0 percent)",
+		float(ab["low"]) > 0.0 and float(ab["low"]) < float(ab["value"]) and float(ab["value"]) < float(ab["high"]) and String(ab["range"]).contains("reserve"),
+		"low %.2f value %.2f high %.2f" % [ab["low"], ab["value"], ab["high"]])
+
+
+static func _econ_swath_is_cross_check() -> TestResult:
+	var pair := _side10_pair()
+	var skip: Dictionary = pair[1]
+	var cc: Dictionary = skip["cross_check_swath"]
+	var head := float(skip["photos"]["mapped_acres"])
+	var cc_acres := float(cc["acres"])
+	var poly_acres := float(skip["polygon_area_m2"]) / 4046.8564224
+	return TestResult.new("sr5 headline is not field / swath: with a line skipped the mapped acres are under 80 percent of the swath cross-check, which is at least the field (planned lines incl. overruns) and is labelled CROSS-CHECK",
+		head < 0.8 * cc_acres and cc_acres >= poly_acres and String(cc["label"]).begins_with("CROSS-CHECK") and float(cc["headline_acres"]) == head,
+		"mapped %.3f acres, swath cross-check %.3f acres, field %.3f acres" % [head, cc_acres, poly_acres])
+
+
+static func _econ_batteries_per_farm() -> TestResult:
+	var r := _survey54(0.0, 0.0, {"farm_acres": 100.0})
+	var ab: Dictionary = r["acres_per_battery"]
+	var bf: Dictionary = r["batteries_per_farm"]
+	return TestResult.new("sr5 batteries per 100-acre farm = 100 / acres per battery, range inverted (low from the high acres), whole batteries rounded up",
+		absf(float(bf["value"]) - 100.0 / float(ab["value"])) < 1e-6 and absf(float(bf["low"]) - 100.0 / float(ab["high"])) < 1e-6 \
+		and absf(float(bf["high"]) - 100.0 / float(ab["low"])) < 1e-6 and float(bf["low"]) < float(bf["value"]) and int(bf["whole_batteries"]) == int(ceil(float(bf["value"]))),
+		"%.2f (%.2f-%.2f) batteries, whole %d" % [bf["value"], bf["low"], bf["high"], bf["whole_batteries"]])
+
+
+static func _econ_json() -> TestResult:
+	var d = JSON.parse_string(MissionResult.to_json(_survey54(0.0, 0.0)))
+	var ok: bool = d.has("holes") and d.has("acres_per_battery") and d.has("batteries_per_farm") and d.has("cross_check_swath")
+	for k in ["value", "low", "high", "tag"]:
+		ok = ok and d["acres_per_battery"].has(k) and d["batteries_per_farm"].has(k)
+	return TestResult.new("sr5 result JSON carries holes[], acres_per_battery and batteries_per_farm as {value, low, high, tag}, and cross_check_swath", ok, str(d.keys().size()))

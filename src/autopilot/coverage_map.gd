@@ -110,3 +110,44 @@ func mean_count(polygon: PackedVector2Array = PackedVector2Array()) -> float:
 				total += count[r * cols + c]
 				cells += 1
 	return float(total) / float(cells) if cells > 0 else 0.0
+
+
+## Connected clusters (4-neighbour) of cells inside `polygon` whose count is below `required`, each at least `min_m2`:
+## [{area_m2, x, z (centroid)}] largest first.
+func unmapped_clusters(required: int, polygon: PackedVector2Array, min_m2: float) -> Array:
+	var seen := PackedByteArray()
+	seen.resize(cols * rows)
+	var out: Array = []
+	for r0 in rows:
+		for c0 in cols:
+			var i0 := r0 * cols + c0
+			if seen[i0] == 1 or count[i0] >= required or not Geometry2D.is_point_in_polygon(_centre(c0, r0), polygon):
+				continue
+			var stack: Array = [i0]
+			seen[i0] = 1
+			var n := 0
+			var sx := 0.0
+			var sz := 0.0
+			while not stack.is_empty():
+				var i: int = stack.pop_back()
+				var r := int(floor(float(i) / float(cols)))
+				var c := i % cols
+				var ce := _centre(c, r)
+				n += 1
+				sx += ce.x
+				sz += ce.y
+				for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					var cc: int = c + d.x
+					var rr: int = r + d.y
+					if cc < 0 or rr < 0 or cc >= cols or rr >= rows:
+						continue
+					var j := rr * cols + cc
+					if seen[j] == 1 or count[j] >= required or not Geometry2D.is_point_in_polygon(_centre(cc, rr), polygon):
+						continue
+					seen[j] = 1
+					stack.append(j)
+			var a := float(n) * cell_m * cell_m
+			if a >= min_m2:
+				out.append({"area_m2": a, "x": sx / n, "z": sz / n})
+	out.sort_custom(func(p: Dictionary, q: Dictionary) -> bool: return float(p["area_m2"]) > float(q["area_m2"]))
+	return out

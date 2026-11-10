@@ -573,7 +573,7 @@ func _touchdown(pos: Vector3) -> void:
 	last_reserve_left = rec
 	home_error = Vector2(pos.x, pos.z).length()
 	sortie_reports.append({"sortie": sorties, "flight_time_s": _now() - sortie_t0, "reserve_left_pct": rec,
-		"home_error_m": home_error, "rth_predicted_wh": rth_pred_wh, "rth_actual_wh": (energy_ws - rth_e0_ws) / 3600.0, "ended": "completed" if mission_done else ("landed_at_reserve" if rth_reason != "" else "landed")})
+		"pack_used_pct": 100.0 - rec, "home_error_m": home_error, "rth_predicted_wh": rth_pred_wh, "rth_actual_wh": (energy_ws - rth_e0_ws) / 3600.0, "ended": "completed" if mission_done else ("landed_at_reserve" if rth_reason != "" else "landed")})
 	phase = "landed"
 	# battery swap for a survey with lines left?
 	if not mission_done and mission == Mission.SURVEY and next_chunk < chunks.size():
@@ -1046,6 +1046,12 @@ func _result(field_out: Dictionary, build: Build, scale: float, cond: Conditions
 	var blur: Dictionary = shots_rep["blur"]
 	if int(blur["flagged"]) > 0:
 		warnings.append("motion blur: %d of %d photos blur by more than %.2f px (worst %.2f px at %.2f s exposure; limit ESTIMATED, model ignores rotation)" % [blur["flagged"], shots_rep["images"], blur["limit_px"], blur["max_px"], blur["exposure_s"]])
+	if mission == Mission.SURVEY:
+		for h in shots_rep["holes"]:
+			holes_out.append(h)
+		if not (shots_rep["holes"] as Array).is_empty():
+			var sh: Array = shots_rep["holes"]
+			warnings.append("photo gaps: %d cluster(s) of at least %.0f m2 seen by fewer than %d photos, largest %.0f m2 near (%.0f, %.0f)" % [sh.size(), HOLE_MIN_M2, required_photos, sh[0]["area_m2"], sh[0]["x"], sh[0]["z"]])
 	var energy_wh := energy_ws / 3600.0
 	var ok: bool = ended_by in NORMAL_ENDINGS and not (mission == Mission.SURVEY and next_chunk < chunks.size())
 	var polygon_area := SurveyPlanner.polygon_area(polygon) if mission == Mission.SURVEY else 0.0
@@ -1087,6 +1093,8 @@ func _result(field_out: Dictionary, build: Build, scale: float, cond: Conditions
 			"spacing_m": plan["spacing_m"], "planned_path_m": plan["path_length_m"], "planned_time_s": plan["expected_time_s"],
 			"shot_interval_s": plan["shot_interval_s"], "line_angle_deg": plan["line_angle_deg"]}
 	MissionResult.add_figures(r)
+	if mission == Mission.SURVEY:
+		MissionResult.add_survey_economics(r, plan, float(params_in.get("farm_acres", 0.0)))
 	return r
 
 
