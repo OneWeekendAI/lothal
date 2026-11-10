@@ -22,6 +22,11 @@ extends RefCounted
 ##   (five_inch / seven_lr / cinelifter), square per-leg xt 0.13 0.36 0.44 0.71 m, crosswind on 0.088 m vs off
 ##   0.654 m, heading-track 41.2 deg, terrain AGL 10.00..10.06 m, altitude step error 0.003 m.
 ##
+## M8 (SR4.1, 2026-11-10) five-minute hold in 15 mph + 1 m/s turbulence: fixed code max radius 0.204 m, last-60 s mean offset 0.005 m.
+##        wind_correction default false: hold-5-min FAILS: max radius 0.701 m (limit 0.4), mean offset 0.323 m (limit 0.1).
+##   The other SR4.1 gaps (square per leg, crab on/off, 10 percent slope AGL, reserve 95 percent not flown) already existed
+##   (nav square/crosswind/terrain; mission res95 x3); no new case needed.
+##
 ## M7 (hover model, added with SR4 follow-up 2026-11-09): hover_throttle_for matched the flown hover to 0.2-1 percent
 ##   already; the 8-20 percent error was the hover POWER the mission runner derived from it (hover_current_a(thr) priced at
 ##   the nominal voltage, no avionics load): flown 79 W against 49 W modelled on the 5 inch (-38 percent).
@@ -40,6 +45,7 @@ static func run() -> Array:
 	out.append(_hold("five_inch"))
 	out.append(_hold("seven_lr"))
 	out.append(_hold("cinelifter"))
+	out.append(_hold_five_minutes())
 	out.append(_square())
 	out.append(_crosswind_corrected())
 	out.append(_crosswind_uncorrected())
@@ -73,6 +79,29 @@ static func _hold(cls: String) -> TestResult:
 	var mean_off := (sum / float(n)).length()
 	return TestResult.new("sr4 hold %s: 60 s in 5 m/s wind + 1 m/s gust stays within 0.5 m and the last-20 s mean offset is under 0.1 m" % cls,
 		worst < 0.5 and mean_off < 0.1, "max radius %.3f m, mean offset (40-60 s) %.3f m" % [worst, mean_off])
+
+
+## SR4.1: five minutes at one point in 15 mph (6.7 m/s, from the east) with turbulence (Dryden, sigma 1.0 m/s, which is
+## above the MIL-F-8785C 0.1 x W20 = 0.7 m/s: a stated harsh case). Stated radius: the drone stays within 0.4 m of the point for
+## the whole 300 s, and the last-60 s mean offset stays under 0.1 m (no integrator windup or slow drift).
+static func _hold_five_minutes() -> TestResult:
+	var rig := _rig("five_inch", 15.0 * 0.44704, 90.0, 1.0)
+	rig.nav.set_hold(Vector2.ZERO)
+	rig.nav.set_altitude_msl(START_Y)
+	var worst := 0.0
+	var sum := Vector2.ZERO
+	var n := 0
+	for k in 300 * 500:
+		rig.step()
+		var p := rig.position()
+		var r := Vector2(p.x, p.z)
+		worst = maxf(worst, r.length())
+		if k >= 240 * 500:
+			sum += r
+			n += 1
+	var mean_off := (sum / float(n)).length()
+	return TestResult.new("sr4 hold five_inch 5 min in 15 mph (6.7 m/s) wind + 1 m/s turbulence: stays within 0.4 m and the last-60 s mean offset is under 0.1 m",
+		worst < 0.4 and mean_off < 0.1, "max radius %.3f m, mean offset (240-300 s) %.3f m, t %.0f s" % [worst, mean_off, rig.time_s])
 
 
 ## 100 m square at 8 m/s, 3 m/s wind from 45 deg, course heading. Cross-track error is read on each leg between
