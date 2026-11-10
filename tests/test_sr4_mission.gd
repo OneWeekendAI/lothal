@@ -111,6 +111,8 @@ static func run() -> Array:
 		"edit_resolve": func() -> TestResult: return _edit_resolve(),
 		"edit_equal": func() -> TestResult: return _edit_to_default_is_not_edited(),
 		"edit_run": func() -> TestResult: return _edited_reserve_changes_result(),
+		"rate_250": func() -> TestResult: return _rate_energy(250.0, true),
+		"rate_40": func() -> TestResult: return _rate_energy(40.0, false),
 		"unknown": func() -> TestResult: return _unknown_class(),
 	}
 	var keys: PackedStringArray = only.split(",") if only != "" else PackedStringArray()
@@ -443,3 +445,26 @@ static func _edited_reserve_changes_result() -> TestResult:
 		and float(r["flight_time_s"]) < float(base["flight_time_s"])
 	return TestResult.new("sr4 mission edit: reserve 40 instead of the 25 default shows edited in the result and the pack lands with more left, sooner",
 		ok, "left %.1f vs %.1f %%, time %.0f vs %.0f s, edited %s" % [r["reserve_left_pct"], base["reserve_left_pct"], r["flight_time_s"], base["flight_time_s"], str(fr["edited"])])
+
+
+# ---------------------------------------------------------------- SR4.4 inner rate for long headless runs
+## MEASURED 2026-11-10 (five_inch cruise loop, 6 laps = 375 s of flight, 3 m/s wind from 60 deg, 1 m/s gusts, seed 5; wall time on a
+## loaded machine, so an upper bound): dt 1/500 12.1 s wall (1.9 s per sim minute, so a 30-minute run is about 1 minute; 1 kHz would be
+## about twice that), 1/250 7.3 s, 1/200 6.4 s, 1/125 5.2 s. Energy 9.3436 / 9.3437 / 9.3434 / 9.3430 Wh: 1/125 is 0.006 percent
+## from 1/500. 2-lap probe: 1/100 3.4929 Wh, 1/60 3.4930 Wh (same), 1/40 lost control at 13.8 s, 1/25 at 3.5 s.
+## DECISION: no new option is needed (the 1 kHz-class cost is a minute per 30 sim minutes); the existing `dt` param is the rate knob and
+## is exposed as --rate-hz in tools/run_mission.gd. STATED BOUND: down to 250 Hz the energy is within 1 percent of the 500 Hz run
+## (measured 0.001 percent); below about 60 Hz the controller loses the aircraft, which the mission reports as lost_control.
+## FAIL-PROOF: runner ignoring the `dt` param (dt fixed at 1/500) -> the too-low-rate case FAILS (a 40 Hz run completes and equals the base run).
+static func _rate_energy(hz: float, expect_within: bool) -> TestResult:
+	var p := {"class_id": "five_inch", "mission": Mission.CRUISE_LOOP, "seed": 5, "laps": 6, "gust_mps": 1.0, "wind_speed_mps": 3.0, "wind_from_deg": 60.0}
+	var base := _fly(p)
+	var q := p.duplicate()
+	q["dt"] = 1.0 / hz
+	var r := _fly(q)
+	var rel := absf(float(r["energy_wh"]) / float(base["energy_wh"]) - 1.0)
+	var within: bool = String(r["ended_by"]) == "completed" and rel < 0.01
+	var detail := "%.0f Hz: ended %s, energy %.4f Wh vs %.4f Wh at 500 Hz (%.3f percent), flight %.0f s" % [hz, r["ended_by"], r["energy_wh"], base["energy_wh"], rel * 100.0, r["flight_time_s"]]
+	if expect_within:
+		return TestResult.new("sr4 mission inner rate 250 Hz vs 500 Hz on a 5-minute cruise: energy within 1 percent and the mission completes", within, detail)
+	return TestResult.new("sr4 mission inner rate 40 Hz (deliberately too low) on the same cruise exceeds the 1 percent bound (or loses control)", not within, detail)

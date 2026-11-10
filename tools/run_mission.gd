@@ -1,7 +1,7 @@
 extends SceneTree
 ## SR4 CLI: see tools/run_mission.sh. Exit 0 = mission completed, 1 = failed / aborted, 2 = usage error.
 
-const USAGE := "usage: tools/run_mission.sh --class=<id> --mission=<hover_endurance|cruise_loop|range_test|survey|follow_path|test_pack> [--seed=N --height=M --speed=M/S --front=0.75 --side=0.65 --reserve=PCT --wind=MPS --wind-from=DEG --gust=MPS --capacity-scale=X --out=path.json]"
+const USAGE := "usage: tools/run_mission.sh --class=<id> --mission=<hover_endurance|cruise_loop|range_test|survey|follow_path|test_pack> [--seed=N --height=M --speed=M/S --front=0.75 --side=0.65 --reserve=PCT --wind=MPS --wind-from=DEG --gust=MPS --capacity-scale=X --rate-hz=500 --out=path.json]"
 
 
 func _init() -> void:
@@ -12,7 +12,7 @@ func _init() -> void:
 			quit(2)
 			return
 		a[arg.substr(2).get_slice("=", 0)] = arg.get_slice("=", 1)
-	var known := ["class", "mission", "seed", "height", "speed", "front", "side", "reserve", "wind", "wind-from", "gust", "capacity-scale", "out"]
+	var known := ["class", "mission", "seed", "height", "speed", "front", "side", "reserve", "wind", "wind-from", "gust", "capacity-scale", "rate-hz", "out"]
 	for k in a:
 		if not k in known:
 			print("unknown option --%s\n%s" % [k, USAGE])
@@ -36,7 +36,8 @@ func _init() -> void:
 			fields[pair[1]] = float(a[pair[0]])
 	var params := {"class_id": a["class"], "mission": a["mission"], "seed": int(a.get("seed", "1")), "fields": fields,
 		"wind_speed_mps": float(a.get("wind", "0")), "wind_from_deg": float(a.get("wind-from", "0")),
-		"gust_mps": float(a.get("gust", "0")), "capacity_scale": float(a.get("capacity-scale", "1"))}
+		"gust_mps": float(a.get("gust", "0")), "capacity_scale": float(a.get("capacity-scale", "1")),
+		"dt": 1.0 / float(a.get("rate-hz", "500"))}
 	var t0 := Time.get_ticks_msec()
 	var r := MissionRunner.run(params)
 	var out_path: String = a.get("out", "/tmp/lothal_missions/%s_%s_%d.json" % [params["class_id"], params["mission"], params["seed"]])
