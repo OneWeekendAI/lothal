@@ -15,17 +15,18 @@ const NUMBERS := {"id": "numbers", "label": "Numbers"}
 const ARMS := {"id": "arms", "label": "Arms"}
 const HARDWARE := {"id": "hardware", "label": "Hardware"}
 const LAYOUT := {"id": "layout", "label": "Layout"}
+const BENCH := {"id": "bench", "label": "Bench"}
 const BLADE := {"id": "blade", "label": "Blade"}
 
 ## Category -> tab list, in tab order. Frame is a category of the sheet though not of the shelf.
 const TABS := {
-	"frame": [SHEET, SHAPE, NUMBERS, ARMS, HARDWARE, LAYOUT],
+	"frame": [SHEET, SHAPE, NUMBERS, ARMS, HARDWARE, LAYOUT, BENCH],
 	"battery": [SHEET],
-	"motor": [SHEET],
+	"motor": [SHEET, BENCH],
 	"propeller": [SHEET, BLADE],
 	"guard": [SHEET],
 	"flight_controller": [SHEET],
-	"esc": [SHEET],
+	"esc": [SHEET, BENCH],
 	"receiver": [SHEET],
 	"camera": [SHEET],
 	"vtx": [SHEET],
@@ -76,6 +77,8 @@ static func build(category: String, tab_id: String, ds: DesignSpace, sheet: Part
 			return FrameShapeTab.new(ds, sheet)
 		"blade":
 			return PropBladeTab.new(ds, sheet)
+		"bench":
+			return BenchTab.new(ds, {"motor": "thrust", "esc": "esc", "frame": "frame"}[category])
 		"numbers", "arms", "hardware", "layout":
 			return FrameFiguresTab.new(ds, tab_id)
 	return null
