@@ -10,8 +10,9 @@ extends RefCounted
 ## {ok: false, reason} with one line for a missing/unknown part, an unknown category, a malformed
 ## frame document, a newer version, or a file that is not a design at all.
 ##
-## Not covered yet: assembly tweaks (user://assembly_tweaks.json is its own file) and a project that
-## flies a drawn `Project.airframe`.
+## The authored harness ("harness"), the assembly tweaks ("assembly") and the Config decisions ("config"), the printing decisions and print records ("printing", "print_records") ride in the file when they are
+## not the as-built defaults; a file without them opens as built. Not covered yet: a project that flies a
+## drawn `Project.airframe`.
 
 const FORMAT := "lothal-design"
 const VERSION := 1
@@ -27,6 +28,16 @@ static func to_dict(session: DesignSession, design_name: String = "") -> Diction
 	var doc := session.frame_document()
 	if doc != null:
 		out["frame_document"] = doc.to_dictionary()
+	if not session.harness_overrides.is_empty():
+		out["harness"] = session.harness_overrides.duplicate(true)
+	if not session.config().is_empty():
+		out["config"] = session.config()
+	if not session.printing().is_empty():
+		out["printing"] = session.printing()
+	if not session.print_records().is_empty():
+		out["print_records"] = session.print_records()
+	if not session.tweaks.is_default():
+		out["assembly"] = session.tweaks.to_dict()
 	return out
 
 
@@ -125,7 +136,13 @@ static func from_dict(d: Dictionary, catalog: PartsCatalog) -> Dictionary:
 		fd = frame
 	elif frame != null:
 		return _no("This class has no editable frame, but the design carries one.")
-	session.restore_state(selection, fd)
+	var harness: Variant = d.get("harness", {})
+	var assembly: Variant = d.get("assembly", {})
+	var config: Variant = d.get("config", {})
+	session.restore_state(selection, fd, harness if harness is Dictionary else {}, assembly if assembly is Dictionary else {},
+		config if config is Dictionary else {},
+		(d.get("printing", {}) as Dictionary) if d.get("printing", {}) is Dictionary else {},
+		(d.get("print_records", []) as Array) if d.get("print_records", []) is Array else [])
 	return {"ok": true, "reason": "", "session": session, "name": str(d.get("name", ""))}
 
 

@@ -16,21 +16,34 @@ const ARMS := {"id": "arms", "label": "Arms"}
 const HARDWARE := {"id": "hardware", "label": "Hardware"}
 const LAYOUT := {"id": "layout", "label": "Layout"}
 const BENCH := {"id": "bench", "label": "Bench"}
+const HARNESS := {"id": "harness", "label": "Harness"}
+const BOARD := {"id": "board", "label": "Board"}
+const TUNE := {"id": "tune", "label": "Tune"}
+const RATES := {"id": "rates", "label": "Rates"}
+const PORTS := {"id": "ports", "label": "Ports"}
+const FAILSAFE := {"id": "failsafe", "label": "Failsafe"}
+const SPIN := {"id": "spin", "label": "Spin"}
+const FIT := {"id": "fit", "label": "Fit"}
+const UPTILT := {"id": "uptilt", "label": "Uptilt"}
+const PAYLOAD := {"id": "payload", "label": "Payload"}
+const LINK := {"id": "link", "label": "Link"}
+const PRINT := {"id": "print", "label": "Print"}
+const CONFIGSHEET := {"id": "configsheet", "label": "Config sheet"}
 const BLADE := {"id": "blade", "label": "Blade"}
 
 ## Category -> tab list, in tab order. Frame is a category of the sheet though not of the shelf.
 const TABS := {
-	"frame": [SHEET, SHAPE, NUMBERS, ARMS, HARDWARE, LAYOUT, BENCH],
-	"battery": [SHEET],
-	"motor": [SHEET, BENCH],
+	"frame": [SHEET, SHAPE, NUMBERS, ARMS, HARDWARE, LAYOUT, FIT, PRINT, BENCH],
+	"battery": [SHEET, PRINT],
+	"motor": [SHEET, BENCH, SPIN],
 	"propeller": [SHEET, BLADE],
-	"guard": [SHEET],
-	"flight_controller": [SHEET],
-	"esc": [SHEET, BENCH],
-	"receiver": [SHEET],
-	"camera": [SHEET],
-	"vtx": [SHEET],
-	"antenna": [SHEET],
+	"guard": [SHEET, PRINT],
+	"flight_controller": [SHEET, BOARD, TUNE, RATES, PORTS, FAILSAFE, CONFIGSHEET],
+	"esc": [SHEET, BENCH, HARNESS],
+	"receiver": [SHEET, LINK],
+	"camera": [SHEET, UPTILT, PAYLOAD, PRINT],
+	"vtx": [SHEET, PAYLOAD],
+	"antenna": [SHEET, LINK, PRINT],
 }
 
 
@@ -79,6 +92,14 @@ static func build(category: String, tab_id: String, ds: DesignSpace, sheet: Part
 			return PropBladeTab.new(ds, sheet)
 		"bench":
 			return BenchTab.new(ds, {"motor": "thrust", "esc": "esc", "frame": "frame"}[category])
+		"board", "tune", "rates", "ports", "failsafe", "spin", "configsheet":
+			return ConfigTab.new(ds, tab_id)
+		"print":
+			return PrintTab.new(ds, sheet, category)
+		"fit", "uptilt", "payload", "link":
+			return FitTab.new(ds, tab_id)
+		"harness":
+			return HarnessTab.new(ds)
 		"numbers", "arms", "hardware", "layout":
 			return FrameFiguresTab.new(ds, tab_id)
 	return null

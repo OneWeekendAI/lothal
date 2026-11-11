@@ -25,6 +25,9 @@ signal pack_designer_requested
 signal motor_designer_requested
 ## The "+" tile at the end of the prop list was pressed: the prop designer.
 signal prop_designer_requested
+## The "New <part>" tile of a category with no designer of its own (ESC, flight controller, camera, VTX,
+## receiver, antenna): the form that enters a part the catalog does not stock.
+signal custom_part_requested(category: String)
 ## A saved motor's or prop's card was right-clicked: its context menu (edit in the designer, delete).
 signal card_menu_requested(category: String, part_id: String)
 
@@ -33,6 +36,12 @@ const DESIGN_TILES := {
 	"battery": ["AddPack", "New pack", "Design your own battery pack"],
 	"motor": ["AddMotor", "Design your own", "Design your own motor"],
 	"propeller": ["AddProp", "New prop", "Design your own prop"],
+	"esc": ["AddEsc", "New ESC", "Enter an ESC the catalog does not stock"],
+	"flight_controller": ["AddFc", "New board", "Enter a flight controller the catalog does not stock"],
+	"camera": ["AddCamera", "New camera", "Enter a camera the catalog does not stock"],
+	"vtx": ["AddVtx", "New VTX", "Enter a video transmitter the catalog does not stock"],
+	"receiver": ["AddReceiver", "New receiver", "Enter a receiver the catalog does not stock"],
+	"antenna": ["AddAntenna", "New antenna", "Enter an antenna the catalog does not stock"],
 }
 
 const INK := Color(0.93, 0.93, 0.93)
@@ -514,8 +523,10 @@ func _add_design_tile(cat: String) -> void:
 		b.pressed.connect(func(): pack_designer_requested.emit())
 	elif cat == "motor":
 		b.pressed.connect(func(): motor_designer_requested.emit())
-	else:
+	elif cat == "propeller":
 		b.pressed.connect(func(): prop_designer_requested.emit())
+	else:
+		b.pressed.connect(func(): custom_part_requested.emit(cat))
 	list.add_child(b)
 
 

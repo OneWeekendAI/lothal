@@ -2112,6 +2112,7 @@ func _build_shelf() -> void:
 	shelf.pack_designer_requested.connect(open_pack_designer)
 	shelf.motor_designer_requested.connect(open_motor_designer)
 	shelf.prop_designer_requested.connect(open_prop_designer)
+	shelf.custom_part_requested.connect(open_custom_part_form)
 	shelf.card_menu_requested.connect(open_card_menu)
 	add_child(shelf)
 
@@ -2199,6 +2200,47 @@ func open_part_sheet(category: String, tab := "") -> bool:
 		return false
 	sheet.grab_focus()
 	return true
+
+
+## The form that enters a part the catalog does not stock (ESC, flight controller, camera, VTX, receiver,
+## antenna), while it is open. The forms are the old Lab dialogs, unchanged; what they save lands in the
+## custom stores the catalog merges, so the new part is on the shelf the moment the form saves.
+var custom_form: AcceptDialog
+
+
+## Opens the form for `category`; false for a category that has none. The saved part appears on the shelf.
+func open_custom_part_form(category: String) -> bool:
+	if custom_form != null and is_instance_valid(custom_form):
+		custom_form.queue_free()
+		custom_form = null
+	var form: AcceptDialog
+	match category:
+		"esc":
+			var e := CustomEscDialog.new()
+			e.esc_saved.connect(func(_id: String): _custom_saved())
+			form = e
+		"flight_controller":
+			var f := CustomFcDialog.new()
+			f.fc_saved.connect(func(_id: String): _custom_saved())
+			form = f
+		"camera", "vtx", "receiver", "antenna":
+			var c := CustomComponentDialog.new(category)
+			c.component_saved.connect(func(_id: String): _custom_saved())
+			form = c
+		_:
+			return false
+	custom_form = form
+	add_child(form)
+	if form.is_inside_tree() and DisplayServer.get_name() != "headless":
+		form.popup_centered()
+	return true
+
+
+func _custom_saved() -> void:
+	refresh_catalog()
+	if custom_form != null and is_instance_valid(custom_form):
+		custom_form.queue_free()
+		custom_form = null
 
 
 ## The pack designer pop-up, while it is open (null otherwise). Opened by the shelf's "+" tile.

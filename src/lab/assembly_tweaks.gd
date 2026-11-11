@@ -409,6 +409,33 @@ func resolved_m(build: Build) -> Dictionary:
 # Persistence
 # ---------------------------------------------------------------------------
 
+## The configuration as a plain dictionary (overrides and choices, nothing else) and back: how a
+## Design Space design carries its assembly in its own file and undo history, without the shared file.
+func to_dict() -> Dictionary:
+	var out := {}
+	for key in _overrides:
+		out[key] = _overrides[key]
+	for key in _choices:
+		out[key] = _choices[key]
+	return out
+
+
+static func from_dict(stored: Dictionary) -> AssemblyTweaks:
+	var tweaks := AssemblyTweaks.new()
+	for key in stored:
+		var value: Variant = stored[key]
+		if CHOICE_KEYS.has(key):
+			if value is String:
+				tweaks._choices[key] = String(value)
+		elif KEYS.has(key) and (value is float or value is int):
+			tweaks._overrides[key] = float(value)
+	return tweaks
+
+
+func is_default() -> bool:
+	return _overrides.is_empty() and _choices.is_empty()
+
+
 ## Writes the file, preserving anything a later version of Lothal put in it. Returns false if the
 ## file could not be opened — the caller may report that, but nothing in Lab depends on it, since
 ## an unsaveable tweak is a lost preference and not a broken workbench.

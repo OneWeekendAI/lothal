@@ -25,6 +25,11 @@ var drone_class: String = ""
 ## category -> part id, dense over ProjectSchema.all_categories().
 var selection: Dictionary = {}
 var _project: Project
+## The authored harness (`Harness.overrides()`, sparse) and the assembly tweaks (shims, battery offset,
+## camera uptilt ...) of this design. Both are part of what the design IS: built into `build()`, in the
+## undo history and in the design file. Empty means "as the parts imply", which builds exactly as before.
+var harness_overrides: Dictionary = {}
+var tweaks := AssemblyTweaks.new()
 ## Undo and redo stacks of whole selections (Section 3). A swap pushes the selection it replaced.
 var _undo: Array = []
 var _redo: Array = []
@@ -81,6 +86,8 @@ static func from_selection(session: DesignSession, category: String, part_id: St
 	# The edited frame comes along (read only), so a previewed swap is measured on the frame on screen.
 	trial._frame_doc = session._frame_doc
 	trial._frame_baseline = session._frame_baseline
+	trial.harness_overrides = session.harness_overrides
+	trial.tweaks = session.tweaks
 	return trial
 
 
@@ -92,6 +99,13 @@ func build(catalog: PartsCatalog) -> Build:
 		var edit := frame_edit(catalog)
 		if not edit.is_empty():
 			b.set_frame_edit(edit)
+	if b != null:
+		if not harness_overrides.is_empty():
+			b.harness = Harness.from_overrides(harness_overrides)
+		if not tweaks.is_default():
+			b.set_assembly(tweaks.resolved_m(b))
+		if not _project.printing.is_empty():
+			b.set_printing(_project.printing.duplicate(true))
 	return b
 
 
@@ -299,8 +313,13 @@ func adopt_frame_document(frame_dict: Dictionary, push_undo := true) -> bool:
 
 ## Puts a saved selection and frame document ({} = leave the document as drawn) into this session
 ## and clears the history. DesignFile has already checked both; this does not.
-func restore_state(p_selection: Dictionary, frame_dict: Dictionary) -> void:
+func restore_state(p_selection: Dictionary, frame_dict: Dictionary, p_harness := {}, p_tweaks := {}, p_config := {}, p_printing := {}, p_records := []) -> void:
 	selection = p_selection.duplicate(true)
+	_project.config = (p_config as Dictionary).duplicate(true)
+	_project.printing = (p_printing as Dictionary).duplicate(true)
+	_project.print_records = (p_records as Array).duplicate(true)
+	harness_overrides = (p_harness as Dictionary).duplicate(true)
+	tweaks = AssemblyTweaks.from_dict(p_tweaks)
 	if not frame_dict.is_empty() and _frame_doc != null:
 		_frame_doc = AirframeDocument.from_dictionary(frame_dict)
 	_undo.clear()
@@ -308,13 +327,91 @@ func restore_state(p_selection: Dictionary, frame_dict: Dictionary) -> void:
 	_changed()
 
 
+## The Config decisions of this design (motor spin, ports, failsafe, rates: `Project.config`, sparse). They
+## build into the aircraft (`Project.to_build` -> `Build.set_config`), so the sim flies them.
+func config() -> Dictionary:
+	return _project.config.duplicate(true)
+
+
+## Sets the Config decisions as one undo step. False when nothing changes.
+func set_config(p_config: Dictionary, push_undo := true) -> bool:
+	if p_config == _project.config:
+		return false
+	if push_undo:
+		_push_undo()
+	_project.config = p_config.duplicate(true)
+	_changed()
+	return true
+
+
+## The printing decisions of this design (clearance, mounts, the kept findings: `Project.printing`, sparse)
+## and the record of what was printed (`Project.print_records`, newest last). Settings build into the
+## aircraft (`Build.set_printing`); the records are what a later divergence check compares against.
+func printing() -> Dictionary:
+	return _project.printing.duplicate(true)
+
+
+## Sets the printing decisions as one undo step. False when nothing changes.
+func set_printing(p_printing: Dictionary, push_undo := true) -> bool:
+	if p_printing == _project.printing:
+		return false
+	if push_undo:
+		_push_undo()
+	_project.printing = p_printing.duplicate(true)
+	_changed()
+	return true
+
+
+func print_records() -> Array:
+	return _project.print_records.duplicate(true)
+
+
+## Notes that a part was printed. Not an undoable edit (a print is a thing that happened).
+func add_print_record(record: Dictionary) -> void:
+	_project.print_records.append(record.duplicate(true))
+	_changed()
+
+
+## What differs from what was printed: `PrintedDivergence.check` on this design's records, no container.
+func print_divergence(catalog: PartsCatalog) -> Array:
+	var b := build(catalog)
+	return PrintedDivergence.check(_project, null, b) if b != null else []
+
+
+## Sets the authored harness (a sparse override table) as one undo step. False when nothing changes.
+func set_harness_overrides(overrides: Dictionary, push_undo := true) -> bool:
+	if overrides == harness_overrides:
+		return false
+	if push_undo:
+		_push_undo()
+	harness_overrides = overrides.duplicate(true)
+	_changed()
+	return true
+
+
+## Sets the assembly tweaks as one undo step. False when nothing changes.
+func set_tweaks(p_tweaks: AssemblyTweaks, push_undo := true) -> bool:
+	if p_tweaks.to_dict() == tweaks.to_dict():
+		return false
+	if push_undo:
+		_push_undo()
+	tweaks = AssemblyTweaks.from_dict(p_tweaks.to_dict())
+	_changed()
+	return true
+
+
 func _snapshot() -> Dictionary:
-	return {"selection": selection.duplicate(true),
+	return {"printing": _project.printing.duplicate(true), "config": _project.config.duplicate(true), "harness": harness_overrides.duplicate(true), "tweaks": tweaks.to_dict(),
+		"selection": selection.duplicate(true),
 		"document": _frame_doc.to_dictionary() if _frame_doc != null else {}}
 
 
 func _restore(entry: Dictionary) -> void:
 	selection = (entry["selection"] as Dictionary).duplicate(true)
+	harness_overrides = (entry.get("harness", {}) as Dictionary).duplicate(true)
+	_project.config = (entry.get("config", {}) as Dictionary).duplicate(true)
+	_project.printing = (entry.get("printing", {}) as Dictionary).duplicate(true)
+	tweaks = AssemblyTweaks.from_dict(entry.get("tweaks", {}))
 	var doc: Dictionary = entry["document"]
 	_frame_doc = AirframeDocument.from_dictionary(doc) if not doc.is_empty() else null
 
