@@ -47,24 +47,66 @@ static func _box(bg: Color, border: Color, radius := LothalTheme.RADIUS_CONTROL)
 
 ## The hairline button of the file bar. `toggle`: selected = lighter fill and an ink border (the tool row's look).
 ## `primary`: rests in that selected look, the one lit action of a group.
+##
+## EVERY STATE LOOKS DIFFERENT (B4): rest, hover (brighter than rest, primary included), pressed (momentary: darker
+## than rest with an ink border, so a click is seen), disabled (nearly gone), focus (an ACCENT hairline ring for
+## the keyboard) and, through `set_busy`, busy (a held, lit "working" look that is not the disabled one).
+## For a toggle, "pressed" is the selected look, and `hover_pressed` is that look brightened.
 static func button(text: String, toggle := false, primary := false) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.toggle_mode = toggle
-	b.focus_mode = Control.FOCUS_NONE
+	# Reachable by keyboard. A mouse press hands the focus straight back (below), so the ring never sits on
+	# a button that was only clicked.
+	b.focus_mode = Control.FOCUS_ALL
+	if not toggle:
+		b.pressed.connect(b.release_focus)
 	b.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	b.add_theme_color_override("font_color", INK if primary else INK_MUTED)
-	for c in ["font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+	for c in ["font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
 		b.add_theme_color_override(c, INK)
 	b.add_theme_color_override("font_disabled_color", INK_FAINT)
-	var flat := _box(Color(1, 1, 1, 0.16) if primary else Color(1, 1, 1, 0.05), INK_MUTED if primary else Color(1, 1, 1, 0.12))
-	b.add_theme_stylebox_override("normal", flat)
-	var hover := _box(Color(1, 1, 1, 0.12), Color(1, 1, 1, 0.12))
-	b.add_theme_stylebox_override("hover", hover)
-	var on := _box(Color(1, 1, 1, 0.16), INK_MUTED)
-	b.add_theme_stylebox_override("pressed", on)
-	b.add_theme_stylebox_override("hover_pressed", on)
+	var rest_fill := 0.16 if primary else 0.05
+	var rest_edge := INK_MUTED if primary else Color(1, 1, 1, 0.12)
+	b.add_theme_stylebox_override("normal", _box(Color(1, 1, 1, rest_fill), rest_edge))
+	b.add_theme_stylebox_override("hover", _box(Color(1, 1, 1, 0.26 if primary else 0.12), INK_MUTED if primary else Color(1, 1, 1, 0.22)))
+	if toggle:
+		# Selected: the lit look; brighter under the pointer.
+		b.add_theme_stylebox_override("pressed", _box(Color(1, 1, 1, 0.16), INK_MUTED))
+		b.add_theme_stylebox_override("hover_pressed", _box(Color(1, 1, 1, 0.24), INK))
+	else:
+		# A click: darker than rest, ink edge, and the label one pixel down (the "pushed in" cue).
+		var down := _box(Color(1, 1, 1, 0.07 if primary else 0.02), INK)
+		down.content_margin_top += 1
+		down.content_margin_bottom -= 1
+		b.add_theme_stylebox_override("pressed", down)
+		b.add_theme_stylebox_override("hover_pressed", down)
+	var off := _box(Color(1, 1, 1, 0.015), Color(1, 1, 1, 0.05))
+	b.add_theme_stylebox_override("disabled", off)
+	b.set_meta("ds_disabled_box", off)
+	var ring := _box(Color(1, 1, 1, rest_fill), LothalTheme.ACCENT)
+	b.add_theme_stylebox_override("focus", ring)
 	return b
+
+
+## Busy: the button holds a lit look, cannot be pressed again and says what it is doing ("Loading..."). `on` false
+## restores the label and the plain disabled look. Not the same look as disabled, so "working" and "unavailable"
+## read differently.
+static func set_busy(b: Button, on: bool, busy_text := "Working...") -> void:
+	if on:
+		if not b.has_meta("ds_rest_text"):
+			b.set_meta("ds_rest_text", b.text)
+		b.text = busy_text
+		b.disabled = true
+		b.add_theme_stylebox_override("disabled", _box(Color(1, 1, 1, 0.10), LothalTheme.ACCENT_DIM))
+		b.add_theme_color_override("font_disabled_color", INK_MUTED)
+	else:
+		if b.has_meta("ds_rest_text"):
+			b.text = String(b.get_meta("ds_rest_text"))
+			b.remove_meta("ds_rest_text")
+		b.disabled = false
+		b.add_theme_stylebox_override("disabled", b.get_meta("ds_disabled_box"))
+		b.add_theme_color_override("font_disabled_color", INK_FAINT)
 
 
 ## The "not modelled" tag of the tool row: returns [chip, label] so the caller can change the words.

@@ -13,6 +13,7 @@ signal save_pressed
 signal save_as_pressed
 signal open_pressed
 signal fly_pressed
+signal identity_pressed
 signal field_pressed
 signal mission_pressed
 signal save_as_confirmed(design_name: String)
@@ -37,6 +38,12 @@ var save_button: Button
 var save_as_button: Button
 var open_button: Button
 var fly_button: Button
+## The identity chip (B5): build name, class and weight; press for the sheet.
+var identity_button: Button
+## Under the row: refusals and short notices ("Cannot fly: ...").
+var toast: DsToast
+## True while Fly it is loading the sim: the button is disabled and reads "Loading...".
+var fly_busy := false
 var field_button: Button
 var mission_button: Button
 var menu_button: Button
@@ -62,7 +69,7 @@ func _init() -> void:
 	_row.name = "FileRow"
 	_row.offset_left = ROW_LEFT
 	_row.offset_top = ROW_TOP
-	_row.offset_right = ROW_LEFT + 420.0
+	_row.offset_right = ROW_LEFT + 660.0
 	_row.offset_bottom = ROW_TOP + 32.0
 	_row.add_theme_constant_override("separation", 4)
 	_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -82,12 +89,30 @@ func _init() -> void:
 	menu_button.pressed.connect(func(): set_menu_open(not menu.visible))
 	_row.add_child(menu_button)
 	_build_menu()
+	identity_button = DsUi.button("")
+	identity_button.name = "IdentityChip"
+	identity_button.tooltip_text = "What is being designed: class, parts, weight, where it came from"
+	identity_button.visible = false
+	identity_button.clip_text = true
+	identity_button.custom_minimum_size = Vector2(200, 0)
+	identity_button.pressed.connect(func(): identity_pressed.emit())
+	_row.add_child(identity_button)
 	status_label = _label("", INK_FAINT, LothalTheme.FONT_SIZE_SMALL)
 	status_label.custom_minimum_size = Vector2(150, 0)
 	status_label.clip_text = true
 	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_row.add_child(status_label)
 	_build_dialog()
+	toast = DsToast.new()
+	toast.offset_left = ROW_LEFT
+	toast.offset_top = ROW_TOP + 38.0
+	add_child(toast)
+
+
+## Fly it's busy state: disabled and "Loading..." while the sim builds, restored after.
+func set_fly_busy(busy: bool) -> void:
+	fly_busy = busy
+	DsUi.set_busy(fly_button, busy, "Loading...")
 
 
 ## The one menu behind the dots: every action that is not the primary one, each still a button of its own.
@@ -226,6 +251,12 @@ func _build_dialog() -> void:
 func show_name(design_name: String) -> void:
 	name_label.text = design_name if design_name != "" else "Untitled"
 	name_label.add_theme_color_override("font_color", INK if design_name != "" else INK_MUTED)
+
+
+## The chip's words; empty hides it.
+func show_identity(chip_text: String) -> void:
+	identity_button.text = chip_text
+	identity_button.visible = chip_text != ""
 
 
 func show_status(text: String) -> void:

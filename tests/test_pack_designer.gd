@@ -18,7 +18,7 @@ const CHARGE := "user://test_pack_designer_charge.json"
 const BEFORE_NAMES := ["Back", "Cat_antenna", "Cat_battery", "Cat_camera", "Cat_esc",
 	"Cat_flight_controller", "Cat_guard", "Cat_motor", "Cat_propeller", "Cat_receiver", "Cat_vtx",
 	"Chip_cells_n1", "Chip_cells_n2", "Chip_cells_n3", "Chip_cells_n4", "Chip_cells_n5",
-	"Chip_cells_n6", "Chip_cells_n7", "Chip_cells_n8", "Home", "LabelsToggle", "MenuButton", "ShelfHeader", "mark_auw_g", "mark_flight_time_min",
+	"Chip_cells_n6", "Chip_cells_n7", "Chip_cells_n8", "Home", "IdentityChip", "LabelsToggle", "MenuButton", "ShelfHeader", "mark_auw_g", "mark_flight_time_min",
 	"mark_hover_throttle", "mark_thrust_to_weight", "mark_top_speed_kmh"]
 ## And its unnamed ("@Button@N") buttons.
 ## 17 = 15 plus the design file bar's "Fly it" and "Field" buttons (src/design/design_file_bar.gd,
@@ -30,7 +30,9 @@ const BEFORE_NAMES := ["Back", "Cat_antenna", "Cat_battery", "Cat_camera", "Cat_
 ## (counted 18), green at 18, and still red if a further unnamed button appears.
 ## The file bar's dots button is named "MenuButton" (in the list above); its five menu items are the same five unnamed
 ## buttons as before (Save, Save as, Open, Field, Mission), so the count stays 18 (design space redesign, 2026-11-11).
-const BEFORE_UNNAMED := 18
+## 19 = 18 plus the identity sheet's close mark (DsDrawer close_button, B5 2026-11-11); the chip itself is named
+## "IdentityChip" above. Deliberate and unrelated to the pack tile.
+const BEFORE_UNNAMED := 19
 
 ## Figure keys that are derived from cells; none may be reachable by typing.
 const DERIVED := ["nominal_v", "full_v", "empty_v", "mah", "wh", "mass_g", "dims_mm", "cont_a",

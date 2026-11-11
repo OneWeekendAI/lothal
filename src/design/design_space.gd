@@ -151,6 +151,10 @@ var file_bar: DesignFileBar
 var side_drawer: DsDrawer
 ## The name this design is saved under ("" until first saved or opened).
 var design_name := ""
+## Where the design came from (DsIdentity.SOURCES): the class seed until opened from or saved to a design file.
+var design_source := "class seed"
+## The identity sheet (B5), a left drawer opened by the chip in the top bar.
+var identity_sheet: DsDrawer
 ## "", "drill", "pocket" or "fill".
 var frame_tool := ""
 var drill_d_mm: float = FrameTools.DRILL_SIZES["M3"]
@@ -255,6 +259,7 @@ func redo() -> bool:
 
 ## Everything a changed selection moves: readouts, the drawn parts, pick shapes, picker, inspector.
 func _after_change() -> void:
+	refresh_identity()
 	_refusal = {}
 	_clicked_battery = ""
 	clear_preview()
@@ -267,6 +272,33 @@ func _after_change() -> void:
 	if selected != "":
 		_fill_inspector()
 	refresh_shelf()
+
+
+## The identity of what is on the stage (DsIdentity.describe with this design's name and source).
+func identity() -> Dictionary:
+	return DsIdentity.describe(session, _catalog, design_name, design_source)
+
+
+## Rewrites the chip and the sheet from `identity()`.
+func refresh_identity() -> void:
+	if file_bar == null or identity_sheet == null:
+		return
+	var info := identity()
+	file_bar.show_identity(String(info["chip"]))
+	DsIdentity.fill(identity_sheet, info)
+
+
+## The chip: opens the sheet (closing the Parts list and any other left drawer), or closes it.
+func toggle_identity() -> void:
+	if identity_sheet.visible:
+		identity_sheet.hide()
+		return
+	shelf.set_open(false)
+	if side_drawer != null and is_instance_valid(side_drawer) and side_drawer != identity_sheet:
+		side_drawer.hide()
+	side_drawer = identity_sheet
+	refresh_identity()
+	identity_sheet.show()
 
 
 ## Re-reads the session's build into the panel.
@@ -1401,6 +1433,10 @@ func _build_file_bar() -> void:
 	file_bar.save_as_pressed.connect(open_save_as)
 	file_bar.open_pressed.connect(open_open_dialog)
 	file_bar.fly_pressed.connect(func(): fly_requested.emit())
+	file_bar.identity_pressed.connect(toggle_identity)
+	identity_sheet = DsIdentity.sheet()
+	add_child(identity_sheet)
+	refresh_identity()
 	file_bar.field_pressed.connect(func(): field_requested.emit())
 	file_bar.mission_pressed.connect(func(): mission_requested.emit())
 	file_bar.save_as_confirmed.connect(func(n: String): save_design(n))
@@ -1422,6 +1458,7 @@ func save_design(p_name: String = "") -> Dictionary:
 		file_bar.show_reason(String(r["reason"]))
 		return r
 	design_name = n
+	design_source = "design file"
 	file_bar.show_name(n)
 	file_bar.show_status("Saved")
 	file_bar.close_dialog()
@@ -1458,6 +1495,7 @@ func open_design(file_name: String) -> Dictionary:
 		file_bar.show_status("")
 		return r
 	session = r["session"]
+	design_source = "design file"
 	design_name = String(r["name"]) if String(r["name"]) != "" else file_name.get_basename()
 	close_slot()
 	set_frame_tool("")

@@ -347,6 +347,17 @@ func _ready() -> void:
 	hud.theme = theme
 	ui_layer.add_child(hud)
 
+	# The flight starts live: the aircraft hovers at the start line with its motors primed, and this
+	# line says how to fly it. It goes on the first key press, or after FLY_HINT_SECONDS.
+	fly_hint = DsToast.new()
+	fly_hint.name = "FlyHint"
+	fly_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	fly_hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	fly_hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	fly_hint.offset_bottom = -24
+	ui_layer.add_child(fly_hint)
+	fly_hint.say(FLY_HINT, false, FLY_HINT_SECONDS)
+
 	# Bottom right, which is the one corner of this screen nothing else claims — the build panel is
 	# top left, the lap block top right, and the HUD's flight readouts bottom left.
 	var fpv_overlay := MarginContainer.new()
@@ -547,12 +558,17 @@ func persist_pack_charge() -> void:
 ## pilot's own aircraft; the figures come from the SAME runner code as a headless `MissionRunner.run(params)` (begin /
 ## advance / finish), so with the same params and seed the result is identical field by field. Each physics frame advances
 ## round(delta / runner.dt) ticks, none skipped. `watch_result` is filled when the flight ends. tests/test_sr4_watch.gd.
+const FLY_HINT := "Hovering at the start.   W / S throttle    arrows tilt    A / D turn    Space mode    Esc back to design"
+const FLY_HINT_SECONDS := 10.0
+var fly_hint: DsToast
 var watch_runner: MissionRunner = null
 var watch_result: Dictionary = {}
 
 
 func watch_mission(params: Dictionary) -> bool:
 	watch_result = {}
+	if fly_hint != null:
+		fly_hint.clear()
 	var runner := MissionRunner.new()
 	if not runner.begin(params):
 		watch_result = runner.finish()
@@ -581,6 +597,9 @@ func _physics_process(delta: float) -> void:
 	if watch_runner != null:
 		_watch_frame(delta)
 		return
+	if fly_hint != null and fly_hint.visible and (Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_S) \
+			or Input.is_key_pressed(KEY_UP) or Input.is_key_pressed(KEY_DOWN)):
+		fly_hint.clear()
 	if Input.is_key_pressed(KEY_TAB) != _tab_was_pressed:
 		_tab_was_pressed = Input.is_key_pressed(KEY_TAB)
 		if _tab_was_pressed:

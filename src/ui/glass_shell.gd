@@ -3489,9 +3489,16 @@ func show_design_space() -> DesignSpace:
 	_design_space_layer.layer = TOGGLE_LAYER + 5
 	add_child(_design_space_layer)
 	design_space = DesignSpace.new(DesignSession.from_project(container.project), rooms.catalog_for_lab())
+	# A project the builder already changed is a saved project; an untouched one is the class seed.
+	var seed_parts := DroneClass.parts_for(container.project.drone_class)
+	for category in seed_parts:
+		if String(container.project.parts.get(category, "")) != String(seed_parts[category]):
+			design_space.design_source = "saved project"
+			design_space.refresh_identity()
+			break
 	design_space.dismissed.connect(_close_design_space)
 	design_space.back_requested.connect(back_to_class_picker)
-	design_space.fly_requested.connect(fly_it)
+	design_space.fly_requested.connect(_on_fly_requested)
 	design_space.field_requested.connect(open_field_from_design)
 	design_space.mission_requested.connect(open_mission_picker)
 	_design_space_layer.add_child(design_space)
@@ -3550,6 +3557,7 @@ func open_mission_picker() -> bool:
 		var layer := _pickers_overlay()
 		layer.add_child(mission_picker)
 	mission_picker.set_session(design_space.session)
+	design_space.identity_sheet.hide()
 	# One left drawer at a time: the Parts list closes, and opening Parts closes the drawer.
 	design_space.shelf.set_open(false)
 	if not design_space.shelf.toggled.is_connected(_hide_mission_picker):
@@ -4008,7 +4016,14 @@ var _away_return_system := 0
 ## rails (`apply_project`, the path Open uses) and autosaved first; then the same `rooms.show_sim()`
 ## the old Sim button calls. The Design Space is only hidden, so Back finds it exactly as left.
 func fly_it() -> bool:
+	if design_space == null:
+		fly_notice = "Cannot fly: no design is open"
+		return false
+	if container == null:
+		fly_notice = "Cannot fly: no project is open to save the design into"
+		return false
 	if not _sync_design_to_lab():
+		fly_notice = "Cannot fly: the design could not be handed to the simulator"
 		return false
 	var session := design_space.session
 	# The session's own Build crosses the door, not just its ids: the sim flies exactly what the
@@ -4031,12 +4046,43 @@ func fly_it() -> bool:
 var fly_notice := ""
 
 
+## Fly it as the builder presses it: the button goes busy and the sim loads one frame later, so the
+## busy state is painted before the (synchronous) load blocks the frame. Outside a tree there is no
+## frame to wait for and the load runs at once. A refusal comes back as a toast on the Design Space.
+func _on_fly_requested() -> void:
+	if not begin_fly():
+		return
+	if is_inside_tree():
+		await get_tree().process_frame
+	finish_fly()
+
+
+## First half of Fly it. False when one is already loading.
+func begin_fly() -> bool:
+	if design_space == null or design_space.file_bar.fly_busy:
+		return false
+	design_space.file_bar.set_fly_busy(true)
+	return true
+
+
+## Second half: do the flight, drop the busy state, and say why when it refused.
+func finish_fly() -> bool:
+	if design_space == null:
+		return false
+	var bar := design_space.file_bar
+	var ok := fly_it()
+	bar.set_fly_busy(false)
+	if not ok:
+		bar.toast.say(fly_notice if fly_notice != "" else "Cannot fly: no design is open", true)
+	return ok
+
+
 ## The one handler behind the old Lab/Sim toggle. With a Design Space open there is ONE way into
 ## the sim, and it syncs the design first; the bare `show_sim()` is only for a shell with no
 ## Design Space (old-shell tests).
 func _on_sim_toggle() -> void:
 	if design_space != null:
-		fly_it()
+		_on_fly_requested()
 	else:
 		rooms.show_sim()
 
@@ -4086,10 +4132,9 @@ func _enter_away() -> void:
 		_away_layer.name = "AwayLayer"
 		_away_layer.layer = TOGGLE_LAYER + 6
 		add_child(_away_layer)
-		var back := Button.new()
+		# The Design Space's own hairline button (every state distinct), not a one-off style.
+		var back := DsUi.button("\u2039 Back to the drone")
 		back.name = "BackToDrone"
-		back.text = "\u2039 Back to the drone"
-		back.focus_mode = Control.FOCUS_NONE
 		# Just right of the centred Lab/Sim toggle, clear of the sim's build panel and HUD.
 		back.anchor_left = 0.5
 		back.anchor_right = 0.5
@@ -4097,23 +4142,6 @@ func _enter_away() -> void:
 		back.offset_top = 10
 		back.grow_horizontal = Control.GROW_DIRECTION_END
 		back.custom_minimum_size = Vector2(0, 32)
-		back.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-		back.add_theme_color_override("font_color", Color(0.78, 0.78, 0.78))
-		back.add_theme_color_override("font_hover_color", Color(0.96, 0.96, 0.96))
-		var flat := StyleBoxFlat.new()
-		flat.bg_color = Color(0.05, 0.055, 0.065, 0.85)
-		flat.border_color = Color(1, 1, 1, 0.16)
-		flat.set_border_width_all(1)
-		flat.set_corner_radius_all(LothalTheme.RADIUS_CONTROL)
-		flat.content_margin_left = 12
-		flat.content_margin_right = 12
-		flat.content_margin_top = 6
-		flat.content_margin_bottom = 6
-		back.add_theme_stylebox_override("normal", flat)
-		var hover := flat.duplicate() as StyleBoxFlat
-		hover.bg_color = Color(0.16, 0.17, 0.19, 0.95)
-		back.add_theme_stylebox_override("hover", hover)
-		back.add_theme_stylebox_override("pressed", hover)
 		back.pressed.connect(back_to_drone_from_room)
 		_away_layer.add_child(back)
 	_set_design_space_shown(false)
