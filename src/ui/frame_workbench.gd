@@ -106,6 +106,9 @@ var _selected_plate := -1
 ## other edit, and without this flag every open would immediately mark the frame it just opened as
 ## hand-drawn — which would hide the layout sliders on a layout the builder had only just chosen.
 var _opening := false
+## Whether an export or print hands its file or folder to the desktop. A test turns it off: opening a
+## Finder window from a headless run can block it.
+var open_in_desktop := true
 
 
 func _init(p_catalog: PartsCatalog = null) -> void:
@@ -526,7 +529,8 @@ func _on_export_chosen(id: int) -> void:
 		_set_status("COULD NOT WRITE %s." % path)
 		return
 	_set_status("Wrote %s — %s" % [ProjectSettings.globalize_path(path), str(spec["label"])])
-	OS.shell_open(ProjectSettings.globalize_path(EXPORT_DIRECTORY))
+	if open_in_desktop:
+		OS.shell_open(ProjectSettings.globalize_path(EXPORT_DIRECTORY))
 
 
 ## "Printable parts": one STL per part into its own folder. A part that is not a closed solid is
@@ -545,7 +549,8 @@ func _export_parts() -> void:
 	else:
 		_set_status("Wrote %d printable parts to %s" % [results.size(),
 			ProjectSettings.globalize_path(directory)])
-	OS.shell_open(ProjectSettings.globalize_path(directory))
+	if open_in_desktop:
+		OS.shell_open(ProjectSettings.globalize_path(directory))
 
 
 ## Sets the cutting bit the ready-to-cut check and the export notes assume (G3). One undo step.
@@ -705,7 +710,8 @@ func _on_print() -> void:
 		_set_status("COULD NOT WRITE %s." % path)
 		return
 	var absolute := ProjectSettings.globalize_path(path)
-	OS.shell_open(absolute)
+	if open_in_desktop:
+		OS.shell_open(absolute)
 	_set_status("Opened %s — print at 100%%, not \"fit to page\", then check the 50 mm bar." %
 		absolute)
 

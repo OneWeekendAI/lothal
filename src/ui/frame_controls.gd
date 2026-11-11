@@ -482,6 +482,7 @@ func _slider_row(
 	slider.max_value = maximum
 	slider.step = step
 	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	DsUi.style_slider(slider)
 	row.add_child(slider)
 
 	# One value, two views: the slider writes into the box and the box drives the change. A slider

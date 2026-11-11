@@ -276,8 +276,8 @@ static func _test_tool_row(catalog: PartsCatalog) -> Array:
 		and String(ds.tool_row.tag_texts()[0]).contains("centred"), "%s" % [ds.tool_row.tag_texts()]))
 	out.append(TestResult.new("before any edit, Undo and Redo are disabled",
 		ds.tool_row.undo_button.disabled and ds.tool_row.redo_button.disabled, ""))
-	out.append(TestResult.new("the plan editor button is there, disabled and labelled as not wired",
-		ds.tool_row.plan_button.disabled and ds.tool_row.plan_button.text.contains("not yet"), ds.tool_row.plan_button.text))
+	out.append(TestResult.new("the plan editor button is live and opens the frame sheet on its Shape tab",
+		not ds.tool_row.plan_button.disabled and _press_opens_shape(ds), ds.tool_row.plan_button.text))
 	ds.tool_row.size_buttons[FrameTools.DRILL_SIZES["M2"]].pressed.emit()
 	out.append(TestResult.new("the M2 button sets a 2.2 mm drill", is_equal_approx(ds.drill_d_mm, 2.2), "%f" % ds.drill_d_mm))
 	# The signal the SpinBox emits on an edit (out of the tree, setting `value` does not emit it).
@@ -344,3 +344,12 @@ static func _test_sliders_and_pocket(catalog: PartsCatalog) -> Array:
 		ds.frame_reason_text()))
 	ds.free()
 	return out
+
+
+static func _press_opens_shape(ds: DesignSpace) -> bool:
+	ds.tool_row.plan_button.pressed.emit()
+	var ok := ds.part_sheet != null and ds.part_sheet.category == "frame" and ds.part_sheet.current_tab == "shape"
+	if ds.part_sheet != null:
+		ds.part_sheet.free()
+		ds.part_sheet = null
+	return ok

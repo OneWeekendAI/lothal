@@ -613,6 +613,13 @@ func _fill_inspector() -> void:
 		ch.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		ch.add_theme_color_override("font_color", INK)
 		inspector.add_child(ch)
+	var sheet_category := PartSheetTabs.category_of_address(selected)
+	if sheet_category != "":
+		var open_sheet := DsUi.button("Open sheet")
+		open_sheet.name = "OpenSheet"
+		open_sheet.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		open_sheet.pressed.connect(func(): open_part_sheet(sheet_category))
+		inspector.add_child(open_sheet)
 
 
 ## The open warning pins: each one's tag, then its full sentence (the existing long text).
@@ -1602,11 +1609,7 @@ func _build_frame_tools() -> void:
 	tool_row.width_committed.connect(set_arm_width)
 	tool_row.undo_pressed.connect(undo)
 	tool_row.redo_pressed.connect(redo)
-	# No seam yet: the Airframe room opens on Lab's own frame document (FrameWorkbench.open_fitted),
-	# and nothing hands a Design Space document back. Labelled, not hidden.
-	tool_row.plan_button.disabled = true
-	tool_row.plan_button.text = "Plan editor (not yet)"
-	tool_row.plan_button.tooltip_text = "Opening this frame in the Airframe room is not wired yet."
+	tool_row.plan_editor_pressed.connect(func(): open_part_sheet("frame", "shape"))
 
 
 ## Whether the tool row shows: a frame region of an editable frame (the 5") is the selection.
@@ -2167,6 +2170,35 @@ func _shelf_judge(category: String) -> Dictionary:
 				reason = String(fit["reason"])
 		out[String(opt["id"])] = {"ok": ok, "reason": reason, "rank": rank}
 	return out
+
+
+## The Part sheet, while it is open (null otherwise): one part's tabs over the Design Space.
+var part_sheet: PartSheet
+
+
+## Opens `category`'s sheet (on `tab`, else its first tab). A second call replaces the open sheet.
+## False for a category without a sheet or a tab it does not have.
+func open_part_sheet(category: String, tab := "") -> bool:
+	var tabs := PartSheetTabs.for_category(category)
+	if tabs.is_empty():
+		return false
+	if tab == "":
+		tab = String(tabs[0]["id"])
+	if part_sheet != null and is_instance_valid(part_sheet):
+		part_sheet.queue_free()
+	var sheet := PartSheet.new(self, category)
+	part_sheet = sheet
+	sheet.closed.connect(func():
+		if part_sheet == sheet:
+			part_sheet = null
+		sheet.queue_free())
+	add_child(sheet)
+	if not sheet.show_tab(tab):
+		sheet.queue_free()
+		part_sheet = null
+		return false
+	sheet.grab_focus()
+	return true
 
 
 ## The pack designer pop-up, while it is open (null otherwise). Opened by the shelf's "+" tile.

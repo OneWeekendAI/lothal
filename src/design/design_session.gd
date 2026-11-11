@@ -281,6 +281,22 @@ func _frame_op(op: Callable) -> Dictionary:
 	return verdict
 
 
+## Takes a frame document the plan editor has been editing (as a dictionary) as THE frame document:
+## the room edits a copy, and this is how the copy reaches the design. Refused (false) when the frame
+## is not editable or the dictionary describes another frame. `push_undo` records one undo step first.
+func adopt_frame_document(frame_dict: Dictionary, push_undo := true) -> bool:
+	if not frame_editable() or String(frame_dict.get("id", "")) != _frame_doc.id:
+		return false
+	var doc := AirframeDocument.from_dictionary(frame_dict)
+	if doc.plates.is_empty():
+		return false
+	if push_undo:
+		_push_undo()
+	_frame_doc = doc
+	_changed()
+	return true
+
+
 ## Puts a saved selection and frame document ({} = leave the document as drawn) into this session
 ## and clears the history. DesignFile has already checked both; this does not.
 func restore_state(p_selection: Dictionary, frame_dict: Dictionary) -> void:
