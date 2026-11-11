@@ -3499,8 +3499,8 @@ func show_design_space() -> DesignSpace:
 	return design_space
 
 
-## The Mission picker's Watch is NOT wired to Main.watch_mission (no clean path from the shell to
-## the main scene); the shell re-emits it for whoever owns the main scene.
+## The Mission picker's Watch: the shell re-emits it (for observers) and itself takes the design into
+## the sim and starts the watched flight (`watch_mission_from_design`).
 signal mission_watch_requested(opts: Dictionary)
 
 var world_editor: WorldEditor
@@ -3545,7 +3545,8 @@ func open_mission_picker() -> bool:
 	if mission_picker == null:
 		mission_picker = MissionPicker.new()
 		mission_picker.watch_requested.connect(func(opts: Dictionary) -> void:
-			mission_watch_requested.emit(opts))
+			mission_watch_requested.emit(opts)
+			watch_mission_from_design(opts))
 		var layer := _pickers_overlay()
 		layer.add_child(mission_picker)
 	mission_picker.set_session(design_space.session)
@@ -3556,6 +3557,18 @@ func open_mission_picker() -> bool:
 	design_space.side_drawer = mission_picker
 	mission_picker.show()
 	return true
+
+
+## "Watch it": the open design flown in view. Same door as Fly it (sync, then the sim with the
+## session's Build), the Mission drawer put away, and the sim's `watch_mission` started with the
+## params `MissionFlow` itself builds, so the watched result equals the headless one.
+func watch_mission_from_design(opts: Dictionary) -> bool:
+	if not fly_it():
+		return false
+	var sim = rooms.sim
+	if sim == null:
+		return false
+	return sim.watch_mission(MissionFlow.params_for(design_space.session, opts))
 
 
 func _hide_mission_picker(shelf_open: bool) -> void:
@@ -4064,6 +4077,9 @@ func _sync_design_to_lab() -> bool:
 
 
 func _enter_away() -> void:
+	# Every drawer that lives on the pickers layer goes with the Design Space, or it hangs over the sim.
+	if mission_picker != null:
+		mission_picker.hide()
 	if _away_layer == null:
 		_away_return_system = _focused_index
 		_away_layer = CanvasLayer.new()

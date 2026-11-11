@@ -3,8 +3,8 @@ extends SceneTree
 ##
 ##   godot --script res://tests/capture_sim_door.gd -- <out.png> <class id> [WxH] [entry] [mission]
 ##
-## entry: "fly" (Fly it, default) or "toggle" (the old Sim toggle). "mission" opens the Mission
-## drawer first, to show it does not stay over the sim. Needs a real window and a scratch HOME.
+## entry: "fly" (Fly it, default), "toggle" (the old Sim toggle) or "watch" (Mission drawer open,
+## then Watch it: the drawer must not stay over the sim). Needs a real window and a scratch HOME.
 
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -29,7 +29,12 @@ func _init() -> void:
 		var bid := String(opt["part_id"])
 		if bid != String(shell.design_space.session.selection["battery"]) and shell.design_space.session.swap(catalog, "battery", bid)["ok"]:
 			break
-	if entry == "toggle":
+	if entry == "watch":
+		shell.open_mission_picker()
+		for i in 10:
+			await process_frame
+		shell.mission_picker.watch_requested.emit(shell.mission_picker.options())
+	elif entry == "toggle":
 		shell._sim_button.pressed.emit()
 	else:
 		shell.design_space.file_bar.fly_button.pressed.emit()

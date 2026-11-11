@@ -564,10 +564,12 @@ func watch_mission(params: Dictionary) -> bool:
 func _watch_frame(delta: float) -> void:
 	var runner := watch_runner
 	runner.advance(maxi(1, int(round(delta / runner.dt))))
-	var rb := runner.rig.core.rigid_body
-	drone.position = rb.position_m
-	drone.quaternion = rb.orientation
-	airframe.set_rates_rpm(runner.rig.core.observables.rpm)
+	# Visuals only when the scene is built (a headless test drives this without `_ready`).
+	if drone != null and airframe != null:
+		var rb := runner.rig.core.rigid_body
+		drone.position = rb.position_m
+		drone.quaternion = rb.orientation
+		airframe.set_rates_rpm(runner.rig.core.observables.rpm)
 	if runner.is_done():
 		watch_result = runner.finish()
 		watch_runner = null

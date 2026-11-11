@@ -31,6 +31,11 @@ static func _prepare(session: DesignSession, opts: Dictionary) -> Dictionary:
 	return params
 
 
+## The MissionRunner params a flight of this design takes: what `run` and a watched flight both fly.
+static func params_for(session: DesignSession, opts: Dictionary) -> Dictionary:
+	return _prepare(session, opts)
+
+
 static func _package(params: Dictionary, result: Dictionary) -> Dictionary:
 	var rec := RunRecord.make(params, result)
 	result["inputs_trail"] = {"build_fingerprint": rec["build"]["fingerprint"], "class_id": rec["build"]["class_id"],
