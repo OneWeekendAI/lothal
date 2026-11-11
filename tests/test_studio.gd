@@ -698,10 +698,11 @@ static func _test_report_fits() -> Array:
 	# font from restoring the crop.
 	results.append(TestResult.new(
 		"report values keep the monospace readout font, without regaining a minimum width",
-		value_label != null and value_label.theme_type_variation == &"ReadoutLabel"
+		value_label != null and value_label.get_theme_font("font") is SystemFont
+			and (value_label.get_theme_font("font") as SystemFont).font_names == LothalTheme.mono_font().font_names
 			and is_zero_approx(value_label.custom_minimum_size.x),
-		"variation %s, min width %.0f" % [
-			"(none)" if value_label == null else str(value_label.theme_type_variation),
+		"font %s, min width %.0f" % [
+			"(none)" if value_label == null else str(value_label.get_theme_font("font")),
 			0.0 if value_label == null else value_label.custom_minimum_size.x]))
 
 	studio.free()

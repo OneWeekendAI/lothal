@@ -563,7 +563,9 @@ static func _test_report_pane() -> Array:
 	var hero_size := 0
 	var other_size := 0
 	for label: Label in _label_nodes(screen._report):
-		var font_size := theme.get_font_size("font_size", str(label.theme_type_variation))
+		# R2: Studio sets sizes as per-label overrides now (Design Space), so an override wins over the theme.
+		var font_size := (label.get_theme_font_size("font_size") if label.has_theme_font_size_override("font_size")
+			else theme.get_font_size("font_size", str(label.theme_type_variation)))
 		# All three axes, not just roll. Matching only "roll" put the pitch and yaw heroes in the
 		# "everything else" bucket, and the check compared 26 px against 26 px and failed for the
 		# wrong reason — which is a test finding its own bug rather than the code's.

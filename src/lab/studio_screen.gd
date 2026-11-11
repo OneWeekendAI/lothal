@@ -208,6 +208,7 @@ func _init(p_library: FlightLogLibrary = null) -> void:
 
 func _build_flight_rail() -> Control:
 	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", DsUi.panel_style())
 	panel.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
@@ -215,16 +216,14 @@ func _build_flight_rail() -> Control:
 	column.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_child(column)
 
-	var title := Label.new()
-	title.text = "FLIGHTS"
-	title.theme_type_variation = &"TitleLabel"
-	column.add_child(title)
+	column.add_child(DsUi.section("Flights"))
 
 	var note := Label.new()
 	note.text = "Recorded with R in the field. Newest first."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(260, 0)
-	note.theme_type_variation = &"MutedLabel"
+	note.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	note.add_theme_color_override("font_color", DsUi.INK_MUTED)
 	column.add_child(note)
 
 	_list = ItemList.new()
@@ -244,11 +243,11 @@ func _build_flight_rail() -> Control:
 	_list.fixed_column_width = 260
 	_list.max_text_lines = 2
 	_list.auto_height = true
+	_style_item_list(_list)
 	_list.item_selected.connect(_on_row_selected)
 	column.add_child(_list)
 
-	_delete_button = Button.new()
-	_delete_button.text = "Delete flight"
+	_delete_button = DsUi.button("Delete flight")
 	_delete_button.pressed.connect(delete_selected)
 	column.add_child(_delete_button)
 
@@ -258,6 +257,7 @@ func _build_flight_rail() -> Control:
 ## The trace, and under it the channels to draw (LTHL-55).
 func _build_trace_column() -> Control:
 	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", DsUi.panel_style())
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
@@ -272,7 +272,7 @@ func _build_trace_column() -> Control:
 	column.add_child(_trace)
 
 	_channel_note = Label.new()
-	_channel_note.theme_type_variation = &"MutedLabel"
+	_quiet(_channel_note)
 	# WITHOUT AUTOWRAP THIS LABEL IS THE THING THAT PUSHES THE REPORT PANE OFF SCREEN. A Label
 	# with autowrap off reports its UNWRAPPED text width as its minimum size, and the gap view's
 	# note ("3000 rows · gyro_x_rad_s against omega_x_rad_s, and what the sensor added") is wide
@@ -287,21 +287,17 @@ func _build_trace_column() -> Control:
 	# The axis selector, which belongs to the gap view and is hidden in the explorer.
 	_axis_bar = HBoxContainer.new()
 	for index in FlightAnalysis.AXIS_LABELS.size():
-		var axis_button := Button.new()
-		axis_button.text = str(FlightAnalysis.AXIS_LABELS[index])
-		axis_button.toggle_mode = true
+		var axis_button := DsUi.button(str(FlightAnalysis.AXIS_LABELS[index]), true)
 		axis_button.button_pressed = index == gap_axis
 		axis_button.pressed.connect(set_gap_axis.bind(index))
 		_axis_bar.add_child(axis_button)
 	column.add_child(_axis_bar)
 
 	_mode_bar = HBoxContainer.new()
-	var gap_button := Button.new()
-	gap_button.text = "Gap view"
+	var gap_button := DsUi.button("Gap view")
 	gap_button.pressed.connect(set_view_mode.bind(ViewMode.GAP))
 	_mode_bar.add_child(gap_button)
-	var explore_button := Button.new()
-	explore_button.text = "Explore channels"
+	var explore_button := DsUi.button("Explore channels")
 	explore_button.pressed.connect(set_view_mode.bind(ViewMode.EXPLORE))
 	_mode_bar.add_child(explore_button)
 	column.add_child(_mode_bar)
@@ -313,6 +309,7 @@ func _build_trace_column() -> Control:
 	# "gyro" is faster than scrolling, and it is one LineEdit over the same header-derived array.
 	_channel_filter = LineEdit.new()
 	_channel_filter.placeholder_text = "Filter channels"
+	DsUi.style_field(_channel_filter)
 	_channel_filter.text_changed.connect(set_channel_filter)
 	column.add_child(_channel_filter)
 
@@ -322,6 +319,7 @@ func _build_trace_column() -> Control:
 	_channel_list.select_mode = ItemList.SELECT_MULTI
 	_channel_list.max_columns = 1
 	_channel_list.custom_minimum_size = Vector2(0, CHANNEL_LIST_HEIGHT)
+	_style_item_list(_channel_list)
 	_channel_list.multi_selected.connect(_on_channel_toggled)
 	column.add_child(_channel_list)
 
@@ -330,6 +328,7 @@ func _build_trace_column() -> Control:
 
 func _build_report_pane() -> Control:
 	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", DsUi.panel_style())
 	panel.custom_minimum_size = Vector2(REPORT_WIDTH, 0)
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
@@ -678,9 +677,7 @@ func _render_report_reset() -> void:
 ## Everything measured from this flight goes into the pane directly; everything the file merely
 ## declares goes into this collapsible block, folded away by default.
 func _begin_declared() -> void:
-	_declared_toggle = Button.new()
-	_declared_toggle.text = "▸  WHAT THE FILE SAYS"
-	_declared_toggle.toggle_mode = true
+	_declared_toggle = DsUi.button("▸  WHAT THE FILE SAYS", true)
 	_declared_toggle.toggled.connect(set_declared_expanded)
 	_report.add_child(_declared_toggle)
 
@@ -815,7 +812,8 @@ func _render_gap() -> void:
 		var hero := Label.new()
 		# The largest text on the pane.
 		hero.text = "%s  %s" % [str(figures["label"]), format_ratio(ratio)]
-		hero.theme_type_variation = &"SubHeroReadoutLabel"
+		hero.add_theme_font_size_override("font_size", 26)
+		hero.add_theme_color_override("font_color", DsUi.INK)
 		(_sink if _sink != null else _report).add_child(hero)
 		_report_grid = null
 
@@ -824,7 +822,7 @@ func _render_gap() -> void:
 		if not verdict.is_empty():
 			var band := Label.new()
 			band.text = verdict
-			band.theme_type_variation = &"MutedLabel"
+			_quiet(band)
 			_report.add_child(band)
 
 		# WHAT ACTUALLY ANCHORS THE HEADLINE, in the absence of a band. Both spreads, side by side,
@@ -914,12 +912,30 @@ func _render_spectrum(p_head: Dictionary) -> void:
 	_add_report_note(str(vibration.get("caveat", "")))
 
 
+## A list in the Design Space greys: no box of its own, a faint fill under the selection.
+static func _style_item_list(list: ItemList) -> void:
+	list.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	var sel := StyleBoxFlat.new()
+	sel.bg_color = Color(1, 1, 1, 0.12)
+	sel.set_corner_radius_all(LothalTheme.RADIUS_CONTROL)
+	list.add_theme_stylebox_override("selected", sel)
+	list.add_theme_stylebox_override("selected_focus", sel)
+	list.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	list.add_theme_color_override("font_color", DsUi.INK_MUTED)
+	list.add_theme_color_override("font_selected_color", DsUi.INK)
+	list.add_theme_color_override("font_hovered_color", DsUi.INK)
+	list.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+
+
+## A quiet caption in the Design Space greys.
+static func _quiet(label: Label) -> void:
+	label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	label.add_theme_color_override("font_color", DsUi.INK_MUTED)
+
+
 func _add_report_title(text: String) -> void:
 	_report_grid = null
-	var label := Label.new()
-	label.text = text
-	label.theme_type_variation = &"TitleLabel"
-	(_sink if _sink != null else _report).add_child(label)
+	(_sink if _sink != null else _report).add_child(DsUi.section(text))
 
 
 ## A two-column grid rather than an HBox of two fixed-width labels.
@@ -936,14 +952,16 @@ func _add_report_row(key: String, value: String) -> void:
 
 	var name_label := Label.new()
 	name_label.text = key
-	name_label.theme_type_variation = &"MutedLabel"
+	_quiet(name_label)
 	_report_grid.add_child(name_label)
 
 	var value_label := Label.new()
 	value_label.text = value
 	value_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	value_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	value_label.theme_type_variation = &"ReadoutLabel"
+	value_label.add_theme_font_override("font", LothalTheme.mono_font())
+	value_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	value_label.add_theme_color_override("font_color", DsUi.INK)
 	_report_grid.add_child(value_label)
 
 
@@ -952,7 +970,7 @@ func _add_report_note(text: String) -> void:
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.custom_minimum_size = Vector2(usable_report_width(), 0)
-	label.theme_type_variation = &"MutedLabel"
+	_quiet(label)
 	(_sink if _sink != null else _report).add_child(label)
 
 
@@ -961,7 +979,8 @@ func _add_report_warning(text: String) -> void:
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.custom_minimum_size = Vector2(usable_report_width(), 0)
-	label.theme_type_variation = &"WarnLabel"
+	label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	label.add_theme_color_override("font_color", DsUi.WARN)
 	(_sink if _sink != null else _report).add_child(label)
 
 

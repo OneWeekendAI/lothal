@@ -36,9 +36,9 @@ extends Control
 ##
 ## The dashing is doing real work there and is not decoration.
 
-const BACKGROUND := LothalTheme.PANEL_BG
-const GRID_COLOUR := LothalTheme.BORDER
-const AXIS_TEXT := LothalTheme.TEXT_MUTED
+const BACKGROUND := Color(0.045, 0.05, 0.058)  # the Design Space ink, a shade under its panels
+const GRID_COLOUR := Color(1, 1, 1, 0.09)
+const AXIS_TEXT := DsUi.INK_MUTED
 const CURVE_COLOUR := LothalTheme.ACCENT
 const HARMONIC_COLOUR := LothalTheme.SUCCESS
 const MODEL_COLOUR := LothalTheme.WARNING
