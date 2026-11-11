@@ -74,6 +74,7 @@ static func run() -> Array:
 	results.append_array(_test_the_field_is_described_and_only_physics_warns(catalog))
 	results.append(_test_the_readout_is_accountable_to_the_sim(catalog))
 	results.append_array(_test_the_panels_show_severity(catalog))
+	results.append_array(_test_the_sim_build_facts(catalog))
 	results.append_array(_test_vibration_is_described_never_blocked(catalog))
 
 	return results
@@ -426,10 +427,12 @@ static func _test_the_panels_show_severity(catalog: PartsCatalog) -> Array:
 	var mixed := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
 		"prop_7x4x3", ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID)
 
-	var panel := BuildPanel.new(catalog, {"propeller": "prop_7x4x3"})
-	panel._rebuild()
-	results.append_array(_assert_panel_shows_severity("build panel", panel._warnings))
-	panel.free()
+	# The list Sim's removed BuildPanel fed: WarningList.show_warnings(build.warnings()) on the
+	# Build Sim flies. Severity ordering and colour are the WarningList's, so they are asserted there.
+	var sim_list := WarningList.new(300)
+	sim_list.show_warnings(mixed.warnings())
+	results.append_array(_assert_panel_shows_severity("sim build warnings", sim_list))
+	sim_list.free()
 
 	var details := PartDetails.new([])
 	details.render(catalog.list_category("frame")[0], mixed)
@@ -637,3 +640,34 @@ static func _find(warnings: Array[BuildWarning], id: StringName) -> BuildWarning
 		if warning.id == id:
 			return warning
 	return null
+
+
+## Facts the Sim's BuildPanel (since deleted; tests/test_build_panel.gd) asserted, restated against
+## what remains: Build.from_ids, which is what Main's standalone boot calls.
+static func _test_the_sim_build_facts(catalog: PartsCatalog) -> Array:
+	var results: Array = []
+	var ref := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID)
+	results.append(TestResult.new("the reference selection builds the 507 g aircraft",
+		absf(ref.all_up_weight_g() - 507.48) < 1.0, "%.1f g" % ref.all_up_weight_g()))
+
+	# The flight time the HUD and Lab quote names the conditions it was computed under (F8/F11):
+	# the number reads the Build's own wind and name, which Main stamps on in _on_build_changed.
+	ref.field_conditions_name = "A Very Distinctive Conditions Name"
+	results.append(TestResult.new("a Build carries the conditions its flight time was computed under",
+		ref.can_hover() and ref.field_conditions_name == "A Very Distinctive Conditions Name"
+			and ref.flight_time_min() > 0.0, "%.1f min" % ref.flight_time_min()))
+
+	var six_s := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, "battery_6s_1300", ReferenceBuild.ESC_ID)
+	results.append(TestResult.new("changing the pack by id gives a different aircraft with a different hover",
+		six_s.battery["part_id"] == "battery_6s_1300"
+			and absf(six_s.hover_throttle() - ref.hover_throttle()) > 1e-6,
+		"hover %.3f -> %.3f" % [ref.hover_throttle(), six_s.hover_throttle()]))
+
+	var big := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		"prop_7x4x3", ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID)
+	results.append(TestResult.new("an over-sized prop warns and stays selected (warn, never block)",
+		big.propeller["part_id"] == "prop_7x4x3" and not big.warnings().is_empty(),
+		"%d warning(s)" % big.warnings().size()))
+	return results

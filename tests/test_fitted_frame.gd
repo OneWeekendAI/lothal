@@ -154,10 +154,19 @@ static func _flies_as_explains_the_difference() -> TestResult:
 
 
 static func _the_sim_door_flies_the_edit() -> TestResult:
-	var panel := BuildPanel.new(PartsCatalog.load_default(), {})
-	panel.frame_edit = {"part_id": ReferenceBuild.FRAME_ID, "mass_g": 90.0, "arm_mm": 110.0}
-	panel._rebuild()
-	var mass := float(panel.build.frame["mass_g"])
-	panel.free()
-	return TestResult.new("fitted frame: Sim's build panel flies the edit handed across the door",
+	var flown := _sim_build({}, {"part_id": ReferenceBuild.FRAME_ID, "mass_g": 90.0, "arm_mm": 110.0})
+	var mass := float(flown.frame["mass_g"])
+	return TestResult.new("fitted frame: Sim's standalone build flies the edit handed across the door",
 		mass == 90.0, "mass %s" % mass)
+
+
+## What Sim flies when nothing is handed over: `Main.make_opening_build()`, the standalone-boot
+## path that replaced the Sim's BuildPanel. Built on a scene object that never enters the tree, so
+## no frame is needed.
+static func _sim_build(selection: Dictionary, frame_edit: Dictionary = {}) -> Build:
+	var scene: Node = load("res://src/scenes/main.gd").new()
+	scene.initial_selection = selection
+	scene.initial_frame_edit = frame_edit
+	var b: Build = scene.make_opening_build()
+	scene.free()
+	return b

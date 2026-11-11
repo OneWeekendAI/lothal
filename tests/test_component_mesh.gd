@@ -15,7 +15,7 @@ extends RefCounted
 ## was no node to measure.
 ##
 ## The reference build's 496 g, 11.7:1 and 4.1 min are NOT re-asserted here. They are already
-## asserted in test_mass_properties, test_hover and test_build_panel, and this slice draws mass that
+## asserted in test_mass_properties, test_hover (and the since-deleted test_build_panel), and this slice draws mass that
 ## was already there rather than adding any — so those suites moving is the signal that this class
 ## is wrong, and a fourth copy of the same three numbers here would only be a fourth place to update.
 

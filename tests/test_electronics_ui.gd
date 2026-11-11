@@ -396,18 +396,16 @@ static func _test_the_payload_crosses_into_sim(catalog: PartsCatalog) -> Array:
 		"camera=%s vtx=%s" % [selection.get("camera", "?"), selection.get("vtx", "?")]
 	))
 
-	var panel := BuildPanel.new(catalog, selection)
-	panel._rebuild()
+	var sim_build := _sim_build(selection)
 
 	results.append(TestResult.new(
-		"Sim's panel, opened on that selection, flies the same aircraft Lab assembled",
-		absf(panel.build.all_up_weight_g() - lab.current_build().all_up_weight_g())
+		"Sim, opened on that selection, flies the same aircraft Lab assembled",
+		absf(sim_build.all_up_weight_g() - lab.current_build().all_up_weight_g())
 			< MASS_EPSILON_G,
 		"Sim %.2f g vs Lab %.2f g" % [
-			panel.build.all_up_weight_g(), lab.current_build().all_up_weight_g()]
+			sim_build.all_up_weight_g(), lab.current_build().all_up_weight_g()]
 	))
 
-	panel.free()
 	lab.free()
 	return results
 
@@ -416,68 +414,72 @@ static func _test_build_panel_dropdowns(catalog: PartsCatalog) -> Array:
 	var results: Array = []
 
 	# A PARTIAL hand-over, which is the normal case for a direct load of main.tscn: nothing names
-	# the components, so the panel must fall back to the fitted defaults rather than to nothing.
-	var panel := BuildPanel.new(catalog, {
+	# the components, so Sim's standalone build must fall back to the fitted defaults.
+	var partial := {
 		"frame": ReferenceBuild.FRAME_ID,
 		"motor": ReferenceBuild.MOTOR_ID,
 		"propeller": ReferenceBuild.PROPELLER_ID,
 		"battery": ReferenceBuild.BATTERY_ID,
-	})
-	panel._rebuild()
+	}
+	var base := _sim_build(partial)
 
 	results.append(TestResult.new(
 		"a selection naming no components still opens on the reference 507.5 g aircraft",
-		absf(panel.build.all_up_weight_g() - 507.48) < 1.0
-			and panel.build.components.size() == Build.carved_components().size(),
-		"%.1f g with %d components" % [
-			panel.build.all_up_weight_g(), panel.build.components.size()]
+		absf(base.all_up_weight_g() - 507.48) < 1.0
+			and base.components.size() == Build.carved_components().size(),
+		"%.1f g with %d components" % [base.all_up_weight_g(), base.components.size()]
 	))
 
+	# Was "Sim's BUILD panel has a dropdown for every component". The dropdowns are gone; the fact
+	# that remains is that Sim's opening selection names every optional category, so none can be
+	# left to an implicit default.
+	var scene: Node = load("res://src/scenes/main.gd").new()
+	var opening: Dictionary = scene._opening_selection()
+	scene.free()
 	var missing: Array = []
 	for category in Build.OPTIONAL_COMPONENTS:
-		if not panel._selectors.has(category):
+		if not opening.has(category):
 			missing.append(category)
 	results.append(TestResult.new(
-		"Sim's BUILD panel has a dropdown for every component",
+		"Sim's opening selection names every component category",
 		missing.is_empty(),
 		"missing: %s" % ("none" if missing.is_empty() else ", ".join(missing))
 	))
 
-	# Drive it the way a click does, through the same handler the signal is connected to.
-	var emitted: Array = []
-	panel.build_changed.connect(func(b: Build) -> void: emitted.append(b))
-	var before_weight := panel.build.all_up_weight_g()
-	var receiver_mass := float(panel.build.components["receiver"].get("mass_g", 0.0))
-	var selector: OptionButton = panel._selectors["receiver"]
-	selector.select(0)                      # the "Not fitted" row
-	panel._on_selection_changed(0, "receiver")
-
+	# "" (a bay the builder emptied) must come out as an empty bay, through the same entry point.
+	var receiver_mass := float(base.components["receiver"].get("mass_g", 0.0))
+	var bare := _sim_build({"receiver": ""})
 	results.append(TestResult.new(
-		"taking the receiver off in Sim re-emits a lighter aircraft",
-		emitted.size() == 1 and not panel.build.components.has("receiver")
-			and absf((before_weight - panel.build.all_up_weight_g()) - receiver_mass)
+		"taking the receiver off gives Sim a lighter aircraft",
+		not bare.components.has("receiver")
+			and absf((_sim_build({}).all_up_weight_g() - bare.all_up_weight_g()) - receiver_mass)
 				< MASS_EPSILON_G,
-		"%d emit(s), AUW %.2f -> %.2f g, receiver weighs %.2f g" % [
-			emitted.size(), before_weight, panel.build.all_up_weight_g(), receiver_mass]
+		"AUW %.2f -> %.2f g, receiver weighs %.2f g" % [
+			_sim_build({}).all_up_weight_g(), bare.all_up_weight_g(), receiver_mass]
 	))
 
-	# The index shift is the trap this last one guards. Every component dropdown has a row the
-	# catalog does not — so `list_category(category)[selector.selected]` is off by one for the
-	# whole of these four lists, and off-by-one over a list of similar small parts fits the wrong
-	# component without ever looking wrong.
+	# Selection is by id, so the last part of a list is the last part and not one past it (the
+	# off-by-one the "Not fitted" row used to cause in the dropdown indices).
 	var cameras := catalog.list_category("camera")
-	var last_index := cameras.size()        # the final row: "Not fitted" + every camera
-	panel._selectors["camera"].select(last_index)
-	panel._on_selection_changed(last_index, "camera")
-
+	var last_id := str(cameras[cameras.size() - 1]["part_id"])
+	var last := _sim_build({"camera": last_id})
 	results.append(TestResult.new(
-		"the last row of a component list is the last part, not one past it",
-		panel.build.components.get("camera", {}).get("part_id", "")
-			== cameras[cameras.size() - 1]["part_id"],
+		"the last part of a component list is fitted by id",
+		last.components.get("camera", {}).get("part_id", "") == last_id,
 		"selected %s, expected %s" % [
-			panel.build.components.get("camera", {}).get("part_id", "(none)"),
-			cameras[cameras.size() - 1]["part_id"]]
+			last.components.get("camera", {}).get("part_id", "(none)"), last_id]
 	))
 
-	panel.free()
 	return results
+
+
+## What Sim flies when nothing is handed over: `Main.make_opening_build()`, the standalone-boot
+## path that replaced the Sim's BuildPanel. Built on a scene object that never enters the tree, so
+## no frame is needed.
+static func _sim_build(selection: Dictionary, frame_edit: Dictionary = {}) -> Build:
+	var scene: Node = load("res://src/scenes/main.gd").new()
+	scene.initial_selection = selection
+	scene.initial_frame_edit = frame_edit
+	var b: Build = scene.make_opening_build()
+	scene.free()
+	return b

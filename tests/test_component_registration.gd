@@ -7,7 +7,7 @@ extends RefCounted
 ## origin; with no system it is on no rail; with no node prefix it never lights up; with no
 ## persistence entry it works until the file is reopened; with no picker it cannot be chosen at
 ## all. C2 watched two of these happen for real — adding `gps` and `buzzer` to the mass model
-## silently broke `BuildPanel.CATEGORY_ORDER` and rendered both parts as raw category strings —
+## silently broke the Sim's (since removed) BuildPanel category table and rendered both parts as raw category strings —
 ## and neither was caught by a check written for it.
 ##
 ## THE RULE THIS FILE IS WRITTEN UNDER, and it is the reason it exists as its own slice:

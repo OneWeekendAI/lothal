@@ -358,12 +358,7 @@ static func run() -> Array:
 	# one aircraft while the field flew another — the precise divergence §2.2 exists to forbid,
 	# and it would be invisible because both halves would produce plausible numbers.
 	var panel_ids := {"flight_controller": "fc_f405_30x30_budget"}
-	var field_panel := BuildPanel.new(catalog, panel_ids)
-	# _rebuild() directly rather than parenting into the tree, as test_build_panel.gd does:
-	# the panel is pure Control wiring and a headless SceneTree has no reason to be involved.
-	field_panel._rebuild()
-	var flown: Build = field_panel.build
-	field_panel.free()
+	var flown: Build = _sim_build(panel_ids)
 	results.append(TestResult.new(
 		"a board chosen in Lab is the board the field builds",
 		flown.fc.get("part_id", "") == "fc_f405_30x30_budget"
@@ -374,10 +369,7 @@ static func run() -> Array:
 
 	# And a selection that predates the category still loads, rather than failing on a missing
 	# key deep inside Build. Saved configurations exist on disk from before this slice.
-	var legacy := BuildPanel.new(catalog, {"frame": ReferenceBuild.FRAME_ID})
-	legacy._rebuild()
-	var legacy_build: Build = legacy.build
-	legacy.free()
+	var legacy_build: Build = _sim_build({"frame": ReferenceBuild.FRAME_ID})
 	results.append(TestResult.new(
 		"a saved selection from before flight controllers existed still loads",
 		legacy_build.fc.get("part_id", "") == Build.DEFAULT_FC_ID,
@@ -385,3 +377,15 @@ static func run() -> Array:
 	))
 
 	return results
+
+
+## What Sim flies when nothing is handed over: `Main.make_opening_build()`, the standalone-boot
+## path that replaced the Sim's BuildPanel. Built on a scene object that never enters the tree, so
+## no frame is needed.
+static func _sim_build(selection: Dictionary, frame_edit: Dictionary = {}) -> Build:
+	var scene: Node = load("res://src/scenes/main.gd").new()
+	scene.initial_selection = selection
+	scene.initial_frame_edit = frame_edit
+	var b: Build = scene.make_opening_build()
+	scene.free()
+	return b

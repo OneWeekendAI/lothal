@@ -603,9 +603,8 @@ static func _test_the_room_says_which_shape_the_aircraft_flies() -> TestResult:
 ##
 ## THE TWO CLAUSES ARE A PAIR. "Sim is rebuilt" alone says nothing about what it reads; "the store
 ## has the blade" alone says nothing about whether Sim ever looks again. Together they are the
-## claim. The panel is exercised through the same class Sim builds — `BuildPanel`, against
-## `load_with_custom`, which is the call `scenes/main.gd:194` makes — because Sim's own panel is
-## built in `_ready` and this runner processes no frames (see tests/test_lab.gd for the same
+## claim. The build is made through the same call Sim's standalone boot makes — `Build.from_ids`
+## against `load_with_custom` — because Sim's own build is made in `_ready` and this runner processes no frames (see tests/test_lab.gd for the same
 ## constraint stated from the other side).
 ##
 ## Mutation that turns this red: have `_close_rooms` leave `sim` alone — the cache §7b assumed —
@@ -631,14 +630,14 @@ static func _test_a_blade_published_next_door_is_flyable_on_the_next_trip_out() 
 	var rebuilt: bool = shell.sim != first
 	shell.free()
 
-	# Clause two: what a freshly built Sim reads. Same catalog call, same panel class, and the
+	# Clause two: what a freshly built Sim reads. Same catalog call, same Build.from_ids Sim's standalone boot uses, and the
 	# planform that comes out the far side must be the narrowed one rather than the arch.
 	var catalog := PartsCatalog.load_with_custom()
 	var in_store: bool = not catalog.get_part(part_id).is_empty()
-	var panel := BuildPanel.new(catalog, {"propeller": part_id})
-	panel._rebuild()
-	var flown := panel.build.blade_chord()
-	panel.free()
+	var flown_build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
+		part_id, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID, ReferenceBuild.FC_ID,
+		Build.DEFAULT_COMPONENT_IDS.duplicate())
+	var flown := flown_build.blade_chord()
 
 	var authored := PropellerDocument.from_catalog_prop(record).chord
 	var chord_matches: bool = flown.size() == authored.size() and flown.size() > 0

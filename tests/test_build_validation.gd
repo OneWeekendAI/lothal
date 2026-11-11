@@ -5,7 +5,7 @@ extends RefCounted
 ##
 ## tests/test_validation.gd is the answer to the objection that would sink the thrust stand.
 ## This file is the answer to the objection that would sink everything above it. The reference
-## build's 496 g, 11.7:1 and 29% hover are asserted in test_hover, test_esc, test_build_panel,
+## build's 496 g, 11.7:1 and 29% hover are asserted in test_hover, test_esc, (test_build_panel, deleted with the Sim BuildPanel),
 ## test_build_warnings, test_flight_controller and test_battery_model — and every one of those
 ## checks the model against a fixture the model's own constants were chosen to reproduce. Move
 ## Build.ELECTRONICS_BUDGET_G by 15 g and all six stay green while every aircraft in the catalog

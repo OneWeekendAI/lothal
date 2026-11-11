@@ -26,7 +26,7 @@ extends RefCounted
 ##
 ## The five-list coverage rule over every optional component is **C4's**, and it is a slice of its
 ## own on purpose — the checks below are about the receiver, the GPS and the buzzer specifically,
-## and about the table that moved them. `BuildPanel.CATEGORY_ORDER` is still a second hand-written
+## and about the table that moved them. the Sim's (since removed) BuildPanel category table is still a second hand-written
 ## list and C4 is where that gets teeth. `LinkDetails` and the panel rows are **C6's**; what stands
 ## in the Link panel today is `LinkStub`, and the checks below assert the routing, not the rows.
 

@@ -14,6 +14,44 @@ static func run() -> Array:
 
 	var all: Array = []
 	_walk(shell, all)
+	# S2: the sim authors nothing, so it carries no part picker at all. The shell is not in a tree
+	# here, so the sim's own _ready (which builds its UI) has not run under it; the same check is
+	# therefore made twice: over the shell's sim subtree, and over a main.tscn that IS booted in the
+	# tree, where a Hud proves the walk reached the sim's UI layer.
+	var sim_nodes: Array = []
+	if shell.rooms.sim != null:
+		_walk(shell.rooms.sim, sim_nodes)
+	results.append(TestResult.new("sim: no BuildPanel node and no OptionButton under the shell's sim",
+		_pickers_in(sim_nodes).is_empty(), str(_pickers_in(sim_nodes))))
+	var booted: Node = load("res://src/scenes/main.tscn").instantiate()
+	booted.notification(Node.NOTIFICATION_READY)   # runs the @onready vars and _ready without a tree
+	var booted_nodes: Array = []
+	_walk(booted, booted_nodes)
+	var saw_hud := false
+	for n in booted_nodes:
+		if n is Hud:
+			saw_hud = true
+	var booted_pickers := _pickers_in(booted_nodes)
+	var has_member := false
+	for prop in booted.get_property_list():
+		if str(prop["name"]) == "build_panel":
+			has_member = true
+	var flies_build: bool = booted.get("build") != null and booted.get("core") != null
+	booted.free()
+	results.append(TestResult.new("sim: a booted main.tscn reaches its HUD (the walk is not vacuous)",
+		saw_hud, "nodes walked: %d" % booted_nodes.size()))
+	results.append(TestResult.new("sim: a booted main.tscn flies a Build with no build_panel member",
+		flies_build and not has_member, "flies build %s, build_panel member %s" % [flies_build, has_member]))
+	results.append(TestResult.new("sim: a booted main.tscn has no BuildPanel node and no OptionButton",
+		booted_pickers.is_empty(), str(booted_pickers)))
+	var has_global := false
+	for entry in ProjectSettings.get_global_class_list():
+		if str(entry.get("class", "")) == "BuildPanel":
+			has_global = true
+	results.append(TestResult.new("the BuildPanel global class no longer exists",
+		not has_global and not ClassDB.class_exists("BuildPanel")
+			and not FileAccess.file_exists("res://src/ui/build_panel.gd"),
+		"global class registered: %s" % has_global))
 	var banned: Array = []
 	var bars: Array = []
 	var buttons: Dictionary = {}
@@ -146,3 +184,12 @@ static func _sig(sb: StyleBox) -> String:
 	if f == null:
 		return "none"
 	return "%s|%s|%d" % [f.bg_color, f.border_color, int(f.content_margin_top)]
+
+
+static func _pickers_in(nodes: Array) -> Array:
+	var out: Array = []
+	for n in nodes:
+		var script: Script = n.get_script()
+		if n is OptionButton or (script != null and str(script.resource_path).ends_with("build_panel.gd")):
+			out.append("%s(%s)" % [n.name, n.get_class()])
+	return out

@@ -8,7 +8,7 @@ extends Node3D
 ##
 ## Keyboard:  Arrows = pitch/roll   A/D = yaw   W/S = throttle trim   Space = mode toggle
 ## Gamepad:   right stick = pitch/roll   left stick = yaw/throttle   button A = mode toggle
-## Tab hides the build panel; parts are picked with the mouse. L swaps the listener between
+## L swaps the listener between
 ## the pilot's position on the ground and the chase camera. C swaps the FPV feed between the
 ## corner inset and the whole screen. R arms and disarms the flight recorder; the HUD says so for
 ## as long as it is running, and disarming writes the log to user://logs.
@@ -66,7 +66,6 @@ var wind: Wind
 ## a builder typed and not the label on them. Stamped onto every Build this scene flies so the
 ## HUD's countdown and Lab's estimate are quoted in — and named after — the same weather.
 var conditions_name := Conditions.STANDARD_NAME
-var build_panel: BuildPanel
 ## The visible aircraft, generated from `build` rather than authored in main.tscn — see the
 ## comment on the Drone node there, and AirframeModel's header.
 var airframe: AirframeModel
@@ -79,7 +78,7 @@ var initial_selection: Dictionary = {}
 ## drawn in the garage is the frame flown in the field. `{}` flies the catalogue frame.
 var initial_frame_edit: Dictionary = {}
 ## The Design Space's finished Build, set by RoomHost beside `initial_selection`. When present the
-## sim flies exactly this Build instead of the one the BuildPanel makes from ids.
+## sim flies exactly this Build instead of one made from ids.
 var initial_build: Build = null
 ## The designer's document beside it, so the aircraft on screen is the frame drawn rather than one
 ## generated from specs. `AirframeModel.draws` decides whether it is THIS build's frame — a frame
@@ -171,7 +170,6 @@ var _recorder: FlightRecorder = null
 var fc := FlightController.new()
 var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": 0.0}
 var _mode_button_was_pressed := false
-var _tab_was_pressed := false
 ## Previous frame's position, so gate passage is tested against the segment actually
 ## travelled rather than against a single sample (see GateCourse.segment_passes_gate).
 var _previous_position := SPAWN_POSITION
@@ -374,20 +372,32 @@ func _ready() -> void:
 	airframe = AirframeModel.new()
 	drone.add_child(airframe)
 
-	# load_with_custom so a frame the builder entered in Lab can be FLOWN. Reading, not authoring:
-	# labs-and-sim.md's rule is that Lab authors and Sim does not, and nothing in this scene
-	# creates or edits a custom part — it resolves the ids it was handed.
-	build_panel = BuildPanel.new(PartsCatalog.load_with_custom(), _opening_selection())
-	build_panel.frame_edit = initial_frame_edit
-	build_panel.theme = theme
-	# This scene owns both, so this is where the two are told about each other rather than
-	# either one reaching across for the other's geometry.
-	build_panel.top_inset = ui_top_inset
-	build_panel.bottom_reserve = Hud.FLIGHT_BLOCK_HEIGHT
-	build_panel.build_changed.connect(_on_build_changed)
-	ui_layer.add_child(build_panel)   # emits build_changed on _ready, which builds the core
-	if initial_build != null:
-		_on_build_changed(initial_build)
+	# The sim authors nothing: it flies exactly the Build the Design Space handed over. With no
+	# hand-over (main.tscn run on its own, tests) the opening selection is resolved to a Build here,
+	# with load_with_custom so a frame the builder entered in Lab can still be FLOWN (reading only).
+	_on_build_changed(initial_build if initial_build != null else make_opening_build())
+
+## The Build for a standalone boot: the opening selection through Build.from_ids, plus the
+## designer's frame edit. Public so a check can compare it with what a booted scene flies.
+func make_opening_build() -> Build:
+	var ids := _opening_selection()
+	var optional := {}
+	for category in Build.OPTIONAL_COMPONENTS:
+		optional[category] = str(ids.get(category, ""))
+	var catalog := PartsCatalog.load_with_custom()
+	# An id the catalog lacks falls back to the reference part rather than failing the boot.
+	var pick := func(category: String, fallback: String) -> String:
+		var wanted := str(ids.get(category, ""))
+		return wanted if not catalog.get_part(wanted).is_empty() else fallback
+	var b := Build.from_ids(
+		catalog,
+		pick.call("frame", ReferenceBuild.FRAME_ID), pick.call("motor", ReferenceBuild.MOTOR_ID),
+		pick.call("propeller", ReferenceBuild.PROPELLER_ID), pick.call("battery", ReferenceBuild.BATTERY_ID),
+		pick.call("esc", ReferenceBuild.ESC_ID), pick.call("flight_controller", ReferenceBuild.FC_ID),
+		optional)
+	if not initial_frame_edit.is_empty():
+		b.set_frame_edit(initial_frame_edit)
+	return b
 
 ## Every part change lands here: new mass properties, new coefficients, new drone. The
 ## airframe is rebuilt from scratch rather than patched, so there is no way for a stat on
@@ -461,6 +471,11 @@ func _opening_selection() -> Dictionary:
 	# written out, so a fifth component cannot be added to the mass model and left off the one
 	# aircraft that loads without Lab in front of it.
 	defaults.merge(Build.DEFAULT_COMPONENT_IDS)
+	# Every optional category is named, "" (not fitted) where Build has no default — GPS, buzzer —
+	# so nothing downstream reads an absent key.
+	for category in Build.OPTIONAL_COMPONENTS:
+		if not defaults.has(category):
+			defaults[category] = ""
 	for category in defaults:
 		# has() rather than get(category, default), because "" is a real hand-over here — an empty
 		# bay — and a value-based fallback would quietly refit a camera the builder took off.
@@ -600,11 +615,6 @@ func _physics_process(delta: float) -> void:
 	if fly_hint != null and fly_hint.visible and (Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_S) \
 			or Input.is_key_pressed(KEY_UP) or Input.is_key_pressed(KEY_DOWN)):
 		fly_hint.clear()
-	if Input.is_key_pressed(KEY_TAB) != _tab_was_pressed:
-		_tab_was_pressed = Input.is_key_pressed(KEY_TAB)
-		if _tab_was_pressed:
-			build_panel.visible = not build_panel.visible
-
 	if Input.is_key_pressed(KEY_L) != _l_was_pressed:
 		_l_was_pressed = Input.is_key_pressed(KEY_L)
 		if _l_was_pressed:
