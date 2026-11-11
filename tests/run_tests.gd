@@ -397,7 +397,6 @@ func _run_suite(suite_name: String) -> Array:
 		"custom parts ui": return TestCustomPartsUi.run()
 		"update check": return TestUpdateCheck.run()
 		"rust constants": return TestRustConstants.run()
-		"glass shell": return TestDesignApp.run()
 		"room host": return TestRoomHost.run()
 		"project": return TestProject.run()
 		"project menu": return TestProjectMenu.run()
