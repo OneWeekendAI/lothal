@@ -1491,7 +1491,7 @@ func open_save_as() -> void:
 
 
 func open_open_dialog() -> void:
-	file_bar.open_open(recent_designs(), ProjectRows.list(_catalog), _current_project_path())
+	file_bar.open_open(recent_designs(), ProjectRows.list(null), _current_project_path())
 
 
 ## The path of the drone open in the shell ("" when the shell has none to name); the shell sets `current_project`.
@@ -1509,7 +1509,7 @@ func delete_project(path: String) -> bool:
 		return false
 	ProjectLibrary.delete(path)
 	project_deleted.emit(path)
-	file_bar.refresh_projects(ProjectRows.list(_catalog))
+	file_bar.refresh_projects(ProjectRows.list(null))
 	return true
 
 

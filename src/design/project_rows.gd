@@ -8,7 +8,7 @@ const SORT_NAME := 1
 
 
 ## Every drone in the builds folder (not the trash), as `[{path, name, updated_unix, size, dry_g, auw_g}]`.
-## A file that will not open is left out rather than shown as a row that cannot be opened.
+## `catalog` null skips the weight figures (the Open dialog wants names and ages only, and is opened often). A file that will not open is left out rather than shown as a row that cannot be opened.
 static func list(catalog: PartsCatalog) -> Array:
 	ProjectLibrary.ensure_dir()
 	var out: Array = []

@@ -72,7 +72,7 @@ static func run(tree: SceneTree) -> Array:
 	out.append(TestResult.new("the Open dialog lists the drones on disk", listed == ["Alpha", "Mike", "Zulu"], str(listed)))
 	# A container's write stamps "now", so the three files share a second: the order is checked on entries with
 	# distinct edit times (the same shape ProjectRows.list returns).
-	var entries := ProjectRows.list(ds._catalog)
+	var entries := ProjectRows.list(null)
 	var age := {"Zulu": 60, "Mike": 3600, "Alpha": 7200}
 	for e in entries:
 		e["updated_unix"] = int(Time.get_unix_time_from_system()) - int(age[String(e["name"])])

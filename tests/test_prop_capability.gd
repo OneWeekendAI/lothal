@@ -22,11 +22,11 @@ const ROWS := [
 	{"old": "g/W, thrust, FM, capped-to, alpha, refusal", "home": "Tunnel Details", "proof": [[D, "details: g/W is BladeAero's"], [D, "details: thrust is BladeAero's"], [D, "details: FM is BladeAero's"], [D, "details: capped-to is BladeAero's"], [D, "details: the alpha curve has a point per lifting station"], [D, "details: a refusal reaches the panel as a refusal"]]},
 	{"old": "Saved list, preset chips", "home": "Prop shelf, tiles", "proof": [[D, "a saved prop reaches the shelf's catalog"], [D, "the shelf prop's record is unchanged"]]},
 	{"old": "Typed custom prop", "home": "Custom entry", "proof": [[D, "the designer has a typed entry"], [D, "and is marked typed"], [D, "the dialog reports a failed write"]]},
-	{"old": "Prop inspector blade rows", "home": "Stays until Lab retires; link repointed", "proof": [["test_propulsion_panel", "_test_every_blade_row_renders_for_every_prop"], ["test_prop_repoint", "_test_inspector_button_opens_designer_on_shown_prop"]]},
-	{"old": "Five analysis overlays", "home": "They stay; none is prop-only", "proof": [["test_thrust_overlay", "_test_the_sum_is_the_solves_thrust_bit_for_bit"], ["test_prop_disc_overlay", "_test_the_gap_is_the_one_the_clearance_check_measures"]]},
+	{"old": "Prop inspector blade rows", "home": "Inspector's Open sheet", "proof": [["test_propulsion_panel", "_test_every_blade_row_renders_for_every_prop"], ["test_part_sheet", "Open sheet on the battery opens the battery's sheet"]]},
 	{"old": "Delete", "home": "Two-press on the card", "proof": [[D, "the first delete press only arms"], [D, "the second press deletes"]]},
 ]
-const SPEC_ROWS := 18
+## 17: the "Five analysis overlays" row went with the overlays themselves (deleted in R9), not with a test.
+const SPEC_ROWS := 17
 
 
 static func run() -> Array:
