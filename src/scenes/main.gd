@@ -106,7 +106,7 @@ var pack_charge: PackCharge = PackCharge.load_from()
 ## corollary, which is what settled where tuning lives). There is no in-flight tuning control, and
 ## the absence is the boundary rather than an omission.
 var pid_tunes: PidTunes = PidTunes.load_from()
-var hud: Hud
+var hud: DsHud
 ## The field, read from the library Lab writes. Read from disk rather than handed over with the
 ## selection, for exactly the reason `tweaks` above is: it is one file, Lab is the only writer, and
 ## a copy passed through the door would be a second place a gate position lives. Sim never writes
@@ -341,7 +341,7 @@ func _ready() -> void:
 	# being a picture of the app. Same cached Theme either way, so the door path is unchanged.
 	var theme := LothalTheme.get_theme()
 
-	hud = Hud.new()
+	hud = DsHud.new()
 	hud.theme = theme
 	ui_layer.add_child(hud)
 
@@ -410,6 +410,9 @@ func _on_build_changed(new_build: Build) -> void:
 		_stop_recording()
 	build = new_build
 	core = build.build_drone_core()
+	# The build's warnings, which the sim no longer lets anyone author away: shown on the HUD.
+	if hud != null:
+		hud.show_warnings(build)
 	# The field this build is about to fly in, not a fresh calm core — a `DroneCore` is built with
 	# no opinion about the air (`wind = null`, drone_core.gd), and this is the one path every part
 	# change lands on, so there is no ordering in which the aircraft on screen flies one weather and
@@ -674,7 +677,7 @@ func _physics_process(delta: float) -> void:
 	drone_audio.update(core.observables, _chase_transform.origin)
 
 	hud.render(core, build, course, lap_timer, fc.is_rate_mode())
-	# Off the recorder's own figures, not off a frame counter here. See Hud.set_recording.
+	# Off the recorder's own figures, not off a frame counter here. See DsHud.set_recording.
 	hud.set_recording(_recorder != null,
 		_recorder.duration_s() if _recorder != null else 0.0,
 		_recorder.row_count() if _recorder != null else 0)

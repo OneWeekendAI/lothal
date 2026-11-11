@@ -341,7 +341,7 @@ static func _test_the_hud_shows_charge_and_time_left(_catalog: PartsCatalog) -> 
 	var core := build.build_drone_core()
 	var course := GateCourse.new()
 	var timer := LapTimer.new(course.fingerprint())
-	var hud := Hud.new()
+	var hud := DsHud.new()
 
 	var throttle := build.hover_throttle_for(core.powertrain.battery)
 	core.prime_motors(throttle)

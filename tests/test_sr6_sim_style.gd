@@ -1,13 +1,13 @@
 class_name TestSr6SimStyle
 extends RefCounted
-## SR6 / L3.1+L3.2: the Sim screen (Hud, plus main.gd which builds it) carries no blue of its own; it uses Design Space tokens
+## SR6 / L3.1+L3.2: the Sim screen (DsHud, plus main.gd which builds it) carries no blue of its own; it uses Design Space tokens
 ## (DesignSpace.INK / INK_MUTED / INK_FAINT / SELECT_INK, the monochrome studio palette). Two cases: no blue-dominant Color(...)
 ## literal (b >= r+0.25 and b >= g+0.1), and no reference to a LothalTheme blue token or a *BLUE* name.
 ## Design Space's own accents are not scanned. FAIL-PROOFS observed 2026-11-10: RED before the fix = 0 literals, 1 named-blue
-## reference (src/ui/hud.gd line 36, COLOR_ACCENT := LothalTheme.ACCENT, used for the gate label and banner). GREEN after the fix.
+## reference (src/ui/hud.gd (now src/design/ds_hud.gd) line 36, COLOR_ACCENT := LothalTheme.ACCENT, used for the gate label and banner). GREEN after the fix.
 ## MT: a literal Color(0.2, 0.4, 0.9) injected into the scanned text makes the literal case FAIL (checked through _blue_literals).
 
-const FILES := ["res://src/ui/hud.gd", "res://src/scenes/main.gd"]
+const FILES := ["res://src/design/ds_hud.gd", "res://src/scenes/main.gd"]
 const BLUE_TOKENS := ["LothalTheme.ACCENT", "LothalTheme.BORDER_FOCUS", "BLUE"]
 
 

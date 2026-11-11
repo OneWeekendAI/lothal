@@ -627,7 +627,7 @@ const FORBIDDEN_WIND_WORDS := ["too windy", "strong for this build", "dangerous"
 
 static func _hud_line() -> Array:
 	var results: Array = []
-	var hud := Hud.new()
+	var hud := DsHud.new()
 	var core := ReferenceBuild.build_drone_core()
 	var conditions := Conditions.new()
 	conditions.wind_speed_mps = 6.3

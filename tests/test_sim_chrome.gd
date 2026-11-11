@@ -17,7 +17,7 @@ static func run() -> Array:
 	# S2: the sim authors nothing, so it carries no part picker at all. The shell is not in a tree
 	# here, so the sim's own _ready (which builds its UI) has not run under it; the same check is
 	# therefore made twice: over the shell's sim subtree, and over a main.tscn that IS booted in the
-	# tree, where a Hud proves the walk reached the sim's UI layer.
+	# tree, where a DsHud proves the walk reached the sim's UI layer.
 	var sim_nodes: Array = []
 	if shell.rooms.sim != null:
 		_walk(shell.rooms.sim, sim_nodes)
@@ -29,7 +29,7 @@ static func run() -> Array:
 	_walk(booted, booted_nodes)
 	var saw_hud := false
 	for n in booted_nodes:
-		if n is Hud:
+		if n is DsHud:
 			saw_hud = true
 	var booted_pickers := _pickers_in(booted_nodes)
 	var has_member := false
