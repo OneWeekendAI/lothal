@@ -206,6 +206,17 @@ func open_room(room_id: String) -> bool:
 	return false
 
 
+## The Flights drawer (Studio) over the design. From the sim or Field it comes back to the design first,
+## so a landing can offer "open the flight you just flew" with one call.
+func open_flights() -> bool:
+	if design_space == null:
+		return false
+	if away_from_design():
+		back_to_drone_from_room()
+	design_space.open_flights()
+	return true
+
+
 ## The Setup pages: the lab's sheets (frame, propulsion, power, control, video, printed, config).
 func open_setup(page := "") -> bool:
 	if design_space == null or not _sync_design_to_lab():

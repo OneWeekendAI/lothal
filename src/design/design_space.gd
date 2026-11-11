@@ -20,6 +20,8 @@ signal fly_requested
 signal field_requested
 ## The Mission button: the shell opens a MissionPicker for this design.
 signal mission_requested
+## The Flights drawer opened (the shell may want to know; the sheet itself is DesignSpace's).
+signal flights_opened
 signal room_requested(room_id: String)
 
 const PANEL_FADE_S := 0.2
@@ -1453,6 +1455,7 @@ func _build_file_bar() -> void:
 	refresh_identity()
 	file_bar.field_pressed.connect(func(): field_requested.emit())
 	file_bar.mission_pressed.connect(func(): mission_requested.emit())
+	file_bar.flights_pressed.connect(func(): open_flights())
 	file_bar.room_pressed.connect(func(id: String): room_requested.emit(id))
 	file_bar.save_as_confirmed.connect(func(n: String): save_design(n))
 	file_bar.open_chosen.connect(func(f: String): open_design(f))
@@ -2200,6 +2203,28 @@ func open_part_sheet(category: String, tab := "") -> bool:
 		return false
 	sheet.grab_focus()
 	return true
+
+
+## The Flights drawer, while it is open (null otherwise): Studio over the Design Space.
+var flights_sheet: FlightsSheet
+
+
+## Opens the Flights drawer (Studio). `library` is a test seam; null reads the builder's real flights.
+## A second call replaces the open one, so the list is always as the last flight left it.
+func open_flights(library: FlightLogLibrary = null) -> FlightsSheet:
+	if flights_sheet != null and is_instance_valid(flights_sheet):
+		flights_sheet.queue_free()
+	var sheet := FlightsSheet.new(library)
+	flights_sheet = sheet
+	sheet.closed.connect(func():
+		if flights_sheet == sheet:
+			flights_sheet = null
+		sheet.queue_free())
+	add_child(sheet)
+	if sheet.is_inside_tree():
+		sheet.grab_focus()
+	flights_opened.emit()
+	return sheet
 
 
 ## The form that enters a part the catalog does not stock (ESC, flight controller, camera, VTX, receiver,

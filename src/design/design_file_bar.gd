@@ -16,6 +16,7 @@ signal fly_pressed
 signal identity_pressed
 signal field_pressed
 signal mission_pressed
+signal flights_pressed
 ## A room from the menu's Rooms group (the DesignApp opens it): setup, frame_bench, bench, esc_bench, studio, projects.
 signal room_pressed(room_id: String)
 signal save_as_confirmed(design_name: String)
@@ -57,6 +58,7 @@ var toast: DsToast
 var fly_busy := false
 var field_button: Button
 var mission_button: Button
+var flights_button: Button
 var room_buttons := {}
 var menu_button: Button
 var menu: PanelContainer
@@ -148,7 +150,8 @@ func _build_menu() -> void:
 	menu.add_child(v)
 	var items := [["Save", "save_button", "save_pressed", ""], ["Save as", "save_as_button", "save_as_pressed", ""],
 		["Open", "open_button", "open_pressed", ""], ["Field", "field_button", "field_pressed", "Open the Field room: courses, sites, weather and worlds"],
-		["Mission", "mission_button", "mission_pressed", "Pick a mission and an environment, then watch or run this design"]]
+		["Mission", "mission_button", "mission_pressed", "Pick a mission and an environment, then watch or run this design"],
+		["Flights", "flights_button", "flights_pressed", "Flights already flown: logs, the gyro-versus-motor gap, spectrum and traces"]]
 	for it in items:
 		if it[0] == "Field":
 			v.add_child(DsUi.rule())
@@ -187,6 +190,8 @@ func _menu_item(which: String) -> void:
 		open_pressed.emit()
 	elif which == "field_pressed":
 		field_pressed.emit()
+	elif which == "flights_pressed":
+		flights_pressed.emit()
 	else:
 		mission_pressed.emit()
 
