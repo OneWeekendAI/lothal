@@ -50,7 +50,7 @@ static func run(tree: SceneTree) -> Array:
 	results.append(TestResult.new("_process draws the pose a quarter of the way between the two ticks (not the latest tick)",
 		d.is_equal_approx(p0 + (p1 - p0) * 0.25), str(d)))
 	results.append(TestResult.new("after _process the drawn drone lies on the segment between the last two physics poses",
-		along >= -1e-6 and along <= 1.0 + 1e-6 and off_line < 1e-5, "t %.3f off %.2e" % [along, off_line]))
+		along >= -1e-6 and along <= 1.0 + 1e-6 and off_line < 1e-5, "t %.3f off %.8f" % [along, off_line]))
 	var fractions := {}
 	for f in [0.1, 0.5, 0.9]:
 		fractions[f] = sim.interpolated_pose(sim._vis_prev, sim._vis_curr, f).origin.x
@@ -89,4 +89,7 @@ static func run(tree: SceneTree) -> Array:
 		and PropWash.intensity(0.6, hover_thrust, area, rho, 0.127) >= PropWash.intensity(1.2, hover_thrust, area, rho, 0.127), ""))
 	results.append(TestResult.new("rotor wash is zero with no thrust and no disc",
 		PropWash.intensity(0.1, 0.0, area, rho, 0.127) == 0.0 and PropWash.intensity(0.1, 5.0, 0.0, rho, 0.127) == 0.0, ""))
+	results.append(TestResult.new("rotor wash: a hover beyond two rotor diameters (0.26 m for a 5 inch) raises no dust",
+		PropWash.intensity(0.3, hover_thrust, area, rho, 0.127) == 0.0 and PropWash.intensity(1.0, hover_thrust, area, rho, 0.127) == 0.0
+		and PropWash.intensity(0.12, hover_thrust, area, rho, 0.127) > 0.3, ""))
 	return results

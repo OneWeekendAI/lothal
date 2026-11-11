@@ -11,9 +11,13 @@ extends Node3D
 ## measurement can replace them.
 
 const REACH_DIAMETERS := 1.5
+## Dust only exists when the rotor is this close to the ground, in rotor diameters (ground effect is
+## gone by about two diameters). Full strength inside FULL_WITHIN_DIAMETERS, fading to none at the limit.
+const GROUND_LIMIT_DIAMETERS := 2.0
+const FULL_WITHIN_DIAMETERS := 1.0
 const LIFT_MPS := 2.0
 const FULL_MPS := 8.0
-const MAX_PARTICLES := 160
+const MAX_PARTICLES := 36
 ## The emitter sits this far above the terrain mesh, which the physics height only approximates: a puff
 ## spawned at the surface is sliced by it and reads as a flat-bottomed dome.
 const LIFT_OFF_M := 0.16
@@ -31,7 +35,11 @@ static func intensity(height_m: float, thrust_n: float, disc_area_m2: float, rho
 	var v_i := sqrt(thrust_n / (2.0 * rho * disc_area_m2))
 	var h := maxf(height_m, 0.05)
 	var v_ground := v_i * minf(1.0, REACH_DIAMETERS * rotor_diameter_m / h)
-	return clampf((v_ground - LIFT_MPS) / (FULL_MPS - LIFT_MPS), 0.0, 1.0)
+	var lift := clampf((v_ground - LIFT_MPS) / (FULL_MPS - LIFT_MPS), 0.0, 1.0)
+	# The hard ground gate: a hover a metre up (many diameters) lifts nothing, whatever the thrust.
+	var d := maxf(rotor_diameter_m, 0.001)
+	var gate := clampf((GROUND_LIMIT_DIAMETERS * d - h) / ((GROUND_LIMIT_DIAMETERS - FULL_WITHIN_DIAMETERS) * d), 0.0, 1.0)
+	return lift * gate
 
 
 func _init() -> void:
@@ -40,17 +48,17 @@ func _init() -> void:
 	_material.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
 	_material.emission_ring_axis = Vector3.UP
 	_material.emission_ring_height = 0.01
-	_material.emission_ring_radius = 0.2
+	_material.emission_ring_radius = 0.1
 	_material.emission_ring_inner_radius = 0.05
 	_material.direction = Vector3(0, 0.05, 0)
 	_material.spread = 12.0
-	_material.radial_velocity_min = 0.5
-	_material.radial_velocity_max = 1.4
+	_material.radial_velocity_min = 0.25
+	_material.radial_velocity_max = 0.7
 	_material.gravity = Vector3(0, 0.0, 0)
 	_material.damping_min = 0.8
 	_material.damping_max = 1.6
-	_material.scale_min = 0.35
-	_material.scale_max = 0.7
+	_material.scale_min = 0.07
+	_material.scale_max = 0.17
 	var grow := Curve.new()
 	grow.add_point(Vector2(0, 0.35))
 	grow.add_point(Vector2(1, 1.0))
@@ -59,7 +67,7 @@ func _init() -> void:
 	_material.scale_curve = grow_tex
 	var ramp := Gradient.new()
 	ramp.set_color(0, Color(1, 1, 1, 0.0))
-	ramp.add_point(0.2, Color(1, 1, 1, 0.14))
+	ramp.add_point(0.2, Color(1, 1, 1, 0.1))
 	ramp.set_color(1, Color(1, 1, 1, 0.0))
 	var ramp_tex := GradientTexture1D.new()
 	ramp_tex.gradient = ramp
@@ -97,7 +105,7 @@ func _init() -> void:
 
 	_particles = GPUParticles3D.new()
 	_particles.amount = MAX_PARTICLES
-	_particles.lifetime = 1.0
+	_particles.lifetime = 0.5
 	_particles.local_coords = false
 	_particles.emitting = false
 	_particles.process_material = _material
@@ -110,10 +118,10 @@ func _init() -> void:
 ## Moves the emitter to the ground point under the aircraft and sets how much it gives off.
 func update(ground_point: Vector3, strength: float, ring_radius_m: float) -> void:
 	global_position = ground_point + Vector3(0, LIFT_OFF_M, 0)
-	_material.emission_ring_radius = maxf(ring_radius_m, 0.05)
+	_material.emission_ring_radius = maxf(0.5 * ring_radius_m, 0.04)
 	_material.emission_ring_inner_radius = 0.25 * _material.emission_ring_radius
-	var on := strength > 0.02
-	_particles.amount_ratio = clampf(strength, 0.05, 1.0)
+	var on := strength > 0.04
+	_particles.amount_ratio = clampf(strength, 0.1, 1.0)
 	if _particles.emitting != on:
 		_particles.emitting = on
 
