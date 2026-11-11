@@ -514,6 +514,7 @@ func _restart_course() -> void:
 ## the ground is a shape now (F4) but it is still arithmetic, so a shape cast would still cost
 ## more than it tells us. See _check_crash.
 func _respawn_after_crash() -> void:
+	hud.say("Crashed. Back at the last gate.", true, 4.0)
 	# A crash is a landing, and a landing is when the pack state is written down. Recorded rather
 	# than reset: hitting the ground does not refill a battery.
 	persist_pack_charge()
@@ -624,8 +625,28 @@ func watch_mission(params: Dictionary) -> bool:
 		watch_result = runner.finish()
 		return false
 	watch_runner = runner
+	if hud != null:
+		hud.set_idle(true)
 	_ensure_watch_card().begin(String(params.get("mission", "")), runner.max_sim_s)
 	return true
+
+
+## S7 the toast for the end of a watched mission: landed, battery empty, or crashed. Plain words from `ended_by`.
+static func watch_end_text(result: Dictionary) -> String:
+	var by := String(result.get("ended_by", ""))
+	if by.begins_with("battery"):
+		return "Battery empty."
+	if by == "lost_control":
+		return "Crashed. Lost control."
+	if by == "completed":
+		return "Landed. Mission complete."
+	if by == "landed_at_reserve":
+		return "Landed. Pack reached reserve."
+	return "Mission ended: %s." % by.replace("_", " ")
+
+
+static func watch_end_is_warning(result: Dictionary) -> bool:
+	return String(result.get("ended_by", "")) not in ["completed", "landed_at_reserve"]
 
 
 func _watch_frame(delta: float) -> void:
@@ -645,6 +666,8 @@ func _watch_frame(delta: float) -> void:
 		watch_runner = null
 		if watch_card != null:
 			watch_card.finish(watch_result, runner.rig.time_s)
+		if hud != null:
+			hud.say(watch_end_text(watch_result), watch_end_is_warning(watch_result), 6.0)
 		watch_finished.emit(watch_result)
 
 
@@ -670,7 +693,6 @@ func _physics_process(delta: float) -> void:
 	if flight_controls != null:
 		flight_controls.show_state(flight_paused, _recorder != null)
 	if flight_paused:
-		hud.tick_banner(delta)
 		return
 
 	if Input.get_connected_joypads().is_empty():
@@ -717,11 +739,21 @@ func _physics_process(delta: float) -> void:
 	drone_audio.update(core.observables, _chase_transform.origin)
 
 	hud.render(core, build, course, lap_timer, fc.is_rate_mode())
+	_note_battery(core.observables.capacity_used_fraction >= 1.0)
 	# Off the recorder's own figures, not off a frame counter here. See DsHud.set_recording.
 	hud.set_recording(_recorder != null,
 		_recorder.duration_s() if _recorder != null else 0.0,
 		_recorder.row_count() if _recorder != null else 0)
-	hud.tick_banner(delta)
+
+## S7 says "Battery empty." once when the pack runs out, and again only after it has been refilled.
+var _battery_empty_said := false
+
+
+func _note_battery(empty: bool) -> void:
+	if empty and not _battery_empty_said:
+		hud.say("Battery empty.", true, 6.0)
+	_battery_empty_said = empty
+
 
 ## Swaps between hearing the drone from where the pilot stands and hearing it from the
 ## chase camera. Ground is the default and the more convincing of the two, but the camera
@@ -731,7 +763,7 @@ func _toggle_listener() -> void:
 	if drone_audio.listener_mode == DroneAudio.Listener.CHASE_CAMERA:
 		next = DroneAudio.Listener.PILOT_GROUND
 	drone_audio.set_listener(next, course.start_position(terrain))
-	hud.show_banner("EARS: %s" % ("PILOT" if next == DroneAudio.Listener.PILOT_GROUND else "CHASE"))
+	hud.say("EARS: %s" % ("PILOT" if next == DroneAudio.Listener.PILOT_GROUND else "CHASE"))
 
 ## Swaps the FPV feed between the corner inset and the whole screen. Says so in the banner either
 ## way, including when the build has no camera to fly off — a key that silently does nothing reads
@@ -739,12 +771,12 @@ func _toggle_listener() -> void:
 func _toggle_fpv() -> void:
 	if not fpv_view.visible:
 		fpv_view.open()
-		hud.show_banner("VIEW: FPV inset shown")
+		hud.say("VIEW: FPV inset shown")
 		return
 	if not fpv_view.is_fitted():
-		hud.show_banner("VIEW: no camera fitted")
+		hud.say("VIEW: no camera fitted")
 		return
-	hud.show_banner("VIEW: %s" % ("FPV" if fpv_view.toggle_main() else "CHASE"))
+	hud.say("VIEW: %s" % ("FPV" if fpv_view.toggle_main() else "CHASE"))
 
 ## R, and it is a toggle rather than a hold: a log worth having is minutes long and no key is held
 ## for minutes.
@@ -765,7 +797,7 @@ func _toggle_recording() -> void:
 ## at all — would be describing the wrong instrument.
 func _start_recording() -> void:
 	_recorder = FlightRecorder.new(build, 1, pid_tunes.tune_for(build), core.gyro)
-	hud.show_banner("REC  started")
+	hud.say("REC  started")
 
 ## Writes the buffer out and disarms. A failed write says so on the HUD and still disarms, because
 ## the alternative is a recorder that stays armed accumulating rows nobody can get out.
@@ -773,7 +805,7 @@ func _stop_recording() -> void:
 	var recorder := _recorder
 	_recorder = null
 	if recorder.row_count() == 0:
-		hud.show_banner("REC  nothing captured")
+		hud.say("REC  nothing captured")
 		return
 
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(LOG_DIR))
@@ -782,9 +814,9 @@ func _stop_recording() -> void:
 		# The count, not just the fact. A pilot who armed the recorder by hand is the only thing
 		# standing between a 55 MB/minute buffer and a full disk, and "wrote 132000 rows" is the
 		# number that makes the next decision for them.
-		hud.show_banner("REC  saved  %d rows  %s" % [recorder.row_count(), path.get_file()], 4.0)
+		hud.say("REC  saved  %d rows  %s" % [recorder.row_count(), path.get_file()], 4.0)
 	else:
-		hud.show_banner("REC  COULD NOT WRITE  %s" % path, 4.0)
+		hud.say("REC  COULD NOT WRITE  %s" % path, 4.0)
 
 ## Timestamped, and deliberately NOT named after the build.
 ##
@@ -860,10 +892,14 @@ func _score_gates(delta: float) -> void:
 
 	if not completed_lap:
 		return
-	if previous_best <= 0.0 or lap_timer.last_lap_s < previous_best:
-		hud.show_banner("NEW BEST  %s" % LapTimer.format(lap_timer.last_lap_s))
-	else:
-		hud.show_banner("LAP  %s" % LapTimer.format(lap_timer.last_lap_s))
+	hud.say(lap_toast_text(lap_timer.last_lap_s, previous_best))
+
+
+## S7 the lap-finished toast: a new best (or the first lap) or just the lap time.
+static func lap_toast_text(last_lap_s: float, previous_best_s: float) -> String:
+	if previous_best_s <= 0.0 or last_lap_s < previous_best_s:
+		return "NEW BEST  %s" % LapTimer.format(last_lap_s)
+	return "LAP  %s" % LapTimer.format(last_lap_s)
 
 func _read_gamepad() -> void:
 	var mode_pressed := Input.is_joy_button_pressed(0, MODE_TOGGLE_BUTTON)
@@ -908,7 +944,7 @@ func _toggle_flight_mode() -> void:
 ## P, and the strip's "Pause" button.
 func toggle_pause() -> void:
 	flight_paused = not flight_paused
-	hud.show_banner("PAUSED" if flight_paused else "RESUMED", 1.5)
+	hud.say("PAUSED" if flight_paused else "RESUMED", 1.5)
 
 func _apply_rc(roll_axis: float, pitch_axis: float, yaw_axis: float, throttle_axis: float) -> void:
 	rc.roll = roll_axis

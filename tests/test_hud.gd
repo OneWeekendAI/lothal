@@ -106,11 +106,11 @@ static func run() -> Array:
 	results.append(TestResult.new("pack line reads percent and time left",
 		hud._pack_label.text.contains("%") and hud._pack_label.text.contains("left"),
 		"reads \"%s\"" % hud._pack_label.text))
-	hud.show_banner("NEW BEST", 1.0)
-	results.append(TestResult.new("banner shows its text, then clears after its time",
-		hud._banner_label.text == "NEW BEST" and hud._banner_panel.visible
-			and _cleared_after(hud, 1.5),
-		"text \"%s\"" % hud._banner_label.text))
+	hud.say("NEW BEST", false, 1.0)
+	results.append(TestResult.new("S7 the HUD's message is a DsToast carrying its text, and clear() empties it",
+		hud.toast is DsToast and hud.toast.message == "NEW BEST" and hud.toast.visible
+			and _cleared(hud),
+		"text \"%s\"" % hud.toast.message))
 	hud.set_recording(true, 75.0, 1200)
 	results.append(TestResult.new("REC line shows elapsed clock and rows, and hides when stopped",
 		hud._record_label.visible and hud._record_label.text.contains("1:15")
@@ -152,9 +152,9 @@ static func _speed_text_for(hud: DsHud, build: Build, core: DroneCore, course: G
 	return hud._speed_label.text
 
 
-static func _cleared_after(hud: DsHud, seconds: float) -> bool:
-	hud.tick_banner(seconds)
-	return not hud._banner_panel.visible
+static func _cleared(hud: DsHud) -> bool:
+	hud.toast.clear()
+	return not hud.toast.visible and hud.toast.message == ""
 
 
 static func _walk_variations(n: Node, out: Array) -> void:

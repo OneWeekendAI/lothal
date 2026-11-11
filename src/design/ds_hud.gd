@@ -2,7 +2,7 @@ class_name DsHud
 extends Control
 ## The flight readouts of the Sim, in Design Space language: two quiet panels (the file bar's own
 ## box, ink text, the interface face) and nothing else. Bottom left the aircraft (speed, wind, pack,
-## flight mode), top right the race (lap, best, gate, recording), top centre a banner, top left the
+## flight mode), top right the race (lap, best, gate, recording), top centre a toast, top left the
 ## build's warnings. Every number is read off the observables layer and the Build; none is computed
 ## here beyond unit conversion and the formatting of a clock.
 ##
@@ -34,12 +34,11 @@ var _current_lap_label: Label
 var _best_lap_label: Label
 var _gate_label: Label
 var _record_label: Label
-var _banner_label: Label
-var _banner_panel: PanelContainer
+var toast: DsToast   ## S7: every transient message (laps, crash, battery empty, REC, view); one DS toast, no banner node
+var _flight_panel: PanelContainer
+var _race_panel: PanelContainer
 var _warnings_panel: PanelContainer
 var _warnings_label: Label
-
-var _banner_timeout := 0.0
 
 
 func _init() -> void:
@@ -55,6 +54,7 @@ func _init() -> void:
 	flight_panel.offset_bottom = -LothalTheme.SPACE_4
 	flight_panel.custom_minimum_size = Vector2(264, 0)
 	add_child(flight_panel)
+	_flight_panel = flight_panel
 	var flight := VBoxContainer.new()
 	flight.add_theme_constant_override("separation", LothalTheme.SPACE_1)
 	flight.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -112,6 +112,8 @@ func _init() -> void:
 	race_panel.offset_top = 64   # under the file bar, which at wide sizes reaches this corner
 	race_panel.custom_minimum_size = Vector2(176, 0)
 	add_child(race_panel)
+	_race_panel = race_panel
+	race_panel.visible = false   # shown once a lap is running or a best exists (see render)
 	var race := VBoxContainer.new()
 	race.add_theme_constant_override("separation", LothalTheme.SPACE_1)
 	race.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -124,16 +126,12 @@ func _init() -> void:
 	_record_label = _line(race, SIZE_BODY, COLOR_CRITICAL, HORIZONTAL_ALIGNMENT_RIGHT)
 	_record_label.visible = false
 
-	# --- Top centre: transient banner, under the file bar ---
-	_banner_panel = _panel()
-	_banner_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_banner_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_banner_panel.offset_top = 72
-	_banner_panel.visible = false
-	add_child(_banner_panel)
-	_banner_label = DsUi.label("", COLOR_ACCENT, LothalTheme.FONT_SIZE_SUBTITLE)
-	_banner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_banner_panel.add_child(_banner_label)
+	# --- Top centre: the toast, under the file bar ---
+	toast = DsToast.new()
+	toast.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	toast.offset_top = 72
+	add_child(toast)
 
 	# --- Top left: what is wrong with the build being flown ---
 	_warnings_panel = _panel()
@@ -190,6 +188,8 @@ func show_warnings(build: Build) -> void:
 
 ## Called every frame with the live simulation state.
 func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, rate_mode: bool) -> void:
+	_flight_panel.visible = true
+	_race_panel.visible = timer.running or timer.best_lap_s > 0.0 or _record_label.visible
 	var obs := core.observables
 	var throttle_fraction := _average_throttle_fraction(obs, build)
 	_throttle_bar.value = throttle_fraction * 100.0
@@ -235,20 +235,20 @@ static func _format_minutes(minutes: float) -> String:
 func set_recording(active: bool, seconds: float = 0.0, rows: int = 0) -> void:
 	_record_label.visible = active
 	if active:
+		_race_panel.visible = true
+	if active:
 		_record_label.text = "Recording  %s  ·  %s rows" % [Duration.clock(round(seconds)), rows]
 
 
-func tick_banner(delta: float) -> void:
-	if _banner_timeout > 0.0:
-		_banner_timeout -= delta
-		if _banner_timeout <= 0.0:
-			_banner_panel.visible = false
+## One transient message. `warn` draws it amber (crash, empty pack).
+func say(text: String, warn := false, seconds := 2.5) -> void:
+	toast.say(text, warn, seconds)
 
 
-func show_banner(text: String, seconds: float = 2.5) -> void:
-	_banner_label.text = text
-	_banner_panel.visible = true
-	_banner_timeout = seconds
+## Mission watch hides both panels (nothing is being flown by hand); the next `render` brings the readouts back.
+func set_idle(idle: bool) -> void:
+	_flight_panel.visible = not idle
+	_race_panel.visible = false
 
 
 ## Mean RPM against the ceiling this pack and prop can reach, not the stick: in angle mode the
