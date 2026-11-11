@@ -905,7 +905,7 @@ func fly_it() -> bool:
 		return false
 	fly_notice = ""
 	_enter_away()
-	rooms.show_sim(build, session.selection)
+	rooms.show_sim(build, session.selection, session.drone_class)
 	return true
 
 

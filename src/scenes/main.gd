@@ -37,12 +37,15 @@ const LOG_DIR := FlightLogLibrary.LOG_DIR
 
 # Behind (+Z, per the coordinate contract's -Z-is-forward) and above the ~15cm frame.
 # Applied in the drone's own heading frame, not world space (see _update_camera).
-const CAMERA_OFFSET := Vector3(0, 0.9, 2.4)
+const CAMERA_OFFSET := Vector3(0, 0.42, 0.85)
+## The chase distance is for a 5-inch (prop tip to prop tip ~0.35 m). A bigger or smaller aircraft keeps
+## the same size on screen: the offset and the aim point scale with its span (see `_camera_scale`).
+const CAMERA_REF_SPAN_M := 0.347
 ## How quickly the camera closes on its target position, per second.
 const CAMERA_FOLLOW_RATE := 6.0
 ## Aim slightly above the airframe so the drone sits low in frame and the gate ahead gets
 ## the screen space, rather than the drone sitting dead centre hiding what it is flying at.
-const CAMERA_LOOK_AHEAD_UP := 0.6
+const CAMERA_LOOK_AHEAD_UP := 0.16
 
 # Where the drone sits before the course exists (and the seed for _previous_position).
 # The real start line comes from GateCourse.start_position() — spawning airborne matters
@@ -54,6 +57,17 @@ const SPAWN_POSITION := Vector3(0, 2.0, 0)
 ## below the altitude this test rejects — a respawn loop, with no evidence but a drone that will
 ## not stay put.
 const CRASH_ALTITUDE_M := GateCourse.GROUND_CLEARANCE_M
+
+## What the interactive sim switches on that a headless harness leaves off, because here there IS a
+## ground under the aircraft and a pilot who trims through the wake:
+##   ground_effect      Cheeseman and Bennett (NACA TN 3484-era image-vortex result, as implemented in
+##                      DroneCore.ground_effect_gain): thrust gain within two rotor radii of the ground.
+##                      The ground height is the terrain under the aircraft, refreshed every tick.
+##   rear_thrust_loss   SR1.5: the rear pair makes ~11 percent less thrust at equal rpm at 5-15 m/s
+##                      (Aerospace 8(11):349, 2021), instead of the mean power factor only. The flight
+##                      controller trims through it, as it would on the real aircraft.
+## Missions, harness runs and goldens build from the same Build WITHOUT these, so none of their figures moved.
+const FREE_FLIGHT_PHYSICS := {"ground_effect": true, "rear_thrust_loss": true}
 
 var core: DroneCore
 var build: Build
@@ -68,7 +82,13 @@ var wind: Wind
 var conditions_name := Conditions.STANDARD_NAME
 ## The visible aircraft, generated from `build` rather than authored in main.tscn — see the
 ## comment on the Drone node there, and AirframeModel's header.
-var airframe: AirframeModel
+var airframe: SimDroneModel
+## The Design Space's drone class (five_inch, cinewhoop_3, ...) whose model the field draws. Handed
+## over beside `initial_build` by RoomHost; empty on a direct run, where `SimDroneModel.class_for`
+## infers it from the build's frame and size.
+var initial_drone_class := ""
+## The catalogue the model re-fits its parts against (SwapLook), read once.
+var _model_catalog: PartsCatalog = null
 ## The parts this scene opens on, as a category -> part_id dictionary. DesignApp sets it from
 ## Lab's rails before adding the scene to the tree, which is how the build crosses the door
 ## (labs-and-sim.md §4). Left empty it falls back to the reference build, so main.tscn still
@@ -175,6 +195,19 @@ var _last_heading := Basis.IDENTITY
 ## Where the chase view is, independent of which camera node is currently rendering it. See
 ## _update_camera for why this cannot live on the node.
 var _chase_transform := Transform3D.IDENTITY
+## The aircraft's pose at the last two physics ticks. The physics runs at 120 Hz and the screen does
+## not: the drawn drone is the blend of these two at `Engine.get_physics_interpolation_fraction()`
+## (set in `_process`), so a 144 or 60 Hz display shows the motion at its own rate instead of
+## repeating or skipping 120 Hz poses. The physics body itself is never touched by this.
+var prop_wash: PropWash
+## A test pins the blend fraction here (>= 0); negative reads the engine's.
+var interpolation_fraction_override := -1.0
+var _vis_prev := Transform3D.IDENTITY
+var _vis_curr := Transform3D.IDENTITY
+## The chase camera's smoothed heading (yaw, rad). A hard-set yaw turned the whole view in one tick.
+var _cam_yaw := 0.0
+var _camera_scale := 1.0
+const CAMERA_HEADING_RATE := 5.0
 ## Cached per build: hover_throttle() sweeps the thrust curve to find its peak, which is
 ## far too much work to redo on every input frame.
 var _hover_throttle := 0.0
@@ -317,6 +350,9 @@ func _ready() -> void:
 	# Read off the HANDED-OVER library (see `conditions_library` above), not re-loaded here. The
 	# standalone-boot fallback is that member's own initialiser, so this line is the same object
 	# either way and there is never a second copy.
+	# 4x MSAA on the 3D scene: the props, arms and gate rings are sub-pixel lines at chase distance and
+	# shimmer without it. Set on the viewport this scene is in (the window's, or a test's own).
+	get_viewport().msaa_3d = Viewport.MSAA_4X
 	var selected_conditions := conditions_library.selected()
 	wind = make_wind(selected_conditions)
 	conditions_name = selected_conditions.conditions_name
@@ -324,6 +360,9 @@ func _ready() -> void:
 
 	course_renderer = CourseRenderer.new(course)
 	add_child(course_renderer)
+
+	prop_wash = PropWash.new()
+	add_child(prop_wash)
 
 	# Added before the build panel, because the panel emits build_changed from its own
 	# _ready and that path runs all the way through to placing the listener.
@@ -377,7 +416,8 @@ func _ready() -> void:
 	fpv_view.theme = theme
 	fpv_overlay.add_child(fpv_view)
 
-	airframe = AirframeModel.new()
+	airframe = SimDroneModel.new()
+	airframe.name = "SimDroneModel"
 	drone.add_child(airframe)
 
 	# The sim authors nothing: it flies exactly the Build the Design Space handed over. With no
@@ -417,7 +457,7 @@ func _on_build_changed(new_build: Build) -> void:
 	if _recorder != null:
 		_stop_recording()
 	build = new_build
-	core = build.build_drone_core()
+	core = build.build_drone_core(FREE_FLIGHT_PHYSICS)
 	# The build's warnings, which the sim no longer lets anyone author away: shown on the HUD.
 	if hud != null:
 		hud.show_warnings(build)
@@ -456,7 +496,10 @@ func _on_build_changed(new_build: Build) -> void:
 	# props, all from this same Build. There is no second description of the aircraft to keep
 	# in step, which is what the old _fit_drone_mesh_to_arm was: a scale factor applied to a
 	# box, correcting a 110 mm arm that had been baked into the scene file.
-	airframe.rebuild(build, tweaks, initial_frame_document)
+	if _model_catalog == null:
+		_model_catalog = PartsCatalog.load_with_custom()
+	_camera_scale = clampf((2.0 * build.arm_m + 2.0 * core.prop_radius_m) / CAMERA_REF_SPAN_M, 0.6, 3.0)
+	airframe.rebuild(build, SimDroneModel.class_for(build, initial_drone_class), _model_catalog, tweaks)
 	# Re-pointed on every rebuild, and it has to be: a rebuild frees the old ComponentMesh, so a
 	# lens held across one is a freed node. Handed the airframe's own answer to where its camera is
 	# rather than looking one up here.
@@ -566,12 +609,12 @@ func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 
 	# Snap the camera rather than let it ease in from wherever the crash left it — easing
 	# across the map after every respawn is disorienting and costs the pilot the first second.
-	drone.position = position
-	drone.quaternion = core.rigid_body.orientation
+	_snap_visual(position, core.rigid_body.orientation)
 	_last_heading = Basis.IDENTITY
-	_chase_transform.origin = position + _drone_heading() * CAMERA_OFFSET
+	_cam_yaw = _yaw_of(_drone_heading())
+	_chase_transform.origin = position + Basis(Vector3.UP, _cam_yaw) * CAMERA_OFFSET * _camera_scale
 	_chase_transform = _chase_transform.looking_at(
-		position + Vector3.UP * CAMERA_LOOK_AHEAD_UP, Vector3.UP)
+		position + Vector3.UP * CAMERA_LOOK_AHEAD_UP * _camera_scale, Vector3.UP)
 	# The FPV lens needs no snap: it is bolted to the airframe, which has already been moved.
 	fpv_view.place_lenses(camera, _chase_transform)
 
@@ -655,8 +698,7 @@ func _watch_frame(delta: float) -> void:
 	# Visuals only when the scene is built (a headless test drives this without `_ready`).
 	if drone != null and airframe != null:
 		var rb := runner.rig.core.rigid_body
-		drone.position = rb.position_m
-		drone.quaternion = rb.orientation
+		_push_visual(rb.position_m, rb.orientation)
 		airframe.set_rates_rpm(runner.rig.core.observables.rpm)
 	watch_progress = runner.progress()
 	if watch_card != null:
@@ -700,6 +742,10 @@ func _physics_process(delta: float) -> void:
 	else:
 		_read_gamepad()
 
+	# The ground the rotors feel is the terrain under the aircraft, not the y = 0 plane.
+	if terrain != null:
+		core.ground_y_m = terrain.height_at(core.rigid_body.position_m.x, core.rigid_body.position_m.z)
+
 	var substep_dt := delta / SUBSTEPS
 	for i in SUBSTEPS:
 		var motor_cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, substep_dt)
@@ -720,11 +766,8 @@ func _physics_process(delta: float) -> void:
 	if _check_crash(core.rigid_body.position_m, terrain):
 		_respawn_after_crash()
 
-	drone.position = core.rigid_body.position_m
-	drone.quaternion = core.rigid_body.orientation
+	_push_visual(core.rigid_body.position_m, core.rigid_body.orientation)
 	_previous_position = core.rigid_body.position_m
-
-	_update_camera(delta)
 
 	# The rotors turn at the RPM the physics computed, per motor, from the same published
 	# observables the audio and the HUD read. There is no second place a rotor speed exists: what you
@@ -854,23 +897,75 @@ func _exit_tree() -> void:
 ## its state back off whichever camera happened to be wearing the chase view last frame, so a swap
 ## would make the chase view jump from wherever the OTHER view was standing.
 func _update_camera(delta: float) -> void:
-	var heading := _drone_heading()
-	var target_position := drone.position + heading * CAMERA_OFFSET
+	# Both terms are frame-rate independent (1 - e^(-k dt)), because this now runs once per RENDERED
+	# frame rather than once per 120 Hz tick. The heading is smoothed as well as the position: the
+	# yaw was hard-set, so the whole view turned in one frame whenever the drone yawed.
+	_cam_yaw = lerp_angle(_cam_yaw, _yaw_of(_drone_heading()), 1.0 - exp(-CAMERA_HEADING_RATE * delta))
+	var target_position := drone.position + Basis(Vector3.UP, _cam_yaw) * CAMERA_OFFSET * _camera_scale
 
-	# Eased rather than snapped, so the camera lags the airframe slightly through a fast
-	# rotation instead of pivoting rigidly with it.
-	var blend := clampf(delta * CAMERA_FOLLOW_RATE, 0.0, 1.0)
+	var blend := 1.0 - exp(-CAMERA_FOLLOW_RATE * delta)
 	_chase_transform.origin = _chase_transform.origin.lerp(target_position, blend)
 	_chase_transform = _chase_transform.looking_at(
-		drone.position + Vector3.UP * CAMERA_LOOK_AHEAD_UP, Vector3.UP)
+		drone.position + Vector3.UP * CAMERA_LOOK_AHEAD_UP * _camera_scale, Vector3.UP)
 
 	# One call places both lenses. Which node ends up with which view is FpvView's business.
 	fpv_view.place_lenses(camera, _chase_transform)
 
+
+## Rotor wash on the ground under the aircraft, from the published thrust and the terrain beneath it.
+func _update_wash() -> void:
+	if prop_wash == null or core == null or terrain == null:
+		return
+	var at := drone.position
+	var ground := terrain.height_at(at.x, at.z)
+	var thrust := 0.0
+	for t in core.observables.thrust_n:
+		thrust += t
+	var radius := core.prop_radius_m
+	var area := 4.0 * PI * radius * radius
+	var strength := PropWash.intensity(at.y - ground, thrust, area, build.air.kgm3(), 2.0 * radius)
+	prop_wash.update(Vector3(at.x, ground, at.z), strength, 2.0 * radius)
+
+
+static func _yaw_of(heading: Basis) -> float:
+	var forward := heading * Vector3(0, 0, -1)
+	return atan2(-forward.x, -forward.z)
+
+
+## The pose to draw at `fraction` of the way from the previous physics tick to the current one.
+## Static and pure so a test can ask it directly.
+static func interpolated_pose(prev: Transform3D, curr: Transform3D, fraction: float) -> Transform3D:
+	return prev.interpolate_with(curr, clampf(fraction, 0.0, 1.0))
+
+
+## Records this tick's pose. The drawn pose is NOT set here: `_process` sets it, blended.
+func _push_visual(p_position: Vector3, p_orientation: Quaternion) -> void:
+	_vis_prev = _vis_curr
+	_vis_curr = Transform3D(Basis(p_orientation), p_position)
+
+
+## A teleport (respawn, restart): both poses are the new one, so nothing blends across the jump.
+func _snap_visual(p_position: Vector3, p_orientation: Quaternion) -> void:
+	_vis_curr = Transform3D(Basis(p_orientation), p_position)
+	_vis_prev = _vis_curr
+	drone.transform = _vis_curr
+
+
+## Draws the aircraft between its last two physics poses, then eases the chase camera onto it.
+func _process(delta: float) -> void:
+	if core == null or drone == null:
+		return
+	var fraction := Engine.get_physics_interpolation_fraction() if interpolation_fraction_override < 0.0 \
+		else interpolation_fraction_override
+	drone.transform = interpolated_pose(_vis_prev, _vis_curr, fraction)
+	if watch_runner == null:
+		_update_camera(delta)
+	_update_wash()
+
 ## The drone's yaw as a basis, with pitch and roll flattened out. Falls back to the last
 ## heading when the drone is pointed straight up or down, where yaw is undefined.
 func _drone_heading() -> Basis:
-	var forward := core.rigid_body.orientation * Vector3(0, 0, -1)
+	var forward := drone.quaternion * Vector3(0, 0, -1)
 	var flat := Vector3(forward.x, 0.0, forward.z)
 	if flat.length() < 0.05:
 		return _last_heading

@@ -2151,7 +2151,10 @@ func build_drone_core(field_opts: Dictionary = {}) -> DroneCore:
 	# The aircraft the sim flies is the aircraft the builder configured, including a spin map
 	# Lothal has warned about: design §5.3 — fly it badly, do not refuse it.
 	core.config = config
-	if rear_thrust_loss_in_sim:
+	# `rear_thrust_loss` in `field_opts` turns the SR1.5 thrust-loss form on for THIS core without touching
+	# the Build, so a free-flight caller (the interactive sim) can fly it while every harness, mission and
+	# golden that builds from the same Build keeps the mean power factor it was frozen with.
+	if bool(field_opts.get("rear_thrust_loss", rear_thrust_loss_in_sim)):
 		core.powertrain.apply_rear_thrust_loss(rotor_interference_loss if motor_count() >= 4 else 0.0)
 	else:
 		core.powertrain.set_interference_loss(rotor_interference_loss if motor_count() >= 4 else 0.0)

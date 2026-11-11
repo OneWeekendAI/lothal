@@ -20,8 +20,17 @@ sky = SubResource("Sky_sky")
 ambient_light_source = 3
 reflected_light_source = 2
 tonemap_mode = 2
+ssao_enabled = true
+ssao_radius = 0.35
+ssao_intensity = 1.6
+ssao_power = 1.5
+ssao_detail = 0.4
 glow_enabled = true
-glow_intensity = 0.5
+glow_intensity = 0.35
+glow_bloom = 0.04
+adjustment_enabled = true
+adjustment_contrast = 1.04
+adjustment_saturation = 0.96
 fog_enabled = true
 fog_light_color = Color(0.66, 0.76, 0.84, 1)
 fog_density = 0.0003
@@ -48,8 +57,13 @@ environment = SubResource("Environment_world")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.8137977, -0.4600171, 0.3536018, 0, 0.6087614, 0.7933533, -0.5809475, -0.6455876, 0.4952422, 0, 3, 0)
-light_energy = 1.1
+light_color = Color(1, 0.97, 0.91, 1)
+light_energy = 1.25
 shadow_enabled = true
+shadow_blur = 1.6
+directional_shadow_mode = 1
+directional_shadow_max_distance = 45.0
+directional_shadow_fade_start = 0.85
 
 ; The ground has no mesh and no shape authored here (F5). Both come from TerrainMesh, built from
 ; the selected site's Terrain at _ready and on every adopt_selected_course() — a shipped plane and
