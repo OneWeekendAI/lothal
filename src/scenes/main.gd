@@ -78,6 +78,9 @@ var initial_selection: Dictionary = {}
 ## The designer's edit to the fitted frame, set by RoomHost beside `initial_selection` — the frame
 ## drawn in the garage is the frame flown in the field. `{}` flies the catalogue frame.
 var initial_frame_edit: Dictionary = {}
+## The Design Space's finished Build, set by RoomHost beside `initial_selection`. When present the
+## sim flies exactly this Build instead of the one the BuildPanel makes from ids.
+var initial_build: Build = null
 ## The designer's document beside it, so the aircraft on screen is the frame drawn rather than one
 ## generated from specs. `AirframeModel.draws` decides whether it is THIS build's frame — a frame
 ## swapped in the field's own panel is not, and draws from its catalogue specs.
@@ -372,6 +375,8 @@ func _ready() -> void:
 	build_panel.bottom_reserve = Hud.FLIGHT_BLOCK_HEIGHT
 	build_panel.build_changed.connect(_on_build_changed)
 	ui_layer.add_child(build_panel)   # emits build_changed on _ready, which builds the core
+	if initial_build != null:
+		_on_build_changed(initial_build)
 
 ## Every part change lands here: new mass properties, new coefficients, new drone. The
 ## airframe is rebuilt from scratch rather than patched, so there is no way for a stat on

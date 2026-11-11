@@ -313,11 +313,14 @@ func show_studio() -> void:
 ## This is the build crossing the boundary (labs-and-sim.md §4), and it is the whole point of
 ## the door: pick the 7" frame in the garage and the airframe in the field is a 7", because
 ## both rooms generate it from the same Build rather than each drawing their own.
-func show_sim() -> void:
+func show_sim(session_build: Build = null, session_selection: Dictionary = {}) -> void:
 	_close_rooms()
 	if sim == null:
 		sim = load(SIM_SCENE).instantiate()
-		sim.initial_selection = lab.selection()
+		sim.initial_selection = session_selection.duplicate(true) if not session_selection.is_empty() else lab.selection()
+		# The Design Space's own Build, when there is one: Sim flies THIS object rather than
+		# rebuilding from ids (which drops class, tweaks and anything the rails cannot hold).
+		sim.initial_build = session_build
 		sim.initial_frame_edit = lab.frame_edit()
 		# And the drawing itself, so the field draws the plates the garage drew. Without it a saved
 		# 3" drawing flew its own mass and arm but stood on screen as a generic plate from specs.

@@ -2896,7 +2896,7 @@ func _build_dock() -> void:
 	_lab_button = _dock.lab_button
 	_lab_button.pressed.connect(func() -> void: rooms.show_lab())
 	_sim_button = _dock.sim_button
-	_sim_button.pressed.connect(func() -> void: rooms.show_sim())
+	_sim_button.pressed.connect(_on_sim_toggle)
 	_room_menu = _dock.room_menu
 	_room_menu.room_chosen.connect(_open_room)
 
@@ -3997,9 +3997,35 @@ var _away_return_system := 0
 func fly_it() -> bool:
 	if not _sync_design_to_lab():
 		return false
+	var session := design_space.session
+	# The session's own Build crosses the door, not just its ids: the sim flies exactly what the
+	# Design Space read out, whatever the Lab rails could or could not hold. A selection that
+	# cannot be built is refused here, with the parts named, rather than flown as something else.
+	var build := session.build(rooms.catalog_for_lab())
+	if build == null:
+		fly_notice = "Cannot fly: this design does not build"
+		if not last_sync_missing.is_empty():
+			fly_notice += " (missing " + ", ".join(last_sync_missing.map(
+				func(m: Dictionary) -> String: return "%s %s" % [m["category"], m["part_id"]])) + ")"
+		return false
+	fly_notice = ""
 	_enter_away()
-	rooms.show_sim()
+	rooms.show_sim(build, session.selection)
 	return true
+
+
+## Why the last `fly_it` refused, "" after a successful one.
+var fly_notice := ""
+
+
+## The one handler behind the old Lab/Sim toggle. With a Design Space open there is ONE way into
+## the sim, and it syncs the design first; the bare `show_sim()` is only for a shell with no
+## Design Space (old-shell tests).
+func _on_sim_toggle() -> void:
+	if design_space != null:
+		fly_it()
+	else:
+		rooms.show_sim()
 
 
 ## "Field": the Field system of the old shell (courses, sites, weather and the SR3 world picker).
@@ -4016,6 +4042,10 @@ func open_field_from_design() -> bool:
 	return _field != null and _field.visible
 
 
+## Parts the last Design Space -> Lab sync could not select on the rails ({category, part_id}).
+var last_sync_missing: Array = []
+
+
 func _sync_design_to_lab() -> bool:
 	if design_space == null or container == null:
 		return false
@@ -4025,7 +4055,9 @@ func _sync_design_to_lab() -> bool:
 	var edit := session.frame_edit(rooms.catalog_for_lab())
 	if not edit.is_empty() and session.frame_document() != null:
 		project.airframe = session.frame_document().to_dictionary()
-	apply_project(project)
+	# Parts the Lab rails could not select are kept, not dropped: the sim flies the session's own
+	# Build, so they do not stop the flight, but the builder is told which ones.
+	last_sync_missing = apply_project(project)
 	container.project.touch()
 	container.write(container.path)
 	return true
@@ -4069,6 +4101,10 @@ func _enter_away() -> void:
 		back.pressed.connect(back_to_drone_from_room)
 		_away_layer.add_child(back)
 	_set_design_space_shown(false)
+	# The Lab/Sim/Rooms dock is the old shell's door; while away, the only way back is the Design
+	# Space's own bar.
+	if _dock != null:
+		_dock.visible = false
 
 
 ## Back from the sim or Field: the Design Space layer is shown again, untouched.
@@ -4086,6 +4122,8 @@ func _close_away_bar() -> void:
 		remove_child(_away_layer)
 		_away_layer.queue_free()
 	_away_layer = null
+	if _dock != null and _empty_state != null and not _empty_state.visible:
+		_dock.visible = true
 
 
 func away_from_design() -> bool:
