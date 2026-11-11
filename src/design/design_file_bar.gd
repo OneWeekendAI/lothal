@@ -21,6 +21,9 @@ signal flights_pressed
 signal room_pressed(room_id: String)
 signal save_as_confirmed(design_name: String)
 signal open_chosen(file_name: String)
+## A drone from the Open dialog's Projects section: open it / delete it (the shell does both).
+signal project_chosen(path: String)
+signal project_delete_confirmed(path: String)
 signal dialog_closed
 
 const INK := Color(0.93, 0.93, 0.93)
@@ -34,6 +37,8 @@ const MENU_W := 130.0
 const DIALOG_TOP := 60.0
 ## How many recent designs the open dialog lists.
 const MAX_RECENT := 8
+## How many drones the Projects section lists (the sort button reaches the rest).
+const MAX_PROJECTS := 8
 ## The Rooms group of the menu: every room that is not the design itself. [id, label, tooltip].
 const ROOMS := [
 	["setup", "Setup pages", "Frame, propulsion, power, control, video, printed and config sheets"],
@@ -70,6 +75,13 @@ var cancel_button: Button
 var reason_label: Label
 var list_box: VBoxContainer
 var recent_buttons: Array = []
+## The Open dialog's Projects section: its sort button and rows ([HBoxContainer], meta "path"), and the sort in force.
+var project_sort_button: Button
+var project_rows: Array = []
+var project_sort := ProjectRows.SORT_EDITED
+var _project_entries: Array = []
+var _project_current := ""
+var _delete_armed := ""
 var mode := ""    ## "", "save_as" or "open"
 var _row: HBoxContainer
 var _save_row: HBoxContainer
@@ -314,8 +326,9 @@ func open_save_as(default_name: String) -> void:
 		name_edit.select_all()
 
 
-## `files` are design file names, newest first; at most MAX_RECENT are listed.
-func open_open(files: Array) -> void:
+## `files` are design file names, newest first; at most MAX_RECENT are listed. `projects` are `ProjectRows` entries
+## (the drones on disk) for the Projects section below them; `current_path` is the drone open now (it cannot be deleted).
+func open_open(files: Array, projects: Array = [], current_path := "") -> void:
 	mode = "open"
 	dialog_title.text = "OPEN  ·  RECENT"
 	_save_row.visible = false
@@ -337,8 +350,84 @@ func open_open(files: Array) -> void:
 		b.pressed.connect(func(): open_chosen.emit(file_name))
 		list_box.add_child(b)
 		recent_buttons.append(b)
+	_project_entries = projects
+	_project_current = current_path
+	_delete_armed = ""
+	_render_projects()
 	show_reason("")
 	dialog.visible = true
+
+
+## (Re)draws the Projects section: a title with the sort button, then one row per drone.
+func _render_projects() -> void:
+	for n in project_rows:
+		list_box.remove_child(n)
+		(n as Node).queue_free()
+	project_rows = []
+	project_sort_button = null
+	if _project_entries.is_empty():
+		return
+	var head := HBoxContainer.new()
+	head.name = "ProjectsHead"
+	head.add_child(DsUi.section("Projects"))
+	var fill := Control.new()
+	fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(fill)
+	project_sort_button = _button("Sort: name" if project_sort == ProjectRows.SORT_NAME else "Sort: last edited")
+	project_sort_button.name = "ProjectSort"
+	project_sort_button.pressed.connect(func() -> void:
+		project_sort = ProjectRows.SORT_EDITED if project_sort == ProjectRows.SORT_NAME else ProjectRows.SORT_NAME
+		_render_projects())
+	head.add_child(project_sort_button)
+	list_box.add_child(head)
+	project_rows.append(head)
+	var now := int(Time.get_unix_time_from_system())
+	for entry in ProjectRows.sorted(_project_entries, project_sort).slice(0, MAX_PROJECTS):
+		var path := String(entry["path"])
+		var row := HBoxContainer.new()
+		row.name = "Project"
+		row.set_meta("path", path)
+		row.add_theme_constant_override("separation", 6)
+		var open_b := _button(String(entry["name"]))
+		open_b.name = "Open"
+		open_b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		open_b.flat = true
+		open_b.clip_text = true
+		open_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		open_b.pressed.connect(func(): project_chosen.emit(path))
+		row.add_child(open_b)
+		var age := _label("open now" if path == _project_current else ProjectChip.relative_time(maxi(0, now - int(entry["updated_unix"]))),
+			INK_MUTED, LothalTheme.FONT_SIZE_SMALL)
+		row.add_child(age)
+		var del := _button("Delete")
+		del.name = "Delete"
+		if path == _project_current:
+			del.disabled = true
+			del.tooltip_text = "This drone is open; open another to delete it"
+		else:
+			del.text = "Delete?" if _delete_armed == path else "Delete"
+			del.pressed.connect(func() -> void:
+				if _delete_armed == path:
+					_delete_armed = ""
+					project_delete_confirmed.emit(path)
+				else:
+					_delete_armed = path
+					_render_projects())
+		row.add_child(del)
+		list_box.add_child(row)
+		project_rows.append(row)
+	if _project_entries.size() > MAX_PROJECTS:
+		var more := _label("and %d more: sort to bring them up" % (_project_entries.size() - MAX_PROJECTS), INK_FAINT,
+			LothalTheme.FONT_SIZE_SMALL)
+		list_box.add_child(more)
+		project_rows.append(more)
+
+
+## The drones on disk after a delete: the section redrawn without the one that went.
+func refresh_projects(projects: Array) -> void:
+	_project_entries = projects
+	_delete_armed = ""
+	_render_projects()
 
 
 func close_dialog() -> void:
@@ -365,7 +454,7 @@ func rects(view_size: Vector2) -> Array:
 		var w := maxf(DIALOG_W, m.x)
 		# A headless control reports no minimum height until it is laid out, so the rect also carries
 		# an estimate from the rows it holds: a title, the rows, the reason line and Cancel.
-		var rows := 1 if mode == "save_as" else maxi(recent_buttons.size(), 1)
+		var rows := 1 if mode == "save_as" else maxi(recent_buttons.size(), 1) + project_rows.size()
 		var est := 72.0 + 30.0 * rows + (36.0 if reason_label.visible else 0.0)
 		out.append(Rect2(view_size.x * 0.5 - w * 0.5, DIALOG_TOP, w, maxf(maxf(dialog.size.y, m.y), est)))
 	return out

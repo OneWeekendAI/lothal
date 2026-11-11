@@ -7,7 +7,7 @@ extends SceneTree
 ## dumped at the end, so a suite that hangs or crashes names itself instead of leaving
 ## the runner silent.
 
-const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop capability", "prop export", "class picker", "bmp classes", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "part sheet", "frame shape", "frame sheet io", "frame figures", "blade tab", "bench tab", "harness tab", "config tab", "fit tab", "print tab", "custom tiles", "flights sheet", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "one door", "sim chrome", "sim drone model", "sim visual", "sim math", "one build", "watch door", "watch card", "fly feedback", "button states", "identity", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
+const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop capability", "prop export", "class picker", "bmp classes", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "part sheet", "frame shape", "frame sheet io", "frame figures", "blade tab", "bench tab", "harness tab", "config tab", "fit tab", "print tab", "custom tiles", "flights sheet", "open projects", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "one door", "sim chrome", "sim drone model", "sim visual", "sim math", "one build", "watch door", "watch card", "fly feedback", "button states", "identity", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "details footers",
 	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "field room", "field ds", "studio ds", "no old ui", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
@@ -436,6 +436,7 @@ func _run_suite(suite_name: String) -> Array:
 		"frame look": return TestFrameLook.run()
 		"frame edits ui": return TestFrameEditsUi.run()
 		"part sheet": return TestPartSheet.run()
+		"open projects": return await TestOpenProjects.run(self)
 		"flights sheet": return await TestFlightsSheet.run(self)
 		"frame shape": return TestFrameShape.run()
 		"frame sheet io": return TestFrameSheetIo.run()

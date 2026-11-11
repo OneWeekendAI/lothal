@@ -472,32 +472,7 @@ func refresh() -> void:
 ## Every drone in the builds folder (not the trash), with the numbers the table shows. A file that
 ## will not open is left out rather than shown as a row that cannot be opened.
 static func list_builds(catalog: PartsCatalog) -> Array:
-	ProjectLibrary.ensure_dir()
-	var out: Array = []
-	var absolute := ProjectSettings.globalize_path(ProjectLibrary.root)
-	for file in DirAccess.get_files_at(absolute):
-		if not file.ends_with(".%s" % ProjectContainer.EXTENSION):
-			continue
-		var path := "%s/%s" % [ProjectLibrary.root, file]
-		var opened := ProjectContainer.open(path)
-		if opened == null:
-			continue
-		var project := opened.project
-		var entry := {
-			"path": path,
-			"name": project.name,
-			"updated_unix": _unix_of(project.updated_at),
-			"size": "—", "dry_g": -1.0, "auw_g": -1.0,
-		}
-		var build: Build = project.to_build(catalog) if catalog != null else null
-		if build != null:
-			entry["auw_g"] = build.all_up_weight_g()
-			entry["dry_g"] = build.all_up_weight_g() - float(build.battery.get("mass_g", 0.0))
-			var specs: Dictionary = build.propeller.get("specs", {})
-			if specs.has("diameter_inches"):
-				entry["size"] = "%s\"" % _trim(float(specs["diameter_inches"]))
-		out.append(entry)
-	return out
+	return ProjectRows.list(catalog)
 
 
 ## The rows the current search and sort leave, before paging.
@@ -745,7 +720,7 @@ class LogoMark extends Control:
 static func _grams(g: float) -> String:
 	if g < 0.0:
 		return "—"
-	return "%s kg" % _trim(g / 1000.0) if g >= 1000.0 else "%d g" % roundi(g)
+	return "%s kg" % ProjectRows.trim(g / 1000.0) if g >= 1000.0 else "%d g" % roundi(g)
 
 
 static func _edited(unix: int, now: int) -> String:
@@ -754,11 +729,3 @@ static func _edited(unix: int, now: int) -> String:
 	return ProjectChip.relative_time(maxi(0, now - unix))
 
 
-static func _trim(value: float) -> String:
-	return ("%.1f" % value).trim_suffix(".0")
-
-
-static func _unix_of(iso: String) -> int:
-	if iso == "":
-		return 0
-	return int(Time.get_unix_time_from_datetime_string(iso.trim_suffix("Z")))

@@ -438,6 +438,15 @@ func reprint_part(part_id: String) -> void:
 		_say("NOT REPRINTED — %s" % String(result["reason"]), true)
 
 
+## The Open dialog chose another drone: the open one is written first (as Projects always did), then the whole project
+## is swapped in, class included (`open_project` rebuilds the Design Space from `DesignSession.from_project`).
+func _open_project_from_design(path: String) -> void:
+	if path == "" or (container != null and path == container.path):
+		return
+	_on_autosave_tick()
+	open_project(path)
+
+
 ## Rename is ProjectChip's own; everything else lands here.
 func _on_project_action(action_id: String) -> void:
 	match action_id:
@@ -575,6 +584,11 @@ func show_design_space() -> DesignSpace:
 	design_space.field_requested.connect(open_field_from_design)
 	design_space.mission_requested.connect(open_mission_picker)
 	design_space.room_requested.connect(open_room)
+	design_space.current_project = func() -> String: return container.path if container != null else ""
+	design_space.project_open_requested.connect(_open_project_from_design)
+	design_space.project_deleted.connect(func(gone: String) -> void:
+		settings.forget_project(gone)
+		settings.save())
 	_design_space_layer.add_child(design_space)
 	design_space.migrate_old_drafts()
 	return design_space

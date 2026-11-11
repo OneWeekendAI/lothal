@@ -22,6 +22,9 @@ signal field_requested
 signal mission_requested
 ## The Flights drawer opened (the shell may want to know; the sheet itself is DesignSpace's).
 signal flights_opened
+## The Open dialog's Projects section: open this drone (the shell swaps the whole project) / this drone was deleted.
+signal project_open_requested(path: String)
+signal project_deleted(path: String)
 signal room_requested(room_id: String)
 
 const PANEL_FADE_S := 0.2
@@ -1458,6 +1461,8 @@ func _build_file_bar() -> void:
 	file_bar.flights_pressed.connect(func(): open_flights())
 	file_bar.room_pressed.connect(func(id: String): room_requested.emit(id))
 	file_bar.save_as_confirmed.connect(func(n: String): save_design(n))
+	file_bar.project_chosen.connect(func(path: String): project_open_requested.emit(path))
+	file_bar.project_delete_confirmed.connect(delete_project)
 	file_bar.open_chosen.connect(func(f: String): open_design(f))
 	file_bar.show_name(design_name)
 
@@ -1488,7 +1493,26 @@ func open_save_as() -> void:
 
 
 func open_open_dialog() -> void:
-	file_bar.open_open(recent_designs())
+	file_bar.open_open(recent_designs(), ProjectRows.list(_catalog), _current_project_path())
+
+
+## The path of the drone open in the shell ("" when the shell has none to name); the shell sets `current_project`.
+var current_project: Callable
+
+
+func _current_project_path() -> String:
+	return String(current_project.call()) if current_project.is_valid() else ""
+
+
+## Deletes a drone from the Open dialog's Projects section: a move to the trash folder (ProjectLibrary.delete), never an
+## unlink. The drone open now is refused. Tells the shell (`project_deleted`) and redraws the section.
+func delete_project(path: String) -> bool:
+	if path == "" or path == _current_project_path():
+		return false
+	ProjectLibrary.delete(path)
+	project_deleted.emit(path)
+	file_bar.refresh_projects(ProjectRows.list(_catalog))
+	return true
 
 
 ## Saved design file names, most recently written first.
