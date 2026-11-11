@@ -595,8 +595,28 @@ var watch_runner: MissionRunner = null
 var watch_result: Dictionary = {}
 
 
+## S6 the watched mission's card (DsWatchCard), made on the first watch. `watch_progress` is the bar's value (0..1);
+## `watch_finished` fires once with `watch_result`; the card's Back to design is re-emitted as `back_to_design_requested`.
+signal watch_finished(result: Dictionary)
+signal back_to_design_requested
+var watch_card: DsWatchCard
+var watch_progress := 0.0
+
+
+func _ensure_watch_card() -> DsWatchCard:
+	if watch_card == null:
+		watch_card = DsWatchCard.new()
+		watch_card.theme = LothalTheme.get_theme()
+		# Deferred: leaving the sim frees it, and the button that asked is inside it.
+		watch_card.back_requested.connect(func() -> void: back_to_design_requested.emit.call_deferred())
+		var host: Node = hud.get_parent() if hud != null else self
+		host.add_child(watch_card)
+	return watch_card
+
+
 func watch_mission(params: Dictionary) -> bool:
 	watch_result = {}
+	watch_progress = 0.0
 	if fly_hint != null:
 		fly_hint.clear()
 	var runner := MissionRunner.new()
@@ -604,6 +624,7 @@ func watch_mission(params: Dictionary) -> bool:
 		watch_result = runner.finish()
 		return false
 	watch_runner = runner
+	_ensure_watch_card().begin(String(params.get("mission", "")), runner.max_sim_s)
 	return true
 
 
@@ -616,9 +637,15 @@ func _watch_frame(delta: float) -> void:
 		drone.position = rb.position_m
 		drone.quaternion = rb.orientation
 		airframe.set_rates_rpm(runner.rig.core.observables.rpm)
+	watch_progress = runner.progress()
+	if watch_card != null:
+		watch_card.update(runner.rig.time_s, watch_progress)
 	if runner.is_done():
 		watch_result = runner.finish()
 		watch_runner = null
+		if watch_card != null:
+			watch_card.finish(watch_result, runner.rig.time_s)
+		watch_finished.emit(watch_result)
 
 
 func _physics_process(delta: float) -> void:

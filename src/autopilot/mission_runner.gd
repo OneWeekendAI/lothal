@@ -146,6 +146,7 @@ var _final: Dictionary = {}
 var _flying := false
 var _ctx: Dictionary = {}
 var _ticks := 0
+var _progress_max := 0.0
 var _slow_every := 1
 var _fast_every := 1
 var _fast_dt := 0.0
@@ -177,6 +178,17 @@ func advance(ticks: int) -> void:
 
 func is_done() -> bool:
 	return not _flying or ended_by != ""
+
+
+## How far along a watched flight is, 0..1: the pack used toward the usable share (all but the reserve), as a running
+## maximum so it never goes back (a sortie's pack swap would). 1 once the flight is over. Read-only for the result.
+func progress() -> float:
+	if is_done():
+		return 1.0
+	if bat != null:
+		var usable := maxf(0.05, 1.0 - float(p.get("reserve_pct", 0.0)) / 100.0)
+		_progress_max = maxf(_progress_max, clampf((1.0 - bat.remaining_fraction()) / usable, 0.0, 1.0))
+	return _progress_max
 
 
 func finish() -> Dictionary:

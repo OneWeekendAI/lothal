@@ -3560,7 +3560,19 @@ func watch_mission_from_design(opts: Dictionary) -> bool:
 	var sim = rooms.sim
 	if sim == null:
 		return false
-	return sim.watch_mission(MissionFlow.params_for(design_space.session, opts))
+	if not sim.watch_finished.is_connected(_on_watch_finished):
+		sim.watch_finished.connect(_on_watch_finished)
+		sim.back_to_design_requested.connect(back_to_drone_from_room)
+	var started: bool = sim.watch_mission(MissionFlow.params_for(design_space.session, opts))
+	if mission_picker != null:
+		mission_picker.set_watching(started)
+	return started
+
+
+## The watched flight ended: the picker's Watch and Run are free again.
+func _on_watch_finished(_result: Dictionary) -> void:
+	if mission_picker != null:
+		mission_picker.set_watching(false)
 
 
 func _hide_mission_picker(shelf_open: bool) -> void:

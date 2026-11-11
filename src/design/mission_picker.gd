@@ -79,7 +79,7 @@ func _init() -> void:
 	br.add_child(watch_button)
 	headless_button = DsUi.button("Run")
 	headless_button.tooltip_text = "Fly it without drawing it and show the result below"
-	headless_button.pressed.connect(run_headless)
+	headless_button.pressed.connect(run_pressed)
 	br.add_child(headless_button)
 	footer.add_child(br)
 	results = ResultsPanel.new()
@@ -150,6 +150,36 @@ func options() -> Dictionary:
 	if i >= 0:
 		o["world"] = WorldPresets.by_id(String(_envs[i]["id"]))
 	return o
+
+
+## S6 busy states. Watch: the button reads "Watching..." and Run is held while a flight is in view (the shell sets it from the
+## sim's watch). Run: the button reads "Running..." for the frame it takes, so the busy look is painted before the flight blocks.
+var watching := false
+var running := false
+
+
+func set_watching(on: bool) -> void:
+	watching = on
+	_apply_busy()
+
+
+func _apply_busy() -> void:
+	DsUi.set_busy(watch_button, watching, "Watching...")
+	DsUi.set_busy(headless_button, running, "Running...")
+	if watching:
+		headless_button.disabled = true
+
+
+func run_pressed() -> void:
+	if running or watching:
+		return
+	running = true
+	_apply_busy()
+	if is_inside_tree():
+		await get_tree().process_frame
+	run_headless()
+	running = false
+	_apply_busy()
 
 
 func run_headless() -> Dictionary:
