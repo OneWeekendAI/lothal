@@ -15,6 +15,12 @@ extends RefCounted
 ## The build goes through `Project.to_build`, the same path a saved drone flies by, so the Design
 ## Space can never open on a different aircraft from the one the project file describes.
 
+## Fired after EVERY change to the selection or the frame document, by whatever path made it. Everything that
+## shows the design (stats, chip, identity sheet, shelf) listens to this one signal, so none of them can show a
+## build the session no longer holds. `revision` counts the changes.
+signal changed
+var revision := 0
+
 var drone_class: String = ""
 ## category -> part id, dense over ProjectSchema.all_categories().
 var selection: Dictionary = {}
@@ -103,6 +109,7 @@ func set_part(category: String, part_id: String) -> bool:
 	if not selection.has(category):
 		return false
 	selection[category] = part_id
+	_changed()
 	return true
 
 
@@ -136,6 +143,7 @@ func swap(catalog: PartsCatalog, category: String, part_id: String) -> Dictionar
 		return verdict
 	_push_undo()
 	selection[category] = part_id
+	_changed()
 	return verdict
 
 
@@ -158,6 +166,7 @@ func drop(catalog: PartsCatalog, part_id: String, point: Vector3, map: Dictionar
 	verdict["replaced"] = String(selection.get(category, ""))
 	_push_undo()
 	selection[category] = part_id
+	_changed()
 	return verdict
 
 
@@ -173,6 +182,7 @@ func remove(category: String) -> Dictionary:
 		return FrameTools.refuse("Nothing is fitted there.")
 	_push_undo()
 	selection[category] = ""
+	_changed()
 	return {"ok": true, "reason": ""}
 
 
@@ -267,6 +277,7 @@ func _frame_op(op: Callable) -> Dictionary:
 		return verdict
 	_push_undo()
 	_frame_doc = trial
+	_changed()
 	return verdict
 
 
@@ -278,6 +289,7 @@ func restore_state(p_selection: Dictionary, frame_dict: Dictionary) -> void:
 		_frame_doc = AirframeDocument.from_dictionary(frame_dict)
 	_undo.clear()
 	_redo.clear()
+	_changed()
 
 
 func _snapshot() -> Dictionary:
@@ -289,6 +301,11 @@ func _restore(entry: Dictionary) -> void:
 	selection = (entry["selection"] as Dictionary).duplicate(true)
 	var doc: Dictionary = entry["document"]
 	_frame_doc = AirframeDocument.from_dictionary(doc) if not doc.is_empty() else null
+
+
+func _changed() -> void:
+	revision += 1
+	changed.emit()
 
 
 func _push_undo() -> void:
@@ -310,6 +327,7 @@ func undo() -> bool:
 		return false
 	_redo.append(_snapshot())
 	_restore(_undo.pop_back())
+	_changed()
 	return true
 
 
@@ -319,4 +337,5 @@ func redo() -> bool:
 		return false
 	_undo.append(_snapshot())
 	_restore(_redo.pop_back())
+	_changed()
 	return true

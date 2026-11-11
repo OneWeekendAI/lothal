@@ -204,6 +204,7 @@ var _callout_version := 0        ## bumped when the numbers or the drawn meshes 
 
 func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
 	session = p_session
+	session.changed.connect(_sync)
 	_catalog = p_catalog if p_catalog != null else PartsCatalog.load_default()
 	name = "DesignSpace"
 	theme = LothalTheme.get_theme()
@@ -228,37 +229,41 @@ func _init(p_session: DesignSession, p_catalog: PartsCatalog = null) -> void:
 ## Sets a part with no fit check and no history, and refreshes. The test seam for "the build
 ## changed"; the user's path is `choose`.
 func set_part(category: String, part_id: String) -> bool:
-	if not session.set_part(category, part_id):
-		return false
-	_after_change()
-	return true
+	return session.set_part(category, part_id)
 
 
 ## Click to swap: fits `part_id` as `category` through the session (refused for a hard misfit,
 ## leaving everything as it was). Returns the verdict {ok, reason, ...}.
 func choose(category: String, part_id: String) -> Dictionary:
+	var rev := session.revision
 	var verdict := session.swap(_catalog, category, part_id)
-	if verdict["ok"]:
+	# Choosing the part already fitted changes nothing, so the session says nothing; the stage is still re-read.
+	if verdict["ok"] and session.revision == rev:
 		_after_change()
 	return verdict
 
 
 func undo() -> bool:
-	if not session.undo():
-		return false
-	_after_change()
-	return true
+	return session.undo()
 
 
 func redo() -> bool:
-	if not session.redo():
-		return false
-	_after_change()
-	return true
+	return session.redo()
 
 
 ## Everything a changed selection moves: readouts, the drawn parts, pick shapes, picker, inspector.
+## The session changed (by any path): re-read everything it feeds. A no-op when `_after_change` already ran
+## for this revision, so a change through our own methods does not redraw twice.
+func _sync() -> void:
+	if session.revision != _synced_revision:
+		_after_change()
+
+
+var _synced_revision := -1
+
+
 func _after_change() -> void:
+	_synced_revision = session.revision
 	refresh_identity()
 	_refusal = {}
 	_clicked_battery = ""
@@ -285,6 +290,7 @@ func refresh_identity() -> void:
 		return
 	var info := identity()
 	file_bar.show_identity(String(info["chip"]))
+	file_bar.identity_button.tooltip_text = String(info.get("text", ""))
 	DsIdentity.fill(identity_sheet, info)
 
 
@@ -1494,7 +1500,9 @@ func open_design(file_name: String) -> Dictionary:
 		file_bar.show_reason(String(r["reason"]))
 		file_bar.show_status("")
 		return r
+	session.changed.disconnect(_sync)
 	session = r["session"]
+	session.changed.connect(_sync)
 	design_source = "design file"
 	design_name = String(r["name"]) if String(r["name"]) != "" else file_name.get_basename()
 	close_slot()
@@ -1777,7 +1785,7 @@ func set_arm_width(width_scale: float) -> Dictionary:
 func _frame_result(verdict: Dictionary) -> Dictionary:
 	last_frame_verdict = verdict
 	if verdict.get("ok", false):
-		_after_change()
+		_sync()
 		tool_row.show_reason("")
 	else:
 		tool_row.show_reason(String(verdict.get("reason", "")))
@@ -2490,7 +2498,7 @@ func end_drag(screen_pos: Vector2) -> Dictionary:
 		return click_card(String(shelf.row_of(part)["category"]), part)
 	if kind == "shelf" and String(v.get("kind", "")) == "snap":
 		var done := session.drop(_catalog, part, drop_point(screen_pos), _mount_map)
-		_after_change()
+		_sync()
 		return done
 	if kind == "off" and String(v.get("kind", "")) == "remove":
 		return _remove(address)
@@ -2556,7 +2564,7 @@ func remove_selected() -> Dictionary:
 func _remove(address: String) -> Dictionary:
 	var r := session.remove_at(address)
 	if r["ok"]:
-		_after_change()
+		_sync()
 		if not picks.addresses().has(selected):
 			select("")
 	return r

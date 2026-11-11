@@ -34,19 +34,41 @@ static func describe(session: DesignSession, catalog: PartsCatalog, build_name: 
 		var id := String(session.selection.get(category, ""))
 		var part := catalog.get_part(id)
 		parts[category] = {"id": id, "name": String(part.get("name", id))}
-		lines.append("%s  %s  (%s)" % [category.capitalize(), parts[category]["name"], id])
+		lines.append("%s  %s" % [category.capitalize(), parts[category]["name"]])
 	var auw := b.all_up_weight_g()
+	var edited := is_edited(session, catalog)
+	var origin := origin_line(class_name_, edited, source)
 	var text := "%s  |  %s (%s)  |  %s  |  %.0f g  |  from %s" % [
 		shown_name, class_name_, session.drone_class, " / ".join(PackedStringArray(KEY_PARTS.map(
 			func(c: String) -> String: return String(parts[c]["id"])))), auw, source]
 	return {"ok": true, "reason": "", "name": shown_name, "class_id": session.drone_class, "class_name": class_name_,
-		"parts": parts, "auw_g": auw, "source": source,
+		"parts": parts, "auw_g": auw, "source": source, "edited": edited, "origin": origin,
 		"chip": "%s  ·  %s  ·  %.0f g" % [shown_name, class_name_, auw], "lines": lines, "text": text}
+
+
+## Whether the design differs from its class's own starting build: any part, or a frame edit.
+static func is_edited(session: DesignSession, catalog: PartsCatalog) -> bool:
+	var seed_parts := DroneClass.parts_for(session.drone_class)
+	for category in seed_parts:
+		if String(session.selection.get(category, "")) != String(seed_parts[category]):
+			return true
+	return not session.frame_edit(catalog).is_empty()
+
+
+## What the build is, in plain words: "Class seed, unedited" or "Edited from 5" seed", plus where it was opened from.
+static func origin_line(class_name_: String, edited: bool, source: String) -> String:
+	var base := "Edited from %s seed" % class_name_ if edited else "Class seed, unedited"
+	match source:
+		"design file":
+			return base + " (opened from a design file)"
+		"saved project":
+			return base + " (saved project)"
+	return base
 
 
 static func _refuse(reason: String) -> Dictionary:
 	return {"ok": false, "reason": reason, "name": "", "class_id": "", "class_name": "", "parts": {}, "auw_g": 0.0,
-		"source": "", "chip": "", "lines": [], "text": ""}
+		"source": "", "edited": false, "origin": "", "chip": "", "lines": [], "text": ""}
 
 
 ## The sheet: a Design Space drawer listing the identity. `fill` rewrites it from a `describe` result.
@@ -66,10 +88,10 @@ static func fill(d: DsDrawer, info: Dictionary) -> void:
 		return
 	var title := DsUi.label(String(info["name"]), DsUi.INK, LothalTheme.FONT_SIZE_BODY)
 	d.content.add_child(title)
-	d.content.add_child(DsUi.label("%s  (%s)" % [info["class_name"], info["class_id"]]))
+	d.content.add_child(DsUi.label(String(info["class_name"])))
 	d.content.add_child(DsUi.rule())
 	for line in info["lines"]:
 		d.content.add_child(DsUi.label(String(line)))
 	d.content.add_child(DsUi.rule())
 	d.content.add_child(DsUi.label("All-up weight  %.0f g" % float(info["auw_g"])))
-	d.content.add_child(DsUi.label("From  %s" % String(info["source"]), DsUi.INK_FAINT))
+	d.content.add_child(DsUi.label(String(info["origin"]), DsUi.INK_FAINT))

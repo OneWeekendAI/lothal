@@ -43,7 +43,7 @@ static func run() -> Array:
 	ds.toggle_identity()
 	var sheet_texts := _texts(ds.identity_sheet)
 	results.append(TestResult.new("the chip opens a sheet naming the frame, and as the side drawer",
-		ds.identity_sheet.visible and ds.side_drawer == ds.identity_sheet and String(ds.session.selection["frame"]) in sheet_texts, sheet_texts))
+		ds.identity_sheet.visible and ds.side_drawer == ds.identity_sheet and String(catalog.get_part(String(ds.session.selection["frame"])).get("name", "?")) in sheet_texts and not (String(ds.session.selection["frame"]) in sheet_texts), sheet_texts))
 	ds.identity_sheet.hide()
 	for opt in catalog.list_category("battery"):
 		var id := String(opt["part_id"])
