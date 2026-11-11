@@ -78,7 +78,7 @@ func _init() -> void:
 
 	var title := Label.new()
 	title.text = "PRINTED"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 	_title = title
 
@@ -86,7 +86,7 @@ func _init() -> void:
 	note.text = "Parts this drone needs printed, generated from what is fitted. Saved with this drone, not across drones."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
-	note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(note)
 	_intro = note
 
@@ -113,7 +113,7 @@ func _init() -> void:
 	_hint.text = PrintSettings.CLEARANCE_HINT
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hint.custom_minimum_size = Vector2(280, 0)
-	_hint.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_hint, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_hint)
 
 	root.add_child(HSeparator.new())
@@ -149,7 +149,7 @@ func render(build: Build, printing: Dictionary) -> void:
 	if _rows.is_empty():
 		var empty := Label.new()
 		empty.text = "Nothing on this build is printed yet."
-		empty.theme_type_variation = &"MutedLabel"
+		DsUi.quiet(empty, LothalTheme.FONT_SIZE_BODY)
 		_parts.add_child(empty)
 		_apply_dock_part()
 		return
@@ -165,7 +165,7 @@ func render(build: Build, printing: Dictionary) -> void:
 		note_label.text = String(row["note"])
 		note_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		note_label.custom_minimum_size = Vector2(280, 0)
-		note_label.theme_type_variation = &"MutedLabel"
+		DsUi.quiet(note_label, LothalTheme.FONT_SIZE_BODY)
 		line.add_child(note_label)
 		var id := String(row["id"])
 		if bool(row.get("fittable", false)) and id == PrintedParts.ARM_GUARD:
@@ -263,7 +263,7 @@ func set_divergence(findings: Array) -> void:
 		message.text = String(finding["message"])
 		message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		message.custom_minimum_size = Vector2(280, 0)
-		message.theme_type_variation = &"MutedLabel"
+		DsUi.quiet(message, LothalTheme.FONT_SIZE_BODY)
 		_before.add_child(message)
 		var row := HBoxContainer.new()
 		var keep := Button.new()

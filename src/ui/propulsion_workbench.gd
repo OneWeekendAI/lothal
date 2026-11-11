@@ -248,7 +248,7 @@ func _init(p_catalog: PartsCatalog = null) -> void:
 	right.add_child(profile)
 
 	_status = Label.new()
-	_status.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(_status)
 	column.add_child(_status)
 
 	open_preset(DEFAULT_PRESET)
@@ -298,7 +298,7 @@ func _build_toolbar() -> Control:
 	# The compact CheckButton, for the reason the variation carries: at the ordinary padding this
 	# one control was the tallest thing in the toolbar's first row and set the height of the whole
 	# row, pushing the room's content column past the bottom of a 1280x720 window.
-	_assumed_button.theme_type_variation = &"CompactCheckButton"
+	DsUi.compact(_assumed_button)
 	_assumed_button.text = "Chord measured"
 	_assumed_button.tooltip_text = ("On: this planform is authored, and figures derived from it "
 		+ "drop the \"blade chord assumed\" caveat. Off: it is the generator's guess.")
@@ -308,7 +308,7 @@ func _build_toolbar() -> Control:
 
 	var pad_caption := Label.new()
 	pad_caption.text = "Pad"
-	pad_caption.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(pad_caption)
 	row.add_child(pad_caption)
 
 	# The pad slider lives on the TOOLBAR rather than in the profile, because the profile is a view
@@ -327,7 +327,7 @@ func _build_toolbar() -> Control:
 
 	var pitch_caption := Label.new()
 	pitch_caption.text = "Pitch"
-	pitch_caption.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(pitch_caption)
 	row.add_child(pitch_caption)
 
 	# THE OTHER HALF OF THE BLADE, and until now the half nobody could edit. The planform editor
@@ -351,7 +351,7 @@ func _build_toolbar() -> Control:
 	# point is the builder's to state — and every figure in the panel below moves with it, which is
 	# the thing worth learning from the slider being there.
 	_rpm_label = Label.new()
-	_rpm_label.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(_rpm_label)
 	_rpm_label.custom_minimum_size = Vector2(96, 0)
 	row.add_child(_rpm_label)
 
@@ -382,7 +382,7 @@ func _build_view_buttons() -> Control:
 	row.add_theme_constant_override("separation", LothalTheme.SPACE_1)
 	for view_id in BladeView3D.VIEWS.keys():
 		var button := Button.new()
-		button.theme_type_variation = "CompactButton"
+		DsUi.compact(button)
 		button.text = str(view_id).capitalize()
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.pressed.connect(blade_view.snap_to.bind(view_id))
@@ -391,11 +391,11 @@ func _build_view_buttons() -> Control:
 
 
 ## Every button this room makes is a workbench control, so they are all compact. The room's column
-## has no vertical slack at 1280x720 — see `CompactButton` in `lothal_theme.gd`, which exists
+## has no vertical slack at 1280x720 — see `DsUi.compact`, which exists
 ## because this room is what overflowed.
 func _button(text: String, on_press: Callable, tooltip: String = "") -> Button:
 	var button := Button.new()
-	button.theme_type_variation = "CompactButton"
+	DsUi.compact(button)
 	button.text = text
 	button.tooltip_text = tooltip
 	button.pressed.connect(on_press)

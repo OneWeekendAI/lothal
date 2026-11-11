@@ -81,7 +81,7 @@ func _init() -> void:
 
 	var title := Label.new()
 	title.text = "TUNE"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 
 	var note := Label.new()
@@ -89,13 +89,13 @@ func _init() -> void:
 	note.text = "Rate PID, per axis. The baseline is derived from what this aircraft can accelerate at — change it and the derived figure stays beside it."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
-	note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(note)
 
 	_summary = Label.new()
 	_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_summary.custom_minimum_size = Vector2(280, 0)
-	_summary.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_summary, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_summary)
 
 	for axis in 3:
@@ -141,7 +141,7 @@ func _add_axis(parent: VBoxContainer, axis: int) -> void:
 	# in a docstring because it is the reason the numbers below differ from the reference build's,
 	# and a tuning screen that showed the gains without the plant would be showing half of it.
 	var plant := Label.new()
-	plant.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(plant, LothalTheme.FONT_SIZE_BODY)
 	plant.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	plant.custom_minimum_size = Vector2(280, 0)
 	parent.add_child(plant)
@@ -177,7 +177,7 @@ func _add_axis(parent: VBoxContainer, axis: int) -> void:
 	_fields[axis] = fields
 
 	var derived_label := Label.new()
-	derived_label.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(derived_label, LothalTheme.FONT_SIZE_BODY)
 	derived_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	derived_label.custom_minimum_size = Vector2(280, 0)
 	parent.add_child(derived_label)

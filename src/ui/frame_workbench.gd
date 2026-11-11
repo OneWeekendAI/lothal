@@ -283,7 +283,7 @@ func _build_toolbar() -> Control:
 	row.add_child(_view_3d_button)
 
 	_zoom_label = Label.new()
-	_zoom_label.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(_zoom_label)
 	_zoom_label.custom_minimum_size = Vector2(46, 0)
 	_zoom_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	row.add_child(_zoom_label)
@@ -305,7 +305,7 @@ func _build_toolbar() -> Control:
 	row.add_child(_symmetry_button)
 
 	_status = Label.new()
-	_status.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(_status)
 	# The only thing here whose length is unbounded — it carries sentences about what just happened.
 	# Clipped rather than allowed to push the toolbar wider than the room.
 	_status.clip_text = true

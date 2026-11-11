@@ -48,7 +48,7 @@ func _init(width: float = 280.0) -> void:
 		var label := Label.new()
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.custom_minimum_size = Vector2(width, 0)
-		label.theme_type_variation = &"WarnLabel"
+		DsUi.warn(label)
 		# Exception: severity is the whole point of this control, and the theme's roles are what
 		# say it. Each is one of LothalTheme's own colours, not a literal.
 		label.add_theme_color_override("font_color", COLORS[severity])

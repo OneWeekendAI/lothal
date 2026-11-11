@@ -58,7 +58,7 @@ func _init() -> void:
 
 	var title := Label.new()
 	title.text = "MOTORS"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 
 	var note := Label.new()
@@ -66,7 +66,7 @@ func _init() -> void:
 		+ "changes is how each propeller is mounted and which way the quad washes out.")
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
-	note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(note)
 	_prose.append(note)
 
@@ -90,7 +90,7 @@ func _init() -> void:
 	_refusal.text = REFUSAL
 	_refusal.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_refusal.custom_minimum_size = Vector2(280, 0)
-	_refusal.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_refusal, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_refusal)
 	_prose.append(_refusal)
 

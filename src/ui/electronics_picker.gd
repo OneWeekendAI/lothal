@@ -100,7 +100,7 @@ func _init(p_catalog: PartsCatalog, p_categories: Array, p_title: String) -> voi
 
 	var title := Label.new()
 	title.text = p_title
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 
 	# WHAT AN EMPTY RAIL SAYS. `Build.components_for_system` answers nothing at all when any
@@ -114,7 +114,7 @@ func _init(p_catalog: PartsCatalog, p_categories: Array, p_title: String) -> voi
 			+ "Build.COMPONENT_SYSTEM is missing an entry — see the error log.")
 		refused.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		refused.custom_minimum_size = Vector2(252, 0)
-		refused.theme_type_variation = &"WarnLabel"
+		DsUi.warn(refused)
 		root.add_child(refused)
 		return
 
@@ -188,7 +188,7 @@ func _init(p_catalog: PartsCatalog, p_categories: Array, p_title: String) -> voi
 	var note := Label.new()
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(252, 0)
-	note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(note, LothalTheme.FONT_SIZE_BODY)
 	note.text = " ".join(sentences)
 	root.add_child(note)
 	_note = note

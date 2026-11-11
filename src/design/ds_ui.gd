@@ -61,6 +61,13 @@ static func button(text: String, toggle := false, primary := false) -> Button:
 	b.focus_mode = Control.FOCUS_ALL
 	if not toggle:
 		b.pressed.connect(b.release_focus)
+	style_button(b, toggle, primary)
+	return b
+
+
+## Gives any button (a Button, a CheckButton, an OptionButton) the hairline look and its five distinct states. `tight`:
+## the tight padding of a dense toolbar.
+static func style_button(b: BaseButton, toggle := false, primary := false, tight := false) -> void:
 	b.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	b.add_theme_color_override("font_color", INK if primary else INK_MUTED)
 	for c in ["font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
@@ -68,25 +75,62 @@ static func button(text: String, toggle := false, primary := false) -> Button:
 	b.add_theme_color_override("font_disabled_color", INK_FAINT)
 	var rest_fill := 0.16 if primary else 0.05
 	var rest_edge := INK_MUTED if primary else Color(1, 1, 1, 0.12)
-	b.add_theme_stylebox_override("normal", _box(Color(1, 1, 1, rest_fill), rest_edge))
-	b.add_theme_stylebox_override("hover", _box(Color(1, 1, 1, 0.26 if primary else 0.12), INK_MUTED if primary else Color(1, 1, 1, 0.22)))
+	var boxes := {}
+	boxes["normal"] = _box(Color(1, 1, 1, rest_fill), rest_edge)
+	boxes["hover"] = _box(Color(1, 1, 1, 0.26 if primary else 0.12), INK_MUTED if primary else Color(1, 1, 1, 0.22))
 	if toggle:
 		# Selected: the lit look; brighter under the pointer.
-		b.add_theme_stylebox_override("pressed", _box(Color(1, 1, 1, 0.16), INK_MUTED))
-		b.add_theme_stylebox_override("hover_pressed", _box(Color(1, 1, 1, 0.24), INK))
+		boxes["pressed"] = _box(Color(1, 1, 1, 0.16), INK_MUTED)
+		boxes["hover_pressed"] = _box(Color(1, 1, 1, 0.24), INK)
 	else:
 		# A click: darker than rest, ink edge, and the label one pixel down (the "pushed in" cue).
 		var down := _box(Color(1, 1, 1, 0.07 if primary else 0.02), INK)
 		down.content_margin_top += 1
 		down.content_margin_bottom -= 1
-		b.add_theme_stylebox_override("pressed", down)
-		b.add_theme_stylebox_override("hover_pressed", down)
+		boxes["pressed"] = down
+		boxes["hover_pressed"] = down
 	var off := _box(Color(1, 1, 1, 0.015), Color(1, 1, 1, 0.05))
-	b.add_theme_stylebox_override("disabled", off)
+	boxes["disabled"] = off
+	boxes["focus"] = _box(Color(1, 1, 1, rest_fill), LothalTheme.ACCENT)
+	for k in boxes:
+		var sb := boxes[k] as StyleBoxFlat
+		if tight:
+			var shift: int = 1 if (k == "pressed" or k == "hover_pressed") and not toggle else 0
+			sb.content_margin_left = LothalTheme.SPACE_2
+			sb.content_margin_right = LothalTheme.SPACE_2
+			sb.content_margin_top = LothalTheme.SPACE_1 + shift
+			sb.content_margin_bottom = LothalTheme.SPACE_1 - shift
+		b.add_theme_stylebox_override(k, sb)
 	b.set_meta("ds_disabled_box", off)
-	var ring := _box(Color(1, 1, 1, rest_fill), LothalTheme.ACCENT)
-	b.add_theme_stylebox_override("focus", ring)
-	return b
+
+
+## A compact toolbar button: the same look, tighter padding.
+static func compact(b: BaseButton) -> void:
+	style_button(b, b.toggle_mode, false, true)
+
+
+## A quiet caption: small (or `size`), muted.
+static func quiet(l: Label, size := LothalTheme.FONT_SIZE_SMALL) -> void:
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", INK_MUTED)
+
+
+## A heading: title size, full ink.
+static func title(l: Label, size := LothalTheme.FONT_SIZE_TITLE) -> void:
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", INK)
+
+
+## A warning line: body size, amber.
+static func warn(l: Label) -> void:
+	l.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_BODY)
+	l.add_theme_color_override("font_color", WARN)
+
+
+## A number you watch: the interface face (no monospace block), full ink, at `size`.
+static func readout(l: Label, size := LothalTheme.FONT_SIZE_BODY) -> void:
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", INK)
 
 
 ## Busy: the button holds a lit look, cannot be pressed again and says what it is doing ("Loading..."). `on` false

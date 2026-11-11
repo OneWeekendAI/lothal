@@ -37,7 +37,7 @@ func _init() -> void:
 
 	var title := Label.new()
 	title.text = "Harness"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	add_child(title)
 
 	var door := Button.new()
@@ -52,7 +52,7 @@ func _init() -> void:
 	add_child(_rows)
 
 	_caption = Label.new()
-	_caption.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(_caption)
 	_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_caption.custom_minimum_size = Vector2(WRAP_WIDTH, 0)
 	_caption.text = ("Lead lengths and gauges are class-typical defaults, not measured figures — "
@@ -100,7 +100,7 @@ func _row(label_text: String, value_text: String) -> void:
 
 	var label := Label.new()
 	label.text = label_text
-	label.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(label, LothalTheme.FONT_SIZE_BODY)
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(label)
 

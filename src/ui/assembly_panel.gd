@@ -71,14 +71,14 @@ func _init(p_tweaks: AssemblyTweaks) -> void:
 
 	var title := Label.new()
 	title.text = "FIT"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 
 	var note := Label.new()
 	note.text = "Mounts, shims and standoffs. Changes the fit, not the flight numbers."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
-	note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(note)
 
 	root.add_child(HSeparator.new())
@@ -97,7 +97,7 @@ func _init(p_tweaks: AssemblyTweaks) -> void:
 	# pack sits is not one of the three tweaks (that is its own decision, not a fourth slider).
 	var fit_title := Label.new()
 	fit_title.text = "PACK ON THE PLATE"
-	fit_title.theme_type_variation = &"TitleLabel"
+	DsUi.title(fit_title)
 	root.add_child(fit_title)
 
 	var grid := GridContainer.new()
@@ -164,7 +164,7 @@ func _add_mount_row(parent: VBoxContainer, row: Dictionary) -> void:
 	hint.text = row["hint"]
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size = Vector2(280, 0)
-	hint.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(hint, LothalTheme.FONT_SIZE_BODY)
 	parent.add_child(hint)
 
 
@@ -193,7 +193,7 @@ func _add_row(parent: VBoxContainer, row: Dictionary) -> void:
 	hint.text = row["hint"]
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size = Vector2(280, 0)
-	hint.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(hint, LothalTheme.FONT_SIZE_BODY)
 	parent.add_child(hint)
 
 

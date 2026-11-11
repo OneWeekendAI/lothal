@@ -173,7 +173,7 @@ func _build_layout_section() -> void:
 	box.add_child(alternate)
 
 	var balance := Label.new()
-	balance.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(balance)
 	balance.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_fields["balance"] = balance
 	box.add_child(balance)
@@ -433,7 +433,7 @@ func _section(key: String, title: String) -> VBoxContainer:
 	panel.add_theme_constant_override("separation", 4)
 	var heading := Label.new()
 	heading.text = title.to_upper()
-	heading.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(heading)
 	heading.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
 	panel.add_child(heading)
 	_sections[key] = panel
@@ -463,7 +463,7 @@ func _slider_row(
 	var header := HBoxContainer.new()
 	var caption := Label.new()
 	caption.text = label_text
-	caption.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(caption)
 	caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(caption)
 
@@ -506,7 +506,7 @@ static func _labelled(text: String, control: Control) -> Control:
 	row.add_theme_constant_override("separation", 1)
 	var caption := Label.new()
 	caption.text = text
-	caption.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(caption)
 	row.add_child(caption)
 	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(control)

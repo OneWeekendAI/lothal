@@ -1955,7 +1955,7 @@ func _build_page_bar() -> void:
 
 	_page_crumb = Label.new()
 	_page_crumb.name = "Crumb"
-	_page_crumb.theme_type_variation = "MutedLabel"
+	DsUi.quiet(_page_crumb, LothalTheme.FONT_SIZE_BODY)
 	_page_crumb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_page_crumb.clip_text = true
 	_page_crumb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2490,7 +2490,7 @@ func _build_finder_glass() -> void:
 	# than drawn on — which was the whole job the alpha was doing.
 	var solid := _glass_stylebox()
 	solid.bg_color = Color(LothalTheme.PANEL_BG.r, LothalTheme.PANEL_BG.g, LothalTheme.PANEL_BG.b)
-	solid.shadow_size = LothalTheme.SHADOW_SIZE * 2
+	solid.shadow_size = 0
 	_finder_glass.add_theme_stylebox_override("panel", solid)
 	_finder_glass.anchor_left = 0.5
 	_finder_glass.anchor_top = 0.5
@@ -3896,9 +3896,7 @@ static func _glass_stylebox() -> StyleBoxFlat:
 	# A cluster that FLOATS over the viewport casts a shadow onto it. Without one these are
 	# translucent rectangles painted on the picture rather than panels in front of it, which is
 	# most of why the shell read as flat while being named for glass.
-	box.shadow_color = LothalTheme.SHADOW
-	box.shadow_size = LothalTheme.SHADOW_SIZE
-	box.shadow_offset = LothalTheme.SHADOW_OFFSET
+	box.shadow_size = 0  # Design Space look: a hairline, no shadow
 	box.anti_aliasing = true
 	return box
 
@@ -3928,12 +3926,12 @@ class SystemStub extends VBoxContainer:
 		add_theme_constant_override("separation", LothalTheme.SPACE_3)
 
 		_title = Label.new()
-		_title.theme_type_variation = "TitleLabel"
+		DsUi.title(_title)
 		add_child(_title)
 
 		var tag := Label.new()
 		tag.text = "soon — nothing behind this yet"
-		tag.theme_type_variation = "WarnLabel"
+		DsUi.warn(tag)
 		add_child(tag)
 
 		_body = VBoxContainer.new()
@@ -3951,7 +3949,7 @@ class SystemStub extends VBoxContainer:
 
 		var heading := Label.new()
 		heading.text = "WHAT BELONGS HERE"
-		heading.theme_type_variation = "SmallLabel"
+		DsUi.quiet(heading)
 		_body.add_child(heading)
 		for item in stub["items"]:
 			var line := Label.new()
@@ -3961,13 +3959,13 @@ class SystemStub extends VBoxContainer:
 		var why := Label.new()
 		why.text = str(stub["why"])
 		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		why.theme_type_variation = "MutedLabel"
+		DsUi.quiet(why, LothalTheme.FONT_SIZE_BODY)
 		_body.add_child(why)
 
 		var source := Label.new()
 		source.text = "Source: %s" % stub["source"]
 		source.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		source.theme_type_variation = "SmallLabel"
+		DsUi.quiet(source)
 		_body.add_child(source)
 
 

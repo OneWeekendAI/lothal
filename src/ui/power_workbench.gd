@@ -145,7 +145,7 @@ func _init() -> void:
 	body.add_child(inspector)
 
 	_status = Label.new()
-	_status.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(_status)
 	column.add_child(_status)
 
 
@@ -156,7 +156,7 @@ func _build_toolbar() -> Control:
 
 	var title := Label.new()
 	title.text = "Harness"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	row.add_child(title)
 	row.add_child(VSeparator.new())
 
@@ -183,7 +183,7 @@ func _build_pack_column() -> Control:
 
 	var title := Label.new()
 	title.text = "Pack on the frame"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	column.add_child(title)
 
 	pack_view = PackView.new()
@@ -205,7 +205,7 @@ func _build_pack_column() -> Control:
 	column.add_child(_offset_slider)
 
 	_com_label = Label.new()
-	_com_label.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(_com_label)
 	_com_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(_com_label)
 	return column

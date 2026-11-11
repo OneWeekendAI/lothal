@@ -36,8 +36,8 @@ static func run(tree: SceneTree) -> Array:
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
 
-	var font: Font = screen.theme.get_font("font", "ReadoutLabel")
-	var size: int = screen.theme.get_font_size("font_size", "ReadoutLabel")
+	var font: Font = screen.theme.default_font
+	var size: int = LothalTheme.FONT_SIZE_BODY
 	var worst_gap := INF
 	var detail := ""
 	var rows := 0

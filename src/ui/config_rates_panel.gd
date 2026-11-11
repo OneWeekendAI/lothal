@@ -50,7 +50,7 @@ func _init() -> void:
 
 	var title := Label.new()
 	title.text = "RATES & MODES"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 
 	var note := Label.new()
@@ -59,7 +59,7 @@ func _init() -> void:
 		+ "is under Control.")
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
-	note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(note)
 	_prose.append(note)
 
@@ -76,7 +76,7 @@ func _init() -> void:
 	_rate_row = Label.new()
 	_rate_row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_rate_row.custom_minimum_size = Vector2(280, 0)
-	_rate_row.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_rate_row, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_rate_row)
 	_prose.append(_rate_row)
 
@@ -99,7 +99,7 @@ func _init() -> void:
 	_expo_row = Label.new()
 	_expo_row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_expo_row.custom_minimum_size = Vector2(280, 0)
-	_expo_row.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_expo_row, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_expo_row)
 	_prose.append(_expo_row)
 
@@ -107,7 +107,7 @@ func _init() -> void:
 
 	var modes_title := Label.new()
 	modes_title.text = "MODES"
-	modes_title.theme_type_variation = &"TitleLabel"
+	DsUi.title(modes_title)
 	root.add_child(modes_title)
 	_prose.append(modes_title)
 
@@ -115,7 +115,7 @@ func _init() -> void:
 	_modes.text = RateSettings.modes_sentence()
 	_modes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_modes.custom_minimum_size = Vector2(280, 0)
-	_modes.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_modes, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_modes)
 	_prose.append(_modes)
 

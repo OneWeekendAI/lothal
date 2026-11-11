@@ -49,7 +49,9 @@ static func _detector_fires(tree: SceneTree) -> bool:
 	var bad_label := Label.new()
 	bad_label.theme_type_variation = &"ReadoutLabel"
 	var bad_panel := PanelContainer.new()
-	bad_panel.add_theme_stylebox_override("panel", LothalTheme.glass_box())
+	var shadowed := LothalTheme.plate()
+	shadowed.shadow_size = 12
+	bad_panel.add_theme_stylebox_override("panel", shadowed)
 	var themed_panel := PanelContainer.new()
 	holder.add_child(bad_label)
 	holder.add_child(bad_panel)
@@ -58,7 +60,7 @@ static func _detector_fires(tree: SceneTree) -> bool:
 	var found: Array[String] = []
 	_walk(holder, holder, found)
 	holder.free()
-	return found.size() >= 3
+	return found.size() >= 2
 
 
 static func _walk(node: Node, root: Node, out: Array[String]) -> void:

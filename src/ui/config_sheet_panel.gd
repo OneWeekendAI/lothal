@@ -38,7 +38,7 @@ func _init() -> void:
 
 	var title := Label.new()
 	title.text = "CONFIG SHEET"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 
 	var note := Label.new()
@@ -47,7 +47,7 @@ func _init() -> void:
 		+ "was when you built from it.")
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
-	note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(note)
 	_prose.append(note)
 
@@ -59,7 +59,7 @@ func _init() -> void:
 	_status = Label.new()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(280, 0)
-	_status.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_status, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_status)
 
 	root.add_child(HSeparator.new())

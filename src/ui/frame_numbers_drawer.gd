@@ -82,7 +82,7 @@ func _init() -> void:
 	# A line of its own rather than a sixth column: a column widened the room past what stands
 	# beside the section list at 1440 (1125 px against 1057), and the list folded away.
 	_flies = Label.new()
-	_flies.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(_flies)
 	_flies.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
 	_values["flies"] = _flies
 	add_child(_flies)
@@ -90,7 +90,7 @@ func _init() -> void:
 	# G6: what cutting this frame might cost — a range at placeholder rates, labelled as such. Its own
 	# clipped line for the same width reason as `_flies`: a long label must not widen the room.
 	var cost := Label.new()
-	cost.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(cost)
 	cost.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
 	cost.clip_text = true
 	cost.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -115,7 +115,7 @@ func _init() -> void:
 	for row in FrameDetails.SPEC_ROWS:
 		var caption := Label.new()
 		caption.text = str(row["label"])
-		caption.theme_type_variation = &"MutedLabel"
+		DsUi.quiet(caption, LothalTheme.FONT_SIZE_BODY)
 		catalogue.add_child(caption)
 		var value := Label.new()
 		value.text = "—"
@@ -203,7 +203,7 @@ func _stat(key: String, label_text: String) -> Control:
 	column.add_theme_constant_override("separation", 0)
 	var caption := Label.new()
 	caption.text = label_text
-	caption.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(caption)
 	caption.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
 	column.add_child(caption)
 	var value := Label.new()

@@ -46,7 +46,7 @@ func _build_shell(top_bar: Control, left: Control, middle: Control, right: Contr
 	window.offset_right = -MARGIN_X
 	window.offset_top = MARGIN_Y
 	window.offset_bottom = -MARGIN_Y
-	var box := LothalTheme.glass_box(Color(0.075, 0.083, 0.105, 0.98), LothalTheme.RADIUS_PANEL)
+	var box := LothalTheme.plate(Color(0.075, 0.083, 0.105, 0.98), LothalTheme.RADIUS_PANEL)
 	box.content_margin_left = LothalTheme.SPACE_4
 	box.content_margin_right = LothalTheme.SPACE_4
 	box.content_margin_top = LothalTheme.SPACE_3

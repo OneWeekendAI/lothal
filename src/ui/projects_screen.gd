@@ -120,7 +120,7 @@ func _build_header() -> Control:
 	row.add_child(mark)
 	var brand := Label.new()
 	brand.text = "LOTHAL"
-	brand.theme_type_variation = "TitleLabel"
+	DsUi.title(brand)
 	brand.add_theme_color_override("font_color", INK)
 	row.add_child(brand)
 	var crumb := Label.new()
@@ -131,7 +131,7 @@ func _build_header() -> Control:
 
 	var version := Label.new()
 	version.text = "v%s" % LothalVersion.CURRENT
-	version.theme_type_variation = "SmallLabel"
+	DsUi.quiet(version)
 	version.add_theme_color_override("font_color", INK_FAINT)
 	row.add_child(version)
 	return panel
@@ -147,7 +147,7 @@ func _build_new_panel() -> Control:
 
 	var title := Label.new()
 	title.text = "NEW DRONE"
-	title.theme_type_variation = "SmallLabel"
+	DsUi.quiet(title)
 	title.add_theme_color_override("font_color", INK_MUTED)
 	box.add_child(title)
 
@@ -161,7 +161,7 @@ func _build_new_panel() -> Control:
 
 	var hint := Label.new()
 	hint.text = "Starts from a known-good 5\" freestyle build. Change any part from there."
-	hint.theme_type_variation = "SmallLabel"
+	DsUi.quiet(hint)
 	hint.add_theme_color_override("font_color", INK_FAINT)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(hint)
@@ -193,7 +193,7 @@ func _build_table() -> Control:
 	box.add_child(bar)
 	var title := Label.new()
 	title.text = "ALL PROJECTS"
-	title.theme_type_variation = "SmallLabel"
+	DsUi.quiet(title)
 	title.add_theme_color_override("font_color", INK_MUTED)
 	bar.add_child(title)
 	_search = LineEdit.new()
@@ -235,7 +235,7 @@ func _build_table() -> Control:
 	var foot := HBoxContainer.new()
 	box.add_child(foot)
 	_range_label = Label.new()
-	_range_label.theme_type_variation = "SmallLabel"
+	DsUi.quiet(_range_label)
 	_range_label.add_theme_color_override("font_color", INK_FAINT)
 	_range_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	foot.add_child(_range_label)
@@ -304,28 +304,7 @@ static func _plain_box(fill: Color, radius: int, bottom_rule := false) -> StyleB
 
 ## The Design Space's ghost button (design_file_bar.gd); primary is the same shape, inverted.
 static func _style_button(b: Button, primary: bool) -> void:
-	b.add_theme_color_override("font_color", Color(0.05, 0.05, 0.055) if primary else INK_MUTED)
-	b.add_theme_color_override("font_hover_color", Color(0.05, 0.05, 0.055) if primary else INK)
-	b.add_theme_color_override("font_pressed_color", Color(0.05, 0.05, 0.055) if primary else INK)
-	b.add_theme_color_override("font_focus_color", Color(0.05, 0.05, 0.055) if primary else INK)
-	b.add_theme_color_override("font_disabled_color", INK_FAINT)
-	var flat := StyleBoxFlat.new()
-	flat.bg_color = Color(0.93, 0.93, 0.93) if primary else Color(1, 1, 1, 0.05)
-	flat.border_color = Color(1, 1, 1, 0.12)
-	flat.set_border_width_all(1)
-	flat.set_corner_radius_all(LothalTheme.RADIUS_CONTROL)
-	flat.content_margin_left = LothalTheme.SPACE_3
-	flat.content_margin_right = LothalTheme.SPACE_3
-	flat.content_margin_top = LothalTheme.SPACE_2
-	flat.content_margin_bottom = LothalTheme.SPACE_2
-	var hover := flat.duplicate() as StyleBoxFlat
-	hover.bg_color = Color(1, 1, 1, 1) if primary else Color(1, 1, 1, 0.12)
-	var off := flat.duplicate() as StyleBoxFlat
-	off.bg_color = Color(1, 1, 1, 0.02)
-	b.add_theme_stylebox_override("normal", flat)
-	b.add_theme_stylebox_override("hover", hover)
-	b.add_theme_stylebox_override("pressed", hover)
-	b.add_theme_stylebox_override("disabled", off)
+	DsUi.style_button(b, false, primary)
 
 
 ## A dialog in the page's monochrome: dark panel with a hairline, no blue outline, and the title
@@ -357,7 +336,7 @@ static func _style_dialog(d: AcceptDialog, title_text: String, body: Control = n
 	var heading := Label.new()
 	heading.name = "Heading"
 	heading.text = title_text
-	heading.theme_type_variation = "SmallLabel"
+	DsUi.quiet(heading)
 	heading.add_theme_color_override("font_color", INK_MUTED)
 	column.add_child(heading)
 	d.set_meta("heading", heading)
@@ -455,10 +434,10 @@ static func _row_box(cells: Array, header := false) -> HBoxContainer:
 		label.clip_text = true
 		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		if header:
-			label.theme_type_variation = "SmallLabel"
+			DsUi.quiet(label)
 			label.add_theme_color_override("font_color", INK_FAINT)
 		elif i > 0:
-			label.theme_type_variation = "ReadoutLabel"
+			DsUi.readout(label)
 			label.add_theme_color_override("font_color", INK_MUTED)
 		else:
 			label.add_theme_color_override("font_color", INK)
@@ -475,8 +454,8 @@ static func _row_box(cells: Array, header := false) -> HBoxContainer:
 ## slack. Measured, not guessed, so a font change moves the column with it.
 static func _edited_width() -> int:
 	var th := LothalTheme.get_theme()
-	var font: Font = th.get_font("font", "ReadoutLabel")
-	var px: int = th.get_font_size("font_size", "ReadoutLabel")
+	var font: Font = th.default_font
+	var px: int = LothalTheme.FONT_SIZE_BODY
 	var widest := 0.0
 	for text in EDITED_LONGEST + ["EDITED"]:
 		widest = maxf(widest, font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, px).x)

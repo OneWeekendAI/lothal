@@ -184,7 +184,7 @@ static func draw_mono() -> Font:
 ## same reason as the font: `_draw` is a per-frame path.
 static func card_plate() -> StyleBoxFlat:
 	if _card_plate_cached == null:
-		var box := glass_box(Color(0.06, 0.07, 0.09, 0.90), RADIUS_PANEL)
+		var box := plate(Color(0.06, 0.07, 0.09, 0.90), RADIUS_PANEL)
 		box.border_color = BORDER
 		_card_plate_cached = box
 	return _card_plate_cached
@@ -196,20 +196,14 @@ static func get_theme() -> Theme:
 	return _cached_theme
 
 
-## A floating surface: translucent fill, one hairline, a shadow. Everything that is supposed to
+## A flat surface: a fill, one hairline, no shadow (Design Space look). Everything that is supposed to
 ## hover over the viewport is built from this so that "floating" is one decision and not fifteen.
-static func glass_box(fill: Color = PANEL_BG, radius: int = RADIUS_PANEL) -> StyleBoxFlat:
+static func plate(fill: Color = PANEL_BG, radius: int = RADIUS_PANEL) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = fill
 	box.border_color = BORDER
 	box.set_border_width_all(1)
 	box.set_corner_radius_all(radius)
-	box.shadow_color = SHADOW
-	box.shadow_size = SHADOW_SIZE
-	box.shadow_offset = SHADOW_OFFSET
-	# Godot draws a stylebox's shadow OUTSIDE its rect without reserving room for it, so a panel
-	# flush against a screen edge has its shadow clipped. That is fine and intended: the clusters
-	# sit inset from the edges already.
 	box.anti_aliasing = true
 	return box
 
@@ -218,7 +212,6 @@ static func _build_theme() -> Theme:
 	var theme := Theme.new()
 
 	var ui := ui_font()
-	var mono := mono_font()
 
 	# Base font and size across every control. The FONT is the single largest visual change in this
 	# file: the previous theme set only the size, so all non-readout text was the engine fallback.
@@ -228,38 +221,6 @@ static func _build_theme() -> Theme:
 	# --- Labels ---
 	theme.set_color("font_color", "Label", TEXT_MAIN)
 
-	# Label Type Variations
-	theme.set_type_variation("ReadoutLabel", "Label")
-	theme.set_font("font", "ReadoutLabel", mono)
-	theme.set_font_size("font_size", "ReadoutLabel", FONT_SIZE_BODY)
-	theme.set_color("font_color", "ReadoutLabel", TEXT_MAIN)
-
-	theme.set_type_variation("HeroReadoutLabel", "Label")
-	theme.set_font("font", "HeroReadoutLabel", mono)
-	theme.set_font_size("font_size", "HeroReadoutLabel", FONT_SIZE_HERO)
-	theme.set_color("font_color", "HeroReadoutLabel", TEXT_MAIN)
-
-	theme.set_type_variation("SubHeroReadoutLabel", "Label")
-	theme.set_font("font", "SubHeroReadoutLabel", mono)
-	theme.set_font_size("font_size", "SubHeroReadoutLabel", 26)
-	theme.set_color("font_color", "SubHeroReadoutLabel", TEXT_MAIN)
-
-	theme.set_type_variation("MutedLabel", "Label")
-	theme.set_font_size("font_size", "MutedLabel", FONT_SIZE_BODY)
-	theme.set_color("font_color", "MutedLabel", TEXT_MUTED)
-
-	theme.set_type_variation("SmallLabel", "Label")
-	theme.set_font_size("font_size", "SmallLabel", FONT_SIZE_SMALL)
-	theme.set_color("font_color", "SmallLabel", TEXT_MUTED)
-
-	theme.set_type_variation("TitleLabel", "Label")
-	theme.set_font_size("font_size", "TitleLabel", FONT_SIZE_TITLE)
-	theme.set_color("font_color", "TitleLabel", TEXT_MAIN)
-
-	theme.set_type_variation("WarnLabel", "Label")
-	theme.set_font_size("font_size", "WarnLabel", FONT_SIZE_BODY)
-	theme.set_color("font_color", "WarnLabel", WARNING)
-
 	# --- Panel & PanelContainer ---
 	#
 	# NO BORDER, and that is the fix for the thing that made the old shell look amateur: almost
@@ -267,11 +228,9 @@ static func _build_theme() -> Theme:
 	# rounded outline four pixels inside another rounded outline. Two concentric boxes is the
 	# classic tell. Separation is carried by the fill step and a soft shadow instead, and the
 	# radius is one step tighter than the cluster's so the nesting reads as deliberate.
-	var panel_box := glass_box(PANEL_BG, RADIUS_CONTROL)
-	panel_box.set_border_width_all(0)
-	panel_box.shadow_size = 10
-	panel_box.shadow_color = Color(0.0, 0.0, 0.0, 0.28)
-	panel_box.shadow_offset = Vector2(0, 2)
+	# The Design Space panel: near-black, one hairline (DsUi.panel_style), no shadow.
+	var panel_box := plate(Color(0.07, 0.075, 0.085, 0.97), RADIUS_CONTROL)
+	panel_box.border_color = BORDER_STRONG
 	# SPACE_2, not SPACE_3, and the suite is why. A roomier panel margin looked better and pushed
 	# the blade room's content column to y=683 in a 720 px window whose room ends at y=644 — it
 	# collided with the Lab/Sim/Rooms cluster. Vertical air inside a panel is not free in this app;
@@ -280,23 +239,6 @@ static func _build_theme() -> Theme:
 
 	theme.set_stylebox("panel", "PanelContainer", panel_box)
 	theme.set_stylebox("panel", "Panel", panel_box)
-
-	# A panel with no chrome of its own, for content that is already inside one. Grouping boxes use
-	# this instead of drawing a second border around the first.
-	var flush_box := StyleBoxEmpty.new()
-	theme.set_type_variation("FlushPanel", "PanelContainer")
-	theme.set_stylebox("panel", "FlushPanel", flush_box)
-
-	# A well: content that should read as recessed into the panel rather than stacked on it. The
-	# parts list is the case this exists for.
-	var sunken_box := StyleBoxFlat.new()
-	sunken_box.bg_color = PANEL_SUNKEN
-	sunken_box.border_color = BORDER
-	sunken_box.set_border_width_all(1)
-	sunken_box.set_corner_radius_all(RADIUS_CONTROL)
-	sunken_box.set_content_margin_all(SPACE_1)
-	theme.set_type_variation("SunkenPanel", "PanelContainer")
-	theme.set_stylebox("panel", "SunkenPanel", sunken_box)
 
 	# --- Buttons ---
 	var btn_normal := StyleBoxFlat.new()
@@ -314,12 +256,12 @@ static func _build_theme() -> Theme:
 	btn_normal.content_margin_bottom = SPACE_2
 
 	var btn_hover := btn_normal.duplicate() as StyleBoxFlat
-	btn_hover.bg_color = Color(1.0, 1.0, 1.0, 0.11)
-	btn_hover.border_color = BORDER_STRONG
+	btn_hover.bg_color = Color(1.0, 1.0, 1.0, 0.12)
+	btn_hover.border_color = Color(1.0, 1.0, 1.0, 0.22)
 
 	var btn_pressed := btn_normal.duplicate() as StyleBoxFlat
-	btn_pressed.bg_color = ACCENT_FILL
-	btn_pressed.border_color = ACCENT_DIM
+	btn_pressed.bg_color = Color(1.0, 1.0, 1.0, 0.16)
+	btn_pressed.border_color = Color(0.58, 0.58, 0.58)
 
 	var btn_disabled := btn_normal.duplicate() as StyleBoxFlat
 	btn_disabled.bg_color = Color(1.0, 1.0, 1.0, 0.02)
@@ -327,7 +269,7 @@ static func _build_theme() -> Theme:
 
 	var btn_focus := btn_normal.duplicate() as StyleBoxFlat
 	btn_focus.bg_color = Color(0, 0, 0, 0)
-	btn_focus.border_color = BORDER_FOCUS
+	btn_focus.border_color = ACCENT
 	btn_focus.set_border_width_all(1)
 
 	for cls in ["Button", "MenuButton", "OptionButton", "CheckButton", "CheckBox"]:
@@ -338,78 +280,9 @@ static func _build_theme() -> Theme:
 		theme.set_stylebox("focus", cls, btn_focus)
 		theme.set_color("font_color", cls, TEXT_MAIN)
 		theme.set_color("font_hover_color", cls, TEXT_MAIN)
-		theme.set_color("font_pressed_color", cls, ACCENT)
+		theme.set_color("font_pressed_color", cls, TEXT_MAIN)
 		theme.set_color("font_focus_color", cls, TEXT_MAIN)
 		theme.set_color("font_disabled_color", cls, TEXT_FAINT)
-
-	# The compact button, for a dense workbench toolbar.
-	#
-	# This exists because of a measurement, not a preference. A real interface face is TALLER at the
-	# same point size than the engine fallback the app used to draw with, and the blade room's
-	# content column had no slack at all: at 1280x720 the column ran to y=683 against a room ending
-	# at y=644 and collided with the Lab/Sim/Rooms cluster — the exact defect `test_shell_layout.gd`
-	# was written for after W0.7. Roughly two thirds of the overrun was the ordinary button's new
-	# vertical padding, and the rest was the face itself.
-	#
-	# The answer is NOT to take the padding back off every button in the app. A toolbar button and a
-	# dialog button are different controls doing different jobs, and every tool this app is trying to
-	# resemble draws the toolbar one tighter. So the comfortable padding stays the default, and a
-	# workbench toolbar opts into this.
-	var compact_normal := btn_normal.duplicate() as StyleBoxFlat
-	compact_normal.content_margin_left = SPACE_2
-	compact_normal.content_margin_right = SPACE_2
-	compact_normal.content_margin_top = SPACE_1
-	compact_normal.content_margin_bottom = SPACE_1
-	var compact_hover := compact_normal.duplicate() as StyleBoxFlat
-	compact_hover.bg_color = btn_hover.bg_color
-	compact_hover.border_color = btn_hover.border_color
-	var compact_pressed := compact_normal.duplicate() as StyleBoxFlat
-	compact_pressed.bg_color = btn_pressed.bg_color
-	compact_pressed.border_color = btn_pressed.border_color
-	var compact_disabled := compact_normal.duplicate() as StyleBoxFlat
-	compact_disabled.bg_color = btn_disabled.bg_color
-	compact_disabled.border_color = btn_disabled.border_color
-
-	theme.set_type_variation("CompactButton", "Button")
-	theme.set_stylebox("normal", "CompactButton", compact_normal)
-	theme.set_stylebox("hover", "CompactButton", compact_hover)
-	theme.set_stylebox("pressed", "CompactButton", compact_pressed)
-	theme.set_stylebox("disabled", "CompactButton", compact_disabled)
-
-	# AND THE SAME TIGHTENING FOR A CHECKBUTTON, as a SECOND variation rather than by pointing a
-	# CheckButton at `CompactButton`.
-	#
-	# A variation inherits from ONE base type, and `CompactButton`'s base is `Button`. A CheckButton
-	# whose `theme_type_variation` is `CompactButton` therefore looks its styleboxes up through
-	# `Button` and never reaches the `CheckButton` type at all — which is where the on/off switch
-	# ICONS live. It would draw as a tight rectangle with a label and no switch in it: the one
-	# control in the blade room's toolbar whose entire job is to show which way it is set, showing
-	# nothing. So this variation is based on `CheckButton` and gets the compact boxes by copy.
-	#
-	# It is worth more pixels than a button is, and that is why it was the last thing in the way.
-	# The toolbar is an `HFlowContainer`: the TALLEST control in a wrapped row sets that whole row's
-	# height. A CheckButton is sized by its switch icon plus the stylebox, not by its text, so at
-	# SPACE_2 padding it stood 36 px against the 28 px of its compact neighbours and held the entire
-	# first row 8 px taller than anything in it needed.
-	theme.set_type_variation("CompactCheckButton", "CheckButton")
-	theme.set_stylebox("normal", "CompactCheckButton", compact_normal)
-	theme.set_stylebox("hover", "CompactCheckButton", compact_hover)
-	theme.set_stylebox("pressed", "CompactCheckButton", compact_pressed)
-	theme.set_stylebox("disabled", "CompactCheckButton", compact_disabled)
-	theme.set_stylebox("focus", "CompactCheckButton", btn_focus)
-
-	# The accented button, for the one action a panel exists to offer.
-	var primary_normal := btn_normal.duplicate() as StyleBoxFlat
-	primary_normal.bg_color = ACCENT_FILL
-	primary_normal.border_color = ACCENT_DIM
-	var primary_hover := primary_normal.duplicate() as StyleBoxFlat
-	primary_hover.bg_color = Color(0.36, 0.74, 1.0, 0.26)
-	primary_hover.border_color = ACCENT
-	theme.set_type_variation("PrimaryButton", "Button")
-	theme.set_stylebox("normal", "PrimaryButton", primary_normal)
-	theme.set_stylebox("hover", "PrimaryButton", primary_hover)
-	theme.set_color("font_color", "PrimaryButton", ACCENT)
-	theme.set_color("font_hover_color", "PrimaryButton", TEXT_MAIN)
 
 	# --- OptionButton / popup menus ---
 	#
@@ -423,7 +296,7 @@ static func _build_theme() -> Theme:
 	# menu is still a readable glyph, because the eye reads contrast, not opacity. There is no alpha
 	# between 0 and 1 that buys anything here — a menu is not hovering over the scene, it is a sheet
 	# you read — so the alpha component simply goes away.
-	var popup_box := glass_box(Color(0.125, 0.138, 0.168), RADIUS_CONTROL)
+	var popup_box := plate(Color(0.125, 0.138, 0.168), RADIUS_CONTROL)
 	popup_box.set_content_margin_all(SPACE_1)
 	theme.set_stylebox("panel", "PopupMenu", popup_box)
 	theme.set_color("font_color", "PopupMenu", TEXT_MAIN)
@@ -666,14 +539,14 @@ static func _build_theme() -> Theme:
 	# --- Tooltips ---
 	# Opaque, by the rule stated at PopupMenu: a tooltip exists to be read, and at 0.97 it read the
 	# viewport's own geometry through its text.
-	var tip_box := glass_box(Color(0.10, 0.11, 0.135), RADIUS_SMALL)
+	var tip_box := plate(Color(0.10, 0.11, 0.135), RADIUS_SMALL)
 	tip_box.set_content_margin_all(SPACE_2)
 	theme.set_stylebox("panel", "TooltipPanel", tip_box)
 	theme.set_color("font_color", "TooltipLabel", TEXT_MAIN)
 
 	# --- Windows (the drone menu, the custom-part dialogs) ---
 	# Opaque, by the same rule. A dialog is the most read-text-off surface in the app.
-	var win_box := glass_box(Color(0.115, 0.128, 0.155), RADIUS_PANEL)
+	var win_box := plate(Color(0.115, 0.128, 0.155), RADIUS_PANEL)
 	win_box.set_content_margin_all(SPACE_4)
 	theme.set_stylebox("panel", "AcceptDialog", win_box)
 	theme.set_stylebox("embedded_border", "Window", win_box)

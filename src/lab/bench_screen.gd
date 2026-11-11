@@ -188,7 +188,7 @@ func _build_throttle(stage: VBoxContainer) -> void:
 
 	var caption := Label.new()
 	caption.text = "THROTTLE"
-	caption.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(caption, LothalTheme.FONT_SIZE_BODY)
 	controls.add_child(caption)
 
 	_slider = HSlider.new()
@@ -204,7 +204,7 @@ func _build_throttle(stage: VBoxContainer) -> void:
 	_throttle_label.text = "0 %"
 	_throttle_label.custom_minimum_size = Vector2(56, 0)
 	_throttle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_throttle_label.theme_type_variation = &"ReadoutLabel"
+	DsUi.readout(_throttle_label)
 	controls.add_child(_throttle_label)
 
 	_sweep_button = Button.new()

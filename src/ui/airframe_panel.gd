@@ -83,7 +83,7 @@ func _build_footer(root: VBoxContainer) -> void:
 	_footer_note = Label.new()
 	_footer_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_footer_note.custom_minimum_size = Vector2(280, 0)
-	_footer_note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_footer_note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_footer_note)
 
 

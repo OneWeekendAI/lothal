@@ -903,7 +903,7 @@ func _build_my_packs_panel() -> void:
 	my_packs_panel.offset_left = -(MARGIN_X + LothalTheme.SPACE_4 + 320)
 	my_packs_panel.offset_top = MARGIN_Y + 56
 	my_packs_panel.offset_bottom = MARGIN_Y + 56 + 380
-	var panel_box := LothalTheme.glass_box(Color(0.105, 0.115, 0.14, 1.0))
+	var panel_box := LothalTheme.plate(Color(0.105, 0.115, 0.14, 1.0))
 	panel_box.set_content_margin_all(LothalTheme.SPACE_2)
 	my_packs_panel.add_theme_stylebox_override("panel", panel_box)
 	var scroll := ScrollContainer.new()

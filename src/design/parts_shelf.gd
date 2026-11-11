@@ -550,6 +550,11 @@ func _flat_button(text: String, font_size: int, ink: Color) -> Button:
 	plain.set_content_margin_all(5)
 	b.add_theme_stylebox_override("normal", plain)
 	b.add_theme_stylebox_override("hover", hover)
-	b.add_theme_stylebox_override("pressed", hover)
-	b.add_theme_stylebox_override("hover_pressed", hover)
+	# A click is seen: the wash goes deeper and the label sits a pixel lower.
+	var down := hover.duplicate() as StyleBoxFlat
+	down.bg_color = Color(1, 1, 1, 0.12)
+	down.content_margin_top = 6
+	down.content_margin_bottom = 4
+	b.add_theme_stylebox_override("pressed", down)
+	b.add_theme_stylebox_override("hover_pressed", down)
 	return b

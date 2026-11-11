@@ -131,7 +131,7 @@ func _init(p_catalog: PartsCatalog, p_motor_id: String = "", p_propeller_id: Str
 	stage_pad.add_child(stage)
 
 	_title = Label.new()
-	_title.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_title, LothalTheme.FONT_SIZE_BODY)
 	stage.add_child(_title)
 
 	trace = BandTrace.new()
@@ -166,7 +166,7 @@ func _build_controls(stage: VBoxContainer) -> void:
 
 	var caption := Label.new()
 	caption.text = "THROTTLE"
-	caption.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(caption, LothalTheme.FONT_SIZE_BODY)
 	controls.add_child(caption)
 
 	_run_button = Button.new()

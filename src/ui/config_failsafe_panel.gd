@@ -64,7 +64,7 @@ func _init() -> void:
 
 	var title := Label.new()
 	title.text = "FAILSAFE"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 
 	var note := Label.new()
@@ -73,7 +73,7 @@ func _init() -> void:
 		+ "chose needs something this build does not carry.")
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
-	note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(note)
 	_prose.append(note)
 
@@ -88,7 +88,7 @@ func _init() -> void:
 	_provenance = Label.new()
 	_provenance.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_provenance.custom_minimum_size = Vector2(280, 0)
-	_provenance.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_provenance, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_provenance)
 	_prose.append(_provenance)
 
@@ -104,7 +104,7 @@ func _init() -> void:
 		+ "Your ESC's protocol decides whether it can.")
 	bidir_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	bidir_note.custom_minimum_size = Vector2(280, 0)
-	bidir_note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(bidir_note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(bidir_note)
 	_prose.append(bidir_note)
 
@@ -122,7 +122,7 @@ func _init() -> void:
 
 	var arming_title := Label.new()
 	arming_title.text = "IF IT WON'T ARM"
-	arming_title.theme_type_variation = &"TitleLabel"
+	DsUi.title(arming_title)
 	root.add_child(arming_title)
 	_prose.append(arming_title)
 
@@ -130,7 +130,7 @@ func _init() -> void:
 	_arming.text = ArmingNotes.preamble() + "\n\n" + "\n\n".join(ArmingNotes.lines())
 	_arming.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_arming.custom_minimum_size = Vector2(280, 0)
-	_arming.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_arming, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_arming)
 	_prose.append(_arming)
 

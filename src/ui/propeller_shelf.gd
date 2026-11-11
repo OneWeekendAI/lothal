@@ -66,7 +66,7 @@ func refresh_saved() -> void:
 	if entries.is_empty():
 		var empty := Label.new()
 		empty.text = "Nothing drawn yet."
-		empty.theme_type_variation = &"SmallLabel"
+		DsUi.quiet(empty)
 		empty.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
 		_saved_box.add_child(empty)
 		return
@@ -105,6 +105,6 @@ func _chip(prop: Dictionary) -> Control:
 func _heading(text: String) -> Label:
 	var label := Label.new()
 	label.text = text.to_upper()
-	label.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(label)
 	label.add_theme_color_override("font_color", LothalTheme.TEXT_MUTED)
 	return label

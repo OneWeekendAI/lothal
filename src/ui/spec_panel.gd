@@ -72,7 +72,7 @@ func _init(p_spec_rows: Array) -> void:
 
 	_title = Label.new()
 	_title.text = "—"
-	_title.theme_type_variation = &"TitleLabel"
+	DsUi.title(_title)
 	# One step down the published scale, matching the finder's title. The inspector is a column of
 	# readouts beside a picker, not a page with a heading.
 	_title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SUBTITLE)
@@ -99,7 +99,6 @@ func use_design_space_look(boxed := true) -> void:
 		add_theme_stylebox_override("panel", DsUi.panel_style())
 	else:
 		add_theme_stylebox_override("panel", StyleBoxEmpty.new())
-	_title.theme_type_variation = &""
 	_title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 	_title.add_theme_color_override("font_color", DsUi.INK_FAINT)
 	var rule := _content.get_child(1)

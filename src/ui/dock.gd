@@ -160,7 +160,7 @@ func _build_status(row: HBoxContainer) -> void:
 	row.add_child(clip)
 
 	status_label = Label.new()
-	status_label.theme_type_variation = "SmallLabel"
+	DsUi.quiet(status_label)
 	status_label.clip_text = true
 	status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

@@ -115,10 +115,9 @@ class RowList extends ItemList:
 		var margin := MarginContainer.new()
 		margin.add_theme_constant_override("margin_top", TOOLTIP_DROP)
 		var panel := PanelContainer.new()
-		panel.theme_type_variation = &"TooltipPanel"
+		panel.add_theme_stylebox_override("panel", LothalTheme.get_theme().get_stylebox("panel", "TooltipPanel"))
 		margin.add_child(panel)
 		var label := Label.new()
-		label.theme_type_variation = &"TooltipLabel"
 		label.text = for_text
 		panel.add_child(label)
 		return margin
@@ -196,19 +195,19 @@ func _init(p_catalog: PartsCatalog, p_system: String, p_category: String, p_noun
 
 	_header = Label.new()
 	_header.text = "%s · %s" % [p_system, _title_case(p_category)]
-	_header.theme_type_variation = &"TitleLabel"
+	DsUi.title(_header)
 	# One step down the published scale — SUBTITLE, not TITLE. A picker's title names what is being
 	# chosen; it is not the page's heading, because this is not a page.
 	_header.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SUBTITLE)
 	_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_header_row.add_child(_header)
 
-	# ×, in the corner every window in this app puts it. `CompactButton` and not a bare Button: the
+	# ×, in the corner every window in this app puts it. `DsUi.compact` and not a bare Button: the
 	# icon buttons of the dock and the room toolbars are that variation, and a close that looked
 	# like nothing else on screen would read as part of the list.
 	_close_button = Button.new()
 	_close_button.text = "×"
-	_close_button.theme_type_variation = &"CompactButton"
+	DsUi.compact(_close_button)
 	_close_button.tooltip_text = "Close (Esc)"
 	_close_button.focus_mode = Control.FOCUS_NONE
 	_close_button.pressed.connect(func() -> void: close_requested.emit())
@@ -240,7 +239,7 @@ func _init(p_catalog: PartsCatalog, p_system: String, p_category: String, p_noun
 		# Clipped and width-capped for PartPicker's reason: one long derived value like
 		# "injection-moulded nylon (PA12)" would otherwise set the whole overlay's width.
 		selector.clip_text = true
-		selector.theme_type_variation = &"CompactButton"
+		DsUi.compact(selector)
 		selector.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		selector.custom_minimum_size = Vector2(150, 0)
 		for value in _options[key]:
@@ -304,7 +303,7 @@ func _init(p_catalog: PartsCatalog, p_system: String, p_category: String, p_noun
 	_empty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_empty_hint.custom_minimum_size = Vector2(LIST_WIDTH, 0)
 	_empty_hint.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	_empty_hint.theme_type_variation = &"WarnLabel"
+	DsUi.warn(_empty_hint)
 	# Exception: Warning label explicit amber color override
 	_empty_hint.add_theme_color_override("font_color", LothalTheme.WARNING)
 	_empty_hint.visible = false
@@ -457,7 +456,7 @@ func set_categories(titles: Array, current: int) -> void:
 		var slot := int((titles[i] as Dictionary)["position"])
 		var button := Button.new()
 		button.text = str((titles[i] as Dictionary)["title"])
-		button.theme_type_variation = &"CompactButton"
+		DsUi.compact(button)
 		button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		button.toggle_mode = true
 		button.button_pressed = slot == current
@@ -490,12 +489,12 @@ func category_labels() -> PackedStringArray:
 func set_actions(p_new_label: String) -> void:
 	if _new_button == null:
 		_new_button = Button.new()
-		_new_button.theme_type_variation = &"CompactButton"
+		DsUi.compact(_new_button)
 		_new_button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		_new_button.pressed.connect(func() -> void: new_part_requested.emit())
 		_actions_row.add_child(_new_button)
 		_delete_button = Button.new()
-		_delete_button.theme_type_variation = &"CompactButton"
+		DsUi.compact(_delete_button)
 		_delete_button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
 		_delete_button.text = "Delete"
 		_delete_button.pressed.connect(func() -> void: delete_part_requested.emit())

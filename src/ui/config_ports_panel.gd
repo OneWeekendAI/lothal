@@ -48,7 +48,7 @@ func _init() -> void:
 
 	var title := Label.new()
 	title.text = "PORTS"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 
 	_demand = Label.new()
@@ -84,14 +84,14 @@ func _init() -> void:
 		+ "Zero follows the catalog's class-typical figure.")
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size = Vector2(280, 0)
-	hint.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(hint, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(hint)
 	_prose.append(hint)
 
 	# Its dock-page stand-in: what the box means, in one line (the paragraph above is off there).
 	_short_hint = Label.new()
 	_short_hint.text = SHORT_HINT
-	_short_hint.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_short_hint, LothalTheme.FONT_SIZE_BODY)
 	_short_hint.visible = false
 	root.add_child(_short_hint)
 

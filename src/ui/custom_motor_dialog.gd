@@ -110,7 +110,7 @@ func _init() -> void:
 	# Every refusal at once rather than one per attempt — see CustomParts.add.
 	_problems.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_problems.custom_minimum_size = Vector2(420, 0)
-	_problems.theme_type_variation = &"WarnLabel"
+	DsUi.warn(_problems)
 	_problems.add_theme_color_override("font_color", LothalTheme.WARNING)
 	_problems.visible = false
 	root.add_child(_problems)

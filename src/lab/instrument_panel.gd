@@ -54,12 +54,12 @@ func _init(headlines: Array, rows: Array) -> void:
 
 		var name_label := Label.new()
 		name_label.text = headline["label"]
-		name_label.theme_type_variation = &"MutedLabel"
+		DsUi.quiet(name_label, LothalTheme.FONT_SIZE_BODY)
 		box.add_child(name_label)
 
 		var value := Label.new()
 		value.text = "—"
-		value.theme_type_variation = &"HeroReadoutLabel" if headlines.size() == 1 else &"SubHeroReadoutLabel"
+		DsUi.readout(value, LothalTheme.FONT_SIZE_HERO if headlines.size() == 1 else 26)
 		# Exception: Dynamic headline color initialization
 		value.add_theme_color_override("font_color", headline.get("colour", VALUE_COLOUR))
 		box.add_child(value)
@@ -69,7 +69,7 @@ func _init(headlines: Array, rows: Array) -> void:
 		caption.text = headline.get("caption", "")
 		caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		caption.custom_minimum_size = Vector2(CAPTION_WIDTH, 0)
-		caption.theme_type_variation = &"MutedLabel"
+		DsUi.quiet(caption, LothalTheme.FONT_SIZE_BODY)
 		box.add_child(caption)
 
 	root.add_child(HSeparator.new())
@@ -81,14 +81,14 @@ func _init(headlines: Array, rows: Array) -> void:
 	for row in rows:
 		var name_label := Label.new()
 		name_label.text = row["label"]
-		name_label.theme_type_variation = &"MutedLabel"
+		DsUi.quiet(name_label, LothalTheme.FONT_SIZE_BODY)
 		grid.add_child(name_label)
 
 		var value := Label.new()
 		value.text = "—"
 		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		value.theme_type_variation = &"ReadoutLabel"
+		DsUi.readout(value)
 		grid.add_child(value)
 		_values[row["key"]] = value
 

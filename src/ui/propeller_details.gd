@@ -279,7 +279,7 @@ func _build_footer(root: VBoxContainer) -> void:
 	_blade_note = Label.new()
 	_blade_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_blade_note.custom_minimum_size = Vector2(280, 0)
-	_blade_note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_blade_note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_blade_note)
 
 	# THE DOOR TO THE PROPULSION ROOM, and it is on this panel for the reason `room_menu.gd`'s own
@@ -308,7 +308,7 @@ func _build_guard_row(root: VBoxContainer) -> void:
 
 	var title := Label.new()
 	title.text = "Prop guard"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 	_guard_heading = title
 
@@ -345,7 +345,7 @@ func _build_guard_row(root: VBoxContainer) -> void:
 	var note := Label.new()
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
-	note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(note, LothalTheme.FONT_SIZE_BODY)
 	note.text = ("A bumper claims mass, inertia and clearance. A duct claims those and the tip-loss "
 		+ "suppression as well — which on this model saves current rather than adding thrust. "
 		+ "Either one bites into roll inertia harder than the motor it rides on.")

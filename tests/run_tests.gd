@@ -9,7 +9,7 @@ extends SceneTree
 
 const SUITES := ["prop page fit", "prop repoint", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop capability", "prop export", "class picker", "bmp classes", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "one door", "sim chrome", "one build", "watch door", "watch card", "fly feedback", "button states", "identity", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "details footers",
-	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "field room", "field ds", "studio ds", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
+	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "field room", "field ds", "studio ds", "no old ui", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
 	"battery rail", "battery model", "preset pack pin", "cell library", "motor dc", "motor configs", "motor designer", "prop designer", "motor detail mesh", "motor bench", "motor pickers", "motor sheet", "designed motors", "motor presets", "motor current", "pack design", "designed packs", "pack bench", "pack designer", "battery audit", "battery density", "drag range", "designed pack flies", "pack sheet", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
@@ -29,7 +29,7 @@ func _init() -> void:
 	var fail_count := 0
 
 	for suite_name in SUITES:
-		var results := _run_suite(suite_name)
+		var results: Array = await _run_suite(suite_name)
 		# A suite that returns nothing has crashed, or its class failed to register. Left
 		# unchecked that reads as zero failures, and the runner cheerfully reports success
 		# for tests it never ran — the one outcome a test runner must never produce.
@@ -365,6 +365,7 @@ func _run_suite(suite_name: String) -> Array:
 		# R1: the Field room wears no old glass-shell look.
 		"field ds": return await TestFieldDs.run(self)
 		"studio ds": return await TestStudioDs.run(self)
+		"no old ui": return await TestNoOldUi.run(self)
 		"course library": return TestCourseLibrary.run()
 		"course warnings": return TestCourseWarnings.run()
 		"hud": return TestHud.run()

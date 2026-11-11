@@ -83,15 +83,15 @@ func _init() -> void:
 	add_theme_constant_override("separation", LothalTheme.SPACE_2)
 
 	_title = Label.new()
-	_title.theme_type_variation = &"TitleLabel"
+	DsUi.title(_title)
 	add_child(_title)
 
 	_subtitle = Label.new()
-	_subtitle.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(_subtitle)
 	add_child(_subtitle)
 
 	_prompt = Label.new()
-	_prompt.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_prompt, LothalTheme.FONT_SIZE_BODY)
 	_prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_prompt.custom_minimum_size = Vector2(WRAP_WIDTH, 0)
 	add_child(_prompt)
@@ -105,7 +105,7 @@ func _init() -> void:
 	_length_note = _note()
 
 	_facts = Label.new()
-	_facts.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_facts, LothalTheme.FONT_SIZE_BODY)
 	_facts.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_facts.custom_minimum_size = Vector2(WRAP_WIDTH, 0)
 	add_child(_facts)
@@ -171,7 +171,7 @@ func _default_button(action: Callable) -> Button:
 
 func _note() -> Label:
 	var label := Label.new()
-	label.theme_type_variation = &"SmallLabel"
+	DsUi.quiet(label)
 	add_child(label)
 	return label
 

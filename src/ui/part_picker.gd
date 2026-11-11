@@ -77,7 +77,7 @@ func _init(p_catalog: PartsCatalog, p_category: String, p_title: String, p_noun:
 
 	var title := Label.new()
 	title.text = p_title
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 
 	var grid := GridContainer.new()
@@ -120,7 +120,7 @@ func _init(p_catalog: PartsCatalog, p_category: String, p_title: String, p_noun:
 	# moment a filter combination goes empty. Its real text is written in _refresh().
 	_empty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_empty_hint.custom_minimum_size = Vector2(252, 0)
-	_empty_hint.theme_type_variation = &"WarnLabel"
+	DsUi.warn(_empty_hint)
 	# Exception: Warning label explicit amber color override
 	_empty_hint.add_theme_color_override("font_color", LothalTheme.WARNING)
 	_empty_hint.visible = false

@@ -124,7 +124,7 @@ func _init() -> void:
 
 	_problems.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_problems.custom_minimum_size = Vector2(460, 0)
-	_problems.theme_type_variation = &"WarnLabel"
+	DsUi.warn(_problems)
 	_problems.add_theme_color_override("font_color", LothalTheme.WARNING)
 	_problems.visible = false
 	root.add_child(_problems)

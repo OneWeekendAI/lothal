@@ -81,17 +81,17 @@ func _init(p_charge: PackCharge, p_catalog: PartsCatalog = null) -> void:
 
 	var title := Label.new()
 	title.text = "CHARGER"
-	title.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(title, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(title)
 
 	_summary = Label.new()
-	_summary.theme_type_variation = &"SubHeroReadoutLabel"
+	DsUi.readout(_summary, 26)
 	root.add_child(_summary)
 
 	# Resting voltage and per-cell voltage, on their own line under the capacity. Two views of one
 	# fact, because a pack is bought and charged in pack volts and JUDGED in cell volts.
 	_volts = Label.new()
-	_volts.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_volts, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_volts)
 
 	_bar = ProgressBar.new()
@@ -109,7 +109,7 @@ func _init(p_charge: PackCharge, p_catalog: PartsCatalog = null) -> void:
 	_clock = Label.new()
 	_clock.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_clock.custom_minimum_size = Vector2(InstrumentPanel.CAPTION_WIDTH, 0)
-	_clock.theme_type_variation = &"ReadoutLabel"
+	DsUi.readout(_clock)
 	root.add_child(_clock)
 
 	var controls := HBoxContainer.new()
@@ -134,13 +134,13 @@ func _init(p_charge: PackCharge, p_catalog: PartsCatalog = null) -> void:
 	_shelf = Label.new()
 	_shelf.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_shelf.custom_minimum_size = Vector2(InstrumentPanel.CAPTION_WIDTH, 0)
-	_shelf.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_shelf, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(_shelf)
 
 	_note = Label.new()
 	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_note.custom_minimum_size = Vector2(InstrumentPanel.CAPTION_WIDTH, 0)
-	_note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(_note, LothalTheme.FONT_SIZE_BODY)
 	_note.text = "Flying and bench runs drain at 1:1. Charging is compressed, because waiting " \
 		+ "45 minutes teaches nothing that waiting four does not."
 	root.add_child(_note)

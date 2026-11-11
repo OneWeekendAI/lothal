@@ -14,7 +14,7 @@ func _ready() -> void:
 
 
 func _on_node_added(node: Node) -> void:
-	if node is Label and node.theme_type_variation == &"TooltipLabel":
+	if node is Label and String(node.theme_type_variation) == "TooltipLabel":
 		wrap_label(node)
 
 

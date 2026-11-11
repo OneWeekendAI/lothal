@@ -65,14 +65,14 @@ func _init() -> void:
 	_full.add_child(head)
 
 	_title = Label.new()
-	_title.theme_type_variation = "TitleLabel"
+	DsUi.title(_title)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_title.clip_text = true
 	_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	head.add_child(_title)
 
 	_count = Label.new()
-	_count.theme_type_variation = "MutedLabel"
+	DsUi.quiet(_count, LothalTheme.FONT_SIZE_BODY)
 	_count.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	head.add_child(_count)
 
@@ -203,13 +203,13 @@ func _row(row: Dictionary) -> Control:
 	var top := HBoxContainer.new()
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(top)
-	var name_label := _line(str(row["name"]), "MutedLabel")
+	var name_label := _line(str(row["name"]), "muted")
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(name_label)
 	var dot := StatusDot.new(STATUS_COLORS.get(str(row["status"]), LothalTheme.TEXT_FAINT))
 	dot.name = "Dot"
 	top.add_child(dot)
-	var chevron := _line("›", "MutedLabel")
+	var chevron := _line("›", "muted")
 	chevron.clip_text = false
 	chevron.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	top.add_child(chevron)
@@ -238,7 +238,7 @@ func _row(row: Dictionary) -> Control:
 		box.add_child(_line(choice_text, ""))
 
 	var line3 := str(row["line3"])
-	var third := _line(line3, "SmallLabel")
+	var third := _line(line3, "small")
 	third.name = "Number"
 	if line3.begins_with("⚠"):
 		third.add_theme_color_override("font_color",
@@ -256,11 +256,11 @@ func _soon_row(row: Dictionary) -> Control:
 	panel.tooltip_text = "Not modelled yet."
 	var top := HBoxContainer.new()
 	panel.add_child(top)
-	var name_label := _line(str(row["name"]), "MutedLabel")
+	var name_label := _line(str(row["name"]), "muted")
 	name_label.add_theme_color_override("font_color", LothalTheme.TEXT_FAINT)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(name_label)
-	var pill := _line("soon", "SmallLabel")
+	var pill := _line("soon", "small")
 	pill.clip_text = false
 	pill.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	pill.add_theme_color_override("font_color", LothalTheme.TEXT_FAINT)
@@ -272,8 +272,10 @@ func _soon_row(row: Dictionary) -> Control:
 func _line(text: String, variation: String) -> Label:
 	var label := Label.new()
 	label.text = text
-	if variation != "":
-		label.theme_type_variation = variation
+	match variation:
+		"muted": DsUi.quiet(label, LothalTheme.FONT_SIZE_BODY)
+		"small": DsUi.quiet(label)
+		"title": DsUi.title(label)
 	label.clip_text = true
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.autowrap_mode = TextServer.AUTOWRAP_OFF

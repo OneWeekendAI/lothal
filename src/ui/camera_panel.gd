@@ -62,14 +62,14 @@ func _init() -> void:
 
 	var title := Label.new()
 	title.text = "CAMERA"
-	title.theme_type_variation = &"TitleLabel"
+	DsUi.title(title)
 	root.add_child(title)
 
 	var note := Label.new()
 	note.text = "How the camera is mounted. Tilt changes what the lens sees and what it can hit, not the flight numbers."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.custom_minimum_size = Vector2(280, 0)
-	note.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(note, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(note)
 	_note = note
 
@@ -110,7 +110,7 @@ func _init() -> void:
 	hint.text = row["hint"]
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size = Vector2(280, 0)
-	hint.theme_type_variation = &"MutedLabel"
+	DsUi.quiet(hint, LothalTheme.FONT_SIZE_BODY)
 	root.add_child(hint)
 	_hint = hint
 

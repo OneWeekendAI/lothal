@@ -44,7 +44,7 @@ func _init(p_project: Project = null) -> void:
 	add_child(row)
 
 	_name_label = Label.new()
-	_name_label.theme_type_variation = "TitleLabel"
+	DsUi.title(_name_label)
 	_name_label.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SUBTITLE)
 	row.add_child(_name_label)
 
@@ -54,7 +54,7 @@ func _init(p_project: Project = null) -> void:
 	row.add_child(_dot)
 
 	_state_label = Label.new()
-	_state_label.theme_type_variation = "SmallLabel"
+	DsUi.quiet(_state_label)
 	row.add_child(_state_label)
 
 	var caret := Label.new()
