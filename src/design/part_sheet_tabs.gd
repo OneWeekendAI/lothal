@@ -10,10 +10,14 @@ extends RefCounted
 
 const SHEET := {"id": "sheet", "label": "Sheet"}
 const SHAPE := {"id": "shape", "label": "Shape"}
+const NUMBERS := {"id": "numbers", "label": "Numbers"}
+const ARMS := {"id": "arms", "label": "Arms"}
+const HARDWARE := {"id": "hardware", "label": "Hardware"}
+const LAYOUT := {"id": "layout", "label": "Layout"}
 
 ## Category -> tab list, in tab order. Frame is a category of the sheet though not of the shelf.
 const TABS := {
-	"frame": [SHEET, SHAPE],
+	"frame": [SHEET, SHAPE, NUMBERS, ARMS, HARDWARE, LAYOUT],
 	"battery": [SHEET],
 	"motor": [SHEET],
 	"propeller": [SHEET],
@@ -68,6 +72,8 @@ static func build(category: String, tab_id: String, ds: DesignSpace, sheet: Part
 			return _facts_tab(category, ds)
 		"shape":
 			return FrameShapeTab.new(ds, sheet)
+		"numbers", "arms", "hardware", "layout":
+			return FrameFiguresTab.new(ds, tab_id)
 	return null
 
 
