@@ -46,6 +46,10 @@ func _init() -> void:
 		shell.design_space.file_bar.fly_button.pressed.emit()
 	for i in 90:
 		await process_frame
+	if entry == "simidentity":
+		shell._toggle_sim_identity()
+		for i in 10:
+			await process_frame
 	var img := root.get_texture().get_image()
 	img.save_png(out_path)
 	print("saved %s %s" % [out_path, img.get_size()])

@@ -63,6 +63,21 @@ static func run() -> Array:
 			(buttons["IdentityChip"] as Button).text))
 		results.append(TestResult.new("chip tooltip is the identity text",
 			(buttons["IdentityChip"] as Button).tooltip_text == String(info["text"]), ""))
+		var chip := buttons["IdentityChip"] as Button
+		var ink: Color = chip.get_theme_color("font_color")
+		results.append(TestResult.new("sim bar ink is full ink, readable over a bright sky",
+			ink.v >= DsUi.INK.v - 0.01, str(ink)))
+		chip.pressed.emit()
+		var sheet = shell.get("_sim_identity")
+		var words := ""
+		if sheet != null:
+			for n in (sheet as DsDrawer).content.get_children():
+				if n is Label:
+					words += (n as Label).text + "|"
+		results.append(TestResult.new("chip opens the This build sheet in the sim",
+			sheet != null and (sheet as DsDrawer).visible and words.contains(String(info["class_name"])), words))
+		chip.pressed.emit()
+		results.append(TestResult.new("chip again closes the sheet", sheet != null and not (sheet as DsDrawer).visible, ""))
 	if buttons.has("Mission"):
 		(buttons["Mission"] as Button).pressed.emit()
 		results.append(TestResult.new("Mission opens the picker",

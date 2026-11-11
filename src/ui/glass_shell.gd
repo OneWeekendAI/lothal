@@ -3987,6 +3987,7 @@ class CompletenessRing extends Control:
 # ---------------------------------------------------------------------------
 
 ## The bar over the sim and Field while the Design Space is hidden behind them.
+var _sim_identity: DsDrawer
 var _away_layer: CanvasLayer
 var _away_return_system := 0
 
@@ -4103,6 +4104,9 @@ func _enter_away() -> void:
 		_away_layer.layer = TOGGLE_LAYER + 6
 		add_child(_away_layer)
 		_away_layer.add_child(_build_sim_bar())
+		# The chip's sheet (S1/S2): the same "This build" drawer the Design Space has, read-only.
+		_sim_identity = DsIdentity.sheet()
+		_away_layer.add_child(_sim_identity)
 	_set_design_space_shown(false)
 	# The Lab/Sim/Rooms dock is the old shell's door; while away, the only way back is the Design
 	# Space's own bar.
@@ -4141,6 +4145,7 @@ func _build_sim_bar() -> Control:
 	id_chip.name = "IdentityChip"
 	id_chip.clip_text = true
 	id_chip.custom_minimum_size = Vector2(200, 0)
+	id_chip.pressed.connect(_toggle_sim_identity)
 	if design_space != null:
 		var info := design_space.identity()
 		id_chip.text = String(info["chip"])
@@ -4158,7 +4163,22 @@ func _build_sim_bar() -> Control:
 	bar.add_child(field)
 	for child in bar.get_children():
 		child.custom_minimum_size.y = 32
+		# Over a bright sky the quiet rest ink is faint: full ink on the dark backing.
+		(child as Button).add_theme_color_override("font_color", DsUi.INK)
 	return frame
+
+
+## The chip in the sim bar: opens "This build" (or closes it). Mission and this sheet share the left side, so one at a time.
+func _toggle_sim_identity() -> void:
+	if _sim_identity == null or design_space == null:
+		return
+	if _sim_identity.visible:
+		_sim_identity.hide()
+		return
+	if mission_picker != null:
+		mission_picker.hide()
+	DsIdentity.fill(_sim_identity, design_space.identity())
+	_sim_identity.show()
 
 
 ## Back from the sim or Field: the Design Space layer is shown again, untouched.
@@ -4176,6 +4196,7 @@ func _close_away_bar() -> void:
 		remove_child(_away_layer)
 		_away_layer.queue_free()
 	_away_layer = null
+	_sim_identity = null
 	if _dock != null and _empty_state != null and not _empty_state.visible:
 		_dock.visible = true
 
