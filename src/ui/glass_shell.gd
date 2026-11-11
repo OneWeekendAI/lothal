@@ -415,14 +415,8 @@ var _tools_glass: Control
 ## The system icons, held so the empty state can hide them while keeping the chip — the two live
 ## project actions ride the chip, not the systems.
 var _dropdown_glass: Control
-## The Lab/Sim/Rooms group, held so the empty state can hide it: there is no build to take to
-## the field, and a toggle that flies nothing would be a button that lies.
-var _bottom_right_glass: Control
 ## The "No drone open" panel that replaces the chrome after a Delete.
 var _empty_state: Control
-var _sim_button: Button
-var _lab_button: Button
-var _room_menu: RoomMenu
 var _focused_index := 0
 ## The plan editor, shown only while Airframe is the focused system.
 var _workbench: FrameWorkbench
@@ -2876,7 +2870,6 @@ func _build_dock() -> void:
 
 	_dropdown_glass = _dock.systems_group
 	_tools_glass = _dock.tools_panel
-	_bottom_right_glass = _dock.mode_panel
 
 	_overlays_button = _dock.overlays_button
 	_overlays_button.toggled.connect(set_thrust_overlay_visible)
@@ -2892,13 +2885,6 @@ func _build_dock() -> void:
 	# inner class of this file — a `Dock` that named `GlassShell` would be a parse cycle.
 	_ring = CompletenessRing.new()
 	_dock.adopt_ring(_ring)
-
-	_lab_button = _dock.lab_button
-	_lab_button.pressed.connect(func() -> void: rooms.show_lab())
-	_sim_button = _dock.sim_button
-	_sim_button.pressed.connect(_on_sim_toggle)
-	_room_menu = _dock.room_menu
-	_room_menu.room_chosen.connect(_open_room)
 
 	# A CENTRED CONTROL SIZED BY ITS CONTENT HAS TO BE TOLD WHEN EITHER CHANGES, and this is the one
 	# way the dock differs from the four anchored clusters it replaces. `minimum_size_changed` fires
@@ -2970,8 +2956,6 @@ func _on_room_changed() -> void:
 	# picker on a screen where changing a part means nothing — the same authoring-where-you-should-
 	# not-be that the retraction exists to make impossible.
 	var in_lab := rooms.showing_lab()
-	_lab_button.button_pressed = in_lab
-	_sim_button.button_pressed = rooms.sim != null
 
 	_top_bar.visible = in_lab
 	_tools_glass.visible = in_lab
@@ -3736,8 +3720,6 @@ func _show_empty_state() -> void:
 	_retract_rooms()
 	_tools_glass.visible = false
 	_dropdown_glass.visible = false
-	if _bottom_right_glass != null:
-		_bottom_right_glass.visible = false
 	# AND THE DOCK ITSELF, not only its three groups. Three hidden groups inside a visible panel is
 	# an empty glass pill floating over "No drone open" — a piece of chrome describing nothing,
 	# which is the one thing the empty state exists to avoid.
@@ -3757,8 +3739,6 @@ func _show_project() -> void:
 	_dropdown_glass.visible = true
 	if _dock != null:
 		_dock.visible = true
-	if _bottom_right_glass != null:
-		_bottom_right_glass.visible = true
 	if _section_list != null:
 		_section_list.visible = true
 		# The list's collapsed state is this drone's (§2: "saved per project").
@@ -4077,16 +4057,6 @@ func finish_fly() -> bool:
 	return ok
 
 
-## The one handler behind the old Lab/Sim toggle. With a Design Space open there is ONE way into
-## the sim, and it syncs the design first; the bare `show_sim()` is only for a shell with no
-## Design Space (old-shell tests).
-func _on_sim_toggle() -> void:
-	if design_space != null:
-		_on_fly_requested()
-	else:
-		rooms.show_sim()
-
-
 ## "Field": the Field system of the old shell (courses, sites, weather and the SR3 world picker).
 func open_field_from_design() -> bool:
 	if not _sync_design_to_lab():
@@ -4132,23 +4102,63 @@ func _enter_away() -> void:
 		_away_layer.name = "AwayLayer"
 		_away_layer.layer = TOGGLE_LAYER + 6
 		add_child(_away_layer)
-		# The Design Space's own hairline button (every state distinct), not a one-off style.
-		var back := DsUi.button("\u2039 Back to the drone")
-		back.name = "BackToDrone"
-		# Just right of the centred Lab/Sim toggle, clear of the sim's build panel and HUD.
-		back.anchor_left = 0.5
-		back.anchor_right = 0.5
-		back.offset_left = 145
-		back.offset_top = 10
-		back.grow_horizontal = Control.GROW_DIRECTION_END
-		back.custom_minimum_size = Vector2(0, 32)
-		back.pressed.connect(back_to_drone_from_room)
-		_away_layer.add_child(back)
+		_away_layer.add_child(_build_sim_bar())
 	_set_design_space_shown(false)
 	# The Lab/Sim/Rooms dock is the old shell's door; while away, the only way back is the Design
 	# Space's own bar.
 	if _dock != null:
 		_dock.visible = false
+
+
+## The only chrome over the sim and Field (S1): a Design Space top bar with Back, the identity chip,
+## Mission and Field. Every button is a `DsUi.button`, so every state is distinct.
+func _build_sim_bar() -> Control:
+	# A dark Design Space panel behind the row: the sim's sky is bright and the buttons' ink is quiet.
+	# Placed right of centre, clear of the sim's own BUILD panel (S2 deletes it) and the lap HUD.
+	var frame := PanelContainer.new()
+	frame.name = "SimBar"
+	var box := DsUi.panel_style()
+	box.content_margin_left = 6
+	box.content_margin_right = 6
+	box.content_margin_top = 5
+	box.content_margin_bottom = 5
+	frame.add_theme_stylebox_override("panel", box)
+	frame.anchor_left = 0.5
+	frame.anchor_right = 0.5
+	frame.offset_left = 60
+	frame.offset_top = 8
+	frame.grow_horizontal = Control.GROW_DIRECTION_END
+	var bar := HBoxContainer.new()
+	bar.name = "Row"
+	bar.add_theme_constant_override("separation", 6)
+	frame.add_child(bar)
+	var back := DsUi.button("\u2039 Back")
+	back.name = "Back"
+	back.tooltip_text = "Back to the design (Esc)"
+	back.pressed.connect(back_to_drone_from_room)
+	bar.add_child(back)
+	var id_chip := DsUi.button("")
+	id_chip.name = "IdentityChip"
+	id_chip.clip_text = true
+	id_chip.custom_minimum_size = Vector2(200, 0)
+	if design_space != null:
+		var info := design_space.identity()
+		id_chip.text = String(info["chip"])
+		id_chip.tooltip_text = String(info.get("text", ""))
+	bar.add_child(id_chip)
+	var mission := DsUi.button("Mission")
+	mission.name = "Mission"
+	mission.tooltip_text = "Pick a mission and an environment, then watch or run this design"
+	mission.pressed.connect(open_mission_picker)
+	bar.add_child(mission)
+	var field := DsUi.button("Field")
+	field.name = "Field"
+	field.tooltip_text = "Open the Field room: courses, sites, weather and worlds"
+	field.pressed.connect(open_field_from_design)
+	bar.add_child(field)
+	for child in bar.get_children():
+		child.custom_minimum_size.y = 32
+	return frame
 
 
 ## Back from the sim or Field: the Design Space layer is shown again, untouched.

@@ -42,13 +42,15 @@ static func _one_class(id: String) -> Array:
 	if session.frame_editable():
 		session.set_plate_thickness(session.plate_of_mesh("frame_plate_top"), 2.5)
 	var want := session.build(catalog)
-	# Through the OLD Sim toggle, the entry that used to skip the sync.
-	shell._sim_button.pressed.emit()
+	# The old Sim toggle is deleted (S1): there is no node to press, Fly it is the one door.
+	var no_toggle: bool = shell.get("_sim_button") == null and shell.get("_lab_button") == null
+	results.append(TestResult.new("%s: there is no old Lab/Sim toggle to enter the sim by" % id, no_toggle, ""))
+	shell.fly_it()
 	var sim = shell.rooms.sim
 	# The object handed across the door (the shell is not in a tree here, so Sim's _ready has not
 	# run; the windowed capture tests/capture_sim_door.gd prints `sim.build` itself).
 	var got: Build = sim.initial_build if sim != null else null
-	results.append(TestResult.new("%s: the old Sim toggle enters the sim" % id, sim != null and want != null, str(sim)))
+	results.append(TestResult.new("%s: Fly it enters the sim" % id, sim != null and want != null, str(sim)))
 	if sim == null or want == null:
 		_done(shell)
 		return results
@@ -60,7 +62,7 @@ static func _one_class(id: String) -> Array:
 	results.append(TestResult.new("%s: and the rails were synced (project holds the design's parts)" % id,
 		String(shell.container.project.parts["battery"]) == String(session.selection["battery"]),
 		"%s" % shell.container.project.parts.get("battery")))
-	results.append(TestResult.new("%s: the Lab/Sim/Rooms dock is hidden while away" % id,
+	results.append(TestResult.new("%s: the dock is hidden while away" % id,
 		not shell._dock.visible and shell.away_from_design(), str(shell._dock.visible)))
 	shell.back_to_drone_from_room()
 	results.append(TestResult.new("%s: back restores the dock" % id, shell._dock.visible, ""))

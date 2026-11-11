@@ -7,7 +7,6 @@ extends PanelContainer
 ##
 ## - **The row itself**, full width along the bottom: the nine sections as WORDS, not icons (§2 —
 ##   Drone is folded into Airframe), and the status readout at the right-hand end.
-## - **`mode_panel`**: Lab | Sim and the Rooms menu, centred in the top bar.
 ## - **`tools_panel`**: Overlays, Explode, X-ray and Measure, in the viewport's bottom-left corner.
 ##
 ## The two clusters are `top_level` CHILDREN of this dock rather than nodes of their own elsewhere,
@@ -55,18 +54,13 @@ signal system_chosen(index: int)
 ## retracts all three.
 var systems_group: HBoxContainer
 var tools_group: HBoxContainer
-var mode_group: HBoxContainer
 ## The glass the two floating groups sit in. Top-level, so placed by `layout_in`.
 var tools_panel: PanelContainer
-var mode_panel: PanelContainer
 
 var system_buttons: Array[Button] = []
 var overlays_button: Button
 var overlays_menu: MenuButton
 var status_label: Label
-var lab_button: Button
-var sim_button: Button
-var room_menu: RoomMenu
 
 var _systems: Array = []
 var _row: HBoxContainer
@@ -123,20 +117,6 @@ func _init(systems: Array, glass: StyleBox) -> void:
 	tools_group.add_theme_constant_override("separation", LothalTheme.SPACE_1)
 	tools_panel.add_child(tools_group)
 	_build_tools()
-
-	mode_panel = _floating(glass, "ModePanel")
-	# Thinner than the tools' glass: the segment sits INSIDE the 44 px top bar, so its box may
-	# take no more than the bar's own height.
-	var thin := (glass as StyleBoxFlat).duplicate() as StyleBoxFlat if glass is StyleBoxFlat \
-		else StyleBoxFlat.new()
-	thin.set_content_margin_all(3)
-	thin.shadow_size = 0
-	mode_panel.add_theme_stylebox_override("panel", thin)
-	mode_group = HBoxContainer.new()
-	mode_group.name = "Modes"
-	mode_group.add_theme_constant_override("separation", LothalTheme.SPACE_1)
-	mode_panel.add_child(mode_group)
-	_build_modes()
 
 
 func _floating(glass: StyleBox, panel_name: String) -> PanelContainer:
@@ -221,30 +201,6 @@ func adopt_ring(ring: Control) -> void:
 	tools_group.add_child(ring)
 
 
-func _build_modes() -> void:
-	lab_button = Button.new()
-	lab_button.name = "Lab"
-	lab_button.text = "Lab"
-	lab_button.toggle_mode = true
-	lab_button.button_pressed = true
-	lab_button.custom_minimum_size = Vector2(62, 30)
-	lab_button.tooltip_text = "The garage. Choose parts, assemble, bench, tune."
-	mode_group.add_child(lab_button)
-
-	sim_button = Button.new()
-	sim_button.name = "Sim"
-	sim_button.text = "Sim"
-	sim_button.toggle_mode = true
-	sim_button.custom_minimum_size = Vector2(62, 30)
-	sim_button.tooltip_text = ("The field. Flies what the garage built, and authors nothing "
-		+ "except what the flight actually cost the pack.")
-	mode_group.add_child(sim_button)
-
-	room_menu = RoomMenu.new()
-	room_menu.name = "Rooms"
-	mode_group.add_child(room_menu)
-
-
 ## Lights the word of the focused section.
 func set_focused(index: int) -> void:
 	for button in system_buttons:
@@ -254,17 +210,12 @@ func set_focused(index: int) -> void:
 
 ## Places the row along the bottom of `window` (`height` tall), the mode segment centred in the top
 ## bar (`top_bar` tall), and the tools in the bottom-left corner of `stage`.
-func layout_in(window: Vector2, margin: float, height: float, top_bar: float = 44.0,
+func layout_in(window: Vector2, margin: float, height: float, _top_bar: float = 44.0,
 		stage: Rect2 = Rect2()) -> void:
 	offset_left = 0.0
 	offset_right = 0.0
 	offset_top = -height
 	offset_bottom = 0.0
-	if mode_panel != null:
-		var mode_size := mode_panel.get_combined_minimum_size()
-		mode_panel.size = mode_size
-		mode_panel.position = Vector2(roundf((window.x - mode_size.x) * 0.5),
-			roundf(maxf((top_bar - mode_size.y) * 0.5, 0.0)))
 	if tools_panel != null:
 		var tools_size := tools_panel.get_combined_minimum_size()
 		tools_panel.size = tools_size
@@ -278,33 +229,11 @@ func layout_in(window: Vector2, margin: float, height: float, top_bar: float = 4
 func action_names() -> PackedStringArray:
 	var names := PackedStringArray()
 	_collect(self, names)
-	var menu := _find_room_menu(self)
-	if menu != null:
-		var popup := menu.get_popup()
-		for entry in RoomMenu.ENTRIES:
-			for index in popup.item_count:
-				if popup.is_item_separator(index):
-					continue
-				if str(popup.get_item_text(index)) == str(entry["label"]):
-					names.append("room:%s" % entry["id"])
-					break
 	return names
-
-
-static func _find_room_menu(node: Node) -> RoomMenu:
-	for child in node.get_children():
-		if child is RoomMenu:
-			return child as RoomMenu
-		var found := _find_room_menu(child)
-		if found != null:
-			return found
-	return null
 
 
 static func _collect(node: Node, into: PackedStringArray) -> void:
 	for child in node.get_children():
-		if child is RoomMenu:
-			continue
 		# A hidden control is not an action the dock offers (the ring is parented hidden).
 		var shown: bool = not (child is CanvasItem) or (child as CanvasItem).visible
 		if shown and (child is Button or child is MenuButton

@@ -47,15 +47,15 @@ static func run() -> Array:
 		results.append(TestResult.new("%s button: busy is disabled, reads Loading..., looks unlike disabled, and restores" % k,
 			busy_ok and not b.disabled and b.text == "x" and _sig(b.get_theme_stylebox("disabled")) == plain_off, b.text))
 		b.free()
-	# The away bar's Back button is one of these, not a one-off with hover == pressed.
+	# The sim bar's Back button is one of these, not a one-off with hover == pressed.
 	var shell := GlassShell.new()
 	ProjectLibrary.root = "user://scratch_btn_%d" % OS.get_process_id()
 	shell._on_project_action("new")
 	shell.class_picker.show_class("five_inch")
 	shell.class_picker.choose()
 	shell._enter_away()
-	var back := shell._away_layer.get_node("BackToDrone") as Button
-	results.append(TestResult.new("the away bar's Back button: hover and pressed differ",
+	var back := shell._away_layer.get_node("SimBar/Row/Back") as Button
+	results.append(TestResult.new("the sim bar's Back button: hover and pressed differ",
 		_sig(back.get_theme_stylebox("hover")) != _sig(back.get_theme_stylebox("pressed")), ""))
 	if shell.container != null and shell.container.path != "":
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(shell.container.path))

@@ -533,9 +533,10 @@ static func _test_fly_it_and_back() -> Array:
 	# The old shell's own Lab/Sim toggle still works with no Design Space involved.
 	shell.rooms.show_sim()
 	var sim_on: bool = shell.rooms.sim != null
-	shell._lab_button.pressed.emit()
-	results.append(TestResult.new("The old Lab/Sim toggle still switches rooms",
-		sim_on and shell.rooms.sim == null and shell.rooms.showing_lab(), ""))
+	shell.rooms.show_lab()
+	results.append(TestResult.new("Rooms still switch with no Design Space (and there is no toggle node)",
+		sim_on and shell.rooms.sim == null and shell.rooms.showing_lab()
+		and shell.get("_lab_button") == null, ""))
 	_scratch_done(shell)
 	return results
 

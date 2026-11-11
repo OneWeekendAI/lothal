@@ -196,16 +196,11 @@ static func _test_sim_retracts_the_chrome_and_lab_restores_it() -> Array:
 		back_chrome == lab_chrome,
 		"back: %s" % [back_chrome]))
 
-	# THE WAY BACK MUST DRAW OVER SIM. Sim puts its HUD and its build panel on a CanvasLayer, which
-	# covers everything in the ordinary tree — so a toggle built as a plain Control vanishes the
-	# instant it takes you to the field, and the app has no way back to the garage short of
-	# quitting. That is what happened, and the screenshot is how it was found: `visible` was true
-	# the whole time, so nothing above could have caught it.
-	var layer := _canvas_layer_over(shell._lab_button)
+	# The Lab/Sim toggle is gone (S1): the way back from the sim is the Design Space's own bar,
+	# which tests/test_sim_chrome.gd proves rides a CanvasLayer above the sim's HUD.
 	results.append(TestResult.new(
-		"the way back rides a CanvasLayer above Sim's HUD, or there is no way back",
-		layer != null and layer.layer > 1,
-		"toggle is on layer %s" % ("none — ordinary tree" if layer == null else str(layer.layer))))
+		"the shell no longer carries a bare Lab/Sim toggle",
+		shell.get("_lab_button") == null and shell.get("_sim_button") == null, ""))
 
 	shell.rooms.show_lab()
 	shell.free()

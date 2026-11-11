@@ -41,7 +41,7 @@ const TOOLS_OFFERED := ["Overlays", "Choose overlays", "Explode", "X-ray", "Meas
 ## is still named here; it is named as "Field", in SYSTEMS_OFFERED, which is where it now lives.
 ## `_the_field_moved_from_the_menu_to_the_dock` below is what asserts the move in both directions,
 ## in the shape `test_room_host.gd` uses for the three benches that made the same journey.
-const MODES_OFFERED := ["Lab", "Sim", "room:frame_bench", "room:studio"]
+const MODES_OFFERED := []
 
 ## A stand-in for `GlassShell.SYSTEMS`, carrying only what the dock reads: a name, and whether
 ## there is a model behind it. Written out rather than imported from `GlassShell`, because building
@@ -76,7 +76,7 @@ static func run() -> Array:
 	results.append(_drone_is_folded_into_airframe(dock))
 	results.append(_the_field_moved_from_the_menu_to_the_dock())
 	results.append(_a_section_word_selects_the_section_it_names(dock))
-	results.append(_the_mode_segment_rides_the_dock(dock))
+	results.append(_the_mode_segment_is_gone(dock))
 	results.append(_the_tools_ride_the_dock(dock))
 	results.append(_a_fallback_label_is_a_named_failure(dock))
 	results.append(_measure_is_a_named_failure_too(dock))
@@ -130,13 +130,13 @@ static func _a_section_word_selects_the_section_it_names(dock: Dock) -> TestResu
 		names == want, "the words selected %s" % [names])
 
 
-## Lab | Sim lives in the top bar but must stay IN THE DOCK'S SUBTREE — that is what keeps it on the
-## CanvasLayer over Sim's HUD. `top_level` is how it is placed apart from the row.
-static func _the_mode_segment_rides_the_dock(dock: Dock) -> TestResult:
-	var inside := dock.is_ancestor_of(dock.lab_button) and dock.is_ancestor_of(dock.sim_button)
-	return TestResult.new("Lab | Sim is placed apart from the row but still rides the dock",
-		inside and dock.mode_panel.top_level and dock.mode_panel.is_ancestor_of(dock.lab_button),
-		"inside=%s top_level=%s" % [inside, dock.mode_panel.top_level])
+## S1: the Lab | Sim | Rooms segment is deleted; the dock offers none of it.
+static func _the_mode_segment_is_gone(dock: Dock) -> TestResult:
+	var offered := Array(dock.action_names())
+	return TestResult.new("the dock carries no Lab/Sim/Rooms segment",
+		dock.get("mode_panel") == null and dock.get("lab_button") == null
+		and not offered.has("Lab") and not offered.has("Sim") and not offered.has("Rooms"),
+		"the dock offers %s" % [offered])
 
 
 static func _the_tools_ride_the_dock(dock: Dock) -> TestResult:
