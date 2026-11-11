@@ -280,7 +280,7 @@ static func _build_theme() -> Theme:
 		theme.set_stylebox("focus", cls, btn_focus)
 		theme.set_color("font_color", cls, TEXT_MAIN)
 		theme.set_color("font_hover_color", cls, TEXT_MAIN)
-		theme.set_color("font_pressed_color", cls, TEXT_MAIN)
+		theme.set_color("font_pressed_color", cls, Color(0.93, 0.93, 0.93))
 		theme.set_color("font_focus_color", cls, TEXT_MAIN)
 		theme.set_color("font_disabled_color", cls, TEXT_FAINT)
 

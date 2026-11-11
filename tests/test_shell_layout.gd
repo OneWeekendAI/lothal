@@ -1274,8 +1274,8 @@ static func _the_finder_is_opaque(shell: GlassShell) -> TestResult:
 	var border: int = box.border_width_left if box != null else 0
 	var shadow: int = box.shadow_size if box != null else 0
 	return TestResult.new(
-		"the finder's panel is opaque, with an edge and a shadow to sit in front of",
-		alpha >= 0.99 and border >= 1 and shadow > 0,
+		"the finder's panel is opaque, with a hairline edge and no shadow (Design Space look)",
+		alpha >= 0.99 and border >= 1 and shadow == 0,
 		"bg alpha %.2f, border %d px, shadow %d px" % [alpha, border, shadow])
 
 
