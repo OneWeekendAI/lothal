@@ -65,6 +65,7 @@ static func run() -> Array:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(SCRATCH + "/designs"))
 	DesignFile.dir = SCRATCH + "/designs"
 	for id in DroneClass.ids():
+		results.append(_seed_hovers(id, catalog))
 		results.append_array(_battery(id, catalog))
 		results.append_array(_motor(id, catalog))
 		results.append_array(_prop(id, catalog))
@@ -76,6 +77,16 @@ static func run() -> Array:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+## EVERY CLASS SEED HOVERS. The class's starting build must have thrust to spare (T:W >= 1.3), so a
+## screenshot of a class that "cannot hover" is a harness loading something else, not the seed.
+## The mapper (a survey aircraft on a 10 Ah Li-ion pack, T:W 3.4 measured) is held to the same bar:
+## it passes, so no exception is needed.
+static func _seed_hovers(id: String, catalog: PartsCatalog) -> TestResult:
+	var b := DesignSession.default_for_class(id).build(catalog)
+	var tw: float = b.thrust_to_weight()
+	return _t("%s seed hovers (T:W %.2f >= 1.3)" % [id, tw], tw >= 1.3)
+
 
 static func _wipe() -> void:
 	var root := ProjectSettings.globalize_path(SCRATCH)
