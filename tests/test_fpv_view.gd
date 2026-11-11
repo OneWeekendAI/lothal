@@ -30,7 +30,10 @@ static func run() -> Array:
 	results.append(_the_swap_restores_the_chase_lens(catalog))
 	results.append(_a_rebuild_re_points_the_feed(catalog))
 	results.append(_no_camera_fitted_means_no_fpv_rather_than_a_black_screen(catalog))
-	results.append(_the_caption_says_the_angle_is_a_placeholder(catalog))
+	results.append(_the_caption_names_the_fitted_camera_and_its_tilt(catalog))
+	results.append(_the_caption_falls_back_without_a_name(catalog))
+	results.append(_the_inset_buttons_swap_and_close(catalog))
+	results.append(_the_inset_is_a_ds_panel(catalog))
 
 	return results
 
@@ -237,29 +240,69 @@ static func _no_camera_fitted_means_no_fpv_rather_than_a_black_screen(catalog: P
 		"toggle refused: %s; caption: %s" % [refused, caption])
 
 
-## The angle is a framing choice this project made, not a spec it read off the part, and moving the
-## feed from the bench into the air is what makes saying so non-negotiable — a number you fly off is
-## read harder than one you glance at. Asserted in BOTH modes, because the mode that gets flown is
-## the one whose caption would be quietly dropped as clutter.
-static func _the_caption_says_the_angle_is_a_placeholder(catalog: PartsCatalog) -> TestResult:
-	var airframe := _reference(catalog)
+## S4: the caption names the camera the build carries and the uptilt the lens flies, and never says
+## "placeholder" (the old wording asserted a lens figure the screen had no business printing).
+## Asserted in BOTH modes.
+static func _the_caption_names_the_fitted_camera_and_its_tilt(catalog: PartsCatalog) -> TestResult:
+	var build := Build.from_ids(catalog, "frame_5in_freestyle", "motor_2207_1960kv",
+		"prop_5x43x3", "battery_4s_1500")
+	var airframe := AirframeModel.new()
+	airframe.rebuild(build)
+	var cam_name := str(build.components.get("camera", {}).get("name", ""))
 	var view := FpvView.new()
 	view.attach(airframe.camera_eye())
-
+	view.set_camera_name(cam_name)
 	var inset := view.caption_text()
 	view.toggle_main()
 	var full := view.caption_text()
-
 	airframe.free()
 	view.free()
-
-	# REWRITTEN IN VIDEO SLICE V3, deliberately rather than deleted. This used to assert both captions
-	# said "no tilt", which was true when the model had none. The camera now flies Build's 25 deg
-	# default on this untweaked build, so the honest caption states the uptilt — and "no tilt" still
-	# appearing would be the screen contradicting the feed it labels.
 	return TestResult.new(
-		"both modes say the angle is a placeholder and state the uptilt the lens is flying",
-		inset.contains("placeholder") and inset.contains("uptilt 25°")
-			and full.contains("placeholder") and full.contains("uptilt 25°")
-			and not inset.contains("no tilt") and not full.contains("no tilt"),
-		"inset: %s | full: %s" % [inset, full])
+		"both captions name the fitted camera and uptilt 25° and never say placeholder",
+		cam_name != "" and inset.contains(cam_name) and full.contains(cam_name)
+			and inset.contains("uptilt 25°") and full.contains("uptilt 25°")
+			and not inset.to_lower().contains("placeholder") and not full.to_lower().contains("placeholder"),
+		"camera '%s' | inset: %s | full: %s" % [cam_name, inset, full])
+
+
+static func _the_caption_falls_back_without_a_name(catalog: PartsCatalog) -> TestResult:
+	var airframe := _reference(catalog)
+	var view := FpvView.new()
+	view.attach(airframe.camera_eye())
+	var text := view.caption_text()
+	airframe.free()
+	view.free()
+	return TestResult.new(
+		"with no camera name the caption is plain 'FPV camera, uptilt N°'",
+		text.contains("FPV camera, uptilt 25°") and not text.to_lower().contains("placeholder"),
+		text)
+
+
+static func _the_inset_buttons_swap_and_close(catalog: PartsCatalog) -> TestResult:
+	var airframe := _reference(catalog)
+	var view := FpvView.new()
+	view.attach(airframe.camera_eye())
+	var swap := view.find_child("SwapButton", true, false) as Button
+	var close := view.find_child("CloseButton", true, false) as Button
+	var exist := swap != null and close != null
+	var swapped := false
+	var closed_back := false
+	if exist:
+		swap.pressed.emit()
+		swapped = view.is_fpv_main()
+		close.pressed.emit()
+		closed_back = not view.visible and not view.is_fpv_main()
+	airframe.free()
+	view.free()
+	return TestResult.new(
+		"swap button swaps the views and close hides the inset, handing FPV back to chase",
+		exist and swapped and closed_back,
+		"exist %s, swapped %s, closed and back to chase %s" % [exist, swapped, closed_back])
+
+
+static func _the_inset_is_a_ds_panel(_catalog: PartsCatalog) -> TestResult:
+	var view := FpvView.new()
+	var box := view.get_theme_stylebox("panel") as StyleBoxFlat
+	var ok := box != null and box.border_width_left == 1 and box.corner_radius_top_left > 0
+	view.free()
+	return TestResult.new("the inset is a rounded hairline panel like DsHud", ok, "")

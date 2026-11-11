@@ -361,8 +361,8 @@ func _ready() -> void:
 	var fpv_overlay := MarginContainer.new()
 	fpv_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	fpv_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	fpv_overlay.add_theme_constant_override("margin_right", 12)
-	fpv_overlay.add_theme_constant_override("margin_bottom", 12)
+	fpv_overlay.add_theme_constant_override("margin_right", LothalTheme.SPACE_4)
+	fpv_overlay.add_theme_constant_override("margin_bottom", LothalTheme.SPACE_4)
 	ui_layer.add_child(fpv_overlay)
 
 	fpv_view = FpvView.new()
@@ -454,6 +454,7 @@ func _on_build_changed(new_build: Build) -> void:
 	# rather than looking one up here.
 	if fpv_view != null:
 		fpv_view.attach(airframe.camera_eye())
+		fpv_view.set_camera_name(str(build.components.get("camera", {}).get("name", "")))
 	# A lap time belongs to a build. Swapping a part mid-lap starts the attempt over rather
 	# than letting a 6S pack finish a lap a 4S one started.
 	_restart_course()
@@ -697,6 +698,10 @@ func _toggle_listener() -> void:
 ## way, including when the build has no camera to fly off — a key that silently does nothing reads
 ## as a broken key rather than as an aircraft without a camera on it.
 func _toggle_fpv() -> void:
+	if not fpv_view.visible:
+		fpv_view.open()
+		hud.show_banner("VIEW: FPV inset shown")
+		return
 	if not fpv_view.is_fitted():
 		hud.show_banner("VIEW: no camera fitted")
 		return

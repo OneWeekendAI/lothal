@@ -27,8 +27,9 @@ extends PanelContainer
 ##     dishonest. Rendering a genuine FPV image needs a fisheye projection, which is a real slice.
 ##
 ## Because of that the caption is not decoration and is on screen in BOTH modes, saying which view
-## is which and that the angle is a placeholder. The header's argument is worth nothing if the
-## screen implies a spec it is not reading.
+## is which and naming the fitted camera and its uptilt (both read off the build). It no longer
+## prints the word "placeholder": the caption states only what the build says, and claims no lens
+## figure at all, which keeps the screen from implying a spec it is not reading.
 ##
 ## CAMERA TILT ARRIVES FOR FREE, AND THAT IS BY DESIGN (video slice V3). Real builds run 15-40 deg
 ## of uptilt, and flown level you stare at the horizon and pitch hard to see the gate. Tilt is a
@@ -58,7 +59,7 @@ const NEAR_M := 0.002
 ## sensor aspect, which would be a claim about the fitted camera of the kind the header refuses.
 const VIEW_SIZE := Vector2i(400, 225)
 ## How big the inset sits on screen.
-const PANEL_SIZE := Vector2(240.0, 135.0)
+const PANEL_SIZE := Vector2(260.0, 146.0)
 
 ## The marker on the drawn camera the feed is taken from, or null when no camera is fitted. Held
 ## rather than re-fetched so the "not fitted" state is one check in one place.
@@ -66,6 +67,10 @@ var _eye: Node3D
 var _viewport: SubViewport
 var _inset_camera: Camera3D
 var _caption: Label
+var _swap_button: Button
+var _close_button: Button
+## The fitted camera's catalog name, or "" when the build does not say. Set by main.gd from the Build.
+var _camera_name := ""
 var _empty: Label
 ## Which viewport the FPV lens is currently rendering into: false = the inset, true = the main
 ## viewport (the whole screen), with the chase view demoted to the inset.
@@ -91,18 +96,46 @@ func _init() -> void:
 	size_flags_horizontal = Control.SIZE_SHRINK_END
 	size_flags_vertical = Control.SIZE_SHRINK_END
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The same rounded hairline panel DsHud draws its readouts in.
+	var box := DsUi.panel_style()
+	box.content_margin_left = 8
+	box.content_margin_right = 8
+	box.content_margin_top = 6
+	box.content_margin_bottom = 8
+	add_theme_stylebox_override("panel", box)
 
 	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", LothalTheme.SPACE_1)
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(column)
 
-	_caption = Label.new()
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", LothalTheme.SPACE_1)
+	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(header)
+
+	_caption = DsUi.label("")
 	_caption.name = "Caption"
-	_caption.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	column.add_child(_caption)
+	_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_caption.custom_minimum_size = Vector2(120.0, 0.0)
+	header.add_child(_caption)
+
+	_swap_button = DsUi.button("Swap")
+	_swap_button.name = "SwapButton"
+	_swap_button.tooltip_text = "Swap FPV and chase views (C)"
+	_swap_button.pressed.connect(toggle_main)
+	header.add_child(_swap_button)
+
+	_close_button = DsUi.button("x")
+	_close_button.name = "CloseButton"
+	_close_button.tooltip_text = "Hide the inset (C brings it back)"
+	_close_button.pressed.connect(close)
+	header.add_child(_close_button)
 
 	var container := SubViewportContainer.new()
 	container.stretch = true
-	container.custom_minimum_size = PANEL_SIZE
+	container.custom_minimum_size = Vector2(PANEL_SIZE.x - 16.0, PANEL_SIZE.y - 56.0)
 	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(container)
 
@@ -156,6 +189,25 @@ func toggle_main() -> bool:
 	_fpv_is_main = not _fpv_is_main
 	_refresh()
 	return _fpv_is_main
+
+
+## Hides the inset. If the feed is the whole screen it is handed back to the chase view first, so
+## closing never leaves the pilot flying a view with no way to see the other one.
+func close() -> void:
+	if _fpv_is_main:
+		toggle_main()
+	visible = false
+
+
+## Shows the inset again.
+func open() -> void:
+	visible = true
+
+
+## The camera's catalog name, from the Build. Empty falls back to the plain caption.
+func set_camera_name(camera_name: String) -> void:
+	_camera_name = camera_name
+	_refresh()
 
 
 func is_fpv_main() -> bool:
@@ -237,14 +289,17 @@ func _apply_chase_lens(lens: Camera3D) -> void:
 ## behind is indistinguishable from the feed it replaced.
 func _refresh() -> void:
 	_empty.visible = not is_fitted()
+	_swap_button.disabled = not is_fitted()
 	if not is_fitted():
 		_caption.text = "CHASE — no camera fitted, no FPV"
-	elif _fpv_is_main:
-		_caption.text = "CHASE (inset) — flying FPV, %d° placeholder, uptilt %d°" % [
-			int(PLACEHOLDER_FOV_DEG), roundi(tilt_deg())]
+		return
+	var cam := "FPV camera, uptilt %d°" % roundi(tilt_deg())
+	if _camera_name != "":
+		cam = "%s, uptilt %d°" % [_camera_name, roundi(tilt_deg())]
+	if _fpv_is_main:
+		_caption.text = "CHASE (inset), flying FPV: " + cam
 	else:
-		_caption.text = "FPV (inset) — %d° placeholder, uptilt %d°" % [
-			int(PLACEHOLDER_FOV_DEG), roundi(tilt_deg())]
+		_caption.text = "FPV (inset): " + cam
 
 
 ## How far the attached lens looks above the AIRFRAME's horizontal, in degrees — 0 with no camera.
