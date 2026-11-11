@@ -139,6 +139,17 @@ static func run(tree: SceneTree) -> Array:
 			m.prop_nodes.size() == 4 and motors >= 4, "%d props" % m.prop_nodes.size()))
 		m.free()
 
+	# The saved tilt reaches the lens Sim flies: 35 deg and 0 deg, from a tweaks object as Sim reads it.
+	for deg in [0.0, 35.0]:
+		var tw := AssemblyTweaks.new()
+		tw.set_mm(AssemblyTweaks.CAMERA_TILT, deg)
+		var tilted := SimDroneModel.new()
+		tilted.rebuild(build, "five_inch", catalog, tw)
+		var fwd := tilted.camera_eye().basis * Vector3(0, 0, -1)
+		results.append(TestResult.new("a saved %.0f deg camera tilt tips the Sim lens by exactly that" % deg,
+			absf(rad_to_deg(asin(fwd.y)) - deg) < 0.01, "%.3f" % rad_to_deg(asin(fwd.y))))
+		tilted.free()
+
 	# A coaxial lower rotor blurs with its upper one (it shares the corner's rate, turning the other way).
 	var coax_session := DesignSession.default_for_class("cinelifter")
 	var coax := SimDroneModel.new()

@@ -352,7 +352,9 @@ func _ready() -> void:
 	# either way and there is never a second copy.
 	# 4x MSAA on the 3D scene: the props, arms and gate rings are sub-pixel lines at chase distance and
 	# shimmer without it. Set on the viewport this scene is in (the window's, or a test's own).
-	get_viewport().msaa_3d = Viewport.MSAA_4X
+	# (A check that boots `_ready()` by hand has no tree and so no viewport; the look is not its business.)
+	if is_inside_tree():
+		get_viewport().msaa_3d = Viewport.MSAA_4X
 	var selected_conditions := conditions_library.selected()
 	wind = make_wind(selected_conditions)
 	conditions_name = selected_conditions.conditions_name
