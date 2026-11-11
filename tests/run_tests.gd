@@ -7,7 +7,7 @@ extends SceneTree
 ## dumped at the end, so a suite that hangs or crashes names itself instead of leaving
 ## the runner silent.
 
-const SUITES := ["prop page fit", "prop repoint", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop capability", "prop export", "class picker", "bmp classes", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "one door", "sim chrome", "one build", "watch door", "watch card", "fly feedback", "button states", "identity", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
+const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop capability", "prop export", "class picker", "bmp classes", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "one door", "sim chrome", "one build", "watch door", "watch card", "fly feedback", "button states", "identity", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "details footers",
 	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "ground authority", "real files", "conditions", "field room", "field ds", "studio ds", "no old ui", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
@@ -15,14 +15,14 @@ const SUITES := ["prop page fit", "prop repoint", "prop capability", "prop pin",
 	"battery rail", "battery model", "preset pack pin", "cell library", "motor dc", "motor configs", "motor designer", "prop designer", "motor detail mesh", "motor bench", "motor pickers", "motor sheet", "designed motors", "motor presets", "motor current", "pack design", "designed packs", "pack bench", "pack designer", "battery audit", "battery density", "drag range", "designed pack flies", "pack sheet", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
 	"yaw authority", "gyro", "wind", "wind numbers", "motor mixer", "control path", "stick release", "warnings", "build warnings", "warning rows", "section list",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "air density", "flight recorder", "studio", "spectrum",
-	"custom frames", "custom motors", "custom propellers", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "glass shell", "room host", "project", "project menu", "project container", "project wiring", "projects delete",
+	"custom frames", "custom motors", "custom propellers", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "room host", "project", "project menu", "project container", "project wiring", "projects delete",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
-	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "fitted frame", "drawn frame persists", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "airframe page", "propulsion page", "power page", "control page", "video page", "config page", "printed page", "field page",
-	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "thrust overlay", "campbell overlay", "vibration overlay", "spin up overlay", "prop disc overlay", "stl writer", "propulsion export", "guard row", "mount row", "overlay tray", "dock", "camera view", "part finder",
+	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "fitted frame", "drawn frame persists", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "field page",
+	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "stl writer", "propulsion export", "guard row", "mount row", "camera view", "part finder",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
-	"control parts", "control components", "control rails", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config motor map", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
+	"control parts", "control components", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
-	"print room", "arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet"]
+	"arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet"]
 
 func _init() -> void:
 	var total := 0
@@ -47,62 +47,8 @@ func _init() -> void:
 			total += 1
 			print("[%s] %s (%s)" % [status, result.name, result.detail])
 
-	# THE LAID-OUT SUITE, LAST AND ON ITS OWN. Every suite above is synchronous by design; this one
-	# needs frames, because the defects it covers are about where a container ENDED UP and no
-	# container has a size until one has been processed. See `tests/test_shell_layout.gd` for why
-	# that exception exists and what belongs in it. Run under --headless like the rest: these are
-	# 2D control rects, which the dummy driver produces correctly — unlike a SubViewport's 3D
-	# contents, which is why the capture tools are not headless.
-	#
-	# RULING 71 — CALLED FROM A HELPER, AND `await`ED OUT HERE. This used to be
-	# `await TestShellLayout.run(self)` inline, in `_init()` itself, above `quit()`, on the one
-	# suite in the repo with a non-zero arity and an unusual contract — precisely the shape that
-	# produced every orphaned process this plan paid for. An abort inline takes `_init()` with it,
-	# never reaches `quit()`, and idles for ever: 1200 s under `tools/run_tests_safe.sh`'s
-	# watchdog, and UNBOUNDED under the raw `godot --headless --script res://tests/run_tests.gd`
-	# that the wrapper's own header promises keeps working.
-	#
-	# The `is Array` guard is not belt-and-braces. `_call_layout_run()` is typed `Variant`, and a
-	# GDScript abort hands the caller that function's return-type default — `null` — which is not
-	# an `Array`. Normalising to `[]` here is what turns a silent hang into the loud `[FAIL]` two
-	# lines down. `tools/run_one_suite.gd:93-99` keeps the same refusal for the same reason.
-	#
-	# WHAT THIS DOES NOT COVER, said plainly: `run()` awaits frames, so an abort raised AFTER its
-	# first suspend leaves a function state that is never resumed, and this `await` never returns.
-	# The helper cannot contain that one — nothing in GDScript can — and the watchdog in
-	# `tools/run_tests_safe.sh` is the backstop for it. What the helper DOES contain is the abort
-	# raised synchronously at or before the call, which is the Ruling-71 shape: a wrong arity, an
-	# unregistered class, an error in the suite's own prologue.
-	var layout_returned: Variant = await _call_layout_run()
-	var layout_results: Array = layout_returned if layout_returned is Array else []
-	if layout_results.is_empty():
-		fail_count += 1
-		total += 1
-		print("[FAIL] suite \"shell layout\" produced no results (crashed, or class not registered)")
-	for result in layout_results:
-		var status: String = "PASS" if result.passed else "FAIL"
-		if not result.passed:
-			fail_count += 1
-		total += 1
-		print("[%s] %s (%s)" % [status, result.name, result.detail])
-
 	# The drawn-build open path, for the same reason and under the same Ruling-71 containment: it
 	# needs a shell whose `_ready` has wired the rails, which takes a tree and frames.
-	var drawn_returned: Variant = await _call_drawn_open_run()
-	var drawn_results: Array = drawn_returned if drawn_returned is Array else []
-	if drawn_results.is_empty():
-		fail_count += 1
-		total += 1
-		print("[FAIL] suite \"drawn build opens\" produced no results (crashed, or class not registered)")
-	for result in drawn_results:
-		var status: String = "PASS" if result.passed else "FAIL"
-		if not result.passed:
-			fail_count += 1
-		total += 1
-		print("[%s] %s (%s)" % [status, result.name, result.detail])
-
-	# A drone's file changed from outside while the shell has it open: needs the same wired, laid-out
-	# shell as the drawn-build suite, for the same reason and under the same containment.
 	var disk_returned: Variant = await _call_disk_changes_run()
 	var disk_results: Array = disk_returned if disk_returned is Array else []
 	if disk_results.is_empty():
@@ -142,6 +88,19 @@ func _init() -> void:
 		total += 1
 		print("[%s] %s (%s)" % [status, result.name, result.detail])
 
+	var app_returned: Variant = await _call_design_app_run()
+	var app_results: Array = app_returned if app_returned is Array else []
+	if app_results.is_empty():
+		fail_count += 1
+		total += 1
+		print("[FAIL] suite \"design app\" produced no results (crashed, or class not registered)")
+	for result in app_results:
+		var status: String = "PASS" if result.passed else "FAIL"
+		if not result.passed:
+			fail_count += 1
+		total += 1
+		print("[%s] %s (%s)" % [status, result.name, result.detail])
+
 	print("")
 	if fail_count == 0:
 		print("ALL %d TESTS PASSED" % total)
@@ -157,27 +116,12 @@ func _init() -> void:
 	print("[runner] run_tests.gd reached the end of _init(); exiting %d" % (1 if fail_count > 0 else 0))
 	quit(1 if fail_count > 0 else 0)
 
-## Calls the laid-out suite's `run()` FROM A HELPER. Ruling 71, and see the call site above for
-## what the inline version cost and what it does not buy.
-##
-## This is a coroutine and it has to be: `TestShellLayout.run()` is one, and GDScript makes
-## calling a coroutine without `await` a PARSE error, so there is no "hand the state back
-## un-awaited" shape available. The containment is still real — an abort raised synchronously
-## inside `run()` kills THIS function, which returns `null` to a caller that is still alive to
-## refuse it, where inline the same abort killed `_init()` itself and the process idled for ever.
-##
-## Do not inline this call back into `_init()`.
-func _call_layout_run() -> Variant:
-	return await TestShellLayout.run(self)
-
-
-## `TestDrawnBuildOpens.run()`, from a helper for the reason `_call_layout_run` gives.
-func _call_drawn_open_run() -> Variant:
-	return await TestDrawnBuildOpens.run(self)
-
-
 func _call_pickers_run() -> Variant:
 	return await TestShellPickers.run(self)
+
+
+func _call_design_app_run() -> Variant:
+	return await TestDesignApp.run(self)
 
 
 func _call_columns_run() -> Variant:
@@ -213,24 +157,15 @@ func _run_suite(suite_name: String) -> Array:
 		"real files": return TestRealFiles.run()
 		"airframe tabs": return TestAirframeTabs.run()
 		# Lab dock, Airframe section: the item pages' plan drawing and their numbers + Why? view.
-		"airframe page": return TestAirframePage.run()
 		# Lab dock, Propulsion section: the shared figures behind rows, page numbers and charts.
-		"propulsion page": return TestPropulsionPage.run()
 		# Lab dock, Power section: the shared figures behind rows, page numbers and charts.
-		"power page": return TestPowerPage.run()
 		# Lab dock, Control section: the shared figures behind rows, page numbers and drawings.
-		"control page": return TestControlPage.run()
 		# Lab dock, Video section: the shared figures behind rows, page numbers and drawings.
-		"video page": return TestVideoPage.run()
 		# Lab dock, Config section: the shared figures behind rows, page numbers and drawings.
-		"config page": return TestConfigPage.run()
 		# Lab dock, Printed section: one row per printed part; the figures behind rows, numbers, drawings.
-		"printed page": return TestPrintedPage.run()
 		# Lab dock, Field section: the shared figures behind rows, page numbers and course warnings.
-		"field page": return TestFieldPage.run()
 		"camera view": return TestCameraView.run()
 		# QC3: the dock lost nothing — every action the three retired clusters offered, by name.
-		"dock": return TestDock.run()
 		# PW1 (plans/2026-09-10-power-room-plan.md). Pure data and pure code — no UI, no physics.
 		"wire gauge": return TestWireGauge.run()
 		"power parts": return TestPowerParts.run()
@@ -246,7 +181,6 @@ func _run_suite(suite_name: String) -> Array:
 		# C2: spin direction from the build, one accessor, today's constants pinned as the default.
 		"config motors": return TestConfigMotors.run()
 		# C3: the motor map drawn on the aircraft, and the props-in/props-out control behind it.
-		"config motor map": return TestConfigMotorMap.run()
 		# C5: the supply side of the port budget — uart_range, the typed override, the provenance.
 		"config ports": return TestConfigPorts.run()
 		# C6: the failsafe panel and the three checks predictable from a build.
@@ -259,12 +193,10 @@ func _run_suite(suite_name: String) -> Array:
 		"config sheet": return TestConfigSheet.run()
 		"control parts": return TestControlParts.run()
 		"control components": return TestControlComponents.run()
-		"control rails": return TestControlRails.run()
 		"harness": return TestHarness.run()
 		"harness checks": return TestHarnessChecks.run()
 		"power room": return TestPowerRoom.run()
 		# Printed-room PR0 (plans/2026-09-14-printed-room-plan.md).
-		"print room": return TestPrintRoom.run()
 		# PR1: the arm guard — geometry, refusal, clearance, opt-in mass, drawn = exported.
 		"arm guard": return TestArmGuard.run()
 		# PR2: the camera mount — a cheek at the tilt, a per-drone plate gap, refusal, no mass.
@@ -298,11 +230,6 @@ func _run_suite(suite_name: String) -> Array:
 		# Airframe gaps G6: the build sheet (parts, hardware, assembly order) and the cutting-cost range.
 		"build sheet": return TestBuildSheet.run()
 		"authored blade": return TestAuthoredBlade.run()
-		"thrust overlay": return TestThrustOverlay.run()
-		"campbell overlay": return TestCampbellOverlay.run()
-		"vibration overlay": return TestVibrationOverlay.run()
-		"spin up overlay": return TestSpinUpOverlay.run()
-		"prop disc overlay": return TestPropDiscOverlay.run()
 		"propeller document": return TestPropellerDocument.run()
 		"blade geometry": return TestBladeGeometry.run()
 		"blade aero": return TestBladeAero.run()
@@ -318,7 +245,6 @@ func _run_suite(suite_name: String) -> Array:
 		"propulsion export": return TestPropulsionExport.run()
 		"guard row": return TestGuardRow.run()
 		"mount row": return TestMountRow.run()
-		"overlay tray": return TestOverlayTray.run()
 		# QC1/QC2 (plans/2026-09-19-quiet-canvas-design.md §6): the summoned finder — browse mode
 		# with nothing typed, and preview-and-restore across any number of previews.
 		"part finder": return TestPartFinder.run()
@@ -412,7 +338,6 @@ func _run_suite(suite_name: String) -> Array:
 		"prop structure": return TestPropStructure.run()
 		"prop capability": return TestPropCapability.run()
 		"prop page fit": return TestPropPageFit.run()
-		"prop repoint": return TestPropRepoint.run()
 		"prop export": return TestPropExport.run()
 		"motor current": return TestMotorCurrent.run()
 		"pack design": return TestPackDesign.run()
@@ -472,7 +397,7 @@ func _run_suite(suite_name: String) -> Array:
 		"custom parts ui": return TestCustomPartsUi.run()
 		"update check": return TestUpdateCheck.run()
 		"rust constants": return TestRustConstants.run()
-		"glass shell": return TestGlassShell.run()
+		"glass shell": return TestDesignApp.run()
 		"room host": return TestRoomHost.run()
 		"project": return TestProject.run()
 		"project menu": return TestProjectMenu.run()

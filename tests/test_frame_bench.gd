@@ -468,7 +468,7 @@ static func screen_tests() -> Array:
 	))
 
 	# --- It is a room of its own, and leaving it frees it ---
-	var shell := AppShell.new()
+	var shell := RoomHost.new()
 	shell.lab.picker.select_id(LONG_FRAME)
 	shell.show_frame_bench()
 	results.append(TestResult.new(

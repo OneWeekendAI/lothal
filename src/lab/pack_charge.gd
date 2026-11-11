@@ -94,9 +94,9 @@ var _used_mah: Dictionary = {}
 var charge_compression: float = DEFAULT_COMPRESSION
 
 ## True once something has actually changed since the last save. Rooms hand their pack state back
-## on the way out whether or not anything happened to it, and AppShell saves on every room change
+## on the way out whether or not anything happened to it, and DesignApp saves on every room change
 ## — so without this, opening and closing a bench you never started would rewrite the file. That
-## is not merely wasteful: the test suite drives AppShell through those transitions, and a save
+## is not merely wasteful: the test suite drives DesignApp through those transitions, and a save
 ## there would overwrite the real packs of whoever is running the tests with an empty shelf.
 var _dirty := false
 

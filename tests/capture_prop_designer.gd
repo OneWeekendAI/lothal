@@ -1,6 +1,6 @@
 extends SceneTree
 ## Dev tool, not a test: photographs the prop designer over the real Design Space, reached the way a
-## builder reaches it: GlassShell, New drone, open the prop shelf, press the "+" tile.
+## builder reaches it: DesignApp, New drone, open the prop shelf, press the "+" tile.
 ##
 ##   godot --script res://tests/capture_prop_designer.gd -- <out.png> [WxH] [state]
 ##
@@ -22,7 +22,7 @@ func _init() -> void:
 		DisplayServer.window_set_size(Vector2i(int(p[0]), int(p[1])))
 		root.size = Vector2i(int(p[0]), int(p[1]))
 	var state: String = args[2] if args.size() > 2 else ""
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	root.add_child(shell)
 	for i in 4:
 		await process_frame

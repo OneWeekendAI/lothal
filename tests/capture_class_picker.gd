@@ -1,6 +1,6 @@
 extends SceneTree
 ## Dev tool, not a test: photographs the "Choose your drone class" screen the way a builder reaches
-## it — a real GlassShell, then New drone — so the picture is of the production path.
+## it — a real DesignApp, then New drone — so the picture is of the production path.
 ##
 ##   godot --script res://tests/capture_class_picker.gd -- <out.png> [settle] [WxH] [class id]
 ##
@@ -18,7 +18,7 @@ func _init() -> void:
 			root.size = Vector2i(int(res_parts[0]), int(res_parts[1]))
 	var shown: String = args[3] if args.size() > 3 else ""
 
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	root.add_child(shell)
 	for i in 4:
 		await process_frame

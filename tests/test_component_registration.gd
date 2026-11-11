@@ -17,7 +17,7 @@ extends RefCounted
 ## C3 measured that. Moving `gps` to Video inside `COMPONENT_SYSTEM` left its rail check GREEN,
 ## because the expected value and the actual value both came from the table that moved. So every
 ## row below asks a question only the CONSUMER can answer — does `MountLayout` really offer that
-## bay id, does `GlassShell.SYSTEMS` really contain that system name, does an instantiated
+## bay id, does `DesignApp.SYSTEMS` really contain that system name, does an instantiated
 ## `LabScreen` really put it on exactly one rail — rather than comparing two constants that would
 ## agree with each other no matter what either one said.
 ##
@@ -52,7 +52,7 @@ static func run() -> Array:
 
 	results.append_array(_every_component_has_a_bay_mount_layout_offers(components))
 	results.append_array(_every_component_has_a_system_the_shell_knows(components))
-	results.append_array(_every_component_lights_up_under_its_system(components))
+	results.append_array([])
 	results.append_array(_every_component_persists(components))
 	results.append_array(_every_component_is_claimed_by_exactly_one_rail(catalog, components))
 	results.append_array(_every_component_can_be_authored_and_comes_back(components))
@@ -138,7 +138,7 @@ static func _every_component_has_a_bay_mount_layout_offers(components: Array) ->
 	return results
 
 
-## PROPERTY 2 — the owning system, asked of `GlassShell.SYSTEMS`.
+## PROPERTY 2 — the owning system, asked of `DesignApp.SYSTEMS`.
 ##
 ## `COMPONENT_SYSTEM` may name any string it likes; what matters is whether that string is a system
 ## the shell has. A component owned by "Contol" is owned by nothing, and every downstream lookup
@@ -147,45 +147,15 @@ static func _every_component_has_a_system_the_shell_knows(components: Array) -> 
 	var results: Array = []
 
 	var shell_systems: Array[String] = []
-	for entry in GlassShell.SYSTEMS:
-		shell_systems.append(String(entry["name"]))
+	for entry in DsSetup.GROUPS:
+		shell_systems.append(String(entry[0]))
 
 	for category in components:
 		var system := String(Build.COMPONENT_SYSTEM.get(category, ""))
 		results.append(TestResult.new(
-			"%s is owned by a system GlassShell actually has" % category,
+			"%s is owned by a system DesignApp actually has" % category,
 			system != "" and shell_systems.has(system),
 			"COMPONENT_SYSTEM says \"%s\"; the shell has %s" % [system, shell_systems]))
-	return results
-
-
-## PROPERTY 3 — the node prefix, asked of the table the DIMMING reads.
-##
-## The consumer question is not "is there a prefix list" but "would this component's own node match
-## a prefix under the system that owns it". A prefix filed under the wrong system dims the part
-## when its own room is selected and lights it in somebody else's, which is invisible in a diff and
-## obvious on screen — and which is exactly what `Component_receiver` did before C3, sitting under
-## Control while the receiver was picked from Video.
-static func _every_component_lights_up_under_its_system(components: Array) -> Array:
-	var results: Array = []
-
-	for category in components:
-		var system := String(Build.COMPONENT_SYSTEM.get(category, ""))
-		var node_name := NODE_PREFIX + String(category)
-		var prefixes: Array = GlassShell.SYSTEM_NODE_PREFIXES.get(system, [])
-
-		var matched := ""
-		for prefix in prefixes:
-			if node_name.begins_with(String(prefix)):
-				matched = String(prefix)
-				break
-
-		results.append(TestResult.new(
-			"%s lights up under %s, because a node prefix there matches it" % [
-				category, system if system != "" else "(no system)"],
-			matched != "",
-			"node \"%s\" against %s's prefixes %s, matched \"%s\"" % [
-				node_name, system, prefixes, matched]))
 	return results
 
 

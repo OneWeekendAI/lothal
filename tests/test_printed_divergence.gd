@@ -115,7 +115,7 @@ static func _keep_survives_reopen_and_the_panel_routes() -> TestResult:
 	PrintSettings.set_clearance_mm(container.project.printing, 0.35)
 	var wrote := container.write(path, RT_DIR + "/no_custom_parts.json")
 
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	shell.open_folder_after_export = false
 	shell.printed_export_dir = DIR
 	var shown_before := 0
@@ -131,7 +131,7 @@ static func _keep_survives_reopen_and_the_panel_routes() -> TestResult:
 	var after_keep := shell.printed_divergence.size()
 	var records_after_keep := shell.container.project.print_records.size() if shell.container != null else -1
 	# Reopened BEFORE Reprint: Reprint writes the drone too, and would carry an unwritten Keep with it.
-	var between := GlassShell.new()
+	var between := DesignApp.new()
 	between.open_folder_after_export = false
 	if wrote:
 		between.open_project(path)
@@ -144,7 +144,7 @@ static func _keep_survives_reopen_and_the_panel_routes() -> TestResult:
 	var records := shell.container.project.print_records.size() if shell.container != null else -1
 	shell.free()
 
-	var reopened := GlassShell.new()
+	var reopened := DesignApp.new()
 	reopened.open_folder_after_export = false
 	if wrote:
 		reopened.open_project(path)
@@ -303,7 +303,7 @@ static func _opening_the_drone_says_it() -> TestResult:
 	PrintSettings.set_clearance_mm(container.project.printing, 0.35)
 	var wrote := container.write(path, RT_DIR + "/no_custom_parts.json")
 
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	shell.open_folder_after_export = false
 	if wrote:
 		shell.open_project(path)

@@ -1,5 +1,5 @@
 extends SceneTree
-## Dev tool: drives the real app shell (GlassShell, what root.tscn boots) through a short tour and
+## Dev tool: drives the real app shell (DesignApp, what root.tscn boots) through a short tour and
 ## dumps a numbered PNG per captured frame, for assembling the README animation. Not a test —
 ## nothing here asserts anything. It exists so the repo's headline image is generated from the
 ## real app rather than staged.
@@ -26,7 +26,7 @@ func _init() -> void:
 	DisplayServer.window_set_size(Vector2i(1280, 720))
 	root.size = Vector2i(1280, 720)
 
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	root.add_child(shell)
 	for i in 30:
 		await process_frame

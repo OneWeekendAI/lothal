@@ -28,7 +28,7 @@ extends Node3D
 ## assembler. Neither is re-derived here — a second copy of either would be a picture that agrees
 ## with the aircraft until the day it does not.
 ##
-## Hidden by default. The map belongs to the section that asks the question (GlassShell shows it
+## Hidden by default. The map belongs to the section that asks the question (DesignApp shows it
 ## while Config is focused); four labels floating over the aircraft in Sim would be Lab's chrome in
 ## the field.
 

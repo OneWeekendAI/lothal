@@ -12,7 +12,7 @@ func _init() -> void:
 	var wh := (args[1] if args.size() > 1 else "1280x720").split("x")
 	DisplayServer.window_set_size(Vector2i(int(wh[0]), int(wh[1])))
 	root.size = Vector2i(int(wh[0]), int(wh[1]))
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	root.add_child(shell)
 	for i in 4:
 		await process_frame

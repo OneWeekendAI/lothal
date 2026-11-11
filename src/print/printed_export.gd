@@ -118,7 +118,7 @@ static func bbox_mm(triangles: Array) -> Array:
 
 
 ## A name safe for a file and for an STL header: letters, digits, `_` and `-`; anything else becomes
-## `_`. The ONE spelling — GlassShell's per-part buttons call this too, so a part lands under the same
+## `_`. The ONE spelling — DesignApp's per-part buttons call this too, so a part lands under the same
 ## name from its button and from the project menu.
 static func safe_name(text: String) -> String:
 	var out := ""

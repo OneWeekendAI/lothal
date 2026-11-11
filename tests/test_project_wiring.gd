@@ -6,8 +6,8 @@ extends RefCounted
 ## WHERE THESE TESTS RUN, AND WHY IT IS NOT THE SHELL
 ## ---------------------------------------------------------------------------
 ##
-## GlassShell wires itself in `_ready()`, which needs a tree and a rendered frame, and
-## tests/run_tests.gd processes no frames by design (see TestGlassShell for what happened the last
+## DesignApp wires itself in `_ready()`, which needs a tree and a rendered frame, and
+## tests/run_tests.gd processes no frames by design (see TestDesignApp for what happened the last
 ## time a suite ignored that). So the checks below drive the two halves the shell only composes:
 ## LabScreen.apply_selection, which is the direction that makes opening a drone possible, and
 ## ProjectLibrary, which decides what a new one contains and where it goes.
@@ -413,7 +413,7 @@ static func _test_new_drones_get_distinct_default_names() -> Array:
 
 static func _test_delete_leaves_no_project() -> Array:
 	var results: Array = []
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	var project := ProjectLibrary.starting_project("Doomed shell")
 	var builds := ProjectSettings.globalize_path(ProjectLibrary.DIR)
 	var before := DirAccess.get_files_at(builds)
@@ -425,8 +425,8 @@ static func _test_delete_leaves_no_project() -> Array:
 	var after := DirAccess.get_files_at(builds)
 	results.append(TestResult.new(
 		"delete closes the drone and opens nothing",
-		shell.container == null and shell.chip.project == null,
-		"container=%s chip-project=%s" % [shell.container, shell.chip.project]
+		shell.container == null and shell.projects_shown(),
+		"container=%s projects=%s" % [shell.container, shell.projects_shown()]
 	))
 	results.append(TestResult.new(
 		"and writes no replacement drone",
@@ -437,9 +437,9 @@ static func _test_delete_leaves_no_project() -> Array:
 			not FileAccess.file_exists(gone)]
 	))
 	results.append(TestResult.new(
-		"and the chip says there is no drone",
-		shell.chip.state_text() == "no drone open",
-		"'%s'" % shell.chip.state_text()
+		"and the Projects screen is up",
+		shell.projects_shown(),
+		"projects screen"
 	))
 	# The move lands in the app's trash; take it back out so the suite leaves the app clean.
 	var trash_file := "%s/trash/%s.%s" % [ProjectLibrary.DIR,

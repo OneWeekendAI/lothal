@@ -41,7 +41,7 @@ static func run(tree: SceneTree) -> Array:
 	var frame := SubViewport.new()
 	frame.size = WINDOW
 	tree.root.add_child(frame)
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	frame.add_child(shell)
 	for i in SETTLE_FRAMES:
 		await tree.process_frame
@@ -68,7 +68,7 @@ static func run(tree: SceneTree) -> Array:
 
 # ---------------------------------------------------------------------------
 
-static func _external_change_no_edits_reloads(tree: SceneTree, shell: GlassShell,
+static func _external_change_no_edits_reloads(tree: SceneTree, shell: DesignApp,
 		other: String) -> TestResult:
 	var path := await _opened(tree, shell, "no_edits")
 	_change_outside(path, other)
@@ -84,7 +84,7 @@ static func _external_change_no_edits_reloads(tree: SceneTree, shell: GlassShell
 			_conflict_copies().size()])
 
 
-static func _external_change_with_edits_keeps_both(tree: SceneTree, shell: GlassShell,
+static func _external_change_with_edits_keeps_both(tree: SceneTree, shell: DesignApp,
 		other: String) -> TestResult:
 	var path := await _opened(tree, shell, "with_edits")
 	shell.container.project.name = "Edited here"
@@ -108,7 +108,7 @@ static func _external_change_with_edits_keeps_both(tree: SceneTree, shell: Glass
 			untouched, copies.size(), kept, fitted, notice])
 
 
-static func _unchanged_file_saves(tree: SceneTree, shell: GlassShell) -> TestResult:
+static func _unchanged_file_saves(tree: SceneTree, shell: DesignApp) -> TestResult:
 	var path := await _opened(tree, shell, "unchanged")
 	shell.container.project.name = "Saved normally"
 	shell._on_autosave_tick()
@@ -120,7 +120,7 @@ static func _unchanged_file_saves(tree: SceneTree, shell: GlassShell) -> TestRes
 		"file name '%s', copies %d" % [name, _conflict_copies().size()])
 
 
-static func _focus_in_reloads(tree: SceneTree, shell: GlassShell, other: String) -> TestResult:
+static func _focus_in_reloads(tree: SceneTree, shell: DesignApp, other: String) -> TestResult:
 	var path := await _opened(tree, shell, "focus")
 	_change_outside(path, other)
 	var disk := FileAccess.get_file_as_bytes(path)
@@ -134,7 +134,7 @@ static func _focus_in_reloads(tree: SceneTree, shell: GlassShell, other: String)
 		"Lab battery %s (disk %s), file untouched %s" % [fitted, other, untouched])
 
 
-static func _missing_file_is_written(tree: SceneTree, shell: GlassShell) -> TestResult:
+static func _missing_file_is_written(tree: SceneTree, shell: DesignApp) -> TestResult:
 	var path := await _opened(tree, shell, "missing")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	shell.container.project.name = "Written again"
@@ -151,7 +151,7 @@ static func _missing_file_is_written(tree: SceneTree, shell: GlassShell) -> Test
 
 ## A fresh drone on the reference battery, written to its own file and opened in the shell. Every
 ## check starts from one, with the test folder emptied, so no check can read another's file or copy.
-static func _opened(tree: SceneTree, shell: GlassShell, stem: String) -> String:
+static func _opened(tree: SceneTree, shell: DesignApp, stem: String) -> String:
 	_clean(TEST_DIR)
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(TEST_DIR))
 	var path := "%s/%s.%s" % [TEST_DIR, stem, ProjectContainer.EXTENSION]
@@ -171,7 +171,7 @@ static func _change_outside(path: String, battery: String) -> void:
 	outside.write(path)
 
 
-static func _other_battery(shell: GlassShell) -> String:
+static func _other_battery(shell: DesignApp) -> String:
 	var fitted := str(shell.lab.selection()["battery"])
 	for part in PartsCatalog.load_default().list_category("battery"):
 		var id := str((part as Dictionary)["part_id"])

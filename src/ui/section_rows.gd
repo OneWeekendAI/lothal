@@ -38,7 +38,7 @@ const SOON := "soon"
 ## finder the choice line opens, and `soon` for a row with no model behind it.
 ##
 ## `page.column` names a rail that must stand beside the page because the finder cannot open it
-## (an `ElectronicsPicker` fits several bays at once; see `GlassShell._column_rail_titles`).
+## (an `ElectronicsPicker` fits several bays at once; see `DesignApp._column_rail_titles`).
 const DEFINITIONS := {
 	"Airframe": [
 		{"id": &"frame", "name": "Frame", "page": {"room": "frame"}, "pick": "Frame"},
@@ -79,7 +79,7 @@ const DEFINITIONS := {
 	"Control": [
 		# `diagram`: ControlDiagram's modes — the stack and the board's ports, where the link lands
 		# on the board, the gains and D against the gyro's noise ceiling. The Receiver page's Link
-		# rail stands over its sheet, beside the drawing (`GlassShell._layout_stage`).
+		# rail stands over its sheet, beside the drawing (`DesignApp._layout_stage`).
 		{"id": &"fc", "name": "Flight controller", "page": {"panels": ["FC"], "diagram": "fc"},
 			"pick": "FC"},
 		{"id": &"receiver", "name": "Receiver & link",

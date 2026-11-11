@@ -110,7 +110,7 @@ static func _the_drawing_survives_save_and_open(catalog: PartsCatalog) -> Array:
 ## `apply_project` (what `open_project` calls) puts it back in the room and on the aircraft.
 static func _the_shell_saves_and_reopens_the_drawing() -> Array:
 	var results: Array = []
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	_open(shell, ProjectLibrary.starting_project("Shell drawn"))
 	shell._sync_project()
 	results.append(TestResult.new(
@@ -127,7 +127,7 @@ static func _the_shell_saves_and_reopens_the_drawing() -> Array:
 
 	# A fresh shell, so nothing the first one held can answer for the file.
 	shell.free()
-	var again := GlassShell.new()
+	var again := DesignApp.new()
 	var opened := ProjectContainer.open(path)
 	_open(again, opened.project)
 	var doc := again.lab.frame_document
@@ -163,7 +163,7 @@ static func _an_old_file_opens_as_the_catalogue_frame(catalog: PartsCatalog) -> 
 
 	# Opened in a shell that just had a DRAWN drone on the same catalogue frame: the old file must
 	# not inherit that drawing.
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	_open(shell, _drawn_project("Before"))
 	var before := shell.lab.frame_document.id if shell.lab.frame_document != null else ""
 	_open(shell, old)
@@ -216,7 +216,7 @@ static func _the_list_row_weighs_the_drawing(catalog: PartsCatalog) -> Array:
 
 ## What `open_project` does once the file is read, minus the settings and the chip: the container
 ## becomes the shell's and `apply_project` fits it.
-static func _open(shell: GlassShell, project: Project) -> void:
+static func _open(shell: DesignApp, project: Project) -> void:
 	shell.container = ProjectContainer.make(project)
 	shell.apply_project(project)
 

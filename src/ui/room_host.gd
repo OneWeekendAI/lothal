@@ -2,7 +2,7 @@ class_name RoomHost
 extends Control
 ## The rooms, and the rules for entering and leaving them (labs-and-sim.md §1).
 ##
-## This holds everything that used to live in `AppShell` except the tab bar itself: Lab, the four
+## This holds everything that used to live in `DesignApp` except the tab bar itself: Lab, the four
 ## benches, Studio, Sim, and the two stores every room touches. A shell decides
 ## how the builder ASKS for a room — eight tabs, or a dropdown and a Lab/Sim toggle — and this
 ## decides what actually happens when they do.
@@ -60,7 +60,7 @@ var frame_bench: FrameBenchScreen = null
 ##
 ## Laying out a course was a ROOM — a door off the Rooms menu, a screen of its own, a second
 ## viewport, its own copy of "which course is open". F10 made the field a SYSTEM on the dock, and
-## F11 moved the authoring into it: `FieldSystem` is built once by `GlassShell` and shown with its
+## F11 moved the authoring into it: `FieldSystem` is built once by `DesignApp` and shown with its
 ## icon, so there is nothing here to open and nothing to free. What used to be this room's one
 ## unusual property — that it costs no charge, because nothing in it turns — is unchanged and is
 ## now a property of a system rather than of a door.

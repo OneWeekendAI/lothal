@@ -20,6 +20,7 @@ signal fly_requested
 signal field_requested
 ## The Mission button: the shell opens a MissionPicker for this design.
 signal mission_requested
+signal room_requested(room_id: String)
 
 const PANEL_FADE_S := 0.2
 
@@ -1445,6 +1446,7 @@ func _build_file_bar() -> void:
 	refresh_identity()
 	file_bar.field_pressed.connect(func(): field_requested.emit())
 	file_bar.mission_pressed.connect(func(): mission_requested.emit())
+	file_bar.room_pressed.connect(func(id: String): room_requested.emit(id))
 	file_bar.save_as_confirmed.connect(func(n: String): save_design(n))
 	file_bar.open_chosen.connect(func(f: String): open_design(f))
 	file_bar.show_name(design_name)

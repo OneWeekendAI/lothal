@@ -13,15 +13,15 @@ static func run() -> Array:
 	return results
 
 
-static func _open(id: String) -> GlassShell:
-	var shell := GlassShell.new()
+static func _open(id: String) -> DesignApp:
+	var shell := DesignApp.new()
 	shell._on_project_action("new")
 	shell.class_picker.show_class(id)
 	shell.class_picker.choose()
 	return shell
 
 
-static func _done(shell: GlassShell) -> void:
+static func _done(shell: DesignApp) -> void:
 	if shell.container != null and shell.container.path != "":
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(shell.container.path))
 	shell.free()
@@ -62,10 +62,10 @@ static func _one_class(id: String) -> Array:
 	results.append(TestResult.new("%s: and the rails were synced (project holds the design's parts)" % id,
 		String(shell.container.project.parts["battery"]) == String(session.selection["battery"]),
 		"%s" % shell.container.project.parts.get("battery")))
-	results.append(TestResult.new("%s: the dock is hidden while away" % id,
-		not shell._dock.visible and shell.away_from_design(), str(shell._dock.visible)))
+	results.append(TestResult.new("%s: the design is hidden while away" % id,
+		shell.away_from_design() and not shell.design_space.visible, "away"))
 	shell.back_to_drone_from_room()
-	results.append(TestResult.new("%s: back restores the dock" % id, shell._dock.visible, ""))
+	results.append(TestResult.new("%s: back restores the design" % id, shell.design_space.visible and not shell.away_from_design(), ""))
 	_done(shell)
 	return results
 

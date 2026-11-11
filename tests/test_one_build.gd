@@ -48,7 +48,7 @@ static func _sim_agrees() -> Array:
 	var results: Array = []
 	ProjectLibrary.root = "user://scratch_onebuild_%d" % OS.get_process_id()
 	var catalog := PartsCatalog.load_default()
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	shell._on_project_action("new")
 	shell.class_picker.show_class("five_inch")
 	shell.class_picker.choose()

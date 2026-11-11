@@ -6,7 +6,7 @@ class_name TestWatchCard
 static func run() -> Array:
 	var results: Array = []
 	ProjectLibrary.root = "user://scratch_watchcard_%d" % OS.get_process_id()
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	shell._on_project_action("new")
 	shell.class_picker.show_class("five_inch")
 	shell.class_picker.choose()

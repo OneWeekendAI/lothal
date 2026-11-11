@@ -160,7 +160,7 @@ static func pack_extents_mm(id: String) -> Vector3:
 	return (hi - lo) * 1000.0
 
 
-static func _cleanup(shell: GlassShell) -> void:
+static func _cleanup(shell: DesignApp) -> void:
 	if shell.container != null and shell.container.path != "":
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(shell.container.path))
 	shell.free()
@@ -169,7 +169,7 @@ static func _cleanup(shell: GlassShell) -> void:
 static func _test_new_lands_on_the_picker() -> Array:
 	var results: Array = []
 	for entry in ["chip", "projects screen"]:
-		var shell := GlassShell.new()
+		var shell := DesignApp.new()
 		var before := shell.class_picker
 		var path_before := shell.container.path
 		if entry == "chip":
@@ -212,7 +212,7 @@ static func _test_back_leaves_the_picker() -> Array:
 	ProjectLibrary.root = BACK_SCRATCH
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(BACK_SCRATCH))
 	for how in ["Back button", "Esc"]:
-		var shell := GlassShell.new()
+		var shell := DesignApp.new()
 		shell._clear_project()
 		var base := _count_builds()
 		shell.projects_screen.new_requested.emit()
@@ -300,7 +300,7 @@ static func _test_arrows_walk_in_size_order(catalog: PartsCatalog) -> Array:
 
 static func _test_choosing_writes_the_project(catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var shell := GlassShell.new(catalog)
+	var shell := DesignApp.new(catalog)
 	shell._on_project_action("new")
 	var picker := shell.class_picker
 	for i in SIZE_ORDER.size():

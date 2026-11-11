@@ -3,16 +3,16 @@ extends RefCounted
 ## G1: nothing of the old glass-shell design is reachable.
 ##
 ## (a) SOURCE GREP. The retired look (glass_box, the ReadoutLabel / MutedLabel / TitleLabel family, any theme_type_variation,
-## the BuildPanel and the Hud) must not appear in src/ at all. The shell chrome classes (GlassShell, Dock, RoomMenu, AppShell)
-## are deleted by R9, which needs owner sign-off; until then they sit in PENDING_R9, and the test also asserts every
-## PENDING_R9 entry still occurs (so deleting the code without trimming the list fails, and the list can only shrink).
+## the BuildPanel and the Hud) must not appear in src/ at all. The shell chrome classes (DesignApp, Dock, RoomMenu, DesignApp)
+## are deleted (R9) and banned like the rest; PENDING_R9 is empty.
 ## (b) RUNTIME WALK. Boot the real shell, go through every door, and walk every node with OldLook: no banned variation, no
 ## shadowed (glass) stylebox, and every Button has distinct hover / pressed / disabled boxes.
 
 const BANNED_TOKENS := ["glass_box", "ReadoutLabel", "MutedLabel", "TitleLabel", "SmallLabel", "WarnLabel", "CompactButton",
-	"theme_type_variation =", "BuildPanel", "class_name Hud"]
+	"theme_type_variation =", "BuildPanel", "class_name Hud",
+	"GlassShell", "class_name Dock", "RoomMenu", "AppShell"]
 ## Deleted by R9 (the swap). Allowed ONLY while R9 is open.
-const PENDING_R9 := ["GlassShell", "class_name Dock", "RoomMenu", "AppShell"]
+const PENDING_R9 := []
 ## Files that may use a banned token: none.
 const ALLOW := {}
 
@@ -57,35 +57,51 @@ static func _gd_files(dir: String) -> Array[String]:
 
 static func _runtime(tree: SceneTree) -> Dictionary:
 	var out := {}
-	var shell := GlassShell.new()
-	tree.root.add_child(shell)
+	var app := DesignApp.new()
+	tree.root.add_child(app)
 	for i in 4:
 		await tree.process_frame
-	out["lab"] = OldLook.scan(shell)
-	for i in GlassShell.SYSTEMS.size():
-		shell._select_system(i)
-		await tree.process_frame
-		out["system " + str(GlassShell.SYSTEMS[i]["name"])] = OldLook.scan(shell)
-	shell._select_system(-1)
-	for room in ["bench", "esc_bench", "frame_bench", "studio"]:
-		shell._open_room(room)
-		for i in 3:
-			await tree.process_frame
-		out["room " + room] = OldLook.scan(shell)
-	shell.show_class_picker()
+	app.interactive = true
+	out["projects"] = OldLook.scan(app)
+	app.new_project()
 	await tree.process_frame
-	out["class picker"] = OldLook.scan(shell)
-	shell._close_class_picker()
-	if shell.container != null:
-		var ds := shell.show_design_space()
+	out["class picker"] = OldLook.scan(app)
+	app.class_picker.show_class("five_inch")
+	app.class_picker.choose()
+	for i in 8:
+		await tree.process_frame
+	out["design space"] = OldLook.scan(app)
+	app.open_mission_picker()
+	await tree.process_frame
+	out["mission picker"] = OldLook.scan(app)
+	for page in DsSetup.GROUPS:
+		app.open_setup(page[0])
+		for i in 2:
+			await tree.process_frame
+		out["setup " + String(page[0])] = OldLook.scan(app)
+		app.back_to_drone_from_room()
+	app.open_setup("Power")
+	app.setup.show_harness_room()
+	await tree.process_frame
+	out["setup harness room"] = OldLook.scan(app)
+	app.back_to_drone_from_room()
+	for room in ["bench", "esc_bench", "frame_bench", "studio"]:
+		app.open_room(room)
 		for i in 3:
 			await tree.process_frame
-		out["design space"] = OldLook.scan(shell)
-		if ds != null:
-			shell.open_mission_picker()
-			await tree.process_frame
-			out["mission picker"] = OldLook.scan(shell)
-	shell.queue_free()
+		out["room " + room] = OldLook.scan(app)
+		app.back_to_drone_from_room()
+	app.open_field_from_design()
+	for i in 3:
+		await tree.process_frame
+	out["field"] = OldLook.scan(app)
+	app.back_to_drone_from_room()
+	app.fly_it()
+	for i in 3:
+		await tree.process_frame
+	out["sim"] = OldLook.scan(app)
+	app.back_to_drone_from_room()
+	app.queue_free()
 	await tree.process_frame
 
 	var extras := {

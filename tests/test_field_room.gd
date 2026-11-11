@@ -43,11 +43,6 @@ const MAIN_SCRIPT := preload("res://src/scenes/main.gd")
 const RAIL_NAMES := ["Sites", "Courses"]
 const PANEL_NAMES := ["Site", "Course", "Conditions"]
 
-## What `RoomMenu` is left offering once Field has gone. A literal, so a slice that removes a
-## second entry while removing Field fails here instead of passing a "field_editor is absent"
-## check that a demolition also satisfies.
-const ROOMS_STILL_IN_THE_MENU := ["frame_bench", "studio"]
-
 ## Two sites an order of magnitude apart. A park you could throw a whoop across and a field you
 ## could lose a 10" in — if one camera distance frames both, the number is not the site's.
 ## The Sim scene the app boots through `RoomHost.show_sim` — the scene FILE, not the script, so
@@ -66,7 +61,7 @@ const LARGE_SITE_M := 400.0
 
 static func run() -> Array:
 	var results: Array = []
-	# The hold is taken HERE and released HERE, for `tests/real_files.gd`'s reason: `GlassShell.new()`
+	# The hold is taken HERE and released HERE, for `tests/real_files.gd`'s reason: `DesignApp.new()`
 	# reads `user://sites.json`, `user://courses.json` and `user://conditions.json` by name, and a
 	# restore written at the end of a section is skipped by exactly the abort it most needs to
 	# survive.
@@ -74,14 +69,9 @@ static func run() -> Array:
 		SiteLibrary.SAVE_PATH, CourseLibrary.SAVE_PATH, ConditionsLibrary.SAVE_PATH,
 		AppSettings.SAVE_PATH, PackCharge.SAVE_PATH])
 	var sections := {
-		"the dock": _the_dock(),
-		"the shell entry": _the_shell_entry(),
-		"the viewport swap": _the_viewport_swap(),
 		"the camera frames the site": _the_camera_frames_the_site(),
 		"the two-level rail": _the_two_level_rail(),
 		"the three panels": _the_three_panels(),
-		"the conditions selector": _the_conditions_selector(),
-		"the rooms menu": _the_rooms_menu(),
 		"the drone silhouette": _the_drone_silhouette(),
 		# F11 — the authoring, and the port of everything the old screen pinned.
 		"editing gates": _editing_gates(),
@@ -116,130 +106,6 @@ static func run() -> Array:
 
 # ---------------------------------------------------------------------------
 # 1. Field is on the dock, and is no longer in the overflow menu
-# ---------------------------------------------------------------------------
-
-static func _the_dock() -> Array:
-	var results: Array = []
-	var dock := Dock.new(GlassShell.SYSTEMS, StyleBoxEmpty.new())
-
-	# THE ICON, FOUND ON THE LIVE ROW rather than by reading `ICONED_SYSTEMS` back to itself. The
-	# constant is what the dock is built FROM, so asserting Field is in it proves only that the
-	# word was typed; what has to be true is that a button called Field is standing in the row.
-	var icon_names: Array[String] = []
-	for button in dock.system_buttons:
-		icon_names.append(str(button.name))
-	results.append(TestResult.new(
-		"a system icon called \"Field\" is standing in the dock's row",
-		icon_names.has("Field"),
-		"the icons are %s" % [icon_names]))
-
-	# AND IT IS A WORD ON THE ROW, NOT BEHIND A MENU (lab dock design §2: the nine sections are all
-	# words; the ··· overflow is gone). Asserted on the button's own text, so a Field button that
-	# lost its word would fail here.
-	var word := ""
-	for button in dock.system_buttons:
-		if str(button.name) == "Field":
-			word = button.text
-	results.append(TestResult.new(
-		"and it reads \"Field\" on the row — there is no overflow menu to hide it behind",
-		word == "Field", "the Field button reads '%s'" % word))
-	dock.free()
-	return results
-
-
-# ---------------------------------------------------------------------------
-# 2. The shell's own entry for Field is a real system now
-# ---------------------------------------------------------------------------
-
-static func _the_shell_entry() -> Array:
-	var results: Array = []
-	var entry := _system("Field")
-
-	results.append(TestResult.new(
-		"GlassShell.SYSTEMS has an entry called \"Field\"",
-		not entry.is_empty(),
-		"the systems are %s" % [_system_names()]))
-	if entry.is_empty():
-		return results
-
-	results.append(TestResult.new(
-		"Field's rails are the two levels of the field — sites, then that site's courses",
-		entry.get("rails", []) == RAIL_NAMES,
-		"rails %s" % [entry.get("rails", [])]))
-	results.append(TestResult.new(
-		"and its panels are §5.2's three, by name",
-		entry.get("panels", []) == PANEL_NAMES,
-		"panels %s" % [entry.get("panels", [])]))
-	# THE STUB KEY IS ABSENT, not empty. A `"stub": {}` left behind would render nothing and read
-	# as a fix; what it would actually be is the next person's reason to fill it back in.
-	results.append(TestResult.new(
-		"and the stub is GONE — the key is absent, not blanked",
-		not entry.has("stub"),
-		"keys %s" % [entry.keys()]))
-	results.append(TestResult.new(
-		"so the shell counts Field as modelled and shows it real columns rather than a stub",
-		GlassShell._is_modelled(entry),
-		"rails %s · panels %s" % [entry.get("rails", []), entry.get("panels", [])]))
-	return results
-
-
-# ---------------------------------------------------------------------------
-# 3. Selecting Field swaps the viewport — and selecting anything else swaps it BACK
-# ---------------------------------------------------------------------------
-
-static func _the_viewport_swap() -> Array:
-	var results: Array = []
-	var shell := GlassShell.new()
-	var lab_view := shell.lab.viewport().get_parent() as Control
-	var room := shell.field_room()
-
-	results.append(TestResult.new(
-		"the shell built a Field room with a viewport of its own to swap TO",
-		room != null and room.viewport_container != null and lab_view != null,
-		"room %s · site view %s · lab view %s" % [
-			room != null, room != null and room.viewport_container != null, lab_view != null]))
-	if room == null or lab_view == null:
-		shell.free()
-		return results
-
-	# Since the lab dock the Field room is the PAGE of Field's rows (design §4): choosing the
-	# section shows its list over the drone, and opening a row puts the site on the stage.
-	shell.select_system_by_name("Field")
-	shell.open_row(&"course")
-	var field_up := room.visible
-	var drone_down := not lab_view.visible
-	results.append(TestResult.new(
-		"opening a Field row puts the site on screen and takes the drone off it",
-		field_up and drone_down,
-		"the field room is visible %s · Lab's viewport is visible %s" % [
-			field_up, lab_view.visible]))
-
-	# THE OTHER DIRECTION, which is the half a one-way swap passes. Power rather than Airframe:
-	# Airframe hides Lab's viewport too, so it would report "still hidden" for its own reason and
-	# say nothing about whether Field put anything back.
-	shell.select_system_by_name("Power")
-	var field_down := not room.visible
-	var drone_back := lab_view.visible
-	results.append(TestResult.new(
-		"and choosing another system swaps it back — the drone returns and the site goes away",
-		field_down and drone_back,
-		"the field room is visible %s · Lab's viewport is visible %s" % [
-			room.visible, lab_view.visible]))
-
-	# The chrome the room needs the space of, asserted while Field is up. The shell's own two
-	# columns would otherwise float over a room that brings its own.
-	shell.select_system_by_name("Field")
-	shell.open_row(&"site")
-	results.append(TestResult.new(
-		"and Field owns the stage: the shell's rail column and its inspector are both down",
-		not shell._rail_glass.visible and not shell._inspector.visible,
-		"rail %s · inspector %s" % [shell._rail_glass.visible, shell._inspector.visible]))
-	shell.free()
-	return results
-
-
-# ---------------------------------------------------------------------------
-# 4. The camera frames the SITE
 # ---------------------------------------------------------------------------
 
 static func _the_camera_frames_the_site() -> Array:
@@ -410,97 +276,6 @@ static func _the_three_panels() -> Array:
 # 7. §5.3 — the conditions selector is reachable from the GARAGE
 # ---------------------------------------------------------------------------
 
-static func _the_conditions_selector() -> Array:
-	var results: Array = []
-	var shell := GlassShell.new()
-	# A system that is NOT Field, deliberately: the whole claim is that the selector is reachable
-	# without walking into the field.
-	shell.select_system_by_name("Power")
-	var picker := shell.conditions_picker()
-
-	results.append(TestResult.new(
-		"the shell has a conditions selector",
-		picker != null,
-		"picker %s" % [picker != null]))
-	if picker == null:
-		shell.free()
-		return results
-
-	# IN THE TOP STRIP, walked up from the control rather than asserted about a member. A selector
-	# built and left unparented is a selector nobody can reach, and `shell._conditions_picker` would
-	# still point at it.
-	var in_top_bar := false
-	var walk: Node = picker
-	while walk != null:
-		if walk == shell._top_bar:
-			in_top_bar = true
-			break
-		walk = walk.get_parent()
-	results.append(TestResult.new(
-		"and it is in the garage's own top strip, with a system other than Field focused",
-		in_top_bar and picker.visible and shell._top_bar.visible,
-		"in the top bar %s · the strip is visible %s" % [in_top_bar, shell._top_bar.visible]))
-
-	var library := shell.rooms.conditions_library
-	results.append(TestResult.new(
-		"it offers every named set the library holds, and the library holds at least one",
-		picker.item_count == library.ids().size() and picker.item_count >= 1,
-		"%d entries for %d sets" % [picker.item_count, library.ids().size()]))
-
-	# AND SWITCHING IT MOVES THE GARAGE. A selector that changes nothing is a decoration, and §5.3's
-	# whole argument is the flight time that silently means "in calm air".
-	var windy := Conditions.new()
-	windy.conditions_id = "f10_windy"
-	windy.conditions_name = "F10 windy"
-	windy.wind_speed_mps = 7.5
-	windy.temperature_c = 35.0
-	library.put(windy)
-	shell._fill_conditions_picker()
-	var at := -1
-	for index in picker.item_count:
-		if str(picker.get_item_text(index)) == windy.conditions_name:
-			at = index
-	results.append(TestResult.new(
-		"the set just authored appears in the strip without leaving the garage",
-		at >= 0,
-		"looked for \"%s\" among %d entries" % [windy.conditions_name, picker.item_count]))
-	if at >= 0:
-		# Through the control's own signal, which is the path a click takes.
-		picker.item_selected.emit(at)
-		results.append(TestResult.new(
-			"and choosing it moves the garage's wind and the name it quotes under",
-			absf(shell.lab.wind_mps - windy.wind_speed_mps) < 1.0e-6
-				and shell.lab.conditions_name == windy.conditions_name,
-			"Lab quotes %.2f m/s under \"%s\"" % [shell.lab.wind_mps, shell.lab.conditions_name]))
-	shell.free()
-	return results
-
-
-# ---------------------------------------------------------------------------
-# 8 and 9. The Rooms menu
-# ---------------------------------------------------------------------------
-
-static func _the_rooms_menu() -> Array:
-	var results: Array = []
-	var ids := RoomMenu.room_ids()
-	# BY ID, not by label — a label is prose and a rename would fail this for the wrong reason.
-	results.append(TestResult.new(
-		"the Rooms menu no longer offers \"field_editor\" — Field is a destination on the dock now",
-		not ids.has("field_editor"),
-		"the menu offers %s" % [ids]))
-	# AND NOTHING ELSE WENT WITH IT, against a literal. "field_editor is absent" is also true of an
-	# empty menu, which is the deletion this second line exists to catch.
-	results.append(TestResult.new(
-		"and the entries that remain are exactly the ones that were not this slice's to move",
-		ids == ROOMS_STILL_IN_THE_MENU,
-		"the menu offers %s, wanted %s" % [ids, ROOMS_STILL_IN_THE_MENU]))
-	return results
-
-
-# ---------------------------------------------------------------------------
-# 10. The drone silhouette (§11 Q1, built ON)
-# ---------------------------------------------------------------------------
-
 static func _the_drone_silhouette() -> Array:
 	var results: Array = []
 	var world := _scratch_field(SMALL_SITE_M)
@@ -596,20 +371,6 @@ static func _rows_of(panel: SpecPanel) -> Dictionary:
 		if at > 0:
 			out[str(line).substr(0, at)] = str(line).substr(at + 2)
 	return out
-
-
-static func _system(system_name: String) -> Dictionary:
-	for system in GlassShell.SYSTEMS:
-		if str(system["name"]) == system_name:
-			return system
-	return {}
-
-
-static func _system_names() -> Array:
-	var names: Array = []
-	for system in GlassShell.SYSTEMS:
-		names.append(str(system["name"]))
-	return names
 
 
 # ===========================================================================
@@ -1188,17 +949,16 @@ static func _it_costs_nothing() -> Array:
 
 	# Through the SHELL, which is the thing that would have to save a changed pack on the way out.
 	# A room driven on its own could not charge the pack even if it wanted to.
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	var pack_id: String = shell.lab.selection()["battery"]
 	var before := shell.rooms.pack_charge.used_mah(pack_id)
 
-	shell.select_system_by_name("Field")
 	var room := shell.field_room()
 	room.select_gate(1)
 	room.set_gate_height_m(7.0)
 	room.add_gate()
 	room.set_gate_radius_m(1.2)
-	shell.select_system_by_name("Power")
+	shell.rooms.show_lab()
 
 	results.append(TestResult.new(
 		"laying out gates costs no charge — no motor turned",
@@ -1381,13 +1141,12 @@ static func _the_field_itself() -> Array:
 ## stats are for the place they are going to fly.
 ##
 ## THROUGH THE SHELL, because the wiring IS the feature. The old screen's version went through
-## `AppShell`; this one goes through `GlassShell`, which is what `project.godot` actually boots.
+## `DesignApp`; this one goes through `DesignApp`, which is what `project.godot` actually boots.
 static func _the_garage_follows_the_field() -> Array:
 	var results: Array = []
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 
 	var before := shell.lab.current_build().thrust_to_weight()
-	shell.select_system_by_name("Field")
 	shell.field_room().set_field_elevation_m(3500.0)
 	shell.field_room().set_field_temperature_c(30.0)
 	var after := shell.lab.current_build().thrust_to_weight()

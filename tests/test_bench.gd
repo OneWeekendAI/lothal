@@ -479,12 +479,12 @@ static func _test_sweep(catalog: PartsCatalog) -> Array:
 # The bench is a room, and it is not there when you are not in it
 # ---------------------------------------------------------------------------
 
-## Same argument AppShell already makes for Sim: a bench holds a running powertrain and an
+## Same argument DesignApp already makes for Sim: a bench holds a running powertrain and an
 ## audio bus, so "it costs nothing while you are in Lab" has to be an absence rather than a
 ## flag. A paused bench is something that can rot; a freed one cannot.
 static func _test_it_is_a_room_of_its_own(_catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var shell := AppShell.new()
+	var shell := RoomHost.new()
 
 	results.append(TestResult.new(
 		"the app still opens on Lab, with no bench and no sim instantiated",

@@ -313,7 +313,7 @@ static func _the_panel_shows_all_three_and_writes_nothing(catalog: PartsCatalog)
 ## writer.
 static func _the_room_carries_the_panel_and_the_edit_reaches_the_drone() -> Array:
 	var results: Array = []
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	shell.apply_project(Project.create("Failsafed"))
 	shell.select_system_by_name("Config")
 

@@ -1,6 +1,6 @@
 extends SceneTree
 ## Dev tool, not a test: photographs the Design Space the way a builder reaches it - real
-## GlassShell, New drone, pick a class, Choose.
+## DesignApp, New drone, pick a class, Choose.
 ##
 ##   godot --script res://tests/capture_design_space.gd -- <out.png> <class id> [WxH] [close-up mesh name]
 ##       [selected address] [hovered address] [swap cat=id,...] [preview cat=id] [frame op]
@@ -22,7 +22,7 @@ func _init() -> void:
 		DisplayServer.window_set_size(Vector2i(int(p[0]), int(p[1])))
 		root.size = Vector2i(int(p[0]), int(p[1]))
 	var closeup: String = args[3] if args.size() > 3 else ""
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	root.add_child(shell)
 	for i in 4:
 		await process_frame

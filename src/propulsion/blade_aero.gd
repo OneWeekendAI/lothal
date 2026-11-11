@@ -6,7 +6,7 @@ extends RefCounted
 ## ## Why this file exists at all, given P10e already shipped five overlays
 ##
 ## The overlays answer for the fitted aircraft: they read `Build.operating_rpm()` and the prop the
-## drone currently carries, they live on `GlassShell`, and `set_blade_room_open` HIDES them while
+## drone currently carries, they live on `DesignApp`, and `set_blade_room_open` HIDES them while
 ## the Propulsion room is up (`OverlayTray`'s defect 1 is about exactly that plumbing). So the one
 ## screen where a builder is drawing a planform was the one screen with no aerodynamic answer on
 ## it: you could author a blade nothing had an opinion about, and the first opinion arrived after

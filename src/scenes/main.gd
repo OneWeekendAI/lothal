@@ -69,7 +69,7 @@ var conditions_name := Conditions.STANDARD_NAME
 ## The visible aircraft, generated from `build` rather than authored in main.tscn — see the
 ## comment on the Drone node there, and AirframeModel's header.
 var airframe: AirframeModel
-## The parts this scene opens on, as a category -> part_id dictionary. AppShell sets it from
+## The parts this scene opens on, as a category -> part_id dictionary. DesignApp sets it from
 ## Lab's rails before adding the scene to the tree, which is how the build crosses the door
 ## (labs-and-sim.md §4). Left empty it falls back to the reference build, so main.tscn still
 ## runs on its own — capture_frame.gd and F5-from-the-editor both load it directly.
@@ -85,7 +85,7 @@ var initial_build: Build = null
 ## swapped in the field's own panel is not, and draws from its catalogue specs.
 var initial_frame_document: AirframeDocument = null
 ## How much of the top of the screen is already covered when this scene is reached through
-## AppShell, which draws its tab bar on a CanvasLayer above the flight scene. Set the same way
+## DesignApp, which draws its tab bar on a CanvasLayer above the flight scene. Set the same way
 ## and for the same reason as `initial_selection`: zero when main.tscn runs on its own.
 var ui_top_inset := 0.0
 ## The builder's fit adjustments, read from the same file Lab writes. Read from disk rather than
@@ -93,7 +93,7 @@ var ui_top_inset := 0.0
 ## passed through the door would be a second place for the shim height to live. Sim never writes it
 ## — the field authors nothing (labs-and-sim.md §1).
 var tweaks: AssemblyTweaks = AssemblyTweaks.load_from()
-## How much charge each pack has left. AppShell hands its own instance over so both rooms are
+## How much charge each pack has left. DesignApp hands its own instance over so both rooms are
 ## looking at one set of packs within a session; a direct load of main.tscn reads the file itself.
 ##
 ## This is the ONE thing Sim writes back (labs-and-sim.md §4). Fly for four minutes on a
@@ -110,7 +110,7 @@ var hud: DsHud
 ## The field, read from the library Lab writes. Read from disk rather than handed over with the
 ## selection, for exactly the reason `tweaks` above is: it is one file, Lab is the only writer, and
 ## a copy passed through the door would be a second place a gate position lives. Sim never writes
-## it — the field authors nothing (labs-and-sim.md §1). AppShell may replace this with its own
+## it — the field authors nothing (labs-and-sim.md §1). DesignApp may replace this with its own
 ## instance before _ready so that both rooms are looking at one library within a session.
 var course_library: CourseLibrary = CourseLibrary.load_from()
 var course: GateCourse = course_library.selected()
@@ -180,7 +180,7 @@ var _chase_transform := Transform3D.IDENTITY
 var _hover_throttle := 0.0
 
 ## Takes the course the handed-over library has selected, and re-keys the lap timer to it. Called
-## by AppShell after it hands `course_library` over and BEFORE this scene enters the tree, so the
+## by DesignApp after it hands `course_library` over and BEFORE this scene enters the tree, so the
 ## field is finished by the time _ready builds anything from it — the same ordering, and for the
 ## same reason, as the build crossing the door.
 ##
@@ -333,7 +333,7 @@ func _ready() -> void:
 	var ui_layer := CanvasLayer.new()
 	add_child(ui_layer)
 
-	# Stated here as well as on AppShell. Sim inherits the shell's theme when it is reached
+	# Stated here as well as on DesignApp. Sim inherits the shell's theme when it is reached
 	# through the door, but main.tscn also runs on its own — F5 from the editor, and
 	# capture_frame.gd — and unthemed is exactly the state in which a screenshot of Sim stops
 	# being a picture of the app. Same cached Theme either way, so the door path is unchanged.
@@ -575,7 +575,7 @@ func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 	# The FPV lens needs no snap: it is bolted to the airframe, which has already been moved.
 	fpv_view.place_lenses(camera, _chase_transform)
 
-## Writes the pack's state back to the shared store. Called on landing, and by AppShell on the
+## Writes the pack's state back to the shared store. Called on landing, and by DesignApp on the
 ## way out of the field — walking back to the garage is the other way a flight ends.
 func persist_pack_charge() -> void:
 	if core != null and build != null:

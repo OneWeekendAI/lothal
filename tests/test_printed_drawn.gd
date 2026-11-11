@@ -291,7 +291,7 @@ static func _the_cheeks_move_no_camera_check() -> Array:
 
 
 static func _the_cheeks_are_fitted_from_the_panel() -> TestResult:
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	var project := Project.create("Cheeks")
 	project.parts["camera"] = "cam_micro_analog"
 	shell.apply_project(project)
@@ -366,7 +366,7 @@ static func _the_antenna_mount_holds_the_drawn_whip() -> Array:
 
 
 static func _the_antenna_mount_is_fitted_from_the_panel() -> TestResult:
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	var project := Project.create("Tube")
 	project.parts["antenna"] = "antenna_rhcp_ufl"
 	shell.apply_project(project)

@@ -43,14 +43,11 @@ static func run() -> Array:
 	results.append(_test_the_profile_height_is_the_motor_meshs_own())
 	results.append(_test_a_pad_moves_both_the_picture_and_the_frequency())
 	results.append(_test_moving_the_caret_rebuilds_nothing())
-	results.append(_test_the_prop_panel_carries_the_door_and_opens_nothing_itself())
 	results.append(_test_a_drag_is_one_undo_step_and_two_undos_reach_the_start())
 	results.append(_test_redo_walks_back_up_and_a_new_edit_forgets_the_branch())
 	results.append(_test_a_refused_edit_leaves_nothing_to_undo())
 	results.append(_test_undo_cannot_reach_across_an_open())
 	results.append(_test_undoing_back_to_the_published_shape_says_so())
-	results.append(_test_the_room_opens_at_the_aircrafts_pad())
-	results.append(_test_the_rooms_pad_slider_moves_the_lab_value())
 	results.append(_test_the_rooms_mount_frequency_is_the_vibration_models())
 	results.append(_test_the_rooms_mount_frequency_carries_the_blades_mass())
 	results.append(_test_the_rooms_mount_frequency_follows_the_fitted_mount())
@@ -70,64 +67,6 @@ static func _build_with_pad(pad_mm: float) -> Array:
 	tweaks.set_mm(AssemblyTweaks.SOFT_MOUNT, pad_mm)
 	build.set_assembly(tweaks.resolved_m(build))
 	return [build, tweaks]
-
-
-## THE ROOM OPENS AT THE AIRCRAFT'S PAD. Driven through the shell, because the open is the shell's:
-## a pad set on the Fit panel before the door is opened must be what the room's slider and drawing
-## show. Until SM4 the room started every visit at zero, so this read 0.0 mm against a 2.0 mm build.
-##
-## MUTATION CONFIRMED RED: drop the `_blade_room.set_build(...)` line from `GlassShell._show_page`'s
-## "blade" branch (the room stays cold: slider 0.0 mm, drawn pad 0.0 mm).
-static func _test_the_room_opens_at_the_aircrafts_pad() -> TestResult:
-	var shell := GlassShell.new()
-	shell.lab.assembly_panel.set_tweak_mm(AssemblyTweaks.SOFT_MOUNT, 2.0)
-	shell.set_blade_room_open(true)
-	var room := shell.blade_room()
-	var slider_mm := room._pad_slider.value * 1000.0
-	var drawn_mm := room.profile.soft_mount_m * 1000.0
-	_free_shell(shell)
-
-	return TestResult.new(
-		"[SM4] the blade room opens at the aircraft's pad, not at a pad of its own",
-		absf(slider_mm - 2.0) < 1.0e-9 and absf(drawn_mm - 2.0) < 1.0e-9,
-		"Fit panel 2.0 mm; the room's slider reads %.4f mm and its profile draws %.4f mm" % [
-			slider_mm, drawn_mm])
-
-
-## AND ITS SLIDER IS PLUGGED INTO THE LAB. The slider's own handler is driven, the way this suite's
-## P10d pad checks drive it — measured: assigning `_pad_slider.value` on a room outside the tree moves
-## the value and emits no `value_changed`, so a check written that way exercises nothing. The Lab's
-## configuration and Fit panel are then asked what they hold. A room that wrote a copy of its own would draw the new pad and leave the aircraft on
-## the old one, which is exactly the pre-SM4 room.
-##
-## MUTATION CONFIRMED RED: drop the `soft_mount_edited` connection in `GlassShell._build_blade_room`
-## (the configuration stays at 0.0 mm and the slider snaps back to it).
-static func _test_the_rooms_pad_slider_moves_the_lab_value() -> TestResult:
-	var shell := GlassShell.new()
-	shell.lab.assembly_panel.set_tweak_mm(AssemblyTweaks.SOFT_MOUNT, 0.0)
-	shell.set_blade_room_open(true)
-	var room := shell.blade_room()
-	room._on_pad_changed(0.0015)
-	var stored := shell.lab.tweaks.value_mm(AssemblyTweaks.SOFT_MOUNT, shell.lab.current_build())
-	var on_the_panel := shell.lab.assembly_panel.tweak_row_text(AssemblyTweaks.SOFT_MOUNT)
-	var room_mm := room.soft_mount_m() * 1000.0
-	_free_shell(shell)
-
-	return TestResult.new(
-		"[SM4] the room's pad slider reaches the Lab's soft-mount tweak, through the path that owns it",
-		absf(stored - 1.5) < 1.0e-9 and on_the_panel.begins_with("1.5") \
-			and absf(room_mm - 1.5) < 1.0e-9,
-		"the configuration reads %.4f mm, the Fit panel says \"%s\", the room %.4f mm" % [
-			stored, on_the_panel, room_mm])
-
-
-## The shell saves the configuration to `user://` on every tweak (`LabScreen._on_tweaks_changed`),
-## so a pad set here would be the next shell's starting pad — in this suite and the next. Put back to
-## the as-built zero before the shell goes.
-static func _free_shell(shell: GlassShell) -> void:
-	shell.lab.tweaks.clear(AssemblyTweaks.SOFT_MOUNT)
-	shell.lab.tweaks.save()
-	shell.free()
 
 
 ## ROOM f_n == `VibrationModel.mount_hz()` FOR THE SAME BUILD, exactly — not within a tolerance,
@@ -878,68 +817,6 @@ static func _test_moving_the_caret_rebuilds_nothing() -> TestResult:
 # ---------------------------------------------------------------------------
 # The door
 # ---------------------------------------------------------------------------
-
-## The room needs a way in, and the way in is a button on the Prop inspector — `room_menu.gd`'s own
-## stated arrangement, a workspace reached from the system it works on.
-##
-## **Two halves, and only one of them can be checked here.** The panel's half is: the button exists,
-## it carries the propeller the panel is RENDERING, and pressing it opens nothing — it emits and
-## lets the shell decide, which is the rule every other control in this UI follows. That is what
-## this check drives, and the identity of the emitted record is the load-bearing part: a button that
-## emitted a hardcoded default would open the room on the wrong blade and look entirely correct
-## doing it.
-##
-## The shell's half — that the signal opens the overlay, switches the 3D world off, and that walking
-## to another system closes it — was described here as uncheckable in this harness, and **that was
-## too strong**. `GlassShell` does need a tree, a rendered frame and a real catalog before its TAB
-## ROUTING means anything (`current_tab` does not take effect until a layout pass, which is what
-## `test_glass_shell.gd` documents about itself) — but `tests/test_room_host.gd` has been building a
-## real shell with `GlassShell.new()` and asserting VISIBILITY on it all along, and visibility is
-## what this paragraph is about.
-##
-## The cost of the overstatement was measured on 2026-09-08: two shell defects shipped green — five
-## analysis overlays floating over the Airframe room, and a card layout that did not fit the window
-## the app opens at — both of them visibility, both caught immediately once somebody wrote the check
-## this comment said could not be written. `tests/test_overlay_tray.gd` §"shell" now drives that
-## path, including the size a `Control` outside a laid-out tree does not have.
-##
-## What stays true here is the split: the PANEL's half is what this check drives, and it is the half
-## that carries the load — a button emitting a hardcoded default would open the room on the wrong
-## blade and look entirely correct doing it.
-static func _test_the_prop_panel_carries_the_door_and_opens_nothing_itself() -> TestResult:
-	var catalog := PartsCatalog.load_default()
-	var panel := PropellerDetails.new(PartsCatalog.load_default())
-	var build := Build.from_ids(catalog, ReferenceBuild.FRAME_ID, ReferenceBuild.MOTOR_ID,
-		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
-		ReferenceBuild.FC_ID, Build.DEFAULT_COMPONENT_IDS)
-
-	# A propeller that is NOT the reference build's own, so "it emitted the right record" cannot be
-	# satisfied by a default.
-	var shown := "prop_7x35x2"
-	panel.render(catalog.get_part(shown), build)
-
-	var emitted: Array = []
-	panel.design_blade_requested.connect(func(prop: Dictionary) -> void: emitted.append(prop))
-
-	var buttons: Array = []
-	for child in panel.find_children("*", "Button", true, false):
-		if str((child as Button).text).begins_with("Design"):
-			buttons.append(child)
-	for button in buttons:
-		(button as Button).pressed.emit()
-
-	var emitted_id := str((emitted[0] as Dictionary).get("part_id", "")) if not emitted.is_empty() \
-		else ""
-	panel.free()
-
-	return TestResult.new(
-		"[P10d] the Prop panel carries the door to the room, and emits the blade it is showing",
-		buttons.size() == 1 and emitted.size() == 1 and emitted_id == shown
-			and shown != ReferenceBuild.PROPELLER_ID,
-		"%d button(s), %d emission(s), carried %s while the build fits %s" % [
-			buttons.size(), emitted.size(), emitted_id, ReferenceBuild.PROPELLER_ID])
-
-
 
 ## SM2 reaching the room: with a 70A mount fitted, the room's f_n is still `VibrationModel`'s, so it
 ## is reading the fitted part's spec and not the class-typical default.

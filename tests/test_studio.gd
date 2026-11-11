@@ -1199,7 +1199,7 @@ static func _test_channel_picker() -> Array:
 ## Studio as a room, against the invariants every other room holds to.
 static func _test_shell_room() -> Array:
 	var results: Array = []
-	var shell := AppShell.new()
+	var shell := RoomHost.new()
 
 	shell.show_studio()
 	var opened := shell.studio != null

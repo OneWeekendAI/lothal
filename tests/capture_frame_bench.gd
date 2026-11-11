@@ -66,7 +66,7 @@ func _init() -> void:
 	var pack_offset_mm: float = float(args[5]) if args.size() > 5 else NAN
 
 	# The rooms without a shell around them. This used to load root.tscn, which was the eight-tab
-	# AppShell; root.tscn is the Glass Bench shell now, and a room screenshot wants neither shell's
+	# DesignApp; root.tscn is the Glass Bench shell now, and a room screenshot wants neither shell's
 	# chrome in the frame. RoomHost is exactly the rooms — unchanged by the swap, which is the
 	# point of it existing.
 	var shell := RoomHost.new()
@@ -81,7 +81,7 @@ func _init() -> void:
 			quit(1)
 			return
 
-	# Slid through Lab's OWN tweaks object, not a fresh one, because that is the object AppShell
+	# Slid through Lab's OWN tweaks object, not a fresh one, because that is the object DesignApp
 	# hands the bench — a second one here would move the picture and leave the bench measuring the
 	# aircraft nobody asked for, which is the exact divergence this slice closed.
 	if is_finite(pack_offset_mm):

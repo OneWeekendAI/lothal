@@ -48,7 +48,7 @@ static func run() -> Array:
 			busy_ok and not b.disabled and b.text == "x" and _sig(b.get_theme_stylebox("disabled")) == plain_off, b.text))
 		b.free()
 	# The sim bar's Back button is one of these, not a one-off with hover == pressed.
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	ProjectLibrary.root = "user://scratch_btn_%d" % OS.get_process_id()
 	shell._on_project_action("new")
 	shell.class_picker.show_class("five_inch")

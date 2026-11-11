@@ -49,7 +49,7 @@ static func run() -> Array:
 ## tests/capture_frame.gd, which does boot the scene.
 static func _test_the_build_crosses_into_sim(catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var shell := AppShell.new()
+	var shell := RoomHost.new()
 
 	shell.lab.picker.select_id("frame_7in_long_range")
 	shell.lab.motor_picker.select_id("motor_2807_1300kv")
@@ -92,7 +92,7 @@ static func _test_the_build_crosses_into_sim(catalog: PartsCatalog) -> Array:
 	# disagree with the physics": if there is no box and no cylinders in main.tscn, there is
 	# nothing for a stale 110 mm arm to be baked into. Before this slice, Drone had five
 	# authored children — a frame box and four motor cylinders at +/-0.0778.
-	var scene: Node = load(AppShell.SIM_SCENE).instantiate()
+	var scene: Node = load(RoomHost.SIM_SCENE).instantiate()
 	var drone: Node = scene.get_node("Drone")
 	var authored_meshes := 0
 	for child in drone.get_children():
@@ -272,7 +272,7 @@ static func _test_orbit(catalog: PartsCatalog) -> Array:
 
 static func _test_shell_lifecycle() -> Array:
 	var results: Array = []
-	var shell := AppShell.new()
+	var shell := RoomHost.new()
 
 	results.append(TestResult.new(
 		"the app opens on Lab, with no sim instantiated at all",

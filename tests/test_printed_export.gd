@@ -155,7 +155,7 @@ static func _the_menu_entry_is_live_and_routes() -> Array:
 
 	# The tilt edit below ends in tweaks.save(), which writes the REAL user://assembly_tweaks.json.
 	var previous: Variant = TestVideoPanel._stash_saved_tweaks()
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	shell.open_folder_after_export = false
 	var project := Project.create("Menu")
 	project.parts["camera"] = "cam_micro_analog"

@@ -25,7 +25,7 @@ extends Control
 ##
 ## ## Why not just show the P10e overlays here
 ##
-## Those read `Build.operating_rpm()` and the prop the AIRCRAFT is carrying, and `GlassShell`
+## Those read `Build.operating_rpm()` and the prop the AIRCRAFT is carrying, and `DesignApp`
 ## retracts them while this room is open (`OverlayTray`, defect 1). The blade on the bench is not
 ## fitted to an aircraft; it has no hover throttle and no pack. So this panel takes an RPM from the
 ## room and asks about the document, and the overlays keep answering for the fitted drone. Two

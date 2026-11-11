@@ -49,7 +49,7 @@ extends Control
 
 ## The two levels of the rail, and the three panels of §5.2, named ONCE.
 ##
-## `GlassShell.SYSTEMS`' Field entry points at these constants rather than repeating the words.
+## `DesignApp.SYSTEMS`' Field entry points at these constants rather than repeating the words.
 ## P10f's finding was two lists that had to be the same list and were never checked to be; a
 ## reference is the version of that which cannot drift.
 const RAIL_TITLES := ["Sites", "Courses"]

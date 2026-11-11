@@ -540,7 +540,7 @@ static func _the_garage_asks_the_site() -> Array:
 	# file carrying 28 C, then builds a RoomHost twice — and `RoomHost._init` now ABSORBS those
 	# into `user://conditions.json`, invents a "30 °C" and a "28 °C" row, saves it and leaves the
 	# selection on 28 °C. Restoring two of the three files left a builder's weather permanently on
-	# a 28 C afternoon, and left every later suite that builds a RoomHost or an AppShell quoting
+	# a 28 C afternoon, and left every later suite that builds a RoomHost or an DesignApp quoting
 	# that air. Found in review, on this developer's own file, with both invented rows in it.
 	var real_weather := ConditionsLibrary.SAVE_PATH
 	var had_weather := FileAccess.file_exists(real_weather)

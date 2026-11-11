@@ -612,7 +612,7 @@ static func _test_the_room_says_which_shape_the_aircraft_flies() -> TestResult:
 static func _test_a_blade_published_next_door_is_flyable_on_the_next_trip_out() -> TestResult:
 	var captured := _capture_custom_parts()
 
-	var shell := AppShell.new()
+	var shell := RoomHost.new()
 	shell.show_sim()
 	var first: Node = shell.sim
 	shell.show_lab()

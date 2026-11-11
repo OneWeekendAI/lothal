@@ -5,7 +5,7 @@ class_name TestSimChrome
 static func run() -> Array:
 	var results: Array = []
 	ProjectLibrary.root = "user://scratch_simchrome_%d" % OS.get_process_id()
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	shell._on_project_action("new")
 	shell.class_picker.show_class("five_inch")
 	shell.class_picker.choose()
@@ -154,7 +154,7 @@ static func _in_bar(n: Node) -> bool:
 	return false
 
 
-static func _finish(shell: GlassShell, results: Array) -> Array:
+static func _finish(shell: DesignApp, results: Array) -> Array:
 	if shell.container != null and shell.container.path != "":
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(shell.container.path))
 	shell.free()

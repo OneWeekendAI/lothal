@@ -14,11 +14,11 @@ const SETTLE_FRAMES := 3
 const WINDOW := Vector2i(1280, 720)
 
 
-static func _shell(tree: SceneTree) -> GlassShell:
+static func _shell(tree: SceneTree) -> DesignApp:
 	var frame := SubViewport.new()
 	frame.size = WINDOW
 	tree.root.add_child(frame)
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	frame.add_child(shell)
 	return shell
 
@@ -28,7 +28,7 @@ static func _settle(tree: SceneTree) -> void:
 		await tree.process_frame
 
 
-static func _mission_shell(tree: SceneTree) -> GlassShell:
+static func _mission_shell(tree: SceneTree) -> DesignApp:
 	var shell := _shell(tree)
 	await _settle(tree)
 	shell.show_design_space()
@@ -60,7 +60,7 @@ static func run(tree: SceneTree) -> Array:
 	return results
 
 
-static func _edit_world_opens_a_visible_editor(shell: GlassShell) -> TestResult:
+static func _edit_world_opens_a_visible_editor(shell: DesignApp) -> TestResult:
 	var field := shell.field_room()
 	var ids: Array[String] = field.worlds.ids() if field != null and field.worlds != null else []
 	var id := ids[0] if not ids.is_empty() else ""
@@ -72,13 +72,13 @@ static func _edit_world_opens_a_visible_editor(shell: GlassShell) -> TestResult:
 		"id=%s editor=%s" % [id, str(ed)])
 
 
-static func _mission_opens_a_visible_picker(shell: GlassShell) -> TestResult:
+static func _mission_opens_a_visible_picker(shell: DesignApp) -> TestResult:
 	var p := shell.find_child("MissionPicker", true, false) as MissionPicker
 	return TestResult.new("shell pickers: the Mission button opens a visible MissionPicker in the shell tree",
 		p != null and p.is_visible_in_tree() and p.session != null, str(p))
 
 
-static func _results_panel_is_under_the_picker(shell: GlassShell) -> TestResult:
+static func _results_panel_is_under_the_picker(shell: DesignApp) -> TestResult:
 	var p := shell.find_child("MissionPicker", true, false)
 	var r: Node = p.find_child("*", true, false) if false else null
 	if p != null:
@@ -88,7 +88,7 @@ static func _results_panel_is_under_the_picker(shell: GlassShell) -> TestResult:
 		r != null, str(r))
 
 
-static func _second_press_does_not_duplicate(shell: GlassShell) -> TestResult:
+static func _second_press_does_not_duplicate(shell: DesignApp) -> TestResult:
 	var n := shell.find_children("*", "MissionPicker", true, false).size()
 	return TestResult.new("shell pickers: pressing Mission twice leaves exactly one MissionPicker",
 		n == 1, "pickers=%d" % n)

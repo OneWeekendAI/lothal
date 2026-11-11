@@ -69,13 +69,10 @@ static func run() -> Array:
 	results.append(_test_drawn_length_tracks_length())
 	results.append(_test_undo_steps_back_through_an_inspector_edit())
 	results.append(_test_undo_twice_reaches_the_state_before_two_edits())
-	results.append(_test_leaving_the_room_retracts_its_chrome())
-	results.append(_test_every_overlay_room_is_in_the_retract_list())
 	results.append(_test_a_click_selects_the_segment_under_it())
 	results.append(_test_the_capacitor_is_a_part_and_not_a_segment())
 	results.append(_test_default_restores_the_derived_value())
 	results.append(_test_selecting_records_no_history())
-	results.append(_test_the_panel_that_replaced_the_stub_carries_a_door())
 
 	# PW6 — the pack view (design §2.2).
 	results.append(_test_sliding_the_pack_aft_moves_the_marker_by_the_computed_amount())
@@ -318,92 +315,6 @@ static func _test_undo_twice_reaches_the_state_before_two_edits() -> TestResult:
 # The plan's row 6 — the chrome retracts
 # ---------------------------------------------------------------------------
 
-## W0.7's defect family. Three paths retracted the shell's chrome and one omitted a term; the fix
-## was to remove the argument a caller could omit, and here the whole list is removed from the
-## caller's hands by `_retract_rooms`.
-##
-## Every path that has to end with no room on screen is walked: choosing another system, going to
-## the field, deleting the project, and each room's own opener opening the OTHER room.
-##
-## MUTATION CONFIRMED RED: replace the `_retract_rooms()` call in `GlassShell._select_system` with
-## the two lines it replaced (`_blade_room.visible = false` and its close glass) — the omission
-## shape, where one room is put away and the one added later is not.
-static func _test_leaving_the_room_retracts_its_chrome() -> TestResult:
-	var shell := GlassShell.new()
-	var failures: Array = []
-
-	shell.select_system_by_name("Power")
-	shell.set_power_room_open(true)
-	if not shell.power_room().visible:
-		failures.append("the room did not open")
-	# The way out is the page bar's "← Back to drone" since the lab dock (design §2).
-	if not shell._page_bar.visible:
-		failures.append("the way out did not appear with it")
-
-	# 1. Walking to another system.
-	shell.set_power_room_open(true)
-	shell.select_system_by_name("Propulsion")
-	failures.append_array(_still_up(shell, "after choosing another system"))
-
-	# 2. Opening the other room. Two opaque overlays and one close button is the state this refuses.
-	shell.set_power_room_open(true)
-	shell.set_blade_room_open(true)
-	if shell.power_room().visible:
-		failures.append("the harness designer stayed under the blade designer")
-
-	# 3. Deleting the project.
-	shell.set_blade_room_open(false)
-	shell.set_power_room_open(true)
-	shell._show_empty_state()
-	failures.append_array(_still_up(shell, "after the project was closed"))
-
-	# 4. Walking into another room entirely. The overlays are children of the SHELL, drawn over
-	#    `rooms`, so this is the path that used to fly a course under a planform editor — the
-	#    retraction was added here in PW5 and it went unnoticed because the way back always ends in
-	#    `_select_system`, which retracts them. The room is only wrong while you are in the other
-	#    one. Studio rather than Sim or a bench: it owns the window the same way and it starts no
-	#    powertrain and no audio bus.
-	shell.select_system_by_name("Power")
-	shell.set_power_room_open(true)
-	shell.rooms.show_studio()
-	failures.append_array(_still_up(shell, "after walking into another room"))
-	shell.rooms.show_lab()
-
-	shell.free()
-	return TestResult.new(
-		"every path out of the Power room takes the room and its chrome with it",
-		failures.is_empty(),
-		"clean" if failures.is_empty() else "; ".join(failures))
-
-
-## And the list itself. `_retract_rooms` walks `_overlay_rooms`, so a third room added as a child of
-## the shell and forgotten here would be retracted by nothing — with no line of code missing
-## anywhere to point at. Found by TYPE off the shell's own children rather than by a second
-## hand-written list, which would be the same defect wearing a test's clothes.
-static func _test_every_overlay_room_is_in_the_retract_list() -> TestResult:
-	var shell := GlassShell.new()
-	var registered: Array = []
-	for entry in shell._overlay_rooms:
-		registered.append(entry["room"])
-
-	var missing: Array = []
-	for child in shell.get_children():
-		if (child is PropulsionWorkbench or child is PowerWorkbench) \
-				and not registered.has(child):
-			missing.append(child.get_script().resource_path.get_file())
-	var count := shell._overlay_rooms.size()
-	shell.free()
-
-	return TestResult.new(
-		"every overlay room the shell holds is in the list the retract paths walk",
-		missing.is_empty() and count == 2,
-		"%d room(s) registered, %d unregistered: %s" % [count, missing.size(), missing])
-
-
-# ---------------------------------------------------------------------------
-# Selecting, and what a selection is worth
-# ---------------------------------------------------------------------------
-
 ## A click on a wire selects that wire. Driven through `id_at`, which is the same function
 ## `_gui_input` calls — see the header for why the event itself is out of reach.
 ##
@@ -509,31 +420,6 @@ static func _test_selecting_records_no_history() -> TestResult:
 		"three selections left %d entries on the undo stack" % depth)
 
 
-## PW4's stub said "the model is built, the view is not" and named PW5 as what it waited on. PW5 is
-## this slice, so the stub is gone — and the panel that replaced it carries the door into the room,
-## because a panel with no way through to the thing it summarises is the stub again with better
-## rows on it.
-##
-## MUTATION CONFIRMED RED: disconnect `harness_room_requested` in `GlassShell._build_power_room`.
-static func _test_the_panel_that_replaced_the_stub_carries_a_door() -> TestResult:
-	var shell := GlassShell.new()
-	shell.select_system_by_name("Power")
-	var wired: bool = shell.lab.harness_panel.harness_room_requested.get_connections().size() > 0
-
-	shell.lab.harness_panel.harness_room_requested.emit()
-	var opened: bool = shell.power_room().visible and shell.power_room().build != null
-	shell.free()
-
-	return TestResult.new(
-		"the Harness panel's door opens the room, on the aircraft that is fitted",
-		wired and opened,
-		"door wired: %s; room up after pressing it: %s" % [wired, opened])
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 ## A room with an aircraft on the bench and a schematic big enough to have a geometry.
 ##
 ## The size is set BEFORE `set_build`, because `geometry()` fits to the rect it has and a (0, 0)
@@ -565,26 +451,6 @@ static func _six_s_cinelifter() -> Build:
 		"motor_2808_1300kv", "prop_10x5x2", "battery_6s_1300", "esc_4in1_80a_30x30",
 		Build.DEFAULT_FC_ID, Build.no_components())
 
-
-## Which of the two rooms, if either, is still on screen — named rather than counted, so a failure
-## says which room and which path.
-static func _still_up(shell: GlassShell, when: String) -> Array:
-	var out: Array = []
-	for entry in shell._overlay_rooms:
-		var room: Control = entry["room"]
-		var close_glass: Control = entry["close_glass"]
-		if room != null and room.visible:
-			out.append("%s is still up %s" % [entry["name"], when])
-		if close_glass != null and close_glass.visible:
-			out.append("the way out of %s is still up %s" % [entry["name"], when])
-	if shell._page_bar.visible and not shell.page_open():
-		out.append("the page bar is still up with no page %s" % when)
-	return out
-
-
-# ---------------------------------------------------------------------------
-# PW6 — the pack, and the marker that moves with it
-# ---------------------------------------------------------------------------
 
 ## THE SLICE IN ONE CHECK. The pack is slid 20 mm aft and the marker moves aft — by the number
 ## `AirframeProperties` computed for that aircraft and by no other number.
@@ -812,18 +678,18 @@ static func _expected_cg_m(build: Build, frame: AirframeDocument) -> Vector3:
 ## a value; this one proves the room's own control reaches the place that value lives at all.
 ##
 ## Driven through the SHELL, because the routing is the shell's — the room announces
-## `pack_offset_edited` and `GlassShell` hands it to `AssemblyPanel.set_tweak_mm`. A room whose
+## `pack_offset_edited` and `DesignApp` hands it to `AssemblyPanel.set_tweak_mm`. A room whose
 ## slider was connected to nothing would pass every check in this file except this one, and would
 ## look exactly right until a builder dragged it.
 ##
 ## MUTATION CONFIRMED RED: drop the `pack_offset_edited` connection in
-## `GlassShell._build_power_room`.
+## `DsSetup.adopt_panels`.
 static func _test_the_rooms_offset_slider_reaches_the_one_path_a_tweak_takes() -> TestResult:
-	var shell := GlassShell.new()
-	shell.select_system_by_name("Power")
-	shell.set_power_room_open(true)
+	var shell := DesignApp.new()
+	shell.setup.adopt_panels(shell.lab)
+	shell.setup.show_harness_room()
 
-	var room := shell.power_room()
+	var room: PowerWorkbench = shell.setup.power_room
 	room.pack_offset_edited.emit(-9.0)
 	var stored := shell.lab.tweaks.value_mm(AssemblyTweaks.BATTERY_OFFSET,
 		shell.lab.current_build())

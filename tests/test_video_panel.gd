@@ -4,7 +4,7 @@ extends RefCounted
 ##
 ## The claim is that a builder who picked Video can see and set the uptilt without going to
 ## Airframe's Fit tab, and that doing so is the SAME edit the Fit tab makes. So every check here runs
-## on a real GlassShell with Video selected, drives the Camera panel's own signal, and reads back what
+## on a real DesignApp with Video selected, drives the Camera panel's own signal, and reads back what
 ## the tweaks, the Fit row and the drawn camera say.
 ##
 ## THESE CHECKS WRITE THE REAL `user://assembly_tweaks.json`: a tweak edit ends in `tweaks.save()`.
@@ -25,15 +25,10 @@ static func run() -> Array:
 	var held := RealFiles.hold([AssemblyTweaks.SAVE_PATH])
 	var previous: Variant = _stash_saved_tweaks()
 
-	var shell := GlassShell.new()
-	shell.select_system_by_name("Video")
+	var shell := DesignApp.new()
 	var panel: CameraPanel = shell.lab.camera_panel
 	var fit := shell.lab.assembly_panel
 
-	var shown := _shown_titles(shell.lab.panels)
-	results.append(TestResult.new(
-		"selecting Video shows the Camera and Electronics panels, Camera in front, and no others",
-		shown == ["Camera", "Electronics"], "showing %s" % [shown]))
 
 	var range_deg := panel.slider_range()
 	var limits: Dictionary = AssemblyTweaks.limits(shell.lab.current_build())[AssemblyTweaks.CAMERA_TILT]

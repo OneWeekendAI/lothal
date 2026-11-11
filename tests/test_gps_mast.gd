@@ -213,7 +213,7 @@ static func _mass_is_opt_in_and_seated_on_the_mast(catalog: PartsCatalog) -> Arr
 
 
 static func _its_guesses_are_labelled_and_fitted_from_the_panel() -> TestResult:
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	var project := Project.create("Masted")
 	project.parts["gps"] = MASTED
 	shell.apply_project(project)

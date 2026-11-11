@@ -27,7 +27,7 @@ func _init() -> void:
 	var prop_id: String = args[3] if args.size() > 3 else ""
 
 	# The rooms without a shell around them. This used to load root.tscn, which was the eight-tab
-	# AppShell; root.tscn is the Glass Bench shell now, and a room screenshot wants neither shell's
+	# DesignApp; root.tscn is the Glass Bench shell now, and a room screenshot wants neither shell's
 	# chrome in the frame. RoomHost is exactly the rooms — unchanged by the swap, which is the
 	# point of it existing.
 	var shell := RoomHost.new()

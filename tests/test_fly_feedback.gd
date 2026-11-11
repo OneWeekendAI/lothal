@@ -2,15 +2,15 @@ class_name TestFlyFeedback
 ## B3 (UI_REDESIGN_TRACKER): Fly it shows something. The button is busy while the sim loads, and a
 ## refusal says why in a Design Space toast instead of returning false silently.
 
-static func _open() -> GlassShell:
-	var shell := GlassShell.new()
+static func _open() -> DesignApp:
+	var shell := DesignApp.new()
 	shell._on_project_action("new")
 	shell.class_picker.show_class("five_inch")
 	shell.class_picker.choose()
 	return shell
 
 
-static func _done(shell: GlassShell) -> void:
+static func _done(shell: DesignApp) -> void:
 	if shell.container != null and shell.container.path != "":
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(shell.container.path))
 	shell.free()

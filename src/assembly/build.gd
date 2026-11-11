@@ -174,7 +174,7 @@ const COMPONENT_MOUNTS := {
 ## OPTIONAL_COMPONENTS through this table instead, and a seventh component that is not named here
 ## does not land quietly on one rail or the other.
 ##
-## The system names are `GlassShell.SYSTEMS`' own, and C4 asserts that rather than trusting it.
+## The system names are `DesignApp.SYSTEMS`' own, and C4 asserts that rather than trusting it.
 const COMPONENT_SYSTEM := {
 	"camera": "Video",
 	"vtx": "Video",

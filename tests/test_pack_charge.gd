@@ -65,11 +65,11 @@ static func run() -> Array:
 ## Two claims about the shell. First, that every room is looking at ONE set of packs — a bench
 ## holding its own copy would drain a battery that the field then flew as though it were full.
 ## Second, that walking through a room without doing anything writes nothing, which matters more
-## than it sounds: AppShell saves on every room change to the real user:// file, and without the
+## than it sounds: DesignApp saves on every room change to the real user:// file, and without the
 ## check this suite would overwrite the packs of whoever is running it with an empty shelf.
 static func _test_every_room_shares_one_shelf() -> Array:
 	var results: Array = []
-	var shell := AppShell.new()
+	var shell := RoomHost.new()
 
 	shell.show_bench()
 	var stand_store := shell.bench.pack_charge

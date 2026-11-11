@@ -63,9 +63,9 @@ extends RefCounted
 ##   is a property of what those callers' setup HAPPENS to do today, not a structural guarantee — if a
 ##   future suite's setup grows a real property access there, this file's protection silently
 ##   stops applying to it, with nothing here to flag that it happened. **`tests/test_video_panel.gd`
-##   is already the exception, not a hypothetical one**: its setup gap builds a `GlassShell` and
+##   is already the exception, not a hypothetical one**: its setup gap builds a `DesignApp` and
 ##   walks `shell.lab.camera_panel`, `shell.lab.assembly_panel` and `shell.lab.panels`, where
-##   `GlassShell.lab` (`src/ui/glass_shell.gd:297-298`) is a getter over `rooms.lab`
+##   `DesignApp.lab` (`src/ui/glass_shell.gd:297-298`) is a getter over `rooms.lab`
 ##   (`var lab: LabScreen`, `src/ui/room_host.gd:32`) with no non-null guarantee at that point in
 ##   construction. That suite is relying on the gap being narrow in practice, not on it being safe.
 ##

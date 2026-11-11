@@ -52,12 +52,7 @@ func _init() -> void:
 	if required_args > 0:
 		print("[REFUSED] suite \"%s\" declares run() with %d required argument(s); this runner calls run() with none." % [suite_name, required_args])
 		print("Calling it anyway throws a SCRIPT ERROR inside _init(), which aborts before quit() and hangs the process for ever (Ruling 71).")
-		if suite_name == "TestShellLayout":
-			print("Run it with its own runner instead:")
-			print("    HOME=<scratch> godot --headless --script res://tools/run_layout_suite.gd")
-			print("  or: tools/run_tests_safe.sh --layout")
-		else:
-			print("A suite that needs arguments needs its own runner — see tools/run_layout_suite.gd for the pattern.")
+		print("A suite that needs arguments needs its own runner (see tests/run_tests.gd's _call_drawn_open_run).")
 		quit(2)
 		return
 

@@ -16,7 +16,7 @@ func _init() -> void:
 		DisplayServer.window_set_size(Vector2i(int(p[0]), int(p[1])))
 		root.size = Vector2i(int(p[0]), int(p[1]))
 	var entry: String = args[3] if args.size() > 3 else "fly"
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	root.add_child(shell)
 	for i in 4:
 		await process_frame

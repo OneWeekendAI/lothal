@@ -31,7 +31,7 @@ extends VBoxContainer
 ## `get_combined_minimum_size()`, so this object reported `(368, 0)`, the `PanelContainer` around
 ## it obliged, and the first screenshot of QC4 was a **384x16 sliver** with eighteen motor rows
 ## drawing below it through the bottom of the window. Every assertion in the suite was green.
-## `GlassShell._size_the_finder()` compensated from the outside by measuring the child column and
+## `DesignApp._size_the_finder()` compensated from the outside by measuring the child column and
 ## pushing the answer back onto this node — a second place that had to know how tall a finder is.
 ##
 ## The root IS the column now. Nothing outside this file sizes it, and the two checks in

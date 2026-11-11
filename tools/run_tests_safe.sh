@@ -52,7 +52,6 @@
 ##   tools/run_tests_safe.sh                              # full suite (tests/run_tests.gd)
 ##   tools/run_tests_safe.sh --suite TestSomeSuite         # one suite (tools/run_one_suite.gd)
 ##   tools/run_tests_safe.sh --sr                          # only the SR suites (tests/sim_reality/run_suites.gd prefix=sr)
-##   tools/run_tests_safe.sh --layout                      # the shell-layout suite (tools/run_layout_suite.gd)
 ##
 ## RULING 71 — `--suite TestShellLayout` USED TO HANG FOR EVER, and it is the spelling everybody
 ## reaches for. That suite's `run()` takes a `SceneTree` and awaits frames; the generic runner
@@ -147,9 +146,7 @@ run_bounded() {
 
 mode="full"
 target=""
-if [[ "${1:-}" == "--layout" ]]; then
-	mode="layout"
-elif [[ "${1:-}" == "--sr" ]]; then
+if [[ "${1:-}" == "--sr" ]]; then
 	mode="sr"
 elif [[ "${1:-}" == "--suite" ]]; then
 	if [[ -z "${2:-}" ]]; then
@@ -157,24 +154,12 @@ elif [[ "${1:-}" == "--suite" ]]; then
 		exit 2
 	fi
 	target="$2"
-	if [[ "$target" == "TestShellLayout" ]]; then
-		# RULING 71. Routed, not run: see the note at the top of this file. Said out loud so the
-		# next person learns the right spelling rather than silently getting a different runner.
-		echo "[ROUTED] TestShellLayout takes a SceneTree and awaits frames, so tools/run_one_suite.gd" >&2
-		echo "[ROUTED] cannot call it - that invocation hangs for ever (Ruling 71)." >&2
-		echo "[ROUTED] Running tools/run_layout_suite.gd instead. Use --layout directly next time." >&2
-		mode="layout"
-	else
-		mode="suite"
-	fi
+	mode="suite"
 fi
 
 echo "Relocated HOME: $scratch_home (real ~/Library/Application Support/Godot untouched)"
 status=0
 case "$mode" in
-	layout)
-		run_bounded "$WATCHDOG_SECONDS" env HOME="$scratch_home" godot --headless --script res://tools/run_layout_suite.gd || status=$?
-		;;
 	suite)
 		run_bounded "$WATCHDOG_SECONDS" env HOME="$scratch_home" godot --headless --script res://tools/run_one_suite.gd -- "$target" || status=$?
 		;;

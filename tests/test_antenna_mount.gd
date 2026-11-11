@@ -230,7 +230,7 @@ static func _no_antenna_no_row() -> TestResult:
 
 
 static func _the_standoffs_are_labelled_guesses_edited_per_drone() -> TestResult:
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	var project := Project.create("Antenna")
 	project.parts["antenna"] = "antenna_rhcp_ufl"
 	shell.apply_project(project)

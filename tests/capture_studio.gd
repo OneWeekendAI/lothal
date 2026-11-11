@@ -1,6 +1,6 @@
 extends SceneTree
 ## Dev tool, not a test: builds a scratch log directory, constructs StudioScreen over it directly
-## (no AppShell — the closest precedent, capture_field_editor.gd, boots the shell because a course
+## (no DesignApp — the closest precedent, capture_field_editor.gd, boots the shell because a course
 ## has to cross the door into Sim; a log never crosses anywhere), and writes two PNGs so a human can
 ## look at the redesigned room. The companion to capture_lab.gd and capture_field_editor.gd.
 ##

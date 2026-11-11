@@ -126,7 +126,7 @@ static func _a_camera_wider_than_the_gap_is_refused(micro: Dictionary, full: Dic
 ## panel's own signal reaching the project file.
 static func _the_gap_is_a_labelled_guess_per_drone() -> Array:
 	var results: Array = []
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	# A new project fits no camera, and no camera means no mount row; each drone here fits the micro.
 	var a := _with_camera("Drone A")
 	CameraMount.set_value(a.printing, CameraMount.PLATE_SPACING, 30.0)

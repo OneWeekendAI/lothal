@@ -97,7 +97,7 @@ var bench: FrameBench
 var yardstick: FrameBench
 var pack_charge: PackCharge = null
 ## The builder's own assembly configuration, or null for whatever the parts imply. Handed over by
-## AppShell rather than re-read from disk, the same way the catalog and the pack charge are: Lab is
+## DesignApp rather than re-read from disk, the same way the catalog and the pack charge are: Lab is
 ## the only writer of it, and a second copy read here could disagree with the one Lab is editing.
 ##
 ## The bench NEEDS it, which it did not before this slice. Where the pack is strapped now decides

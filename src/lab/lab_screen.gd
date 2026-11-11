@@ -188,21 +188,21 @@ var rates_panel: ConfigRatesPanel
 var sheet_panel: ConfigSheetPanel
 
 ## THIS drone's name, for the sheet's header and its file name. A working copy the way `config` and
-## `printing` are — GlassShell hands it over when a project is opened, and nothing here writes it
+## `printing` are — DesignApp hands it over when a project is opened, and nothing here writes it
 ## back. A sheet with no name on it is indistinguishable from the next one on the same bench.
 var drone_name: String = "Untitled build"
 ## THIS drone's printing decisions — a working copy of `Project.printing`, kept the way the rails keep
-## the part selection. GlassShell hands it in on open (`set_printing`) and copies it back out on
+## the part selection. DesignApp hands it in on open (`set_printing`) and copies it back out on
 ## autosave; nothing here writes a file. Per drone by design (PrintSettings' header).
 var printing: Dictionary = {}
 ## THIS drone's configuration decisions — a working copy of `Project.config`, kept exactly the way
-## `printing` above is kept: GlassShell hands it in on open (`set_config`) and copies it back out
+## `printing` above is kept: DesignApp hands it in on open (`set_config`) and copies it back out
 ## on sync. Per drone, never per app (design §6): a motor map describes THIS aircraft.
 var config: Dictionary = {}
 ## The charger. Lab's, because charging is a garage activity — there is a charger in the garage
 ## and there is not one in the field (labs-and-sim.md §5).
 var charge_panel: PackChargePanel
-## How much charge is in each pack. Injected by AppShell so every room shares one set of packs;
+## How much charge is in each pack. Injected by DesignApp so every room shares one set of packs;
 ## tests pass their own, so the suite never depends on or overwrites the packs of whoever runs it.
 var pack_charge: PackCharge
 var assembly_panel: AssemblyPanel
@@ -388,7 +388,7 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	# every ampere from cell to motor lead. PW4 held this place with a stub that said the view was
 	# PW5's; PW5 is here, so the stub is gone and the panel summarises the current path and opens
 	# the room that draws it. A named panel in SYSTEMS with no tab behind it routes to nothing and
-	# hides silently; see GlassShell._show_only_tabs.
+	# hides silently; see DesignApp._show_only_tabs.
 	harness_panel = HarnessPanel.new()
 	panels.add_child(harness_panel)
 
@@ -400,7 +400,7 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	# Video is chosen — `_show_only_tabs` fronts the first named tab in container order: the camera's uptilt, where a builder looking at the
 	# camera looks for it. Named for routing, like Electronics. Its slider writes nothing — the edit
 	# is routed into the Fit panel's `set_tweak_mm`, the single path every tweak takes, which emits
-	# the `tweaks_changed` this screen rebuilds and saves on. See CameraPanel's header, and GlassShell's
+	# the `tweaks_changed` this screen rebuilds and saves on. See CameraPanel's header, and DesignApp's
 	# pack-offset routing for the same shape one room over. Resolved at call time, so the Fit panel
 	# being built a few lines below is not an ordering problem.
 	camera_panel = CameraPanel.new()
@@ -527,7 +527,7 @@ func _init(p_catalog: PartsCatalog, p_tweaks: AssemblyTweaks = null,
 	#
 	# BY TITLE, NOT BY INDEX. The two columns stopped being the same list the moment Airframe's
 	# four panels landed between Frame and Motor: seven rails against fourteen panels, so the ESC
-	# rail used to route to the Layout panel. GlassShell.SYSTEMS already matches rails to panels by
+	# rail used to route to the Layout panel. DesignApp.SYSTEMS already matches rails to panels by
 	# tab title for exactly this reason, and this is the same arrangement one layer down.
 	_rails.tab_changed.connect(func(index: int) -> void:
 		if index < 0:
@@ -713,7 +713,7 @@ func viewport() -> SubViewport:
 ## be MOVED, not to let its tabs be rebuilt from outside — reload_catalog() is the only thing
 ## permitted to swap its children, and that stays in this file.
 ##
-## GlassShell reparents this and `panels` out of the row on the way in, which is what leaves the
+## DesignApp reparents this and `panels` out of the row on the way in, which is what leaves the
 ## SubViewportContainer alone in an HBox and therefore full-bleed. Nothing else here changes.
 func rails() -> TabContainer:
 	return _rails
@@ -1047,7 +1047,7 @@ func show_panel(panel_name: String) -> bool:
 
 ## The build currently selected across the four rails. Public because it is what crosses the
 ## boundary into Sim (labs-and-sim.md §4) — the field flies exactly the Build the garage
-## assembled, and AppShell hands this one over rather than rebuilding it.
+## assembled, and DesignApp hands this one over rather than rebuilding it.
 ##
 ## The pack used to be pinned here to ReferenceBuild.BATTERY_ID, which was honest while there was
 ## no battery rail and is the single line this slice existed to delete: every number Lab reported

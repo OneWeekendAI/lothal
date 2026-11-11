@@ -232,7 +232,7 @@ static func _mass_is_opt_in_and_under_the_pack() -> Array:
 
 
 static func _its_guesses_are_labelled_and_fitted_from_the_panel() -> TestResult:
-	var shell := GlassShell.new()
+	var shell := DesignApp.new()
 	shell.apply_project(Project.create("Padded"))
 	var note := shell.lab.print_panel.row_note(BatteryPad.PART_ID)
 	var before := shell.lab.current_build().mass_properties.total_mass_kg

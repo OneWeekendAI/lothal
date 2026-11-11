@@ -1,16 +1,9 @@
 [gd_scene load_steps=2 format=3]
 
-; The application root: the Glass Bench shell (src/ui/glass_shell.gd) — full-bleed viewport, the
-; project chip and system dropdown floating over it, the Lab/Sim toggle bottom right.
-;
-; This used to be AppShell and its eight tabs. AppShell is still in the source and still covered by
-; the suite; it is simply not what the app boots any more. Both shells drive one RoomHost, so the
-; swap moved no lifecycle rule — see room_host.gd.
-;
-; Deliberately almost empty — everything is constructed in the script, because hand-placed UI does
-; not survive version control (architecture.md).
+; The application root: the Design Space app (src/ui/design_app.gd). Projects, the class picker,
+; the Design Space, the simulator and every room are built in the script (architecture.md).
 
-[ext_resource type="Script" path="res://src/ui/glass_shell.gd" id="1"]
+[ext_resource type="Script" path="res://src/ui/design_app.gd" id="1"]
 
 [node name="Root" type="Control"]
 layout_mode = 3

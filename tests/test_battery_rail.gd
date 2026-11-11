@@ -292,7 +292,7 @@ static func _test_the_rail_moves_the_build(catalog: PartsCatalog) -> Array:
 ## everything on screen correct, and the aircraft flying on a battery nobody chose.
 static func _test_the_pack_crosses_the_doors(_catalog: PartsCatalog) -> Array:
 	var results: Array = []
-	var shell := AppShell.new()
+	var shell := RoomHost.new()
 
 	shell.lab.battery_picker.select_id("battery_6s_1300")
 

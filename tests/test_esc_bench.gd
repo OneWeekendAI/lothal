@@ -371,7 +371,7 @@ static func _test_it_names_what_runs_out_first(catalog: PartsCatalog) -> Array:
 ## rather than a paused flag.
 static func _test_it_is_a_room_of_its_own() -> Array:
 	var results: Array = []
-	var shell := AppShell.new()
+	var shell := RoomHost.new()
 
 	shell.lab.esc_picker.select_id(UNDERSIZED_ESC)
 	shell.show_esc_bench()

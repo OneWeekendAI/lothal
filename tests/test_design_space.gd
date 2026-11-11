@@ -32,7 +32,7 @@ static func run() -> Array:
 	return results
 
 
-static func _cleanup(shell: GlassShell) -> void:
+static func _cleanup(shell: DesignApp) -> void:
 	if shell.container != null and shell.container.path != "":
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(shell.container.path))
 	shell.free()
@@ -41,7 +41,7 @@ static func _cleanup(shell: GlassShell) -> void:
 static func _test_choose_lands_on_the_model() -> Array:
 	var results: Array = []
 	for id in ["five_inch", "tiny_whoop"]:
-		var shell := GlassShell.new()
+		var shell := DesignApp.new()
 		shell._on_project_action("new")
 		var before := shell.design_space
 		shell.class_picker.show_class(id)
@@ -288,8 +288,8 @@ static func _key(code: Key) -> InputEventKey:
 	return k
 
 
-static func _open(id: String) -> GlassShell:
-	var shell := GlassShell.new()
+static func _open(id: String) -> DesignApp:
+	var shell := DesignApp.new()
 	shell._on_project_action("new")
 	shell.class_picker.show_class(id)
 	shell.class_picker.choose()
@@ -452,12 +452,12 @@ static func _test_charge_chip(catalog: PartsCatalog) -> Array:
 # ---------------------------------------------------------------------------
 
 ## A scratch ProjectLibrary root, so no test here touches the builder's own builds.
-static func _scratch_open(id: String) -> GlassShell:
+static func _scratch_open(id: String) -> DesignApp:
 	ProjectLibrary.root = "user://scratch_flyit_%d" % OS.get_process_id()
 	return _open(id)
 
 
-static func _scratch_done(shell: GlassShell) -> void:
+static func _scratch_done(shell: DesignApp) -> void:
 	if shell.container != null and shell.container.path != "":
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(shell.container.path))
 	shell.free()

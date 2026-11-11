@@ -16,6 +16,8 @@ signal fly_pressed
 signal identity_pressed
 signal field_pressed
 signal mission_pressed
+## A room from the menu's Rooms group (the DesignApp opens it): setup, frame_bench, bench, esc_bench, studio, projects.
+signal room_pressed(room_id: String)
 signal save_as_confirmed(design_name: String)
 signal open_chosen(file_name: String)
 signal dialog_closed
@@ -31,6 +33,15 @@ const MENU_W := 130.0
 const DIALOG_TOP := 60.0
 ## How many recent designs the open dialog lists.
 const MAX_RECENT := 8
+## The Rooms group of the menu: every room that is not the design itself. [id, label, tooltip].
+const ROOMS := [
+	["setup", "Setup pages", "Frame, propulsion, power, control, video, printed and config sheets"],
+	["bench", "Thrust bench", "Run the fitted motor and prop on the stand"],
+	["esc_bench", "ESC bench", "Run the fitted ESC under load"],
+	["frame_bench", "Frame bench", "Shake and load the frame"],
+	["studio", "Studio", "Flights already flown"],
+	["projects", "Projects", "All saved drones"],
+]
 
 var name_label: Label
 var status_label: Label
@@ -46,6 +57,7 @@ var toast: DsToast
 var fly_busy := false
 var field_button: Button
 var mission_button: Button
+var room_buttons := {}
 var menu_button: Button
 var menu: PanelContainer
 var dialog: PanelContainer
@@ -148,6 +160,21 @@ func _build_menu() -> void:
 		b.pressed.connect(_menu_item.bind(which))
 		set(StringName(it[1]), b)
 		v.add_child(b)
+	v.add_child(DsUi.rule())
+	for room in ROOMS:
+		var rb := _button(String(room[1]))
+		rb.name = "Room_" + String(room[0])
+		rb.flat = true
+		rb.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		rb.tooltip_text = String(room[2])
+		rb.pressed.connect(_room_item.bind(String(room[0])))
+		room_buttons[String(room[0])] = rb
+		v.add_child(rb)
+
+
+func _room_item(room_id: String) -> void:
+	set_menu_open(false)
+	room_pressed.emit(room_id)
 
 
 func _menu_item(which: String) -> void:
