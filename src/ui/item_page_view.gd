@@ -111,18 +111,14 @@ func _add_warning(w: BuildWarning) -> void:
 	short.add_theme_color_override("font_color", colour)
 	line.add_child(short)
 
-	var button := Button.new()
-	button.text = "Why?"
-	button.flat = true
-	button.toggle_mode = true
-	button.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	var button := DsUi.button("Why?", true)
 	line.add_child(button)
 
 	var long := Label.new()
 	long.text = w.long()
 	long.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	long.custom_minimum_size = Vector2(WHY_WIDTH, 0)
-	long.theme_type_variation = &"MutedLabel"
+	long.add_theme_color_override("font_color", DsUi.INK_MUTED)
 	long.visible = false
 	box.add_child(long)
 

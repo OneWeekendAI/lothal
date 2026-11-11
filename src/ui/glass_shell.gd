@@ -4081,7 +4081,17 @@ func open_field_from_design() -> bool:
 	# The Field room is the page of a Field row (design section 4): the course row puts the site,
 	# the course and the SR3 world picker on screen.
 	open_row(&"course")
-	return _field != null and _field.visible
+	if _field == null or not _field.visible:
+		return false
+	# From the Design Space the Field room is the WHOLE room, as drawers: the sites, courses, gates, weather and worlds
+	# together, with none of the Lab's list or page bar around it.
+	_field.set_dock_page("")
+	if _section_list != null:
+		_section_list.visible = false
+	if _page_bar != null:
+		_page_bar.visible = false
+	_layout_stage()
+	return true
 
 
 ## Parts the last Design Space -> Lab sync could not select on the rails ({category, part_id}).

@@ -249,25 +249,27 @@ var gust_tau_s: float:
 		var now := conditions.selected()
 		return now.gust_tau_s if now != null else Conditions.DEFAULT_GUST_TAU_S
 
-var site_list: ItemList
-var course_list: ItemList
+var site_list: DsList
+var course_list: DsList
 var name_field: LineEdit
-var elevation_field: SpinBox
-var temperature_field: SpinBox
-var width_field: SpinBox
-var length_field: SpinBox
-var gust_tau_field: SpinBox
-var wind_speed_field: SpinBox
-var wind_from_field: SpinBox
-var gustiness_field: SpinBox
+var elevation_field: DsStepper
+var temperature_field: DsStepper
+var width_field: DsStepper
+var length_field: DsStepper
+var gust_tau_field: DsStepper
+var wind_speed_field: DsStepper
+var wind_from_field: DsStepper
+var gustiness_field: DsStepper
 ## SR3: the controls SR2 left out (humidity, surface roughness, wind reference height) and the world picker.
-var humidity_field: SpinBox
-var roughness_field: SpinBox
-var ref_height_field: SpinBox
-var world_picker: OptionButton
+var humidity_field: DsStepper
+var roughness_field: DsStepper
+var ref_height_field: DsStepper
+var world_picker: DsList
 var edit_world_button: Button
 ## SR3.3: the world last applied (its id), the button that re-imports its ground from USGS 3DEP, and the last result.
 var applied_world_id := ""
+## The world ids behind `world_picker`'s rows, in row order.
+var _world_ids: Array[String] = []
 var reimport_button: Button
 var reimport_status: Label
 var worlds: WorldLibrary
@@ -284,7 +286,7 @@ var _viewport: SubViewport
 ## Held so `rail()`, `rail_scroll()` and `panels_scroll()` can hand them to a check by name — a
 ## check that walks `site_list.get_parent().get_parent()` to find the rail silently starts
 ## measuring something else the day a container is inserted, which is exactly what just happened.
-var _rail: PanelContainer
+var _rail: DsDrawer
 var _rail_scroll: ScrollContainer
 var _panels_scroll: ScrollContainer
 var _orbit: Node3D
@@ -381,6 +383,7 @@ func _init(p_sites: SiteLibrary, p_courses: CourseLibrary, p_conditions: Conditi
 	row.add_child(_build_panels())
 	_collect_rail_groups()
 	set_dock_page("")
+	resized.connect(func() -> void: (_rail as RailDrawer).refit.call_deferred())
 
 	refresh()
 
@@ -439,7 +442,7 @@ func _scroller(node_name: String, visible_floor: float) -> ScrollContainer:
 
 
 ## The rail itself, and the two scrollers, by name. See `_rail`.
-func rail_panel() -> PanelContainer:
+func rail_panel() -> DsDrawer:
 	return _rail
 
 
@@ -452,27 +455,25 @@ func panels_scroll() -> ScrollContainer:
 
 
 func _build_rail() -> Control:
-	var rail := PanelContainer.new()
+	# THE RAIL IS A DESIGN SPACE DRAWER (R1): the same box, small-caps title and scrolling column the Mission and Parts
+	# drawers use. Its close mark is hidden: the way out of the room is the bar's Back, not hiding half of it.
+	var rail := RailDrawer.new("Field")
 	rail.name = "Rail"
-	rail.custom_minimum_size = Vector2(RAIL_WIDTH, 0)
-	rail.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	rail.close_button.visible = false
+	rail.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 
-	_rail_scroll = _scroller("RailScroll", RAIL_VISIBLE_FLOOR)
-	rail.add_child(_rail_scroll)
+	_rail_scroll = rail.scroll
+	_rail_scroll.name = "RailScroll"
+	# A scrollbar you can see (Ruling 78): the theme's grabber has no content margin, so give it pixels.
+	_rail_scroll.get_v_scroll_bar().custom_minimum_size.x = SCROLLBAR_WIDTH
+	# ...and a gutter, so the bar is not standing on the buttons.
+	var gutter := StyleBoxEmpty.new()
+	gutter.content_margin_right = SCROLLBAR_WIDTH + 10.0
+	_rail_scroll.add_theme_stylebox_override("panel", gutter)
 
-	var column := VBoxContainer.new()
+	var column := rail.content
 	column.name = "RailColumn"
-	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	column.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# TIGHTER THAN THE THEME'S DEFAULT, and it is a budget. This column holds fourteen controls in
-	# 588 px of room; at the theme's own separation it needs 591 and an `HBoxContainer` expands to
-	# its combined minimum whatever its offsets say, so those three pixels are drawn over the dock
-	# rather than dropped. One pixel off each gap buys thirteen back.
-	#
-	# The scroller above is what keeps that budget from being a cliff (see `_scroller`): the tight
-	# separation still means fewer builders ever have to scroll, which is worth three pixels.
-	column.add_theme_constant_override("separation", LothalTheme.SPACE_1)
-	_rail_scroll.add_child(column)
+	column.add_theme_constant_override("separation", LothalTheme.SPACE_2)
 	_rail = rail
 
 	site_list = _titled_list(column, RAIL_TITLES[0])
@@ -480,25 +481,24 @@ func _build_rail() -> Control:
 	course_list = _titled_list(column, RAIL_TITLES[1])
 	course_list.item_selected.connect(choose_course)
 
-	# NAMING, ADDING AND DELETING A COURSE, under the list they are about. The old screen's three
-	# controls, carried across unchanged in behaviour.
+	# NAMING, ADDING AND DELETING A COURSE, under the list they are about.
 	name_field = LineEdit.new()
 	name_field.name = "CourseName"
 	name_field.placeholder_text = "Course name"
+	DsUi.style_field(name_field)
 	name_field.text_submitted.connect(func(text: String) -> void: rename_course(text))
 	column.add_child(name_field)
 
 	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 6)
 	column.add_child(buttons)
-	var new_button := Button.new()
+	var new_button := DsUi.button("New")
 	new_button.name = "NewCourse"
-	new_button.text = "New"
 	new_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	new_button.pressed.connect(func() -> void: new_course(_next_course_name()))
 	buttons.add_child(new_button)
-	_delete_button = Button.new()
+	_delete_button = DsUi.button("Delete")
 	_delete_button.name = "DeleteCourse"
-	_delete_button.text = "Delete"
 	_delete_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_delete_button.pressed.connect(func() -> void: delete_course())
 	buttons.add_child(_delete_button)
@@ -522,18 +522,14 @@ func _build_rail() -> Control:
 ## is a different course to fly, and the fingerprint says so — so it needs a control and not only
 ## a method.
 func _build_gate_buttons(column: VBoxContainer) -> void:
-	var title := Label.new()
-	title.text = "GATE"
-	title.theme_type_variation = &"TitleLabel"
-	title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	column.add_child(title)
+	column.add_child(DsUi.section("Gate"))
 
 	var buttons := HBoxContainer.new()
 	buttons.name = "GateButtons"
+	buttons.add_theme_constant_override("separation", 6)
 	for spec in [["Add", 0], ["Remove", 1], ["Earlier", 2], ["Later", 3]]:
-		var button := Button.new()
+		var button := DsUi.button(str(spec[0]))
 		button.name = "Gate%d" % int(spec[1])
-		button.text = str(spec[0])
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var which := int(spec[1])
 		button.pressed.connect(func() -> void: _on_gate_button(which))
@@ -561,11 +557,7 @@ func _on_gate_button(which: int) -> void:
 ## field beside it. This room is the first authoring surface the field has ever had, so it is the
 ## first place that debt can be paid.
 func _build_field_section(column: VBoxContainer) -> void:
-	var title := Label.new()
-	title.text = "THE FIELD"
-	title.theme_type_variation = &"TitleLabel"
-	title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	column.add_child(title)
+	column.add_child(DsUi.section("The field"))
 
 	_build_world_picker(column)
 	elevation_field = _add_field(column, "Elevation", "m",
@@ -604,7 +596,7 @@ func _build_field_section(column: VBoxContainer) -> void:
 		MIN_REF_HEIGHT_M, MAX_REF_HEIGHT_M, 1.0,
 		func(v: float) -> void: set_field_wind_ref_height_m(v))
 
-	gust_tau_label = Label.new()
+	gust_tau_label = DsUi.label("", DsUi.INK_FAINT)
 	gust_tau_label.name = "GustGuess"
 	# The literal string a check reads: labelled a guess, not measured. SHORT ENOUGH TO SET ON ONE
 	# LINE at this rail width, which is not a style preference — the second line it wrapped onto
@@ -612,7 +604,6 @@ func _build_field_section(column: VBoxContainer) -> void:
 	gust_tau_label.text = "A guess, not measured."
 	gust_tau_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	gust_tau_label.custom_minimum_size = Vector2(RAIL_WIDTH - 24.0, 0)
-	gust_tau_label.theme_type_variation = &"MutedLabel"
 	column.add_child(gust_tau_label)
 
 	gust_tau_field = _add_field(column, "Gust settle", "s",
@@ -628,23 +619,16 @@ func _build_field_section(column: VBoxContainer) -> void:
 ## A labelled numeric entry. A SpinBox is for a number you KNOW; the sliders on the Course panel
 ## are for one you are choosing by eye, and the split is the whole of §2.4 read literally.
 func _add_field(column: VBoxContainer, label_text: String, suffix: String,
-		minimum: float, maximum: float, step: float, on_change: Callable) -> SpinBox:
+		minimum: float, maximum: float, step: float, on_change: Callable) -> DsStepper:
 	var row := HBoxContainer.new()
-	var label := Label.new()
-	label.text = label_text
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(label)
+	row.add_theme_constant_override("separation", 8)
+	row.add_child(_field_label("%s  (%s)" % [label_text, suffix]))
 
-	var field := SpinBox.new()
+	var field := DsStepper.new(minimum, maximum, step)
 	field.name = label_text.replace(" ", "")
-	field.min_value = minimum
-	field.max_value = maximum
-	field.step = step
-	field.suffix = suffix
-	field.custom_minimum_size = Vector2(96, 0)
-	field.select_all_on_focus = true
-	# A SpinBox is a Range, so `value_changed` does not fire for a value set from code — but the
-	# guard is still what stops the room writing its own controls from reading back as an edit.
+	field.custom_minimum_size = Vector2(150, 0)
+	field.size_flags_horizontal = Control.SIZE_SHRINK_END
+	# `value` set from code never emits, but the guard still stops the room writing its OWN controls reading back as an edit.
 	field.value_changed.connect(func(v: float) -> void:
 		if not _updating:
 			on_change.call(v))
@@ -653,27 +637,20 @@ func _add_field(column: VBoxContainer, label_text: String, suffix: String,
 	return field
 
 
-func _titled_list(column: VBoxContainer, title_text: String) -> ItemList:
-	var title := Label.new()
-	title.text = title_text.to_upper()
-	title.theme_type_variation = &"TitleLabel"
-	title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
-	column.add_child(title)
+## The caption of a typed field: quiet ink, taking the row's slack so the stepper sits flush right.
+func _field_label(text: String) -> Label:
+	var label := DsUi.label(text, DsUi.INK_MUTED)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	label.clip_text = true
+	return label
 
-	var list := ItemList.new()
+
+func _titled_list(column: VBoxContainer, title_text: String) -> DsList:
+	column.add_child(DsUi.section(title_text))
+	# Design Space toggle rows (the ItemList replacement): one row per site or course, the picked one lit.
+	var list := DsList.new()
 	list.name = title_text
-	list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	list.auto_height = false
-	# A FLOOR RATHER THAN A SHARE: the rail's fixed controls below take what they need first, and
-	# an `ItemList` with no floor collapses to nothing when they do.
-	#
-	# 44 px, not 76, and the difference is measured rather than chosen. The rail carries two lists,
-	# a name field, four gate buttons, five numeric fields and a wrapped label, and an
-	# `HBoxContainer` expands to its combined minimum whatever its offsets say — at 76 the rail ran
-	# 43 px into the strip the dock stands in. Found by LOOKING at the 1280x720 photograph, and
-	# held by `test_shell_layout._the_rail_itself_stays_out_of_the_bottom_keepout` since — which is
-	# also what said 52 was still 3 px short.
-	list.custom_minimum_size = Vector2(0, 44)
 	column.add_child(list)
 	return list
 
@@ -1241,29 +1218,36 @@ func _build_world_picker(column: VBoxContainer) -> void:
 	worlds = WorldLibrary.load_dir(worlds_dir)
 	if worlds.count() == 0:
 		worlds.ensure_presets()
-	world_picker = OptionButton.new()
+	# The worlds as Design Space chips (the OptionButton replacement): pick one and its weather and ground are applied.
+	world_picker = DsList.new(true)
 	world_picker.name = "World"
-	world_picker.add_item("World...")
+	_world_ids.clear()
 	for id in worlds.ids():
 		world_picker.add_item(worlds.world(id).world_name)
-		world_picker.set_item_metadata(world_picker.item_count - 1, id)
+		_world_ids.append(str(id))
+	world_picker.select(-1)
 	world_picker.item_selected.connect(func(index: int) -> void:
-		if index > 0:
-			apply_world(String(world_picker.get_item_metadata(index))))
+		if index >= 0 and index < _world_ids.size():
+			apply_world(_world_ids[index]))
 	column.add_child(world_picker)
-	edit_world_button = Button.new()
+	var world_buttons := HBoxContainer.new()
+	world_buttons.add_theme_constant_override("separation", 6)
+	edit_world_button = DsUi.button("Edit world")
 	edit_world_button.name = "EditWorld"
-	edit_world_button.text = "Edit world"
+	edit_world_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	edit_world_button.pressed.connect(func() -> void: edit_world_requested.emit(applied_world_id))
-	column.add_child(edit_world_button)
-	reimport_button = Button.new()
+	world_buttons.add_child(edit_world_button)
+	reimport_button = DsUi.button("Re-import elevation")
 	reimport_button.name = "ReimportElevation"
-	reimport_button.text = "Re-import elevation"
+	reimport_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	reimport_button.pressed.connect(func() -> void: reimport_elevation())
-	column.add_child(reimport_button)
-	reimport_status = Label.new()
+	world_buttons.add_child(reimport_button)
+	column.add_child(world_buttons)
+	reimport_status = DsUi.label("", DsUi.INK_FAINT)
 	reimport_status.name = "ReimportStatus"
-	reimport_status.text = ""
+	reimport_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	reimport_status.custom_minimum_size = Vector2(RAIL_WIDTH - 24.0, 0)
+	reimport_status.visible = false
 	column.add_child(reimport_status)
 
 
@@ -1295,6 +1279,7 @@ func finish_reimport(w: World, got: Dictionary) -> Dictionary:
 
 func _reimport_result(res: Dictionary) -> Dictionary:
 	if reimport_status != null:
+		reimport_status.visible = true
 		reimport_status.text = "Ground updated from USGS 3DEP" if bool(res["ok"]) else "Elevation import failed: %s (flat ground kept)" % String(res["error"])
 	return res
 
@@ -1318,6 +1303,8 @@ func apply_world(id: String) -> bool:
 	here.terrain = w.terrain
 	here.obstacles = w.obstacles
 	applied_world_id = id
+	if world_picker != null:
+		world_picker.select(_world_ids.find(id))
 	_changed(true)
 	return true
 
@@ -1665,11 +1652,6 @@ func _project_ray(camera_transform: Transform3D, point: Vector2) -> Vector3:
 ## Which panel is each dock page's own.
 const DOCK_PANELS := {"site": "Site", "course": "Course", "conditions": "Conditions"}
 
-## How tall a rail list stands on a dock page, where the list no longer shares the rail with every
-## other control and would otherwise stretch to the rail's full height over nothing. A drawing
-## dimension (four rows of the theme's ItemList), not a claim about anything.
-const DOCK_LIST_HEIGHT := 96.0
-
 
 ## The rail's controls, grouped by the page whose settings they are. Read off the built column —
 ## each field's row is its SpinBox's parent, each list's title the child before it.
@@ -1725,16 +1707,14 @@ func set_dock_page(page: String) -> void:
 			wanted_parent.add_child(each)
 			if wanted_parent == panels_column:
 				panels_column.move_child(each, PANEL_TITLES.find(title))
+			# Inside the rail's drawer a panel is content, not a second box.
+			each.use_design_space_look(wanted_parent == panels_column)
 	_panels_scroll.visible = page == ""
 	var shown := rail_controls_for(page)
 	for child in column.get_children():
 		if child is SpecPanel:
 			continue
 		(child as Control).visible = shown.has(child)
-	for list in [site_list, course_list]:
-		(list as ItemList).size_flags_vertical = Control.SIZE_EXPAND_FILL if page == "" \
-			else Control.SIZE_FILL
-		(list as ItemList).custom_minimum_size.y = 44.0 if page == "" else DOCK_LIST_HEIGHT
 	# The page's warnings are the head's, short + Why?; the Course panel's full list is the room's.
 	(panel(PANEL_TITLES[1]) as CoursePanel).warnings.visible = page == ""
 	page_view.set_head_visible(page != "")
@@ -1761,6 +1741,24 @@ func width_for_site(site_floor: float) -> float:
 # The panels themselves
 # ---------------------------------------------------------------------------
 
+## The Field rail's drawer. A `DsDrawer` bounds its scrolling column by the WINDOW; the rail lives in a room that is
+## laid out inside the shell, so it is bounded by the ROOM instead — what the room has, less the drawer's own head and box
+## and a row of slack — and scrolls past that.
+class RailDrawer extends DsDrawer:
+	const SLACK := 24.0
+
+	## The room changed size: re-bound the column (deferred, so the room's own layout has run first).
+	func refit() -> void:
+		_fit()
+
+	func _max_h() -> float:
+		var room := get_parent().get_parent() as Control if get_parent() != null else null
+		var h := room.size.y if room != null and room.size.y > 0.0 else 560.0
+		# The drawer's own head, gaps and box, measured (its minimum less the column's), plus a row of slack.
+		var chrome := get_combined_minimum_size().y - scroll.custom_minimum_size.y + SLACK
+		return maxf(FieldSystem.RAIL_VISIBLE_FLOOR, h - chrome)
+
+
 ## §5.2's Site panel: name, shape, its typed dimensions, elevation datum, obstacle list — all five,
 ## in three rows and a title.
 ##
@@ -1783,6 +1781,7 @@ class SitePanel extends SpecPanel:
 			{"key": "elevation", "label": "Elevation"},
 			{"key": "obstacles", "label": "Obstacles"},
 		])
+		use_design_space_look()
 
 	## No footer, only the width floor — see `PANEL_CONTENT_WIDTH`.
 	func _build_footer(root: VBoxContainer) -> void:
@@ -1824,6 +1823,7 @@ class CoursePanel extends SpecPanel:
 	var height_slider: HSlider
 	var heading_slider: HSlider
 	var radius_slider: HSlider
+	var sliders: Array = []
 	var height_value: Label
 	var heading_value: Label
 	var radius_value: Label
@@ -1833,59 +1833,44 @@ class CoursePanel extends SpecPanel:
 		super([
 			{"key": "gate", "label": "Selected gate"},
 		])
+		use_design_space_look()
 
 	func _build_footer(root: VBoxContainer) -> void:
 		root.custom_minimum_size = Vector2(FieldSystem.PANEL_CONTENT_WIDTH, 0)
-		height_slider = _add_slider(root, "Height",
+		var height_row := _add_slider(root, "Height", " m",
 			FieldSystem.MIN_HEIGHT_M, FieldSystem.MAX_HEIGHT_M, FieldSystem.HEIGHT_STEP_M,
 			func(v: float) -> void: room.set_gate_height_m(v))
-		height_value = root.get_child(root.get_child_count() - 1).get_child(2) as Label
-		heading_slider = _add_slider(root, "Heading",
+		height_slider = height_row.slider
+		height_value = height_row.value_label
+		var heading_row := _add_slider(root, "Heading", "°",
 			-180.0, 180.0, FieldSystem.HEADING_STEP_DEG,
 			func(v: float) -> void: room.set_gate_heading_deg(v))
-		heading_value = root.get_child(root.get_child_count() - 1).get_child(2) as Label
-		radius_slider = _add_slider(root, "Radius",
+		heading_slider = heading_row.slider
+		heading_value = heading_row.value_label
+		var radius_row := _add_slider(root, "Radius", " m",
 			FieldSystem.MIN_RADIUS_M, FieldSystem.MAX_RADIUS_M, FieldSystem.RADIUS_STEP_M,
 			func(v: float) -> void: room.set_gate_radius_m(v))
-		radius_value = root.get_child(root.get_child_count() - 1).get_child(2) as Label
+		radius_slider = radius_row.slider
+		radius_value = radius_row.value_label
+		sliders = [height_row, heading_row, radius_row]
 
 		warnings = WarningList.new(260.0)
 		root.add_child(warnings)
 
-	## One line: what it is, the control, what it reads. The value label is the row's third child,
-	## which is what lets the caller pick it up without this helper returning two things.
-	func _add_slider(root: VBoxContainer, label_text: String, minimum: float, maximum: float,
-			step: float, on_change: Callable) -> HSlider:
-		var row := HBoxContainer.new()
+	## One Design Space slider (caption, value with its unit, thin slider under). `value_changed` fires only for a user
+	## move, which is what lets the model update live in a plain method this calls.
+	func _add_slider(root: VBoxContainer, label_text: String, unit: String, minimum: float, maximum: float,
+			step: float, on_change: Callable) -> DsSlider:
+		var row := DsSlider.new(label_text, unit, minimum, maximum, step)
 		row.name = "%sRow" % label_text
-		var label := Label.new()
-		label.text = label_text
-		label.custom_minimum_size = Vector2(62, 0)
-		row.add_child(label)
-
-		var slider := HSlider.new()
-		slider.name = label_text
-		slider.min_value = minimum
-		slider.max_value = maximum
-		slider.step = step
-		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		# `Range.value_changed` does not fire for a value set from code, so the model update lives
-		# in a plain method this signal calls — which is also what keeps the room drivable from a
-		# headless test with no sliders to move.
-		slider.value_changed.connect(func(v: float) -> void:
+		row.slider.name = label_text
+		# No provenance tag on a gate: the value is the builder's own.
+		row.tag_label.get_parent().visible = false
+		row.value_changed.connect(func(v: float) -> void:
 			if not _updating and room != null:
 				on_change.call(v))
-		row.add_child(slider)
-
-		var value := Label.new()
-		value.theme_type_variation = &"ReadoutLabel"
-		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		value.custom_minimum_size = Vector2(62, 0)
-		row.add_child(value)
-
 		root.add_child(row)
-		return slider
+		return row
 
 	## `p_room` rather than a `Site`, because the height this panel shows is a height ABOVE THE
 	## GROUND and only the room knows what the ground is — see `FieldSystem.set_gate_height_m`.
@@ -1906,14 +1891,11 @@ class CoursePanel extends SpecPanel:
 		var radius := float(gate["radius"])
 
 		_updating = true
-		height_slider.value = above
-		heading_slider.value = heading
-		radius_slider.value = radius
+		# The DsSlider's own `value` shows the number and moves the thumb without emitting.
+		(sliders[0] as DsSlider).value = above
+		(sliders[1] as DsSlider).value = heading
+		(sliders[2] as DsSlider).value = radius
 		_updating = false
-
-		height_value.text = "%.1f m" % above
-		heading_value.text = "%.0f°" % heading
-		radius_value.text = "%.2f m" % radius
 
 	func row_text(key: String) -> String:
 		if course == null or course.gates.is_empty():
@@ -1949,6 +1931,7 @@ class ConditionsPanel extends SpecPanel:
 			{"key": "gust", "label": "Gustiness"},
 			{"key": "temperature", "label": "Temperature"},
 		])
+		use_design_space_look()
 
 	## No footer, only the width floor — see `PANEL_CONTENT_WIDTH`.
 	func _build_footer(root: VBoxContainer) -> void:

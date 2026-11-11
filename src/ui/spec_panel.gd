@@ -91,6 +91,28 @@ func _init(p_spec_rows: Array) -> void:
 	_build_footer(root)
 
 
+## Re-skins this panel in the Design Space language (R1): the drawer's box (or no box at all, `boxed` false, when it
+## stands inside a drawer), a small-caps quiet title, a hairline rule, quiet captions and full-ink values. Opt-in, so
+## the Lab's own panels are untouched until their rooms are ported.
+func use_design_space_look(boxed := true) -> void:
+	if boxed:
+		add_theme_stylebox_override("panel", DsUi.panel_style())
+	else:
+		add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	_title.theme_type_variation = &""
+	_title.add_theme_font_size_override("font_size", LothalTheme.FONT_SIZE_SMALL)
+	_title.add_theme_color_override("font_color", DsUi.INK_FAINT)
+	var rule := _content.get_child(1)
+	if rule is HSeparator:
+		_content.remove_child(rule)
+		rule.queue_free()
+		_content.add_child(DsUi.rule())
+		_content.move_child(_content.get_child(_content.get_child_count() - 1), 1)
+	for pair in _row_labels:
+		(pair[0] as Label).add_theme_color_override("font_color", DsUi.INK_MUTED)
+		(pair[1] as Label).add_theme_color_override("font_color", DsUi.INK)
+
+
 ## What goes below the spec grid. The base panel has nothing there — a subclass that adds no footer
 ## is a legitimate panel, not an unfinished one.
 func _build_footer(_root: VBoxContainer) -> void:

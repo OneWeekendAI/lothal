@@ -15,6 +15,10 @@ var slider: HSlider
 var unit := ""
 var unit_scale := 1.0
 var _value_label: Label
+## The value readout (a test reads its text and rect).
+var value_label: Label:
+	get:
+		return _value_label
 
 
 func _init(caption: String, p_unit: String, lo: float, hi: float, step: float, p_scale := 1.0) -> void:

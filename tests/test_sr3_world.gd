@@ -389,7 +389,7 @@ static func _field_room_controls() -> TestResult:
 	var after := ConditionsLibrary.load_from(ConditionsLibrary.path_beside(base)).selected()
 	var site_after := SiteLibrary.load_from(SiteLibrary.path_beside(base)).selected()
 	var ok := edited_ok and picked and absf(after.wind_speed_mps - 6.7056) < 1.0e-3 and after.humidity_pct == 55.0 and absf(site_after.elevation_m - 215.84) < 0.01 \
-		and room.world_picker != null and room.world_picker.item_count >= 5
+		and room.world_picker != null and room.world_picker.item_count >= 4 and room.world_picker.item_count == room.worlds.count()
 	return TestResult.new("sr3 field room: humidity, surface z0 and wind reference height are editable and saved; picking a world loads its weather and ground", ok,
 		"edited ok %s, picked %s, wind %.3f, humidity %.0f, elevation %.2f, picker items %d" % [edited_ok, picked, after.wind_speed_mps, after.humidity_pct, site_after.elevation_m, room.world_picker.item_count])
 
