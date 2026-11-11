@@ -296,13 +296,6 @@ static func _test_the_pack_crosses_the_doors(_catalog: PartsCatalog) -> Array:
 
 	shell.lab.battery_picker.select_id("battery_6s_1300")
 
-	shell.show_bench()
-	results.append(TestResult.new(
-		"the thrust stand runs on the pack chosen on Lab's rail, not on the reference pack",
-		shell.bench.current_build().battery["part_id"] == "battery_6s_1300",
-		"benching %s" % shell.bench.current_build().battery["name"]
-	))
-
 	shell.show_lab()
 	shell.show_sim()
 	results.append(TestResult.new(

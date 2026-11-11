@@ -30,6 +30,10 @@ extends RefCounted
 const NODE_PREFIX := "Component_"
 
 
+## The system names `Build.COMPONENT_SYSTEM` may use.
+const SYSTEMS: Array[String] = ["Frame", "Propulsion", "Power", "Control", "Video", "Printed", "Config"]
+
+
 static func run() -> Array:
 	var results: Array = []
 	# THE HOLD ON THE BUILDER'S OWN FILES. Taken here and released below, because a section that
@@ -147,8 +151,8 @@ static func _every_component_has_a_system_the_shell_knows(components: Array) -> 
 	var results: Array = []
 
 	var shell_systems: Array[String] = []
-	for entry in DsSetup.GROUPS:
-		shell_systems.append(String(entry[0]))
+	# The seven systems of the old shell (the Parts drawer's sheets carry them now, but the names stay the registry's).
+	shell_systems.append_array(SYSTEMS)
 
 	for category in components:
 		var system := String(Build.COMPONENT_SYSTEM.get(category, ""))

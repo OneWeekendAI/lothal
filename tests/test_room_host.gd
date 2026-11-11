@@ -70,10 +70,6 @@ static func _test_every_room_opens_and_is_freed() -> Array:
 	# Field name -> the door that opens it. Driven as data so a room added later without a matching
 	# entry here is a visible omission rather than a test that quietly covers six of seven.
 	var doors := {
-		"bench": host.show_bench,
-		"esc_bench": host.show_esc_bench,
-		"frame_bench": host.show_frame_bench,
-		"studio": host.show_studio,
 		"sim": host.show_sim,
 	}
 
@@ -100,16 +96,6 @@ static func _test_every_room_opens_and_is_freed() -> Array:
 	# One room at a time, and the assertion is about the OTHERS. Entering a second room without
 	# leaving the first is the shape the tab bar allowed and the toggle does not, so the check that
 	# matters is that opening any door closes whatever was behind it.
-	host.show_bench()
-	var left_behind: Object = host.bench
-	host.show_sim()
-	var only_sim := not is_instance_valid(left_behind) and host.sim != null
-	host.show_lab()
-	results.append(TestResult.new(
-		"entering a room closes whatever was running behind it",
-		only_sim,
-		"bench freed on the way into Sim: %s" % only_sim))
-
 	# Walking through every room without touching anything must leave nothing to write. Without
 	# this the suite would overwrite the packs of whoever runs it with an empty shelf — the same
 	# argument TestPackCharge makes, restated because this suite opens every room too.

@@ -17,8 +17,6 @@ signal identity_pressed
 signal field_pressed
 signal mission_pressed
 signal flights_pressed
-## A room from the menu's Rooms group (the DesignApp opens it): setup, frame_bench, bench, esc_bench, studio, projects.
-signal room_pressed(room_id: String)
 signal save_as_confirmed(design_name: String)
 signal open_chosen(file_name: String)
 ## A drone from the Open dialog's Projects section: open it / delete it (the shell does both).
@@ -39,15 +37,6 @@ const DIALOG_TOP := 60.0
 const MAX_RECENT := 8
 ## How many drones the Projects section lists (the sort button reaches the rest).
 const MAX_PROJECTS := 8
-## The Rooms group of the menu: every room that is not the design itself. [id, label, tooltip].
-const ROOMS := [
-	["setup", "Setup pages", "Frame, propulsion, power, control, video, printed and config sheets"],
-	["bench", "Thrust bench", "Run the fitted motor and prop on the stand"],
-	["esc_bench", "ESC bench", "Run the fitted ESC under load"],
-	["frame_bench", "Frame bench", "Shake and load the frame"],
-	["studio", "Studio", "Flights already flown"],
-	["projects", "Projects", "All saved drones"],
-]
 
 var name_label: Label
 var status_label: Label
@@ -64,7 +53,6 @@ var fly_busy := false
 var field_button: Button
 var mission_button: Button
 var flights_button: Button
-var room_buttons := {}
 var menu_button: Button
 var menu: PanelContainer
 var dialog: PanelContainer
@@ -175,21 +163,6 @@ func _build_menu() -> void:
 		b.pressed.connect(_menu_item.bind(which))
 		set(StringName(it[1]), b)
 		v.add_child(b)
-	v.add_child(DsUi.rule())
-	for room in ROOMS:
-		var rb := _button(String(room[1]))
-		rb.name = "Room_" + String(room[0])
-		rb.flat = true
-		rb.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		rb.tooltip_text = String(room[2])
-		rb.pressed.connect(_room_item.bind(String(room[0])))
-		room_buttons[String(room[0])] = rb
-		v.add_child(rb)
-
-
-func _room_item(room_id: String) -> void:
-	set_menu_open(false)
-	room_pressed.emit(room_id)
 
 
 func _menu_item(which: String) -> void:
@@ -448,7 +421,7 @@ func dialog_open() -> bool:
 func rects(view_size: Vector2) -> Array:
 	var out: Array = [Rect2(_row.offset_left, _row.offset_top, _row.offset_right - _row.offset_left, 32.0)]
 	if menu.visible:
-		out.append(Rect2(menu.offset_left, menu.offset_top, MENU_W, 5 * 30.0 + 20.0))
+		out.append(Rect2(menu.offset_left, menu.offset_top, MENU_W, 6 * 30.0 + 20.0))
 	if dialog.visible:
 		var m := dialog.get_combined_minimum_size()
 		var w := maxf(DIALOG_W, m.x)

@@ -71,17 +71,13 @@ static func _test_every_room_shares_one_shelf() -> Array:
 	var results: Array = []
 	var shell := RoomHost.new()
 
-	shell.show_bench()
-	var stand_store := shell.bench.pack_charge
-	shell.show_lab()
 	shell.show_sim()
 	var sim_store = shell.sim.pack_charge
 	shell.show_lab()
 
 	results.append(TestResult.new(
-		"the thrust bench, the field and Lab all read and write ONE set of packs",
-		stand_store == shell.pack_charge
-			and sim_store == shell.pack_charge and shell.lab.pack_charge == shell.pack_charge,
+		"the field and Lab both read and write ONE set of packs",
+		sim_store == shell.pack_charge and shell.lab.pack_charge == shell.pack_charge,
 		"one PackCharge instance across Lab, the bench and Sim"
 	))
 

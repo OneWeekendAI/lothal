@@ -25,7 +25,6 @@ signal flights_opened
 ## The Open dialog's Projects section: open this drone (the shell swaps the whole project) / this drone was deleted.
 signal project_open_requested(path: String)
 signal project_deleted(path: String)
-signal room_requested(room_id: String)
 
 const PANEL_FADE_S := 0.2
 
@@ -1459,7 +1458,6 @@ func _build_file_bar() -> void:
 	file_bar.field_pressed.connect(func(): field_requested.emit())
 	file_bar.mission_pressed.connect(func(): mission_requested.emit())
 	file_bar.flights_pressed.connect(func(): open_flights())
-	file_bar.room_pressed.connect(func(id: String): room_requested.emit(id))
 	file_bar.save_as_confirmed.connect(func(n: String): save_design(n))
 	file_bar.project_chosen.connect(func(path: String): project_open_requested.emit(path))
 	file_bar.project_delete_confirmed.connect(delete_project)

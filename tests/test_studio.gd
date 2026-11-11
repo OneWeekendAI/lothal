@@ -113,7 +113,6 @@ static func run() -> Array:
 	results.append_array(_test_bad_files())
 	results.append_array(_test_screen())
 	results.append_array(_test_report_fits())
-	results.append_array(_test_shell_room())
 	results.append_array(_test_log_reader())
 	results.append_array(_test_trace_decimation())
 	results.append_array(_test_trace_legend())
@@ -1193,38 +1192,6 @@ static func _test_channel_picker() -> Array:
 		"gyro channel reads: %s" % offered[1]))
 
 	studio.free()
-	return results
-
-
-## Studio as a room, against the invariants every other room holds to.
-static func _test_shell_room() -> Array:
-	var results: Array = []
-	var shell := RoomHost.new()
-
-	shell.show_studio()
-	var opened := shell.studio != null
-	shell.show_lab()
-	var closed_on_leaving := shell.studio == null
-
-	results.append(TestResult.new(
-		"Studio is a room: built fresh on entry, freed on the way out",
-		opened and closed_on_leaving,
-		"opened=%s, freed on leaving=%s" % [opened, closed_on_leaving]))
-
-	# Reading files cannot drain a pack, and a write-back "for symmetry" would be inventing a
-	# consequence out of having opened a room — the field editor's argument, verbatim.
-	# Read off RoomHost rather than a shell: the shells ask for rooms, RoomHost is the one owner of
-	# what happens on the way out, so that is where a write-back would have to appear to exist.
-	var shell_code := TestPidTunes._code_only(
-		FileAccess.get_file_as_string("res://src/ui/room_host.gd"))
-	var studio_block := shell_code.split("if studio != null:")
-	results.append(TestResult.new(
-		"closing Studio does not persist a pack charge — reading files turns no motors",
-		studio_block.size() == 2 and not studio_block[1].split("studio = null")[0]
-			.contains("persist_pack_charge"),
-		"no pack write-back on the Studio path"))
-
-	shell.free()
 	return results
 
 

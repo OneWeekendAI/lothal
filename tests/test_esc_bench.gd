@@ -64,7 +64,6 @@ static func run() -> Array:
 	results.append_array(_test_the_chart_is_a_rating_and_a_draw(catalog))
 	results.append_array(_test_burst_is_never_quoted_as_a_limit(catalog))
 	results.append_array(_test_it_names_what_runs_out_first(catalog))
-	results.append_array(_test_it_is_a_room_of_its_own())
 
 	return results
 
@@ -359,37 +358,4 @@ static func _test_it_names_what_runs_out_first(catalog: PartsCatalog) -> Array:
 	))
 	big.free()
 
-	return results
-
-
-# ---------------------------------------------------------------------------
-# It is a room, and it is not there when you are not in it
-# ---------------------------------------------------------------------------
-
-## The same argument the other two benches and Sim already make: this room holds a powertrain
-## draining a real pack, so "it costs nothing while you are choosing parts" has to be an absence
-## rather than a paused flag.
-static func _test_it_is_a_room_of_its_own() -> Array:
-	var results: Array = []
-	var shell := RoomHost.new()
-
-	shell.lab.esc_picker.select_id(UNDERSIZED_ESC)
-	shell.show_esc_bench()
-
-	results.append(TestResult.new(
-		"the ESC bench opens on the board chosen on Lab's rail, with no other room running",
-		shell.esc_bench != null and shell.bench == null
-			and shell.sim == null
-			and shell.esc_bench.current_build().esc["part_id"] == UNDERSIZED_ESC,
-		"testing %s" % shell.esc_bench.current_build().esc["name"]
-	))
-
-	shell.show_lab()
-	results.append(TestResult.new(
-		"leaving frees it, so no pack drains behind Lab",
-		shell.esc_bench == null and shell.showing_lab(),
-		"esc_bench=%s" % shell.esc_bench
-	))
-
-	shell.free()
 	return results

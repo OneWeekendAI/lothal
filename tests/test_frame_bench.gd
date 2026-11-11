@@ -467,24 +467,5 @@ static func screen_tests() -> Array:
 			"" if named.is_empty() else " — found " + ", ".join(named)]
 	))
 
-	# --- It is a room of its own, and leaving it frees it ---
-	var shell := RoomHost.new()
-	shell.lab.picker.select_id(LONG_FRAME)
-	shell.show_frame_bench()
-	results.append(TestResult.new(
-		"the frame bench opens on the frame chosen on Lab's rail, with no other room running",
-		shell.frame_bench != null and shell.bench == null
-			and shell.esc_bench == null and shell.sim == null
-			and shell.frame_bench.current_build().frame["part_id"] == LONG_FRAME,
-		"testing %s" % shell.frame_bench.current_build().frame["name"]
-	))
-
-	shell.show_lab()
-	results.append(TestResult.new(
-		"leaving frees it, so no pack drains behind Lab",
-		shell.frame_bench == null and shell.showing_lab(),
-		"frame_bench=%s" % shell.frame_bench
-	))
-	shell.free()
-
+	# (Its opening on the design's frame and being freed on leaving is the Bench tab's: tests/test_bench_tab.gd.)
 	return results

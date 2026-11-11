@@ -41,8 +41,6 @@ var _autosave: Timer
 var _open_dialog: FileDialog
 var _field: FieldSystem
 ## The Setup pages (the lab's sheets in a Design Space frame) and the layer they ride on.
-var setup: DsSetup
-var _setup_layer: CanvasLayer
 ## What the last status message said; a message also shows as a toast.
 var _status_text := ""
 var _toast: DsToast
@@ -66,7 +64,6 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	add_child(rooms)
 	_build_update_notice()
 	_build_field()
-	_build_setup()
 	_build_projects_screen()
 	_build_toast()
 
@@ -117,8 +114,6 @@ func _ready() -> void:
 	lab.print_panel.divergence_reprint_requested.connect(reprint_part)
 	lab.motor_details.mount_stl_requested.connect(_on_mount_stl_requested)
 	lab.propeller_details.guard_stl_requested.connect(_on_guard_stl_requested)
-	lab.harness_panel.harness_room_requested.connect(func() -> void: setup.show_harness_room())
-	setup.adopt_panels(lab)
 	if boot_to_projects:
 		_clear_project()
 
@@ -154,17 +149,6 @@ func _build_toast() -> void:
 	_toast_layer.add_child(_toast)
 
 
-func _build_setup() -> void:
-	_setup_layer = CanvasLayer.new()
-	_setup_layer.name = "SetupLayer"
-	_setup_layer.layer = TOGGLE_LAYER + 5
-	_setup_layer.visible = false
-	add_child(_setup_layer)
-	setup = DsSetup.new()
-	setup.closed.connect(back_to_drone_from_room)
-	_setup_layer.add_child(setup)
-
-
 ## What the last message said (a status line is a toast now).
 func status_text() -> String:
 	return _status_text
@@ -184,28 +168,6 @@ func projects_shown() -> bool:
 	return projects_screen != null and projects_screen.visible
 
 
-## Takes the room the DS menu named. "projects" saves and goes to the Projects screen.
-func open_room(room_id: String) -> bool:
-	match room_id:
-		"projects":
-			_on_project_action("projects")
-			return true
-		"setup":
-			return open_setup()
-		"bench", "esc_bench", "frame_bench", "studio":
-			if design_space == null or not _sync_design_to_lab():
-				return false
-			_enter_away(room_id)
-			match room_id:
-				"bench": rooms.show_bench()
-				"esc_bench": rooms.show_esc_bench()
-				"frame_bench": rooms.show_frame_bench()
-				"studio": rooms.show_studio()
-			return true
-	push_error("no such room: %s" % room_id)
-	return false
-
-
 ## The Flights drawer (Studio) over the design. From the sim or Field it comes back to the design first,
 ## so a landing can offer "open the flight you just flew" with one call.
 func open_flights() -> bool:
@@ -214,16 +176,6 @@ func open_flights() -> bool:
 	if away_from_design():
 		back_to_drone_from_room()
 	design_space.open_flights()
-	return true
-
-
-## The Setup pages: the lab's sheets (frame, propulsion, power, control, video, printed, config).
-func open_setup(page := "") -> bool:
-	if design_space == null or not _sync_design_to_lab():
-		return false
-	_enter_away("setup")
-	_setup_layer.visible = true
-	setup.show_page(page)
 	return true
 
 
@@ -583,7 +535,6 @@ func show_design_space() -> DesignSpace:
 	design_space.fly_requested.connect(_on_fly_requested)
 	design_space.field_requested.connect(open_field_from_design)
 	design_space.mission_requested.connect(open_mission_picker)
-	design_space.room_requested.connect(open_room)
 	design_space.current_project = func() -> String: return container.path if container != null else ""
 	design_space.project_open_requested.connect(_open_project_from_design)
 	design_space.project_deleted.connect(func(gone: String) -> void:
@@ -1093,8 +1044,6 @@ func back_to_drone_from_room() -> void:
 	if design_space == null:
 		return
 	_field.visible = false
-	_setup_layer.visible = false
-	setup.leave()
 	away_room = ""
 	rooms.show_lab()
 	lab.visible = false
@@ -1125,7 +1074,6 @@ func _clear_project() -> void:
 	_close_design_space()
 	_close_class_picker()
 	_field.visible = false
-	_setup_layer.visible = false
 	projects_screen.refresh()
 	projects_screen.visible = true
 

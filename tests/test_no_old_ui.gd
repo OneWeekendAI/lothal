@@ -10,7 +10,10 @@ extends RefCounted
 
 const BANNED_TOKENS := ["glass_box", "ReadoutLabel", "MutedLabel", "TitleLabel", "SmallLabel", "WarnLabel", "CompactButton",
 	"theme_type_variation =", "BuildPanel", "class_name Hud",
-	"GlassShell", "class_name Dock", "RoomMenu", "AppShell"]
+	"GlassShell", "class_name Dock", "RoomMenu", "AppShell",
+	# M15: the Rooms group and the Setup pages are retired; these may not come back.
+	"DsSetup", "DesignFileBar.ROOMS", "const ROOMS", "room_pressed", "signal room_requested", "func open_room", "func open_setup",
+	"\"Room_\"", "func show_bench", "func show_esc_bench", "func show_frame_bench", "func show_studio"]
 ## Deleted by R9 (the swap). Allowed ONLY while R9 is open.
 const PENDING_R9 := []
 ## Files that may use a banned token: none.
@@ -74,23 +77,22 @@ static func _runtime(tree: SceneTree) -> Dictionary:
 	app.open_mission_picker()
 	await tree.process_frame
 	out["mission picker"] = OldLook.scan(app)
-	for page in DsSetup.GROUPS:
-		app.open_setup(page[0])
-		for i in 2:
-			await tree.process_frame
-		out["setup " + String(page[0])] = OldLook.scan(app)
-		app.back_to_drone_from_room()
-	app.open_setup("Power")
-	app.setup.show_harness_room()
+	app.open_flights()
+	for i in 3:
+		await tree.process_frame
+	out["flights drawer"] = OldLook.scan(app)
+	app.design_space.flights_sheet.close()
 	await tree.process_frame
-	out["setup harness room"] = OldLook.scan(app)
-	app.back_to_drone_from_room()
-	for room in ["bench", "esc_bench", "frame_bench", "studio"]:
-		app.open_room(room)
-		for i in 3:
-			await tree.process_frame
-		out["room " + room] = OldLook.scan(app)
-		app.back_to_drone_from_room()
+	app.design_space.open_part_sheet("frame", "shape")
+	for i in 3:
+		await tree.process_frame
+	out["part sheet"] = OldLook.scan(app)
+	app.design_space.part_sheet.close()
+	await tree.process_frame
+	app.design_space.file_bar.set_menu_open(true)
+	await tree.process_frame
+	out["file menu: Rooms group absent"] = ([] if app.find_children("Room_*", "Button", true, false).is_empty() else ["a Room_ button"])
+	app.design_space.file_bar.set_menu_open(false)
 	app.open_field_from_design()
 	for i in 3:
 		await tree.process_frame

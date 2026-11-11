@@ -81,7 +81,6 @@ static func run() -> Array:
 	results.append(_test_a_centred_pack_puts_the_marker_at_the_frames_own_centre())
 	results.append(_test_the_drawn_pack_matches_battery_size_in_all_three_dimensions())
 	results.append(_test_the_room_and_the_fit_panel_show_one_offset())
-	results.append(_test_the_rooms_offset_slider_reaches_the_one_path_a_tweak_takes())
 
 	return results
 
@@ -673,30 +672,3 @@ static func _expected_cg_m(build: Build, frame: AirframeDocument) -> Vector3:
 			extras.append(part)
 	return AirframeProperties.compute(frame, PackView.materials(), extras).cg_m
 
-
-## AND THE ROOM'S SLIDER IS ACTUALLY PLUGGED IN. The check above proves the two screens agree about
-## a value; this one proves the room's own control reaches the place that value lives at all.
-##
-## Driven through the SHELL, because the routing is the shell's — the room announces
-## `pack_offset_edited` and `DesignApp` hands it to `AssemblyPanel.set_tweak_mm`. A room whose
-## slider was connected to nothing would pass every check in this file except this one, and would
-## look exactly right until a builder dragged it.
-##
-## MUTATION CONFIRMED RED: drop the `pack_offset_edited` connection in
-## `DsSetup.adopt_panels`.
-static func _test_the_rooms_offset_slider_reaches_the_one_path_a_tweak_takes() -> TestResult:
-	var shell := DesignApp.new()
-	shell.setup.adopt_panels(shell.lab)
-	shell.setup.show_harness_room()
-
-	var room: PowerWorkbench = shell.setup.power_room
-	room.pack_offset_edited.emit(-9.0)
-	var stored := shell.lab.tweaks.value_mm(AssemblyTweaks.BATTERY_OFFSET,
-		shell.lab.current_build())
-	var on_the_panel := shell.lab.assembly_panel.tweak_row_text(AssemblyTweaks.BATTERY_OFFSET)
-	shell.free()
-
-	return TestResult.new(
-		"the room's offset control reaches the configuration, through the path that already owns it",
-		absf(stored + 9.0) < 1.0e-9 and on_the_panel.begins_with("-9.0"),
-		"the configuration reads %.1f mm and the Fit panel says \"%s\"" % [stored, on_the_panel])

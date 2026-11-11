@@ -32,30 +32,8 @@ const SIM_SCENE := "res://src/scenes/main.tscn"
 var lab: LabScreen
 ## The flight simulation, or null whenever Lab is showing. Null IS the assertion — see above.
 var sim: Node = null
-## The thrust stand, or null whenever it is not the room you are in. Same argument as `sim`
-## and for the same reason: a bench holds a running Powertrain and a live audio bus, so "it
-## costs nothing while you are choosing parts" has to be an absence rather than a paused flag.
-##
-## It is a room rather than a panel inside Lab deliberately. labs-and-sim.md §2.1 puts the
-## component benches inside Labs, and they are — but Lab's stated virtue is that it is quiet
-## and cheap while you work, and a bench is the one part of the garage that runs a physics
-## loop and makes noise. Putting it behind its own door keeps that promise literally true
-## instead of nearly true.
-var bench: BenchScreen = null
-## The battery bench — a load test rather than a stand — or null when it is not the room you are
-## in. Same argument as `bench` and `sim`: it holds a running Powertrain draining a real pack, and
-## a pack that kept emptying while you were next door choosing propellers would be the worst kind
-## of bug, since the only evidence would be a number that was wrong later.
-## The ESC bench — a board swept against the motors chosen — or null when it is not the room you
-## are in. Same argument as the other two: it holds a running Powertrain drawing real current out
-## of a real pack, and a sweep left running behind Lab would be flattening a battery to answer a
-## question nobody was still asking.
-var esc_bench: EscBenchScreen = null
-## The frame bench — the assembled aircraft stepped about one axis — or null when it is not the room
-## you are in. Same argument as the other three: it holds a running Powertrain turning four motors
-## at four different throttles out of a real pack, and a step response left running behind Lab would
-## be flattening a battery to answer a question nobody was still asking.
-var frame_bench: FrameBenchScreen = null
+## THE BENCHES AND STUDIO ARE NOT ROOMS ANY MORE (M15): the thrust stand, ESC bench and frame bench are Bench tabs of the
+## Motor, ESC and Frame sheets, and Studio is the Flights drawer, all over the Design Space. Nothing here holds one.
 ## THERE IS NO FIELD EDITOR HERE ANY MORE (F11), and its absence is the slice.
 ##
 ## Laying out a course was a ROOM — a door off the Rooms menu, a screen of its own, a second
@@ -64,12 +42,6 @@ var frame_bench: FrameBenchScreen = null
 ## icon, so there is nothing here to open and nothing to free. What used to be this room's one
 ## unusual property — that it costs no charge, because nothing in it turns — is unchanged and is
 ## now a property of a system rather than of a door.
-## Studio — the flights already flown — or null when it is not the room you are in. Freed on the
-## way out like the others, and for the field editor's reason rather than the benches': it turns
-## no motors and costs no charge. What it holds is a list of headers read off disk, which goes
-## stale the moment a flight is recorded next door, so a Studio kept alive behind Sim would be a
-## room describing a history that had moved on. Rebuilding on entry re-reads the directory.
-var studio: StudioScreen = null
 ## The courses that have been laid out, and which one is flown. Held here for the same reason
 ## `pack_charge` is: two rooms touch it — the editor writes it and the field reads it — and one
 ## instance within a session is what stops the door from handing over a stale copy.
@@ -225,87 +197,6 @@ func show_lab() -> void:
 	room_changed.emit()
 
 
-## Onto the thrust stand, with the pairing currently chosen on Lab's rails. The bench judges
-## the build being assembled next door — it has no fixture of its own, because a bench that
-## tested something other than what you are building would be answering a question nobody asked.
-##
-## Built fresh every time, so the pack starts full and the motor starts stopped. A bench you
-## walked away from mid-run and came back to still spinning would be a machine left unattended.
-func show_bench() -> void:
-	_close_rooms()
-	var selection := lab.selection()
-	_unplug_for(selection)
-	bench = BenchScreen.new(
-		lab.catalog,
-		selection["motor"],
-		selection["propeller"],
-		selection["battery"],
-		pack_charge
-	)
-	_enter_room(bench)
-
-
-## Onto the ESC bench, with the board currently chosen on Lab's rail and the motors that will be
-## pulling through it. Built fresh every time, for the same reason the other two benches are: a
-## bench you walked away from mid-sweep and came back to still at full throttle would be a machine
-## left unattended.
-func show_esc_bench() -> void:
-	_close_rooms()
-	var selection := lab.selection()
-	_unplug_for(selection)
-	esc_bench = EscBenchScreen.new(
-		lab.catalog,
-		selection["motor"],
-		selection["propeller"],
-		selection["battery"],
-		selection["esc"],
-		pack_charge,
-		selection["frame"]
-	)
-	_enter_room(esc_bench)
-
-
-## Onto the frame bench, with the whole aircraft Lab has assembled. It takes the FULL selection
-## rather than a pairing, because what is under test here is the frame carrying its build — an empty
-## frame has no interesting inertia, and swapping the pack changes the answer as much as swapping
-## the frame does.
-##
-## Built fresh every time, for the same reason the other three benches are: a bench you walked away
-## from mid-step and came back to still at full deflection would be a machine left unattended.
-func show_frame_bench() -> void:
-	_close_rooms()
-	var selection := lab.selection()
-	_unplug_for(selection)
-	frame_bench = FrameBenchScreen.new(
-		lab.catalog,
-		selection["frame"],
-		selection["motor"],
-		selection["propeller"],
-		selection["battery"],
-		selection["esc"],
-		pack_charge,
-		lab.tweaks
-	)
-	_enter_room(frame_bench)
-
-
-## Into Studio, to look at flights already flown (LTHL-54).
-##
-## The library is constructed HERE and fresh on every entry, rather than held as a field alongside
-## course_library and pack_charge. Those two are shared because two rooms look at one set of packs
-## and one set of courses within a session, and a second copy would be a second opinion. A log
-## directory has exactly one reader and its contents change while the builder is somewhere else —
-## every time they land in Sim. A cached library would open a room describing the history as it
-## stood before the flight they just finished, which is the one flight they came in here to look at.
-##
-## Like the field editor, this does NOT call _unplug_for(): Studio draws no current, so there is
-## nothing for it to overwrite.
-func show_studio() -> void:
-	_close_rooms()
-	studio = StudioScreen.new(FlightLogLibrary.load_from())
-	_enter_room(studio)
-
-
 ## Out to the field, flying what the garage built. The scene is instantiated fresh, handed
 ## Lab's selection, and only THEN added to the tree — the hand-over has to land before _ready
 ## runs, or the flight scene would spend a moment on a different aircraft and rebuild.
@@ -394,28 +285,6 @@ func _close_rooms() -> void:
 		remove_child(sim)
 		sim.free()
 		sim = null
-	if bench != null:
-		bench.persist_pack_charge()
-		_host.remove_child(bench)
-		bench.free()
-		bench = null
-	if esc_bench != null:
-		esc_bench.persist_pack_charge()
-		_host.remove_child(esc_bench)
-		esc_bench.free()
-		esc_bench = null
-	if frame_bench != null:
-		frame_bench.persist_pack_charge()
-		_host.remove_child(frame_bench)
-		frame_bench.free()
-		frame_bench = null
-	# No persist_pack_charge() here either, and for the same reason: Studio reads files. Nothing
-	# in it turns, draws current or holds a Powertrain, so a write-back would be inventing a
-	# consequence out of having opened a room.
-	if studio != null:
-		_host.remove_child(studio)
-		studio.free()
-		studio = null
 	# Only when a room actually changed something. Opening a bench and walking straight back out
 	# must not rewrite the file — see PackCharge._dirty.
 	if pack_charge.has_unsaved_changes():

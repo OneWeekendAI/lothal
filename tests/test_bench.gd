@@ -29,7 +29,6 @@ static func run() -> Array:
 	results.append_array(_test_sag_and_recovery(catalog))
 	results.append_array(_test_instruments(catalog))
 	results.append_array(_test_sweep(catalog))
-	results.append_array(_test_it_is_a_room_of_its_own(catalog))
 	results.append_array(_test_the_camera_is_looking_at_the_pairing(catalog))
 	results.append_array(_test_the_bench_can_be_heard(catalog))
 
@@ -472,52 +471,4 @@ static func _test_sweep(catalog: PartsCatalog) -> Array:
 	))
 
 	bench.free()
-	return results
-
-
-# ---------------------------------------------------------------------------
-# The bench is a room, and it is not there when you are not in it
-# ---------------------------------------------------------------------------
-
-## Same argument DesignApp already makes for Sim: a bench holds a running powertrain and an
-## audio bus, so "it costs nothing while you are in Lab" has to be an absence rather than a
-## flag. A paused bench is something that can rot; a freed one cannot.
-static func _test_it_is_a_room_of_its_own(_catalog: PartsCatalog) -> Array:
-	var results: Array = []
-	var shell := RoomHost.new()
-
-	results.append(TestResult.new(
-		"the app still opens on Lab, with no bench and no sim instantiated",
-		shell.showing_lab() and shell.bench == null and shell.sim == null,
-		"showing_lab=%s bench=%s sim=%s" % [shell.showing_lab(), shell.bench, shell.sim]
-	))
-
-	shell.show_bench()
-	results.append(TestResult.new(
-		"opening the bench instantiates it and leaves the flight sim absent",
-		shell.bench != null and shell.sim == null and not shell.showing_lab(),
-		"bench=%s sim=%s" % [shell.bench, shell.sim]
-	))
-
-	# The pairing under test is the one chosen on Lab's rails — the bench judges the build
-	# being assembled, not a fixture of its own.
-	shell.show_lab()
-	shell.lab.motor_picker.select_id("motor_2807_1300kv")
-	shell.lab.propeller_picker.select_id("prop_7x4x3")
-	shell.show_bench()
-	var benched := shell.bench.current_build()
-	results.append(TestResult.new(
-		"the bench tests the pairing chosen on Lab's rails, not a fixture of its own",
-		benched.motor["part_id"] == "motor_2807_1300kv" and benched.propeller["part_id"] == "prop_7x4x3",
-		"benching %s + %s" % [benched.motor["name"], benched.propeller["name"]]
-	))
-
-	shell.show_lab()
-	results.append(TestResult.new(
-		"leaving the bench frees it, so a powertrain never runs behind Lab",
-		shell.bench == null and shell.showing_lab(),
-		"bench=%s" % shell.bench
-	))
-
-	shell.free()
 	return results
