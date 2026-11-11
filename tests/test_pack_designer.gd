@@ -32,7 +32,9 @@ const BEFORE_NAMES := ["Back", "Cat_antenna", "Cat_battery", "Cat_camera", "Cat_
 ## buttons as before (Save, Save as, Open, Field, Mission), so the count stays 18 (design space redesign, 2026-11-11).
 ## 19 = 18 plus the identity sheet's close mark (DsDrawer close_button, B5 2026-11-11); the chip itself is named
 ## "IdentityChip" above. Deliberate and unrelated to the pack tile.
-const BEFORE_UNNAMED := 19
+## 20 = 19 plus the file bar menu's "Flights" item (flights_button, M13). Deliberate and unrelated; red at
+## 19 (counted 20), green at 20, and still red if a further unnamed button appears.
+const BEFORE_UNNAMED := 20
 
 ## Figure keys that are derived from cells; none may be reachable by typing.
 const DERIVED := ["nominal_v", "full_v", "empty_v", "mah", "wh", "mass_g", "dims_mm", "cont_a",

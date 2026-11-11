@@ -1033,7 +1033,7 @@ static func _test_migration_reaches_builder(catalog: PartsCatalog, mats: FrameMa
 	out.append(_t("unreadable and refused drafts are counted",
 		CustomPropellers.migration_problem({"unreadable": ["a"], "refused": ["b"]}).begins_with("2 old drafts")))
 	# The production paths: the shell runs it, and the designer's bar is where the builder hears.
-	var shell_source := FileAccess.get_file_as_string("res://src/ui/glass_shell.gd")
+	var shell_source := FileAccess.get_file_as_string("res://src/ui/design_app.gd")
 	out.append(_t("the shell runs the migration when it opens the Design Space",
 		shell_source.contains("design_space.migrate_old_drafts()")))
 	var ds := DesignSpace.new(DesignSession.default_for_class("five_inch"), catalog)

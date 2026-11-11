@@ -28,7 +28,18 @@ func _init() -> void:
 	var total := 0
 	var fail_count := 0
 
+	# `-- only=a|b|c` runs just those suites from SUITES (the tail runs below still follow): for bisecting
+	# which earlier suite leaves state behind that stalls a later one.
+	var only := PackedStringArray()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("only="):
+			only = a.substr(5).split("|")
 	for suite_name in SUITES:
+		if not only.is_empty() and not (suite_name in only):
+			continue
+		# A start line, so a slow suite (tests/test_one_door.gd opens a whole DesignApp per drone class, ~30 s
+		# each, minutes of silence) names itself instead of looking like a hang after the previous suite.
+		print("[start] %s" % suite_name)
 		var results: Array = await _run_suite(suite_name)
 		# A suite that returns nothing has crashed, or its class failed to register. Left
 		# unchecked that reads as zero failures, and the runner cheerfully reports success
@@ -288,6 +299,7 @@ func _run_suite(suite_name: String) -> Array:
 		"conditions": return TestConditions.run()
 		# F10 (plans/2026-09-21-field-room-plan.md). The Field room in the glass shell.
 		"field room": return TestFieldRoom.run()
+		"field page": return TestFieldPage.run()
 		# R1: the Field room wears no old glass-shell look.
 		"field ds": return await TestFieldDs.run(self)
 		"studio ds": return await TestStudioDs.run(self)
@@ -423,6 +435,7 @@ func _run_suite(suite_name: String) -> Array:
 		"sim chrome": return TestSimChrome.run()
 		"sim drone model": return await TestSimDroneModel.run(self)
 		"sim visual": return await TestSimVisual.run(self)
+		"sim perf": return await TestSimPerf.run(self)
 		"sim math": return await TestSimMath.run(self)
 		"one build": return TestOneBuild.run()
 		"watch door": return TestWatchDoor.run()

@@ -62,6 +62,10 @@ func _init(p_catalog: PartsCatalog = null, p_tweaks: AssemblyTweaks = null,
 	var catalog := p_catalog if p_catalog != null else PartsCatalog.load_with_custom()
 	rooms = RoomHost.new(catalog, p_tweaks, p_pack_charge)
 	add_child(rooms)
+	# Keep / Reprint on a "Printed before" finding are wired here, not in _ready: an app a test builds
+	# outside a tree never runs _ready, and its panel buttons must still reach these two handlers.
+	lab.print_panel.divergence_kept.connect(keep_divergence)
+	lab.print_panel.divergence_reprint_requested.connect(reprint_part)
 	_build_update_notice()
 	_build_field()
 	_build_projects_screen()
@@ -110,8 +114,6 @@ func _ready() -> void:
 	lab.motor_details.mount_changed.connect(func(_mount_id: String) -> void: _refresh_status())
 	lab.tune_panel.tune_changed.connect(_refresh_status)
 	lab.print_panel.export_requested.connect(_on_printed_export_requested)
-	lab.print_panel.divergence_kept.connect(keep_divergence)
-	lab.print_panel.divergence_reprint_requested.connect(reprint_part)
 	lab.motor_details.mount_stl_requested.connect(_on_mount_stl_requested)
 	lab.propeller_details.guard_stl_requested.connect(_on_guard_stl_requested)
 	if boot_to_projects:

@@ -56,7 +56,7 @@ static func run() -> Array:
 	var bars: Array = []
 	var buttons: Dictionary = {}
 	for n in all:
-		if (n is Dock or n is RoomMenu) and _shown(n):
+		if (n.get_class() == "Dock" or n.name in ["Dock", "RoomMenu"] or (n.get_script() != null and String(n.get_script().resource_path).ends_with("/dock.gd"))) and _shown(n):
 			banned.append("%s(%s)" % [n.name, n.get_class()])
 		if n is Button:
 			var b := n as Button
