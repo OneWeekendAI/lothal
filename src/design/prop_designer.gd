@@ -882,6 +882,32 @@ func open_prop(p_part_id: String) -> void:
 	_rederive()
 
 
+## Opens a blade drawn in the old Propulsion room (a `BladeLibrary` file) as a NEW prop: its planform,
+## twist, material and thickness come with it; saving makes a part of its own. False when the file
+## cannot be read.
+func open_blade_file(path: String) -> bool:
+	var loaded := BladeLibrary.load_blade(path)
+	if loaded == null:
+		_set_status("Could not open %s" % path.get_file(), true)
+		return false
+	doc = loaded
+	source_name = doc.name
+	part_id = ""
+	doc.id = ""
+	doc.published_mass_g = 0.0
+	hub_assumed = true
+	hub_g = default_hub_g(doc, materials)
+	_undo.clear()
+	_redo.clear()
+	name_field.text = doc.name
+	chord_editor.set_document(doc)
+	twist_editor.set_document(doc)
+	pitch_offer_open = false
+	_set_status("Opened the drawn blade %s. Saving makes a new prop." % doc.name, false)
+	_rederive()
+	return true
+
+
 ## The Lab's way in: the part its rail and inspector are looking at. A saved prop opens as `open_prop`
 ## does; a shelf prop starts a new one from its figures, so a save never claims to be the vendor's.
 func open_part(prop: Dictionary) -> void:

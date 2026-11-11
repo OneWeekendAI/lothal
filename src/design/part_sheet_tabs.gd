@@ -6,6 +6,7 @@ extends RefCounted
 ##
 ## Tabs land one at a time as the old rooms are merged in (MERGE_TRACKER). Every category has the
 ## "sheet" tab (the fitted part's facts, the same rows the inspector shows), so no sheet is empty;
+## the propeller "blade" (the blade designer's door and the blades drawn in the old Propulsion room),
 ## the frame also has "shape" (the plan editor, layouts, SVG/DXF import and the exports).
 
 const SHEET := {"id": "sheet", "label": "Sheet"}
@@ -14,13 +15,14 @@ const NUMBERS := {"id": "numbers", "label": "Numbers"}
 const ARMS := {"id": "arms", "label": "Arms"}
 const HARDWARE := {"id": "hardware", "label": "Hardware"}
 const LAYOUT := {"id": "layout", "label": "Layout"}
+const BLADE := {"id": "blade", "label": "Blade"}
 
 ## Category -> tab list, in tab order. Frame is a category of the sheet though not of the shelf.
 const TABS := {
 	"frame": [SHEET, SHAPE, NUMBERS, ARMS, HARDWARE, LAYOUT],
 	"battery": [SHEET],
 	"motor": [SHEET],
-	"propeller": [SHEET],
+	"propeller": [SHEET, BLADE],
 	"guard": [SHEET],
 	"flight_controller": [SHEET],
 	"esc": [SHEET],
@@ -72,6 +74,8 @@ static func build(category: String, tab_id: String, ds: DesignSpace, sheet: Part
 			return _facts_tab(category, ds)
 		"shape":
 			return FrameShapeTab.new(ds, sheet)
+		"blade":
+			return PropBladeTab.new(ds, sheet)
 		"numbers", "arms", "hardware", "layout":
 			return FrameFiguresTab.new(ds, tab_id)
 	return null

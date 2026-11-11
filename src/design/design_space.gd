@@ -2268,7 +2268,7 @@ var prop_designer: PropDesigner
 
 ## Opens the prop designer over the Design Space, starting from this drone's prop. A second call
 ## while it is open does nothing.
-func open_prop_designer(saved_id: String = "") -> void:
+func open_prop_designer(saved_id: String = "", blade_path: String = "") -> void:
 	if prop_designer != null:
 		return
 	cancel_drag()
@@ -2285,6 +2285,8 @@ func open_prop_designer(saved_id: String = "") -> void:
 	add_child(designer)
 	if saved_id != "":
 		designer.open_prop(saved_id)
+	elif blade_path != "":
+		designer.open_blade_file(blade_path)
 	var draft_problem := CustomPropellers.migration_problem(draft_migration)
 	if draft_problem != "":
 		designer.show_warning(draft_problem)
