@@ -148,9 +148,7 @@ var drone_audio: DroneAudio
 ## moves the PLACEMENT between two permanent cameras rather than moving a camera between viewports,
 ## so there is no state in which a viewport has none.
 var fpv_view: FpvView
-var _l_was_pressed := false
-var _c_was_pressed := false
-var _r_was_pressed := false
+var _key_was_down: Dictionary = {}
 ## The recorder, when one is armed, and null the rest of the time (LTHL-51).
 ##
 ## RECORDING IS EXPLICIT AND THE NULL IS THE OFF STATE. The alternative shapes — always-on, or an
@@ -352,8 +350,18 @@ func _ready() -> void:
 	fly_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	fly_hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	fly_hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	fly_hint.offset_bottom = -24
+	fly_hint.offset_bottom = -76   # above the controls strip
 	ui_layer.add_child(fly_hint)
+
+	# The on-screen flight controls, bottom centre between the aircraft readouts and the FPV inset.
+	flight_controls = DsFlightControls.new()
+	flight_controls.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	flight_controls.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	flight_controls.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	flight_controls.offset_bottom = -LothalTheme.SPACE_4
+	flight_controls.theme = theme
+	ui_layer.add_child(flight_controls)
+	flight_controls.bind(self)
 	fly_hint.say(FLY_HINT, false, FLY_HINT_SECONDS)
 
 	# Bottom right, which is the one corner of this screen nothing else claims — the build panel is
@@ -580,6 +588,9 @@ func persist_pack_charge() -> void:
 const FLY_HINT := "Hovering at the start.   W / S throttle    arrows tilt    A / D turn    Space mode    Esc back to design"
 const FLY_HINT_SECONDS := 10.0
 var fly_hint: DsToast
+var flight_controls: DsFlightControls
+## Pause freezes the flight (physics stepping) and nothing else; the HUD and the strip stay live.
+var flight_paused := false
 var watch_runner: MissionRunner = null
 var watch_result: Dictionary = {}
 
@@ -619,20 +630,21 @@ func _physics_process(delta: float) -> void:
 	if fly_hint != null and fly_hint.visible and (Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_S) \
 			or Input.is_key_pressed(KEY_UP) or Input.is_key_pressed(KEY_DOWN)):
 		fly_hint.clear()
-	if Input.is_key_pressed(KEY_L) != _l_was_pressed:
-		_l_was_pressed = Input.is_key_pressed(KEY_L)
-		if _l_was_pressed:
-			_toggle_listener()
-
-	if Input.is_key_pressed(KEY_C) != _c_was_pressed:
-		_c_was_pressed = Input.is_key_pressed(KEY_C)
-		if _c_was_pressed:
-			_toggle_fpv()
-
-	if Input.is_key_pressed(KEY_R) != _r_was_pressed:
-		_r_was_pressed = Input.is_key_pressed(KEY_R)
-		if _r_was_pressed:
-			_toggle_recording()
+	# One table for the keys and the strip's buttons (DsFlightControls.ACTIONS). Space is edge-read in
+	# `_read_keyboard`, so it is skipped here.
+	for a in DsFlightControls.ACTIONS:
+		if a[3] == KEY_SPACE:
+			continue
+		var down := Input.is_key_pressed(a[3])
+		if down != bool(_key_was_down.get(a[3], false)):
+			_key_was_down[a[3]] = down
+			if down:
+				call(a[4])
+	if flight_controls != null:
+		flight_controls.show_state(flight_paused, _recorder != null)
+	if flight_paused:
+		hud.tick_banner(delta)
+		return
 
 	if Input.get_connected_joypads().is_empty():
 		_read_keyboard()
@@ -859,8 +871,17 @@ func _read_keyboard() -> void:
 
 func _apply_mode_toggle(pressed: bool) -> void:
 	if pressed and not _mode_button_was_pressed:
-		fc.toggle_mode()   # also clears integral/derivative history from the other mode
+		_toggle_flight_mode()
 	_mode_button_was_pressed = pressed
+
+## Space, and the strip's "Flight mode" button.
+func _toggle_flight_mode() -> void:
+	fc.toggle_mode()   # also clears integral/derivative history from the other mode
+
+## P, and the strip's "Pause" button.
+func toggle_pause() -> void:
+	flight_paused = not flight_paused
+	hud.show_banner("PAUSED" if flight_paused else "RESUMED", 1.5)
 
 func _apply_rc(roll_axis: float, pitch_axis: float, yaw_axis: float, throttle_axis: float) -> void:
 	rc.roll = roll_axis
