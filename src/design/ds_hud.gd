@@ -211,7 +211,7 @@ func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, 
 	_voltage_label.add_theme_color_override("font_color", _voltage_color(obs, build))
 
 	var remaining := 1.0 - obs.capacity_used_fraction
-	var minutes := build.remaining_flight_time_min(core.powertrain.battery)
+	var minutes := _remaining_minutes(core, build)
 	_pack_label.text = "%.0f %%  ·  %s" % [remaining * 100.0, _format_minutes(minutes)]
 	_pack_label.add_theme_color_override("font_color",
 		COLOR_CRITICAL if minutes <= 0.0 else (COLOR_WARN if remaining < 0.2 else COLOR_OK))
@@ -222,6 +222,31 @@ func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, 
 	_current_lap_label.text = "Lap  %s" % (LapTimer.format(timer.current_lap_s) if timer.running else "--:--.--")
 	_best_lap_label.text = "Best  %s" % LapTimer.format(timer.best_lap_s)
 	_gate_label.text = "Gate %d of %d" % [course.next_gate_index + 1, course.gate_count()]
+
+
+## The "N left" figure re-solves the whole aircraft's hover current (about 4 ms on this Mac), which is
+## 40x the 0.1 ms the rest of the frame costs. It moves by seconds per minute of flight, so it is
+## re-solved at most every REMAINING_REFRESH_S of sim time (and at once for a different Build or
+## pack) rather than on every 120 Hz tick. Measured: 3.9 ms/call, the whole sim regression.
+const REMAINING_REFRESH_S := 1.0
+var _remaining_cache_build: Build = null
+var _remaining_cache_pack: BatteryModel = null
+var _remaining_cache_min := 0.0
+var _remaining_cache_at_s := -1.0e9
+var remaining_solves := 0   ## how many times the solve really ran; a perf test reads it
+
+
+func _remaining_minutes(core: DroneCore, build: Build) -> float:
+	var pack: BatteryModel = core.powertrain.battery
+	var now_s := Time.get_ticks_msec() / 1000.0
+	var stale := now_s - _remaining_cache_at_s >= REMAINING_REFRESH_S or now_s < _remaining_cache_at_s
+	if stale or build != _remaining_cache_build or pack != _remaining_cache_pack:
+		_remaining_cache_build = build
+		_remaining_cache_pack = pack
+		_remaining_cache_at_s = now_s
+		_remaining_cache_min = build.remaining_flight_time_min(pack)
+		remaining_solves += 1
+	return _remaining_cache_min
 
 
 ## "2:24 left", because "2.4 min" is a number to convert mid-flight. Zero reads as spent.

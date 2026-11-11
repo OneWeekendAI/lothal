@@ -13,7 +13,10 @@ extends Node3D
 const REACH_DIAMETERS := 1.5
 const LIFT_MPS := 2.0
 const FULL_MPS := 8.0
-const MAX_PARTICLES := 140
+const MAX_PARTICLES := 160
+## The emitter sits this far above the terrain mesh, which the physics height only approximates: a puff
+## spawned at the surface is sliced by it and reads as a flat-bottomed dome.
+const LIFT_OFF_M := 0.16
 
 var _particles: GPUParticles3D
 var _material: ParticleProcessMaterial
@@ -36,18 +39,18 @@ func _init() -> void:
 	_material = ParticleProcessMaterial.new()
 	_material.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
 	_material.emission_ring_axis = Vector3.UP
-	_material.emission_ring_height = 0.02
+	_material.emission_ring_height = 0.01
 	_material.emission_ring_radius = 0.2
 	_material.emission_ring_inner_radius = 0.05
-	_material.direction = Vector3(0, 0.15, 0)
-	_material.spread = 25.0
-	_material.radial_velocity_min = 1.2
-	_material.radial_velocity_max = 3.2
-	_material.gravity = Vector3(0, 0.15, 0)
+	_material.direction = Vector3(0, 0.05, 0)
+	_material.spread = 12.0
+	_material.radial_velocity_min = 0.5
+	_material.radial_velocity_max = 1.4
+	_material.gravity = Vector3(0, 0.0, 0)
 	_material.damping_min = 0.8
 	_material.damping_max = 1.6
-	_material.scale_min = 0.5
-	_material.scale_max = 1.4
+	_material.scale_min = 0.35
+	_material.scale_max = 0.7
 	var grow := Curve.new()
 	grow.add_point(Vector2(0, 0.35))
 	grow.add_point(Vector2(1, 1.0))
@@ -56,7 +59,7 @@ func _init() -> void:
 	_material.scale_curve = grow_tex
 	var ramp := Gradient.new()
 	ramp.set_color(0, Color(1, 1, 1, 0.0))
-	ramp.add_point(0.15, Color(1, 1, 1, 0.75))
+	ramp.add_point(0.2, Color(1, 1, 1, 0.14))
 	ramp.set_color(1, Color(1, 1, 1, 0.0))
 	var ramp_tex := GradientTexture1D.new()
 	ramp_tex.gradient = ramp
@@ -69,8 +72,11 @@ func _init() -> void:
 	puff.width = 64
 	puff.height = 64
 	var g := Gradient.new()
-	g.set_color(0, Color(1, 1, 1, 1))
-	g.set_color(1, Color(1, 1, 1, 0))
+	# A round puff that reaches ZERO alpha well inside the quad's edge, so no quad outline is ever drawn.
+	g.set_color(0, Color(1, 1, 1, 0.9))
+	g.add_point(0.45, Color(1, 1, 1, 0.3))
+	g.add_point(0.85, Color(1, 1, 1, 0.0))
+	g.set_color(g.get_point_count() - 1, Color(1, 1, 1, 0.0))
 	puff.gradient = g
 	var quad_mat := StandardMaterial3D.new()
 	quad_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -78,15 +84,20 @@ func _init() -> void:
 	quad_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	quad_mat.vertex_color_use_as_albedo = true
 	quad_mat.albedo_texture = puff
-	quad_mat.albedo_color = Color(0.66, 0.61, 0.5)
+	quad_mat.albedo_color = Color(0.5, 0.47, 0.4, 0.28)
+	# Soft particles: fade as a quad nears the terrain it would otherwise slice through, which is what
+	# drew the hard horizontal cut-offs. No depth write, so overlapping puffs blend rather than clip.
+	quad_mat.proximity_fade_enabled = true
+	quad_mat.proximity_fade_distance = 0.35
+	quad_mat.disable_receive_shadows = true
 	quad_mat.particles_anim_h_frames = 1
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.55, 0.55)
+	quad.size = Vector2(0.2, 0.2)
 	quad.material = quad_mat
 
 	_particles = GPUParticles3D.new()
 	_particles.amount = MAX_PARTICLES
-	_particles.lifetime = 1.3
+	_particles.lifetime = 1.0
 	_particles.local_coords = false
 	_particles.emitting = false
 	_particles.process_material = _material
@@ -98,7 +109,7 @@ func _init() -> void:
 
 ## Moves the emitter to the ground point under the aircraft and sets how much it gives off.
 func update(ground_point: Vector3, strength: float, ring_radius_m: float) -> void:
-	global_position = ground_point + Vector3(0, 0.03, 0)
+	global_position = ground_point + Vector3(0, LIFT_OFF_M, 0)
 	_material.emission_ring_radius = maxf(ring_radius_m, 0.05)
 	_material.emission_ring_inner_radius = 0.25 * _material.emission_ring_radius
 	var on := strength > 0.02
