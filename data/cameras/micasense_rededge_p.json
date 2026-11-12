@@ -1,15 +1,43 @@
 {
   "id": "micasense_rededge_p",
   "name": "MicaSense RedEdge-P (multispectral channels)",
-  "retrieved": "2026-11-10",
-  "source_url": "https://micasense.com/rededge-p/ (NOT fetchable from the build machine on 2026-11-10: HTTP 403)",
+  "retrieved": "2026-11-12",
+  "source_url": "https://xcopter.com/download/RedEdge-P-Guide-Dec2021.pdf (first-party MicaSense guide; micasense.com returned 403 on 2026-11-10)",
   "fields": {
-    "px_w": {"value": 1456, "tag": "estimated", "source": "from memory of the vendor datasheet (1.6 MP multispectral, 1456 x 1088); not re-checked against the page, which returned 403"},
-    "px_h": {"value": 1088, "tag": "estimated", "source": "from memory of the vendor datasheet (1456 x 1088); not re-checked, page returned 403"},
-    "pixel_pitch_um": {"value": 3.45, "tag": "estimated", "source": "from memory of the vendor datasheet; not re-checked, page returned 403"},
-    "focal_mm": {"value": 5.5, "tag": "estimated", "source": "from memory of the vendor datasheet; not re-checked, page returned 403"},
-    "shutter_min_s": {"value": 0.0001, "tag": "estimated", "source": "global shutter, fastest exposure not known; stand-in"},
-    "exposure_s": {"value": 0.0005, "tag": "estimated", "source": "typical daylight exposure for the blur check (1/2000 s); editable"},
-    "trigger_min_interval_s": {"value": 1.0, "tag": "estimated", "source": "from memory of the vendor datasheet (1 capture per second); not re-checked, page returned 403"}
+    "px_w": {
+      "value": 1456,
+      "tag": "published",
+      "source": "1456 x 1088 multispectral, MicaSense RedEdge-P and DLS 2 Integration Guide, Dec 2021, https://xcopter.com/download/RedEdge-P-Guide-Dec2021.pdf"
+    },
+    "px_h": {
+      "value": 1088,
+      "tag": "published",
+      "source": "1456 x 1088 multispectral, MicaSense RedEdge-P and DLS 2 Integration Guide, Dec 2021, https://xcopter.com/download/RedEdge-P-Guide-Dec2021.pdf"
+    },
+    "pixel_pitch_um": {
+      "value": 3.45,
+      "tag": "published",
+      "source": "pixel size 3.45 um, MicaSense RedEdge-P and DLS 2 Integration Guide, Dec 2021, https://xcopter.com/download/RedEdge-P-Guide-Dec2021.pdf"
+    },
+    "focal_mm": {
+      "value": 5.5,
+      "tag": "published",
+      "source": "focal length 5.5 mm (multispectral), MicaSense RedEdge-P and DLS 2 Integration Guide, Dec 2021, https://xcopter.com/download/RedEdge-P-Guide-Dec2021.pdf"
+    },
+    "shutter_min_s": {
+      "value": 0.0001,
+      "tag": "estimated",
+      "source": "global shutter, fastest exposure not known; stand-in"
+    },
+    "exposure_s": {
+      "value": 0.0005,
+      "tag": "estimated",
+      "source": "typical daylight exposure for the blur check (1/2000 s); editable"
+    },
+    "trigger_min_interval_s": {
+      "value": 1.0,
+      "tag": "estimated",
+      "source": "CONSERVATIVE STAND-IN, kept at 1 s so earlier results stay comparable. The guide PUBLISHES a maximum of 3 captures per second with the supplied CFexpress card (0.33 s); the speed rows of the Phase A matrix use that."
+    }
   }
 }

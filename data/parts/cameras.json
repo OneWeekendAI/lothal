@@ -120,6 +120,66 @@
         "sensor": "5-band multispectral + panchromatic"
       },
       "source": "MicaSense RedEdge-P class multispectral mapping camera. Mass 430 g and 112 x 87 x 74 mm are recalled from the manufacturer's published spec sheet and are UNVERIFIED against it (not re-checked this session); treat as ESTIMATED. The sunlight sensor (DLS 2) is not in this mass; it rides as the class payload (DroneClass.payload_for)."
+    },
+    {
+      "part_id": "cam_micasense_rededge_p_kit",
+      "name": "MicaSense RedEdge-P + DLS 2 kit (5-band multispectral + panchromatic)",
+      "category": "camera",
+      "mass_g": 315.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 86.8,
+        "width_mm": 63.0,
+        "height_mm": 67.35
+      },
+      "catalog": {
+        "signal": "none (onboard storage)",
+        "size_class": "payload",
+        "sensor": "5-band multispectral 1456x1088 + panchromatic 2464x2056"
+      },
+      "source": "MicaSense 'RedEdge-P and DLS 2 Integration Guide', December 2021 (first-party PDF, mirrored at https://xcopter.com/download/RedEdge-P-Guide-Dec2021.pdf; micasense.com itself returns 403 to the build machine). PUBLISHED: mass 315 g = camera + DLS 2 + WiFi adapter + storage (the guide also gives 245 g camera only; DLS 2 alone 54 g); dimensions 86.8 x 63 x 67.35 mm; bands blue/green/red/red-edge/NIR at 1456 x 1088, 3.45 um, 5.5 mm, 49.6 x 38.3 deg; max capture 3 per second with the supplied CFexpress card. Retailer listings disagree on the kit mass (300, 350 and 363 g); the first-party figure is used. The DLS 2 is inside this mass, so a build carrying this part must not add a second sunlight sensor. The camera has NO RGB band (panchromatic only)."
+    },
+    {
+      "part_id": "cam_sentera_6x_multispectral",
+      "name": "Sentera 6X multispectral (G/R/RE/NIR + B, plus 20 MP RGB)",
+      "category": "camera",
+      "mass_g": 290.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 79.5,
+        "width_mm": 66.0,
+        "height_mm": 67.5
+      },
+      "catalog": {
+        "signal": "none (onboard storage)",
+        "size_class": "payload",
+        "sensor": "5-band multispectral 2048x1536 + 20 MP RGB"
+      },
+      "source": "Sentera 6X Multispectral. PUBLISHED: 79.5 x 66 x 67.5 mm sensor only, 2048 x 1536 multispectral, 5184 x 3888 RGB, 47 deg HFOV, bands 475/550/670/715/840 nm (Freefly docs page https://docs.freeflysystems.com/ecosystem/payloads/third-party-payloads/sentera-6x-65r); mass 290 g sensor only, 15 W, 5 fps sustained (reseller listing https://www.spheredrones.com.au/product/sentera-6x-multispectral-sensor; Sentera's own spec sheet is quoted at 280 g by a search summary, and the Freefly page's 515 g includes the gimbal). The incident-light sensor is a separate Sentera accessory whose mass was not found: it is NOT in this mass. Includes its own RGB camera."
+    },
+    {
+      "part_id": "cam_sony_rx0_ii",
+      "name": "Sony RX0 II (RGB, 1-inch 15.3 MP)",
+      "category": "camera",
+      "mass_g": 132.0,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 59.0,
+        "width_mm": 40.5,
+        "height_mm": 35.0
+      },
+      "catalog": {
+        "signal": "none (onboard storage)",
+        "size_class": "payload",
+        "sensor": "1.0-type stacked CMOS 15.3 MP RGB"
+      },
+      "source": "ESTIMATED: Sony's pages (sony.com, electronics.sony.com) could not be fetched from the build machine. A web-search summary quoting Sony's spec sheet gives 132 g with battery and card (117 g body only) and 59 x 40.5 x 35 mm (B&H listing https://www.bhphotovideo.com/c/product/1469682-REG/sony_dscrx0m2_b_rx0_ii_digital_camera.html). Not verified at the source. Example RGB add-on for a camera with no RGB band."
     }
   ]
 }

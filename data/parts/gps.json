@@ -126,6 +126,27 @@
         "protocol": "UBX"
       },
       "source": "class-typical multi-band RTK GNSS receiver with patch antenna of the kind fitted to survey multirotors, not a specific product. Mass, box and 40 mm mast are ESTIMATED / unverified class figures; no manufacturer sheet was consulted."
+    },
+    {
+      "part_id": "gps_here3plus_rtk",
+      "name": "Here3+ RTK GNSS (CAN)",
+      "category": "gps",
+      "mass_g": 51.8,
+      "mounting": {
+        "attachment": "tray"
+      },
+      "specs": {
+        "length_mm": 68.0,
+        "width_mm": 68.0,
+        "height_mm": 16.0,
+        "mast_height_mm": 0.0
+      },
+      "catalog": {
+        "constellations": "GPS + GLONASS + Galileo + BeiDou",
+        "compass": true,
+        "protocol": "DroneCAN"
+      },
+      "source": "CubePilot Here3 manual, https://docs.cubepilot.org/user-guides/here-3/here-3-manual . PUBLISHED: Here3+ 51.8 g (Here3 is 48.8 g), 68 x 68 x 16 mm, RTK accuracy 0.025 m. Mast height 0 mm is a ROUGH class-typical ESTIMATE (sits flat on the top plate; a mast would add mass and height). RTK needs a base station or network, not modelled."
     }
   ]
 }

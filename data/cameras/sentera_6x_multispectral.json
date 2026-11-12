@@ -1,0 +1,53 @@
+{
+  "id": "sentera_6x_multispectral",
+  "name": "Sentera 6X (multispectral channels)",
+  "retrieved": "2026-11-12",
+  "source_url": "https://docs.freeflysystems.com/ecosystem/payloads/third-party-payloads/sentera-6x-65r , https://www.spheredrones.com.au/product/sentera-6x-multispectral-sensor",
+  "fields": {
+    "px_w": {
+      "value": 2048,
+      "tag": "published",
+      "source": "2048 px by 1536 px multispectral, Freefly docs page"
+    },
+    "px_h": {
+      "value": 1536,
+      "tag": "published",
+      "source": "2048 px by 1536 px multispectral, Freefly docs page"
+    },
+    "fov_h_deg": {
+      "value": 47.0,
+      "tag": "published",
+      "source": "47 deg HFOV (MSP and RGB), Freefly docs page and reseller listing"
+    },
+    "fov_v_deg": {
+      "value": 36.1,
+      "tag": "estimated",
+      "source": "derived from the published 47 deg HFOV and the 4:3 pixel grid; not published"
+    },
+    "pixel_pitch_um": {
+      "value": 3.45,
+      "tag": "estimated",
+      "source": "not found; 3.45 um assumed for a 3.2 MP global-shutter mono sensor. Footprint uses the published FOV, so this only sets the derived focal length"
+    },
+    "focal_mm": {
+      "value": 0,
+      "tag": "estimated",
+      "source": "unused: derived from the published HFOV"
+    },
+    "shutter_min_s": {
+      "value": 0.0001,
+      "tag": "estimated",
+      "source": "global shutter, fastest exposure not found; stand-in"
+    },
+    "exposure_s": {
+      "value": 0.0005,
+      "tag": "estimated",
+      "source": "typical daylight exposure for the blur check (1/2000 s); editable"
+    },
+    "trigger_min_interval_s": {
+      "value": 0.2,
+      "tag": "published",
+      "source": "sustained capture rate 5 fps (reseller listing); 0.2 s between captures"
+    }
+  }
+}

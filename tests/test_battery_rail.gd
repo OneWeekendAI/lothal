@@ -151,7 +151,7 @@ static func _test_the_catalog_spans_what_the_frames_need(catalog: PartsCatalog) 
 	# 2 parallel 5 Ah groups, and paralleling divides resistance, so 53 mOhm vs the 30 mOhm 4S 5000 LiPo
 	# is the physics of a big parallel pack, not a missing trade. The small-cell trade is already proven
 	# by the two packs above.
-	var parallel_pack_ids := ["mapper_battery_4s_10000_liion"]
+	var parallel_pack_ids := ["mapper_battery_4s_10000_liion", "mapper_battery_4s3p_15000_liion"]
 	for pack in packs:
 		if str(pack["specs"]["chemistry"]) != "Li-ion":
 			continue
