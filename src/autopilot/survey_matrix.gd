@@ -124,12 +124,17 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 		var part: Dictionary = PartsCatalog.load_default().get_part(pack_id)
 		if not part.is_empty():
 			row["pack_limit_a"] = snappedf(float(part["specs"]["c_rating"]) * float(part["specs"]["mah"]) / 1000.0, 0.1)
+	var warns := PackedStringArray(r["warnings"])
 	if row["flight_min"] is float:
 		row["meets_30min"] = "true" if float(row["flight_min"]) >= 30.0 else "false"
+		# a sortie that finished the field before the reserve measured mission time, not endurance: it cannot fail the 30 min ask
+		if String(row["ended_by"]) == "completed" and float(row["flight_min"]) < 30.0:
+			row["meets_30min"] = ""
+			warns.append("field completed with %s %% left: flight_min is mission time, not endurance; meets_30min unknown (use a bigger field)" % str(row["left_pct"]))
 	if str(row["packs500"]) != "":
 		row["meets_4to5_packs"] = "true" if float(row["packs500"]) <= 5.0 else "false"
 		row["meets_100_125_acres"] = "true" if float(row["acres_batt"]) >= 100.0 else "false"
-	row["warnings"] = " | ".join(PackedStringArray(r["warnings"]))
+	row["warnings"] = " | ".join(warns)
 	return row
 
 

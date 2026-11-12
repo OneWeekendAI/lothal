@@ -20,6 +20,7 @@ static func run() -> Array:
 	out.append(_bad_sensor())
 	out.append(_mavic_blank())
 	out.append(_effective(row))
+	out.append(_completed_not_endurance(row))
 	return out
 
 
@@ -86,3 +87,10 @@ static func _effective(row: Dictionary) -> TestResult:
 		and absf(float(row["field_acres"]) - 300.0 * 200.0 / 4046.856) < 0.06
 	return TestResult.new("survey matrix: omitted spec fields are reported as the effective defaults used, with the field area in acres", ok,
 		"h %s f %s s %s res %s wind %s gust %s seed %s acres %s" % [str(row["height_m"]), str(row["front"]), str(row["side"]), str(row["reserve_pct"]), str(row["wind_mph"]), str(row["gust_frac"]), str(row["seed"]), str(row.get("field_acres", "MISSING"))])
+
+
+## A run that finishes the field before reaching the reserve has a flight_min that is MISSION time, not endurance, so it cannot
+## judge the 30 min ask. FAIL-PROOF: without the completed-row rule meets_30min reads "false" here (a 300 x 200 m field takes minutes).
+static func _completed_not_endurance(row: Dictionary) -> TestResult:
+	var ok := String(row["ended_by"]) == "completed" and str(row["meets_30min"]) == "" and String(row["warnings"]).contains("not endurance")
+	return TestResult.new("survey matrix: a run that completes the field leaves meets_30min blank and says flight_min is not endurance", ok, "%s %s / %s" % [row["ended_by"], row["meets_30min"], row["flight_min"]])
