@@ -7,7 +7,7 @@ extends RefCounted
 ## reserve_pct, field "WxH", wind_mph, wind_dir (calm|along|across|quartering; lines run east-west), gust_frac, seed, farm_acres.
 
 const COLUMNS := ["run_id", "group", "sensor", "pack_ah", "pack_wh", "rgb_addon", "rtk", "remote_id", "height_m", "front", "side",
-	"speed_mps", "speed_source", "reserve_pct", "field", "wind_mph", "wind_dir", "gust_frac", "seed", "mass_kg", "twr", "flight_min",
+	"speed_mps", "speed_source", "reserve_pct", "field", "field_acres", "wind_mph", "wind_dir", "gust_frac", "seed", "mass_kg", "twr", "flight_min",
 	"left_pct", "ended_by", "energy_wh", "acres_batt", "acres_low", "acres_high", "mapped_acres", "packs500", "packs500_low",
 	"packs500_high", "gsd_cm", "trigger_interval_s", "required_fps", "camera_max_fps", "trigger_ok", "peak_current_a", "pack_limit_a",
 	"min_voltage_v", "hover_power_w", "cruise_power_w", "meets_30min", "meets_4to5_packs", "meets_100_125_acres", "warnings"]
@@ -37,9 +37,20 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 			row[k] = spec[k]
 	var sensor := String(spec.get("sensor", "rededge_p"))
 	row["sensor"] = sensor
+	# every row carries the EFFECTIVE value used, never a blank for "default"
+	row["height_m"] = float(spec.get("height_m", 60.0))
+	row["front"] = float(spec.get("front", 0.75))
+	row["side"] = float(spec.get("side", 0.65))
+	row["reserve_pct"] = float(spec.get("reserve_pct", 25.0))
+	row["wind_mph"] = float(spec.get("wind_mph", 0.0))
+	row["wind_dir"] = String(spec.get("wind_dir", "calm")) if float(spec.get("wind_mph", 0.0)) > 0.0 else "calm"
+	row["gust_frac"] = float(spec.get("gust_frac", 0.0))
+	row["seed"] = int(spec.get("seed", 1))
+	row["field"] = String(spec.get("field", "1000x500"))
 	var fs := String(spec.get("field", "1000x500")).split("x")
 	var fw := float(fs[0])
 	var fh := float(fs[1]) if fs.size() > 1 else 500.0
+	row["field_acres"] = snappedf(fw * fh / 4046.856, 0.1)
 	var poly := PackedVector2Array([Vector2(30, 0), Vector2(30 + fw, 0), Vector2(30 + fw, fh), Vector2(30, fh)])
 	var h := float(spec.get("height_m", 60.0))
 	var front := float(spec.get("front", 0.75))

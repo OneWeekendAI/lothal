@@ -5,7 +5,7 @@ extends RefCounted
 ## FAIL-PROOF: with src/autopilot/survey_matrix.gd absent every case FAILS (class missing); with the telemetry block removed from
 ## MissionRunner._result the electrical case FAILS (cells empty).
 
-const COLUMNS_N := 46
+const COLUMNS_N := 47
 
 
 static func run() -> Array:
@@ -19,6 +19,7 @@ static func run() -> Array:
 	out.append(_wind_dir())
 	out.append(_bad_sensor())
 	out.append(_mavic_blank())
+	out.append(_effective(row))
 	return out
 
 
@@ -76,3 +77,12 @@ static func _mavic_blank() -> TestResult:
 	var ok := float(row["flight_min"]) > 1.0 and str(row["pack_limit_a"]) == "" and float(row["peak_current_a"]) > 0.0
 	return TestResult.new("survey matrix: the Mavic reference leaves the pack current limit empty (no catalog entry) but still reports sim peak current", ok,
 		"limit '%s' peak %s" % [str(row["pack_limit_a"]), str(row["peak_current_a"])])
+
+
+static func _effective(row: Dictionary) -> TestResult:
+	## A spec that omits height/overlap/reserve/wind/gust/seed must still report the values the run used.
+	var ok := float(row["height_m"]) == 60.0 and float(row["front"]) == 0.75 and float(row["side"]) == 0.65 and float(row["reserve_pct"]) == 25.0 \
+		and float(row["wind_mph"]) == 0.0 and float(row["gust_frac"]) == 0.0 and int(row["seed"]) == 1 and String(row["wind_dir"]) == "calm" \
+		and absf(float(row["field_acres"]) - 300.0 * 200.0 / 4046.856) < 0.01
+	return TestResult.new("survey matrix: omitted spec fields are reported as the effective defaults used, with the field area in acres", ok,
+		"h %s f %s s %s res %s wind %s gust %s seed %s acres %s" % [str(row["height_m"]), str(row["front"]), str(row["side"]), str(row["reserve_pct"]), str(row["wind_mph"]), str(row["gust_frac"]), str(row["seed"]), str(row.get("field_acres", "MISSING"))])
