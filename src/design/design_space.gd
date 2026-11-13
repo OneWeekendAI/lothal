@@ -322,12 +322,16 @@ func refresh() -> void:
 	var r := session.readouts(_catalog)
 	var entry := DroneClass.by_id(session.drone_class)
 	title_label.text = String(entry.get("name", "Drone"))
+	var b := session.build(_catalog)
+	# Whether peak thrust beats the weight. hover_throttle() is the peak-thrust throttle when it does not, and a
+	# bare number cannot say which it is; kept out of `readouts()`, whose five keys other callers count.
+	if b != null:
+		r["can_hover"] = b.can_hover()
 	var keys := ["auw_g", "thrust_to_weight", "hover_throttle", "flight_time_min", "top_speed_kmh"]
 	for key in keys:
 		(value_labels[key] as Label).text = format_readout(key, r)
 		(gauges[key] as ReadoutGauge).set_value(r.get(key, null))
 	var fs := session.flight_state(_catalog)
-	var b := session.build(_catalog)
 	if payload_panel != null:
 		payload_panel.refresh()
 	_refresh_warnings(b, fs)

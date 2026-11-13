@@ -142,9 +142,6 @@ static func readouts_of(b: Build) -> Dictionary:
 		"auw_g": b.all_up_weight_g(),
 		"thrust_to_weight": b.thrust_to_weight(),
 		"hover_throttle": b.hover_throttle(),
-		# Whether peak thrust beats the weight. hover_throttle() is the peak-thrust throttle when it does not, and
-		# a bare number cannot say which it is.
-		"can_hover": b.can_hover(),
 		"flight_time_min": b.flight_time_min(),
 		"top_speed_kmh": b.top_speed_kmh(),
 	}

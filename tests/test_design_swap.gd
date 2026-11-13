@@ -84,6 +84,8 @@ static func _labels(ds: DesignSpace) -> Dictionary:
 
 static func _want_labels(b: Build) -> Dictionary:
 	var r := DesignSession.readouts_of(b)
+	# The panel also knows whether the build can hover at all (a build that cannot reads "no hover").
+	r["can_hover"] = b.can_hover()
 	var out := {}
 	for k in KEYS:
 		out[k] = DesignSpace.format_readout(k, r)

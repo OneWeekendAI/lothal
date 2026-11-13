@@ -410,7 +410,7 @@ static func _lift_words(_catalog: PartsCatalog) -> Array:
 	out.append(_t("the hover readout says so instead of printing a throttle it never hovers at",
 		DesignSpace.format_readout("hover_throttle", {"hover_throttle": 1.0, "can_hover": false}) == "no hover"
 			and DesignSpace.format_readout("hover_throttle", {"hover_throttle": 0.33, "can_hover": true}) == "33.0 %"
-			and DesignSession.readouts_of(heavy)["can_hover"] == false, ""))
+			and DesignSession.readouts_of(heavy).size() == 5 and not heavy.can_hover(), ""))
 	return out
 
 

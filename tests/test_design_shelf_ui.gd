@@ -295,6 +295,7 @@ static func _test_release_attaches(catalog: PartsCatalog) -> Array:
 	var want: Array = []
 	if b != null:
 		var direct := DesignSession.readouts_of(b)
+		direct["can_hover"] = b.can_hover()
 		want = KEYS.map(func(k): return DesignSpace.format_readout(k, direct))
 	out.append(TestResult.new("the readouts update to the new build's own figures",
 		b != null and _labels_text(ds) == want and want != shown, "%s vs %s" % [_labels_text(ds), want]))
