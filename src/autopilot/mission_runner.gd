@@ -8,7 +8,9 @@ extends RefCounted
 ## params: class_id (DroneClass id or references.json id), mission, seed, wind_speed_mps, wind_from_deg, gust_mps,
 ## fields {height_m, speed_mps, front_overlap, side_overlap, reserve_pct}, polygon, path, capacity_scale (default 1),
 ## max_sorties, camera (CameraParams), dt (default 1/500), camera_on (non-survey), hover_s, laps, range_heading_deg,
-## end ("land"|"rth", follow_path), max_sim_min (default 120), debug_skip_line (survey, test only).
+## end ("land"|"rth", follow_path), max_sim_min (default 120), debug_skip_line (survey, test only),
+## max_wall_s (default 0 = off): a WALL-clock budget for the flight loop; past it the flight ends "wall_cap" (a batch-runner guard,
+## not part of the deterministic result: a run that hits it is an error, not data).
 ## build (Build, optional; MissionFlow passes a saved design's build): flown instead of make_build(class_id); capacity_scale then scales its pack.
 ## SR8 tolerance hooks (all default 1 / unset, then bit-identical to before): mass_scale (mass and inertia), drag_scale (Cd*A, every axis),
 ## esc_loss_scale (ESC resistance and switching loss), pack_temp_c (pack temperature; default 25).
@@ -90,6 +92,13 @@ var phase := "takeoff"
 var t := 0.0
 var t_phase := 0.0
 var energy_ws := 0.0
+# telemetry for the survey matrix (cross-check phase A): read from the sim every tick / slow sample, never back-computed
+var tel_peak_a := 0.0
+var tel_min_v := INF
+var tel_hover_ws := 0.0
+var tel_hover_n := 0
+var tel_cruise_ws := 0.0
+var tel_cruise_n := 0
 var last_ws := 0.0
 var distance_m := 0.0
 var max_home := 0.0
@@ -150,6 +159,8 @@ var _progress_max := 0.0
 var _slow_every := 1
 var _fast_every := 1
 var _fast_dt := 0.0
+var _max_wall_ms := 0
+var _wall_t0_ms := 0
 
 
 static func run(params: Dictionary) -> Dictionary:
@@ -165,6 +176,8 @@ static func run(params: Dictionary) -> Dictionary:
 ## begin(): true when a flight is ready to step; false when the result is already final (error, not flown, test_pack,
 ## which runs its parts as separate flights and is not watchable).
 func begin(params: Dictionary) -> bool:
+	_max_wall_ms = int(float(params.get("max_wall_s", 0.0)) * 1000.0)
+	_wall_t0_ms = Time.get_ticks_msec()
 	_final = _run(params)
 	return _flying
 
@@ -174,6 +187,9 @@ func advance(ticks: int) -> void:
 	while _flying and ended_by == "" and n < ticks:
 		_tick_once()
 		n += 1
+		if _max_wall_ms > 0 and (n & 1023) == 0 and Time.get_ticks_msec() - _wall_t0_ms > _max_wall_ms:
+			ended_by = "wall_cap"
+			warnings.append("wall-time cap of %.1f s reached at sim t=%.1f s (batch guard; this run is not data)" % [_max_wall_ms / 1000.0, _now()])
 
 
 func is_done() -> bool:
@@ -343,6 +359,9 @@ func _tick_once() -> void:
 	var o := rig.core.observables
 	rig.step()
 	energy_ws += o.voltage_live_v * o.current_total_a * dt
+	tel_peak_a = maxf(tel_peak_a, o.current_total_a)
+	if o.voltage_live_v > 0.0:
+		tel_min_v = minf(tel_min_v, o.voltage_live_v)
 	_ticks += 1
 	if _ticks % _fast_every == 0:
 		_fast(_fast_dt)
@@ -547,6 +566,12 @@ func _slow(slow_dt: float) -> void:
 	pa[slot] = (vel - _wind_at(pos)).length()
 	rf[slot] = bat.remaining_fraction()
 	pn += 1
+	if pos.y >= float(p["height_m"]) - 1.0 and vel.length() < 1.0:
+		tel_hover_ws += pw_now
+		tel_hover_n += 1
+	elif phase == "mission" and sp_h >= 2.0:
+		tel_cruise_ws += pw_now
+		tel_cruise_n += 1
 	# Effective Wh per full pack: nominal V x capacity over-states what the pack delivers (voltage sags under load,
 	# Peukert), so once 3 percent is used it becomes the MEASURED energy per used fraction of this pack. Estimate.
 	var used_f := 1.0 - bat.remaining_fraction()
@@ -1144,6 +1169,10 @@ func _result(field_out: Dictionary, build: Build, scale: float, cond: Conditions
 		r["survey"] = {"line_count": plan["line_count"], "lines_in_queue": chunks.size(), "lines_flown": mini(next_chunk, chunks.size()),
 			"spacing_m": plan["spacing_m"], "planned_path_m": plan["path_length_m"], "planned_time_s": plan["expected_time_s"],
 			"shot_interval_s": plan["shot_interval_s"], "line_angle_deg": plan["line_angle_deg"]}
+	r["telemetry"] = {"peak_current_a": tel_peak_a if flight_t > 0.0 else -1.0, "min_voltage_v": tel_min_v if tel_min_v < INF else -1.0,
+		"hover_power_w": tel_hover_ws / tel_hover_n if tel_hover_n > 0 else -1.0, "cruise_power_w": tel_cruise_ws / tel_cruise_n if tel_cruise_n > 0 else -1.0,
+		"trigger_interval_s": trigger_interval_s, "camera_min_interval_s": camera.min_shot_interval_s,
+		"note": "peak/min over every physics tick of the flight; hover = samples at height under 1 m/s; cruise = mission samples at 2 m/s or more (turns included); -1 = no samples"}
 	MissionResult.add_figures(r)
 	if mission == Mission.SURVEY:
 		MissionResult.add_survey_economics(r, plan, float(params_in.get("farm_acres", 0.0)))
