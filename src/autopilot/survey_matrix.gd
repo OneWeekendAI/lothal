@@ -10,7 +10,8 @@ const COLUMNS := ["run_id", "group", "sensor", "pack_ah", "pack_wh", "rgb_addon"
 	"speed_mps", "speed_source", "reserve_pct", "field", "field_acres", "wind_mph", "wind_dir", "gust_frac", "seed", "mass_kg", "twr", "flight_min",
 	"left_pct", "ended_by", "energy_wh", "acres_batt", "acres_low", "acres_high", "mapped_acres", "packs500", "packs500_low",
 	"packs500_high", "gsd_cm", "trigger_interval_s", "required_fps", "camera_max_fps", "trigger_ok", "peak_current_a", "pack_limit_a",
-	"min_voltage_v", "hover_power_w", "cruise_power_w", "meets_30min", "meets_4to5_packs", "meets_100_125_acres", "warnings"]
+	"min_voltage_v", "hover_power_w", "cruise_power_w", "meets_30min", "meets_4to5_packs", "meets_100_125_acres",
+	"pack_s", "speed_cap_mps", "sorties", "packs_used", "farm_complete", "acres_per_sortie", "warnings"]
 ## Published maximum capture rates (sheets / camera presets): RedEdge-P 3 per s, Sentera 6X 5 per s, Mavic 3M 2 s interval.
 const CAMERA_MAX_FPS := {"rededge_p": 3.0, "sentera_6x": 5.0, "mavic": 0.5}
 const MPH := 0.44704
@@ -46,6 +47,10 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 	row["wind_dir"] = String(spec.get("wind_dir", "calm")) if float(spec.get("wind_mph", 0.0)) > 0.0 else "calm"
 	row["gust_frac"] = float(spec.get("gust_frac", 0.0))
 	row["seed"] = int(spec.get("seed", 1))
+	if sensor != "mavic":
+		row["rgb_addon"] = "true" if bool(spec.get("rgb_addon", false)) else "false"
+		row["rtk"] = "true" if bool(spec.get("rtk", true)) else "false"
+		row["remote_id"] = "true" if bool(spec.get("remote_id", false)) else "false"
 	row["field"] = String(spec.get("field", "1000x500"))
 	var fs := String(spec.get("field", "1000x500")).split("x")
 	var fw := float(fs[0])
@@ -58,7 +63,8 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 	var wind := float(spec.get("wind_mph", 0.0)) * MPH
 	var params := {"mission": Mission.SURVEY, "seed": int(spec.get("seed", 1)), "fields": fields, "polygon": poly,
 		"wind_speed_mps": wind, "wind_from_deg": wind_from_deg(String(spec.get("wind_dir", "calm"))), "gust_mps": wind * float(spec.get("gust_frac", 0.0)),
-		"max_sorties": 1, "farm_acres": float(spec.get("farm_acres", 500.0))}
+		"max_sorties": 1, "farm_acres": float(spec.get("farm_acres", 500.0)),
+		"max_wall_s": float(spec.get("max_wall_s", 900.0)), "max_sim_min": float(spec.get("max_sim_min", 120.0))}
 	var build: Build
 	var pack_id := ""
 	if sensor == "mavic":
@@ -67,7 +73,8 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 		build = MissionRunner.make_build("mavic_3m", 1.0)
 		params["build"] = build
 	else:
-		var made := SurveyKitBuilds.make({"sensor": sensor, "pack": str(int(spec.get("pack_ah", 15))), "rtk": bool(spec.get("rtk", true)), "rgb_addon": bool(spec.get("rgb_addon", false))})
+		var pack_key := String(spec.get("pack", str(int(spec.get("pack_ah", 15)))))
+		var made := SurveyKitBuilds.make({"sensor": sensor, "pack": pack_key, "rtk": bool(spec.get("rtk", true)), "rgb_addon": bool(spec.get("rgb_addon", false))})
 		if String(made.get("error", "")) != "":
 			row["warnings"] = "error: " + String(made["error"])
 			return row
@@ -75,7 +82,10 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 		params["class_id"] = "mapper"
 		params["build"] = build
 		params["camera"] = made["camera"]
-		pack_id = String(SurveyKitBuilds.PACKS.get(str(int(spec.get("pack_ah", 15))), ""))
+		pack_id = String(SurveyKitBuilds.PACKS.get(pack_key, ""))
+		var bs: Dictionary = build.battery.get("specs", {})
+		row["pack_ah"] = snappedf(float(bs.get("mah", 0.0)) / 1000.0, 0.1)
+		row["pack_s"] = int(bs.get("cells", 0))
 	var cam: CameraParams = params["camera"]
 	var max_fps := float(CAMERA_MAX_FPS.get(sensor, 0.0))
 	if bool(spec.get("fps_cap", false)) and max_fps > 0.0:
@@ -90,6 +100,10 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 	row["mass_kg"] = snappedf(build.mass_properties.total_mass_kg, 0.001)
 	row["twr"] = snappedf(build.thrust_to_weight(), 0.01)
 	var r := MissionRunner.run(params)
+	if String(r.get("ended_by", "")) == "wall_cap":
+		row["ended_by"] = "wall_cap"
+		row["warnings"] = "error: " + " | ".join(PackedStringArray(r.get("warnings", [])))
+		return row
 	var ab: Dictionary = r.get("acres_per_battery", {})
 	var bf: Dictionary = r.get("batteries_per_farm", {})
 	var ph: Dictionary = r.get("photos", {})
@@ -125,17 +139,29 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 		if not part.is_empty():
 			row["pack_limit_a"] = snappedf(float(part["specs"]["c_rating"]) * float(part["specs"]["mah"]) / 1000.0, 0.1)
 	var warns := PackedStringArray(r["warnings"])
-	if row["flight_min"] is float:
-		row["meets_30min"] = "true" if float(row["flight_min"]) >= 30.0 else "false"
-		# a sortie that finished the field before the reserve measured mission time, not endurance: it cannot fail the 30 min ask
-		if String(row["ended_by"]) == "completed" and float(row["flight_min"]) < 30.0:
-			row["meets_30min"] = ""
-			warns.append("field completed with %s %% left: flight_min is mission time, not endurance; meets_30min unknown (use a bigger field)" % str(row["left_pct"]))
+	endurance_verdict(row, warns)
 	if str(row["packs500"]) != "":
 		row["meets_4to5_packs"] = "true" if float(row["packs500"]) <= 5.0 else "false"
 		row["meets_100_125_acres"] = "true" if float(row["acres_batt"]) >= 100.0 else "false"
 	row["warnings"] = " | ".join(warns)
 	return row
+
+
+## meets_30min from the row's flight_min, ended_by, left_pct and reserve_pct; appends the reason to `warns` when it has to stay blank.
+## A sortie that finished the field, or stopped at a line boundary far above the reserve, measured mission time, not endurance.
+static func endurance_verdict(row: Dictionary, warns: PackedStringArray) -> void:
+	if not row["flight_min"] is float:
+		return
+	row["meets_30min"] = "true" if float(row["flight_min"]) >= 30.0 else "false"
+	# the line-fit lookahead sent it home with far more than the reserve: the time is line-quantised, so a short one cannot fail the ask
+	if String(row["ended_by"]) == "landed_at_reserve" and float(row["flight_min"]) < 30.0 and str(row.get("reserve_pct", "")) != "" \
+			and float(row["left_pct"]) > float(row["reserve_pct"]) + 10.0:
+		row["meets_30min"] = ""
+		warns.append("sortie stopped at a line boundary with %s %% left (reserve %s %%): flight_min understates endurance; meets_30min unknown" % [str(row["left_pct"]), str(row["reserve_pct"])])
+	# a sortie that finished the field before the reserve measured mission time, not endurance: it cannot fail the 30 min ask
+	if String(row["ended_by"]) == "completed" and float(row["flight_min"]) < 30.0:
+		row["meets_30min"] = ""
+		warns.append("field completed with %s %% left: flight_min is mission time, not endurance; meets_30min unknown (use a bigger field)" % str(row["left_pct"]))
 
 
 static func csv_cell(v: Variant) -> String:

@@ -1,6 +1,6 @@
 extends SceneTree
 ## Batch worker: runs the specs of a JSON array file (every `shards`-th one, starting at `shard`) and prints "ROW<TAB>index<TAB>csv line".
-## usage: godot --headless --script res://tools/run_survey_matrix.gd -- --specs=file.json [--shard=0 --shards=1]
+## usage: godot --headless --script res://tools/run_survey_matrix.gd -- --specs=file.json [--shard=0 --shards=1 | --only=i]
 ## Normally driven by tools/run_survey_matrix.sh, which shards across processes and writes the CSV.
 
 func _init() -> void:
@@ -19,7 +19,10 @@ func _init() -> void:
 		return
 	var shard := int(a.get("shard", "0"))
 	var shards := maxi(1, int(a.get("shards", "1")))
-	for i in range(shard, specs.size(), shards):
+	var idx: Array = range(shard, specs.size(), shards)
+	if a.has("only"):
+		idx = [int(a["only"])]
+	for i in idx:
 		var t0 := Time.get_ticks_msec()
 		var row := SurveyMatrix.run_spec(specs[i])
 		print("ROW\t%d\t%s" % [i, SurveyMatrix.csv_line(row)])

@@ -5,7 +5,7 @@ extends RefCounted
 ## FAIL-PROOF: with src/autopilot/survey_matrix.gd absent every case FAILS (class missing); with the telemetry block removed from
 ## MissionRunner._result the electrical case FAILS (cells empty).
 
-const COLUMNS_N := 47
+const COLUMNS_N := 53
 
 
 static func run() -> Array:
@@ -21,6 +21,9 @@ static func run() -> Array:
 	out.append(_mavic_blank())
 	out.append(_effective(row))
 	out.append(_completed_not_endurance(row))
+	out.append(_kit_effective(row))
+	out.append_array(_line_boundary())
+	out.append(_wall_cap())
 	return out
 
 
@@ -94,3 +97,35 @@ static func _effective(row: Dictionary) -> TestResult:
 static func _completed_not_endurance(row: Dictionary) -> TestResult:
 	var ok := String(row["ended_by"]) == "completed" and str(row["meets_30min"]) == "" and String(row["warnings"]).contains("not endurance")
 	return TestResult.new("survey matrix: a run that completes the field leaves meets_30min blank and says flight_min is not endurance", ok, "%s %s / %s" % [row["ended_by"], row["meets_30min"], row["flight_min"]])
+
+
+## Phase C: rgb_addon / rtk / pack_ah / remote_id carry the EFFECTIVE value even when the spec omits them (runs.csv was patched for this).
+## FAIL-PROOF (seen red 2026-11-13): before the fix these four cells were blank on a default spec.
+static func _kit_effective(row: Dictionary) -> TestResult:
+	var ok := str(row["rgb_addon"]) == "false" and str(row["rtk"]) == "true" and str(row["remote_id"]) == "false" and float(str(row["pack_ah"]) if str(row["pack_ah"]) != "" else "0") == 15.0 and str(row["pack_s"]) == "4"
+	return TestResult.new("survey matrix: a default spec reports rgb_addon false, rtk true, remote_id false, pack 15 Ah 4S (effective, not blank)", ok,
+		"rgb '%s' rtk '%s' rid '%s' pack '%s' s '%s'" % [str(row["rgb_addon"]), str(row["rtk"]), str(row["remote_id"]), str(row["pack_ah"]), str(row["pack_s"])])
+
+
+## Phase C: a sortie that lands at a line boundary with far more than the reserve left (> reserve + 10 points) measured a
+## line-quantised time, not endurance: the RUNNER blanks a failing meets_30min and says why (200 rows were patched by hand).
+## FAIL-PROOF (seen red 2026-11-13): without the rule the 22.6 min / 53 % row read meets_30min "false".
+static func _line_boundary() -> Array:
+	var out: Array = []
+	var cases := [[22.6, 53.0, "landed_at_reserve", "", true], [22.6, 30.0, "landed_at_reserve", "false", false], [31.0, 53.0, "landed_at_reserve", "true", false]]
+	for c in cases:
+		var row := {"flight_min": c[0], "left_pct": c[1], "ended_by": c[2], "reserve_pct": 25.0, "meets_30min": ""}
+		var w := PackedStringArray()
+		SurveyMatrix.endurance_verdict(row, w)
+		var said := " ".join(w).contains("line boundary")
+		out.append(TestResult.new("survey matrix: %.1f min with %.0f %% left (reserve 25) -> meets_30min '%s', line-boundary warning %s" % [c[0], c[1], c[3], str(c[4])],
+			str(row["meets_30min"]) == c[3] and said == c[4], "got '%s' warns %s" % [str(row["meets_30min"]), str(w)]))
+	return out
+
+
+## Phase C: a run past its wall-time budget stops and yields an ERROR row (no figures), never a hang.
+## FAIL-PROOF (seen red 2026-11-13): before the guard max_wall_s was ignored and the run produced a normal row.
+static func _wall_cap() -> TestResult:
+	var row := SurveyMatrix.run_spec({"run_id": "w", "sensor": "rededge_p", "field": "300x200", "max_wall_s": 0.01})
+	var ok := String(row["ended_by"]) == "wall_cap" and String(row["warnings"]).begins_with("error") and str(row["flight_min"]) == "" and str(row["acres_batt"]) == "" and String(row["run_id"]) == "w"
+	return TestResult.new("survey matrix: a run past max_wall_s ends 'wall_cap' as an error row with no figures", ok, "%s / %s / %s" % [row["ended_by"], row["flight_min"], str(row["warnings"]).left(80)])

@@ -8,7 +8,9 @@ extends RefCounted
 ## params: class_id (DroneClass id or references.json id), mission, seed, wind_speed_mps, wind_from_deg, gust_mps,
 ## fields {height_m, speed_mps, front_overlap, side_overlap, reserve_pct}, polygon, path, capacity_scale (default 1),
 ## max_sorties, camera (CameraParams), dt (default 1/500), camera_on (non-survey), hover_s, laps, range_heading_deg,
-## end ("land"|"rth", follow_path), max_sim_min (default 120), debug_skip_line (survey, test only).
+## end ("land"|"rth", follow_path), max_sim_min (default 120), debug_skip_line (survey, test only),
+## max_wall_s (default 0 = off): a WALL-clock budget for the flight loop; past it the flight ends "wall_cap" (a batch-runner guard,
+## not part of the deterministic result: a run that hits it is an error, not data).
 ## build (Build, optional; MissionFlow passes a saved design's build): flown instead of make_build(class_id); capacity_scale then scales its pack.
 ## SR8 tolerance hooks (all default 1 / unset, then bit-identical to before): mass_scale (mass and inertia), drag_scale (Cd*A, every axis),
 ## esc_loss_scale (ESC resistance and switching loss), pack_temp_c (pack temperature; default 25).
@@ -157,6 +159,8 @@ var _progress_max := 0.0
 var _slow_every := 1
 var _fast_every := 1
 var _fast_dt := 0.0
+var _max_wall_ms := 0
+var _wall_t0_ms := 0
 
 
 static func run(params: Dictionary) -> Dictionary:
@@ -172,6 +176,8 @@ static func run(params: Dictionary) -> Dictionary:
 ## begin(): true when a flight is ready to step; false when the result is already final (error, not flown, test_pack,
 ## which runs its parts as separate flights and is not watchable).
 func begin(params: Dictionary) -> bool:
+	_max_wall_ms = int(float(params.get("max_wall_s", 0.0)) * 1000.0)
+	_wall_t0_ms = Time.get_ticks_msec()
 	_final = _run(params)
 	return _flying
 
@@ -181,6 +187,9 @@ func advance(ticks: int) -> void:
 	while _flying and ended_by == "" and n < ticks:
 		_tick_once()
 		n += 1
+		if _max_wall_ms > 0 and (n & 1023) == 0 and Time.get_ticks_msec() - _wall_t0_ms > _max_wall_ms:
+			ended_by = "wall_cap"
+			warnings.append("wall-time cap of %.1f s reached at sim t=%.1f s (batch guard; this run is not data)" % [_max_wall_ms / 1000.0, _now()])
 
 
 func is_done() -> bool:
