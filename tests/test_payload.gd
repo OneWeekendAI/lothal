@@ -474,3 +474,112 @@ static func design_space(catalog: PartsCatalog) -> Array:
 	out.append(_t("choosing None removes it", ds2.session.payload().is_empty(), ""))
 	ds2.free()
 	return out
+
+
+# ---------------------------------------------------------------------------
+# The flight sim: the payload on the drone, and the ground under an overloaded one
+# ---------------------------------------------------------------------------
+
+## Boots main.tscn with `b`, puts the drone on the ground at rest, holds W (full throttle on a keyboard) and
+## runs the scene's own _physics_process for `seconds`. Returns {max_y, min_y, rest_y, throttle, core, sim}.
+## `mutate` is called with the booted scene before the run: the way each check is shown to fail.
+static func _sim_run(tree: SceneTree, b: Build, seconds: float, mutate := Callable()) -> Dictionary:
+	var sim: Node = load("res://src/scenes/main.tscn").instantiate()
+	sim.initial_build = b
+	sim.initial_drone_class = "five_inch"
+	tree.root.add_child(sim)
+	await tree.process_frame
+	if mutate.is_valid():
+		mutate.call(sim)
+	# Stick all the way up: full throttle, not hover-times-a-factor.
+	sim._hover_throttle = 1.0
+	var core: DroneCore = sim.core
+	var rest_y := b.rest_height_m()
+	sim._reset_to(Vector3(0.0, rest_y + 1.0e-6, 0.0), Vector3(0.0, 0.0, -1.0))
+	sim.terrain = null
+	var key := InputEventKey.new()
+	key.keycode = KEY_W
+	key.physical_keycode = KEY_W
+	key.pressed = true
+	Input.parse_input_event(key)
+	var max_y := -INF
+	var min_y := INF
+	var throttle := 0.0
+	for i in int(seconds * 120.0):
+		sim._physics_process(1.0 / 120.0)
+		var y: float = sim.core.rigid_body.position_m.y
+		max_y = maxf(max_y, y)
+		min_y = minf(min_y, y)
+		throttle = sim.rc.throttle
+	key.pressed = false
+	Input.parse_input_event(key)
+	return {"max_y": max_y, "min_y": min_y, "rest_y": rest_y, "throttle": throttle, "core": core, "sim": sim}
+
+
+static func sim_path(tree: SceneTree) -> Array:
+	var out: Array = []
+	var bare := ReferenceBuild.build()
+	var heavy := ReferenceBuild.build()
+	heavy.set_payload_part({"kind": "payload_custom", "mass_g": 10000.0, "size_mm": [200.0, 200.0, 150.0]})
+
+	# --- the drawing -------------------------------------------------------
+	var drawn: Dictionary = await _sim_run(tree, heavy, 0.0)
+	var model := (drawn["sim"].drone.get_node("SimDroneModel")) as SimDroneModel
+	var node: Node3D = model.content.get_node_or_null("Payload") as Node3D
+	var box: MeshInstance3D = null if node == null else node.get_node_or_null("PayloadBox") as MeshInstance3D
+	out.append(_t("sim: the drone visual carries a Payload node with its box", node != null and box != null, ""))
+	if node != null and box != null:
+		var attach := heavy.payload_attach_m()
+		out.append(_t("sim: the Payload node sits at the build's attach point in the airframe frame",
+			node.position.is_equal_approx(attach), "%s vs %s" % [node.position, attach]))
+		# Box centre in the model's parent space (the body origin = centre of mass) against the physics' payload centre.
+		var centre_world := model.to_local(box.global_position)
+		var want := heavy.payload_centre_m() - heavy.mass_properties.com_m
+		out.append(_t("sim: the box is drawn where the physics weighs it (to the millimetre, about the CoM)",
+			(centre_world - want).length() < 1e-3, "%s vs %s" % [centre_world, want]))
+		out.append(_t("sim: the box is a child of the drone model, so it moves with the aircraft",
+			model.is_ancestor_of(node) and model.get_parent() == drawn["sim"].drone, ""))
+		var fresh := PayloadMesh.build(heavy.payload_part)
+		var same_size := (box.mesh.get_aabb().size - (fresh.get_node("PayloadBox") as MeshInstance3D).mesh.get_aabb().size).length() < 1e-6
+		out.append(_t("sim: it is Design Space's own mesh (same box size from PayloadMesh)", same_size, ""))
+		fresh.free()
+		# Moves and turns with the drone.
+		var s: Node = drawn["sim"]
+		var before := box.global_position
+		s._snap_visual(Vector3(3.0, 5.0, -2.0), Basis(Vector3.UP, PI * 0.5).get_rotation_quaternion())
+		out.append(_t("sim: snapping the drone to a new pose carries the payload box (position and a 90 degree turn)",
+			(box.global_position - s.drone.global_transform * model.content.transform * node.transform * box.position).length() < 1e-5
+				and (box.global_position - before).length() > 1.0
+				and absf(box.global_transform.basis.get_rotation_quaternion().angle_to(Basis(Vector3.UP, PI * 0.5).get_rotation_quaternion())) < 1e-3, "%s" % (box.global_position - before)))
+	drawn["sim"].queue_free()
+	var plain: Dictionary = await _sim_run(tree, bare, 0.0)
+	out.append(_t("sim: no payload, no Payload node", (plain["sim"].drone.get_node("SimDroneModel") as SimDroneModel).content.get_node_or_null("Payload") == null, ""))
+	plain["sim"].queue_free()
+
+	# --- the ground --------------------------------------------------------
+	out.append(_t("sim: a payload build's core holds ground contact with the rest height of its lowest point (the payload)",
+		heavy.build_drone_core().ground_contact_enabled and is_equal_approx(heavy.build_drone_core().rest_height_m, heavy.rest_height_m())
+			and not bare.build_drone_core().ground_contact_enabled, ""))
+	out.append(_t("sim: the payload build rests higher than the sim's crash line, so resting there is not a 'crash'",
+		heavy.rest_height_m() > GateCourse.GROUND_CLEARANCE_M and heavy.lowest_point_y_m() < heavy.lowest_body_y_m(), "%.4f" % heavy.rest_height_m()))
+
+	var held: Dictionary = await _sim_run(tree, heavy, 3.0)
+	out.append(_t("sim: full throttle is really full (the check below would be vacuous otherwise)", float(held["throttle"]) > 0.999, "%.3f" % float(held["throttle"])))
+	var rest_y: float = held["rest_y"]
+	out.append(_t("sim: 500 g build + 10 kg payload, full throttle 3 s through main.gd's own physics step, stays at rest height",
+		float(held["max_y"]) - rest_y < 1e-3 and float(held["min_y"]) - rest_y > -1e-6,
+		"rest %.5f, min %.5f, max %.5f" % [rest_y, float(held["min_y"]), float(held["max_y"])]))
+	held["sim"].queue_free()
+
+	# Mutant 1: ground contact off in the real path. It sinks, hits the crash line and the sim teleports it back up.
+	var m1: Dictionary = await _sim_run(tree, heavy, 3.0, func(s): s.core.ground_contact_enabled = false)
+	out.append(_t("MUTANT: with ground contact off in the sim the same run does NOT stay at rest height (sinks / respawns)",
+		float(m1["min_y"]) - rest_y < -1e-6 or float(m1["max_y"]) - rest_y > 1e-3, "min %.4f max %.4f" % [float(m1["min_y"]), float(m1["max_y"])]))
+	m1["sim"].queue_free()
+	# Mutant 2: the same build without its payload mass climbs through the same path.
+	var light := ReferenceBuild.build()
+	var m2: Dictionary = await _sim_run(tree, light, 1.5, func(s): s.core.ground_contact_enabled = true)
+	out.append(_t("MUTANT: the payload-free build through the same path climbs (the check can fail)",
+		float(m2["max_y"]) - float(m2["rest_y"]) > 0.5, "%.2f m" % (float(m2["max_y"]) - float(m2["rest_y"]))))
+	m2["sim"].queue_free()
+	return out

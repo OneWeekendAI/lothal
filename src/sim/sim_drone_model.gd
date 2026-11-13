@@ -159,6 +159,14 @@ func rebuild(build: Build, p_class_id: String, catalog: PartsCatalog, tweaks: As
 	com_m = build.mass_properties.com_m if build.mass_properties != null else Vector3.ZERO
 	content.position = -com_m
 
+	# The payload hangs from the attach point under the belly, in the same body frame the GLB is in, so it
+	# is a child of `content` and rides with the airframe. PayloadMesh is the Design Space's own drawing.
+	if not build.payload_part.is_empty():
+		var payload := PayloadMesh.build(build.payload_part)
+		payload.name = "Payload"
+		payload.position = build.payload_attach_m()
+		content.add_child(payload)
+
 	_blades = maxi(int(build.propeller.get("specs", {}).get("blades", 3)), 1)
 	var spin_map := MotorLayout.spin_map(build.config)
 	for corner in CORNER_TO_MOTOR:

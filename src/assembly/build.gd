@@ -2265,6 +2265,10 @@ func build_drone_core(field_opts: Dictionary = {}) -> DroneCore:
 		pole_pairs(), geometry.blades, geometry.diameter_m * 0.5, gyro(), geometry.pitch_m,
 		air.kgm3(), blade_chord(), guard_closure, blade_twist())
 	core.drag_axes = drag_axes
+	# A payload hangs below everything, so an aircraft that cannot lift it must sit ON it, not sink through the
+	# floor (and into the sim's crash-and-respawn). Opt-in: no payload leaves the core exactly as it was.
+	core.rest_height_m = rest_height_m()
+	core.ground_contact_enabled = not payload_part.is_empty()
 	# The aircraft the sim flies is the aircraft the builder configured, including a spin map
 	# Lothal has warned about: design §5.3 — fly it badly, do not refuse it.
 	core.config = config

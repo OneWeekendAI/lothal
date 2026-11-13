@@ -376,7 +376,7 @@ func _run_suite(suite_name: String) -> Array:
 		"fpv view": return TestFpvView.run()
 		"camera tilt": return TestCameraTilt.run()
 		# The payload part: placement on every frame and class, mass into physics, persistence, the lift line
-		"payload": return TestPayload.run() + TestPayload.design_space(PartsCatalog.load_default())
+		"payload": return TestPayload.run() + TestPayload.design_space(PartsCatalog.load_default()) + await TestPayload.sim_path(self)
 		# V4 (plans/2026-09-13-video-room-design.md §3): VideoPlausibility.
 		"video warnings": return TestVideoWarnings.run()
 		# V5: Video's Camera panel, driven on a real shell.
