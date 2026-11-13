@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the CropMerge decision data from runs.csv (phase D of the cross-check).
 
-Reads  DATA/runs.csv, repro.csv, bom.csv   (DATA = landingpage/docs/lothal/plans/cropmerge/data)
+Reads  DATA/runs.csv, repro.csv, bom.csv   (DATA = landingpage/docs/lothal/plans/cropmerge/crosscheck/data)
 Writes DATA/configs.csv, requirements.csv, data_dictionary.csv, cropmerge_data.xlsx
 Appends 3 farm-run rows to repro.csv (idempotent).
 
@@ -12,7 +12,7 @@ import csv, os, sys
 from collections import defaultdict
 
 DATA = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser(
-    "~/Desktop/OneWeekendAI/landingpage/docs/lothal/plans/cropmerge/data")
+    "~/Desktop/OneWeekendAI/landingpage/docs/lothal/plans/cropmerge/crosscheck/data")
 P = lambda n: os.path.join(DATA, n)
 
 KEY_NOFIELD = ["sensor", "pack_ah", "pack_s", "pack_wh", "rgb_addon", "rtk", "remote_id", "height_m",
