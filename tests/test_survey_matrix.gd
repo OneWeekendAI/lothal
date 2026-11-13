@@ -24,6 +24,8 @@ static func run() -> Array:
 	out.append(_kit_effective(row))
 	out.append_array(_line_boundary())
 	out.append(_wall_cap())
+	out.append(_remote_id_and_cap(row))
+	out.append(_farm_swaps())
 	return out
 
 
@@ -129,3 +131,28 @@ static func _wall_cap() -> TestResult:
 	var row := SurveyMatrix.run_spec({"run_id": "w", "sensor": "rededge_p", "field": "300x200", "max_wall_s": 0.01})
 	var ok := String(row["ended_by"]) == "wall_cap" and String(row["warnings"]).begins_with("error") and str(row["flight_min"]) == "" and str(row["acres_batt"]) == "" and String(row["run_id"]) == "w"
 	return TestResult.new("survey matrix: a run past max_wall_s ends 'wall_cap' as an error row with no figures", ok, "%s / %s / %s" % [row["ended_by"], row["flight_min"], str(row["warnings"]).left(80)])
+
+
+## Phase C: the remote_id key flies the Beacon's 16 g; speed_cap_mps replaces the fixed 15 m/s auto-speed ceiling and is reported.
+## FAIL-PROOF (seen red 2026-11-13): before run_spec passed remote_id the mass delta was 0; before the key the cap cell was blank and
+## the Sentera 6X at 120 m sat at 15 m/s.
+static func _remote_id_and_cap(base: Dictionary) -> TestResult:
+	var rid := SurveyMatrix.run_spec({"run_id": "rid", "sensor": "rededge_p", "field": "300x200", "remote_id": true})
+	var cap := SurveyMatrix.run_spec({"run_id": "cap", "sensor": "sentera_6x", "field": "300x200", "height_m": 120, "speed_cap_mps": 20})
+	var dm := (float(rid["mass_kg"]) - float(base["mass_kg"])) * 1000.0
+	var ok := absf(dm - 16.0) < 1.01 and String(rid["remote_id"]) == "true" and float(str(cap["speed_cap_mps"]) if str(cap["speed_cap_mps"]) != "" else "0") == 20.0 \
+		and float(cap["speed_mps"]) > 15.0 and float(str(base["speed_cap_mps"]) if str(base["speed_cap_mps"]) != "" else "0") == 15.0
+	return TestResult.new("survey matrix: remote_id adds 16 g to mass_kg; speed_cap_mps 20 lets the Sentera at 120 m pass 15 m/s and is reported (default 15)", ok,
+		"dm %.1f g, cap %s speed %s, base cap %s" % [dm, str(cap["speed_cap_mps"]), str(cap["speed_mps"]), str(base["speed_cap_mps"])])
+
+
+## Phase C: max_sorties > 1 swaps packs until the field is done: sorties, packs_used (sum of pack fractions drawn), farm_complete and
+## acres_per_sortie come from the run's own sortie reports. FAIL-PROOF (seen red 2026-11-13): before the key the runner forced
+## max_sorties 1, so this 10 Ah run stopped after one sortie with farm_complete blank.
+static func _farm_swaps() -> TestResult:
+	var r := SurveyMatrix.run_spec({"run_id": "farm", "sensor": "rededge_p", "pack_ah": 10, "field": "1000x500", "max_sorties": 6, "max_sim_min": 300})
+	var ok := String(r["ended_by"]) == "completed" and int(r["sorties"]) >= 2 and String(r["farm_complete"]) == "true" \
+		and float(r["packs_used"]) > 0.5 and float(r["packs_used"]) <= float(r["sorties"]) \
+		and absf(float(r["acres_per_sortie"]) * int(r["sorties"]) - float(r["mapped_acres"])) < 0.2 * int(r["sorties"])
+	return TestResult.new("survey matrix: a 10 Ah run over 1000 x 500 m with max_sorties 6 swaps packs and completes; sorties, packs_used, acres per sortie reported", ok,
+		"%s sorties %s packs %s complete %s aps %s mapped %s" % [r["ended_by"], str(r["sorties"]), str(r["packs_used"]), str(r["farm_complete"]), str(r["acres_per_sortie"]), str(r["mapped_acres"])])

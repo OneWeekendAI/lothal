@@ -5,6 +5,9 @@ extends RefCounted
 ## Spec keys: run_id, group, sensor (rededge_p|sentera_6x|mavic), pack_ah (15|10), rgb_addon, rtk, remote_id (echoed, not modelled),
 ## height_m, front, side, speed_mps (omit = camera-interval auto), fps_cap (true = camera trigger floor set to the PUBLISHED max fps),
 ## reserve_pct, field "WxH", wind_mph, wind_dir (calm|along|across|quartering; lines run east-west), gust_frac, seed, farm_acres.
+## Phase C keys: pack ("15"|"10"|"20"|"25"|"6s10"|"6s15", overrides pack_ah), remote_id (Dronetag Beacon, really flown), swaps
+## ({category: part_id}, e.g. motor / propeller), speed_cap_mps (auto-speed ceiling, default 15), max_sorties (default 1: pack swaps
+## until the field is done), max_sim_min (default 120), max_wall_s (default 900: past it the row is an error).
 
 const COLUMNS := ["run_id", "group", "sensor", "pack_ah", "pack_wh", "rgb_addon", "rtk", "remote_id", "height_m", "front", "side",
 	"speed_mps", "speed_source", "reserve_pct", "field", "field_acres", "wind_mph", "wind_dir", "gust_frac", "seed", "mass_kg", "twr", "flight_min",
@@ -63,7 +66,7 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 	var wind := float(spec.get("wind_mph", 0.0)) * MPH
 	var params := {"mission": Mission.SURVEY, "seed": int(spec.get("seed", 1)), "fields": fields, "polygon": poly,
 		"wind_speed_mps": wind, "wind_from_deg": wind_from_deg(String(spec.get("wind_dir", "calm"))), "gust_mps": wind * float(spec.get("gust_frac", 0.0)),
-		"max_sorties": 1, "farm_acres": float(spec.get("farm_acres", 500.0)),
+		"max_sorties": int(spec.get("max_sorties", 1)), "farm_acres": float(spec.get("farm_acres", 500.0)),
 		"max_wall_s": float(spec.get("max_wall_s", 900.0)), "max_sim_min": float(spec.get("max_sim_min", 120.0))}
 	var build: Build
 	var pack_id := ""
@@ -74,7 +77,8 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 		params["build"] = build
 	else:
 		var pack_key := String(spec.get("pack", str(int(spec.get("pack_ah", 15)))))
-		var made := SurveyKitBuilds.make({"sensor": sensor, "pack": pack_key, "rtk": bool(spec.get("rtk", true)), "rgb_addon": bool(spec.get("rgb_addon", false))})
+		var made := SurveyKitBuilds.make({"sensor": sensor, "pack": pack_key, "rtk": bool(spec.get("rtk", true)), "rgb_addon": bool(spec.get("rgb_addon", false)),
+			"remote_id": bool(spec.get("remote_id", false)), "swaps": spec.get("swaps", {})})
 		if String(made.get("error", "")) != "":
 			row["warnings"] = "error: " + String(made["error"])
 			return row
@@ -94,7 +98,9 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 		fields["speed_mps"] = float(spec["speed_mps"])
 		row["speed_source"] = "manual"
 	else:
-		fields["speed_mps"] = Mission.fp_survey_speed(cam, h, front, 15.0)
+		var cap := float(spec.get("speed_cap_mps", 15.0))
+		row["speed_cap_mps"] = cap
+		fields["speed_mps"] = Mission.fp_survey_speed(cam, h, front, cap)
 		row["speed_source"] = "auto_1s" if sensor == "rededge_p" and not bool(spec.get("fps_cap", false)) else "auto_camera_fps"
 	row["speed_mps"] = snappedf(float(fields["speed_mps"]), 0.01)
 	row["mass_kg"] = snappedf(build.mass_properties.total_mass_kg, 0.001)
@@ -138,6 +144,17 @@ static func run_spec(spec: Dictionary) -> Dictionary:
 		var part: Dictionary = PartsCatalog.load_default().get_part(pack_id)
 		if not part.is_empty():
 			row["pack_limit_a"] = snappedf(float(part["specs"]["c_rating"]) * float(part["specs"]["mah"]) / 1000.0, 0.1)
+	var reps: Array = r.get("sortie_reports", [])
+	row["sorties"] = int(r.get("sorties", 0))
+	if not reps.is_empty():
+		var used := 0.0
+		for sr in reps:
+			used += float(sr.get("pack_used_pct", 0.0)) / 100.0
+		row["packs_used"] = snappedf(used, 0.01)
+	if int(row["sorties"]) > 0 and float(ph.get("mapped_acres", 0.0)) > 0.0:
+		row["acres_per_sortie"] = snappedf(float(ph["mapped_acres"]) / int(row["sorties"]), 0.1)
+	if int(params["max_sorties"]) > 1:
+		row["farm_complete"] = "true" if bool(r.get("completed", false)) else "false"
 	var warns := PackedStringArray(r["warnings"])
 	endurance_verdict(row, warns)
 	if str(row["packs500"]) != "":
