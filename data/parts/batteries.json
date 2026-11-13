@@ -425,6 +425,106 @@
         "connector": "XT60"
       },
       "source": "ESTIMATED survey pack for the mapper (survey mapper), no published product: 4S3P of 21700 cells, 3.6 V per cell nominal = 14.4 V, 15000 mAh = 216 Wh. MASS 870 g ESTIMATED (range 800-980 g) = 248 Wh/kg at pack level: 12 cells of the Samsung 50S class (5000 mAh, about 69 g per cell, maker figure; cell mass from memory and unchecked) = 828 g plus holder, strip, BMS and wrap at roughly 5 percent. Internal resistance 35 mOhm ESTIMATED = the 4S2P pack's 53 mOhm scaled by 2/3 for the third parallel group. C-rating 5 = 75 A: three parallel Samsung INR21700-50S cells at the 25 A continuous rating (Samsung SDI product introduction, 2021, https://salespot.com.ua/content/files/introduction-of-inr21700-50s_2021_v220210104-66391931.pdf); c_rating PUBLISHED (cell datasheet), the pack itself is estimated. 100 x 75 x 65 mm ESTIMATED (4 x 3 grid of 21 mm cells, 70 mm cell length laid flat, plus holder)."
+    },
+    {
+      "part_id": "mapper_battery_4s4p_20000_liion",
+      "name": "Mapper 4S4P 20000mAh Li-ion",
+      "category": "battery",
+      "mass_g": 1160.0,
+      "mounting": {
+        "attachment": "strap"
+      },
+      "specs": {
+        "cells": 4,
+        "nominal_v": 14.4,
+        "mah": 20000.0,
+        "internal_r_ohm": 0.0265,
+        "chemistry": "Li-ion",
+        "c_rating": 5.0,
+        "length_mm": 100.0,
+        "width_mm": 95.0,
+        "height_mm": 65.0
+      },
+      "catalog": {
+        "cell_class": "4S",
+        "connector": "XT60"
+      },
+      "source": "ESTIMATED survey pack for the mapper (cross-check phase C, 2026-11-13), no published product, derived exactly as the 4S3P 15 Ah pack: 4S4P of 21700 cells, 3.6 V per cell nominal x 4 = 14.4 V, 4 x 5000 mAh = 20000 mAh = 288 Wh. MASS 1160 g ESTIMATED = 16 cells x 69 g (Samsung 50S class; maker figure for capacity, cell mass from memory and unchecked) = 1104 g, plus holder, strip, BMS and wrap at roughly 5 percent = 1159 g, rounded; 248 Wh/kg at pack level. Internal resistance 26.5 mOhm ESTIMATED = the 4S2P pack's 53 mOhm scaled by 4/4 series and 2/4 parallel. C-rating 5 = 100 A: 4 parallel cells at 25 A, Samsung INR21700-50S cell rated 25 A continuous (Samsung SDI product introduction, 2021, https://salespot.com.ua/content/files/introduction-of-inr21700-50s_2021_v220210104-66391931.pdf); c_rating PUBLISHED (cell datasheet), the pack itself is estimated. 100 x 95 x 65 mm ESTIMATED (cell grid of 21 mm cells, 70 mm cell length, plus holder). "
+    },
+    {
+      "part_id": "mapper_battery_4s5p_25000_liion",
+      "name": "Mapper 4S5P 25000mAh Li-ion",
+      "category": "battery",
+      "mass_g": 1450.0,
+      "mounting": {
+        "attachment": "strap"
+      },
+      "specs": {
+        "cells": 4,
+        "nominal_v": 14.4,
+        "mah": 25000.0,
+        "internal_r_ohm": 0.0212,
+        "chemistry": "Li-ion",
+        "c_rating": 5.0,
+        "length_mm": 100.0,
+        "width_mm": 115.0,
+        "height_mm": 65.0
+      },
+      "catalog": {
+        "cell_class": "4S",
+        "connector": "XT60"
+      },
+      "source": "ESTIMATED survey pack for the mapper (cross-check phase C, 2026-11-13), no published product, derived exactly as the 4S3P 15 Ah pack: 4S5P of 21700 cells, 3.6 V per cell nominal x 4 = 14.4 V, 5 x 5000 mAh = 25000 mAh = 360 Wh. MASS 1450 g ESTIMATED = 20 cells x 69 g (Samsung 50S class; maker figure for capacity, cell mass from memory and unchecked) = 1380 g, plus holder, strip, BMS and wrap at roughly 5 percent = 1449 g, rounded; 248 Wh/kg at pack level. Internal resistance 21.2 mOhm ESTIMATED = the 4S2P pack's 53 mOhm scaled by 4/4 series and 2/5 parallel. C-rating 5 = 125 A: 5 parallel cells at 25 A, Samsung INR21700-50S cell rated 25 A continuous (Samsung SDI product introduction, 2021, https://salespot.com.ua/content/files/introduction-of-inr21700-50s_2021_v220210104-66391931.pdf); c_rating PUBLISHED (cell datasheet), the pack itself is estimated. 100 x 115 x 65 mm ESTIMATED (cell grid of 21 mm cells, 70 mm cell length, plus holder). "
+    },
+    {
+      "part_id": "mapper_battery_6s2p_10000_liion",
+      "name": "Mapper 6S2P 10000mAh Li-ion",
+      "category": "battery",
+      "mass_g": 870.0,
+      "mounting": {
+        "attachment": "strap"
+      },
+      "specs": {
+        "cells": 6,
+        "nominal_v": 21.6,
+        "mah": 10000.0,
+        "internal_r_ohm": 0.0795,
+        "chemistry": "Li-ion",
+        "c_rating": 5.0,
+        "length_mm": 100.0,
+        "width_mm": 75.0,
+        "height_mm": 65.0
+      },
+      "catalog": {
+        "cell_class": "6S",
+        "connector": "XT60"
+      },
+      "source": "ESTIMATED survey pack for the mapper (cross-check phase C, 2026-11-13), no published product, derived exactly as the 4S3P 15 Ah pack: 6S2P of 21700 cells, 3.6 V per cell nominal x 6 = 21.6 V, 2 x 5000 mAh = 10000 mAh = 216 Wh. MASS 870 g ESTIMATED = 12 cells x 69 g (Samsung 50S class; maker figure for capacity, cell mass from memory and unchecked) = 828 g, plus holder, strip, BMS and wrap at roughly 5 percent = 869 g, rounded; 248 Wh/kg at pack level. Internal resistance 79.5 mOhm ESTIMATED = the 4S2P pack's 53 mOhm scaled by 6/4 series and 2/2 parallel. C-rating 5 = 50 A: 2 parallel cells at 25 A, Samsung INR21700-50S cell rated 25 A continuous (Samsung SDI product introduction, 2021, https://salespot.com.ua/content/files/introduction-of-inr21700-50s_2021_v220210104-66391931.pdf); c_rating PUBLISHED (cell datasheet), the pack itself is estimated. 100 x 75 x 65 mm ESTIMATED (cell grid of 21 mm cells, 70 mm cell length, plus holder). Same cells and mass as the 4S3P 15 Ah pack (216 Wh) at 6S, to isolate pack voltage."
+    },
+    {
+      "part_id": "mapper_battery_6s3p_15000_liion",
+      "name": "Mapper 6S3P 15000mAh Li-ion",
+      "category": "battery",
+      "mass_g": 1305.0,
+      "mounting": {
+        "attachment": "strap"
+      },
+      "specs": {
+        "cells": 6,
+        "nominal_v": 21.6,
+        "mah": 15000.0,
+        "internal_r_ohm": 0.053,
+        "chemistry": "Li-ion",
+        "c_rating": 5.0,
+        "length_mm": 100.0,
+        "width_mm": 95.0,
+        "height_mm": 75.0
+      },
+      "catalog": {
+        "cell_class": "6S",
+        "connector": "XT60"
+      },
+      "source": "ESTIMATED survey pack for the mapper (cross-check phase C, 2026-11-13), no published product, derived exactly as the 4S3P 15 Ah pack: 6S3P of 21700 cells, 3.6 V per cell nominal x 6 = 21.6 V, 3 x 5000 mAh = 15000 mAh = 324 Wh. MASS 1305 g ESTIMATED = 18 cells x 69 g (Samsung 50S class; maker figure for capacity, cell mass from memory and unchecked) = 1242 g, plus holder, strip, BMS and wrap at roughly 5 percent = 1304 g, rounded; 248 Wh/kg at pack level. Internal resistance 53.0 mOhm ESTIMATED = the 4S2P pack's 53 mOhm scaled by 6/4 series and 2/3 parallel. C-rating 5 = 75 A: 3 parallel cells at 25 A, Samsung INR21700-50S cell rated 25 A continuous (Samsung SDI product introduction, 2021, https://salespot.com.ua/content/files/introduction-of-inr21700-50s_2021_v220210104-66391931.pdf); c_rating PUBLISHED (cell datasheet), the pack itself is estimated. 100 x 95 x 75 mm ESTIMATED (cell grid of 21 mm cells, 70 mm cell length, plus holder). "
     }
   ]
 }

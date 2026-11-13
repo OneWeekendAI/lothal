@@ -147,6 +147,28 @@
         "protocol": "DroneCAN"
       },
       "source": "CubePilot Here3 manual, https://docs.cubepilot.org/user-guides/here-3/here-3-manual . PUBLISHED: Here3+ 51.8 g (Here3 is 48.8 g), 68 x 68 x 16 mm, RTK accuracy 0.025 m. Mast height 0 mm is a ROUGH class-typical ESTIMATE (sits flat on the top plate; a mast would add mass and height). RTK needs a base station or network, not modelled."
+    },
+    {
+      "part_id": "rid_dronetag_beacon",
+      "name": "Dronetag Beacon (broadcast Remote ID)",
+      "category": "gps",
+      "mass_g": 16.0,
+      "mounting": {
+        "attachment": "strap"
+      },
+      "specs": {
+        "length_mm": 37.0,
+        "width_mm": 26.0,
+        "height_mm": 16.0,
+        "mast_height_mm": 0.0
+      },
+      "catalog": {
+        "constellations": "GPS + GLONASS + Galileo + SBAS",
+        "compass": false,
+        "protocol": "standalone (own battery); Bluetooth broadcast",
+        "role": "remote_id_broadcast"
+      },
+      "source": "Dronetag Beacon product page, https://dronetag.com/products/beacon/ (read 2026-11-13). PUBLISHED: 16 g, 37 x 26 x 16 mm, Li-Po 3.7 V 200 mAh internal battery, current 15 mA avg / 100 mA peak; resellers (getfpv, Drone Nerds) agree on 16 g, one Adorama Gen 2 listing says 17 g. A broadcast Remote ID add-on, NOT a navigation GNSS: do not fit it in the gps slot. Power: it runs on its own cell, so it draws nothing from the flight pack; the survey-kit builds nevertheless charge 0.37 W (= 100 mA peak x 3.7 V, computed from the published figures, an upper bound) to the pack so the option is never free."
     }
   ]
 }

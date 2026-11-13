@@ -18,6 +18,8 @@ static func run() -> Array:
 	out.append(_presets())
 	out.append_array(_builds(cat))
 	out.append_array(_farm())
+	out.append_array(_remote_id(cat))
+	out.append_array(_big_packs(cat))
 	return out
 
 
@@ -82,4 +84,62 @@ static func _farm() -> Array:
 		absf(r["value"] - 3.0) < 1e-9 and absf(r["low"] - 2.4) < 1e-9 and absf(r["high"] - 3.75) < 1e-9 and r["packs_low"] == 3 and r["packs_high"] == 4 and r["packs_value"] == 3, str(r)))
 	var z := SurveyKitBuilds.batteries_per_farm(300.0, 0.0, 0.0, 0.0)
 	out.append(TestResult.new("survey kit farm: a zero acres-per-battery figure reports unknown (-1), not infinity", z["value"] == -1.0 and z["packs_value"] == -1, str(z)))
+	return out
+
+
+## Phase C (2026-11-13): the Dronetag Beacon broadcast Remote ID module, 16 g PUBLISHED (dronetag.com product page), and the
+## remote_id build option that really carries its mass and a 0.37 W load (100 mA peak x 3.7 V, computed from published figures).
+## FAIL-PROOF (seen red): with the part absent from gps.json the part case FAILS; before SurveyKitBuilds read remote_id the
+## build case FAILS (mass delta 0) and the payload-items case FAILS (key missing).
+static func _remote_id(cat: PartsCatalog) -> Array:
+	var out: Array = []
+	var p: Dictionary = cat.get_part("rid_dronetag_beacon")
+	out.append(TestResult.new("survey kit parts: rid_dronetag_beacon is in the catalog at 16 g, PUBLISHED, with the maker URL", not p.is_empty() and absf(float(p.get("mass_g", 0)) - 16.0) < 1e-6
+		and String(p.get("source", "")).contains("https://dronetag.com") and String(p.get("source", "")).contains("PUBLISHED"), str(p.get("mass_g"))))
+	var off := SurveyKitBuilds.make({"sensor": "rededge_p", "pack": "15"}, cat)
+	var on := SurveyKitBuilds.make({"sensor": "rededge_p", "pack": "15", "remote_id": true}, cat)
+	if String(on.get("error", "x")) != "" or String(off.get("error", "x")) != "":
+		out.append(TestResult.new("survey kit builds: remote_id adds 16 g and 0.37 W", false, str(on.get("error"))))
+		return out
+	var dm := ((on["build"] as Build).mass_properties.total_mass_kg - (off["build"] as Build).mass_properties.total_mass_kg) * 1000.0
+	var dw := (on["build"] as Build).payload_w - (off["build"] as Build).payload_w
+	out.append(TestResult.new("survey kit builds: remote_id adds the Beacon's 16 g and 0.37 W to the flown build", absf(dm - 16.0) < 0.01 and absf(dw - 0.37) < 1e-6, "dm %.2f g dw %.3f W" % [dm, dw]))
+	var items: Array = on.get("payload_items", [])
+	var names := []
+	var g := 0.0
+	for it in items:
+		names.append(String(it["part_id"]))
+		g += float(it["mass_g"])
+	out.append(TestResult.new("survey kit builds: payload_items list the add-ons by part id and sum to the build's payload mass", names.has("rid_dronetag_beacon") and absf(g - (on["build"] as Build).payload_mass_g) < 1e-6, str(names)))
+	return out
+
+
+## Phase C: larger packs derived like the 4S3P (21700 cells x 69 g + 5 %, 5C of 5 Ah cells). FAIL-PROOF (seen red): with the four
+## entries absent every pack case FAILS; before PACKS listed them the build cases FAIL ("unknown sensor or pack").
+const BIG := {"20": ["mapper_battery_4s4p_20000_liion", 1160.0, 288.0, 100.0, 4], "25": ["mapper_battery_4s5p_25000_liion", 1450.0, 360.0, 125.0, 4],
+	"6s10": ["mapper_battery_6s2p_10000_liion", 870.0, 216.0, 50.0, 6], "6s15": ["mapper_battery_6s3p_15000_liion", 1305.0, 324.0, 75.0, 6]}
+
+
+static func _big_packs(cat: PartsCatalog) -> Array:
+	var out: Array = []
+	var base := SurveyKitBuilds.make({"sensor": "rededge_p", "pack": "15"}, cat)["build"] as Build
+	for key in BIG:
+		var want: Array = BIG[key]
+		var p: Dictionary = cat.get_part(String(want[0]))
+		var ok := not p.is_empty()
+		var detail := "missing"
+		if ok:
+			var s: Dictionary = p["specs"]
+			var wh := float(s["nominal_v"]) * float(s["mah"]) / 1000.0
+			var why := TestBatteryDensity.check(String(s["chemistry"]), float(s["nominal_v"]), float(s["mah"]), float(p["mass_g"]))
+			ok = absf(float(p["mass_g"]) - float(want[1])) < 1e-6 and absf(wh - float(want[2])) < 0.5 and why == "" and int(s["cells"]) == int(want[4]) \
+				and absf(float(s["c_rating"]) * float(s["mah"]) / 1000.0 - float(want[3])) < 0.5 and String(p["source"]).contains("ESTIMATED") and String(p["source"]).contains("https://")
+			detail = "%.0f g %.0f Wh %s" % [float(p["mass_g"]), wh, why]
+		out.append(TestResult.new("survey kit parts: pack %s is %s g, %s Wh, %s A, %dS, tagged ESTIMATED with the cell source" % [key, str(want[1]), str(want[2]), str(want[3]), int(want[4])], ok, detail))
+		var m := SurveyKitBuilds.make({"sensor": "rededge_p", "pack": key}, cat)
+		var bok := String(m.get("error", "x")) == ""
+		var dm := ((m["build"] as Build).mass_properties.total_mass_kg - base.mass_properties.total_mass_kg) * 1000.0 if bok else 0.0
+		var dh := ((m["build"] as Build).harness_mass_g() - base.harness_mass_g()) if bok else 0.0
+		out.append(TestResult.new("survey kit builds: pack %s builds and adds exactly its mass over the 870 g pack (plus the harness's own change: %.1f g)" % [key, dh],
+			bok and absf(dm - (float(want[1]) - 870.0) - dh) < 0.5, "%s dm %.1f" % [str(m.get("error")), dm]))
 	return out
