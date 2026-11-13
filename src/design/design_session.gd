@@ -142,6 +142,9 @@ static func readouts_of(b: Build) -> Dictionary:
 		"auw_g": b.all_up_weight_g(),
 		"thrust_to_weight": b.thrust_to_weight(),
 		"hover_throttle": b.hover_throttle(),
+		# Whether peak thrust beats the weight. hover_throttle() is the peak-thrust throttle when it does not, and
+		# a bare number cannot say which it is.
+		"can_hover": b.can_hover(),
 		"flight_time_min": b.flight_time_min(),
 		"top_speed_kmh": b.top_speed_kmh(),
 	}
@@ -313,8 +316,9 @@ func adopt_frame_document(frame_dict: Dictionary, push_undo := true) -> bool:
 
 ## Puts a saved selection and frame document ({} = leave the document as drawn) into this session
 ## and clears the history. DesignFile has already checked both; this does not.
-func restore_state(p_selection: Dictionary, frame_dict: Dictionary, p_harness := {}, p_tweaks := {}, p_config := {}, p_printing := {}, p_records := []) -> void:
+func restore_state(p_selection: Dictionary, frame_dict: Dictionary, p_harness := {}, p_tweaks := {}, p_config := {}, p_printing := {}, p_records := [], p_payload := {}) -> void:
 	selection = p_selection.duplicate(true)
+	_project.payload = (p_payload as Dictionary).duplicate(true)
 	_project.config = (p_config as Dictionary).duplicate(true)
 	_project.printing = (p_printing as Dictionary).duplicate(true)
 	_project.print_records = (p_records as Array).duplicate(true)
@@ -340,6 +344,22 @@ func set_config(p_config: Dictionary, push_undo := true) -> bool:
 	if push_undo:
 		_push_undo()
 	_project.config = p_config.duplicate(true)
+	_changed()
+	return true
+
+
+## The payload part of this design (`Project.payload`, PayloadPart's saved form), `{}` for none.
+func payload() -> Dictionary:
+	return _project.payload.duplicate(true)
+
+
+## Sets the payload as one undo step; `{}` removes it. False when nothing changes.
+func set_payload(p_payload: Dictionary, push_undo := true) -> bool:
+	if p_payload == _project.payload:
+		return false
+	if push_undo:
+		_push_undo()
+	_project.payload = p_payload.duplicate(true)
 	_changed()
 	return true
 
@@ -401,7 +421,7 @@ func set_tweaks(p_tweaks: AssemblyTweaks, push_undo := true) -> bool:
 
 
 func _snapshot() -> Dictionary:
-	return {"printing": _project.printing.duplicate(true), "config": _project.config.duplicate(true), "harness": harness_overrides.duplicate(true), "tweaks": tweaks.to_dict(),
+	return {"payload": _project.payload.duplicate(true), "printing": _project.printing.duplicate(true), "config": _project.config.duplicate(true), "harness": harness_overrides.duplicate(true), "tweaks": tweaks.to_dict(),
 		"selection": selection.duplicate(true),
 		"document": _frame_doc.to_dictionary() if _frame_doc != null else {}}
 
@@ -411,6 +431,7 @@ func _restore(entry: Dictionary) -> void:
 	harness_overrides = (entry.get("harness", {}) as Dictionary).duplicate(true)
 	_project.config = (entry.get("config", {}) as Dictionary).duplicate(true)
 	_project.printing = (entry.get("printing", {}) as Dictionary).duplicate(true)
+	_project.payload = (entry.get("payload", {}) as Dictionary).duplicate(true)
 	tweaks = AssemblyTweaks.from_dict(entry.get("tweaks", {}))
 	var doc: Dictionary = entry["document"]
 	_frame_doc = AirframeDocument.from_dictionary(doc) if not doc.is_empty() else null

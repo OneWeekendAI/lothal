@@ -77,6 +77,10 @@ var config: Dictionary = {}
 ## (FittedFrame.edit_of) and the Airframe room reopens on it, so nothing reads the catalogue frame's
 ## numbers in its place.
 var airframe: Dictionary = {}
+## The payload part (PayloadPart): `{kind, mass_g?, size_mm?}`, sparse. EMPTY means no payload, which is every
+## project written before this block existed: nothing is added to the aircraft the day it appears. `to_build`
+## hangs it under the belly (Build.set_payload_part).
+var payload: Dictionary = {}
 
 ## Named versions (⌘S), newest last. Each is {version_id, label, saved_at, decisions}.
 var versions: Array = []
@@ -156,6 +160,7 @@ static func from_dict(document: Dictionary, ladder: Array = ProjectSchema.MIGRAT
 	project.printing = project._read_block(decisions as Dictionary, "printing")
 	project.config = project._read_block(decisions as Dictionary, "config")
 	project.airframe = project._read_block(decisions as Dictionary, "airframe")
+	project.payload = project._read_block(decisions as Dictionary, "payload")
 
 	project.versions = _array_or(doc, "versions")
 	project.print_records = _array_or(doc, "prints")
@@ -219,6 +224,7 @@ func to_dict() -> Dictionary:
 	decisions["printing"] = printing.duplicate(true)
 	decisions["config"] = config.duplicate(true)
 	decisions["airframe"] = airframe.duplicate(true)
+	decisions["payload"] = payload.duplicate(true)
 
 	var out: Dictionary = (_unknown.get("", {}) as Dictionary).duplicate(true)
 	out["schema"] = ProjectSchema.current_version()
@@ -284,6 +290,7 @@ func restore_version(version_id: String) -> bool:
 		printing = _read_block(decisions as Dictionary, "printing")
 		config = _read_block(decisions as Dictionary, "config")
 		airframe = _read_block(decisions as Dictionary, "airframe")
+		payload = _read_block(decisions as Dictionary, "payload")
 		touch()
 		return true
 	return false
@@ -341,6 +348,10 @@ func to_build(catalog: PartsCatalog, missing: Array = []) -> Build:
 		if drawn != null:
 			var frame := catalog.get_part(String(parts["frame"]))
 			build.set_frame_edit(FittedFrame.edit_of(frame, drawn, FittedFrame.baseline(frame)))
+		# Last, so it hangs under the belly of the frame as flown. A payload is not a catalog part, so it
+		# is set rather than passed to `from_ids`; none of it exists when the block is empty.
+		if not payload.is_empty():
+			build.set_payload_part(payload)
 	return build
 
 

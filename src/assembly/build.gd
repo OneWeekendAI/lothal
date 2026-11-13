@@ -836,6 +836,11 @@ func at_air(p_air: AirDensity) -> Build:
 	# And the designer's edit to the frame: a twin at another field is the same drawn frame.
 	twin.set_frame_edit(_frame_edit)
 	twin.set_assembly(assembly)
+	# The payload part, for the twin's own reason: "would it lift at sea level" is about THIS aircraft,
+	# and one without its payload would say yes to a drone that cannot.
+	if not payload_part.is_empty():
+		twin.payload_part = payload_part.duplicate()
+		twin._recompute()
 	return twin
 
 
@@ -1313,6 +1318,15 @@ func mass_parts() -> Array:
 		var payload_kg := payload_mass_g / 1000.0
 		parts.append(PartMass.new(payload_kg, payload_seat_m(),
 			InertiaPrimitives.box(payload_kg, PAYLOAD_SIZE_M), "Payload"))
+
+	# The payload PART (PayloadPart): its own entry at its own seat under the belly, so it moves AUW, the
+	# centre of mass and the inertia tensor by exactly what it weighs and where it hangs. Separate from the
+	# lump above, which survey kits feed; a build that has both carries both.
+	if payload_part_mass_g() > 0.0:
+		var part_kg := PayloadPart.mass_kg(payload_part)
+		parts.append(PartMass.new(part_kg, payload_centre_m(),
+			InertiaPrimitives.box(part_kg, PayloadPart.size_m(payload_part)),
+			"Payload (%s)" % String(payload_part["name"])))
 
 	# THE HARNESS, and this is the block PW2 exists for. It was ONE 14 g lump at the origin — the
 	# budget's remainder, standing for wiring, connector, capacitor, solder, heat-shrink and straps,
@@ -2012,6 +2026,109 @@ func payload_seat_m() -> Vector3:
 	if payload_position_m.is_finite():
 		return payload_position_m
 	return Vector3(0.0, -0.02, -0.5 * arm_m)
+
+
+## THE PAYLOAD PART (Project.payload, PayloadPart): a box on a hook, gimbal or plate, hung under the belly of
+## whatever airframe this is. `{}` is none. It is separate from the lump above, which survey kits and the
+## class payloads still feed: both can be present and the aircraft carries BOTH (`total_payload_mass_g`),
+## each its own entry in `mass_parts()`, so nothing is counted twice and nothing is dropped.
+var payload_part: Dictionary = {}
+
+
+## Fits the payload a project saved (`{kind, mass_g?, size_mm?}`, PayloadPart.resolve) and recomputes the mass
+## properties. `{}` removes it.
+func set_payload_part(saved: Dictionary) -> void:
+	payload_part = PayloadPart.resolve(saved)
+	_recompute()
+
+
+## The payload part's mass, grams. Zero when none is fitted.
+func payload_part_mass_g() -> float:
+	return float(payload_part.get("mass_g", 0.0))
+
+
+## Everything the aircraft carries as payload: the class/survey lump plus the payload part. This is the
+## figure the "plus" in AUW is made of, stated once.
+func total_payload_mass_g() -> float:
+	return payload_mass_g + payload_part_mass_g()
+
+
+## The mean of the four motor positions in the horizontal plane (x, z), metres: where the thrust acts on
+## average. A payload centred here shifts the centre of mass fore-aft and sideways by nothing.
+func thrust_centroid_xz_m() -> Vector2:
+	var sum := Vector2.ZERO
+	for name in MotorLayout.MOTOR_NAMES:
+		var p := MotorLayout.motor_position(name, arm_m)
+		sum += Vector2(p.x, p.z)
+	return sum / float(MotorLayout.MOTOR_NAMES.size())
+
+
+## The airframe's own solid bodies as boxes in body axes, [{name, centre, size}]: both centre plates, the
+## pack, the two stack boards and every fitted optional component, each where mass_parts() weighs it.
+## The payload hangs below the lowest of these, and the tests ask this list whether anything overlaps it.
+## Motors and props are not here: they sit at the arm tips in the y = 0 plane and the payload is always
+## below the plates, so they cannot reach it.
+func body_boxes() -> Array:
+	var boxes: Array = []
+	var mounts := mount_points()
+	var side := MountLayout.centre_plate_side_m(arm_m)
+	var t := FRAME_PLATE_THICKNESS_M
+	var stack := MountLayout.by_id(mounts, "stack")
+	var top := MountLayout.by_id(mounts, "strap_top")
+	var plate_size := Vector3(side, t, side)
+	# The bottom plate's UPPER face is the stack's seat; the plate hangs below it.
+	boxes.append({"name": "Bottom plate", "centre": Vector3(0.0, stack.position.y - t * 0.5, 0.0), "size": plate_size})
+	boxes.append({"name": "Top plate", "centre": Vector3(0.0, top.position.y - t * 0.5, 0.0), "size": plate_size})
+	boxes.append({"name": "Pack", "centre": battery_seat()["position"], "size": battery_size_m()})
+	boxes.append({"name": "Flight controller", "centre": stack.position + Vector3(0.0, StackMesh.fc_centre_height_m(), 0.0),
+		"size": StackMesh.size_m(fc_mount_pattern())})
+	boxes.append({"name": "ESC", "centre": stack.position + Vector3(0.0, StackMesh.esc_centre_height_m(), 0.0),
+		"size": StackMesh.size_m(esc_mount_pattern())})
+	for category in OPTIONAL_COMPONENTS:
+		if components.has(category):
+			boxes.append({"name": category, "centre": component_centre_m(category, mounts),
+				"size": component_size_of(components[category])})
+	return boxes
+
+
+## The y of the lowest face among `body_boxes()`.
+func lowest_body_y_m() -> float:
+	var low := INF
+	for b in body_boxes():
+		low = minf(low, (b["centre"] as Vector3).y - (b["size"] as Vector3).y * 0.5)
+	return low
+
+
+## The y of the lowest point of the whole aircraft: the payload's underside when one hangs, else the lowest body part.
+func lowest_point_y_m() -> float:
+	var low := lowest_body_y_m()
+	if not payload_part.is_empty():
+		low = minf(low, payload_centre_m().y - PayloadPart.size_m(payload_part).y * 0.5)
+	return low
+
+
+## How high the centre of mass is above the lowest point, metres: what the sim rests the aircraft at on the ground.
+func rest_height_m() -> float:
+	return mass_properties.com_m.y - lowest_point_y_m()
+
+
+## Where the payload's mount starts, metres in body axes: on the thrust centroid, on the underside of the
+## lowest body part. ZERO with no payload.
+func payload_attach_m() -> Vector3:
+	if payload_part.is_empty():
+		return Vector3.ZERO
+	var c := thrust_centroid_xz_m()
+	return Vector3(c.x, lowest_body_y_m(), c.y)
+
+
+## The payload box's centre: the attach point, then the mount's gap, then half the box's height further
+## down. ZERO with no payload.
+func payload_centre_m() -> Vector3:
+	if payload_part.is_empty():
+		return Vector3.ZERO
+	var attach := payload_attach_m()
+	var size := PayloadPart.size_m(payload_part)
+	return attach - Vector3(0.0, PayloadPart.mount_gap_m(payload_part) + size.y * 0.5, 0.0)
 
 
 func payload_mass_breakdown() -> Dictionary:

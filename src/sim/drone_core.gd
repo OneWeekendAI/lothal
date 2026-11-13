@@ -42,6 +42,15 @@ var drag_axes := Vector3(-1.0, -1.0, -1.0)
 var ground_effect_enabled := false
 ## World height of the ground plane, m.
 var ground_y_m := 0.0
+## GROUND CONTACT, opt-in and OFF by default. This core is a free body: with it off, an aircraft whose thrust is
+## below its weight simply sinks through y = ground_y_m, which is what every flight written before this
+## expected (the sim's crash check and respawn live in the scene, not here). With it ON the ground pushes
+## back: the centre of mass cannot go below `ground_y_m + rest_height_m`, and while it is held there it
+## neither sinks nor tumbles. THIS IS NOT A THROTTLE GATE: nothing here looks at thrust or mass. The
+## aircraft stays down because gravity beats the rotors, and rises the instant the rotors beat gravity.
+var ground_contact_enabled := false
+## How high the centre of mass sits above the lowest point of the aircraft when it rests, m (Build.rest_height_m).
+var rest_height_m := 0.0
 ## Rotor radius, m (from the propeller), the length scale the ground effect is measured in.
 var prop_radius_m := 0.0635
 ## Height of the rotor plane above the CoM, m. ESTIMATED 0.02 (motors sit just above the plate).
@@ -203,6 +212,13 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	var specific_force := total_force + Vector3(0, GRAVITY_MPS2 * mass_properties.total_mass_kg, 0)
 
 	rigid_body.integrate(total_force, total_torque, mass_properties.total_mass_kg, mass_properties.inertia, mass_properties.inertia_inverse, dt)
+	if ground_contact_enabled:
+		var floor_y := ground_y_m + rest_height_m
+		if rigid_body.position_m.y <= floor_y and rigid_body.velocity_mps.y <= 0.0:
+			rigid_body.position_m.y = floor_y
+			# Supported: the ground takes the weight, and a body sitting on it does not spin or slide.
+			rigid_body.velocity_mps = Vector3.ZERO
+			rigid_body.angular_velocity_rad_s = Vector3.ZERO
 
 	# The sensor's shake follows the MOTORS, so the four current rpms are handed over before the
 	# sample. Four rather than one average: they are not equal while the aircraft is manoeuvring,

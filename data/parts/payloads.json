@@ -1,0 +1,59 @@
+{
+  "_schema": "Payload kinds — one box hung under the belly of ANY frame on a mount (hook, gimbal or plate). Same two-tier shape as every other catalog file: `specs` carries the three box dimensions in millimetres (length along the aircraft, width across it, height up) and `mounting.attachment` names how it hangs. What the physics reads is the MASS and the box; where it sits is never written here — PayloadPart places it from the airframe (below the lowest part, centred on the thrust centroid) so one entry fits every frame and every class. This file is NOT one of PartsCatalog's categories: a payload is chosen per design (Project `payload` block, with the builder's own mass and size overriding the catalog's), not fitted as a catalog part. Every mass here is APPROXIMATE, class-typical rather than a named product unless `source` says otherwise; the builder is expected to type their own.",
+  "parts": [
+    {
+      "part_id": "payload_gimbal_camera",
+      "name": "Gimbal camera (150 g class)",
+      "category": "payload",
+      "mass_g": 150.0,
+      "mounting": {"attachment": "gimbal"},
+      "specs": {"length_mm": 65.0, "width_mm": 55.0, "height_mm": 70.0},
+      "source": "APPROXIMATE. Class-typical 3-axis brushless gimbal with an action-camera or 1-inch sensor head, about 150 g; not a specific product. Box is the gimbal's swing envelope, rounded."
+    },
+    {
+      "part_id": "payload_mapping_camera",
+      "name": "Mapping camera (multispectral)",
+      "category": "payload",
+      "mass_g": 460.0,
+      "mounting": {"attachment": "plate"},
+      "specs": {"length_mm": 94.0, "width_mm": 63.0, "height_mm": 60.0},
+      "source": "APPROXIMATE. RedEdge-P class multispectral mapping camera, published body weight is in the 0.4 to 0.5 kg range; box rounded from the published body size. Mass here includes no sunlight sensor. Use Custom for a different sensor."
+    },
+    {
+      "part_id": "payload_drop_hook",
+      "name": "Drop hook (release servo)",
+      "category": "payload",
+      "mass_g": 35.0,
+      "mounting": {"attachment": "hook"},
+      "specs": {"length_mm": 45.0, "width_mm": 30.0, "height_mm": 35.0},
+      "source": "APPROXIMATE. Servo-actuated release hook of the kind sold for payload drops, about 35 g with its servo. This is the hook alone: set the mass to hook plus package to fly it loaded."
+    },
+    {
+      "part_id": "payload_winch",
+      "name": "Winch (line and spool)",
+      "category": "payload",
+      "mass_g": 180.0,
+      "mounting": {"attachment": "plate"},
+      "specs": {"length_mm": 90.0, "width_mm": 60.0, "height_mm": 60.0},
+      "source": "APPROXIMATE. Small drone winch with a 10 to 15 m line and a stepper or geared motor; class-typical, not a named product. The load on the line is not included."
+    },
+    {
+      "part_id": "payload_sprayer_tank",
+      "name": "Sprayer tank (1 L, full)",
+      "category": "payload",
+      "mass_g": 1400.0,
+      "mounting": {"attachment": "plate"},
+      "specs": {"length_mm": 110.0, "width_mm": 100.0, "height_mm": 130.0},
+      "source": "APPROXIMATE. One litre of water (1000 g) plus a light tank, pump and nozzle (about 400 g). Scale the mass with the fill; the box is a litre and a quarter of tank."
+    },
+    {
+      "part_id": "payload_custom",
+      "name": "Custom",
+      "category": "payload",
+      "mass_g": 100.0,
+      "mounting": {"attachment": "plate"},
+      "specs": {"length_mm": 60.0, "width_mm": 60.0, "height_mm": 60.0},
+      "source": "A starting point only: 100 g in a 60 mm cube. Mass and size are yours to set."
+    }
+  ]
+}

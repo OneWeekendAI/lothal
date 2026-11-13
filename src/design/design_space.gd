@@ -150,6 +150,10 @@ var _look_nodes: Dictionary = {}
 var _pack_label: Label3D
 var _plain_wrap: StandardMaterial3D
 ## Frame edits (Section 4): the tool row, the active tool, and what the plates were as drawn.
+var payload_panel: PayloadPanel
+var _payload_node: Node3D
+var _payload_drop_m := 0.0         ## how far the drone is raised so it stands on its payload
+var _payload_rest_y := 0.0         ## _doc_root's resting height with no payload
 var tool_row: FrameToolRow
 var file_bar: DesignFileBar
 ## A drawer another layer shows at the left (the shell's Mission picker): callouts keep clear of it.
@@ -276,6 +280,7 @@ func _after_change() -> void:
 	refresh()
 	regenerate_frame()
 	apply_look()
+	refresh_payload_model()
 	if selected != "" and not picks.addresses().has(selected):
 		selected = _plate_address_of(selected)
 	_update_tool_row()
@@ -323,6 +328,8 @@ func refresh() -> void:
 		(gauges[key] as ReadoutGauge).set_value(r.get(key, null))
 	var fs := session.flight_state(_catalog)
 	var b := session.build(_catalog)
+	if payload_panel != null:
+		payload_panel.refresh()
 	_refresh_warnings(b, fs)
 	_refresh_callout_numbers(b)
 
@@ -474,7 +481,9 @@ static func format_readout(key: String, r: Dictionary) -> String:
 	match key:
 		"auw_g": return "%.1f g" % v
 		"thrust_to_weight": return "%.2f : 1" % v
-		"hover_throttle": return "%.1f %%" % (v * 100.0)
+		# Flat out and still sinking is not a hover throttle: the figure would be the peak-thrust throttle, a number
+		# the aircraft never hovers at. Say so instead of printing it as if it did.
+		"hover_throttle": return "no hover" if r.get("can_hover", true) == false else "%.1f %%" % (v * 100.0)
 		"flight_time_min": return "%.1f min" % v
 		"top_speed_kmh": return "%.0f km/h" % v
 	return str(v)
@@ -1091,6 +1100,41 @@ func _build_stage() -> void:
 	apply_camera()
 
 
+## Draws the payload under the drone and raises the drone so it stands on it. The box hangs from the lowest
+## point of the drawn model, on the mean of the four motors in plan (the thrust centroid), which is the
+## same rule Build.payload_centre_m weighs it by. No payload: the drone is put back and the node removed.
+func refresh_payload_model() -> void:
+	if _doc_root == null:
+		return
+	if _payload_node != null and is_instance_valid(_payload_node):
+		_stage.remove_child(_payload_node)
+		_payload_node.free()
+	_payload_node = null
+	var spec := PayloadPart.resolve(session.payload())
+	var drop := 0.0
+	if not spec.is_empty():
+		drop = PayloadPart.mount_gap_m(spec) + PayloadPart.size_m(spec).y
+	var moved := not is_equal_approx(drop, _payload_drop_m)
+	_payload_drop_m = drop
+	_doc_root.position.y = _payload_rest_y + drop
+	if moved:
+		rebuild_picks()
+	if spec.is_empty():
+		return
+	var sum := Vector2.ZERO
+	var n := 0
+	for corner in ["FL", "FR", "BL", "BR"]:
+		var box := picks.box_of("part/motor/%s" % corner)
+		if box.size != Vector3.ZERO:
+			var c := box.get_center()
+			sum += Vector2(c.x, c.z)
+			n += 1
+	var centre := sum / float(n) if n > 0 else Vector2.ZERO
+	_payload_node = PayloadMesh.build(spec)
+	_payload_node.position = Vector3(centre.x, drop, centre.y)
+	_stage.add_child(_payload_node)
+
+
 ## Loads the class's GLB, standing on y=0 and centred on its bounds; sizes the rig from it.
 func _load_model() -> void:
 	_model_path = DroneClass.model_path(session.drone_class)
@@ -1137,6 +1181,7 @@ func _load_model() -> void:
 			(root as Node3D).position = Vector3(-centre.x, -lo.y, -centre.z)
 			rig = CameraRig.new(0.5 * Vector2(hi.x - lo.x, hi.z - lo.z).length(), hi.y - lo.y)
 		_doc_root = root as Node3D
+		_payload_rest_y = _doc_root.position.y
 		_mount_map = PartSnap.mount_map(root)
 		_stash_frame(root)
 		_capture_look(root)
@@ -1394,6 +1439,9 @@ func _build_panel() -> void:
 		delta_labels[row[0]] = dl
 		delta_bars[row[0]] = bar
 
+	# The payload: its kind, mass and box, and under them the lift line beside the numbers it is about.
+	payload_panel = PayloadPanel.new(self)
+	panel.add_child(payload_panel)
 
 	home_button = Button.new()
 	home_button.name = "Home"

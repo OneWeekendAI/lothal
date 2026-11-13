@@ -10,6 +10,7 @@ extends RefCounted
 ## {ok: false, reason} with one line for a missing/unknown part, an unknown category, a malformed
 ## frame document, a newer version, or a file that is not a design at all.
 ##
+## The payload part ("payload", sparse: absent is none, so every file written before it reopens unloaded) rides in the file too.
 ## The authored harness ("harness"), the assembly tweaks ("assembly") and the Config decisions ("config"), the printing decisions and print records ("printing", "print_records") ride in the file when they are
 ## not the as-built defaults; a file without them opens as built. Not covered yet: a project that flies a
 ## drawn `Project.airframe`.
@@ -34,6 +35,8 @@ static func to_dict(session: DesignSession, design_name: String = "") -> Diction
 		out["config"] = session.config()
 	if not session.printing().is_empty():
 		out["printing"] = session.printing()
+	if not session.payload().is_empty():
+		out["payload"] = session.payload()
 	if not session.print_records().is_empty():
 		out["print_records"] = session.print_records()
 	if not session.tweaks.is_default():
@@ -142,7 +145,8 @@ static func from_dict(d: Dictionary, catalog: PartsCatalog) -> Dictionary:
 	session.restore_state(selection, fd, harness if harness is Dictionary else {}, assembly if assembly is Dictionary else {},
 		config if config is Dictionary else {},
 		(d.get("printing", {}) as Dictionary) if d.get("printing", {}) is Dictionary else {},
-		(d.get("print_records", []) as Array) if d.get("print_records", []) is Array else [])
+		(d.get("print_records", []) as Array) if d.get("print_records", []) is Array else [],
+		(d.get("payload", {}) as Dictionary) if d.get("payload", {}) is Dictionary else {})
 	return {"ok": true, "reason": "", "session": session, "name": str(d.get("name", ""))}
 
 

@@ -98,7 +98,7 @@ extends RefCounted
 ##
 ## 4 (2026-10-31): top-level `drone_class`, the class chosen on the class picker. An older Lothal
 ## carries it untouched (rule 3); it labels intent and changes no physics.
-const SCHEMA_MINOR := 4
+const SCHEMA_MINOR := 5
 ## Bumped when a field CHANGES MEANING. Old Lothals refuse the file.
 const SCHEMA_MAJOR := 1
 
@@ -136,7 +136,7 @@ const OPTIONAL_CATEGORIES := ["camera", "vtx", "antenna", "receiver", "guard", "
 ## app's default", so a builder who never opened the Config room gets today's behaviour, and a
 ## default that later changes follows rather than freezing at the value some build happened to
 ## have. It has no key whitelist — C2..C9 each add keys to it without this list changing.
-const DECISION_BLOCKS := ["parts", "assembly", "tune", "air", "printing", "config", "airframe"]
+const DECISION_BLOCKS := ["parts", "assembly", "tune", "air", "printing", "config", "airframe", "payload"]
 
 const TOP_KEYS := ["schema", "project_id", "name", "created_at", "updated_at", "lothal_version",
 	"decisions", "versions", "prints", "notes", "drone_class"]
