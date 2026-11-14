@@ -12,7 +12,7 @@ extends Control
 ##   whose job is "pick a drone" does not need to advertise features it is not.
 ##
 ## The table pages rather than scrolls — the same clip-and-page rule the rest of the shell follows —
-## and the page size is whatever fits, so a taller window shows more rows instead of more gap.
+## ten rows a page.
 
 signal new_requested
 signal open_requested
@@ -48,12 +48,12 @@ const HAIRLINE := Color(1, 1, 1, 0.08)
 var entries: Array = []
 var _catalog: PartsCatalog
 var _page := 0
-var _rows_per_page := 10
+const ROWS_PER_PAGE := 10
+var _rows_per_page := ROWS_PER_PAGE
 
 var _search: LineEdit
 var _sort: OptionButton
 var _rows: VBoxContainer
-var _rows_holder: Control
 var _range_label: Label
 var _prev: Button
 var _next: Button
@@ -220,19 +220,12 @@ func _build_table() -> Control:
 	rule.custom_minimum_size = Vector2(0, 1)
 	box.add_child(rule)
 
-	# The rows sit in a plain Control, not straight in `box`. A VBoxContainer's minimum height is
-	# the sum of its rows, so measured directly it grows with every row it is given: more rows ->
-	# taller -> "more fit" -> more rows, until the table runs off the window and takes the pager
-	# with it. The holder's minimum is zero, so its height is the space the window leaves.
-	_rows_holder = Control.new()
-	_rows_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_rows_holder.clip_contents = true
-	_rows_holder.resized.connect(_on_rows_resized)
-	box.add_child(_rows_holder)
+	# A fixed ROWS_PER_PAGE, not "whatever fits": sizing the page from the measured height fed back
+	# on itself (and assumed ROW_HEIGHT, which rows exceed at real font sizes), pushing the pager off
+	# the bottom. The rows take their natural height; the pager sits right under them.
 	_rows = VBoxContainer.new()
-	_rows.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	_rows.add_theme_constant_override("separation", 0)
-	_rows_holder.add_child(_rows)
+	box.add_child(_rows)
 
 	_empty_label = Label.new()
 	_empty_label.text = "No saved drones yet. New drone starts one."
@@ -496,13 +489,6 @@ func visible_entries() -> Array:
 	else:
 		out.sort_custom(func(a, b) -> bool: return int(a["updated_unix"]) > int(b["updated_unix"]))
 	return out
-
-
-func _on_rows_resized() -> void:
-	var fits := maxi(1, int(_rows_holder.size.y / ROW_HEIGHT))
-	if fits != _rows_per_page:
-		_rows_per_page = fits
-		_render()
 
 
 func _render() -> void:
