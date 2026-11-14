@@ -53,6 +53,7 @@ var _rows_per_page := 10
 var _search: LineEdit
 var _sort: OptionButton
 var _rows: VBoxContainer
+var _rows_holder: Control
 var _range_label: Label
 var _prev: Button
 var _next: Button
@@ -219,12 +220,19 @@ func _build_table() -> Control:
 	rule.custom_minimum_size = Vector2(0, 1)
 	box.add_child(rule)
 
+	# The rows sit in a plain Control, not straight in `box`. A VBoxContainer's minimum height is
+	# the sum of its rows, so measured directly it grows with every row it is given: more rows ->
+	# taller -> "more fit" -> more rows, until the table runs off the window and takes the pager
+	# with it. The holder's minimum is zero, so its height is the space the window leaves.
+	_rows_holder = Control.new()
+	_rows_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_rows_holder.clip_contents = true
+	_rows_holder.resized.connect(_on_rows_resized)
+	box.add_child(_rows_holder)
 	_rows = VBoxContainer.new()
-	_rows.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_rows.clip_contents = true
+	_rows.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	_rows.add_theme_constant_override("separation", 0)
-	_rows.resized.connect(_on_rows_resized)
-	box.add_child(_rows)
+	_rows_holder.add_child(_rows)
 
 	_empty_label = Label.new()
 	_empty_label.text = "No saved drones yet. New drone starts one."
@@ -491,7 +499,7 @@ func visible_entries() -> Array:
 
 
 func _on_rows_resized() -> void:
-	var fits := maxi(1, int(_rows.size.y / ROW_HEIGHT))
+	var fits := maxi(1, int(_rows_holder.size.y / ROW_HEIGHT))
 	if fits != _rows_per_page:
 		_rows_per_page = fits
 		_render()
