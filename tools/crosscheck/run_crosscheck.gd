@@ -156,7 +156,6 @@ func _check_propeller(motors: Array, props: Array, catalog: PartsCatalog) -> voi
 				from_doc.diameter_mm * 0.001, from_doc.pitch_mm * 0.001, float(from_doc.blades), from_doc.chord,
 				to_doc.diameter_mm * 0.001, to_doc.pitch_mm * 0.001, float(to_doc.blades), to_doc.chord,
 				from_rpm)
-			var tg := _geom(to_p)
 			var k_q := RProp.fit_k_q(k_t, PropellerDocument.from_catalog_prop(to_p).torque_to_thrust_m())
 			for rpm in rpm_sweep:
 				_cmp("PropellerModel.thrust_n",
