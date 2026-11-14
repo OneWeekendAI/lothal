@@ -120,9 +120,11 @@ static func _test_tile(catalog: PartsCatalog) -> Array:
 	expected.append("AddPack")
 	expected.append("MisfitToggle_battery")  # the 5"'s 1S-3S packs are other classes' (ClassFit), held back behind it
 	expected.append("Plug")  # the selected-battery charge chip's plug button (charge_chip.gd)
+	expected.append("PayloadKind")  # the payload panel's kind picker (payload_panel.gd)
 	expected.sort()
 	out.append(_t("battery shelf ends with an AddPack tile and no other new button exists",
-		named == expected and unnamed == BEFORE_UNNAMED, "named %s unnamed %d" % [named, unnamed]))
+		named == expected and unnamed == BEFORE_UNNAMED + 2,  # + the payload mass stepper's - and + buttons
+		 "named %s unnamed %d" % [named, unnamed]))
 
 	var after_last_pack := _tile_follows_last_pack(ds)
 	out.append(_t("the AddPack tile comes right after the last battery card, and misfits shown or not",
