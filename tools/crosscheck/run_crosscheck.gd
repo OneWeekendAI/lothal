@@ -46,7 +46,11 @@ func _init() -> void:
 
 	var motors: Array = catalog.by_category["motor"]
 	var props: Array = catalog.by_category["propeller"]
-	var packs: Array = catalog.by_category["battery"]
+	# Only chemistries the GDScript reference knows (LiPo, Li-ion). LiPo HV and LiFePO4 were added
+	# to rust/src/battery.rs after the port and never had a GDScript original, so there is nothing
+	# to cross-check them against; the Rust unit tests in battery.rs cover their curves instead.
+	var packs: Array = catalog.by_category["battery"].filter(
+		func(p): return RBatt.CURVES.has(String(p["specs"]["chemistry"])))
 	print("catalog: %d motors x %d propellers x %d packs = %d combos"
 		% [motors.size(), props.size(), packs.size(), motors.size() * props.size() * packs.size()])
 

@@ -294,7 +294,10 @@ func _check_wind() -> void:
 			c.wind_speed_mps = 4.0
 			c.wind_from_deg = 30.0
 			c.gustiness_mps = gust
-			var a := Wind.new(c, tau)
+			# SR2 made Dryden the default model. The reference is the first-order gust that FlightLaw's
+			# gust_coefficients replaced, so cross-check the FIRST_ORDER path (kept bit-identical to it).
+			# Passed to the constructor, not set after: setting up the Dryden field draws from the RNG.
+			var a := Wind.new(c, tau, Wind.DEFAULT_SEED, Wind.Model.FIRST_ORDER)
 			var b = RWind.new(c, tau)
 			_cmp("Wind.steady_mps", a.steady_mps, b.steady_mps, "")
 			for i in 3000:
