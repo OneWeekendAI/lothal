@@ -132,6 +132,18 @@ var ref_height_m := DEFAULT_REF_HEIGHT_M
 
 var _rng := RandomNumberGenerator.new()
 var _seed: int
+
+## R1.7 MEANDER (see `Conditions.dir_sigma_deg`): two seeded Ornstein-Uhlenbeck processes on the MEAN wind,
+## a direction offset (degrees) and a speed fraction (dimensionless), on their own RNG so they never
+## perturb the Dryden stream. Off unless `p_meander` is passed; the flight scene turns it on.
+var meander_enabled := false
+var meander_dir_sigma_deg := 0.0
+var meander_dir_tau_s := Conditions.DEFAULT_DIR_TAU_S
+var meander_speed_sigma := 0.0
+var meander_speed_tau_s := Conditions.DEFAULT_SPEED_TAU_S
+var _m_theta_deg := 0.0
+var _m_speed := 0.0
+var _m_rng := RandomNumberGenerator.new()
 ## Legacy first-order gust state.
 var _gust := Vector3.ZERO
 ## Last returned total wind (mean at the last query height plus turbulence).
@@ -157,7 +169,7 @@ var _obstacles: Array = []          # Obstacle
 
 
 func _init(p_conditions: Conditions, p_gust_tau_s := DEFAULT_GUST_TAU_S,
-		p_seed := DEFAULT_SEED, p_model: int = Model.DRYDEN) -> void:
+		p_seed := DEFAULT_SEED, p_model: int = Model.DRYDEN, p_meander := false) -> void:
 	speed_mps = p_conditions.wind_speed_mps
 	from_deg = p_conditions.wind_from_deg
 	gustiness_mps = p_conditions.gustiness_mps
@@ -169,6 +181,13 @@ func _init(p_conditions: Conditions, p_gust_tau_s := DEFAULT_GUST_TAU_S,
 	_last = steady_mps
 	_seed = p_seed
 	_rng.seed = _seed
+	if p_meander and p_conditions.has_steady_wind():
+		meander_enabled = true
+		meander_dir_sigma_deg = p_conditions.effective_dir_sigma_deg()
+		meander_dir_tau_s = maxf(p_conditions.dir_tau_s, 0.1)
+		meander_speed_sigma = maxf(p_conditions.speed_sigma_frac, 0.0)
+		meander_speed_tau_s = maxf(p_conditions.speed_tau_s, 0.1)
+		_reset_meander()
 	if model == Model.DRYDEN:
 		_setup_dryden()
 
@@ -201,7 +220,51 @@ func mean_speed_at(height_m: float) -> float:
 func mean_at(height_m: float) -> Vector3:
 	if model == Model.FIRST_ORDER:
 		return steady_mps
-	return steady_mps * profile_factor(height_m)
+	return meandered_steady() * profile_factor(height_m)
+
+
+## The reference-height mean wind with the meander applied: rotated by the direction offset and scaled
+## by the speed fraction. Equals `steady_mps` exactly when the meander is off.
+func meandered_steady() -> Vector3:
+	if not meander_enabled:
+		return steady_mps
+	return steady_vector(speed_mps * maxf(1.0 + _m_speed, 0.0), from_deg + _m_theta_deg)
+
+
+## The instantaneous mean speed (reference height) and the bearing it comes FROM, for the HUD.
+func inst_speed_mps() -> float:
+	return speed_mps * maxf(1.0 + _m_speed, 0.0) if meander_enabled else speed_mps
+
+
+func inst_from_deg() -> float:
+	if not meander_enabled:
+		return from_deg
+	return fposmod(from_deg + _m_theta_deg, 360.0)
+
+
+func meander_theta_deg() -> float:
+	return _m_theta_deg
+
+
+func meander_speed_fraction() -> float:
+	return _m_speed
+
+
+## Exact OU step: x' = a x + sigma sqrt(1 - a^2) n, a = exp(-dt / tau). Stationary variance sigma^2.
+func _step_meander(dt: float) -> void:
+	if not meander_enabled or dt <= 0.0:
+		return
+	var a := exp(-dt / meander_dir_tau_s)
+	_m_theta_deg = a * _m_theta_deg + meander_dir_sigma_deg * sqrt(1.0 - a * a) * _m_rng.randfn()
+	var b := exp(-dt / meander_speed_tau_s)
+	_m_speed = b * _m_speed + meander_speed_sigma * sqrt(1.0 - b * b) * _m_rng.randfn()
+
+
+func _reset_meander() -> void:
+	_m_rng.seed = _seed ^ 0x3EA4D3
+	# Drawn from the stationary distribution, so the wind is already wandering at t = 0.
+	_m_theta_deg = meander_dir_sigma_deg * _m_rng.randfn()
+	_m_speed = meander_speed_sigma * _m_rng.randfn()
 
 
 ## ln(z/z0) / ln(z_ref/z0), with z clamped to [2 z0, 200 m].
@@ -429,6 +492,7 @@ func update_at(dt: float, pos: Vector3, height_m: float) -> Vector3:
 		_gust += (drive - _gust) * a
 		_last = steady_mps + _gust
 		return _last
+	_step_meander(dt)
 	var mean := mean_at(height_m)
 	_t += dt
 	var turb := Vector3.ZERO
@@ -464,5 +528,7 @@ func reset() -> void:
 	_last = steady_mps
 	_rng.seed = _seed
 	_t = 0.0
+	if meander_enabled:
+		_reset_meander()
 	if model == Model.DRYDEN:
 		_reset_field()

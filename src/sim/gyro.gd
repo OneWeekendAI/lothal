@@ -67,6 +67,9 @@ var cutoff_hz: float
 ## Standard deviation of the per-sample white noise, rad/s, applied independently per axis.
 var noise_rad_s: float
 var bias_rad_s: Vector3
+## What a power-up calibration has taken back out of `bias_rad_s` (R1.7). Zero until `calibrate()` runs, so every
+## sensor built without it reads exactly as before.
+var trim_rad_s := Vector3.ZERO
 
 ## The most recent reading. Held between samples, which is what a consumer polling faster
 ## than the sensor actually gets.
@@ -164,9 +167,18 @@ func reset() -> void:
 	# Without this, "the same flight twice" would not be the same flight.
 	_rng.seed = _seed
 
+## Power-up gyro calibration, as every flight controller does on arming: the aircraft is still, so whatever the gyro reads
+## IS its offset, and the firmware subtracts it. It cannot remove all of it (temperature, quantisation, a still aircraft
+## that is not perfectly still), so `CALIBRATION_REMOVES` of the offset goes and the rest stays. A LABELLED ESTIMATE:
+## no datasheet publishes the residue after a still-gyro cal; 0.9 leaves 10 percent of the factory figure.
+const CALIBRATION_REMOVES := 0.9
+
+func calibrate() -> void:
+	trim_rad_s = bias_rad_s * CALIBRATION_REMOVES
+
 ## One sensor sample: truth, plus bias, plus vibration, plus noise, through the PT1.
 func _sample(true_rate_rad_s: Vector3, period: float) -> void:
-	var raw := true_rate_rad_s + bias_rad_s
+	var raw := true_rate_rad_s + bias_rad_s - trim_rad_s
 
 	# Vibration is read at THIS SAMPLE INSTANT and at no other, which is the whole mechanism.
 	# Everything interesting about it follows from that one line and needs no further code:

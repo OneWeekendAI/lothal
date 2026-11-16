@@ -203,7 +203,7 @@ func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, 
 	# what the pilot can handle, which is the warning vocabulary's job). `core.wind` is null on a
 	# core nobody handed a Wind: that reads as no wind.
 	if core.wind != null:
-		_wind_label.text = "Wind  %.1f m/s from %.0f°" % [core.wind.speed_mps, core.wind.from_deg]
+		_wind_label.text = "Wind  %.1f m/s from %.0f°" % [core.wind.inst_speed_mps(), core.wind.inst_from_deg()]
 	else:
 		_wind_label.text = "Wind  none"
 

@@ -56,6 +56,14 @@ extends RefCounted
 ## order of a gust front at hand-flown scale. It is NOT measured, and the control says so.
 const DEFAULT_GUST_TAU_S := 2.5
 
+const DIR_SIGMA_AUTO := -1.0
+const DIR_SIGMA_K_DEG_MPS := 57.3   # sigma_v of 1 m/s, as degrees
+const DIR_SIGMA_MIN_DEG := 8.0
+const DIR_SIGMA_MAX_DEG := 45.0
+const DEFAULT_DIR_TAU_S := 60.0
+const DEFAULT_SPEED_SIGMA_FRAC := 0.15
+const DEFAULT_SPEED_TAU_S := 40.0
+
 const STANDARD_ID := "standard"
 const STANDARD_NAME := "Standard"
 
@@ -95,6 +103,26 @@ var roughness_z0_m := 0.03
 ## standard. Old files had no such field and were uniform; at 10 m they read identically.
 var wind_ref_height_m := 10.0
 
+## R1.7 MEANDER. Real wind does not blow down one bearing at one speed: the mean direction wanders
+## slowly (boundary-layer "meander") and the mean speed breathes. Both are seeded Ornstein-Uhlenbeck
+## processes on top of the Dryden turbulence, run by `Wind` (see `Wind.meander_*`). All four numbers
+## are LABELLED ESTIMATES, not measurements, and editable:
+##
+## `dir_sigma_deg` is the std of the direction wander, degrees. NEGATIVE MEANS "AUTO", the estimate
+## sigma_theta ~= clamp(DIR_SIGMA_K_DEG_MPS / U, 8, 45) degrees. Basis: the Pasquill-Gifford /
+## Turner stability-class practice of quoting sigma_theta (horizontal wind-direction std) as
+## ~ sigma_v / U, with sigma_v ~ 1 m/s for near-neutral open terrain (Hanna, Briggs & Hosker 1982;
+## EPA-454/R-99-005 section 6.2.4). 1 m/s over U in rad is 57.3 deg*m/s / U: ~29 deg at 2 m/s,
+## ~11 deg at 5 m/s, clamped to 8 deg floor in strong wind and 45 deg ceiling in near-calm.
+## `dir_tau_s` is the wander's time scale (autocorrelation e-folding time): 60 s, inside the
+## 30-120 s the meander literature gives. `speed_sigma_frac` is the std of the mean speed as a
+## fraction of U (15 %, inside 10-20 %), `speed_tau_s` its time scale (40 s, inside 20-60 s).
+## Calm (`is_calm`) stays calm: nothing is applied below `CALM_TOLERANCE_MPS`.
+var dir_sigma_deg := DIR_SIGMA_AUTO
+var dir_tau_s := DEFAULT_DIR_TAU_S
+var speed_sigma_frac := DEFAULT_SPEED_SIGMA_FRAC
+var speed_tau_s := DEFAULT_SPEED_TAU_S
+
 ## Everything the file held that this version does not recognise, kept so that opening an older
 ## build does not silently destroy a newer one's settings.
 var _unknown: Dictionary = {}
@@ -132,7 +160,8 @@ func has_steady_wind() -> bool:
 # ---------------------------------------------------------------------------
 
 const KNOWN_KEYS := ["id", "name", "wind_speed_mps", "wind_from_deg", "gustiness_mps",
-	"temperature_c", "gust_tau_s", "humidity_pct", "roughness_z0_m", "wind_ref_height_m"]
+	"temperature_c", "gust_tau_s", "humidity_pct", "roughness_z0_m", "wind_ref_height_m",
+	"dir_sigma_deg", "dir_tau_s", "speed_sigma_frac", "speed_tau_s"]
 
 ## The five the builder authors, as distinct from the two that identify the set. The literal the
 ## suite checks `to_data()` against, kept here rather than in the test so that the design statement
@@ -141,7 +170,18 @@ const AUTHORED_KEYS := ["wind_speed_mps", "wind_from_deg", "gustiness_mps", "tem
 	"gust_tau_s"]
 ## SR2 additions. Written ONLY when they differ from their defaults, so a file saved before SR2
 ## round-trips byte-for-byte and a file that never set them stays the shape it was.
-const OPTIONAL_KEYS := ["humidity_pct", "roughness_z0_m", "wind_ref_height_m"]
+const OPTIONAL_KEYS := ["humidity_pct", "roughness_z0_m", "wind_ref_height_m",
+	"dir_sigma_deg", "dir_tau_s", "speed_sigma_frac", "speed_tau_s"]
+
+
+## The direction std in degrees this set will fly with: the typed one, or the labelled estimate
+## clamp(57.3 / U, 8, 45) when it is left on auto. Zero when there is no wind to wander.
+func effective_dir_sigma_deg() -> float:
+	if not has_steady_wind():
+		return 0.0
+	if dir_sigma_deg >= 0.0:
+		return dir_sigma_deg
+	return clampf(DIR_SIGMA_K_DEG_MPS / absf(wind_speed_mps), DIR_SIGMA_MIN_DEG, DIR_SIGMA_MAX_DEG)
 
 
 ## A set from a record. An unreadable field falls back to its standard value rather than dropping
@@ -174,6 +214,11 @@ static func from_data(data: Variant) -> Conditions:
 	out.roughness_z0_m = _number(record.get("roughness_z0_m"), 0.03)
 	out.wind_ref_height_m = _number(record.get("wind_ref_height_m"), 10.0)
 
+	out.dir_sigma_deg = _number(record.get("dir_sigma_deg"), DIR_SIGMA_AUTO)
+	out.dir_tau_s = _number(record.get("dir_tau_s"), DEFAULT_DIR_TAU_S)
+	out.speed_sigma_frac = _number(record.get("speed_sigma_frac"), DEFAULT_SPEED_SIGMA_FRAC)
+	out.speed_tau_s = _number(record.get("speed_tau_s"), DEFAULT_SPEED_TAU_S)
+
 	out._unknown = JsonStore.unknown_fields(record, KNOWN_KEYS)
 	return out
 
@@ -202,6 +247,14 @@ func to_data() -> Dictionary:
 		record["roughness_z0_m"] = roughness_z0_m
 	if wind_ref_height_m != 10.0:
 		record["wind_ref_height_m"] = wind_ref_height_m
+	if dir_sigma_deg != DIR_SIGMA_AUTO:
+		record["dir_sigma_deg"] = dir_sigma_deg
+	if dir_tau_s != DEFAULT_DIR_TAU_S:
+		record["dir_tau_s"] = dir_tau_s
+	if speed_sigma_frac != DEFAULT_SPEED_SIGMA_FRAC:
+		record["speed_sigma_frac"] = speed_sigma_frac
+	if speed_tau_s != DEFAULT_SPEED_TAU_S:
+		record["speed_tau_s"] = speed_tau_s
 	return record
 
 

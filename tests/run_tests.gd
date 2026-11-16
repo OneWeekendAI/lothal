@@ -22,7 +22,7 @@ const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "tw
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
-	"arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet", "payload"]
+	"arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet", "payload", "r17 realism"]
 
 func _init() -> void:
 	var total := 0
@@ -411,6 +411,7 @@ func _run_suite(suite_name: String) -> Array:
 		"wind numbers": return TestWindNumbers.run()
 		"r16 wind": return TestR16Wind.run()
 		"r21 field look": return TestR21FieldLook.run()
+		"r17 realism": return TestR17Realism.run()
 		"vibration": return TestVibration.run()
 		"forward flight": return TestForwardFlight.run()
 		"vrs": return TestVrs.run()

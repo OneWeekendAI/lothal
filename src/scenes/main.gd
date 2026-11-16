@@ -618,6 +618,10 @@ func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 	# the line above prevents.
 	core.gyro.reset()
 	core.accel.reset()
+	# R1.7: the flight controller calibrates its IMU at power-up, as a real one does on arming (sensor offsets cannot be
+	# trusted to be zero-mean for a whole flight, and an uncalibrated one tilts a hands-off aircraft away on its own).
+	core.gyro.calibrate()
+	core.accel.calibrate()
 	core.vbat.reset()
 	# And a respawn replays the same gust rather than continuing the old stream, for the identical
 	# reason: "the same flight twice" must mean the same flight, gust for gust.
@@ -635,6 +639,136 @@ func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 		position + Vector3.UP * CAMERA_LOOK_AHEAD_UP * _camera_scale, Vector3.UP)
 	# The FPV lens needs no snap: it is bolted to the airframe, which has already been moved.
 	fpv_view.place_lenses(camera, _chase_transform)
+
+# ---------------------------------------------------------------------------
+# R1.7: the world and the weather, from inside the flight
+# ---------------------------------------------------------------------------
+
+## Where the weather and the places are written. Defaults are the real files; a check redirects them to scratch.
+var conditions_path := ConditionsLibrary.SAVE_PATH
+var sites_path := SiteLibrary.SAVE_PATH
+var worlds_dir := WorldLibrary.DEFAULT_DIR
+var conditions_panel: DsSimConditions = null
+var _paused_by_panel := false
+
+## How far past the edge of the field the aircraft may fly before the range limit brings it back (a real aircraft is lost to
+## the radio link at a few hundred metres; the ground beyond the drawn field still exists and is collidable, see CollisionWorld).
+const RANGE_LIMIT_M := 150.0
+
+static func out_of_range(at: Vector3, p_terrain: Terrain) -> bool:
+	var centre := Vector2.ZERO
+	var half := Vector2(60.0, 60.0)
+	if p_terrain != null:
+		centre = Vector2(p_terrain.center_x_m, p_terrain.center_z_m)
+		half = p_terrain.half_extent()
+	return absf(at.x - centre.x) > half.x + RANGE_LIMIT_M or absf(at.z - centre.y) > half.y + RANGE_LIMIT_M
+
+
+## K, and the strip's "World & weather" button.
+func toggle_conditions_panel() -> void:
+	if conditions_panel == null:
+		conditions_panel = DsSimConditions.new(self)
+		conditions_panel.apply_requested.connect(apply_conditions_edit)
+		conditions_panel.conditions_chosen.connect(select_conditions)
+		conditions_panel.world_chosen.connect(apply_world)
+		conditions_panel.closed.connect(_on_conditions_panel_closed)
+		conditions_panel.visible = false
+		hud.get_parent().add_child(conditions_panel)
+	if conditions_panel.visible:
+		conditions_panel.hide()
+		_on_conditions_panel_closed()
+		return
+	_refresh_conditions_panel()
+	conditions_panel.show()
+	if not flight_paused:
+		flight_paused = true
+		_paused_by_panel = true
+
+
+func _on_conditions_panel_closed() -> void:
+	if _paused_by_panel:
+		flight_paused = false
+		_paused_by_panel = false
+
+
+func _refresh_conditions_panel(note := "") -> void:
+	if conditions_panel == null:
+		return
+	var lib := WorldLibrary.load_dir(worlds_dir)
+	if lib.count() == 0:
+		lib.ensure_presets()
+	conditions_panel.refresh(conditions_library, _course_site(), lib)
+	conditions_panel.status_label.text = note
+
+
+## Makes the typed numbers the flown weather: onto the selected set (Standard is never edited in place: it is forked to
+## "Custom"), onto the site's altitude, both saved, then a fresh wind, a fresh air, a rebuilt aircraft at the start.
+func apply_conditions_edit(edit: Dictionary) -> void:
+	var now := conditions_library.selected()
+	if now.conditions_id == Conditions.STANDARD_ID:
+		var forked := conditions_library.create("Custom")
+		forked.wind_speed_mps = now.wind_speed_mps
+		now = forked
+		conditions_library.select(forked.conditions_id)
+	now.wind_speed_mps = clampf(float(edit.get("wind_speed_mps", now.wind_speed_mps)), 0.0, 40.0)
+	now.wind_from_deg = fposmod(float(edit.get("wind_from_deg", now.wind_from_deg)), 360.0)
+	now.gustiness_mps = clampf(float(edit.get("gustiness_mps", now.gustiness_mps)), 0.0, 10.0)
+	now.temperature_c = AirDensity.new(0.0, float(edit.get("temperature_c", now.temperature_c))).temperature_c
+	now.humidity_pct = clampf(float(edit.get("humidity_pct", now.humidity_pct)), 0.0, 100.0)
+	now.dir_sigma_deg = clampf(float(edit.get("dir_sigma_deg", now.dir_sigma_deg)), Conditions.DIR_SIGMA_AUTO, 45.0)
+	now.speed_sigma_frac = clampf(float(edit.get("speed_sigma_frac", now.speed_sigma_frac)), 0.0, 0.4)
+	var here := _course_site()
+	if here != null and edit.has("elevation_m"):
+		here.elevation_m = AirDensity.new(float(edit["elevation_m"]), 0.0).elevation_m
+		site_library.save(sites_path)
+	conditions_library.save(conditions_path)
+	_apply_weather("Applied: %s" % now.conditions_name)
+
+
+## A different saved weather set, selected and saved.
+func select_conditions(id: String) -> void:
+	if conditions_library.select(id):
+		conditions_library.save(conditions_path)
+		_apply_weather("Selected: %s" % conditions_library.selected().conditions_name)
+
+
+## A world: its weather onto a set of its own (never onto Standard) and its ground onto the course's site, both saved.
+func apply_world(id: String) -> bool:
+	var lib := WorldLibrary.load_dir(worlds_dir)
+	var w := lib.world(id)
+	var here := _course_site()
+	if w == null or here == null:
+		return false
+	var c := w.to_conditions()
+	c.conditions_id = "world_%s" % id
+	c.conditions_name = w.world_name
+	conditions_library.put(c)
+	conditions_library.select(c.conditions_id)
+	here.elevation_m = w.origin_elevation_m
+	here.terrain = w.terrain
+	here.obstacles = w.obstacles
+	site_library.save(sites_path)
+	conditions_library.save(conditions_path)
+	terrain = _course_terrain()
+	obstacles = _course_obstacles()
+	_apply_weather("World: %s" % w.world_name)
+	return true
+
+
+## Rebuilds everything downstream of the weather: the name, the air the aircraft is flown in, the wind, the lap key, the
+## ground, and the aircraft itself (its thrust and hover throttle depend on the air), then respawns at the start.
+func _apply_weather(note := "") -> void:
+	var c := conditions_library.selected()
+	conditions_name = c.conditions_name
+	# A twin rebuilt at the new air, not `build.air = ...`: k_t, k_q, drag and the hover throttle are derived when the Build
+	# is constructed, so assigning the field would change what the HUD says and leave the thrust in the old air.
+	build = build.at_air(AirDensity.compose(_course_site(), c))
+	wind = make_wind(c)
+	wind.set_obstacles(obstacles)
+	adopt_selected_course()   # lap key, ground and obstacles, from the one place that builds them
+	_on_build_changed(build)
+	_refresh_conditions_panel(note)
+
 
 ## Writes the pack's state back to the shared store. Called on landing, and by DesignApp on the
 ## way out of the field — walking back to the garage is the other way a flight ends.
@@ -788,6 +922,9 @@ func _physics_process(delta: float) -> void:
 	# for a body that tunnelled through the ground in one frame.
 	if core.crashed or _check_crash(core.rigid_body.position_m, terrain):
 		_respawn_after_crash()
+	elif out_of_range(core.rigid_body.position_m, terrain):
+		_respawn_after_crash()
+		hud.say("Out of range. Back at the last gate.", true, 4.0)
 
 	_push_visual(core.rigid_body.position_m, core.rigid_body.orientation)
 	_previous_position = core.rigid_body.position_m

@@ -13,6 +13,7 @@ const ACTIONS := [
 	["mode", "Flight mode", "Space", KEY_SPACE, "_toggle_flight_mode"],
 	["listener", "Listener", "L", KEY_L, "_toggle_listener"],
 	["record", "Record", "R", KEY_R, "_toggle_recording"],
+	["weather", "Weather", "K", KEY_K, "toggle_conditions_panel"],
 ]
 
 var buttons: Dictionary = {}

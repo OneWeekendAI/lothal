@@ -38,6 +38,16 @@ var sample_rate_hz: float
 var cutoff_hz: float
 var noise_mps2: float
 var bias_mps2: Vector3
+## What a level calibration has taken back out of `bias_mps2` (R1.7); zero until `calibrate()` runs.
+var trim_mps2 := Vector3.ZERO
+
+## The level calibration every flight controller offers and every pilot does once: on a level surface the reading IS the
+## offset, and the firmware subtracts it. `CALIBRATION_REMOVES` is a LABELLED ESTIMATE of how much of it a bench
+## calibration takes back (the header's 5 mg is already described as the residue; this is a second, quick one at power-up).
+const CALIBRATION_REMOVES := 0.9
+
+func calibrate() -> void:
+	trim_mps2 = bias_mps2 * CALIBRATION_REMOVES
 ## The most recent reading (m/s^2, body frame). Held between samples.
 var reading_mps2 := Vector3.ZERO
 
@@ -62,7 +72,7 @@ func update(true_specific_force_body_mps2: Vector3, gyro_shake_rad_s: Vector3, d
 	_time_since_sample += dt
 	while _time_since_sample >= period:
 		_time_since_sample -= period
-		var raw := true_specific_force_body_mps2 + bias_mps2 + gyro_shake_rad_s * SHAKE_MPS2_PER_RAD_S
+		var raw := true_specific_force_body_mps2 + bias_mps2 - trim_mps2 + gyro_shake_rad_s * SHAKE_MPS2_PER_RAD_S
 		if noise_mps2 > 0.0:
 			raw += Vector3(_rng.randfn(0.0, noise_mps2), _rng.randfn(0.0, noise_mps2),
 				_rng.randfn(0.0, noise_mps2))

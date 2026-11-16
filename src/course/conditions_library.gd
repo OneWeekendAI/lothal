@@ -36,7 +36,19 @@ extends RefCounted
 ## authored fact on the next save. See `site.gd`.
 
 const SAVE_PATH := "user://conditions.json"
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
+
+## R1.7. A file older than schema 2 can have a windy set SELECTED (a builder or a test once switched to it and nothing ever
+## switched back), so a fresh launch flew in a 10 m/s wind with no hint of why. The migration changes the SELECTION only,
+## never a set: the first calm set (Standard when it is there) is selected, the original file is copied to `<path>.v1.bak`
+## before anything is rewritten, and `migrated_selection_from` remembers what was selected so the UI can say so.
+var migrated_selection_from := ""
+## The schema number this library writes back. A file read at an older schema keeps writing it until something is CHANGED
+## (a select, a put, a migration), so merely opening and re-saving an old file is still byte-identical.
+var _schema_out := SCHEMA_VERSION
+## The sets and the selection as they were when read; a save that finds them UNCHANGED writes the old schema number back, so a
+## re-save of an untouched old file is byte-identical, and any change at all writes the new one.
+var _loaded_state := ""
 
 ## How close two temperatures have to be to be the same temperature. Exact equality, to within a
 ## double's noise: these numbers come off a spinbox and out of a JSON file, and neither introduces
@@ -70,6 +82,7 @@ static func load_from(path: String = SAVE_PATH) -> ConditionsLibrary:
 		return with_default()
 
 	var library := ConditionsLibrary.new()
+	library._schema_out = int(document.get("schema", 1))
 	library._unknown_top = JsonStore.unknown_fields(document, ["schema", "selected", "conditions"])
 
 	var stored: Variant = document.get("conditions", [])
@@ -93,7 +106,32 @@ static func load_from(path: String = SAVE_PATH) -> ConditionsLibrary:
 	library.selected_id = String(document.get("selected", ""))
 	if not library._sets.has(library.selected_id):
 		library.selected_id = String(library._sets.keys()[0])
+	if int(document.get("schema", 1)) < SCHEMA_VERSION and not library.selected().is_calm():
+		var calm_id := ""
+		if library._sets.has(Conditions.STANDARD_ID) and (library._sets[Conditions.STANDARD_ID] as Conditions).is_calm():
+			calm_id = Conditions.STANDARD_ID
+		else:
+			for id in library._sets:
+				if (library._sets[id] as Conditions).is_calm():
+					calm_id = String(id)
+					break
+		if calm_id != "":
+			var backup := "%s.v1.bak" % path
+			if not FileAccess.file_exists(backup):
+				DirAccess.copy_absolute(path, backup)
+			library.migrated_selection_from = library.selected_id
+			library.selected_id = calm_id
+			library.save(path)
+			library._schema_out = SCHEMA_VERSION
+	library._loaded_state = library._state_json()
 	return library
+
+
+func _state_json() -> String:
+	var sets: Array = []
+	for id in _sets:
+		sets.append((_sets[id] as Conditions).to_data())
+	return JSON.stringify([selected_id, sets])
 
 
 func save(path: String = SAVE_PATH) -> bool:
@@ -102,7 +140,7 @@ func save(path: String = SAVE_PATH) -> bool:
 		sets.append((_sets[id] as Conditions).to_data())
 
 	var document := _unknown_top.duplicate(true)
-	document["schema"] = SCHEMA_VERSION
+	document["schema"] = _schema_out if JSON.stringify([selected_id, sets]) == _loaded_state else SCHEMA_VERSION
 	document["selected"] = selected_id
 	document["conditions"] = sets
 	return JsonStore.write_document(path, document)
