@@ -61,6 +61,23 @@ var rotor_above_com_m := 0.02
 ## business below z = R/2, so z is floored there (gain 1.33). ABOVE z = R it is faded to exactly 1.0
 ## at z = 2R with a cosine taper (the textbook gain at 2R is still 1.6 percent; a hover test wants a
 ## finite effect range, and the measured gain beyond 1 diameter is within the scatter).
+## R1.1: what the aircraft can hit. Null (the default) means no collision at all, exactly as before.
+var collision_world: CollisionWorld = null
+## R1.1: thrust fraction each motor has LOST to impacts, 0 (sound) .. 1 (gone), in MotorLayout.MOTOR_NAMES order.
+var prop_damage: PackedFloat64Array = PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+## R1.1: set when a hit reaches CollisionConstants.CRASH_SPEED_MPS. The scene reads it and respawns.
+var crashed := false
+## R1.1: the largest normal speed of the latest step's contacts, and of the whole flight since repair().
+var last_impact_speed_mps := 0.0
+var peak_impact_speed_mps := 0.0
+
+## Back to a sound aircraft: damage and the crash flag cleared (a respawn is a new airframe).
+func repair() -> void:
+	prop_damage = PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+	crashed = false
+	last_impact_speed_mps = 0.0
+	peak_impact_speed_mps = 0.0
+
 static func ground_effect_gain(height_m: float, radius_m: float) -> float:
 	if radius_m <= 0.0 or height_m >= 2.0 * radius_m:
 		return 1.0
@@ -164,7 +181,8 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 
 	for i in MotorLayout.MOTOR_NAMES.size():
 		var name: String = MotorLayout.MOTOR_NAMES[i]
-		var thrust_n: float = powertrain.observables.thrust_n[i]
+		# A damaged prop gives only what is left of it (R1.1): the same scaling reaches the torque below.
+		var thrust_n: float = powertrain.observables.thrust_n[i] * (1.0 - prop_damage[i])
 		# Read, not recomputed: the powertrain stepped and published a line above, so this is the
 		# reaction torque of THIS tick's rpm, and it is the same number any consumer reading the
 		# observables layer sees. A second k_q x omega^2 here would agree with it exactly until
@@ -219,6 +237,8 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 			# Supported: the ground takes the weight, and a body sitting on it does not spin or slide.
 			rigid_body.velocity_mps = Vector3.ZERO
 			rigid_body.angular_velocity_rad_s = Vector3.ZERO
+	if collision_world != null:
+		_resolve_collisions()
 
 	# The sensor's shake follows the MOTORS, so the four current rpms are handed over before the
 	# sample. Four rather than one average: they are not equal while the aircraft is manoeuvring,
@@ -243,6 +263,61 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 ## writes RPM straight into core.motor_rpm and then calls _publish, expecting blade-pass to be
 ## recomputed from it — precisely the check that blade-pass has one expression in the codebase.
 ## The republish is idempotent; it recomputes from stored state and integrates nothing.
+## R1.1: the aircraft's contact points, body frame, from the COM. The central body, the four arm hubs and
+## the four prop tips: the frame's and props' own extents (arm_m, prop_radius_m), not a bounding box.
+## Each is {"r": Vector3, "radius": float, "motor": int (-1 for the body)}.
+func contact_points() -> Array[Dictionary]:
+	var points: Array[Dictionary] = [{"r": Vector3.ZERO, "radius": CollisionConstants.BODY_RADIUS_M, "motor": -1}]
+	for i in MotorLayout.MOTOR_NAMES.size():
+		var hub := MotorLayout.motor_position(MotorLayout.MOTOR_NAMES[i], arm_m) - mass_properties.com_m
+		hub.y = rotor_above_com_m
+		var outward := Vector3(hub.x, 0.0, hub.z).normalized()
+		points.append({"r": hub, "radius": CollisionConstants.POINT_RADIUS_M, "motor": i})
+		points.append({"r": hub + outward * prop_radius_m, "radius": CollisionConstants.POINT_RADIUS_M, "motor": i})
+	return points
+
+
+## Pushes the aircraft out of whatever it overlaps and applies the impulse for each contact. Below
+## BOUNCE_SPEED_MPS: restitution + friction. Up to CRASH_SPEED_MPS: no bounce, the touching prop(s) lose
+## thrust. At or above it: `crashed`.
+func _resolve_collisions() -> void:
+	last_impact_speed_mps = 0.0
+	var mass := mass_properties.total_mass_kg
+	for point in contact_points():
+		var r_body: Vector3 = point["r"]
+		var r_world := rigid_body.orientation * r_body
+		var hit := collision_world.contact(rigid_body.position_m + r_world, float(point["radius"]))
+		if hit.is_empty():
+			continue
+		var normal: Vector3 = hit["normal"]
+		rigid_body.position_m += normal * float(hit["depth"])
+		var speed := rigid_body.approach_speed(r_body, normal)
+		if speed <= 0.0:
+			continue
+		last_impact_speed_mps = maxf(last_impact_speed_mps, speed)
+		peak_impact_speed_mps = maxf(peak_impact_speed_mps, speed)
+		var restitution := 0.0
+		if speed >= CollisionConstants.CRASH_SPEED_MPS:
+			crashed = true
+		elif speed >= CollisionConstants.BOUNCE_SPEED_MPS:
+			_damage_from_hit(int(point["motor"]), speed)
+		elif speed >= CollisionConstants.REST_SPEED_MPS:
+			restitution = CollisionConstants.RESTITUTION
+		rigid_body.apply_contact_impulse(r_body, normal, restitution, CollisionConstants.FRICTION, mass,
+			mass_properties.inertia_inverse)
+
+
+func _damage_from_hit(motor: int, speed: float) -> void:
+	var band := CollisionConstants.CRASH_SPEED_MPS - CollisionConstants.BOUNCE_SPEED_MPS
+	var severity := clampf((speed - CollisionConstants.BOUNCE_SPEED_MPS) / band, 0.0, 1.0)
+	var lost := severity * CollisionConstants.MAX_DAMAGE_PER_HIT
+	if motor >= 0:
+		prop_damage[motor] = minf(1.0, prop_damage[motor] + lost)
+	else:
+		for i in prop_damage.size():
+			prop_damage[i] = minf(1.0, prop_damage[i] + lost * CollisionConstants.BODY_HIT_DAMAGE_SHARE)
+
+
 func _publish(specific_force_n: Vector3) -> void:
 	powertrain.publish()
 

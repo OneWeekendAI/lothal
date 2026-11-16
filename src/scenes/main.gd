@@ -578,6 +578,7 @@ func _respawn_after_crash() -> void:
 ## Places the drone level, stationary, and pointed at `forward` (yaw only — respawning
 ## already banked would just hand the pilot a second crash).
 func _reset_to(p_position: Vector3, forward: Vector3) -> void:
+	core.repair()
 	core.rigid_body.position_m = p_position
 	core.rigid_body.velocity_mps = Vector3.ZERO
 	core.rigid_body.angular_velocity_rad_s = Vector3.ZERO
@@ -748,6 +749,9 @@ func _physics_process(delta: float) -> void:
 	if terrain != null:
 		core.ground_y_m = terrain.height_at(core.rigid_body.position_m.x, core.rigid_body.position_m.z)
 
+	# R1.1: the very terrain, obstacles and gate rings this scene draws are what the aircraft hits.
+	core.collision_world = CollisionWorld.new(terrain, obstacles, course.gates)
+
 	var substep_dt := delta / SUBSTEPS
 	for i in SUBSTEPS:
 		var motor_cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, substep_dt)
@@ -765,7 +769,9 @@ func _physics_process(delta: float) -> void:
 	# pass that ends in a clip just past the ring is silently thrown away.
 	_score_gates(delta)
 
-	if _check_crash(core.rigid_body.position_m, terrain):
+	# A hit past CollisionConstants.CRASH_SPEED_MPS crashes (R1.1); the altitude test stays as the backstop
+	# for a body that tunnelled through the ground in one frame.
+	if core.crashed or _check_crash(core.rigid_body.position_m, terrain):
 		_respawn_after_crash()
 
 	_push_visual(core.rigid_body.position_m, core.rigid_body.orientation)

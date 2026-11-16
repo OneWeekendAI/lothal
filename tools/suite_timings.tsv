@@ -1,0 +1,256 @@
+@tail	382.8
+air density	0.1
+airframe	0.2
+airframe document	0.1
+airframe properties	0.1
+airframe room	1.3
+airframe tabs	7.5
+antenna mount	37.1
+arm beam	0.0
+arm guard	0.0
+arm profile	0.0
+arm strength	0.5
+assembly tweaks	19.0
+authored blade	4.7
+battery audit	6.7
+battery density	0.0
+battery mesh	17.1
+battery model	0.0
+battery mount	0.2
+battery pad	14.5
+battery rail	14.9
+bemt	0.0
+bemt forward	0.1
+bemt ratios	4.7
+bench	0.4
+bench tab	5.8
+blade aero	0.1
+blade geometry	0.0
+blade room	0.2
+blade tab	3.8
+bmp classes	183.1
+build sheet	0.3
+build validation	0.1
+build warnings	3.8
+button states	38.5
+calibration	0.1
+callout look	4.7
+callouts	15.8
+camera cage	5.5
+camera mount	28.9
+camera tilt	0.1
+camera view	0.1
+catalog tuning	6.9
+cell library	0.0
+charge readouts	1.7
+class picker	146.9
+coaxial build	0.1
+collisions	0.4
+component mesh	6.8
+component registration	4.5
+conditions	7.0
+config arming	0.0
+config failsafe	13.8
+config motors	0.2
+config ports	0.0
+config rates	0.0
+config sheet	4.1
+config tab	2.6
+control components	0.2
+control effectiveness	0.2
+control parts	0.0
+control path	0.2
+control persistence	0.0
+control warnings	0.4
+course library	0.0
+course warnings	0.1
+custom control components	0.4
+custom escs	1.0
+custom flight controllers	1.7
+custom frames	0.8
+custom motors	1.8
+custom parts ui	9.9
+custom propellers	0.5
+custom tiles	23.8
+design file	3.1
+design file ui	15.9
+design picking	19.1
+design shelf	8.6
+design shelf ui	33.1
+design space	266.7
+design swap	97.8
+designed motors	6.3
+designed pack flies	6.6
+designed packs	0.3
+details footers	0.4
+drag range	0.0
+drawn frame persists	38.7
+electronics parts	0.5
+electronics ui	17.7
+esc	0.3
+esc bench	0.6
+fabrication	0.4
+field ds	0.9
+field page	0.3
+field room	31.5
+fingerprint survival	0.0
+fit tab	1.5
+fitted frame	0.1
+flight controller	1.9
+flight recorder	3.6
+flights sheet	1.6
+fly feedback	61.2
+forward flight	0.1
+fpv view	0.0
+frame bench	0.5
+frame edits	0.0
+frame edits design	0.6
+frame edits ui	9.3
+frame export	0.2
+frame figures	1.9
+frame gen	2.3
+frame import	0.0
+frame layouts	0.0
+frame look	1.0
+frame materials	0.0
+frame model	0.0
+frame plan editor	0.0
+frame shape	2.5
+frame sheet io	1.8
+frame workbench	2.2
+gate course	0.0
+gps mast	12.1
+ground authority	0.1
+guard mesh	0.1
+guard row	10.9
+gyro	0.1
+hardware mass	0.0
+harness	0.2
+harness checks	0.4
+harness tab	2.2
+hover	0.0
+hover at charge	1.0
+hover stability	2.6
+hud	0.2
+identity	0.7
+keyboard throttle	0.2
+lab	61.0
+label toggle	2.2
+mass positions	0.4
+mass properties	0.1
+motor bench	0.7
+motor configs	0.0
+motor current	0.6
+motor dc	0.0
+motor designer	4.2
+motor detail mesh	0.0
+motor mesh	0.0
+motor mixer	0.0
+motor pickers	3.9
+motor presets	0.6
+motor sheet	0.3
+motor spin up	0.0
+mount points	0.0
+mount row	35.5
+mounting	0.7
+no old ui	93.6
+observables	0.9
+obstacles	0.0
+one build	55.1
+one door	768.2
+open projects	63.6
+pack bench	0.2
+pack charge	7.3
+pack current limit	0.2
+pack design	0.1
+pack designer	8.3
+pack sheet	0.0
+part colour	13.7
+part filter	6.2
+part finder	0.2
+part sheet	1.4
+parts system	0.4
+payload	15.7
+pid tunes	1.0
+planform edits	0.0
+plate mesh	0.0
+polygon props	0.0
+power parts	0.0
+power room	1.2
+powertrain	0.1
+preset pack pin	0.3
+print tab	3.6
+printed divergence	75.0
+printed drawn	31.1
+printed export	24.1
+printed infill	0.0
+project	0.1
+project container	0.1
+project menu	0.0
+project wiring	39.0
+projects delete	0.0
+prop balance	0.6
+prop capability	0.0
+prop designer	15.4
+prop export	2.8
+prop gap	0.1
+prop guard	0.2
+prop page fit	0.1
+prop pin	9.3
+prop rotation	5.9
+prop structure	0.7
+prop tunnel	0.2
+propeller document	0.0
+propeller mesh	0.0
+propulsion export	0.2
+propulsion panel	0.0
+propulsion room	0.3
+rate mode release	0.1
+rate step response	0.2
+rate tune	0.9
+ready to cut	1.8
+real files	0.0
+room host	5.5
+rotor synth	1.8
+rust constants	0.0
+section list	0.2
+side swap	31.7
+sim chrome	95.9
+sim drone model	2.7
+sim math	1.0
+sim perf	0.9
+sim visual	1.2
+site	10.4
+soft mount	0.2
+spectrum	2.7
+stack mesh	0.0
+stack mount	0.6
+stick release	0.5
+stl bodies	0.6
+stl writer	0.0
+straps pads	0.2
+studio	2.4
+studio ds	0.4
+survey bom	2.2
+survey kit parts	1.3
+survey matrix	266.4
+terrain	0.0
+terrain mesh	0.6
+torque reference	0.0
+torque signs	0.0
+translation	1.1
+twist flies	1.4
+update check	6.2
+validation	0.0
+vibration	0.4
+video panel	5.5
+video warnings	0.5
+warning pins	18.0
+warning rows	0.3
+warnings	425.1
+watch card	61.3
+watch door	44.2
+wind	1.9
+wind numbers	34.7
+wire gauge	0.0
+yaw authority	0.2
