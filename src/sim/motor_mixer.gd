@@ -58,7 +58,7 @@ const MIX_GAIN := 0.2   # fraction of throttle range given to attitude authority
 ## MotorLayout.spin_map() — the SAME accessor torque_from_motor() uses, per design §5.1: the mixer
 ## that commands a yaw and the model that produces its torque cannot be allowed to hold two
 ## different opinions about which way a motor turns.
-static func mix(throttle: float, roll_cmd: float, pitch_cmd: float, yaw_cmd: float, config: Dictionary = {}) -> Dictionary:
+static func mix(throttle: float, roll_cmd: float, pitch_cmd: float, yaw_cmd: float, config: Dictionary = {}, vbat_scale: float = 1.0) -> Dictionary:
 	var spin := MotorLayout.spin_map(config)
 	var spins := PackedFloat64Array()
 	for name in MotorLayout.MOTOR_NAMES:
@@ -67,5 +67,7 @@ static func mix(throttle: float, roll_cmd: float, pitch_cmd: float, yaw_cmd: flo
 	var cmds := FlightLaw.mix(throttle, roll_cmd, pitch_cmd, yaw_cmd, spins)
 	var out := {}
 	for i in MotorLayout.MOTOR_NAMES.size():
-		out[MotorLayout.MOTOR_NAMES[i]] = cmds[i]
+		# Battery-voltage compensation (R1.3): the scale is computed by the FC from its MEASURED
+		# voltage (VbatSensor). 1.0 is exactly the old behaviour; output is held at full throttle.
+		out[MotorLayout.MOTOR_NAMES[i]] = cmds[i] if vbat_scale == 1.0 else minf(1.0, cmds[i] * vbat_scale)
 	return out

@@ -126,7 +126,8 @@ var config: Dictionary = {}
 ## setpoint_normalized — Vector3(roll, pitch, yaw), each -1..1 as a fraction of
 ##   MAX_RATE_RAD_S, whatever produced it.
 ## gyro_rate_rad_s — the SENSOR's body-frame reading (DroneCore.gyro), never ground truth.
-func update(setpoint_normalized: Vector3, gyro_rate_rad_s: Vector3, throttle: float, dt: float) -> Dictionary:
+## vbat — the FC's battery-voltage sensor (DroneCore.vbat), or null for no compensation.
+func update(setpoint_normalized: Vector3, gyro_rate_rad_s: Vector3, throttle: float, dt: float, vbat: VbatSensor = null) -> Dictionary:
 	# One expression of the body-XYZ -> roll/pitch/yaw mapping, borrowed from the sensor that
 	# owns it. Writing it out by hand here is how the two old control laws came to disagree.
 	var measured := Gyro.contract_rates(gyro_rate_rad_s) / MAX_RATE_RAD_S
@@ -138,7 +139,8 @@ func update(setpoint_normalized: Vector3, gyro_rate_rad_s: Vector3, throttle: fl
 	var pitch_cmd := pid_pitch.update(setpoint_normalized.y, measured.y, dt)
 	var yaw_cmd := pid_yaw.update(setpoint_normalized.z, measured.z, dt)
 
-	return MotorMixer.mix(throttle, roll_cmd, pitch_cmd, yaw_cmd, config)
+	var vbat_scale := VbatSensor.scale(VbatSensor.percent(config), vbat)
+	return MotorMixer.mix(throttle, roll_cmd, pitch_cmd, yaw_cmd, config, vbat_scale)
 
 func reset() -> void:
 	pid_roll.reset()

@@ -31,10 +31,10 @@ var estimator := AttitudeEstimator.new()
 ## here may reach for rigid_body.angular_velocity_rad_s or rigid_body.orientation — see
 ## src/sim/gyro.gd. Angle mode levels against the ESTIMATED attitude, so it inherits what the
 ## estimator gets wrong (a tilted horizon in a long turn, under hard acceleration).
-func update(accel_body_mps2: Vector3, gyro_rate_rad_s: Vector3, rc: Dictionary, dt: float) -> Dictionary:
+func update(accel_body_mps2: Vector3, gyro_rate_rad_s: Vector3, rc: Dictionary, dt: float, vbat: VbatSensor = null) -> Dictionary:
 	estimator.update(gyro_rate_rad_s, accel_body_mps2, dt)
 	var setpoint := rate_setpoint(estimator.attitude, rc)
-	return rate_loop.update(setpoint, gyro_rate_rad_s, rc.throttle, dt)
+	return rate_loop.update(setpoint, gyro_rate_rad_s, rc.throttle, dt, vbat)
 
 ## The mode switch, in its entirety. `orientation` is the ESTIMATE.
 func rate_setpoint(orientation: Quaternion, rc: Dictionary) -> Vector3:

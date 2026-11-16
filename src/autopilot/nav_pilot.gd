@@ -327,7 +327,7 @@ func command(dt: float) -> Dictionary:
 
 	last_rc = {"roll": clampf(rc_roll, -1.0, 1.0), "pitch": clampf(rc_pitch, -1.0, 1.0),
 		"yaw": clampf(rc_yaw, -1.0, 1.0), "throttle": clampf(thr, 0.0, 1.0)}
-	return fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, last_rc, dt)
+	return fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, last_rc, dt, core.vbat)
 
 
 var _last_goal := NAN

@@ -605,6 +605,7 @@ func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 	# the line above prevents.
 	core.gyro.reset()
 	core.accel.reset()
+	core.vbat.reset()
 	# And a respawn replays the same gust rather than continuing the old stream, for the identical
 	# reason: "the same flight twice" must mean the same flight, gust for gust.
 	wind.reset()
@@ -755,7 +756,7 @@ func _physics_process(delta: float) -> void:
 
 	var substep_dt := delta / SUBSTEPS
 	for i in SUBSTEPS:
-		var motor_cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, substep_dt)
+		var motor_cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, substep_dt, core.vbat)
 		core.step(motor_cmds, substep_dt)
 		# EVERY SUBSTEP, i.e. the full 1 kHz, and inside the loop rather than once per frame.
 		# Sampling at the 120 Hz frame rate instead would be a decimation by 8 that the header

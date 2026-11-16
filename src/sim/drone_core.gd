@@ -26,6 +26,9 @@ var gyro: Gyro
 ## The accelerometer on the same IMU (R1.2): body-frame specific force, with noise, bias and the
 ## gyro's vibration. The attitude estimator reads this; nothing else should.
 var accel := Accelerometer.new()
+## The FC's battery-voltage sensor (R1.3): the pack's true voltage through ADC noise and a low-pass.
+## Its `reference_v` is the fitted pack's full-charge resting voltage, taken at construction.
+var vbat := VbatSensor.new()
 ## The air's own motion, or null on a still day. HANDED IN, not constructed here, for the same
 ## reason `gyro` is: null means "nobody has told this core about the field it is flying at",
 ## which is every core built before F7 and every test that has never heard of `Wind` — those keep
@@ -121,6 +124,10 @@ func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m
 	prop_radius_m = p_prop_radius_m
 	drag_coefficient = p_drag_coefficient
 	gyro = p_gyro if p_gyro != null else Gyro.new()
+	var used_now: float = p_battery.used_mah
+	p_battery.used_mah = 0.0
+	vbat.reference_v = p_battery.resting_voltage_v()
+	p_battery.used_mah = used_now
 	_publish(Vector3.ZERO)
 
 ## Current drawn by ONE motor at a given RPM. Delegates: there is one such function in the
@@ -259,6 +266,7 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# next substep is one tick old. That is not an approximation to apologise for — it is
 	# what a real loop does, and the delay is part of what the gains are tuned against.
 	gyro.update(rigid_body.angular_velocity_rad_s, dt)
+	vbat.update(powertrain.observables.voltage_live_v, dt)
 	accel.update(accel_orientation.inverse() * (specific_force / mass_properties.total_mass_kg),
 		gyro.last_vibration_rad_s, dt)
 
