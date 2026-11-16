@@ -44,6 +44,13 @@ static func build_mesh(p_terrain: Terrain) -> ArrayMesh:
 	return tool.commit()
 
 
+## The hills' surface height at a world x/z for a terrain (the same function the mesh is built from).
+static func height_world(x: float, z: float, p_terrain: Terrain) -> float:
+	var terrain := p_terrain if p_terrain != null else Terrain.flat(Terrain.DEFAULT_WIDTH_M, Terrain.DEFAULT_LENGTH_M)
+	var c := terrain.center()
+	return _height(x - c.x, z - c.y, terrain.half_extent())
+
+
 static func _inside(p: Vector3, c: Vector2, half: Vector2) -> bool:
 	return absf(p.x - c.x) < half.x and absf(p.z - c.y) < half.y
 

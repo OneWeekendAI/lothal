@@ -76,6 +76,8 @@ var build: Build
 ## (`_reset_to`) re-seeds it, the same rule `core.gyro` lives under. Read-only here and in
 ## `DroneCore`: `Sim authors nothing`, and `ConditionsLibrary.load_from()` is a read.
 var wind: Wind
+## R2.1: grass and trees (null on the headless renderer).
+var field_look: FieldLook
 ## The name of the conditions set `wind` was built from, held because `Wind` keeps only the numbers
 ## a builder typed and not the label on them. Stamped onto every Build this scene flies so the
 ## HUD's countdown and Lab's estimate are quoted in — and named after — the same weather.
@@ -321,6 +323,14 @@ func _rebuild_ground() -> void:
 		add_child(hills)
 	hills.mesh = BackdropHills.build_mesh(terrain)
 	hills.material_override = GroundGrid.build_backdrop_material()
+	# R2.1: grass and trees, from the same terrain. Skipped on the headless dummy renderer, where nothing is drawn and the
+	# thousands of instances would only slow every suite that boots this scene; tests/test_r21_field_look.gd builds it directly.
+	if DisplayServer.get_name() != "headless":
+		if field_look == null:
+			field_look = FieldLook.new()
+			field_look.name = "FieldLook"
+			add_child(field_look)
+		field_look.rebuild(terrain)
 
 ## Whether the aircraft has hit the ground. STILL AN ALTITUDE COMPARISON and deliberately not a
 ## physics query: the recorded decision above was that a shape cast costs more than it tells us,
@@ -974,6 +984,8 @@ func _process(delta: float) -> void:
 	if watch_runner == null:
 		_update_camera(delta)
 	_update_wash()
+	if field_look != null:
+		field_look.set_wind(wind)
 
 ## The drone's yaw as a basis, with pitch and roll flattened out. Falls back to the last
 ## heading when the drone is pointed straight up or down, where yaw is undefined.

@@ -824,13 +824,24 @@ func silhouette() -> MeshInstance3D:
 
 
 func _build_world() -> void:
+	# R2.1: the room shows the same field the sim flies over: a sky, a sun that casts shadows, ACES, aerial-perspective fog.
+	var sky_material := ProceduralSkyMaterial.new()
+	sky_material.sky_top_color = Color(0.22, 0.42, 0.72)
+	sky_material.sky_horizon_color = Color(0.66, 0.76, 0.84)
+	sky_material.ground_bottom_color = Color(0.22, 0.32, 0.18)
+	sky_material.ground_horizon_color = Color(0.55, 0.64, 0.66)
+	var sky := Sky.new()
+	sky.sky_material = sky_material
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.16, 0.17, 0.20)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.52, 0.57, 0.66)
-	env.ambient_light_energy = 1.0
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.66, 0.76, 0.86)
+	env.fog_density = 0.0009
+	env.fog_aerial_perspective = 0.7
 
 	var world_environment := WorldEnvironment.new()
 	world_environment.environment = env
@@ -841,12 +852,10 @@ func _build_world() -> void:
 	# editor drew and which cannot show a slope, a bowl or a wall.
 	_terrain = MeshInstance3D.new()
 	_terrain.name = TERRAIN_NAME
-	var ground := StandardMaterial3D.new()
-	ground.albedo_color = Color(0.24, 0.27, 0.24)
-	# Both faces, because a bowl and an enclosure are seen from inside as well as from above and a
-	# back-face-culled wall vanishes exactly when you are standing in the field it encloses.
-	ground.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_terrain.material_override = ground
+	# The sim's own ground shader (GroundGrid): grass, dirt and rock by slope, with the flight grid. It draws both faces, which
+	# a bowl and an enclosure need (seen from inside as well as from above, and a back-face-culled wall vanishes exactly when
+	# you are standing in the field it encloses) and it flips the normal on the back face.
+	_terrain.material_override = GroundGrid.build_material(120.0)
 	_viewport.add_child(_terrain)
 
 	renderer = CourseRenderer.new(course())
@@ -864,8 +873,11 @@ func _build_world() -> void:
 	_viewport.add_child(_silhouette)
 
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-52.0, -34.0, 0.0)
-	sun.light_energy = 1.2
+	sun.rotation_degrees = Vector3(-32.0, -34.0, 0.0)
+	sun.light_energy = 2.2
+	sun.shadow_enabled = true
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = 600.0
 	_viewport.add_child(sun)
 
 	_orbit = Node3D.new()

@@ -1,40 +1,58 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://src/scenes/main.gd" id="1"]
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
-sky_top_color = Color(0.22, 0.42, 0.72, 1)
-sky_horizon_color = Color(0.66, 0.76, 0.84, 1)
-sky_curve = 0.18
-ground_bottom_color = Color(0.22, 0.32, 0.18, 1)
-ground_horizon_color = Color(0.55, 0.64, 0.66, 1)
-sun_angle_max = 12.0
-sun_curve = 0.08
+; R2.1: a physical (Rayleigh + Mie) sky. The sun disc in it is placed by the scene's one DirectionalLight3D
+; (sky_mode LIGHT_AND_SKY), so the light that casts the shadows and the sun you see are the same direction by construction.
+[sub_resource type="PhysicalSkyMaterial" id="PhysicalSkyMaterial_sky"]
+rayleigh_coefficient = 2.0
+mie_coefficient = 0.004
+mie_eccentricity = 0.8
+turbidity = 8.0
+sun_disk_scale = 1.0
+ground_color = Color(0.30, 0.36, 0.24, 1)
+energy_multiplier = 1.0
 
 [sub_resource type="Sky" id="Sky_sky"]
-sky_material = SubResource("ProceduralSkyMaterial_sky")
+sky_material = SubResource("PhysicalSkyMaterial_sky")
 
+; Exposure follows the scene's brightness, bounded so a look at the sun does not black the field out.
+[sub_resource type="CameraAttributesPractical" id="CameraAttributes_world"]
+auto_exposure_enabled = true
+auto_exposure_scale = 0.4
+auto_exposure_speed = 1.5
+auto_exposure_min_sensitivity = 60.0
+auto_exposure_max_sensitivity = 600.0
+
+; ACES tonemap. Ambient and reflections come from the sky. Fog: exponential extinction (density 0.0009 /m is about 4.3 km
+; meteorological visibility, an ESTIMATE for a hazy day) with aerial perspective so distant hills take the sky's colour,
+; and a thin ground haze.
 [sub_resource type="Environment" id="Environment_world"]
 background_mode = 2
 sky = SubResource("Sky_sky")
 ambient_light_source = 3
 reflected_light_source = 2
-tonemap_mode = 2
+tonemap_mode = 3
 ssao_enabled = true
 ssao_radius = 0.35
 ssao_intensity = 1.6
 ssao_power = 1.5
 ssao_detail = 0.4
 glow_enabled = true
-glow_intensity = 0.35
-glow_bloom = 0.04
+glow_intensity = 0.3
+glow_bloom = 0.03
 adjustment_enabled = true
 adjustment_contrast = 1.04
-adjustment_saturation = 0.96
+adjustment_saturation = 1.0
 fog_enabled = true
-fog_light_color = Color(0.66, 0.76, 0.84, 1)
-fog_density = 0.0003
-fog_sky_affect = 0.0
+fog_light_color = Color(0.66, 0.76, 0.86, 1)
+fog_light_energy = 1.0
+fog_sun_scatter = 0.25
+fog_density = 0.0009
+fog_aerial_perspective = 0.7
+fog_sky_affect = 0.35
+fog_height = 0.0
+fog_height_density = 0.01
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -54,16 +72,27 @@ far = 600.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_world")
+camera_attributes = SubResource("CameraAttributes_world")
 
+; Sun: 26 degrees above the horizon. PSSM with 4 splits out to 300 m; the split offsets (fractions of that 300 m) put
+; the first split at 12 m, which is the FPV-low range where the drone's own shadow is judged, then 36 m, then 105 m.
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-transform = Transform3D(0.8137977, -0.4600171, 0.3536018, 0, 0.6087614, 0.7933533, -0.5809475, -0.6455876, 0.4952422, 0, 3, 0)
-light_color = Color(1, 0.97, 0.91, 1)
-light_energy = 1.25
+transform = Transform3D(0.8138443, -0.2547300, 0.5222739, 0.0000000, 0.8987940, 0.4383711, -0.5810830, -0.3567659, 0.7314784, 0, 3, 0)
+light_color = Color(1, 0.96, 0.88, 1)
+light_energy = 2.2
+light_angular_distance = 0.5
 shadow_enabled = true
-shadow_blur = 1.6
-directional_shadow_mode = 1
-directional_shadow_max_distance = 45.0
-directional_shadow_fade_start = 0.85
+shadow_bias = 0.03
+shadow_normal_bias = 1.2
+shadow_blur = 1.2
+sky_mode = 0
+directional_shadow_mode = 2
+directional_shadow_split_1 = 0.04
+directional_shadow_split_2 = 0.12
+directional_shadow_split_3 = 0.35
+directional_shadow_blend_splits = true
+directional_shadow_fade_start = 0.9
+directional_shadow_max_distance = 300.0
 
 ; The ground has no mesh and no shape authored here (F5). Both come from TerrainMesh, built from
 ; the selected site's Terrain at _ready and on every adopt_selected_course() — a shipped plane and

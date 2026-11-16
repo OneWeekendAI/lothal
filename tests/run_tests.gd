@@ -13,7 +13,7 @@ const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "tw
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
 	"assembly tweaks", "prop rotation", "lab", "powertrain", "bench", "validation", "build validation",
 	"battery rail", "survey kit parts", "survey matrix", "survey bom", "battery model", "preset pack pin", "cell library", "motor dc", "motor configs", "motor designer", "prop designer", "motor detail mesh", "motor bench", "motor pickers", "motor sheet", "designed motors", "motor presets", "motor current", "pack design", "designed packs", "pack bench", "pack designer", "battery audit", "battery density", "drag range", "designed pack flies", "pack sheet", "hover at charge", "pack current limit", "charge readouts", "esc", "esc bench", "frame bench", "pack charge", "battery mesh", "component mesh", "fpv view",
-	"yaw authority", "gyro", "attitude estimator", "vbat compensation", "wind", "wind numbers", "r16 wind", "motor mixer", "control path", "stick release", "warnings", "build warnings", "warning rows", "section list",
+	"yaw authority", "gyro", "attitude estimator", "vbat compensation", "wind", "wind numbers", "r16 wind", "r21 field look", "motor mixer", "control path", "stick release", "warnings", "build warnings", "warning rows", "section list",
 	"flight controller", "rate tune", "catalog tuning", "pid tunes", "vibration", "forward flight", "vrs", "air density", "flight recorder", "studio", "spectrum",
 	"custom frames", "custom motors", "custom propellers", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "room host", "project", "project menu", "project container", "project wiring", "projects delete",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
@@ -409,6 +409,7 @@ func _run_suite(suite_name: String) -> Array:
 		# F8: wind in Lab — the headline numbers under the selected conditions.
 		"wind numbers": return TestWindNumbers.run()
 		"r16 wind": return TestR16Wind.run()
+		"r21 field look": return TestR21FieldLook.run()
 		"vibration": return TestVibration.run()
 		"forward flight": return TestForwardFlight.run()
 		"vrs": return TestVrs.run()
