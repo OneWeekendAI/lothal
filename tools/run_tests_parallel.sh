@@ -102,15 +102,25 @@ while [[ "$k" -lt "$JOBS" ]]; do
 	k=$((k + 1))
 done
 wait
+# Timing-budget suites (SERIAL in run_tests_parallel.py), alone: every shard has exited, nothing else of ours is alive.
+NW="$JOBS"
+if [[ -f "$OUT/shard_$JOBS.txt" ]]; then
+	h="${HOME}/.lothal-test-home.par.$$.serial.$RANDOM"
+	mkdir -p "$h"
+	HOMES+=("$h")
+	echo "[parallel] shards done; running the timing-budget suites serially"
+	worker "$JOBS" "$h"
+	NW=$((JOBS + 1))
+fi
 WALL=$((SECONDS - T0))
 
 statuses=""
 k=0
-while [[ "$k" -lt "$JOBS" ]]; do
+while [[ "$k" -lt "$NW" ]]; do
 	s=1
 	if [[ -f "$OUT/status_$k" ]]; then s="$(cat "$OUT/status_$k")"; fi
 	statuses="${statuses:+$statuses,}$s"
 	k=$((k + 1))
 done
-python3 -I "$SCRIPT_DIR/run_tests_parallel.py" summary "$OUT" "$TIMINGS" "$WALL" "$JOBS" "$statuses"
+python3 -I "$SCRIPT_DIR/run_tests_parallel.py" summary "$OUT" "$TIMINGS" "$WALL" "$NW" "$statuses"
 exit $?

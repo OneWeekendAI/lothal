@@ -28,11 +28,20 @@ def load_timings(path):
     return t
 
 
+# Suites that assert on wall-clock time (a per-tick budget, a real-time audio budget, a timing ratio).
+# Under N-way CPU contention they fail for reasons that say nothing about the code, so they are kept out
+# of the shards and run SERIALLY after every shard has finished, as shard number JOBS, alone on the
+# machine. They still count toward the exit code. Add a suite here when it asserts on elapsed time.
+SERIAL = ["sim perf", "rotor synth", "studio"]
+
+
 def pack(rt, timings, jobs, outdir):
     items = suites(rt) + ["@tail", "@sr"]
     only = os.environ.get("ONLY")  # ONLY="a|b": just those suites, no tail/SR (for trying the runner out)
     if only:
         items = [i for i in items if i in only.split("|")]
+    serial = [i for i in items if i in SERIAL]
+    items = [i for i in items if i not in SERIAL]
     t = load_timings(timings)
     known = sorted(v for k, v in t.items() if k in items)
     default = known[len(known) // 2] if known else 10.0
@@ -46,6 +55,10 @@ def pack(rt, timings, jobs, outdir):
     for k, sh in enumerate(shards):
         with open(os.path.join(outdir, "shard_%d.txt" % k), "w") as f:
             f.write("\n".join(sh) + "\n")
+    if serial:  # shard JOBS: run by the shell after all the others have exited
+        with open(os.path.join(outdir, "shard_%d.txt" % jobs), "w") as f:
+            f.write("\n".join(serial) + "\n")
+    print("serial after the shards: %s" % (", ".join(serial) or "none"))
     print("packed %d items into %d shards; estimated shard seconds: %s (%d items without a timing used %.1fs)" % (
         len(items), jobs, ", ".join("%.0f" % l for l in load), len([i for i in items if i not in t]), default))
 
