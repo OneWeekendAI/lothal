@@ -10,26 +10,15 @@ extends PanelContainer
 ## are turning at the RPM the physics computed, and the question is the one the camera is actually
 ## for: can you fly off it. That question needs the full screen, so it gets it.
 ##
-## THE FIELD OF VIEW IS A STATED PLACEHOLDER AND IS NOT A PROPERTY OF THE FITTED CAMERA, and moving
-## this from the bench to the air raises the stakes rather than lowering them — a number you fly off
-## is read harder than a number you glance at. `cameras.json`'s schema still bans resolution and
-## lens FOV from `specs` by name, this class still reads no optical spec of any part, and every
-## camera in the catalog still renders through the same PLACEHOLDER_FOV_DEG. The two reasons are
-## unchanged, and the second is still the interesting one:
+## THE LENS IS THE FITTED CAMERA'S (R2.2). Each camera part carries a `lens` block (horizontal FOV and a distortion
+## model, see FpvLens and cameras.json). A Camera3D can only project rectilinearly, so the world is drawn through a
+## wider-than-the-lens rectilinear camera and a fullscreen shader (FpvLens.shader) remaps it into what that lens would
+## see: equidistant fisheye or a Brown-Conrady barrel, with a labelled-estimate vignette and chromatic aberration. The
+## inset applies the shader to its SubViewportContainer; the full-screen mode puts it on a ColorRect on a canvas layer
+## below the HUD, reading the main viewport's rendered screen. Nearly every lens figure is an ESTIMATE (the catalog says
+## so per part) and a part with no lens data renders through FpvLens.DEFAULT, labelled, rather than a silent 90 deg.
 ##
-##   - nobody has sourced FOV figures for these entries, and the catalog's rule is that a published
-##     number is a measured one. A plausible 150 deg per entry would be this project computing a
-##     spec instead of reading one.
-##   - A REAL FPV LENS IS A FISHEYE AND THIS IS A RECTILINEAR PROJECTION. Real cameras in this class
-##     are sold at 150-170 deg diagonal, and a perspective Camera3D asked for that stretches the
-##     corners into uselessness — the picture would be wrong in a way that looks like a bug rather
-##     than like a wide lens. So even with sourced numbers, feeding them straight to `fov` would be
-##     dishonest. Rendering a genuine FPV image needs a fisheye projection, which is a real slice.
-##
-## Because of that the caption is not decoration and is on screen in BOTH modes, saying which view
-## is which and naming the fitted camera and its uptilt (both read off the build). It no longer
-## prints the word "placeholder": the caption states only what the build says, and claims no lens
-## figure at all, which keeps the screen from implying a spec it is not reading.
+## The caption names the lens figure and marks it "est." when the data says it is an estimate.
 ##
 ## CAMERA TILT ARRIVES FOR FREE, AND THAT IS BY DESIGN (video slice V3). Real builds run 15-40 deg
 ## of uptilt, and flown level you stare at the horizon and pitch hard to see the gate. Tilt is a
@@ -47,9 +36,6 @@ extends PanelContainer
 ## own and it needs the same sourced-numbers discipline the FOV above is held to — inventing a
 ## range at which the picture breaks up would be exactly the fabricated spec this header refuses.
 
-## Horizontal degrees, held for every camera in the catalog. See the header: this is a framing
-## choice, not an optical spec, and it is deliberately narrower than the class really is.
-const PLACEHOLDER_FOV_DEG := 90.0
 ## The near plane for the FPV lens. Tiny, because the eye is INSIDE the aircraft: at the chase
 ## camera's 2 cm the pack and the camera's own lens barrel would be clipped away and the feed would
 ## look clear when it is not.
@@ -71,6 +57,12 @@ var _swap_button: Button
 var _close_button: Button
 ## The fitted camera's catalog name, or "" when the build does not say. Set by main.gd from the Build.
 var _camera_name := ""
+## The fitted camera's lens (FpvLens.from_part), DEFAULT until set_camera_part says otherwise.
+var _lens: Dictionary = FpvLens.DEFAULT.duplicate()
+var _container: SubViewportContainer
+var _inset_material: ShaderMaterial
+var _screen_material: ShaderMaterial
+var _post_layer: CanvasLayer
 var _empty: Label
 ## Which viewport the FPV lens is currently rendering into: false = the inset, true = the main
 ## viewport (the whole screen), with the chase view demoted to the inset.
@@ -138,6 +130,10 @@ func _init() -> void:
 	container.custom_minimum_size = Vector2(PANEL_SIZE.x - 16.0, PANEL_SIZE.y - 56.0)
 	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(container)
+	_container = container
+	_inset_material = ShaderMaterial.new()
+	_inset_material.shader = FpvLens.shader(false)
+	_build_post_layer()
 
 	_viewport = SubViewport.new()
 	_viewport.size = VIEW_SIZE
@@ -155,6 +151,24 @@ func _init() -> void:
 	_viewport.add_child(_inset_camera)
 
 	_refresh()
+
+
+## The full-screen distortion pass: a ColorRect on a canvas layer BELOW the HUD (the HUD's layer is 1) that reads the
+## rendered 3D screen. Hidden unless the FPV feed is the main view.
+func _build_post_layer() -> void:
+	_post_layer = CanvasLayer.new()
+	_post_layer.name = "LensPostLayer"
+	_post_layer.layer = -1
+	_post_layer.visible = false
+	var rect := ColorRect.new()
+	rect.name = "LensPost"
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_screen_material = ShaderMaterial.new()
+	_screen_material.shader = FpvLens.shader(true)
+	rect.material = _screen_material
+	_post_layer.add_child(rect)
+	add_child(_post_layer)
 
 
 func _empty_label() -> Label:
@@ -210,6 +224,46 @@ func set_camera_name(camera_name: String) -> void:
 	_refresh()
 
 
+## The fitted camera part itself (the Build's component dictionary, or {} for none): name AND lens.
+func set_camera_part(part: Dictionary) -> void:
+	_camera_name = str(part.get("name", ""))
+	_lens = FpvLens.from_part(part)
+	_refresh()
+
+
+## The lens in force (FpvLens.from_part output).
+func lens_data() -> Dictionary:
+	return _lens
+
+
+## The picture's width / height for whichever surface the FPV view is on now. 16:9 when not in the tree (tests).
+func target_aspect() -> float:
+	var dims := Vector2(16.0, 9.0)
+	if _fpv_is_main:
+		if is_inside_tree():
+			dims = get_viewport().get_visible_rect().size
+	else:
+		dims = Vector2(_viewport.size)
+	return dims.x / maxf(dims.y, 1.0)
+
+
+## The shader material currently carrying the lens (the inset's or the full-screen pass).
+func lens_material() -> ShaderMaterial:
+	return _screen_material if _fpv_is_main else _inset_material
+
+
+## Pushes the lens to the shader and shows the pass that belongs to the current mode. Cheap; runs every frame because
+## the viewport can be resized.
+func _sync_lens_shader() -> void:
+	var params := FpvLens.shader_params(_lens, target_aspect())
+	var mat := lens_material()
+	for key in params:
+		mat.set_shader_parameter(key, params[key])
+	var shown := is_fitted()
+	_container.material = null if (_fpv_is_main or not shown) else _inset_material
+	_post_layer.visible = _fpv_is_main and shown
+
+
 func is_fpv_main() -> bool:
 	return _fpv_is_main
 
@@ -249,6 +303,7 @@ func place_lenses(main_camera: Camera3D, chase: Transform3D) -> void:
 		_inset_camera.far = main_camera.far
 		_chase_lens_captured = true
 
+	_sync_lens_shader()
 	var fpv_lens := main_camera if _fpv_is_main else _inset_camera
 	var chase_lens := _inset_camera if _fpv_is_main else main_camera
 
@@ -261,9 +316,10 @@ func place_lenses(main_camera: Camera3D, chase: Transform3D) -> void:
 	_apply_fpv_lens(fpv_lens)
 
 
-## The placeholder lens, applied wherever the FPV view currently lives.
+## The rectilinear SOURCE camera behind the distortion pass, wherever the FPV view currently lives: wide enough that the
+## lens's whole picture, corners included, is inside the render (FpvLens.source_fov_deg).
 func _apply_fpv_lens(lens: Camera3D) -> void:
-	lens.fov = PLACEHOLDER_FOV_DEG
+	lens.fov = FpvLens.source_fov_deg(_lens, target_aspect())
 	lens.near = NEAR_M
 	lens.keep_aspect = Camera3D.KEEP_WIDTH
 
@@ -293,9 +349,10 @@ func _refresh() -> void:
 	if not is_fitted():
 		_caption.text = "CHASE — no camera fitted, no FPV"
 		return
-	var cam := "FPV camera, uptilt %d°" % roundi(tilt_deg())
+	var lens_text := "%d° lens%s" % [roundi(float(_lens["hfov_deg"])), " est." if bool(_lens["estimated"]) else ""]
+	var cam := "FPV camera, %s, uptilt %d°" % [lens_text, roundi(tilt_deg())]
 	if _camera_name != "":
-		cam = "%s, uptilt %d°" % [_camera_name, roundi(tilt_deg())]
+		cam = "%s, %s, uptilt %d°" % [_camera_name, lens_text, roundi(tilt_deg())]
 	if _fpv_is_main:
 		_caption.text = "CHASE (inset), flying FPV: " + cam
 	else:

@@ -1,5 +1,5 @@
 {
-  "_schema": "The FPV camera — the first of the four components LTHL-11 unbundled out of Build.ELECTRONICS_MASS_G's 35 g remainder. Two tiers, as in every other category file: `specs` is physics-bearing and `catalog` is browsing metadata only. Colour, price and vendor links are banned by name, from either block. WHAT THE PHYSICS READS HERE IS THE THREE DIMENSIONS AND THE MASS, AND NOTHING ELSE. A camera does not enter the dynamics through a coefficient the way a prop does; it enters as a lump of mass in a place, so `specs` carries length_mm, width_mm and height_mm (the box the inertia tensor is built from, published in the part's own frame exactly as batteries.json publishes a pack's) and everything a builder browses on — sensor, signal, size class — sits in `catalog` where an unread field belongs. Resolution and lens FOV are NOT in `specs`: nothing in Lothal renders through this camera, and a spec block is a claim that the sim reads the number. MASS COMES OUT OF THE BUDGET, NEVER ADDED BESIDE IT. The camera's share is Build.CAMERA_BUDGET_MASS_G (8 g), carved out of ELECTRONICS_MASS_G exactly as the FC's and the ESC's were; the default entry weighs exactly that, so the reference build still weighs 496.0 g to the gram, and a heavier camera costs the aircraft only the excess. THE CAMERA IS OPTIONAL AND OMITTING IT COSTS ZERO GRAMS. A whoop's AIO board carries the camera on the board itself, so \"no camera fitted\" is a real and common build, and it must weigh the budget minus this whole share rather than silently keeping a default. 'mounting' says TRAY: a camera is held in a bay by screws through the frame's side plates or by a printed bracket, at no spacing any frame in this catalog publishes — which is why it is not BOLT (there is no pattern to compare and a fabricated one would agree with nothing) and not STRAP (nothing passes round it). Entries are ordered by mass, which gives the picker an ascending order without anything sorting it. THE MASSES HERE ARE CLASS-TYPICAL RATHER THAN RE-SOURCED FROM ONE TEST REGIME, and each entry's `source` says so; re-sourcing the catalog's small-part masses is tracked separately and is not what LTHL-11 fixed.",
+  "_schema": "The FPV camera — the first of the four components LTHL-11 unbundled out of Build.ELECTRONICS_MASS_G's 35 g remainder. Two tiers, as in every other category file: `specs` is physics-bearing and `catalog` is browsing metadata only. Colour, price and vendor links are banned by name, from either block. WHAT THE PHYSICS READS HERE IS THE THREE DIMENSIONS AND THE MASS, AND NOTHING ELSE. A camera does not enter the dynamics through a coefficient the way a prop does; it enters as a lump of mass in a place, so `specs` carries length_mm, width_mm and height_mm (the box the inertia tensor is built from, published in the part's own frame exactly as batteries.json publishes a pack's) and everything a builder browses on — sensor, signal, size class — sits in `catalog` where an unread field belongs. Resolution and lens FOV are NOT in `specs`: nothing in Lothal renders through this camera, and a spec block is a claim that the sim reads the number. MASS COMES OUT OF THE BUDGET, NEVER ADDED BESIDE IT. The camera's share is Build.CAMERA_BUDGET_MASS_G (8 g), carved out of ELECTRONICS_MASS_G exactly as the FC's and the ESC's were; the default entry weighs exactly that, so the reference build still weighs 496.0 g to the gram, and a heavier camera costs the aircraft only the excess. THE CAMERA IS OPTIONAL AND OMITTING IT COSTS ZERO GRAMS. A whoop's AIO board carries the camera on the board itself, so \"no camera fitted\" is a real and common build, and it must weigh the budget minus this whole share rather than silently keeping a default. 'mounting' says TRAY: a camera is held in a bay by screws through the frame's side plates or by a printed bracket, at no spacing any frame in this catalog publishes — which is why it is not BOLT (there is no pattern to compare and a fabricated one would agree with nothing) and not STRAP (nothing passes round it). Entries are ordered by mass, which gives the picker an ascending order without anything sorting it. THE MASSES HERE ARE CLASS-TYPICAL RATHER THAN RE-SOURCED FROM ONE TEST REGIME, and each entry's `source` says so; re-sourcing the catalog's small-part masses is tracked separately and is not what LTHL-11 fixed. LENS (R2.2): an optional `lens` block, deliberately NOT in `specs` (specs is what the physics reads; the lens is read only by the FPV renderer, FpvView/FpvLens). Fields: `hfov_deg` horizontal field of view of the displayed 16:9 picture; `model` is `fisheye_equidistant` (image radius proportional to ray angle, the wide FPV lenses) or `brown_conrady` (radial polynomial k1/k2 applied to the rectilinear tan-radius, normalised so the horizontal picture edge stays at hfov_deg/2; k1 = k2 = 0 is a plain rectilinear lens); `k1`, `k2` Brown-Conrady coefficients (ignored by fisheye); `estimated` true when no datasheet figure backs the numbers; `lens_source` says where each number came from. A part with no valid `lens` block renders through FpvLens.DEFAULT, a labelled estimate, never a silent 90 deg.",
   "parts": [
     {
       "part_id": "cam_nano_analog",
@@ -19,7 +19,13 @@
         "size_class": "nano",
         "sensor": "CMOS 1/3\""
       },
-      "source": "representative 14x14 nano analog camera of the class fitted to whoops and toothpicks; class-typical, not a specific product. Mass is the camera with its lens and pigtail, in the 2-3 g band this class is sold in. NOT re-sourced from one test regime — see _schema."
+      "source": "representative 14x14 nano analog camera of the class fitted to whoops and toothpicks; class-typical, not a specific product. Mass is the camera with its lens and pigtail, in the 2-3 g band this class is sold in. NOT re-sourced from one test regime — see _schema.",
+      "lens": {
+        "hfov_deg": 128.0,
+        "model": "fisheye_equidistant",
+        "estimated": true,
+        "lens_source": "ESTIMATE: class-typical 1.8 mm lens on a 1/3\" sensor, about 150 deg diagonal over the 4:3 sensor; the 16:9 crop shown is about 128 deg horizontal. No datasheet for a class entry."
+      }
     },
     {
       "part_id": "cam_micro_analog",
@@ -39,7 +45,13 @@
         "size_class": "micro",
         "sensor": "CMOS 1/1.8\""
       },
-      "source": "representative 19x19 micro analog camera — the 5\" freestyle class's default, and the reference build's. Mass is the camera with its bracket, in the 8-9 g band this class is sold in, and it is exactly Build.CAMERA_BUDGET_MASS_G so the reference build is unmoved. NOT re-sourced from one test regime — see _schema."
+      "source": "representative 19x19 micro analog camera — the 5\" freestyle class's default, and the reference build's. Mass is the camera with its bracket, in the 8-9 g band this class is sold in, and it is exactly Build.CAMERA_BUDGET_MASS_G so the reference build is unmoved. NOT re-sourced from one test regime — see _schema.",
+      "lens": {
+        "hfov_deg": 133.0,
+        "model": "fisheye_equidistant",
+        "estimated": true,
+        "lens_source": "ESTIMATE: class-typical 2.1 mm lens, about 150 deg diagonal (the usual published figure for this class); equidistant fisheye puts the horizontal of a 16:9 crop at 150 x 16 / sqrt(16^2 + 9^2) = 133 deg. No datasheet for a class entry."
+      }
     },
     {
       "part_id": "cam_fullsize_analog",
@@ -59,7 +71,15 @@
         "size_class": "full-size",
         "sensor": "CMOS 1/1.8\""
       },
-      "source": "representative 26x26 full-size analog camera, the long-range and cinematic class; class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+      "source": "representative 26x26 full-size analog camera, the long-range and cinematic class; class-typical, not a specific product. NOT re-sourced from one test regime — see _schema.",
+      "lens": {
+        "hfov_deg": 108.0,
+        "model": "brown_conrady",
+        "k1": 0.3,
+        "k2": 0.04,
+        "estimated": true,
+        "lens_source": "ESTIMATE: class-typical 2.5 mm long-range/cinematic lens, narrower than the micro class with moderate barrel distortion. k1/k2 are plausible magnitudes, not calibrated values."
+      }
     },
     {
       "part_id": "cam_digital_hd",
@@ -79,7 +99,13 @@
         "size_class": "micro",
         "sensor": "CMOS 1/1.8\""
       },
-      "source": "representative camera half of an HD digital FPV system — the camera, its board and the coax to the transmitter, which is a separate entry in vtxs.json rather than being counted twice here. Class-typical, not a specific product. NOT re-sourced from one test regime — see _schema."
+      "source": "representative camera half of an HD digital FPV system — the camera, its board and the coax to the transmitter, which is a separate entry in vtxs.json rather than being counted twice here. Class-typical, not a specific product. NOT re-sourced from one test regime — see _schema.",
+      "lens": {
+        "hfov_deg": 122.0,
+        "model": "fisheye_equidistant",
+        "estimated": true,
+        "lens_source": "ESTIMATE: class-typical HD digital FPV module lens, about 145 deg diagonal; no datasheet for a class entry."
+      }
     },
     {
       "part_id": "cam_dji_o4_pro",
@@ -99,7 +125,13 @@
         "size_class": "micro",
         "sensor": "CMOS 1/1.3\""
       },
-      "source": "DJI 'O4 Air Unit Series' specifications page (dji.com/o4-air-unit/specs), O4 Air Unit Pro column. THE MASS IS A DIFFERENCE OF TWO PUBLISHED FIGURES, NOT A FIGURE: DJI publishes 'Air Unit (camera module included): Approx. 32 g' and 'Air Unit (camera module excluded): Approx. 15.6 g', and 32 - 15.6 = 16.4 g is the camera module with its coaxial cable. The subtraction is stated here rather than done silently because the split between this entry and vtx_dji_o4_pro is derived while their SUM (32 g) is what DJI actually published — an aircraft carrying both is right to the gram, and either one alone inherits the split's uncertainty. Dimensions are the published camera module L x W x H. The antennas are NOT in the 32 g: DJI lists them separately at 2.1 g each, and they are antenna_dji_o4_pro. First entry in this file sourced from a named product rather than a class."
+      "source": "DJI 'O4 Air Unit Series' specifications page (dji.com/o4-air-unit/specs), O4 Air Unit Pro column. THE MASS IS A DIFFERENCE OF TWO PUBLISHED FIGURES, NOT A FIGURE: DJI publishes 'Air Unit (camera module included): Approx. 32 g' and 'Air Unit (camera module excluded): Approx. 15.6 g', and 32 - 15.6 = 16.4 g is the camera module with its coaxial cable. The subtraction is stated here rather than done silently because the split between this entry and vtx_dji_o4_pro is derived while their SUM (32 g) is what DJI actually published — an aircraft carrying both is right to the gram, and either one alone inherits the split's uncertainty. Dimensions are the published camera module L x W x H. The antennas are NOT in the 32 g: DJI lists them separately at 2.1 g each, and they are antenna_dji_o4_pro. First entry in this file sourced from a named product rather than a class.",
+      "lens": {
+        "hfov_deg": 137.0,
+        "model": "fisheye_equidistant",
+        "estimated": true,
+        "lens_source": "ESTIMATE: recalled 155 deg diagonal FOV for the O4 Air Unit camera, NOT re-checked against DJI's page this session; 155 x 16 / sqrt(16^2 + 9^2) = 137 deg horizontal under an equidistant model, which DJI does not state."
+      }
     },
     {
       "part_id": "mapper_cam_multispectral_rededge",
@@ -119,7 +151,15 @@
         "size_class": "payload",
         "sensor": "5-band multispectral + panchromatic"
       },
-      "source": "MicaSense RedEdge-P class multispectral mapping camera. Mass 430 g and 112 x 87 x 74 mm are recalled from the manufacturer's published spec sheet and are UNVERIFIED against it (not re-checked this session); treat as ESTIMATED. The sunlight sensor (DLS 2) is not in this mass; it rides as the class payload (DroneClass.payload_for)."
+      "source": "MicaSense RedEdge-P class multispectral mapping camera. Mass 430 g and 112 x 87 x 74 mm are recalled from the manufacturer's published spec sheet and are UNVERIFIED against it (not re-checked this session); treat as ESTIMATED. The sunlight sensor (DLS 2) is not in this mass; it rides as the class payload (DroneClass.payload_for).",
+      "lens": {
+        "hfov_deg": 44.5,
+        "model": "brown_conrady",
+        "k1": 0.0,
+        "k2": 0.0,
+        "estimated": true,
+        "lens_source": "ESTIMATE: recalled RedEdge-class horizontal FOV, not verified against the spec sheet; rectilinear (no distortion modelled)."
+      }
     },
     {
       "part_id": "cam_micasense_rededge_p_kit",
@@ -139,7 +179,15 @@
         "size_class": "payload",
         "sensor": "5-band multispectral 1456x1088 + panchromatic 2464x2056"
       },
-      "source": "MicaSense 'RedEdge-P and DLS 2 Integration Guide', December 2021 (first-party PDF, mirrored at https://xcopter.com/download/RedEdge-P-Guide-Dec2021.pdf; micasense.com itself returns 403 to the build machine). PUBLISHED: mass 315 g = camera + DLS 2 + WiFi adapter + storage (the guide also gives 245 g camera only; DLS 2 alone 54 g); dimensions 86.8 x 63 x 67.35 mm; bands blue/green/red/red-edge/NIR at 1456 x 1088, 3.45 um, 5.5 mm, 49.6 x 38.3 deg; max capture 3 per second with the supplied CFexpress card. Retailer listings disagree on the kit mass (300, 350 and 363 g); the first-party figure is used. The DLS 2 is inside this mass, so a build carrying this part must not add a second sunlight sensor. The camera has NO RGB band (panchromatic only)."
+      "source": "MicaSense 'RedEdge-P and DLS 2 Integration Guide', December 2021 (first-party PDF, mirrored at https://xcopter.com/download/RedEdge-P-Guide-Dec2021.pdf; micasense.com itself returns 403 to the build machine). PUBLISHED: mass 315 g = camera + DLS 2 + WiFi adapter + storage (the guide also gives 245 g camera only; DLS 2 alone 54 g); dimensions 86.8 x 63 x 67.35 mm; bands blue/green/red/red-edge/NIR at 1456 x 1088, 3.45 um, 5.5 mm, 49.6 x 38.3 deg; max capture 3 per second with the supplied CFexpress card. Retailer listings disagree on the kit mass (300, 350 and 363 g); the first-party figure is used. The DLS 2 is inside this mass, so a build carrying this part must not add a second sunlight sensor. The camera has NO RGB band (panchromatic only).",
+      "lens": {
+        "hfov_deg": 44.5,
+        "model": "brown_conrady",
+        "k1": 0.0,
+        "k2": 0.0,
+        "estimated": true,
+        "lens_source": "ESTIMATE: recalled RedEdge-P multispectral horizontal FOV (44.5 deg), not re-read from the integration guide; rectilinear (no distortion modelled)."
+      }
     },
     {
       "part_id": "cam_sentera_6x_multispectral",
@@ -159,7 +207,15 @@
         "size_class": "payload",
         "sensor": "5-band multispectral 2048x1536 + 20 MP RGB"
       },
-      "source": "Sentera 6X Multispectral. PUBLISHED: 79.5 x 66 x 67.5 mm sensor only, 2048 x 1536 multispectral, 5184 x 3888 RGB, 47 deg HFOV, bands 475/550/670/715/840 nm (Freefly docs page https://docs.freeflysystems.com/ecosystem/payloads/third-party-payloads/sentera-6x-65r); mass 290 g sensor only, 15 W, 5 fps sustained (reseller listing https://www.spheredrones.com.au/product/sentera-6x-multispectral-sensor; Sentera's own spec sheet is quoted at 280 g by a search summary, and the Freefly page's 515 g includes the gimbal). The incident-light sensor is a separate Sentera accessory whose mass was not found: it is NOT in this mass. Includes its own RGB camera."
+      "source": "Sentera 6X Multispectral. PUBLISHED: 79.5 x 66 x 67.5 mm sensor only, 2048 x 1536 multispectral, 5184 x 3888 RGB, 47 deg HFOV, bands 475/550/670/715/840 nm (Freefly docs page https://docs.freeflysystems.com/ecosystem/payloads/third-party-payloads/sentera-6x-65r); mass 290 g sensor only, 15 W, 5 fps sustained (reseller listing https://www.spheredrones.com.au/product/sentera-6x-multispectral-sensor; Sentera's own spec sheet is quoted at 280 g by a search summary, and the Freefly page's 515 g includes the gimbal). The incident-light sensor is a separate Sentera accessory whose mass was not found: it is NOT in this mass. Includes its own RGB camera.",
+      "lens": {
+        "hfov_deg": 47.0,
+        "model": "brown_conrady",
+        "k1": 0.0,
+        "k2": 0.0,
+        "estimated": false,
+        "lens_source": "PUBLISHED: 47 deg HFOV, Freefly docs page for the Sentera 6X (cited in `source`). Rectilinear (no distortion modelled: the sheet does not give coefficients)."
+      }
     },
     {
       "part_id": "cam_sony_rx0_ii",
@@ -179,7 +235,15 @@
         "size_class": "payload",
         "sensor": "1.0-type stacked CMOS 15.3 MP RGB"
       },
-      "source": "ESTIMATED: Sony's pages (sony.com, electronics.sony.com) could not be fetched from the build machine. A web-search summary quoting Sony's spec sheet gives 132 g with battery and card (117 g body only) and 59 x 40.5 x 35 mm (B&H listing https://www.bhphotovideo.com/c/product/1469682-REG/sony_dscrx0m2_b_rx0_ii_digital_camera.html). Not verified at the source. Example RGB add-on for a camera with no RGB band."
+      "source": "ESTIMATED: Sony's pages (sony.com, electronics.sony.com) could not be fetched from the build machine. A web-search summary quoting Sony's spec sheet gives 132 g with battery and card (117 g body only) and 59 x 40.5 x 35 mm (B&H listing https://www.bhphotovideo.com/c/product/1469682-REG/sony_dscrx0m2_b_rx0_ii_digital_camera.html). Not verified at the source. Example RGB add-on for a camera with no RGB band.",
+      "lens": {
+        "hfov_deg": 73.0,
+        "model": "brown_conrady",
+        "k1": 0.0,
+        "k2": 0.0,
+        "estimated": true,
+        "lens_source": "ESTIMATE: 24 mm-equivalent f/4 lens, about 84 deg diagonal, about 73 deg horizontal on a 16:9 crop; rectilinear (no distortion modelled)."
+      }
     }
   ]
 }

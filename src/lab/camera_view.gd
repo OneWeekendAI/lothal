@@ -10,8 +10,8 @@ extends RefCounted
 ## `specs` BY NAME, and `FpvView`'s header argues why at length: nobody has sourced FOV figures for
 ## these entries, the catalog's rule is that a published number is a measured one, and a real FPV
 ## lens is a 150-170 deg fisheye that a rectilinear projection cannot honestly represent anyway.
-## `FpvView.PLACEHOLDER_FOV_DEG` is 90 and says of itself that it is a framing choice rather than
-## an optical spec.
+## (Since R2.2 the FPV renderer carries per-part lens ESTIMATES in cameras.json `lens`; they are labelled
+## estimates, still not published specs, so this class still reads none of them.)
 ##
 ## So a containment test run against that placeholder would emit a WARNING ABOUT A BUILD derived
 ## from a number this project refuses to claim — "never invent a spec to unlock a feature", and it

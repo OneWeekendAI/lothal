@@ -13,10 +13,7 @@ extends RefCounted
 ## viewports, and a test that only checked "the picture changed" would pass against the design that
 ## has a black frame in it.
 ##
-## What is deliberately NOT asserted here is anything optical. The field of view is a stated
-## placeholder shared by every camera in the catalog (FpvView's header says why), so a test
-## comparing it against a part would be asserting a spec this project does not publish. What IS
-## asserted about it is that the screen says it is a placeholder.
+## The lens itself (FOV, distortion, the shader mirror) is tested in test_fpv_lens.gd.
 
 const EPS := 1e-6
 
@@ -161,8 +158,8 @@ static func _the_swap_never_leaves_a_viewport_without_a_camera(catalog: PartsCat
 		"cameras intact %s across modes %s" % [never_empty, modes])
 
 
-## After a swap the chase view is rendering through the node that was just wearing the 90 deg
-## placeholder. An unrestored FOV would leave the chase camera flying a lens that is not its own —
+## After a swap the chase view is rendering through the node that was just wearing FPV source
+## lens. An unrestored FOV would leave the chase camera flying a lens that is not its own —
 ## a bug that only appears on the SECOND keypress, which is why the cycle is driven twice here.
 static func _the_swap_restores_the_chase_lens(catalog: PartsCatalog) -> TestResult:
 	var airframe := _reference(catalog)
@@ -185,7 +182,7 @@ static func _the_swap_restores_the_chase_lens(catalog: PartsCatalog) -> TestResu
 
 	return TestResult.new(
 		"the chase lens comes back after a swap rather than keeping the FPV angle",
-		is_equal_approx(fpv_fov, FpvView.PLACEHOLDER_FOV_DEG) and is_equal_approx(restored, authored),
+		is_equal_approx(fpv_fov, FpvLens.source_fov_deg(FpvLens.DEFAULT, 16.0 / 9.0)) and not is_equal_approx(fpv_fov, authored) and is_equal_approx(restored, authored),
 		"authored %.1f deg -> FPV %.1f deg -> restored %.1f deg" % [authored, fpv_fov, restored])
 
 
@@ -273,8 +270,8 @@ static func _the_caption_falls_back_without_a_name(catalog: PartsCatalog) -> Tes
 	airframe.free()
 	view.free()
 	return TestResult.new(
-		"with no camera name the caption is plain 'FPV camera, uptilt N°'",
-		text.contains("FPV camera, uptilt 25°") and not text.to_lower().contains("placeholder"),
+		"with no camera name the caption is plain 'FPV camera, <lens>, uptilt N°' with the default lens labelled est.",
+		text.contains("FPV camera, 125° lens est., uptilt 25°") and not text.to_lower().contains("placeholder"),
 		text)
 
 

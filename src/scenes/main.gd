@@ -520,7 +520,7 @@ func _on_build_changed(new_build: Build) -> void:
 	# rather than looking one up here.
 	if fpv_view != null:
 		fpv_view.attach(airframe.camera_eye())
-		fpv_view.set_camera_name(str(build.components.get("camera", {}).get("name", "")))
+		fpv_view.set_camera_part(build.components.get("camera", {}))
 	# A lap time belongs to a build. Swapping a part mid-lap starts the attempt over rather
 	# than letting a 6S pack finish a lap a 4S one started.
 	_restart_course()

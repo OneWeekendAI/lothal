@@ -453,7 +453,7 @@ static func _a_level_aircraft_looks_above_the_horizon_by_the_tilt(catalog: Parts
 
 		var forward: Vector3 = (-camera.transform.basis.z).normalized()
 		var elevation := rad_to_deg(asin(forward.y))
-		var is_fpv := camera.fov == FpvView.PLACEHOLDER_FOV_DEG
+		var is_fpv := is_equal_approx(camera.fov, FpvLens.source_fov_deg(view.lens_data(), view.target_aspect()))
 		seen.append("%s° saved -> lens %.4f° above the horizon" % [degrees, elevation])
 		if not is_fpv:
 			problems.append("the main camera is not wearing the FPV lens at %s deg" % degrees)

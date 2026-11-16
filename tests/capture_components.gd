@@ -67,7 +67,7 @@ func _init() -> void:
 	world.add_child(camera)
 
 	if through_the_lens:
-		camera.fov = FpvView.PLACEHOLDER_FOV_DEG
+		camera.fov = FpvLens.source_fov_deg(FpvLens.DEFAULT, 16.0 / 9.0)
 		camera.keep_aspect = Camera3D.KEEP_WIDTH
 		camera.near = FpvView.NEAR_M
 		camera.make_current()
