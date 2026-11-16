@@ -211,6 +211,11 @@ static func derive(p_build: Build) -> RateTune:
 	tune.derived_kd = law[3]
 	tune.d_limited = law[4] != Vector3.ZERO
 
+	# Catalog yaw pilot trim (R1.4): frame data, applied to P and I together, part of the derived baseline.
+	var trim := float(p_build.frame.get("tuning", {}).get("yaw_pi_trim", 1.0))
+	tune.derived_kp.z *= trim
+	tune.derived_ki.z *= trim
+
 	tune._apply()
 	return tune
 

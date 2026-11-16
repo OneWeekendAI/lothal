@@ -82,9 +82,17 @@ static func run() -> Array:
 	var worst := 0.0
 	for tune in [whoop, long_range]:
 		for axis in 3:
-			var product: float = tune.kp[axis] * tune.plant_alpha[axis]
+			# The catalog's declared yaw pilot trim (frames.json tuning.yaw_pi_trim) is the one sanctioned departure from the law.
+			var trim: float = float(tune.build.frame.get("tuning", {}).get("yaw_pi_trim", 1.0)) if axis == 2 else 1.0
+			var product: float = tune.kp[axis] * tune.plant_alpha[axis] / trim
 			var anchor: float = ANCHOR_KP[axis] * ref_tune.plant_alpha[axis]
 			worst = maxf(worst, absf(product - anchor) / anchor)
+	var trimmed: RateTune = RateTune.derive(_with_frame("frame_8in_cinelifter"))
+	results.append(TestResult.new(
+		"the shipped 8in cinelifter carries the data-declared 1.25x yaw P/I trim in its derived tune",
+		absf(trimmed.kp.z * trimmed.plant_alpha.z / (ANCHOR_KP.z * ref_tune.plant_alpha.z) - 1.25) < 1e-4
+			and trimmed.kp.z == trimmed.derived_kp.z,
+		"kp.z %f derived %f" % [trimmed.kp.z, trimmed.derived_kp.z]))
 	results.append(TestResult.new(
 		"kp * plant acceleration is invariant across the catalog's extremes",
 		worst < 1e-6,

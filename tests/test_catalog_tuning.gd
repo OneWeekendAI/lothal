@@ -97,8 +97,7 @@ const COAXIAL_FRAME := "frame_8in_cinelifter"
 ## the plant's authority, not the pack's sag, so a pilot flying these two builds raises yaw P (and I with it, the same ratio) until the
 ## step is crisp again. 1.25x lands both on the reference's settle within a millisecond or two (P 24.8 -> 31.0 and 25.2 -> 31.5).
 ## The band is NOT widened: 13% stays, and these builds are hand-tuned the way the tune_override warning describes.
-const YAW_PILOT_TRIM := 1.25
-const YAW_PILOT_TRIM_FRAMES := ["frame_8in_cinelifter", "frame_10in_long_range"]
+## The trim now lives in data/parts/frames.json ("tuning.yaw_pi_trim") and RateTune.derive applies it, so this test flies what ships.
 ## 10% -> 13% (prop chapter, 2026-11-04): the plant moved with k_q (tau from the plant's own Rm) and
 ## the gains were not re-tuned by decision; the 10\" long-range's yaw is now 12.2% away on settling.
 ## 13% is the worst real case plus under a point; `_the_band_is_real` still requires fixed gains to fail.
@@ -210,9 +209,6 @@ static func _worst_deviation(derived: bool) -> Array:
 	var label := ""
 	for build in _frame_builds():
 		var tune := RateTune.derive(build) if derived else null
-		if derived and build.frame["part_id"] in YAW_PILOT_TRIM_FRAMES:
-			tune.set_gains(2, Vector3(tune.derived_kp.z * YAW_PILOT_TRIM,
-				tune.derived_ki.z * YAW_PILOT_TRIM, tune.derived_kd.z))
 		for axis in 3:
 			var got := _step_response(build, axis, tune)
 			var want: Dictionary = anchor[axis]
