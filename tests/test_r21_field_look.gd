@@ -250,7 +250,7 @@ static func _sun_and_sky() -> TestResult:
 		"sky ok %s, suns %d, sky_mode %d, sun elevation %.1f deg" % [sky_ok, n["suns"], mode, rad_to_deg(asin(-down))])
 
 
-## Mutation: the first split at 0.5 (a 150 m first cascade, a blurry drone shadow) or 2 splits -> caught.
+## Mutation: the first split at 0.5 (a 150 m first cascade, a blurry drone shadow), 2 splits, or blend_splits back on (dither stipple on far shadows) -> caught.
 static func _shadows() -> TestResult:
 	var n := _main_nodes()
 	var sun: DirectionalLight3D = n["sun"]
@@ -259,7 +259,7 @@ static func _shadows() -> TestResult:
 	var second := sun.directional_shadow_split_2 * reach
 	var third := sun.directional_shadow_split_3 * reach
 	var ok := sun.shadow_enabled and sun.directional_shadow_mode == DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS \
-		and reach >= 300.0 and first <= 15.0 and first >= 5.0 and second > first and third > second and third < reach
+		and not sun.directional_shadow_blend_splits and reach >= 300.0 and first <= 15.0 and first >= 5.0 and second > first and third > second and third < reach
 	(n["main"] as Node).free()
 	return TestResult.new("r2.1 shadows: 4-split PSSM to 300 m with the first cascade 5-15 m (FPV range) and ordered splits", ok,
 		"max %.0f m, splits at %.1f / %.1f / %.1f m" % [reach, first, second, third])

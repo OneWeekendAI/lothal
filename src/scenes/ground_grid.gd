@@ -103,11 +103,15 @@ static func _ground_shader() -> Shader:
 	return _shader
 
 
-## The flyable field's material: grass plus the flight grid.
-static func build_material(_ground_size_m: float) -> ShaderMaterial:
+## The ground material. `with_grid` is true only for the Field/design room, where the 2 m lines are a scale reference for
+## laying out a course. The flying view passes false (R2.1c): a square overlay painted on real grass reads as a debug
+## artefact, and motion cues there come from the grass, the trees and the terrain itself.
+static func build_material(_ground_size_m: float, with_grid := true) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = _ground_shader()
 	material.set_shader_parameter("tile_m", METRES_PER_TILE)
+	if not with_grid:
+		material.set_shader_parameter("grid_strength", 0.0)
 	return material
 
 

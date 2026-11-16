@@ -90,7 +90,8 @@ directional_shadow_mode = 2
 directional_shadow_split_1 = 0.04
 directional_shadow_split_2 = 0.12
 directional_shadow_split_3 = 0.35
-directional_shadow_blend_splits = true
+; Blend off (R2.1c): Forward+ blends cascades with a per-pixel dither, which read as stipple on a far tree's shadow.
+directional_shadow_blend_splits = false
 directional_shadow_fade_start = 0.9
 directional_shadow_max_distance = 300.0
 

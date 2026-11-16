@@ -313,7 +313,7 @@ func _rebuild_ground() -> void:
 	ground_collision.shape = TerrainMesh.build_collider(terrain, obstacles)
 	var extent := terrain.extent() if terrain != null else Vector2(Terrain.DEFAULT_WIDTH_M, Terrain.DEFAULT_LENGTH_M)
 	var ground_size := maxf(absf(extent.x), absf(extent.y))
-	ground_mesh.material_override = GroundGrid.build_material(ground_size)
+	ground_mesh.material_override = GroundGrid.build_material(ground_size, false)
 	# Scenery around the field: drawn only, never part of the collider above.
 	var hills := get_node_or_null("BackdropHills") as MeshInstance3D
 	if hills == null:
@@ -357,7 +357,7 @@ static func _check_crash(at: Vector3, p_terrain: Terrain) -> bool:
 ## `scene.wind` (`tests/test_field_room.gd`'s `_the_booted_scene_flies_the_typed_settle_time`).
 ## Neither stands alone: this one is the oracle, that one is the subject.
 static func make_wind(p_conditions: Conditions) -> Wind:
-	return Wind.new(p_conditions, p_conditions.gust_tau_s)
+	return Wind.new(p_conditions, p_conditions.gust_tau_s, Wind.DEFAULT_SEED, Wind.Model.DRYDEN, true)
 
 func _ready() -> void:
 	# Read off the HANDED-OVER library (see `conditions_library` above), not re-loaded here. The
