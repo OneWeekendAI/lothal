@@ -98,6 +98,9 @@ static func ground_effect_gain(height_m: float, radius_m: float) -> float:
 ## cannot tell which half published what. Refilled at the end of every step(); no consumer
 ## should read physics internals directly.
 var observables: Observables
+## The motor commands of the most recent step(), MotorLayout.MOTOR_NAMES order. Published so a test can
+## measure the flight controller's command variance (R1.4: it is what turns into copper loss).
+var last_motor_cmds := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
 
 ## The build's `config` decision block (C1), for the one value of it that reaches the physics:
 ## motor spin direction, read through MotorLayout.spin_map() — design §5. Empty means today's
@@ -155,6 +158,7 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	var cmds := PackedFloat64Array()
 	for name in MotorLayout.MOTOR_NAMES:
 		cmds.append(motor_throttle_cmds.get(name, 0.0))
+	last_motor_cmds = cmds
 	# The powertrain is told how the aircraft is MOVING, not just what the sticks asked for. Without
 	# this line the propeller behaves identically parked and at 120 km/h: no unloading at speed, and
 	# no translational lift, so forward flight costs the same current as hovering. Both halves

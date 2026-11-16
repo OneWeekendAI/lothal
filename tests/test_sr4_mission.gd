@@ -111,7 +111,7 @@ static func run() -> Array:
 		"edit_resolve": func() -> TestResult: return _edit_resolve(),
 		"edit_equal": func() -> TestResult: return _edit_to_default_is_not_edited(),
 		"edit_run": func() -> TestResult: return _edited_reserve_changes_result(),
-		"rate_250": func() -> TestResult: return _rate_energy(250.0, true),
+		"rate_250": func() -> TestResult: return _rate_energy_law(250.0),
 		"rate_40": func() -> TestResult: return _rate_energy(40.0, false),
 		"unknown": func() -> TestResult: return _unknown_class(),
 	}
@@ -453,8 +453,21 @@ static func _edited_reserve_changes_result() -> TestResult:
 ## about twice that), 1/250 7.3 s, 1/200 6.4 s, 1/125 5.2 s. Energy 9.3436 / 9.3437 / 9.3434 / 9.3430 Wh: 1/125 is 0.006 percent
 ## from 1/500. 2-lap probe: 1/100 3.4929 Wh, 1/60 3.4930 Wh (same), 1/40 lost control at 13.8 s, 1/25 at 3.5 s.
 ## DECISION: no new option is needed (the 1 kHz-class cost is a minute per 30 sim minutes); the existing `dt` param is the rate knob and
-## is exposed as --rate-hz in tools/run_mission.gd. STATED BOUND: down to 250 Hz the energy is within 1 percent of the 500 Hz run
-## (measured 0.001 percent); below about 60 Hz the controller loses the aircraft, which the mission reports as lost_control.
+## is exposed as --rate-hz in tools/run_mission.gd. Below about 60 Hz the controller loses the aircraft, which the mission reports as
+## lost_control.
+## STATED BOUND, REBASED 2026-11-16 (R1.4, ESC/motor dynamics ON): the old "within 1 percent" held because the linear spin-up lag
+## smoothed the command away. The electromechanical motor does not: current through the winding is I = (V*duty - Ke*w)/R and the pack
+## sees only the positive part (braking current is dissipated in the ESC), so a command ripple of variance v raises the mean pack
+## current by about s*v (s ~ 1100-1350 A per unit variance on the five_inch hover point, the plant's own convexity plus rectification).
+## The flight controller's command ripple is NOT rate-independent, and that is physical, not a bug: every filter was audited and
+## is Hz-defined (gyro and accelerometer PT1 alpha = dt/(RC+dt) from the cutoff in Hz, the vbat PT1 likewise, the Mahony gain in
+## rad/s, D = kd * d(measured)/dt with the real dt), and the sensor's own noise is a fixed per-sample spec at the sensor's own clock.
+## A derivative taken over a shorter dt sees more of that fixed noise (hover command std 0.0037 / 0.0056 / 0.0062 at 250 / 500 /
+## 1000 Hz), exactly as a Betaflight D term does when the PID loop is sped up. So the bound is now: the mean-current difference
+## between 250 and 500 Hz equals what the plant converts the measured command-variance difference into (s measured here on the
+## SAME plant with white ripple at each rate, so it is not fitted to the flight), within 30 percent; the 250 Hz run completes;
+## and the energy gap stays under 3 percent (the law's own size here is 1.7 percent). The plant alone converging with dt is a
+## separate, tight check in tests/test_esc_dynamics.gd (_test_plant_converges_with_dt).
 ## FAIL-PROOF: runner ignoring the `dt` param (dt fixed at 1/500) -> the too-low-rate case FAILS (a 40 Hz run completes and equals the base run).
 static func _rate_energy(hz: float, expect_within: bool) -> TestResult:
 	var p := {"class_id": "five_inch", "mission": Mission.CRUISE_LOOP, "seed": 5, "laps": 6, "gust_mps": 1.0, "wind_speed_mps": 3.0, "wind_from_deg": 60.0}
@@ -468,3 +481,82 @@ static func _rate_energy(hz: float, expect_within: bool) -> TestResult:
 	if expect_within:
 		return TestResult.new("sr4 mission inner rate 250 Hz vs 500 Hz on a 5-minute cruise: energy within 1 percent and the mission completes", within, detail)
 	return TestResult.new("sr4 mission inner rate 40 Hz (deliberately too low) on the same cruise exceeds the 1 percent bound (or loses control)", not within, detail)
+
+
+## One instrumented flight of the cruise loop above: the mission result plus the mean pack current (A, time average) and the
+## per-motor command variance about a 0.1 s moving mean (the ripple the loop adds on top of the manoeuvre), and the mean command.
+static func _flight_with_ripple(hz: float) -> Dictionary:
+	var runner := MissionRunner.new()
+	var p := {"class_id": "five_inch", "mission": Mission.CRUISE_LOOP, "seed": 5, "laps": 6, "gust_mps": 1.0, "wind_speed_mps": 3.0, "wind_from_deg": 60.0, "dt": 1.0 / hz}
+	var out := {}
+	if not runner.begin(p):
+		return runner.finish()
+	var dt := 1.0 / hz
+	var a := dt / (0.1 + dt)
+	var core := runner.rig.core
+	var slow := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+	var seeded := false
+	var ripple_sum := 0.0
+	var cmd_sum := 0.0
+	var amp_s := 0.0
+	var ticks := 0
+	while runner._flying and runner.ended_by == "":
+		runner.advance(1)
+		var c := core.last_motor_cmds
+		if not seeded:
+			slow = c.duplicate()
+			seeded = true
+		for k in 4:
+			slow[k] += (c[k] - slow[k]) * a
+			var d := c[k] - slow[k]
+			ripple_sum += d * d
+			cmd_sum += c[k]
+		amp_s += core.observables.current_total_a * dt
+		ticks += 1
+	out = runner.finish()
+	out["mean_a"] = amp_s / (ticks * dt)
+	out["ripple_var"] = ripple_sum / (ticks * 4.0)
+	out["mean_cmd"] = cmd_sum / (ticks * 4.0)
+	out["build"] = runner.rig.build
+	return out
+
+
+## Mean pack current excess (A) the plant makes of a white command ripple of variance `var_c` about `c0`, at loop rate `hz`:
+## the same powertrain the flight uses, held at c0, with and without the ripple.
+static func _plant_current_excess(build: Build, hz: float, c0: float, var_c: float) -> float:
+	var dt := 1.0 / hz
+	var sigma := sqrt(var_c)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var means: Array = []
+	for sd in [0.0, sigma]:
+		var core := build.build_drone_core({})
+		core.prime_motors(c0)
+		var pt := core.powertrain
+		var isum := 0.0
+		var n := int(round(20.0 / dt))
+		for _i in n:
+			var cmds := PackedFloat64Array()
+			for _k in 4:
+				cmds.append(c0 + (rng.randfn(0.0, sd) if sd > 0.0 else 0.0))
+			pt.step(cmds, dt)
+			isum += pt.last_current_total_a
+		means.append(isum / n)
+	return means[1] - means[0]
+
+
+static func _rate_energy_law(hz: float) -> TestResult:
+	var base := _flight_with_ripple(500.0)
+	var low := _flight_with_ripple(hz)
+	var build: Build = base["build"]
+	var excess_base := _plant_current_excess(build, 500.0, float(base["mean_cmd"]), float(base["ripple_var"]))
+	var excess_low := _plant_current_excess(build, hz, float(low["mean_cmd"]), float(low["ripple_var"]))
+	var predicted: float = excess_base - excess_low
+	var actual: float = float(base["mean_a"]) - float(low["mean_a"])
+	var rel_e := absf(float(low["energy_wh"]) / float(base["energy_wh"]) - 1.0)
+	var explained: bool = absf(actual) > 0.0 and absf(predicted - actual) <= 0.30 * absf(actual)
+	var ok: bool = String(low["ended_by"]) == "completed" and String(base["ended_by"]) == "completed" and explained and rel_e < 0.03
+	var detail := "%.0f Hz: ended %s, energy %.4f Wh vs %.4f Wh at 500 Hz (%.3f percent); command std %.5f vs %.5f; mean current %.4f vs %.4f A, difference %.4f A, command-variance law predicts %.4f A" % [
+		hz, low["ended_by"], low["energy_wh"], base["energy_wh"], rel_e * 100.0, sqrt(float(low["ripple_var"])),
+		sqrt(float(base["ripple_var"])), low["mean_a"], base["mean_a"], actual, predicted]
+	return TestResult.new("sr4 mission inner rate 250 Hz vs 500 Hz on a 5-minute cruise: completes, and the current difference is the command-variance law's (within 30 percent, energy gap under 3 percent)", ok, detail)

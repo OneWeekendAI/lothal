@@ -21,6 +21,8 @@ static func run() -> Array:
 	results.append(_test_steady_state_matches_dc_solve())
 	results.append(_test_whoop_cinelifter_ratio_vs_p7())
 	results.append(_test_dynamics_off_is_the_p7_lag())
+	results.append(_test_plant_converges_with_dt())
+	results.append(_test_powertrain_converges_with_dt())
 	return results
 
 
@@ -200,3 +202,95 @@ static func _test_dynamics_off_is_the_p7_lag() -> TestResult:
 	var passed := not mm.dynamics_on() and absf(rpm / 20000.0 - (1.0 - exp(-1.0))) < 1e-12
 	return TestResult.new("dynamics off: MotorModel.step is still the P7 first-order lag",
 		passed, "fraction %.12f" % (rpm / 20000.0))
+
+
+## The command history every dt-convergence check replays: a hold of 4 ms per entry, wide steps between 0.2 and 0.85 so the
+## current limit, the braking branch and the stiff back-EMF term are all exercised. 50 entries = 200 ms, several time constants.
+static func _hold_waveform(entries: int = 50) -> PackedFloat64Array:
+	var w := PackedFloat64Array()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4
+	for _i in entries:
+		w.append(rng.randf_range(0.2, 0.85))
+	return w
+
+
+## R1.4 PLANT CONVERGENCE. The same command history, held for the same 4 ms per entry, integrated at 4, 2, 1 and 0.5 ms
+## steps (against a 0.05 ms run as the converged answer) must land on the same rpm at every 4 ms boundary and draw the same pack charge. The motor sub-steps at <= 0.5 ms
+## internally, so the loop rate is not a parameter of the physics; with the sub-stepping removed (one backward-Euler step per
+## call) the 4 ms run sits several percent off the 0.5 ms run and this test fails (mutation-proven, see the tracker).
+static func _test_plant_converges_with_dt() -> TestResult:
+	var wave := _hold_waveform(20)
+	var v := 15.0
+	var hold_s := 0.02
+	var rpms: Dictionary = {}
+	var charge: Dictionary = {}
+	for step_ms in [4.0, 2.0, 1.0, 0.5, 0.05]:
+		var mm: MotorModel = _model(REF_MOTOR)["mm"]
+		var dt: float = step_ms * 0.001
+		var per_hold := int(round(hold_s / dt))
+		var rpm := mm.target_rpm(wave[0], v)
+		var track: Array = []
+		var q := 0.0
+		for c in wave:
+			for _i in per_hold:
+				var r := mm.step_dynamic(rpm, c, v, dt)
+				rpm = r[0]
+				q += r[2] * dt
+			track.append(rpm)
+		rpms[step_ms] = track
+		charge[step_ms] = q
+	var worst_rpm := 0.0
+	var worst_q := 0.0
+	var half_ms: Array = rpms[0.5]
+	for step_ms in [4.0, 2.0, 1.0]:
+		var track: Array = rpms[step_ms]
+		for i in track.size():
+			worst_rpm = maxf(worst_rpm, absf(track[i] - half_ms[i]) / maxf(half_ms[i], 1.0))
+		worst_q = maxf(worst_q, absf(charge[step_ms] - charge[0.5]) / charge[0.5])
+	# Truncation of the 0.5 ms sub-step itself (first-order backward Euler) against a 0.05 ms run. This is a bias, not a loop-rate
+	# effect, and it is largest in the current-limited punches this waveform is made of (every 20 ms between 0.2 and 0.85).
+	var fine: Array = rpms[0.05]
+	var trunc_rpm := 0.0
+	for i in half_ms.size():
+		trunc_rpm = maxf(trunc_rpm, absf(half_ms[i] - fine[i]) / maxf(fine[i], 1.0))
+	var trunc_q: float = absf(charge[0.5] - charge[0.05]) / charge[0.05]
+	return TestResult.new(
+		"plant converges with dt: 4/2/1 ms steps equal the 0.5 ms run (0.1% rpm and charge), and 0.5 ms is within 0.5% rpm / 2% charge of a 0.05 ms run",
+		worst_rpm < 0.001 and worst_q < 0.001 and trunc_rpm < 0.005 and trunc_q < 0.02,
+		"loop-rate error: rpm %.4f%%, charge %.4f%%; sub-step truncation: rpm %.3f%%, charge %.3f%%" % [
+			worst_rpm * 100.0, worst_q * 100.0, trunc_rpm * 100.0, trunc_q * 100.0])
+
+
+## The same replay through the whole powertrain (pack sag feeds back from the previous step's current, so this is the
+## loop-rate-sensitive path): mean pack current at 4/2/1 ms steps against 0.5 ms, within 1%.
+static func _test_powertrain_converges_with_dt() -> TestResult:
+	# 20 ms holds (a punch-out every 50 ms is already a violent pilot): the pack voltage the motors see is the previous step's, so
+	# the coupling is explicit and a command that changes every single 4 ms step is the one input the loop rate cannot resolve.
+	var wave := _hold_waveform(20)
+	var hold_s := 0.02
+	var means: Dictionary = {}
+	for step_ms in [4.0, 2.0, 1.0, 0.5]:
+		var build := Build.from_ids(PartsCatalog.load_default(), ReferenceBuild.FRAME_ID,
+			ReferenceBuild.MOTOR_ID, ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID)
+		build.esc_dynamics = true
+		var core := build.build_drone_core({})
+		core.prime_motors(wave[0])
+		var dt: float = step_ms * 0.001
+		var per_hold := int(round(hold_s / dt))
+		var isum := 0.0
+		var n := 0
+		for c in wave:
+			for _i in per_hold:
+				core.powertrain.step(PackedFloat64Array([c, c, c, c]), dt)
+				isum += core.powertrain.last_current_total_a
+				n += 1
+		means[step_ms] = isum / n
+	var worst := 0.0
+	for step_ms in [4.0, 2.0, 1.0]:
+		worst = maxf(worst, absf(means[step_ms] / means[0.5] - 1.0))
+	return TestResult.new(
+		"powertrain converges with dt: mean pack current at 4/2/1 ms within 0.5% of the 0.5 ms run",
+		worst < 0.005,
+		"mean A: 4 ms %.3f, 2 ms %.3f, 1 ms %.3f, 0.5 ms %.3f; worst %.3f%%" % [
+			means[4.0], means[2.0], means[1.0], means[0.5], worst * 100.0])

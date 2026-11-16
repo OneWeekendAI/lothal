@@ -55,7 +55,10 @@ const REFERENCE_TWR := 8.131013
 const REFERENCE_HOVER := 0.330306
 const REFERENCE_COM_Y_M := 0.01183166
 const REFERENCE_COM_Z_M := 0.00017882
-const REFERENCE_PLANT_ALPHA := Vector3(343.550659, 320.511688, 28.343199)
+## RE-PINNED at R1.4 (2026-11-16): ESC/motor dynamics are ON by default, and the plant's peak angular acceleration (FrameBench) is
+## measured through the electromechanical motor, whose first millisecond differs from the lag's by 0.006 percent (343.5507 ->
+## 343.5306). Same plant, same tune law; the derived gains move by the same 0.006 percent, far inside every band.
+const REFERENCE_PLANT_ALPHA := Vector3(343.530640, 320.493042, 28.341549)
 
 ## The equal-mass pair. The shipped catalog HAS NO SUCH PAIR — C1 authored flats at 4.0/6.5/9.0 g
 ## and masts at 11.0/14.0 g, and no flat and masted entry share a mass — so "a masted GPS raises the

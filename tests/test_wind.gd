@@ -41,14 +41,20 @@ const DT := 0.001   # 1 kHz, matching physics.md §6
 ## RE-FROZEN at SR1 bucket-depth terms (2026-11-09): the 17 m/s forward pass now pays the published induced-power
 ## factor, profile growth with advance ratio and rear-rotor interference (more current: 4.152 -> 4.440 A), so it
 ## decelerates and sinks a little differently (z 18.319 -> 18.317).
-const GOLDEN_POS := Vector3(0.00000000000000000, -44.71037673950195312, 18.10928153991699219)
-const GOLDEN_VEL := Vector3(0.00000000000000000, -16.94856643676757812, -2.77855610847473145)
-const GOLDEN_ANGVEL := Vector3(2.67796587944030762, 0.00000000000000000, 0.00000000000000000)
-const GOLDEN_ORIENT := Quaternion(-0.26002702116966248, 0.00000000000000000, 0.00000000000000000,
-	-0.96560138463973999)
-const GOLDEN_GFORCE := 1.78042984397647075
-const GOLDEN_CURRENT := 4.43917064652463367
-const GOLDEN_AIRSPEED := 17.17481422424316406
+const GOLDEN_POS := Vector3(0.00000000000000000, -44.71035003662109375, 18.10926246643066406)
+const GOLDEN_VEL := Vector3(0.00000000000000000, -16.94854164123535156, -2.77847886085510254)
+const GOLDEN_ANGVEL := Vector3(2.67797231674194336, 0.00000000000000000, 0.00000000000000000)
+const GOLDEN_ORIENT := Quaternion(-0.26003316044807434, 0.00000000000000000, 0.00000000000000000,
+	-0.96559971570968628)
+const GOLDEN_GFORCE := 1.78042381667701943
+const GOLDEN_CURRENT := 4.43821951825290562
+const GOLDEN_AIRSPEED := 17.17477798461914062
+## RE-FROZEN at R1.4 (2026-11-16), same capture, because ESC/motor dynamics are now ON by default (Build.esc_dynamics): the motor is
+## the electromechanical model (back-EMF, winding resistance, current limit, braking) instead of a first-order lag, so the 5 s tumble's
+## rpm history, and with it the thrust, differ in the fifth digit. CAUSE CONFIRMED, not assumed: with Build.esc_dynamics = false the
+## previous literals are reproduced bit for bit. OLD -> NEW: pos y -44.71038 -> -44.71035, z 18.10928 -> 18.10926; vel y -16.94857
+## -> -16.94854, z -2.77856 -> -2.77848; angvel x 2.677966 -> 2.677972; current 4.43917 -> 4.43822 A (-0.02 percent: the lag's
+## smoothing of the command is the dynamic model's real response).
 ## RE-FROZEN a fifth time (2026-11-11), commit 75bdf06 (BemtRatios::read no longer returns the static 1.0 for ANY negative axial
 ## velocity; the edgewise ratio fades to 1.0 as descent speed reaches 0.08 omega R). CAUSE CONFIRMED, not assumed: the same suite
 ## on a dylib built from the pre-75bdf06 bemt_ratios.rs reproduces the old literals bit for bit (7/7 green), and on the fixed dylib

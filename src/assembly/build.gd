@@ -1828,12 +1828,11 @@ func motor_model() -> MotorModel:
 	return mm
 
 
-## R1.4: fly the electromechanical ESC/motor model instead of P7's first-order lag. OFF by default
-## (owner decision pending): switched on it moves pins that were calibrated on the lag -- the SR4
-## 250-vs-500 Hz energy bound (1.7% vs 1%, the asymmetric actuator is loop-rate sensitive), the
-## catalog settling band (15.9% vs 13%, 8in cinelifter yaw), the F7 trajectory goldens and the
-## reference plant alpha. See REALISM_TRACKER.md R1.4.
-var esc_dynamics := false
+## R1.4: fly the electromechanical ESC/motor model instead of P7's first-order lag. ON by default since 2026-11-16. Set false
+## to get the lag back (identity: every pre-R1.4 golden reproduces bit for bit). Switching it on re-pinned the F7 trajectory
+## goldens and the reference plant alpha, re-based the SR4 250-vs-500 Hz energy bound onto the command-variance law, and moved
+## two catalog frames' yaw to a pilot trim. See REALISM_TRACKER.md R1.4.
+var esc_dynamics := true
 
 ## R1.4 ESC setting: active braking (damped light). ESTIMATED default ON; the common FPV ESC default.
 const ESC_ACTIVE_BRAKING := true
