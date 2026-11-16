@@ -22,7 +22,7 @@ static func run(tree: SceneTree) -> Array:
 	var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": ReferenceBuild.hover_throttle()}
 	var recorder := FlightRecorder.new(build, 1, null, core.gyro)
 	for _i in 300:
-		core.step(fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, 0.001), 0.001)
+		core.step(fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, 0.001), 0.001)
 		recorder.capture(core.observables)
 	recorder.save(path)
 

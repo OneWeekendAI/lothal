@@ -87,7 +87,7 @@ func _init() -> void:
 		# Sticks centred throughout. The aircraft is not being asked to go anywhere; the props
 		# are the shaker and the airframe is the specimen.
 		var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": throttle}
-		var cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT)
+		var cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, DT)
 		core.step(cmds, DT)
 		recorder.capture(core.observables)
 

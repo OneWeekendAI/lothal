@@ -252,7 +252,7 @@ static func _nose_heavy_needs_differential_thrust() -> Array:
 	var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": hover}
 	var commands := {}
 	for i in 4000:
-		commands = controller.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, dt)
+		commands = controller.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, dt)
 		core.step(commands, dt)
 
 	var front: float = (float(commands["M2"]) + float(commands["M4"])) * 0.5
@@ -291,7 +291,7 @@ static func _nose_heavy_needs_differential_thrust() -> Array:
 	var level_samples := 0
 	for i in 4000:
 		level_commands = level_controller.update(
-			level_core.rigid_body.orientation, level_core.gyro.rate_rad_s, level_rc, dt)
+			level_core.accel.reading_mps2, level_core.gyro.rate_rad_s, level_rc, dt)
 		level_core.step(level_commands, dt)
 		if i >= 3000:
 			level_spread_sum += (float(level_commands["M2"]) + float(level_commands["M4"])) * 0.5 \

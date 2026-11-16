@@ -61,7 +61,7 @@ static func _fly(build: Build, recorder: FlightRecorder = null) -> DroneCore:
 	var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": throttle}
 
 	for _i in STEPS:
-		var cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT)
+		var cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, DT)
 		core.step(cmds, DT)
 		if recorder != null:
 			recorder.capture(core.observables)

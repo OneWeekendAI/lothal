@@ -85,7 +85,7 @@ static func run() -> Array:
 	var main_code := _code_only(FileAccess.get_file_as_string("res://src/scenes/main.gd"))
 	results.append(TestResult.new(
 		"the scene feeds the flight controller from core.gyro and from nothing else",
-		main_code.contains("fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s")
+		main_code.contains("fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s")
 			and not main_code.contains("angular_velocity_rad_s,"),
 		"main.gd's single FC call site passes core.gyro.rate_rad_s"
 	))

@@ -105,7 +105,7 @@ func _write_log(name: String, rows: int, jumps: int = 0) -> String:
 	recorder.discontinuities = jumps
 
 	for _i in rows:
-		var cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, 0.001)
+		var cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, 0.001)
 		core.step(cmds, 0.001)
 		recorder.capture(core.observables)
 

@@ -47,7 +47,7 @@ static func _rate_on(core: DroneCore, axis: String) -> float:
 
 static func _advance(core: DroneCore, fc: FlightController, rc: Dictionary, duration_s: float) -> void:
 	for i in int(duration_s / DT):
-		core.step(fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT), DT)
+		core.step(fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, DT), DT)
 
 ## Two unequal opposing taps on one axis, then hands off. Returns the residual rate on that
 ## axis and how far the whole attitude still moved over the last SETTLE_WINDOW_S.

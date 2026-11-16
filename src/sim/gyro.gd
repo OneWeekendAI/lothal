@@ -14,11 +14,8 @@ extends RefCounted
 ## rigid_body.angular_velocity_rad_s. That single rule is the whole point of the class.
 ##
 ## WHAT IS NOT MODELLED, deliberately: scale-factor error, axis misalignment, temperature
-## drift, and rate saturation (a real ICM-42688 clips around 2000 deg/s). Attitude, too,
-## is still taken straight from the integrator rather than estimated — a real FC fuses an
-## accelerometer to correct gyro drift, and Lothal has no accelerometer fusion yet. All of
-## that is a later slice; the seam built here is what makes it a later slice rather than a
-## rewrite.
+## drift, and rate saturation (a real ICM-42688 clips around 2000 deg/s). Attitude is
+## now ESTIMATED, not read from the integrator: see Accelerometer and AttitudeEstimator (R1.2).
 
 ## --- The filter ---
 ## PT1 (single-pole IIR), not a biquad. Chosen because it is what Betaflight's default
@@ -85,6 +82,10 @@ var rate_rad_s := Vector3.ZERO
 ## every gyro in the project to produce a vector of zeroes. Build.gyro() is what fits a real
 ## one, because what an airframe shakes with is a property of the airframe.
 var vibration: VibrationSource = null
+## The shake added at the most recent sample, rad/s. The accelerometer on the same IMU is shaken by
+## the same airframe, and the vibration source is stateful (phase advances per call), so it is read
+## ONCE here and handed on rather than asked a second time.
+var last_vibration_rad_s := Vector3.ZERO
 
 var _rng := RandomNumberGenerator.new()
 var _seed: int
@@ -154,6 +155,7 @@ func update(true_rate_rad_s: Vector3, dt: float) -> Vector3:
 
 func reset() -> void:
 	rate_rad_s = Vector3.ZERO
+	last_vibration_rad_s = Vector3.ZERO
 	_time_since_sample = 0.0
 	_sample_time_s = 0.0
 	if vibration != null:
@@ -182,7 +184,8 @@ func _sample(true_rate_rad_s: Vector3, period: float) -> void:
 	# Stated at this length because aliasing that emerges from a correct sample-and-hold and
 	# aliasing that happens because nobody thought about it look identical in the output.
 	if vibration != null:
-		raw += vibration.angular_rate_at(_sample_time_s)
+		last_vibration_rad_s = vibration.angular_rate_at(_sample_time_s)
+		raw += last_vibration_rad_s
 	_sample_time_s += period
 
 	if noise_rad_s > 0.0:

@@ -23,6 +23,9 @@ var rigid_body := RigidBodyState.new()
 ## without one gets the stock sensor, so every call site written before flight controllers
 ## were selectable still means what it meant.
 var gyro: Gyro
+## The accelerometer on the same IMU (R1.2): body-frame specific force, with noise, bias and the
+## gyro's vibration. The attitude estimator reads this; nothing else should.
+var accel := Accelerometer.new()
 ## The air's own motion, or null on a still day. HANDED IN, not constructed here, for the same
 ## reason `gyro` is: null means "nobody has told this core about the field it is flying at",
 ## which is every core built before F7 and every test that has never heard of `Wind` — those keep
@@ -228,6 +231,7 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# afterwards from a velocity difference would be a numerical derivative of an
 	# integrated quantity, which is both noisier and one tick late.
 	var specific_force := total_force + Vector3(0, GRAVITY_MPS2 * mass_properties.total_mass_kg, 0)
+	var accel_orientation := rigid_body.orientation   # the body the force acted on, before it moves
 
 	rigid_body.integrate(total_force, total_torque, mass_properties.total_mass_kg, mass_properties.inertia, mass_properties.inertia_inverse, dt)
 	if ground_contact_enabled:
@@ -237,6 +241,9 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 			# Supported: the ground takes the weight, and a body sitting on it does not spin or slide.
 			rigid_body.velocity_mps = Vector3.ZERO
 			rigid_body.angular_velocity_rad_s = Vector3.ZERO
+			# And it pushes back: an accelerometer on the ground reads 1 g, not the near-zero a
+			# bare thrust sum would give.
+			specific_force.y += maxf(0.0, -total_force.y)
 	if collision_world != null:
 		_resolve_collisions()
 
@@ -252,6 +259,8 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# next substep is one tick old. That is not an approximation to apologise for — it is
 	# what a real loop does, and the delay is part of what the gains are tuned against.
 	gyro.update(rigid_body.angular_velocity_rad_s, dt)
+	accel.update(accel_orientation.inverse() * (specific_force / mass_properties.total_mass_kg),
+		gyro.last_vibration_rad_s, dt)
 
 	_publish(specific_force)
 

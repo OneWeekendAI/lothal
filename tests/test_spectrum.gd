@@ -677,7 +677,7 @@ static func _write_real_log(p_name: String, p_rows: int, p_decimation: int) -> S
 	var recorder := FlightRecorder.new(build, p_decimation, tune, core.gyro)
 
 	for _i in p_rows * p_decimation:
-		var cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, 0.001)
+		var cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, 0.001)
 		core.step(cmds, 0.001)
 		recorder.capture(core.observables)
 

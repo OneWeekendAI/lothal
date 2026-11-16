@@ -262,28 +262,36 @@ static func _recovers_to_level(build: Build, tune: RateTune) -> Dictionary:
 
 	var rc := {"roll": 1.0, "pitch": 0.0, "yaw": 0.0, "throttle": throttle}
 	for _i in 400:
-		core.step(fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT), DT)
+		core.step(fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, DT), DT)
 
 	var banked := absf(core.rigid_body.orientation.get_euler(EULER_ORDER_YXZ).z)
 
 	rc.roll = 0.0
 	var worst_after_release := 0.0
+	var worst_true_after_release := 0.0
 	# How long the OUTER loop takes to bring the aircraft back inside a degree of level. This is
 	# the figure that says whether AngleModeController's fixed LEVEL_P is safe: the outer loop
 	# closes on the inner one rather than on the airframe, and the inner one's time constant is
 	# what RateTune holds invariant, so this number should not depend on which frame is fitted.
 	var level_ms := -1.0
 	for i in 1200:
-		core.step(fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT), DT)
+		core.step(fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, DT), DT)
 		var bank := absf(core.rigid_body.orientation.get_euler(EULER_ORDER_YXZ).z)
-		if level_ms < 0.0 and bank < deg_to_rad(1.0):
+		# R1.2: the outer loop closes on the FC's own horizon, not on the truth, so its settle time
+		# and residual are read from the estimate. After a held bank the estimate has been dragged
+		# toward the body's thrust axis (the accelerometer cannot tell a bank from a level hover
+		# that is accelerating), so the TRUE residual is the estimator's error and is bounded
+		# separately, by that physics, in the caller.
+		var believed := absf(fc.estimator.attitude.get_euler(EULER_ORDER_YXZ).z)
+		if level_ms < 0.0 and believed < deg_to_rad(1.0):
 			level_ms = (i + 1) * DT * 1000.0
 		# Only the last third counts as "returned": the first two are the aircraft on its way back.
 		if i > 800:
-			worst_after_release = maxf(worst_after_release, bank)
+			worst_after_release = maxf(worst_after_release, believed)
+			worst_true_after_release = maxf(worst_true_after_release, bank)
 
 	return {"banked_deg": rad_to_deg(banked), "residual_deg": rad_to_deg(worst_after_release),
-		"level_ms": level_ms}
+		"true_residual_deg": rad_to_deg(worst_true_after_release), "level_ms": level_ms}
 
 
 static func run() -> Array:
@@ -334,7 +342,20 @@ static func run() -> Array:
 		results.append(TestResult.new(
 			"the %s banks on full stick and returns to level hands off" % name,
 			flown.banked_deg > 20.0 and flown.residual_deg < 1.0,
-			"banked %.1f deg, back to within %.2f deg" % [flown.banked_deg, flown.residual_deg]))
+			"banked %.1f deg, back to within %.2f deg of the FC's own horizon (truth: %.2f deg)" % [
+				flown.banked_deg, flown.residual_deg, flown.true_residual_deg]))
+
+		# R1.2: the aircraft the FC "levelled" is off true level by what the estimator was fooled by
+		# during the 0.4 s hold. In a held bank the specific force lies along the body axis, so the
+		# accelerometer calls it level and pulls the estimate toward the bank at Kp: error <=
+		# banked * (1 - exp(-Kp * t_hold)) for t_hold ~ 0.4 s plus the ~0.2 s of return (the window
+		# still drags it) = 0.6 s. It must be BOTH nonzero (the effect is real: > 1 deg) and no
+		# bigger than that (a gain or sign error would exceed it).
+		var fooled_bound: float = flown.banked_deg * (1.0 - exp(-AttitudeEstimator.DEFAULT_KP * 0.6))
+		results.append(TestResult.new(
+			"the %s's true attitude after the hold is off by the estimator's accel-fooled drift: 1 deg to %.1f deg" % [name, fooled_bound],
+			flown.true_residual_deg > 1.0 and flown.true_residual_deg < fooled_bound,
+			"truth is %.2f deg off level while the FC believes it is level" % flown.true_residual_deg))
 
 		# AngleModeController's LEVEL_P is NOT scaled, on the argument that the outer loop closes on
 		# the inner one and the inner one's time constant is what RateTune holds invariant. This is

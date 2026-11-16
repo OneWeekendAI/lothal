@@ -27,7 +27,7 @@ static func _banked_flight_accelerates_sideways() -> TestResult:
 	var fc := FlightController.new()   # angle mode by default
 
 	for i in int(3.0 / DT):
-		var cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT)
+		var cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, DT)
 		core.step(cmds, DT)
 
 	var lateral_mps := core.rigid_body.velocity_mps.x
@@ -80,11 +80,22 @@ static func _body_yaw_does_not_tilt_a_rolled_drone() -> TestResult:
 ##    hovering hands-off is not a thing anyone does. The original 1 m bound survives intact as
 ##    the control: the SAME aircraft on a pack too large to empty still holds altitude, which is
 ##    what attributes the sink to the state-of-charge term and to nothing else.
+## R1.2: these checks are about the POWER model (sag, ESC loss, state of charge), measured as an
+## altitude. With the stock IMU errors the attitude estimate wanders ~2 degrees in ten seconds, the
+## aircraft drifts sideways at a few m/s, and translational lift then adds ~1 m of climb that has
+## nothing to do with the pack. An IMU with no bias or noise takes that out and changes no band.
+static func _ideal_imu(core: DroneCore) -> DroneCore:
+	core.gyro.bias_rad_s = Vector3.ZERO
+	core.gyro.noise_rad_s = 0.0
+	core.accel.bias_mps2 = Vector3.ZERO
+	core.accel.noise_mps2 = 0.0
+	return core
+
 static func _holds_altitude_at_published_hover_throttle() -> Array:
 	var results: Array = []
 	var hover := ReferenceBuild.hover_throttle()
 
-	var draining := ReferenceBuild.build_drone_core()
+	var draining := _ideal_imu(ReferenceBuild.build_drone_core())
 	var early_climb_rate := _fly_hands_off(draining, hover, 0.5)
 	results.append(TestResult.new(
 		"the published hover throttle hovers: no sink at all in the first half second",
@@ -104,12 +115,12 @@ static func _holds_altitude_at_published_hover_throttle() -> Array:
 	# rate/temperature terms ON, the nominal-voltage throttle is about 0.25 % of thrust short (the
 	# extra current sags the pack a little further), which is -1.24 m in 10 s; that is a physical
 	# loss and is pinned separately below with its own bound, not folded into the SoC attribution.
-	var full := ReferenceBuild.build_drone_core({"off": true})
+	var full := _ideal_imu(ReferenceBuild.build_drone_core({"off": true}))
 	full.powertrain.battery.capacity_mah *= 100000.0
 	_fly_hands_off(full, hover, 10.0)
 	var undrained_drift := full.rigid_body.position_m.y
 
-	var full_loss := ReferenceBuild.build_drone_core()
+	var full_loss := _ideal_imu(ReferenceBuild.build_drone_core())
 	full_loss.powertrain.battery.capacity_mah *= 100000.0
 	_fly_hands_off(full_loss, hover, 10.0)
 	var loss_drift := full_loss.rigid_body.position_m.y
@@ -149,6 +160,6 @@ static func _fly_hands_off(core: DroneCore, throttle: float, seconds: float) -> 
 	var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": throttle}
 	var fc := FlightController.new()   # angle mode by default
 	for _i in int(seconds / DT):
-		var cmds := fc.update(core.rigid_body.orientation, core.gyro.rate_rad_s, rc, DT)
+		var cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, DT)
 		core.step(cmds, DT)
 	return core.rigid_body.velocity_mps.y
