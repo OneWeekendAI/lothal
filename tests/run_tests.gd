@@ -31,16 +31,23 @@ func _init() -> void:
 	# `-- only=a|b|c` runs just those suites from SUITES (the tail runs below still follow): for bisecting
 	# which earlier suite leaves state behind that stalls a later one.
 	var only := PackedStringArray()
+	# `-- notail` skips the tail runs below (tools/run_tests_parallel.sh runs them in exactly one worker).
+	var no_tail := false
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("only="):
 			only = a.substr(5).split("|")
+		elif a == "notail":
+			no_tail = true
 	for suite_name in SUITES:
 		if not only.is_empty() and not (suite_name in only):
 			continue
 		# A start line, so a slow suite (tests/test_one_door.gd opens a whole DesignApp per drone class, ~30 s
 		# each, minutes of silence) names itself instead of looking like a hang after the previous suite.
 		print("[start] %s" % suite_name)
+		var suite_t0 := Time.get_ticks_msec()
 		var results: Array = await _run_suite(suite_name)
+		# Wall time per suite, read by tools/run_tests_parallel.sh to balance shards next run.
+		print("[time] %s | %.1f" % [suite_name, (Time.get_ticks_msec() - suite_t0) / 1000.0])
 		# A suite that returns nothing has crashed, or its class failed to register. Left
 		# unchecked that reads as zero failures, and the runner cheerfully reports success
 		# for tests it never ran — the one outcome a test runner must never produce.
@@ -58,6 +65,14 @@ func _init() -> void:
 			total += 1
 			print("[%s] %s (%s)" % [status, result.name, result.detail])
 
+	if no_tail:
+		print("")
+		print("ALL %d TESTS PASSED" % total if fail_count == 0 else "%d/%d TESTS FAILED" % [fail_count, total])
+		print("[runner] run_tests.gd reached the end of _init(); exiting %d" % (1 if fail_count > 0 else 0))
+		quit(1 if fail_count > 0 else 0)
+		return
+
+	var tail_t0 := Time.get_ticks_msec()
 	# The drawn-build open path, for the same reason and under the same Ruling-71 containment: it
 	# needs a shell whose `_ready` has wired the rails, which takes a tree and frames.
 	var disk_returned: Variant = await _call_disk_changes_run()
@@ -112,6 +127,7 @@ func _init() -> void:
 		total += 1
 		print("[%s] %s (%s)" % [status, result.name, result.detail])
 
+	print("[time] @tail | %.1f" % ((Time.get_ticks_msec() - tail_t0) / 1000.0))
 	print("")
 	if fail_count == 0:
 		print("ALL %d TESTS PASSED" % total)
