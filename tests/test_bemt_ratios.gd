@@ -330,31 +330,35 @@ static func _beyond_the_domain_it_clamps_rather_than_extrapolates(ratios: BemtRa
 # The refusals
 # ---------------------------------------------------------------------------
 
-## Descent is out of domain — vortex ring below the windmill-brake threshold, energy extraction
-## above it — and the table declines it rather than reading a surface that has no negative side.
-## Returning 1.0 is the static answer, which is the model saying "outside the model" in the only
-## currency the tick understands.
+## Pure descent is modelled since R1.5 (vortex ring and windmill brake, see tests/test_vrs.gd for the model's own checks).
+## What this check still owns is the DOMAIN BOUNDARY: a descent whose relative flow is not near-vertical (the in-plane
+## speed sweeps the wake away) must read the static 1.0 exactly as before, so no existing flight moved, and a pure
+## descent must read a finite positive answer at every speed (a pack that charges itself is still a defect).
 ##
-## TO MAKE THIS FAIL: drop the `v_axial_mps < 0.0` branch in `BemtRatios::read`. A negative velocity
-## clamps to mu = 0 and the descent silently reads as a hover — the same number, arrived at without
-## the refusal, which is the difference between declining and guessing.
+## TO MAKE THIS FAIL: drop the `wf == 0.0` early return in `BemtRatios::read` (the flat-descent half goes red), or
+## let `descent_power_ratio` skip its floor (the positive half goes red at 4 vh and beyond).
 static func _descent_is_declined(ratios: BemtRatios) -> TestResult:
-	# Pure vertical descent (no edgewise flow) and fast descent (any edgewise flow) are out of domain and read 1.0.
-	# A gentle descent component in fast edgewise flight is NOT out of domain: see _a_gentle_descent_in_fast_flight_is_continuous.
 	var worst_thrust := 1.0
+	var best_thrust := 1.0
 	var worst_power := 1.0
 	var worst_edge := 1.0
+	var best_edge := 1.0
 	for i in range(1, 61):
-		worst_thrust = minf(worst_thrust, ratios.thrust_ratio(8500.0, -float(i), 0.0))
+		var t := ratios.thrust_ratio(8500.0, -float(i), 0.0)
+		worst_thrust = minf(worst_thrust, t)
+		best_thrust = maxf(best_thrust, t)
 		worst_power = minf(worst_power, ratios.power_ratio(8500.0, -float(i), 0.0))
 		if i >= 12:
-			worst_edge = minf(worst_edge, ratios.power_ratio(8500.0, -float(i), 5.0))
-			worst_edge = minf(worst_edge, ratios.thrust_ratio(8500.0, -float(i), 5.0))
+			# 40 m/s of edgewise flow keeps the descent angle under 70 degrees up to 60 m/s of descent.
+			var e := ratios.power_ratio(8500.0, -float(i), 40.0)
+			var et := ratios.thrust_ratio(8500.0, -float(i), 40.0)
+			worst_edge = minf(worst_edge, minf(e, et))
+			best_edge = maxf(best_edge, maxf(e, et))
 	return TestResult.new(
-		"no pure descent, and no fast descent whatever the edgewise flow, moves either ratio off 1.0",
-		worst_thrust == 1.0 and worst_power == 1.0 and worst_edge == 1.0,
-		"1-60 m/s pure descent: worst thrust %.6f, worst power %.6f; 12-60 m/s descent with 5 m/s edgewise: worst %.6f" % [
-			worst_thrust, worst_power, worst_edge])
+		"a pure descent reads finite, positive ratios at every speed (soft-capped gain); a shallow descent in 40 m/s of edgewise flow still reads exactly 1.0",
+		worst_thrust > 0.0 and worst_power > 0.0 and is_finite(best_thrust) and best_thrust < 2.2 and worst_edge == 1.0 and best_edge == 1.0,
+		"1-60 m/s pure descent: thrust %.3f..%.3f, worst power %.3f; shallow descent in 40 m/s edgewise: %.6f..%.6f" % [
+			worst_thrust, best_thrust, worst_power, worst_edge, best_edge])
 
 
 ## DIAGNOSED 2026-11-11 (CropMerge, mapper at 20 mph with gusts): the body-frame axial velocity of an aircraft in fast
@@ -373,7 +377,7 @@ static func _a_gentle_descent_in_fast_flight_is_continuous(ratios: BemtRatios) -
 	var down_t := ratios.thrust_ratio(rpm, -0.02, 18.0)
 	var up_p := ratios.power_ratio(rpm, 0.02, 18.0)
 	var down_p := ratios.power_ratio(rpm, -0.02, 18.0)
-	var fast := ratios.thrust_ratio(rpm, -60.0, 18.0)
+	var fast := ratios.thrust_ratio(rpm, -30.0, 40.0)
 	return [
 		TestResult.new("a 0.02 m/s climb and a 0.02 m/s descent at 18 m/s edgewise give the same thrust ratio (no step through zero axial)",
 			up_t > 1.1 and absf(up_t - down_t) < 0.02,
@@ -381,7 +385,7 @@ static func _a_gentle_descent_in_fast_flight_is_continuous(ratios: BemtRatios) -
 		TestResult.new("and the same power ratio",
 			absf(up_p - down_p) < 0.02,
 			"+0.02: %.4f  -0.02: %.4f" % [up_p, down_p]),
-		TestResult.new("a 60 m/s descent in the same edgewise flow still reads the static 1.0",
+		TestResult.new("a 30 m/s descent in 40 m/s of edgewise flow (a shallow angle) still reads the static 1.0",
 			fast == 1.0, "thrust ratio %.4f" % fast),
 	]
 

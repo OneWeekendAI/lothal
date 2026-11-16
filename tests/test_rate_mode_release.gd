@@ -16,6 +16,10 @@ static func run() -> Array:
 	var results: Array = []
 
 	var core := ReferenceBuild.build_drone_core()
+	# R1.5: after the one-second flip this open-loop throttle falls through near-vertical descent, where the rotors draw
+	# the vortex-ring thrust fluctuation (a seeded 10 percent RMS random disturbance, tests/test_vrs.gd). This gate is about
+	# the rate loop's own release behaviour, so the random disturbance is held off here; the vortex-ring mean deficit stays on.
+	core.powertrain.vrs_fluctuation_on = false
 	var controller := RateModeController.new()
 	var rate_rad_s := deg_to_rad(ROLL_RATE_DEG_S)
 	var throttle := ReferenceBuild.hover_throttle()

@@ -105,6 +105,14 @@ pub struct Powertrain {
     /// downstream is decided by the body velocity: flying nose-first (-Z) the rear pair is M1 and M3.
     #[var]
     pub rear_thrust_loss: f64,
+    /// R1.5: the vortex-ring thrust fluctuation is drawn when true (default). Off exists so a test can prove the
+    /// fluctuation, rather than the mean deficit, is what a check reads.
+    #[var]
+    pub vrs_fluctuation_on: bool,
+    /// R1.5: one low-passed unit-variance noise state and one xorshift stream per rotor, seeded from a constant so a
+    /// run is repeatable and the four rotors are independent.
+    vrs_noise: [f64; 4],
+    vrs_rng: [u64; 4],
     /// The published observables layer. Created here and shared with DroneCore when one wraps
     /// this — exactly one instance per simulation, bench or flight.
     #[var]
@@ -249,6 +257,33 @@ impl Powertrain {
         if rear { vz < 0.0 } else { vz > 0.0 }
     }
 
+    /// R1.5: the multiplicative vortex-ring thrust fluctuation for rotor `i` this tick. 1.0 outside the band.
+    /// A first-order low-pass at `VRS_FLUCT_HZ` on unit-variance noise, scaled by `VRS_FLUCT_RMS` times the band and
+    /// forward-clearing weight, so the RMS is 10 percent at the peak and fades to zero at the band edges. The exact
+    /// discretisation keeps the stationary variance at one for any dt.
+    fn vrs_fluctuation(&mut self, i: usize, rpm: f64, v_axial: f64, v_edge: f64, dt: f64) -> f64 {
+        if !self.vrs_fluctuation_on {
+            return 1.0;
+        }
+        let w = self.forward_ratios.bind().vrs_weight(rpm, v_axial, v_edge);
+        if w <= 0.0 {
+            return 1.0;
+        }
+        let mut sum = 0.0;
+        for _ in 0..12 {
+            let mut x = self.vrs_rng[i];
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.vrs_rng[i] = x;
+            sum += (x.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64;
+        }
+        let g = sum - 6.0;
+        let a = (-std::f64::consts::TAU * crate::bemt_ratios::VRS_FLUCT_HZ * dt).exp();
+        self.vrs_noise[i] = a * self.vrs_noise[i] + (1.0 - a * a).sqrt() * g;
+        (1.0 + crate::bemt_ratios::VRS_FLUCT_RMS * w * self.vrs_noise[i]).max(0.0)
+    }
+
     fn airspeed_components(&self) -> (f64, f64) {
         let v = self.last_body_velocity_mps;
         let axial = v.y as f64;
@@ -354,6 +389,9 @@ impl Powertrain {
             cutoff_low_s: 0.0,
             last_body_velocity_mps: Vector3::ZERO,
             rear_thrust_loss: 0.0,
+            vrs_fluctuation_on: true,
+            vrs_noise: [0.0; 4],
+            vrs_rng: [0x9E37_79B9_7F4A_7C15, 0xBF58_476D_1CE4_E5B9, 0x94D0_49BB_1331_11EB, 0xD6E8_FEB8_6659_FD93],
             observables,
             avionics_w: 0.0,
             thermal_on: false,
@@ -502,6 +540,7 @@ impl Powertrain {
             self.motor_rpm[i] = rpm;
             let mut thrust = PropellerModel::thrust_n(self.k_t, rpm)
                 * self.forward_ratios.bind().thrust_ratio(rpm, v_axial, v_edge);
+            thrust *= self.vrs_fluctuation(i, rpm, v_axial, v_edge, dt);
             if self.rear_thrust_loss > 0.0 && self.is_downstream(i) {
                 thrust *= BemtRatios::interference_thrust_factor(self.rear_thrust_loss, v_axial, v_edge, rpm, self.prop_radius_m);
             }

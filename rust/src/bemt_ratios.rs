@@ -349,7 +349,7 @@ impl BemtRatios {
     /// thrust it multiplies is zero anyway.
     #[func]
     pub fn thrust_ratio(&self, rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
-        self.read(&self.table.thrust, rpm, v_axial_mps, v_edge_mps)
+        self.read(&self.table.thrust, rpm, v_axial_mps, v_edge_mps, false)
     }
 
     /// The shaft-power ratio — the BEMT-native replacement for the deleted
@@ -357,7 +357,7 @@ impl BemtRatios {
     /// torque both carry. Same three short circuits as `thrust_ratio`.
     #[func]
     pub fn power_ratio(&self, rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
-        let base = self.read(&self.table.power, rpm, v_axial_mps, v_edge_mps);
+        let base = self.read(&self.table.power, rpm, v_axial_mps, v_edge_mps, true);
         base * Self::interference_power_factor(self.interference_loss, v_axial_mps, v_edge_mps, rpm, self.radius_m)
     }
 
@@ -411,6 +411,76 @@ impl BemtRatios {
         1.0 + w * 0.5 * ((1.0 - loss.clamp(0.0, 0.5)).powf(-1.5) - 1.0)
     }
 
+    /// R1.5 — the induced velocity ratio vi/vh for a descent of `x` hover-inflows (x = descent speed / vh, >= 0).
+    /// See `descent_inflow` for the branches and sources.
+    #[func]
+    pub fn descent_inflow_ratio(x: f64) -> f64 {
+        descent_inflow(x)
+    }
+
+    /// R1.5 — the thrust ratio the inflow alone gives at fixed rpm (no flow-breakdown deficit). A GAIN in descent.
+    #[func]
+    pub fn descent_thrust_ratio_inflow_only(x: f64) -> f64 {
+        thrust_from_inflow(x)
+    }
+
+    /// R1.5 — the pure-vertical-descent thrust ratio with the VRS mean deficit applied.
+    #[func]
+    pub fn descent_thrust_ratio_pure(x: f64) -> f64 {
+        descent_thrust_ratio(x)
+    }
+
+    /// R1.5 — the pure-vertical-descent shaft-power ratio.
+    #[func]
+    pub fn descent_power_ratio_pure(x: f64) -> f64 {
+        descent_power_ratio(x)
+    }
+
+    /// R1.5 — 0..1 bell over the VRS band (zero at and outside 0.25 and 1.5 vh, one at 1.0 vh).
+    #[func]
+    pub fn vrs_band_weight(x: f64) -> f64 {
+        vrs_band(x)
+    }
+
+    /// R1.5 — 1 for a near-vertical descent, 0 once the in-plane speed sweeps the wake away.
+    #[func]
+    pub fn vrs_clearing(descent_mps: f64, v_edge_mps: f64) -> f64 {
+        vrs_forward_clear(descent_mps, v_edge_mps)
+    }
+
+    /// R1.5 — what scales the thrust deficit AND the fluctuation at this state: band bell times forward clearing.
+    /// Zero for climb, hover, forward flight and fast descent.
+    #[func]
+    pub fn vrs_weight(&self, rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
+        let omega_r = rpm * std::f64::consts::TAU / 60.0 * self.radius_m;
+        if v_axial_mps >= 0.0 || omega_r <= 0.0 {
+            return 0.0;
+        }
+        let x = -v_axial_mps / (VH_OVER_OMEGA_R * omega_r);
+        vrs_band(x) * vrs_forward_clear(-v_axial_mps, v_edge_mps)
+    }
+
+    #[func]
+    pub fn vrs_mean_deficit() -> f64 {
+        VRS_MEAN_DEFICIT
+    }
+
+    #[func]
+    pub fn vrs_fluct_rms() -> f64 {
+        VRS_FLUCT_RMS
+    }
+
+    #[func]
+    pub fn vrs_fluct_hz() -> f64 {
+        VRS_FLUCT_HZ
+    }
+
+    /// Descent speed of one hover inflow (vh = 0.08 omega R, the same ESTIMATED figure used throughout this file).
+    #[func]
+    pub fn hover_inflow_mps(&self, rpm: f64) -> f64 {
+        VH_OVER_OMEGA_R * rpm * std::f64::consts::TAU / 60.0 * self.radius_m
+    }
+
     /// The tabulated domain, for a test that wants to prove the flight envelope stays inside it
     /// and for a panel that wants to say when it did not.
     #[func]
@@ -437,7 +507,7 @@ impl BemtRatios {
         v_mps / omega_r
     }
 
-    fn read(&self, values: &[f64], rpm: f64, v_axial_mps: f64, v_edge_mps: f64) -> f64 {
+    fn read(&self, values: &[f64], rpm: f64, v_axial_mps: f64, v_edge_mps: f64, is_power: bool) -> f64 {
         if values.is_empty() {
             return 1.0;
         }
@@ -456,17 +526,150 @@ impl BemtRatios {
             // axial velocity of a fast-flying aircraft crossed zero (the CropMerge mapper flip, 2026-11-11). So the edgewise
             // answer at zero axial flow fades out linearly to 1.0 as the descent speed rises to the hover inflow
             // 0.08 omega R (ESTIMATED; the figure the rotor-rotor interference window uses). Pure descent stays exactly 1.0.
-            let x = -v_axial_mps / (0.08 * omega_r);
+            let x = -v_axial_mps / (VH_OVER_OMEGA_R * omega_r);
             let w = (1.0 - x).clamp(0.0, 1.0);
-            if w == 0.0 {
-                return 1.0;
+            let old = if w == 0.0 {
+                1.0
+            } else {
+                let edge = RatioTable::sample(values, 0.0, mu_ed);
+                1.0 + w * (edge - 1.0)
+            };
+            // R1.5: vortex ring and windmill brake. Gated by the inflow angle so that anything but a near-vertical
+            // descent reads exactly what it read before (see `vrs_forward_clear`).
+            let wf = vrs_forward_clear(-v_axial_mps, v_edge_mps);
+            if wf == 0.0 {
+                return old;
             }
-            let edge = RatioTable::sample(values, 0.0, mu_ed);
-            return 1.0 + w * (edge - 1.0);
+            let pure = if is_power { descent_power_ratio(x) } else { descent_thrust_ratio(x) };
+            return old * (1.0 + wf * (pure - 1.0));
         }
         let mu_ax = (v_axial_mps / omega_r).clamp(0.0, MU_MAX);
         RatioTable::sample(values, mu_ax, mu_ed)
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// R1.5 — vortex ring state and windmill braking
+// ---------------------------------------------------------------------------------------------------------------
+//
+// x = descent speed / vh, vh = hover induced velocity. Inflow branches, continuous at every edge:
+//   x < 0.25        momentum theory continued into slow descent, eased onto the fit by 0.25;
+//   0.25 .. 1.5     the Johnson (1980) empirical fit as printed in Leishman, Principles of Helicopter Aerodynamics:
+//                   vi/vh = k + k1 x' + k2 x'^2 + k3 x'^3 + k4 x'^4, x' = Vc/vh = -x, k = 1 (hover = 1, because every
+//                   ratio in this file is relative to the static solve), k1..k4 = -1.125, -1.372, -1.718, -0.655;
+//   1.5 .. 2        eased onto the windmill branch (the fit and the momentum curve differ by 0.03 at 2);
+//   x >= 2          momentum windmill brake: vi/vh = x/2 - sqrt(x^2/4 - 1).
+//
+// THE FIT ALONE IS WRONG ABOUT THRUST. At fixed rpm the net through-disc flow (vi - descent) falls in descent, the blades
+// see a higher angle of attack and the thrust rises: the fit predicts a GAIN. Real vortex ring loses thrust because the
+// flow breaks down, which an inflow fit cannot carry. So, by OWNER DECISION (2026-11-16), two LABELLED ESTIMATES sit on
+// top, both bell-shaped over the band and zero at its edges: a mean thrust deficit (net thrust 15 percent below static at
+// the peak) and a seeded fluctuation of 10 percent RMS band-limited to 3 Hz (Powertrain draws it, one stream per rotor).
+// The constants marked ESTIMATED below are estimates, not measurements, and are the only place they live.
+
+/// ESTIMATED hover inflow ratio vh / (omega R); the figure the rotor-rotor interference window already uses.
+pub const VH_OVER_OMEGA_R: f64 = 0.08;
+/// Band edges and peak, in vh (PUBLISHED: the VRS band of the Johnson fit, 0.25 to 1.5 vh of descent).
+pub const VRS_X_LO: f64 = 0.25;
+pub const VRS_X_PEAK: f64 = 1.0;
+pub const VRS_X_HI: f64 = 1.5;
+/// Windmill branch starts here (the momentum root needs x >= 2).
+pub const WINDMILL_X: f64 = 2.0;
+/// ESTIMATED: peak mean thrust loss against static thrust at the same rpm (owner decision).
+pub const VRS_MEAN_DEFICIT: f64 = 0.15;
+/// ESTIMATED: RMS of the thrust fluctuation at the band peak, as a fraction of thrust (owner decision).
+pub const VRS_FLUCT_RMS: f64 = 0.10;
+/// ESTIMATED: corner of the fluctuation low-pass, Hz.
+pub const VRS_FLUCT_HZ: f64 = 3.0;
+/// ESTIMATED: the wake is swept away between these descent angles measured from the disc plane (degrees): full VRS at
+/// or above the upper, none at or below the lower. A 3 m/s drift against a 6 m/s descent is 63 degrees and clears it.
+pub const VRS_CLEAR_DEG_LO: f64 = 70.0;
+pub const VRS_CLEAR_DEG_HI: f64 = 85.0;
+/// ESTIMATED thrust gain per unit of through-disc-flow change, in vh: dT/T = (vh - through) * this. From blade-element
+/// theory with solidity 0.1, lift slope 5.7 and CT 0.013 (hover inflow ratio 0.08): 0.08 / (2 * 0.045) = 0.89.
+const THRUST_PER_INFLOW: f64 = 0.8889;
+/// ESTIMATED soft ceiling on the thrust GAIN (blade stall): ratio = 1 + CAP * tanh(gain / CAP).
+const THRUST_GAIN_CAP: f64 = 1.0;
+/// ESTIMATED profile (non-induced) share of hover shaft power for the power ratio in descent.
+const PROFILE_SHARE: f64 = 0.35;
+/// ESTIMATED floor under the descent power ratio: this powertrain cannot receive regeneration.
+const DESCENT_POWER_FLOOR: f64 = 0.10;
+
+fn smooth01(t: f64) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn johnson_fit(x: f64) -> f64 {
+    let y = -x;
+    1.0 + y * (-1.125 + y * (-1.372 + y * (-1.718 + y * -0.655)))
+}
+
+fn momentum_descent(x: f64) -> f64 {
+    x * 0.5 + (x * x * 0.25 + 1.0).sqrt()
+}
+
+fn momentum_windmill(x: f64) -> f64 {
+    let r = x * x * 0.25 - 1.0;
+    x * 0.5 - r.max(0.0).sqrt()
+}
+
+/// vi/vh at descent x (hover inflows), continuous on x >= 0.
+pub fn descent_inflow(x: f64) -> f64 {
+    let x = x.max(0.0);
+    if x < VRS_X_LO {
+        let off = johnson_fit(VRS_X_LO) - momentum_descent(VRS_X_LO);
+        momentum_descent(x) + off * smooth01(x / VRS_X_LO)
+    } else if x <= VRS_X_HI {
+        johnson_fit(x)
+    } else if x < WINDMILL_X {
+        let s = smooth01((x - VRS_X_HI) / (WINDMILL_X - VRS_X_HI));
+        johnson_fit(x) * (1.0 - s) + momentum_windmill(WINDMILL_X) * s
+    } else {
+        momentum_windmill(x)
+    }
+}
+
+/// The thrust ratio the inflow alone gives at fixed rpm.
+fn thrust_from_inflow(x: f64) -> f64 {
+    let through = descent_inflow(x) - x;
+    let gain = 1.0 + THRUST_PER_INFLOW * (1.0 - through);
+    if gain > 1.0 { 1.0 + THRUST_GAIN_CAP * ((gain - 1.0) / THRUST_GAIN_CAP).tanh() } else { gain }
+}
+
+/// 0 outside the band, 1 at the peak.
+fn vrs_band(x: f64) -> f64 {
+    if x <= VRS_X_LO || x >= VRS_X_HI {
+        0.0
+    } else if x <= VRS_X_PEAK {
+        smooth01((x - VRS_X_LO) / (VRS_X_PEAK - VRS_X_LO))
+    } else {
+        smooth01((VRS_X_HI - x) / (VRS_X_HI - VRS_X_PEAK))
+    }
+}
+
+/// Pure-vertical thrust ratio: the inflow answer, drawn down to (1 - deficit) at the band peak.
+fn descent_thrust_ratio(x: f64) -> f64 {
+    let b = vrs_band(x);
+    (1.0 - b) * thrust_from_inflow(x) + b * (1.0 - VRS_MEAN_DEFICIT)
+}
+
+/// Pure-vertical shaft-power ratio: profile share plus induced power from the inflow alone (the breakdown loses
+/// thrust, not torque), floored at a positive value.
+fn descent_power_ratio(x: f64) -> f64 {
+    let through = descent_inflow(x) - x;
+    let p = PROFILE_SHARE + (1.0 - PROFILE_SHARE) * thrust_from_inflow(x) * through;
+    p.max(DESCENT_POWER_FLOOR)
+}
+
+/// The standard inflow-angle criterion: VRS needs a near-vertical descent. The angle is that of the relative flow
+/// above the disc plane, atan2(descent, in-plane speed).
+fn vrs_forward_clear(descent_mps: f64, v_edge_mps: f64) -> f64 {
+    if descent_mps <= 0.0 {
+        return 0.0;
+    }
+    let deg = descent_mps.atan2(v_edge_mps.abs()).to_degrees();
+    smooth01((deg - VRS_CLEAR_DEG_LO) / (VRS_CLEAR_DEG_HI - VRS_CLEAR_DEG_LO))
 }
 
 #[cfg(test)]

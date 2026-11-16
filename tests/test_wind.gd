@@ -41,14 +41,21 @@ const DT := 0.001   # 1 kHz, matching physics.md §6
 ## RE-FROZEN at SR1 bucket-depth terms (2026-11-09): the 17 m/s forward pass now pays the published induced-power
 ## factor, profile growth with advance ratio and rear-rotor interference (more current: 4.152 -> 4.440 A), so it
 ## decelerates and sinks a little differently (z 18.319 -> 18.317).
-const GOLDEN_POS := Vector3(0.00000000000000000, -44.71036911010742188, 18.10927009582519531)
-const GOLDEN_VEL := Vector3(0.00000000000000000, -16.94855690002441406, -2.77850961685180664)
-const GOLDEN_ANGVEL := Vector3(2.67796802520751953, 0.00000000000000000, 0.00000000000000000)
-const GOLDEN_ORIENT := Quaternion(-0.26003041863441467, 0.00000000000000000, 0.00000000000000000,
-	-0.96560043096542358)
-const GOLDEN_GFORCE := 1.78042731639928165
-const GOLDEN_CURRENT := 4.43824446417875773
-const GOLDEN_AIRSPEED := 17.17479896545410156
+const GOLDEN_POS := Vector3(0.00000000000000000, -44.52101898193359375, 18.13430595397949219)
+const GOLDEN_VEL := Vector3(0.00000000000000000, -15.59248447418212891, -2.52507400512695312)
+const GOLDEN_ANGVEL := Vector3(2.78085446357727051, 0.00000000000000000, 0.00000000000000000)
+const GOLDEN_ORIENT := Quaternion(-0.26655039191246033, 0.00000000000000000, 0.00000000000000000,
+	-0.96382099390029907)
+const GOLDEN_GFORCE := 1.65642029648527078
+const GOLDEN_CURRENT := 4.45924933570694559
+const GOLDEN_AIRSPEED := 15.79561805725097656
+## RE-FROZEN at R1.5 (2026-11-16): vortex ring state and windmill braking are modelled. The open-loop 5 s tumble passes
+## through near-vertical descent at 0.25 to 1.5 hover inflows, where the rotors now carry the mean thrust deficit and the
+## seeded fluctuation (rust/src/bemt_ratios.rs, R1.5 block; powertrain.rs vrs_fluctuation). CAUSE CONFIRMED, not assumed:
+## with the inflow-angle gate forced to zero (VRS off) the previous literals reproduce bit for bit (47/47 green). OLD -> NEW:
+## pos y -44.71037 -> -44.52102, z 18.10927 -> 18.13431; vel y -16.94856 -> -15.59248, z -2.77851 -> -2.52507; angvel x
+## 2.677968 -> 2.780854; orient x -0.26003 -> -0.26655; g 1.78043 -> 1.65642; current 4.43824 -> 4.45925 A; airspeed
+## 17.17480 -> 15.79562 m/s (the tumbling airframe sheds speed faster once its descending rotors brake in the windmill state).
 ## RE-FROZEN at R1.4 A2 (2026-11-16): the motor sub-step is now trapezoidal (second order) in rpm and in pack charge, removing the 1.3 percent
 ## charge truncation. CAUSE CONFIRMED: the previous literals reproduce with the old motor.rs. OLD -> NEW: pos y -44.71035 -> -44.71037,
 ## z 18.10926 -> 18.10927; vel y -16.94854 -> -16.94856, z -2.77848 -> -2.77851; angvel x 2.677972 -> 2.677968; current 4.43822 -> 4.43824 A.

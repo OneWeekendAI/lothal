@@ -224,6 +224,7 @@ static func _the_power_curve_has_a_minimum(build: Build) -> TestResult:
 ## factor goes negative, and a quad in a 30 m/s descent CHARGES ITS OWN PACK. That is not a
 ## hypothetical: it is how this was found, as a battery that gained charge during a test flight.
 static func _descent_is_declined_rather_than_guessed(build: Build) -> TestResult:
+	# R1.5: descent is modelled now (vortex ring, windmill); what this still guards is that no speed pays the pack back.
 	var ratios := build.forward_ratios()
 	var rpm := 8500.0
 	var worst := 1.0
@@ -231,9 +232,9 @@ static func _descent_is_declined_rather_than_guessed(build: Build) -> TestResult
 		var factor := ratios.power_ratio(rpm, -float(i), 0.0)
 		worst = minf(worst, factor)
 	return TestResult.new(
-		"no descent, however fast, produces negative power (a pack that charges itself)",
-		worst == 1.0,
-		"power factor over a 1-60 m/s descent never leaves 1.0 (min %.4f)" % worst
+		"no descent, however fast, produces negative power (a pack that charges itself); the windmill floor holds",
+		worst >= 0.099 and worst <= 1.0,
+		"power factor over a 1-60 m/s descent never goes below the 0.10 floor (min %.4f)" % worst
 	)
 
 
