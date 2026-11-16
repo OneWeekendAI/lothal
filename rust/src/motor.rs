@@ -177,14 +177,21 @@ impl MotorModel {
             if !clipped {
                 df -= kt * kt / (r * j);
             }
-            let dw = h * f / (1.0 - h * df);
+            let dw = h * f / (1.0 - 0.5 * h * df);
+            let w0 = w;
             w = (w + dw).max(0.0);
-            // Pack side, at the end-of-substep speed.
-            let duty = if v_supply > 0.0 { ((kt * w + i * r) / v_supply).clamp(0.0, 1.0) } else { 0.0 };
-            i_sum += i;
-            if i > 0.0 {
-                pack_sum += i * duty;
-            }
+            // Pack side. The rpm step is implicit (end-of-substep speed) but the winding current it
+            // used is the START-of-substep one, so charging i(w0) alone truncates the integral
+            // (about 1.3% on a full-authority punch, R1.4 follow-up). The substep's charge is the
+            // trapezoid of the pack current at both ends: second order, and it equals the sum over
+            // the substeps by construction.
+            let pack_at = |wv: f64, iv: f64| -> f64 {
+                let duty = if v_supply > 0.0 { ((kt * wv + iv * r) / v_supply).clamp(0.0, 1.0) } else { 0.0 };
+                if iv > 0.0 { iv * duty } else { 0.0 }
+            };
+            let i_end = ((v_app - kt * w) / r).clamp(i_lo, i_cap);
+            i_sum += 0.5 * (i + i_end);
+            pack_sum += 0.5 * (pack_at(w0, i) + pack_at(w, i_end));
         }
         let nf = n as f64;
         PackedFloat64Array::from([w / rad, i_sum / nf,

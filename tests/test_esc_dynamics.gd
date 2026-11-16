@@ -256,8 +256,8 @@ static func _test_plant_converges_with_dt() -> TestResult:
 		trunc_rpm = maxf(trunc_rpm, absf(half_ms[i] - fine[i]) / maxf(fine[i], 1.0))
 	var trunc_q: float = absf(charge[0.5] - charge[0.05]) / charge[0.05]
 	return TestResult.new(
-		"plant converges with dt: 4/2/1 ms steps equal the 0.5 ms run (0.1% rpm and charge), and 0.5 ms is within 0.5% rpm / 2% charge of a 0.05 ms run",
-		worst_rpm < 0.001 and worst_q < 0.001 and trunc_rpm < 0.005 and trunc_q < 0.02,
+		"plant converges with dt: 4/2/1 ms steps equal the 0.5 ms run (0.1% rpm and charge), and 0.5 ms is within 0.5% rpm / 0.1% charge of a 0.05 ms run (charge conserved through the sub-step)",
+		worst_rpm < 0.001 and worst_q < 0.001 and trunc_rpm < 0.005 and trunc_q < 0.001,
 		"loop-rate error: rpm %.4f%%, charge %.4f%%; sub-step truncation: rpm %.3f%%, charge %.3f%%" % [
 			worst_rpm * 100.0, worst_q * 100.0, trunc_rpm * 100.0, trunc_q * 100.0])
 

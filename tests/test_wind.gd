@@ -41,14 +41,17 @@ const DT := 0.001   # 1 kHz, matching physics.md §6
 ## RE-FROZEN at SR1 bucket-depth terms (2026-11-09): the 17 m/s forward pass now pays the published induced-power
 ## factor, profile growth with advance ratio and rear-rotor interference (more current: 4.152 -> 4.440 A), so it
 ## decelerates and sinks a little differently (z 18.319 -> 18.317).
-const GOLDEN_POS := Vector3(0.00000000000000000, -44.71035003662109375, 18.10926246643066406)
-const GOLDEN_VEL := Vector3(0.00000000000000000, -16.94854164123535156, -2.77847886085510254)
-const GOLDEN_ANGVEL := Vector3(2.67797231674194336, 0.00000000000000000, 0.00000000000000000)
-const GOLDEN_ORIENT := Quaternion(-0.26003316044807434, 0.00000000000000000, 0.00000000000000000,
-	-0.96559971570968628)
-const GOLDEN_GFORCE := 1.78042381667701943
-const GOLDEN_CURRENT := 4.43821951825290562
-const GOLDEN_AIRSPEED := 17.17477798461914062
+const GOLDEN_POS := Vector3(0.00000000000000000, -44.71036911010742188, 18.10927009582519531)
+const GOLDEN_VEL := Vector3(0.00000000000000000, -16.94855690002441406, -2.77850961685180664)
+const GOLDEN_ANGVEL := Vector3(2.67796802520751953, 0.00000000000000000, 0.00000000000000000)
+const GOLDEN_ORIENT := Quaternion(-0.26003041863441467, 0.00000000000000000, 0.00000000000000000,
+	-0.96560043096542358)
+const GOLDEN_GFORCE := 1.78042731639928165
+const GOLDEN_CURRENT := 4.43824446417875773
+const GOLDEN_AIRSPEED := 17.17479896545410156
+## RE-FROZEN at R1.4 A2 (2026-11-16): the motor sub-step is now trapezoidal (second order) in rpm and in pack charge, removing the 1.3 percent
+## charge truncation. CAUSE CONFIRMED: the previous literals reproduce with the old motor.rs. OLD -> NEW: pos y -44.71035 -> -44.71037,
+## z 18.10926 -> 18.10927; vel y -16.94854 -> -16.94856, z -2.77848 -> -2.77851; angvel x 2.677972 -> 2.677968; current 4.43822 -> 4.43824 A.
 ## RE-FROZEN at R1.4 (2026-11-16), same capture, because ESC/motor dynamics are now ON by default (Build.esc_dynamics): the motor is
 ## the electromechanical model (back-EMF, winding resistance, current limit, braking) instead of a first-order lag, so the 5 s tumble's
 ## rpm history, and with it the thrust, differ in the fifth digit. CAUSE CONFIRMED, not assumed: with Build.esc_dynamics = false the
