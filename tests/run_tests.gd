@@ -18,7 +18,7 @@ const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "tw
 	"custom frames", "custom motors", "custom propellers", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "room host", "project", "project menu", "project container", "project wiring", "projects delete",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "fitted frame", "drawn frame persists", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "field page",
-	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "stl writer", "propulsion export", "guard row", "mount row", "camera view", "part finder",
+	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "esc dynamics", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "stl writer", "propulsion export", "guard row", "mount row", "camera view", "part finder",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
@@ -268,6 +268,7 @@ func _run_suite(suite_name: String) -> Array:
 		"bemt forward": return TestBemtForward.run()
 		"propulsion panel": return TestPropulsionPanel.run()
 		"motor spin up": return TestMotorSpinUp.run()
+		"esc dynamics": return TestEscDynamics.run()
 		"soft mount": return TestSoftMount.run()
 		"bemt ratios": return TestBemtRatios.run()
 		"stl writer": return TestStlWriter.run()

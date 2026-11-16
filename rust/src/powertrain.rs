@@ -139,6 +139,14 @@ pub struct Powertrain {
     /// Heat shed by one motor's winding at the last thermal update, W (for the panels and tests).
     #[var]
     pub last_motor_loss_w: f64,
+    /// R1.4. Mean winding current of ONE motor over the last step, per motor, A (signed; negative
+    /// is ESC braking). Only meaningful while the motor's dynamics are on; the thermal path reads it.
+    #[var]
+    pub motor_winding_a: PackedFloat64Array,
+    /// R1.4. Pack-side current each thruster drew over the last step, A (what publish() reports
+    /// per motor while dynamics are on, so the per-motor figures still sum to the pack current).
+    #[var]
+    pub motor_pack_a: PackedFloat64Array,
 }
 
 impl Powertrain {
@@ -159,13 +167,18 @@ impl Powertrain {
         if rm <= 0.0 || kv <= 0.0 {
             return;
         }
+        let dynamics = self.motor_model.bind().dynamics_on();
         let mut loss = 0.0;
         let mut rpm_sum = 0.0;
         let mut thrust_sum = 0.0;
         for i in 0..4 {
             let rpm = self.motor_rpm[i];
             let ratio = self.forward_ratios.bind().power_ratio(rpm, v_axial, v_edge);
-            let i_w = self.motor_model.bind().dc_current_at_rpm(rpm) / count * ratio;
+            let i_w = if dynamics {
+                self.motor_winding_a[i] * ratio
+            } else {
+                self.motor_model.bind().dc_current_at_rpm(rpm) / count * ratio
+            };
             loss += i_w * i_w * rm * scale
                 + crate::motor::io_impl(io, io_v, kv, rpm) * rpm / kv;
             rpm_sum += rpm;
@@ -184,6 +197,26 @@ impl Powertrain {
         self.winding_c = tw;
         self.bell_c = tb;
         self.apply_rm_temperature();
+    }
+
+    /// R1.4. Re-derives the dynamic path's stored per-motor currents from the stored rpm, as the
+    /// steady (no transient) figures: used wherever rpm is placed rather than integrated (prime,
+    /// set_motor_rpm_at), so a republish stays idempotent and consistent.
+    fn sync_dynamic_currents_to_rpm(&mut self) {
+        let (count, dynamics) = {
+            let mm = self.motor_model.bind();
+            (mm.dc_count.max(1.0), mm.dynamics_on())
+        };
+        if !dynamics {
+            return;
+        }
+        let (v_axial, v_edge) = self.airspeed_components();
+        for i in 0..4 {
+            let rpm = self.motor_rpm[i];
+            let ratio = self.forward_ratios.bind().power_ratio(rpm, v_axial, v_edge);
+            self.motor_winding_a[i] = self.motor_model.bind().dc_current_at_rpm(rpm) / count;
+            self.motor_pack_a[i] = self.current_at_rpm_on(rpm, self.current_supply_v) * ratio;
+        }
     }
 
     fn make_observables() -> Gd<godot::classes::RefCounted> {
@@ -336,6 +369,8 @@ impl Powertrain {
             th_stator_h_mm: 0.0,
             th_acc_s: 0.0,
             last_motor_loss_w: 0.0,
+            motor_winding_a: PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0]),
+            motor_pack_a: PackedFloat64Array::from([0.0, 0.0, 0.0, 0.0]),
         });
         pt.bind_mut().publish();
         pt
@@ -406,6 +441,7 @@ impl Powertrain {
         for i in 0..4 {
             self.motor_rpm[i] = rpm;
         }
+        self.sync_dynamic_currents_to_rpm();
         self.publish();
     }
 
@@ -447,13 +483,22 @@ impl Powertrain {
         let mut total_current_a = 0.0;
         let mut thrusts = [0.0f64; 4];
 
+        let dynamics = self.motor_model.bind().dynamics_on();
         for i in 0..4 {
-            let rpm = self.motor_model.bind().step(
-                self.motor_rpm[i],
-                if self.cutoff_latched { 0.0 } else { motor_throttle_cmds[i] },
-                self.last_voltage_v,
-                dt,
-            );
+            let cmd = if self.cutoff_latched { 0.0 } else { motor_throttle_cmds[i] };
+            let mut pack_a = 0.0;
+            let rpm = if dynamics {
+                // R1.4: voltage- and current-limited electromechanical response; its pack current
+                // (spin-up transient included) is what drains and sags the battery below.
+                let out = self.motor_model.bind().step_dynamic(
+                    self.motor_rpm[i], cmd, self.last_voltage_v, dt);
+                self.motor_winding_a[i] = out[1];
+                pack_a = out[2] * self.forward_ratios.bind().power_ratio(out[0], v_axial, v_edge);
+                self.motor_pack_a[i] = pack_a;
+                out[0]
+            } else {
+                self.motor_model.bind().step(self.motor_rpm[i], cmd, self.last_voltage_v, dt)
+            };
             self.motor_rpm[i] = rpm;
             let mut thrust = PropellerModel::thrust_n(self.k_t, rpm)
                 * self.forward_ratios.bind().thrust_ratio(rpm, v_axial, v_edge);
@@ -461,7 +506,11 @@ impl Powertrain {
                 thrust *= BemtRatios::interference_thrust_factor(self.rear_thrust_loss, v_axial, v_edge, rpm, self.prop_radius_m);
             }
             thrusts[i] = thrust;
-            total_current_a += self.current_in_flight_at_rpm(rpm, v_axial, v_edge);
+            total_current_a += if dynamics {
+                pack_a
+            } else {
+                self.current_in_flight_at_rpm(rpm, v_axial, v_edge)
+            };
         }
         self.observables.set(
             "thrust_n",
@@ -528,6 +577,7 @@ impl Powertrain {
         let power_ratio_at = |rpm: f64| self.forward_ratios.bind()
             .power_ratio(rpm, v_axial, v_edge);
 
+        let dynamics = self.motor_model.bind().dynamics_on();
         let mut total_thrust = 0.0;
         for i in 0..4 {
             let rpm = self.motor_rpm[i];
@@ -539,7 +589,11 @@ impl Powertrain {
             let reaction_nm = PropellerModel::reaction_torque_n_m(self.k_q, rpm)
                 * power_ratio_at(rpm);
             reaction.push(reaction_nm);
-            current.push(self.current_at_rpm_on(rpm, self.current_supply_v) * power_ratio_at(rpm));
+            current.push(if dynamics {
+                self.motor_pack_a[i]
+            } else {
+                self.current_at_rpm_on(rpm, self.current_supply_v) * power_ratio_at(rpm)
+            });
             // Recomputed from stored rpm like everything else in this function, so a republish
             // is still idempotent — the value step() published this tick, read back the same.
             total_thrust += thrust_arr[i] as f64;
@@ -567,5 +621,6 @@ impl Powertrain {
     #[func]
     fn set_motor_rpm_at(&mut self, index: i64, rpm: f64) {
         self.motor_rpm[index as usize] = rpm;
+        self.sync_dynamic_currents_to_rpm();
     }
 }

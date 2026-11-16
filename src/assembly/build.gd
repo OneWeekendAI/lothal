@@ -1819,7 +1819,33 @@ func motor_model() -> MotorModel:
 	if uses_dc_motor():
 		var a := _dc_args()
 		mm.set_dc(a[1], a[2], a[3], a[4])
+		# R1.4: the electromechanical response replaces the first-order lag on the DC model. J is the
+		# same J_rotor + J_blades P7 divided into tau; the current limit and braking mode are the
+		# ESC settings below. A build whose J cannot be computed keeps the P7 lag (identity).
+		var j_total := float(spin_up().get("j_total_kg_m2", 0.0)) if esc_dynamics else 0.0
+		if j_total > 0.0:
+			mm.set_dynamics(j_total, esc_current_limit_a(), ESC_ACTIVE_BRAKING)
 	return mm
+
+
+## R1.4: fly the electromechanical ESC/motor model instead of P7's first-order lag. OFF by default
+## (owner decision pending): switched on it moves pins that were calibrated on the lag -- the SR4
+## 250-vs-500 Hz energy bound (1.7% vs 1%, the asymmetric actuator is loop-rate sensitive), the
+## catalog settling band (15.9% vs 13%, 8in cinelifter yaw), the F7 trajectory goldens and the
+## reference plant alpha. See REALISM_TRACKER.md R1.4.
+var esc_dynamics := false
+
+## R1.4 ESC setting: active braking (damped light). ESTIMATED default ON; the common FPV ESC default.
+const ESC_ACTIVE_BRAKING := true
+## R1.4 ESTIMATE, no data: the ESC's phase-current limit as a multiple of the motor's rated amps.
+## Real ESCs are rated near the motor's burst figure; 2x is a class-typical guess (1.5x slows a 500 deg/s roll step past its 100 ms pin). The limit never
+## clips below the commanded steady-state current (see MotorModel.esc_i_limit_a).
+const ESC_LIMIT_PER_RATED_AMPS := 2.0
+
+
+## ESC current limit per motor, A. 0 (no limit) when the motor lists no rated amps.
+func esc_current_limit_a() -> float:
+	return ESC_LIMIT_PER_RATED_AMPS * float(motor["specs"].get("max_amps", 0.0))
 
 
 ## The τ this build hands to MotorModel. Derived at the hover operating point when the build

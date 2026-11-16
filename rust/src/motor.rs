@@ -64,6 +64,24 @@ pub struct MotorModel {
     /// Copper resistance multiplier from winding temperature, 1.0 at 25 C. Set by the thermal model.
     #[var]
     pub rm_temp_scale: f64,
+    /// R1.4. Total rotor inertia J = J_rotor + J_blades, kg m^2. 0 = dynamics off: `step` is the
+    /// first-order lag with `tau_s` (the P7 path, still the answer for a probe or a stub). Above
+    /// 0 (and with the DC model set), `step_dynamic` integrates J dw/dt = Kt (i - Io) - k_q w^2
+    /// from the supply voltage, so spin-up is limited by voltage and current, not by a tau.
+    #[var]
+    pub dyn_j_kg_m2: f64,
+    /// R1.4. ESC phase-current limit, A per motor; 0 = none. ESTIMATED when no datasheet figure is
+    /// known (Build uses 2 x the motor's rated amps). The ESC is never allowed to clip BELOW the
+    /// current the commanded operating point needs in steady state, so the limit only ever shapes
+    /// transients (a punch from rest), never the steady thrust the k_t fit was made at.
+    #[var]
+    pub esc_i_limit_a: f64,
+    /// R1.4. ESC setting: active braking (damped light / complementary PWM). On, the ESC may drive
+    /// current backwards through the winding (up to the same limit) so a throttle chop brakes the
+    /// rotor; off, the winding current cannot reverse and the rotor coasts down on prop drag and
+    /// iron/friction loss alone. Default on is ESTIMATED (damped light is the common FPV default).
+    #[var]
+    pub esc_active_braking: bool,
 }
 
 #[godot_api]
@@ -94,7 +112,83 @@ impl MotorModel {
             esc_r_ohm: 0.0,
             esc_sw_frac: 0.0,
             rm_temp_scale: 1.0,
+            dyn_j_kg_m2: 0.0,
+            esc_i_limit_a: 0.0,
+            esc_active_braking: true,
         })
+    }
+
+    /// R1.4. Turns on the electromechanical response (needs `set_dc` too). `j_kg_m2 <= 0` turns it
+    /// back off. `i_limit_a <= 0` means no ESC current limit.
+    #[func]
+    pub fn set_dynamics(&mut self, j_kg_m2: f64, i_limit_a: f64, active_braking: bool) {
+        self.dyn_j_kg_m2 = j_kg_m2;
+        self.esc_i_limit_a = i_limit_a;
+        self.esc_active_braking = active_braking;
+    }
+
+    #[func]
+    pub fn dynamics_on(&self) -> bool {
+        self.dyn_j_kg_m2 > 0.0 && self.uses_dc()
+    }
+
+    /// R1.4. One dt of the electrical + mechanical motor model. Returns
+    /// [rpm, mean winding current of ONE motor (A, signed), mean PACK current of the thruster (A)].
+    ///
+    /// The ESC applies V = throttle * v_supply (duty). The winding current is
+    /// i = (V - Ke w) / R (inductance neglected: the electrical time constant is ~100 us), clipped
+    /// to [0 or -limit, limit]. Shaft torque Kt (i - Io(w)) less the prop load k_q w^2 accelerates
+    /// J. Integrated by linearised backward Euler in <= 0.5 ms sub-steps, so it is stable through
+    /// the stiff back-EMF term at any dt. The pack sees duty * i (the ESC is a buck converter, power
+    /// in = power out) times (1 + switching loss), only while i > 0: braking current circulates in
+    /// the winding and ESC and is dissipated there, it does not recharge the pack (named
+    /// simplification; FPV ESCs have no path for it beyond the bus capacitor).
+    #[func]
+    pub fn step_dynamic(&self, rpm0: f64, throttle_cmd: f64, v_supply: f64, dt: f64) -> PackedFloat64Array {
+        let kt = kt_impl(self.kv).max(1e-12);
+        let r = self.series_r_ohm().max(1e-6);
+        let rad = std::f64::consts::TAU / 60.0;
+        let t = throttle_cmd.clamp(0.0, self.max_throttle);
+        let v_app = t * v_supply.max(0.0);
+        let j = self.dyn_j_kg_m2.max(1e-12);
+        let k_q = self.dc_k_q.max(0.0);
+        // Floor on the limit: the steady current of the commanded point (see esc_i_limit_a).
+        let i_cap = if self.esc_i_limit_a > 0.0 {
+            let ss = solve_point(v_app, self.kv, r, self.dc_io_a, self.dc_io_v, k_q).current_a;
+            self.esc_i_limit_a.max(1.05 * ss)
+        } else {
+            f64::INFINITY
+        };
+        let i_lo = if self.esc_active_braking { -i_cap } else { 0.0 };
+        let n = ((dt / 5.0e-4).ceil() as usize).clamp(1, 40);
+        let h = dt / n as f64;
+        let mut w = rpm0.max(0.0) * rad;
+        let (mut i_sum, mut pack_sum) = (0.0, 0.0);
+        for _ in 0..n {
+            let rpm = w / rad;
+            let i_raw = (v_app - kt * w) / r;
+            let i = i_raw.clamp(i_lo, i_cap);
+            let clipped = i != i_raw;
+            let io = io_impl(self.dc_io_a, self.dc_io_v, self.kv, rpm);
+            let io_slope = (io_impl(self.dc_io_a, self.dc_io_v, self.kv, rpm + 1.0)
+                - io_impl(self.dc_io_a, self.dc_io_v, self.kv, rpm)) / rad;
+            let f = (kt * (i - io) - k_q * w * w) / j;
+            let mut df = (-kt * io_slope - 2.0 * k_q * w) / j;
+            if !clipped {
+                df -= kt * kt / (r * j);
+            }
+            let dw = h * f / (1.0 - h * df);
+            w = (w + dw).max(0.0);
+            // Pack side, at the end-of-substep speed.
+            let duty = if v_supply > 0.0 { ((kt * w + i * r) / v_supply).clamp(0.0, 1.0) } else { 0.0 };
+            i_sum += i;
+            if i > 0.0 {
+                pack_sum += i * duty;
+            }
+        }
+        let nf = n as f64;
+        PackedFloat64Array::from([w / rad, i_sum / nf,
+            self.dc_count * (1.0 + self.esc_sw_frac) * pack_sum / nf])
     }
 
     /// Switches this motor to the DC (Kv, Rm, Io) model for the drone. `rm_ohm <= 0` switches it
