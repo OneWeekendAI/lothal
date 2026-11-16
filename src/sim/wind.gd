@@ -58,6 +58,25 @@ extends RefCounted
 ##    Four height bins (3, 10, 30, 100 m) are filtered once and interpolated in log height, so the
 ##    whole field costs 40 filter states at 100 Hz, not per query point.
 ##
+## ---------------------------------------------------------------------------
+## R1.6: DISCRETE 1-COSINE GUST AND OBSTACLE WAKE
+## ---------------------------------------------------------------------------
+##
+## DISCRETE GUST (MIL-HDBK-1797 / MIL-F-8785C "1-cosine"): v(s) = A/2 (1 - cos(pi s / d)) for 0 <= s <= 2d, where s is the
+## distance behind the gust front and d the gust length (the ramp). The front is carried downwind at the local mean speed
+## (frozen turbulence, Taylor), so a point at along-wind coordinate xi sees s = U (t - t0) - xi. The gust adds to the wind
+## velocity along the downwind, crosswind or vertical axis. `add_discrete_gust()`; none by default.
+##
+## OBSTACLE WAKE / SHADOW (`set_obstacles()`, off when the list is empty). In the lee of an obstacle of height H the mean wind
+## is reduced and the turbulence raised, fading linearly to nothing at WAKE_LENGTH_HEIGHTS * H downwind of the lee face.
+## The numbers are LABELLED ESTIMATES in the spirit of wind-engineering wake surveys (typical cavity/wake lengths 5-10 H),
+## not a CFD result: WAKE_LENGTH_HEIGHTS = 7.5 (mid of 5-10), WAKE_DEFICIT = 0.7 of the free mean at the lee face,
+## WAKE_TI = 0.3 (wake turbulence sigma as a fraction of the free mean wind at the lee face), lateral spread 0.1 per unit
+## downwind distance either side of the obstacle's own width, vertical extent H + 0.1 x, edges tapering over 0.5 H.
+## Shape: s = (1 - x/L) times the lateral and vertical tapers; mean x (1 - deficit s); sigma_wake = TI s U_free, taken from
+## the same frozen Dryden unit field (so it is seeded, advected and spatially correlated like the rest of the turbulence).
+## The obstacle's footprint is its axis-aligned box (`Obstacle.aabb()`), so a yawed obstacle shadows its bounding box.
+##
 ## Everything is a function of the seed (own RandomNumberGenerator); `reset()` re-seeds.
 
 enum Model { DRYDEN, FIRST_ORDER }
@@ -86,6 +105,13 @@ const DT_S := 0.01                 # turbulence field step, 100 Hz
 const HISTORY_S := 60.0            # how far upstream/downstream a point may be, +-30 s of travel
 const BIN_HEIGHTS_M := [3.048, 10.0, 30.0, 100.0]
 const REFERENCE_LENGTH_TAU_S := 2.5
+
+const WAKE_LENGTH_HEIGHTS := 7.5   # ESTIMATE, 5-10 obstacle heights
+const WAKE_DEFICIT := 0.7          # ESTIMATE, fraction of the free mean removed at the lee face
+const WAKE_TI := 0.3               # ESTIMATE, wake sigma / free mean at the lee face
+const WAKE_SPREAD := 0.1           # ESTIMATE, lateral half-width growth per metre downwind
+const WAKE_EDGE_HEIGHTS := 0.5     # ESTIMATE, taper width in obstacle heights
+enum GustAxis { ALONG, ACROSS, VERTICAL }
 
 const DEFAULT_GUST_TAU_S := Conditions.DEFAULT_GUST_TAU_S
 const DEFAULT_SEED := 0x10FA2   # distinct from Gyro's, so the two streams never correlate
@@ -125,6 +151,9 @@ var _hist: PackedFloat32Array       # ring: slot * (4 bins * 6) + bin * 6 + stre
 var _slots := 0
 var _head := 0                      # slot written last
 var _acc := 0.0
+var _t := 0.0                       # time since reset, s (discrete gusts)
+var _gusts: Array = []              # {t0, amp, len, axis}
+var _obstacles: Array = []          # Obstacle
 
 
 func _init(p_conditions: Conditions, p_gust_tau_s := DEFAULT_GUST_TAU_S,
@@ -231,7 +260,7 @@ func _reset_field() -> void:
 	_hist.resize(_slots * 24)
 	_head = 0
 	_acc = 0.0
-	if gustiness_mps <= 0.0:
+	if not _field_needed():
 		return
 	# Burn in over the whole history so the field is stationary and every delay is filled.
 	for _k in _slots:
@@ -263,9 +292,78 @@ func _step_field() -> void:
 			_hist[base + b * 6 + st * 3 + 2] = (1.0 - s3) * _x[o + 4] + s3 * _x[o + 3]
 
 
-## Turbulence vector (world frame) at a point, from the stored field.
+func _field_needed() -> bool:
+	return gustiness_mps > 0.0 or not _obstacles.is_empty()
+
+
+## Obstacles whose lee is sheltered (R1.6). Pass an empty list to remove the wake.
+func set_obstacles(list: Array) -> void:
+	if list.is_empty() and _obstacles.is_empty():
+		return
+	_obstacles = list.duplicate()
+	if model == Model.DRYDEN:
+		_rng.seed = _seed
+		_reset_field()
+
+
+## A discrete 1-cosine gust: `amplitude_mps` peak (signed), `length_m` = ramp length d (total 2d), front reaching the
+## origin at `start_s` seconds after reset, along `axis` (GustAxis).
+func add_discrete_gust(amplitude_mps: float, length_m: float, start_s := 0.0, axis: int = GustAxis.ALONG) -> void:
+	_gusts.append({"t0": start_s, "amp": amplitude_mps, "len": maxf(length_m, 0.01), "axis": axis})
+
+
+## The 1-cosine profile at distance `s` behind the front.
+static func one_minus_cosine(amp: float, length_m: float, s: float) -> float:
+	if s <= 0.0 or s >= 2.0 * length_m:
+		return 0.0
+	return 0.5 * amp * (1.0 - cos(PI * s / length_m))
+
+
+func _gust_at(height_m: float, along: float) -> Vector3:
+	var out := Vector3.ZERO
+	if _gusts.is_empty():
+		return out
+	var u := clampf(mean_speed_at(height_m), V_MIN_MPS, V_MAX_MPS)
+	for g in _gusts:
+		var v := one_minus_cosine(g["amp"], g["len"], u * (_t - g["t0"]) - along)
+		match int(g["axis"]):
+			GustAxis.ALONG: out += _dir * v
+			GustAxis.ACROSS: out += _cross * v
+			_: out += Vector3(0, v, 0)
+	return out
+
+
+## Wake of every obstacle at a point: [mean_factor (1 = free), sigma_fraction (wake sigma / free mean)].
+func wake_at(pos: Vector3, height_m: float) -> Array:
+	var factor := 1.0
+	var ti := 0.0
+	for o in _obstacles:
+		var box: AABB = o.aabb()
+		var hgt := box.size.y
+		if hgt <= 0.0:
+			continue
+		var c := box.get_center()
+		var rel := pos - c
+		var ext_along := 0.5 * (absf(_dir.x) * box.size.x + absf(_dir.z) * box.size.z)
+		var ext_cross := 0.5 * (absf(_cross.x) * box.size.x + absf(_cross.z) * box.size.z)
+		var x := rel.dot(_dir) - ext_along
+		var y := absf(rel.dot(_cross))
+		var length := WAKE_LENGTH_HEIGHTS * hgt
+		if x <= 0.0 or x >= length:
+			continue
+		var edge := WAKE_EDGE_HEIGHTS * hgt
+		var half_w := ext_cross + WAKE_SPREAD * x
+		var top := hgt + WAKE_SPREAD * x
+		var sh := (1.0 - x / length) * clampf(1.0 - (y - half_w) / edge, 0.0, 1.0) \
+			* clampf(1.0 - (height_m - top) / edge, 0.0, 1.0)
+		factor *= 1.0 - WAKE_DEFICIT * sh
+		ti += WAKE_TI * sh
+	return [factor, ti]
+
+
+## Turbulence vector (world frame) at a point, from the stored field. `unit` returns unit variance on every axis.
 ## `along` and `across` are the point's coordinates along the downwind and crosswind axes.
-func _turbulence_at(height_m: float, along: float, across: float) -> Vector3:
+func _turbulence_at(height_m: float, along: float, across: float, unit := false) -> Vector3:
 	var h := clampf(height_m, MIN_HEIGHT_M, MAX_HEIGHT_M)
 	var fb := (log(h) - log(BIN_HEIGHTS_M[0])) / (log(BIN_HEIGHTS_M[1]) - log(BIN_HEIGHTS_M[0]))
 	var b0 := 0
@@ -300,7 +398,10 @@ func _turbulence_at(height_m: float, along: float, across: float) -> Vector3:
 			var va := lerpf(_hist[s0 * 24 + ia], _hist[s1 * 24 + ia], fr)
 			var vb := lerpf(_hist[s0 * 24 + ib], _hist[s1 * 24 + ib], fr)
 			r[ax] = ct * va + st * vb
-		out += w * Vector3(r.x * sb[2], r.y * sb[2], r.z * sb[3])
+		if unit:
+			out += w * r
+		else:
+			out += w * Vector3(r.x * sb[2], r.y * sb[2], r.z * sb[3])
 	return _dir * out.x + _cross * out.y + Vector3(0, out.z, 0)
 
 
@@ -329,15 +430,25 @@ func update_at(dt: float, pos: Vector3, height_m: float) -> Vector3:
 		_last = steady_mps + _gust
 		return _last
 	var mean := mean_at(height_m)
-	if gustiness_mps <= 0.0:
-		_last = mean
-		return _last
-	_acc += dt
-	while _acc >= DT_S:
-		_acc -= DT_S
-		_step_field()
-	_turb = _turbulence_at(height_m, pos.dot(_dir), pos.dot(_cross))
-	_last = mean + _turb
+	_t += dt
+	var turb := Vector3.ZERO
+	if _field_needed():
+		_acc += dt
+		while _acc >= DT_S:
+			_acc -= DT_S
+			_step_field()
+		var along := pos.dot(_dir)
+		var across := pos.dot(_cross)
+		if gustiness_mps > 0.0:
+			turb = _turbulence_at(height_m, along, across)
+		if not _obstacles.is_empty() and steady_mps.length() > 0.05:
+			var wk := wake_at(pos, height_m)
+			mean *= float(wk[0])
+			if float(wk[1]) > 0.0:
+				turb += _turbulence_at(height_m, along, across, true) * (float(wk[1]) * mean_speed_at(height_m))
+	turb += _gust_at(height_m, pos.dot(_dir))
+	_turb = turb
+	_last = mean + turb
 	return _last
 
 
@@ -352,5 +463,6 @@ func reset() -> void:
 	_turb = Vector3.ZERO
 	_last = steady_mps
 	_rng.seed = _seed
+	_t = 0.0
 	if model == Model.DRYDEN:
 		_reset_field()

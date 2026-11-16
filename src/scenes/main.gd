@@ -302,6 +302,9 @@ func _course_obstacles() -> Array[Obstacle]:
 ## so it now follows the terrain's own extent, the way the field room already ties its
 ## ground tiling to the layout it is drawing.
 func _rebuild_ground() -> void:
+	# R1.6: the obstacles on screen also shelter the wind behind them (Wind.set_obstacles; a no-op for an empty course).
+	if wind != null:
+		wind.set_obstacles(obstacles)
 	if ground_mesh == null or ground_collision == null:
 		return
 	ground_mesh.mesh = TerrainMesh.build_mesh(terrain, obstacles)
