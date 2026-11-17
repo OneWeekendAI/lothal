@@ -25,26 +25,51 @@ extends RefCounted
 
 const MAX_RATE_RAD_S := 13.962634   # 800 deg/s at full stick
 
-## Roll and pitch's D gain, named rather than left as a literal in two constructors.
+## THE TUNE, in Betaflight's own numbers (P, I, D, F per axis), mapped to this loop's units by
+## BetaflightPid's scale constants (betaflight_pid.gd). B1 RETUNE (2026-11-17).
 ##
-## A READ SEAM, not a tuning change: the value is exactly what it was. It is named because the
-## FC details panel quotes what a board's noise floor costs at the installed D gain, and a panel
-## that restated 0.042 would be a second opinion about the tune the day anyone changed it.
-const ROLL_PITCH_KD := 0.042
+## Why it changed: the old tune (P 2.3 / I 0.15, i.e. Betaflight P18 / I0.15) had an integral time
+## of 15.3 s against Betaflight's 0.074 s, so nothing could remove the steady torque the rotor
+## H-force puts on the hub-height lever (acro taps left 0.51 rad/s, whoops never levelled).
+##
+## How it was retuned, as a tuner on Betaflight 4.4 would: I and F at Betaflight's DEFAULTS (I80,
+## F120); iterm_relax RP/setpoint on; then P and D found against the flip release and the step.
+## - I80 with the old P bounced the flip release back 0.44 rad/s. A tenth of a second after the stop,
+##   descending at 8 m/s through its own wake, the airframe takes a roll pulse; I integrates it and
+##   then overshoots when it passes (ki = 0: no bounce at all). More P and D shrink the pulse.
+## - D is bounded by the board: the noisiest catalog FC caps kd at 0.179, and the 8" cinelifter's
+##   derived scale is 2.39, so the reference D must stay under 0.075 (D35) or the big frames get a
+##   clipped D and stop responding like the reference (test_catalog_tuning).
+## - P53 / D35 then left the bounce at -0.127 rad/s with relax at its 15 Hz default (bound 0.15).
+##   iterm_relax_cutoff is Betaflight's knob for exactly this (lower for slower-responding craft, and
+##   this one's 30 ms motors are slow): at 2 Hz I stays frozen ~175 ms after a 360 deg/s stop and the
+##   bounce is -0.079 rad/s. Step: 0.4% overshoot, settled in 59 ms (bound 80).
+## Yaw: P70 (yaw is slew-limited on big steps but not on small ones, where P buys the settling), D0
+## and F120 as Betaflight's defaults, and I by Betaflight's integral time held against yaw's OWN loop
+## (YAW_LOOP_SLOWDOWN below).
+const BF_ROLL_PITCH := Vector4(53.0, 80.0, 35.0, 120.0)
+const BF_YAW_P := 70.0
+const BF_YAW_F := 120.0
 
-## THE HAND TUNE, per axis, as Vector3(roll, pitch, yaw) — the gains below, named so that RateTune
-## has a reference to scale FROM without restating them.
-##
-## Another read seam, and the same reasoning as ROLL_PITCH_KD's: these values are exactly what they
-## were, and the derivation in rate_tune.gd is normalised so that the aircraft they were found on
-## reproduces them exactly. What changed is that a build which is NOT that aircraft no longer gets
-## them unaltered.
-const REFERENCE_KP := Vector3(2.3, 2.3, 6.0)
-const REFERENCE_KI := Vector3(0.15, 0.15, 0.39)
+## Roll and pitch's D gain, named: the FC details panel quotes what a board's noise floor costs at the
+## installed D gain, and a panel that restated a literal would be a second opinion about the tune.
+const ROLL_PITCH_KD := BetaflightPid.KD_PER_BF * 35.0
+
+const REFERENCE_KP := Vector3(BetaflightPid.KP_PER_BF * 53.0, BetaflightPid.KP_PER_BF * 53.0,
+	BetaflightPid.KP_PER_BF * BF_YAW_P)
+## Yaw's closed loop is slower than roll's by alpha_roll*kp_roll / (alpha_yaw*kp_yaw) (the authority
+## figures documented at pid_yaw below: 448.8 and 57.2 rad/s^2). Betaflight's integral time is set
+## against a roll/pitch loop; copied onto yaw's slower loop it made a 50 deg/s yaw step overshoot 49%
+## with a 475 ms tail. Yaw's I keeps roll's Ti/tau instead.
+const YAW_LOOP_SLOWDOWN := (448.8 * 53.0) / (57.2 * BF_YAW_P)
+const REFERENCE_KI := Vector3(BetaflightPid.KI_PER_BF * 80.0, BetaflightPid.KI_PER_BF * 80.0,
+	BetaflightPid.KP_PER_BF * BF_YAW_P / (53.0 / 80.0 * BetaflightPid.KP_PER_BF / BetaflightPid.KI_PER_BF * YAW_LOOP_SLOWDOWN))
+const REFERENCE_KFF := Vector3(BetaflightPid.KFF_PER_BF * 120.0, BetaflightPid.KFF_PER_BF * 120.0,
+	BetaflightPid.KFF_PER_BF * BF_YAW_F)
 const REFERENCE_KD := Vector3(ROLL_PITCH_KD, ROLL_PITCH_KD, 0.0)
 
-var pid_roll := PIDController.new(2.3, 0.15, ROLL_PITCH_KD)
-var pid_pitch := PIDController.new(2.3, 0.15, ROLL_PITCH_KD)
+var pid_roll := BetaflightPid.new(REFERENCE_KP.x, REFERENCE_KI.x, REFERENCE_KD.x, REFERENCE_KFF.x, true)
+var pid_pitch := BetaflightPid.new(REFERENCE_KP.y, REFERENCE_KI.y, REFERENCE_KD.y, REFERENCE_KFF.y, true)
 
 ## Yaw is NOT roll's gains, and sharing them was never a neutral choice.
 ##
@@ -78,7 +103,23 @@ var pid_pitch := PIDController.new(2.3, 0.15, ROLL_PITCH_KD)
 ## kd is ZERO, matching Betaflight's own yaw default. Yaw's plant is dominated by rotor drag
 ## and is already damped; there is no fast resonance for D to catch, so all it would do is
 ## amplify gyro noise on the axis with the least authority to spare.
-var pid_yaw := PIDController.new(6.0, 0.39, 0.0)
+## iterm_relax = RPY (a Betaflight option): with relax on roll/pitch only, a small yaw step on the
+## reference (unsaturated) wound I through the rise and overshot 7.6%, while big frames, slew-limited
+## at their output clamp, had I frozen by anti-windup and overshot ~3%: the catalog stopped responding
+## alike. Relax on yaw freezes I through every build's rise the same way.
+var pid_yaw := BetaflightPid.new(REFERENCE_KP.z, REFERENCE_KI.z, REFERENCE_KD.z, REFERENCE_KFF.z, true)
+
+## anti_gravity (Betaflight 4.4: anti_gravity_gain 80, cutoff 5 Hz): |d throttle/dt| through a
+## PT2 at 5 Hz, times (1 - throttle)^2, times gain/100 -> the I accelerator. The point is that a
+## throttle punch changes every motor's torque at once and the I term must catch up fast.
+const ANTI_GRAVITY_GAIN := 0.8
+const ANTI_GRAVITY_CUTOFF_HZ := 5.0
+var anti_gravity_enabled := true
+var _ag_last_throttle := -1.0
+var _ag_lpf1 := 0.0
+var _ag_lpf2 := 0.0
+## Last tick's motor-mix range for the iterm_windup attenuation (0..1, 1 = saturated).
+var _mix_range := 0.0
 
 ## The tune in force, or null for the hand tune above.
 ##
@@ -109,6 +150,9 @@ func adopt_tune(p_tune: RateTune) -> void:
 	pid_yaw.kp = p_tune.kp.z
 	pid_yaw.ki = p_tune.ki.z
 	pid_yaw.kd = p_tune.kd.z
+	pid_roll.kff = p_tune.kff.x
+	pid_pitch.kff = p_tune.kff.y
+	pid_yaw.kff = p_tune.kff.z
 
 
 ## The acro front end: all three sticks ARE rate setpoints, and the outer loop is simply
@@ -135,14 +179,57 @@ func update(setpoint_normalized: Vector3, gyro_rate_rad_s: Vector3, throttle: fl
 	# PIDController clamps its own output and stops integrating while it is clamped, so
 	# there is no clampf here — a second clamp outside the controller would hide the
 	# saturation from the anti-windup that needs to see it.
-	var roll_cmd := pid_roll.update(setpoint_normalized.x, measured.x, dt)
-	var pitch_cmd := pid_pitch.update(setpoint_normalized.y, measured.y, dt)
-	var yaw_cmd := pid_yaw.update(setpoint_normalized.z, measured.z, dt)
+	var boost := _anti_gravity(throttle, dt)
+	var roll_cmd := pid_roll.update(setpoint_normalized.x, measured.x, dt, _mix_range, boost)
+	var pitch_cmd := pid_pitch.update(setpoint_normalized.y, measured.y, dt, _mix_range, boost)
+	var yaw_cmd := pid_yaw.update(setpoint_normalized.z, measured.z, dt, _mix_range, boost)
+	_mix_range = mix_range(roll_cmd, pitch_cmd, yaw_cmd, config)
 
 	var vbat_scale := VbatSensor.scale(VbatSensor.percent(config), vbat)
 	return MotorMixer.mix(throttle, roll_cmd, pitch_cmd, yaw_cmd, config, vbat_scale)
 
+## The motor-mix range Betaflight's iterm_windup reads: the spread of the per-motor deltas
+## (MotorMixer's MIX_GAIN times the axis commands), and, because the sim clamps each axis at its
+## output_limit (pidsum_limit) before the mixer, an axis pinned at that clamp counts as saturated too.
+static func mix_range(r: float, p: float, y: float, p_config: Dictionary = {}) -> float:
+	var spin := MotorLayout.spin_map(p_config)
+	var front := [false, true, false, true]
+	var right := [true, true, false, false]
+	var lo := INF
+	var hi := -INF
+	for i in 4:
+		var d: float = MotorMixer.MIX_GAIN * ((p if front[i] else -p) + (-r if right[i] else r)
+			+ y * float(spin[MotorLayout.MOTOR_NAMES[i]]))
+		lo = minf(lo, d)
+		hi = maxf(hi, d)
+	var axis_sat := maxf(absf(r), maxf(absf(p), absf(y)))
+	return maxf(hi - lo, axis_sat)
+
+func _anti_gravity(throttle: float, dt: float) -> float:
+	if _ag_last_throttle < 0.0 or dt <= 0.0:
+		_ag_last_throttle = throttle
+		return 0.0
+	var deriv := absf(throttle - _ag_last_throttle) / dt
+	_ag_last_throttle = throttle
+	var k := BetaflightPid._pt1_k(ANTI_GRAVITY_CUTOFF_HZ * 1.553774, dt)   # PT2 stage cutoff
+	_ag_lpf1 += k * (deriv - _ag_lpf1)
+	_ag_lpf2 += k * (_ag_lpf1 - _ag_lpf2)
+	if not anti_gravity_enabled:
+		return 0.0
+	var inv := 1.0 - clampf(throttle, 0.0, 1.0)
+	return _ag_lpf2 * inv * inv * ANTI_GRAVITY_GAIN * 10.0
+
+func set_mechanisms(relax: bool, windup: bool, ff: bool) -> void:
+	for pid in [pid_roll, pid_pitch, pid_yaw]:
+		pid.iterm_relax_enabled = relax
+		pid.anti_windup_enabled = windup
+		pid.feedforward_enabled = ff
+
 func reset() -> void:
+	_mix_range = 0.0
+	_ag_last_throttle = -1.0
+	_ag_lpf1 = 0.0
+	_ag_lpf2 = 0.0
 	pid_roll.reset()
 	pid_pitch.reset()
 	pid_yaw.reset()

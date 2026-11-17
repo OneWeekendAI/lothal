@@ -13,9 +13,14 @@ extends RefCounted
 ## and that is the right rule everywhere except here. This suite's whole job is to catch the day
 ## somebody changes the reference aircraft's gains while believing they are changing a scaling
 ## rule, and a test that read the constant it is guarding would pass through that change silently.
-const ANCHOR_KP := Vector3(2.3, 2.3, 6.0)
-const ANCHOR_KI := Vector3(0.15, 0.15, 0.39)
-const ANCHOR_KD := Vector3(0.042, 0.042, 0.0)
+## B1 retune (2026-11-17): Betaflight P53 I80 D35 on roll/pitch, yaw P70 D0 with I at roll's Ti/tau,
+## written out in Betaflight's own scale constants (pid.c PTERM/ITERM/DTERM_SCALE x 4.0, see
+## betaflight_pid.gd) rather than read from RateModeController, for the reason above. Was 2.3/0.15/0.042,
+## 6.0/0.39/0.0 (integral time 15.3 s, two hundred times Betaflight's).
+const ANCHOR_KP := Vector3((0.032029 * 4.0) * 53.0, (0.032029 * 4.0) * 53.0, (0.032029 * 4.0) * 70.0)
+const ANCHOR_KI := Vector3((0.244381 * 4.0) * 80.0, (0.244381 * 4.0) * 80.0,
+	(0.032029 * 4.0) * 70.0 / (53.0 / 80.0 * (0.032029 * 4.0) / (0.244381 * 4.0) * ((448.8 * 53.0) / (57.2 * 70.0))))
+const ANCHOR_KD := Vector3((0.000529 * 4.0) * 35.0, (0.000529 * 4.0) * 35.0, 0.0)
 
 const WHOOP := "frame_65mm_whoop"
 const LONG_RANGE := "frame_10in_long_range"

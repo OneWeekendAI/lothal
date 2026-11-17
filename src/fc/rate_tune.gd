@@ -161,6 +161,11 @@ const AXIS_NAMES := ["roll", "pitch", "yaw"]
 var kp := Vector3.ZERO
 var ki := Vector3.ZERO
 var kd := Vector3.ZERO
+## Feed-forward (Betaflight F), per axis. Not a builder override: it follows P at the reference
+## build's FF time (RateModeController.REFERENCE_KFF / REFERENCE_KP per axis), because
+## Betaflight's slider moves F with P and the time is what carries across airframes.
+var kff := Vector3.ZERO
+var derived_kff := Vector3.ZERO
 
 ## What the law derived, kept alongside what is in force so a builder who has changed something can
 ## still be told what they changed it FROM. An auto-tune whose baseline disappears the moment you
@@ -215,6 +220,7 @@ static func derive(p_build: Build) -> RateTune:
 	var trim := float(p_build.frame.get("tuning", {}).get("yaw_pi_trim", 1.0))
 	tune.derived_kp.z *= trim
 	tune.derived_ki.z *= trim
+	tune.derived_kff = RateModeController.REFERENCE_KFF * tune.derived_kp / RateModeController.REFERENCE_KP
 
 	tune._apply()
 	return tune
@@ -447,9 +453,11 @@ func _apply() -> void:
 	kp = derived_kp
 	ki = derived_ki
 	kd = derived_kd
+	kff = derived_kff
 	for axis in _overrides:
 		var gains: Vector3 = _overrides[axis]
 		kp[axis] = gains.x
+		kff[axis] = gains.x * RateModeController.REFERENCE_KFF[axis] / RateModeController.REFERENCE_KP[axis]
 		ki[axis] = gains.y
 		kd[axis] = gains.z
 

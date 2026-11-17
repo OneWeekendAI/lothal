@@ -247,15 +247,27 @@ static func _hover(gust: float, speed: float) -> Array:
 	var sp := 0.0
 	var st := 0.0
 	var n := 0
+	# B1 (rotor H-force + flapping): holding station in the 3 m/s MEAN wind now takes a steady trim
+	# lean of ~6-7 deg (mu v / g plus body drag), the same at both intensities, and an RMS of total tilt
+	# was dominated by it (7.07 -> 9.25 deg, 1.31x, while the gust part tripled). The attitude
+	# DISTURBANCE is the tilt about that trim: the up vector's horizontal part minus its mean. Calm
+	# air has no trim lean, so the calm check reads the same quantity as before.
+	var ups: Array[Vector2] = []
 	for k in 40 * 500:
 		rig.step()
 		if k > 10 * 500:
 			var p := rig.position()
 			sp += Vector2(p.x, p.z).length_squared() + (p.y - 10.0) * (p.y - 10.0)
 			var up := rig.core.rigid_body.orientation * Vector3.UP
-			var tilt := acos(clampf(up.y, -1.0, 1.0))
-			st += tilt * tilt
+			ups.append(Vector2(up.x, up.z))
 			n += 1
+	var mean := Vector2.ZERO
+	for u in ups:
+		mean += u
+	mean /= float(n)
+	for u in ups:
+		var d := asin(clampf((u - mean).length(), 0.0, 1.0))
+		st += d * d
 	return [sqrt(sp / n), rad_to_deg(sqrt(st / n))]
 
 
