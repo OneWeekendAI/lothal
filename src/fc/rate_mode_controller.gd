@@ -49,10 +49,21 @@ const MAX_RATE_RAD_S := 13.962634   # 800 deg/s at full stick
 ##   I80 -0.170, I40 -0.150, I32 -0.140, I28 -0.134, I24 -0.126; P56 I32 -0.128 (step 2.2%, 57 ms).
 ##   P58+ or D40+ also cut it but D clips on the X8 and P alone made it worse. Then the 65 mm whoop sagged out of its 5% band at 0.6 s on a 50 deg/s step (rolling 30 deg it slides, and rotor H torque grows faster than I32 follows): I32 settles at 600 ms, I37 600, I38 81 ms. Chosen: P56 I38 D35 F120 (flip -0.134).
 ##   Integral time 56*0.128/(38*0.978) = 0.19 s, still 65x faster than the pre-B1 15 s.
+## - B1 final (owner decision 2026-11-17): a real tuner targets <= 5% overshoot and no tail on the
+##   5% settle band for a SMALL step. P56 I38 overshot 9.2% at 50 deg/s with an I-windup tail at
+##   1.04-1.05, so the catalog-relative settle test compared frames against a reference sitting on
+##   its own band edge. Sweep (.test_runs/tp.gd, 50 deg/s): I is the tail lever (I38 9.2%, I23 6.8%,
+##   I15 5.6%); P down a little takes the rest (P53 I15 4.9%, P52 I14 4.5% / 37 ms). D stays at the
+##   D35 board cap; relax stays at 15 Hz. P52 I14 met it (4.5%) but lost the I
+##   the acro taps need (residual 3.6 deg/s vs 2.9). So relax moves down (BetaflightPid RELAX_CUTOFF_HZ,
+##   final 5 Hz), which holds I through the rise: P52 I22 at 10 Hz is 4.9% at 50 deg/s and keeps
+##   the taps. In the catalog fixture (nominal-voltage datum) P52 I22 read 5.47%, so P50 I20:
+##   4.79% roll / 4.86% pitch at 10 Hz: on the band edge,
+##   so relax went to 5 Hz: 3.18% roll / 3.22% pitch, settle 40 / 42 ms, flat tail. Chosen P50 I20 D35 F120. Whoops keep their 1.5x I trim.
 ## Yaw: P70 (P53 was tried for the catalog yaw settle and broke the 500 deg/s yaw step, 521 ms vs 413; see HANDOVER) (yaw is slew-limited on big steps but not on small ones, where P buys the settling), D0
 ## and F120 as Betaflight's defaults, and I by Betaflight's integral time held against yaw's OWN loop
 ## (YAW_LOOP_SLOWDOWN below).
-const BF_ROLL_PITCH := Vector4(56.0, 38.0, 35.0, 120.0)
+const BF_ROLL_PITCH := Vector4(50.0, 20.0, 35.0, 120.0)
 const BF_YAW_P := 70.0
 const BF_YAW_F := 120.0
 

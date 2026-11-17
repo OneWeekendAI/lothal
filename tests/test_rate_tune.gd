@@ -17,9 +17,9 @@ extends RefCounted
 ## written out in Betaflight's own scale constants (pid.c PTERM/ITERM/DTERM_SCALE x 4.0, see
 ## betaflight_pid.gd) rather than read from RateModeController, for the reason above. Was 2.3/0.15/0.042,
 ## 6.0/0.39/0.0 (integral time 15.3 s, two hundred times Betaflight's).
-const ANCHOR_KP := Vector3((0.032029 * 4.0) * 56.0, (0.032029 * 4.0) * 56.0, (0.032029 * 4.0) * 70.0)
-const ANCHOR_KI := Vector3((0.244381 * 4.0) * 38.0, (0.244381 * 4.0) * 38.0,
-	(0.032029 * 4.0) * 70.0 / (56.0 / 38.0 * (0.032029 * 4.0) / (0.244381 * 4.0) * ((448.8 * 56.0) / (57.2 * 70.0))))
+const ANCHOR_KP := Vector3((0.032029 * 4.0) * 50.0, (0.032029 * 4.0) * 50.0, (0.032029 * 4.0) * 70.0)
+const ANCHOR_KI := Vector3((0.244381 * 4.0) * 20.0, (0.244381 * 4.0) * 20.0,
+	(0.032029 * 4.0) * 70.0 / (50.0 / 20.0 * (0.032029 * 4.0) / (0.244381 * 4.0) * ((448.8 * 50.0) / (57.2 * 70.0))))
 const ANCHOR_KD := Vector3((0.000529 * 4.0) * 35.0, (0.000529 * 4.0) * 35.0, 0.0)
 
 const WHOOP := "frame_65mm_whoop"
@@ -89,6 +89,8 @@ static func run() -> Array:
 		for axis in 3:
 			# The catalog's declared yaw pilot trim (frames.json tuning.yaw_pi_trim) is the one sanctioned departure from the law.
 			var trim: float = float(tune.build.frame.get("tuning", {}).get("yaw_pi_trim", 1.0)) if axis == 2 else 1.0
+			# And the per-class roll/pitch master multiplier (RateTune.WHOOP_RP_MASTER, B1 final).
+			if axis < 2: trim = RateTune.rp_master_for(tune.build)
 			var product: float = tune.kp[axis] * tune.plant_alpha[axis] / trim
 			var anchor: float = ANCHOR_KP[axis] * ref_tune.plant_alpha[axis]
 			worst = maxf(worst, absf(product - anchor) / anchor)

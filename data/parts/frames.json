@@ -348,6 +348,9 @@
       "mass_g": 940.0,
       "tuning": {
         "yaw_pi_trim": 1.25,
+        "rp_master": 1.07,
+        "rp_i_trim": 0.8,
+        "rp_master_note": "B1 pilot trim: on the clean reference tune (3% overshoot) the 940 g lifter's roll/pitch rise lagged, settling 14-18% slow; P, I and D raised together (BF master slider)",
         "yaw_pi_trim_note": "R1.4 pilot trim: lag-limited high-gain yaw settles 15-16% slow from pack sag + ESC current limit; P and I raised together"
       },
       "specs": {
@@ -390,6 +393,10 @@
       "name": "Mapper frame 380 (Mavic 3M-like)",
       "category": "frame",
       "mass_g": 362.0,
+      "tuning": {
+        "yaw_pi_trim": 1.15,
+        "yaw_pi_trim_note": "B1 pilot trim: on the clean reference tune the 380 mm mapper's yaw settled 14% slow; P and I raised together"
+      },
       "specs": {
         "arm_mm": 190.0,
         "plate_thickness_mm": 3.0,

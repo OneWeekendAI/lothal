@@ -183,7 +183,7 @@ static func _step_response(build: Build, axis: int, tune: RateTune,
 	var controller := RateModeController.new()
 	controller.adopt_tune(tune)
 	# B1 (2026-11-17): iterm_relax_cutoff is now a per-CLASS tuner choice (RateTune.relax_cutoff_for:
-	# whoop 25, 5" 15, 7" 10, 8"+ and cinelifters 5 Hz), not part of the gain-scaling law this file
+	# whoop 25, 5", 7", 8"+ and cinelifters 5 Hz; B1 final reference retune), not part of the gain-scaling law this file
 	# grades. A lower cutoff deliberately holds I longer through a stick move, which changes a 50 deg/s
 	# step's overshoot by design. So the comparison flies every frame at the reference's cutoff and
 	# grades the LAW alone; _relax_cutoff_per_class below checks the per-class values separately.
@@ -313,13 +313,13 @@ static func _relax_cutoff_per_class() -> TestResult:
 		ReferenceBuild.FC_ID, Build.no_components())
 	var ref_hz := RateTune.derive(ReferenceBuild.build()).relax_cutoff_hz
 	var x8_hz := RateTune.derive(x8).relax_cutoff_hz
-	var ok := is_equal_approx(ref_hz, 15.0) and is_equal_approx(x8_hz, 5.0)
+	var ok := is_equal_approx(ref_hz, 5.0) and is_equal_approx(x8_hz, 5.0)
 	for id in got:
 		var hz: float = got[id]
 		if String(id).contains("10in") and not is_equal_approx(hz, 5.0): ok = false
-		if String(id).contains("7in") and not (is_equal_approx(hz, 10.0) or is_equal_approx(hz, 5.0)): ok = false
+		if String(id).contains("7in") and not is_equal_approx(hz, 5.0): ok = false
 		if (String(id).contains("mm_whoop") or String(id).contains("in_whoop")) and not is_equal_approx(hz, 25.0): ok = false
-	return TestResult.new("iterm_relax_cutoff follows Betaflight's per-class guidance (5\" 15, 7\" 10, 8\"+/cinelifter 5, whoop 25 Hz)",
+	return TestResult.new("iterm_relax_cutoff follows Betaflight's per-class guidance (whoop 25 Hz; 5\" reference, 7\", 8\"+ and cinelifter 5 Hz, B1 final)",
 		ok, "reference %.0f Hz, X8 %.0f Hz, %s" % [ref_hz, x8_hz, got])
 
 

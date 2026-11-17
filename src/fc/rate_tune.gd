@@ -226,6 +226,13 @@ static func derive(p_build: Build) -> RateTune:
 	var i_trim := rp_i_trim_for(p_build)
 	tune.derived_ki.x *= i_trim
 	tune.derived_ki.y *= i_trim
+	# Per-class roll/pitch master multiplier (B1 final): Betaflight's simplified-tuning master slider,
+	# P, I and D together, so kp/ki and kp/kd keep the law's ratios. D stays under the board ceiling.
+	var master := rp_master_for(p_build)
+	for axis in 2:
+		tune.derived_kp[axis] *= master
+		tune.derived_ki[axis] *= master
+		tune.derived_kd[axis] = minf(tune.derived_kd[axis] * master, maxf(tune.kd_ceiling, tune.derived_kd[axis]))
 	tune.derived_kff = RateModeController.REFERENCE_KFF * tune.derived_kp / RateModeController.REFERENCE_KP
 	tune.relax_cutoff_hz = relax_cutoff_for(p_build)
 
@@ -257,8 +264,8 @@ static func plant_alpha_for(p_build: Build) -> Vector3:
 ## fitted prop's diameter (the thing that sets the motor+prop response time the cutoff tracks) and
 ## the frame's catalog type for cinelifters.
 const RELAX_CUTOFF_WHOOP_HZ := 25.0    # estimate, BF guidance 20-30 for whoops/micros (<= 3.5")
-const RELAX_CUTOFF_5IN_HZ := 15.0      # BF default, the 5" class (4-6")
-const RELAX_CUTOFF_7IN_HZ := 10.0      # estimate, BF guidance ~10 for 7"
+const RELAX_CUTOFF_5IN_HZ := 5.0       # B1 final reference tuner choice, see BetaflightPid.RELAX_CUTOFF_HZ
+const RELAX_CUTOFF_7IN_HZ := 5.0       # estimate; BF guidance ~10 for 7", held at the 5" reference value (no class may relax LESS than the reference below the whoops)
 const RELAX_CUTOFF_BIG_HZ := 5.0       # estimate, BF guidance ~5 for 8-10" and cinelifters
 
 static func relax_cutoff_for(p_build: Build) -> float:
@@ -282,13 +289,35 @@ static func relax_cutoff_for(p_build: Build) -> float:
 ## I removes. Measured (.test_runs/cat.gd): at x1.0 the 65 mm whoop-lite roll sags out of the 5% band
 ## at ~0.55 s (598 ms vs the reference's 101); at x1.5 it settles in 101 ms. LABELLED estimate, in the
 ## band real whoop presets use. It breaks the kp/ki invariance ON PURPOSE for this class only.
-const WHOOP_RP_I_TRIM := 1.5
+## B1 final: 1.75 (with master 1.15, effective I x2.0) on the clean P50 I20 reference: the 65 mm whoop
+## roll sag needs I x~1.9+, and 2.2 x 1.1 overshot 4.4% (34% off the reference's 3.2%).
+const WHOOP_RP_I_TRIM := 1.75
 
 static func is_whoop_class(p_build: Build) -> bool:
 	return relax_cutoff_for(p_build) == RELAX_CUTOFF_WHOOP_HZ
 
 static func rp_i_trim_for(p_build: Build) -> float:
+	# A frame may declare its own roll/pitch I trim (frames.json tuning.rp_i_trim).
+	var declared := float(p_build.frame.get("tuning", {}).get("rp_i_trim", 0.0))
+	if declared > 0.0:
+		return declared
 	return WHOOP_RP_I_TRIM if is_whoop_class(p_build) else 1.0
+
+## Roll/pitch master multiplier by class (B1 final, 2026-11-17). When the reference was retuned to a
+## clean <= 5% / no-tail step (P50 I20, see RateModeController), the whoops' I (1.5x of a much lower
+## base) no longer followed the slide-induced rotor H torque after a 30 deg bank: the 65 mm whoop
+## sagged out of its 5% band (settle 600 ms vs 40). Raising I alone overshot 7-10%. Raising the
+## whole tune together (BF master multiplier) fixed both: x1.4 gives 4.8% / 32 ms (.test_runs/cat.gd).
+## LABELLED estimate; real whoop presets sit at master ~1.2-1.5 over a scaled 5" tune.
+## Final: 1.15 with the I trim 1.75 (1.25 x 1.5 put whoop-lite pitch settle 14% fast of the reference).
+const WHOOP_RP_MASTER := 1.15
+
+static func rp_master_for(p_build: Build) -> float:
+	# A frame may declare its own pilot master trim (frames.json tuning.rp_master, like yaw_pi_trim).
+	var declared := float(p_build.frame.get("tuning", {}).get("rp_master", 0.0))
+	if declared > 0.0:
+		return declared
+	return WHOOP_RP_MASTER if is_whoop_class(p_build) else 1.0
 
 
 static func reference_alpha() -> Vector3:
