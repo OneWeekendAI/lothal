@@ -61,6 +61,7 @@ var relax_cutoff_hz := RELAX_CUTOFF_HZ
 var iterm_relax_enabled := true
 var anti_windup_enabled := true
 var feedforward_enabled := true
+var dterm_filter_enabled := true
 
 var _integral: float = 0.0   # the I TERM, in output units (as pidData[axis].I)
 var _last_measured: float = 0.0
@@ -72,6 +73,15 @@ var _has_last: bool = false
 ## Feed-forward derivative smoothing (stands in for Betaflight's RC smoothing of the setpoint
 ## before feed-forward; the sim's stick arrives as a step every tick, not at an RC link rate).
 const FF_SMOOTH_HZ := 30.0
+
+## D-term lowpass, Betaflight 4.4 defaults: dterm_lpf1 PT1 dynamic 75-150 Hz (its floor, 75, is what a hover at
+## low throttle runs; held there, a labelled simplification) then dterm_lpf2 PT1 150 Hz. Without it the D term
+## differentiates raw gyro noise straight onto the motors: the five_inch hover chattered at 1.1 percent command
+## sd and drew 7.6 percent over the hover model (B1, sr4 hover model); with sensor noise off the gap was 1.5 percent.
+const DTERM_LPF1_HZ := 75.0
+const DTERM_LPF2_HZ := 150.0
+var _d_lpf1: float = 0.0
+var _d_lpf2: float = 0.0
 
 func _init(p_kp: float, p_ki: float, p_kd: float, p_kff: float = 0.0, p_relax_axis: bool = true) -> void:
 	kp = p_kp
@@ -106,7 +116,12 @@ func update(target: float, measured: float, dt: float, mix_range: float = 0.0, k
 	var d_term := 0.0
 	var ff := 0.0
 	if _has_last and dt > 0.0:
-		d_term = -kd * (measured - _last_measured) / dt
+		var d_raw := -(measured - _last_measured) / dt
+		if dterm_filter_enabled:
+			_d_lpf1 += _pt1_k(DTERM_LPF1_HZ, dt) * (d_raw - _d_lpf1)
+			_d_lpf2 += _pt1_k(DTERM_LPF2_HZ, dt) * (_d_lpf1 - _d_lpf2)
+			d_raw = _d_lpf2
+		d_term = kd * d_raw
 		var sp_rate := (target - _last_setpoint) / dt
 		_ff_lpf += _pt1_k(FF_SMOOTH_HZ, dt) * (sp_rate - _ff_lpf)
 		if feedforward_enabled:
@@ -124,6 +139,8 @@ static func _pt1_k(f_cut: float, dt: float) -> float:
 func reset() -> void:
 	_integral = 0.0
 	_ff_lpf = 0.0
+	_d_lpf1 = 0.0
+	_d_lpf2 = 0.0
 	_setpoint_lpf = 0.0
 	_last_setpoint = 0.0
 	_has_last = false

@@ -555,6 +555,14 @@ static func _rate_energy_law(hz: float) -> TestResult:
 	var actual: float = float(base["mean_a"]) - float(low["mean_a"])
 	var rel_e := absf(float(low["energy_wh"]) / float(base["energy_wh"]) - 1.0)
 	var explained: bool = absf(actual) > 0.0 and absf(predicted - actual) <= 0.30 * absf(actual)
+	# B1 (2026-11-17): the rate loop now has Betaflight's Hz-defined D-term lowpass (dterm_lpf1 75 + lpf2 150 Hz), so the D term
+	# no longer differentiates raw per-sample noise and the command ripple stopped depending on the loop rate (std 0.01065 vs
+	# 0.01061). The law then predicts a difference below the flight's resolution (0.009 A of 5.17 A) and a 30 percent ratio
+	# of two near-zero numbers is noise. In that regime both the measured and the predicted difference must be under 0.5
+	# percent of the mean current, i.e. the rate does not change the draw, which is the pre-R1.4 "within 1 percent" bound.
+	var resolution := 0.005 * float(base["mean_a"])
+	if absf(predicted) < resolution:
+		explained = absf(actual) < resolution
 	var ok: bool = String(low["ended_by"]) == "completed" and String(base["ended_by"]) == "completed" and explained and rel_e < 0.03
 	var detail := "%.0f Hz: ended %s, energy %.4f Wh vs %.4f Wh at 500 Hz (%.3f percent); command std %.5f vs %.5f; mean current %.4f vs %.4f A, difference %.4f A, command-variance law predicts %.4f A" % [
 		hz, low["ended_by"], low["energy_wh"], base["energy_wh"], rel_e * 100.0, sqrt(float(low["ripple_var"])),

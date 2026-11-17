@@ -32,12 +32,20 @@ extends RefCounted
 ## including its identity — which would give two drones one id and one file. The check asserts the
 ## id and the file path DIFFER while the parts match.
 
-const TEST_DIR := "user://test_wiring"
+## Per process (flake fix, B1 2026-11-17): user:// is shared by every Lothal process on the machine, so two runs of this
+## suite at once (parallel workers, another worktree) wiped each other's folder mid-test ("could not write
+## user://test_wiring/settings.json", reproduced with two overlapping runs: 5 FAIL incl. the trash check).
+static var TEST_DIR := "user://test_wiring_%d" % OS.get_process_id()
 
 static func run() -> Array:
 	var results: Array = []
 	_clean()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(TEST_DIR))
+	# The whole suite runs against a per-process library (same flake fix as TEST_DIR): the delete and default-name checks
+	# count files in the builds folder, which other Lothal processes write to.
+	var saved_root := ProjectLibrary.root
+	ProjectLibrary.root = "%s/builds" % TEST_DIR
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(ProjectLibrary.root))
 	var catalog := PartsCatalog.load_default()
 
 	results.append_array(_test_a_new_drone_is_a_real_starting_build(catalog))
@@ -53,6 +61,8 @@ static func run() -> Array:
 	results.append_array(_test_new_drones_get_distinct_default_names())
 	results.append_array(_test_delete_leaves_no_project())
 
+	_rm_tree(ProjectSettings.globalize_path(ProjectLibrary.root))
+	ProjectLibrary.root = saved_root
 	_clean()
 	return results
 
@@ -358,6 +368,12 @@ static func _test_recent_remembers_without_claiming_files_exist() -> Array:
 ## and opens as a valid container — which only a move can satisfy.
 static func _test_delete_moves_to_trash() -> Array:
 	var results: Array = []
+	# Flake fix (B1, 2026-11-17): this used the REAL user://builds/trash, shared by every Lothal process on the machine
+	# (parallel suite workers, other worktrees, the app), and read it at ProjectLibrary.DIR while delete() writes under
+	# ProjectLibrary.root, which another suite in the same process may have left pointed at its scratch. It now owns a
+	# per-process library root and reads the trash under that same root, then restores both.
+	var saved_root := ProjectLibrary.root
+	ProjectLibrary.root = "user://scratch_wiring_trash_%d" % OS.get_process_id()
 	var project := ProjectLibrary.starting_project("Doomed")
 	var container := ProjectContainer.make(project)
 	var path := "%s/%s.%s" % [TEST_DIR, project.project_id, ProjectContainer.EXTENSION]
@@ -365,7 +381,7 @@ static func _test_delete_moves_to_trash() -> Array:
 
 	ProjectLibrary.delete(path)
 
-	var trash := "%s/trash/%s.%s" % [ProjectLibrary.DIR, project.project_id,
+	var trash := "%s/%s/%s.%s" % [ProjectLibrary.root, ProjectLibrary.TRASH_SUBDIR, project.project_id,
 		ProjectContainer.EXTENSION]
 	results.append(TestResult.new(
 		"a deleted drone is gone from where it lived",
@@ -380,6 +396,9 @@ static func _test_delete_moves_to_trash() -> Array:
 	# The trash is real app-owned storage; take the file back out so the suite leaves it clean.
 	if FileAccess.file_exists(trash):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(trash))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("%s/%s" % [ProjectLibrary.root, ProjectLibrary.TRASH_SUBDIR]))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(ProjectLibrary.root))
+	ProjectLibrary.root = saved_root
 	return results
 
 
@@ -415,7 +434,7 @@ static func _test_delete_leaves_no_project() -> Array:
 	var results: Array = []
 	var shell := DesignApp.new()
 	var project := ProjectLibrary.starting_project("Doomed shell")
-	var builds := ProjectSettings.globalize_path(ProjectLibrary.DIR)
+	var builds := ProjectSettings.globalize_path(ProjectLibrary.root)
 	var before := DirAccess.get_files_at(builds)
 	shell.adopt(project)
 	var gone := shell.container.path
@@ -442,7 +461,7 @@ static func _test_delete_leaves_no_project() -> Array:
 		"projects screen"
 	))
 	# The move lands in the app's trash; take it back out so the suite leaves the app clean.
-	var trash_file := "%s/trash/%s.%s" % [ProjectLibrary.DIR,
+	var trash_file := "%s/trash/%s.%s" % [ProjectLibrary.root,
 		project.project_id, ProjectContainer.EXTENSION]
 	if FileAccess.file_exists(trash_file):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(trash_file))
@@ -457,3 +476,13 @@ static func _clean() -> void:
 	for file in DirAccess.get_files_at(absolute):
 		DirAccess.remove_absolute(absolute.path_join(file))
 	DirAccess.remove_absolute(absolute)
+
+
+static func _rm_tree(dir: String) -> void:
+	if not DirAccess.dir_exists_absolute(dir):
+		return
+	for sub in DirAccess.get_directories_at(dir):
+		_rm_tree(dir.path_join(sub))
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(dir.path_join(f))
+	DirAccess.remove_absolute(dir)

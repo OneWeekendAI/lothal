@@ -509,7 +509,30 @@ func _return_wind_factor(height: float, from_xz: Vector2) -> float:
 	# In wind the window's ground speed is dragged around by the head/tail legs and the ratio under-priced the return (seven_lr from 225 deg landed
 	# at 24.8 %), so the speed ratio is applied only in near-calm air, where it fixes the survey (slow lines, fast return) case.
 	var speed_ratio := vg / maxf(rth_mps, 1.0) if _wind_at(Vector3(from_xz.x, height + rig.core.ground_y_m, from_xz.y)).length() < 1.0 else 1.0
-	return clampf((p_h + k * air.length_squared()) / p_win * speed_ratio, 0.3, 2.5)
+	var ratio := (p_h + k * air.length_squared()) / p_win
+	# B1 (2026-11-17): with rotor H-force and flapping the aircraft's own power curve is a BUCKET (cheapest near 10-12 m/s,
+	# below hover), which the P_h + k Va^2 shape cannot represent: it priced a crosswind return (seven_lr, 20 mph from 90 deg)
+	# as dearer than the loop and landed with 34 percent left. The ratio is now read off the build's trimmed-flight current
+	# curve (Build.flight_current_at_a: the same physics the aircraft flies) at the airspeed home over the window's RMS
+	# airspeed. The measured window power still sets the absolute level (j_per_m); only the ratio comes from the model.
+	var b := rig.build if rig != null else null
+	if b != null:
+		var i_home := _curve_current_a(b, air.length())
+		var i_win := _curve_current_a(b, sqrt(va3))
+		if i_home > 0.0 and i_win > 0.0:
+			ratio = i_home / i_win
+	return clampf(ratio * speed_ratio, 0.3, 2.5)
+
+
+var _curve_cache := {}
+
+## Build.flight_current_at_a at `va` (level, 1 g, nominal pack, peak-thrust ceiling), cached on a 0.25 m/s grid.
+func _curve_current_a(b: Build, va: float) -> float:
+	var key := roundi(va * 4.0)
+	if not _curve_cache.has(key):
+		var ceiling: float = b.peak_thrust(Build.AT_NOMINAL)["throttle"]
+		_curve_cache[key] = b.flight_current_at_a(float(key) / 4.0, 1.0, ceiling)
+	return float(_curve_cache[key])
 
 
 ## How many pack-average watt-hours one more watt-hour costs NOW (>= 1). pack_wh is the average energy per used fraction
