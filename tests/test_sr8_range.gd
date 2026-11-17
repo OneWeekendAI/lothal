@@ -133,7 +133,10 @@ static func _hook_drag() -> TestResult:
 	var b := _fly({"drag_scale": 2.0}, Mission.CRUISE_LOOP)
 	var wa := float(a["wh_per_min"])
 	var wb := float(b["wh_per_min"])
-	return TestResult.new("sr8 hooks: doubling body drag raises a cruise's Wh per minute by 5-25 percent", wb / wa - 1.0 > 0.05 and wb / wa - 1.0 < 0.25, "%.4f -> %.4f Wh/min (%.1f percent)" % [wa, wb, (wb / wa - 1.0) * 100.0])
+	# B1 (2026-11-17): the body Cd*A is now the part of the drag the rotors' H-force does not carry (0.009 -> 0.002648 m^2 on the
+	# reference; body + rotor reproduce the calibrated top speed), so doubling the BODY term moves a cruise's power by its smaller
+	# share: band 1-12 percent (was 5-25 with the body carrying all of it). Measured 3.3 percent.
+	return TestResult.new("sr8 hooks: doubling body drag raises a cruise's Wh per minute by 1-12 percent", wb / wa - 1.0 > 0.01 and wb / wa - 1.0 < 0.12, "%.4f -> %.4f Wh/min (%.1f percent)" % [wa, wb, (wb / wa - 1.0) * 100.0])
 
 
 # ---------------------------------------------------------------- SR8.2 Monte Carlo

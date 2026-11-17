@@ -331,8 +331,10 @@ static func _trk_tilt_in_cruise() -> TestResult:
 			sum += trk[i * 7 + 6]
 			n += 1
 	var mean_deg := rad_to_deg(sum / maxf(n, 1.0))
-	return TestResult.new("sr5 track: cruising the survey lines at 2.95 m/s the nose is down (mean pitch between -2 and -0.1 deg; measured -0.55)",
-		n > 100 and mean_deg < -0.1 and mean_deg > -2.0, "%d camera-on samples, mean pitch %.3f deg" % [n, mean_deg])
+	# B1 (2026-11-17): rotor H-force + flapping damp the craft at mu_h ~0.35 /s, so holding 2.95 m/s needs a lean of
+	# atan(mu_h v / g) = atan(0.35 x 2.95 / 9.81) = 6.0 deg (measured 6.07); the old -0.55 was body drag alone. Band 4-8 deg.
+	return TestResult.new("sr5 track: cruising the survey lines at 2.95 m/s the nose is down by the rotor-drag lean (mean pitch between -8 and -4 deg; derived -6.0)",
+		n > 100 and mean_deg < -4.0 and mean_deg > -8.0, "%d camera-on samples, mean pitch %.3f deg" % [n, mean_deg])
 
 
 static func _trk_roll_gusty() -> TestResult:

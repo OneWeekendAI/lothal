@@ -41,14 +41,20 @@ const DT := 0.001   # 1 kHz, matching physics.md §6
 ## RE-FROZEN at SR1 bucket-depth terms (2026-11-09): the 17 m/s forward pass now pays the published induced-power
 ## factor, profile growth with advance ratio and rear-rotor interference (more current: 4.152 -> 4.440 A), so it
 ## decelerates and sinks a little differently (z 18.319 -> 18.317).
-const GOLDEN_POS := Vector3(0.00000000000000000, -44.52101898193359375, 18.13430595397949219)
-const GOLDEN_VEL := Vector3(0.00000000000000000, -15.59248447418212891, -2.52507400512695312)
-const GOLDEN_ANGVEL := Vector3(2.78085446357727051, 0.00000000000000000, 0.00000000000000000)
-const GOLDEN_ORIENT := Quaternion(-0.26655039191246033, 0.00000000000000000, 0.00000000000000000,
-	-0.96382099390029907)
-const GOLDEN_GFORCE := 1.65642029648527078
-const GOLDEN_CURRENT := 4.45924933570694559
-const GOLDEN_AIRSPEED := 15.79561805725097656
+## RE-FROZEN at B1 (2026-11-17): per-rotor H-force + blade flapping at each hub (RotorHForce), the TPP power path and the
+## body Cd*A recalibrated so body + rotor drag reproduce the 108.2 km/h top speed (0.009 -> 0.002648 m^2). The 5 s open-loop
+## tumble now loses speed through rotor drag and the hub-height H torque tips it out of the pure roll: pos y -44.52 -> -27.75,
+## angvel picks up y/z (the H acts at each hub with v + omega x r, and the rotors' spin senses differ). With
+## rotor_h_force_enabled = false the tumble returns to a pure roll (x, y, z angvel 2.685, 0, 0), the residual difference from
+## the old literals being the recalibrated body Cd*A and the TPP power path.
+const GOLDEN_POS := Vector3(0.13471812009811401, -27.75299835205078125, -4.89381885528564453)
+const GOLDEN_VEL := Vector3(0.09535618871450424, -17.97195434570312500, -0.65904575586318970)
+const GOLDEN_ANGVEL := Vector3(7.96936941146850586, 0.13895927369594574, -0.63562572002410889)
+const GOLDEN_ORIENT := Quaternion(0.98120480775833130, 0.00291153672151268, -0.01736800931394100,
+	0.19216442108154297)
+const GOLDEN_GFORCE := 0.29985775884381372
+const GOLDEN_CURRENT := 2.16324886832334551
+const GOLDEN_AIRSPEED := 17.98428726196289062
 ## RE-FROZEN at R1.5 (2026-11-16): vortex ring state and windmill braking are modelled. The open-loop 5 s tumble passes
 ## through near-vertical descent at 0.25 to 1.5 hover inflows, where the rotors now carry the mean thrust deficit and the
 ## seeded fluctuation (rust/src/bemt_ratios.rs, R1.5 block; powertrain.rs vrs_fluctuation). CAUSE CONFIRMED, not assumed:

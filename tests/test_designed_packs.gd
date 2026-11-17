@@ -94,11 +94,15 @@ static func _migration() -> Array:
 ## test_preset_pack_pin: 8.363 -> 6.865, and the 0.02 % gap between the two packs is unchanged); long_range_6s 16.073 -> 15.367 (-4.4 %,
 ## a high-resistance Li-ion pack, which moves least, as the preset battery_6s_4000_liion does: 15.13 -> 15.02, -0.7 %; mechanism not isolated). Every other column
 ## (AUW, T:W, hover throttle, top speed, R, mass) is unchanged to 1e-9, so hover physics did not move.
+## Columns 3 and 4 RE-PINNED at B1 (2026-11-17): per-rotor H-force + flapping with the TPP power path deepen the forward-flight
+## bucket (min near 10-12 m/s), so every freestyle-profile pack flies longer (4S 1500 7.73 -> 9.03 min, +17 %; +4 to +27 % across the
+## shelf, Li-ion least), and the body Cd*A recalibration (body + rotor drag reproduce the 108.2 km/h calibration) moves top speed by
+## under 1.5 %. AUW, T:W, hover throttle, R and mass are unchanged to 1e-9: hover physics did not move.
 const V1_GOLDEN := {
 	"custom_shed_4s_1300": [477.480708465516, 8.64188216420273, 0.31956843668757,
-		6.86398367309389, 104.940833999123, 0.0113, 155.0],
+		8.18543948376607, 104.64419087627809, 0.0113, 155.0],
 	"custom_long_range_6s": [944.980708465516, 8.61511446938397, 0.34437748810877,
-		15.3669031649656, 147.631172121907, 0.2345, 612.5],
+		16.17967084338341, 149.63064746494766, 0.2345, 612.5],
 	"custom_whoop_1s": [327.030708465516, 0.91282443245776, 1.0,
 		0.0, 0.0, 0.0721, 9.5],   # top speed 46.9 -> 0.0 at SR1.3 (T:W 0.91 cannot hover; see test_preset_pack_pin.gd)
 }

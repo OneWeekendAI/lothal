@@ -371,10 +371,19 @@ static func _top_speed_top_area() -> Array:
 	var c2 := ReferenceBuild.build()
 	c2.drag_field_m2 = Vector3(0.0, c2.drag_cda_m2.y * 2.0, 0.0)
 	c2._recompute()
-	results.append(TestResult.new("top speed: the reference FPV build is lean-capped (its figure equals sqrt(W / front Cd*A halves) within 0.1 percent)",
-		absf(capped.top_speed_kmh() - sqrt(capped.weight_n() / capped.drag_coefficient) * 3.6) < 0.001 * capped.top_speed_kmh(),
-		"top speed %.3f km/h" % capped.top_speed_kmh()))
-	results.append(TestResult.new("top speed: on a lean-capped build the top-area term cancels exactly at 45 degrees (doubling it moves the figure by under 0.1 percent), the physics the note records",
-		absf(c2.top_speed_kmh() - capped.top_speed_kmh()) < 0.001 * capped.top_speed_kmh(),
-		"lean-capped %.3f km/h, top area x2 %.3f km/h" % [capped.top_speed_kmh(), c2.top_speed_kmh()]))
+	# B1 (2026-11-17): the cap is TOP_SPEED_LEAN_DEG = 62 (rotor H-force + flapping carry part of the drag; the body Cd*A was
+	# recalibrated so the total reproduces 108.2 km/h). At 62 degrees the top area no longer cancels (it does only at 45), so the
+	# closed form sqrt(W / front Cd*A) and the "doubling the top area changes nothing" claim are both gone, by physics. What stays:
+	# the reference is LEAN-capped (at its top speed the trim lean is the cap and the rotors still have thrust in hand), and the
+	# top-area term is now in a lean-capped figure too.
+	var v_top := capped.top_speed_kmh() / 3.6
+	var trim_top: Dictionary = capped.trim_lean(v_top, capped.weight_n())
+	var lean_top_deg := rad_to_deg(float(trim_top["lean_rad"]))
+	results.append(TestResult.new("top speed: the reference FPV build is lean-capped (at its top speed the trim lean sits at the %.0f degree cap within 0.5 degree)" % Build.TOP_SPEED_LEAN_DEG,
+		absf(lean_top_deg - Build.TOP_SPEED_LEAN_DEG) < 0.5,
+		"top speed %.3f km/h, trim lean %.2f deg" % [capped.top_speed_kmh(), lean_top_deg]))
+	var drop := 1.0 - c2.top_speed_kmh() / capped.top_speed_kmh()
+	results.append(TestResult.new("top speed: at the 62 degree cap the top-area term no longer cancels: doubling it lowers the lean-capped figure by 1 to 10 percent",
+		drop > 0.01 and drop < 0.10,
+		"lean-capped %.3f km/h, top area x2 %.3f km/h (%.1f percent)" % [capped.top_speed_kmh(), c2.top_speed_kmh(), drop * 100.0]))
 	return results

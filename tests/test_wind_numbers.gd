@@ -80,8 +80,8 @@ static func run() -> Array:
 ## and the old penalty was applied to it). Hover in still air (HOVER_0) is unchanged.
 ## RE-FROZEN AGAIN at SR1 bucket-depth terms (2026-11-09): 8.336 -> 9.421 A, 8.6371 -> 7.6426 min (induced-power factor,
 ## profile growth, rear-rotor interference all cost power in forward flight; hover unchanged).
-const GOLDEN_AVG_CURRENT := 9.31523917734718587   # 17 sig. digits: the 20-digit literal parses one ulp off
-const GOLDEN_FLIGHT_TIME := 7.72927013780705785
+const GOLDEN_AVG_CURRENT := 7.975982058312337   # 17 sig. digits: the 20-digit literal parses one ulp off
+const GOLDEN_FLIGHT_TIME := 9.02710154982905166
 
 ## MUTATION THIS CATCHES: the wind term added as `+ wind_mps` with no zero guard, using a non-zero
 ## default. That mutation moves BOTH figures away from the golden literals even at the call sites
@@ -269,10 +269,11 @@ static func _hover_delegates_in_source() -> Array:
 ## Re-measured 2026-09-27 — see GOLDEN_AVG_CURRENT's note (the ceiling bounds the bisection).
 ## Re-measured 2026-11-04 (prop chapter: k_t and k_q from BEMT; MOTOR_REBASELINE.md).
 ## Re-measured 2026-11-09 (SR1, see GOLDEN_AVG_CURRENT).
-const FT_CALM := 7.72927013780705785
-const FT_3 := 6.03157721952415304
-const FT_7 := 3.96522514168554707
-const FT_12 := 2.18131586257820320
+## Re-measured 2026-11-17 (B1: rotor H + flapping, TPP power path; the forward-flight bucket deepens, min near 10-12 m/s).
+const FT_CALM := 9.02710154982905166
+const FT_3 := 7.65420037231767925
+const FT_7 := 5.70401561659598233
+const FT_12 := 3.61242880855468318
 
 ## MUTATION THIS CATCHES: the wind term applied to one segment only. With only one of five legs
 ## seeing the wind, the weighted average moves far less per m/s of wind than the pinned literals
@@ -307,9 +308,10 @@ static func _flight_time_falls() -> Array:
 ## Re-measured 2026-09-27 — see GOLDEN_AVG_CURRENT's note (the ceiling bounds the bisection).
 const HOVER_0 := 4.72773575204462837
 ## Re-measured 2026-11-09 (SR1, see GOLDEN_AVG_CURRENT). HOVER_0 is unchanged: still air has no edgewise flow.
-const HOVER_3 := 4.64617526903505684
-const HOVER_7 := 4.58996330567381250
-const HOVER_12 := 4.87021052631011653
+## Re-measured 2026-11-17 (B1: rotor H + flapping, TPP power path; the forward-flight bucket deepens, min near 10-12 m/s).
+const HOVER_3 := 4.63298230874360417
+const HOVER_7 := 4.47604024164529157
+const HOVER_12 := 4.38440741883959184
 
 ## MUTATION THIS CATCHES: `hover_current_in_wind_a` ignoring its argument. With the argument
 ## ignored, every one of the four pinned values below collapses to HOVER_0 (or whatever constant
@@ -346,13 +348,13 @@ static func _hover_current_measured_shape() -> Array:
 	results.append(TestResult.new(
 		"22 m/s of headwind draws MORE hover current than calm — the drag term has overtaken the "
 			+ "lift saved by this point (SR1: the crossing moved from between 7 and 12 m/s to between 12 and 22 m/s "
-			+ "once edgewise flow raises thrust and drag is directional; SR1 bucket terms: the induced-power factor, profile growth and rear-rotor interference move it again, to between 7 and 12 m/s: 7 m/s still draws less than calm, 12 m/s more)",
-		build.hover_current_in_wind_a(22.0) > h0 and h12 > h0 and h7 < h0,
+			+ "once edgewise flow raises thrust and drag is directional; SR1 bucket terms: the induced-power factor, profile growth and rear-rotor interference move it again, to between 7 and 12 m/s; B1 rotor H + flapping with the TPP power path deepens the bucket and moves it back to between 12 and 22 m/s: 12 m/s draws less than calm, 22 m/s more)",
+		build.hover_current_in_wind_a(22.0) > h0 and h12 < h0 and h7 < h0,
 		"calm=%.4f, 12 m/s=%.4f, 22 m/s=%.4f" % [h0, h12, build.hover_current_in_wind_a(22.0)]))
 	results.append(TestResult.new(
-		"the curve is genuinely non-monotonic: it falls from calm to 7 m/s, then rises past it",
-		h7 < h0 and h12 > h7,
-		"%.4f -> %.4f -> %.4f -> %.4f A" % [h0, h3, h7, h12]))
+		"the curve is genuinely non-monotonic: it falls from calm through 12 m/s, then rises past it by 22 m/s (B1: bucket minimum near 10-12 m/s)",
+		h7 < h0 and h12 < h7 and build.hover_current_in_wind_a(22.0) > h0,
+		"%.4f -> %.4f -> %.4f -> %.4f -> %.4f A (0/3/7/12/22)" % [h0, h3, h7, h12, build.hover_current_in_wind_a(22.0)]))
 	return results
 
 
