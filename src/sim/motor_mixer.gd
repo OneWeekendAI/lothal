@@ -63,11 +63,15 @@ static func mix(throttle: float, roll_cmd: float, pitch_cmd: float, yaw_cmd: flo
 	var spins := PackedFloat64Array()
 	for name in MotorLayout.MOTOR_NAMES:
 		spins.append(float(spin[name]))
+	# Battery-voltage compensation (R1.3), computed by the FC from its MEASURED voltage (VbatSensor).
+	# B2/P5: Betaflight scales the whole output range, so the scale goes on the collective AND the
+	# attitude commands BEFORE the desaturation below; a full motor then lowers the collective and the
+	# roll/pitch/yaw differential is kept. (Per-motor min(1, cmd * scale) after the mix clipped only the
+	# high motors and ate the differential.) 1.0 is bit-identical to no compensation.
+	var k := vbat_scale
 	# The three steps described above run in the native core (FlightLaw.mix).
-	var cmds := FlightLaw.mix(throttle, roll_cmd, pitch_cmd, yaw_cmd, spins)
+	var cmds := FlightLaw.mix(throttle * k, roll_cmd * k, pitch_cmd * k, yaw_cmd * k, spins)
 	var out := {}
 	for i in MotorLayout.MOTOR_NAMES.size():
-		# Battery-voltage compensation (R1.3): the scale is computed by the FC from its MEASURED
-		# voltage (VbatSensor). 1.0 is exactly the old behaviour; output is held at full throttle.
-		out[MotorLayout.MOTOR_NAMES[i]] = cmds[i] if vbat_scale == 1.0 else minf(1.0, cmds[i] * vbat_scale)
+		out[MotorLayout.MOTOR_NAMES[i]] = cmds[i]
 	return out

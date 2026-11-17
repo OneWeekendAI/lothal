@@ -545,6 +545,9 @@ static func _plant_current_excess(build: Build, hz: float, c0: float, var_c: flo
 	return means[1] - means[0]
 
 
+const ENERGY_GAP_BOUND := 0.002   # B2/T3: measured 0.00114 x ~1.75
+
+
 static func _rate_energy_law(hz: float) -> TestResult:
 	var base := _flight_with_ripple(500.0)
 	var low := _flight_with_ripple(hz)
@@ -563,8 +566,11 @@ static func _rate_energy_law(hz: float) -> TestResult:
 	var resolution := 0.005 * float(base["mean_a"])
 	if absf(predicted) < resolution:
 		explained = absf(actual) < resolution
-	var ok: bool = String(low["ended_by"]) == "completed" and String(base["ended_by"]) == "completed" and explained and rel_e < 0.03
+	# B2/T3: the energy bound is measured x ~1.5, stated. R1.4 had widened it 1 -> 3 percent for a 1.72 percent gap that
+	# came from D-term noise; B1's Betaflight D lowpass removed that cause, and the measured gap is now 0.114 percent
+	# (8.8584 vs 8.8483 Wh, 2026-11-17). Bound 0.2 percent = 1.75 x measured, so a returning loop-rate dependence fails it.
+	var ok: bool = String(low["ended_by"]) == "completed" and String(base["ended_by"]) == "completed" and explained and rel_e < ENERGY_GAP_BOUND
 	var detail := "%.0f Hz: ended %s, energy %.4f Wh vs %.4f Wh at 500 Hz (%.3f percent); command std %.5f vs %.5f; mean current %.4f vs %.4f A, difference %.4f A, command-variance law predicts %.4f A" % [
 		hz, low["ended_by"], low["energy_wh"], base["energy_wh"], rel_e * 100.0, sqrt(float(low["ripple_var"])),
 		sqrt(float(base["ripple_var"])), low["mean_a"], base["mean_a"], actual, predicted]
-	return TestResult.new("sr4 mission inner rate 250 Hz vs 500 Hz on a 5-minute cruise: completes, and the current difference is the command-variance law's (within 30 percent, energy gap under 3 percent)", ok, detail)
+	return TestResult.new("sr4 mission inner rate 250 Hz vs 500 Hz on a 5-minute cruise: completes, and the current difference is the command-variance law's (within 30 percent, energy gap under 0.2 percent = 1.75 x measured)", ok, detail)

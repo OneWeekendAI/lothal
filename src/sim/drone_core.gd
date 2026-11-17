@@ -27,7 +27,7 @@ var gyro: Gyro
 ## gyro's vibration. The attitude estimator reads this; nothing else should.
 var accel := Accelerometer.new()
 ## The FC's battery-voltage sensor (R1.3): the pack's true voltage through ADC noise and a low-pass.
-## Its `reference_v` is the fitted pack's full-charge resting voltage, taken at construction.
+## Its `cells` is the fitted pack's cell count; the reference is cells x Betaflight's full-cell voltage.
 var vbat := VbatSensor.new()
 ## The air's own motion, or null on a still day. HANDED IN, not constructed here, for the same
 ## reason `gyro` is: null means "nobody has told this core about the field it is flying at",
@@ -153,10 +153,7 @@ func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m
 		p_guard_closure, p_blade_twist)
 	theta_75 = RotorHForce.theta_75(p_prop_radius_m, p_prop_pitch_m, p_blade_twist)
 	gyro = p_gyro if p_gyro != null else Gyro.new()
-	var used_now: float = p_battery.used_mah
-	p_battery.used_mah = 0.0
-	vbat.reference_v = p_battery.resting_voltage_v()
-	p_battery.used_mah = used_now
+	vbat.cells = int(p_battery.cells)
 	_publish(Vector3.ZERO)
 
 ## Current drawn by ONE motor at a given RPM. Delegates: there is one such function in the

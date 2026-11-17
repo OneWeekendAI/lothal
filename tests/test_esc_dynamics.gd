@@ -19,6 +19,7 @@ static func run() -> Array:
 	results.append(_test_current_limit_clips())
 	results.append(_test_pack_current_reaches_sag())
 	results.append(_test_steady_state_matches_dc_solve())
+	results.append(_test_limit_binds_at_steady_state())
 	results.append(_test_whoop_cinelifter_ratio_vs_p7())
 	results.append(_test_dynamics_off_is_the_p7_lag())
 	results.append(_test_plant_converges_with_dt())
@@ -167,6 +168,30 @@ static func _test_steady_state_matches_dc_solve() -> TestResult:
 		worst < 0.005, "worst error %.4f%%" % (worst * 100.0))
 
 
+## B2/P4: a limit BELOW the full-throttle steady current binds in steady state too: the held winding
+## current is at most the limit, and the rotor settles below the unlimited DC point.
+## MUTATION: the pre-B2 floor (limit.max(1.05 x steady)) lets the winding settle at ~30 A, fails.
+static func _test_limit_binds_at_steady_state() -> TestResult:
+	var limit := 20.0
+	var mm: MotorModel = _model(REF_MOTOR, limit)["mm"]
+	var free: MotorModel = _model(REF_MOTOR, 0.0)["mm"]
+	var rpm := 0.0
+	var rpm_free := 0.0
+	var i_held := 0.0
+	var i_free := 0.0
+	for _i in 1500:
+		var o: PackedFloat64Array = mm.step_dynamic(rpm, 1.0, 15.0, DT)
+		rpm = o[0]
+		i_held = o[1]
+		var f: PackedFloat64Array = free.step_dynamic(rpm_free, 1.0, 15.0, DT)
+		rpm_free = f[0]
+		i_free = f[1]
+	return TestResult.new(
+		"b2 p4: an ESC limit below the steady draw holds the steady winding current at the limit",
+		i_free > limit * 1.2 and i_held <= limit + 1e-9 and rpm < rpm_free,
+		"held %.2f A (limit %.0f A, unlimited steady %.2f A); rpm %.0f vs %.0f" % [i_held, limit, i_free, rpm, rpm_free])
+
+
 ## P7 had a whoop/cinelifter tau ratio of about 1.3x (0802 slower: damping K_e^2/R outgrows J). The
 ## new model's 63% rise time on the same small step must keep the ordering and land within 2x of
 ## P7's ratio. Not required to equal tau: tau is linearised, this one is shaped by voltage and the
@@ -187,9 +212,13 @@ static func _test_whoop_cinelifter_ratio_vs_p7() -> TestResult:
 
 
 ## Time to 63.2% of the step from throttle 0.35 to 0.5 (the small step P7's tau is linearised for).
+## B2/P4: each motor runs at its OWN thrust-test voltage. This used 4S (14.8 V) for both, which puts the 1S 0802
+## whoop motor at four times its rated voltage; that only worked while the ESC limit could never bind at steady state
+## (its 0.5-throttle point then needs 4x its 7 A limit). With the plain cap the 4S whoop could never reach its target.
 static func _rise_63(motor_id: String) -> float:
 	var mm: MotorModel = _model(motor_id)["mm"]
-	var v := 3.7 * 4.0
+	var motor: Dictionary = PartsCatalog.load_default().get_part(motor_id)
+	var v := float(motor["thrust_test"]["voltage_v"])
 	var lo := mm.target_rpm(0.35, v)
 	var hi := mm.target_rpm(0.5, v)
 	return _time_to(mm, lo, 0.5, v, lo + 0.632 * (hi - lo), false, 2.0)

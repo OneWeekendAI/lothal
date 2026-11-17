@@ -354,11 +354,19 @@ static func _descent_is_declined(ratios: BemtRatios) -> TestResult:
 			var et := ratios.thrust_ratio(8500.0, -float(i), 40.0)
 			worst_edge = minf(worst_edge, minf(e, et))
 			best_edge = maxf(best_edge, maxf(e, et))
+	# B2/T5: bounds tied to the model's own constants, not a copied 2.2. The windmill brake must reach a real thrust GAIN
+	# (best > 1) that stays under the stall soft cap 1 + THRUST_GAIN_CAP, and the descent power must bottom out ON the
+	# no-regeneration floor (fast descent drives the momentum power negative; the floor is what holds it).
+	# MUTATIONS: THRUST_GAIN_CAP's tanh removed (gain grows unbounded past 2.0) fails the cap half; DESCENT_POWER_FLOOR
+	# skipped fails the floor half (worst power goes to or below zero).
+	var cap := 1.0 + BemtRatios.thrust_gain_cap()
+	var floor_p := BemtRatios.descent_power_floor()
 	return TestResult.new(
-		"a pure descent reads finite, positive ratios at every speed (soft-capped gain); a shallow descent in 40 m/s of edgewise flow still reads exactly 1.0",
-		worst_thrust > 0.0 and worst_power > 0.0 and is_finite(best_thrust) and best_thrust < 2.2 and worst_edge == 1.0 and best_edge == 1.0,
-		"1-60 m/s pure descent: thrust %.3f..%.3f, worst power %.3f; shallow descent in 40 m/s edgewise: %.6f..%.6f" % [
-			worst_thrust, best_thrust, worst_power, worst_edge, best_edge])
+		"a pure descent reads finite ratios at every speed: thrust gain > 1 and under the soft cap 1 + %.2f, power bottoms out exactly on the %.2f floor; a shallow descent in 40 m/s of edgewise flow still reads exactly 1.0" % [cap - 1.0, floor_p],
+		worst_thrust > 0.0 and is_finite(best_thrust) and best_thrust > 1.0 and best_thrust < cap
+			and absf(worst_power - floor_p) < 1.0e-12 and worst_edge == 1.0 and best_edge == 1.0,
+		"1-60 m/s pure descent: thrust %.3f..%.3f (cap %.3f), worst power %.4f (floor %.4f); shallow descent in 40 m/s edgewise: %.6f..%.6f" % [
+			worst_thrust, best_thrust, cap, worst_power, floor_p, worst_edge, best_edge])
 
 
 ## DIAGNOSED 2026-11-11 (CropMerge, mapper at 20 mph with gusts): the body-frame axial velocity of an aircraft in fast

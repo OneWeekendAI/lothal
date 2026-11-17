@@ -71,9 +71,9 @@ pub struct MotorModel {
     #[var]
     pub dyn_j_kg_m2: f64,
     /// R1.4. ESC phase-current limit, A per motor; 0 = none. ESTIMATED when no datasheet figure is
-    /// known (Build uses 2 x the motor's rated amps). The ESC is never allowed to clip BELOW the
-    /// current the commanded operating point needs in steady state, so the limit only ever shapes
-    /// transients (a punch from rest), never the steady thrust the k_t fit was made at.
+    /// known (Build uses 2 x the motor's rated amps). A plain cap (B2/P4): when the commanded
+    /// operating point needs more than the limit in steady state, the ESC holds the limit and the
+    /// rotor settles slower than the DC solve says, as a real current-limited ESC does.
     #[var]
     pub esc_i_limit_a: f64,
     /// R1.4. ESC setting: active braking (damped light / complementary PWM). On, the ESC may drive
@@ -152,10 +152,10 @@ impl MotorModel {
         let v_app = t * v_supply.max(0.0);
         let j = self.dyn_j_kg_m2.max(1e-12);
         let k_q = self.dc_k_q.max(0.0);
-        // Floor on the limit: the steady current of the commanded point (see esc_i_limit_a).
+        // B2/P4: a plain cap. A real ESC current limit binds whenever the winding asks for more,
+        // steady state included; the old floor at 1.05 x the steady current made it unable to bind.
         let i_cap = if self.esc_i_limit_a > 0.0 {
-            let ss = solve_point(v_app, self.kv, r, self.dc_io_a, self.dc_io_v, k_q).current_a;
-            self.esc_i_limit_a.max(1.05 * ss)
+            self.esc_i_limit_a
         } else {
             f64::INFINITY
         };

@@ -216,6 +216,19 @@ pub struct BemtRatios {
 
 #[godot_api]
 impl BemtRatios {
+    /// B2/T5: the descent thrust soft cap (ratio < 1 + this), exposed so tests bound against the
+    /// constant rather than a copied number.
+    #[func]
+    fn thrust_gain_cap() -> f64 {
+        THRUST_GAIN_CAP
+    }
+
+    /// B2/T5: the floor under the descent power ratio (no regeneration).
+    #[func]
+    fn descent_power_floor() -> f64 {
+        DESCENT_POWER_FLOOR
+    }
+
     /// The ratio surface for one propeller, from the cache or freshly solved. Geometry only —
     /// no RPM and no air density, because the surface depends on neither (see module docs).
     ///

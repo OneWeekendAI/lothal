@@ -53,7 +53,7 @@ static func run() -> Array:
 	var same := true
 	for n in MotorLayout.MOTOR_NAMES:
 		same = same and plain[n] == unit[n]
-	var sag := VbatSensor.new(16.8, 0.0)
+	var sag := VbatSensor.new(4, 0.0)
 	sag.update(14.0, DT)
 	var rl_off := RateModeController.new()
 	var rl_none := RateModeController.new()
@@ -72,24 +72,57 @@ static func run() -> Array:
 		a == b, "%.9f vs %.9f" % [a, b]))
 
 	# ---- the scale law ----
-	var s := VbatSensor.new(16.8, 0.0)
+	# B2/P6: Betaflight's law (mixer.c), relative to a full pack: (1 - a(v)) / (1 - a(full)),
+	# a(v) = p * clamp(v_cell - 3.30, 0, 0.80) / 4.10. 4S at 14.0 V = 3.50 V/cell.
+	var s := VbatSensor.new(4, 0.0)
 	s.update(14.0, DT)
 	var full_scale := VbatSensor.scale(100.0, s)
 	var half_scale := VbatSensor.scale(50.0, s)
+	var want100 := (1.0 - 0.20 / 4.10) / (1.0 - 0.80 / 4.10)
+	var want50 := (1.0 - 0.5 * 0.20 / 4.10) / (1.0 - 0.5 * 0.80 / 4.10)
 	results.append(TestResult.new(
-		"scale = reference/filtered at 100%, half-way at 50%, 1.0 at 0%",
-		absf(full_scale - 16.8 / 14.0) < 0.01 and absf(half_scale - (1.0 + 0.5 * (16.8 / 14.0 - 1.0))) < 0.01
+		"scale is Betaflight's range attenuation relative to a full pack: %.4f at 100%%, %.4f at 50%%, 1.0 at 0%%" % [want100, want50],
+		absf(full_scale - want100) < 1.0e-3 and absf(half_scale - want50) < 1.0e-3
 			and VbatSensor.scale(0.0, s) == 1.0,
 		"100%%: %.4f  50%%: %.4f" % [full_scale, half_scale]))
-	var above := VbatSensor.new(16.8, 0.0)
+	var above := VbatSensor.new(4, 0.0)
 	above.update(17.5, DT)
 	results.append(TestResult.new("a pack above the reference is never cut back (scale >= 1)",
 		VbatSensor.scale(100.0, above) == 1.0, "scale %.4f" % VbatSensor.scale(100.0, above)))
+	# B2/P6: clamped as Betaflight clamps batteryGoodness. At or below the min cell voltage the scale
+	# stops at full/min = 4.10/3.30; at or above the full cell voltage it is 1. The reference is
+	# cells x 4.10 V, not the pack's resting voltage.
+	# MUTATION: dropping the clampf in scale() gives 1.48 at 2.0 V/cell, fails.
+	var dead := VbatSensor.new(4, 0.0)
+	dead.update(8.0, DT)
+	var at_min := VbatSensor.new(4, 0.0)
+	at_min.update(13.2, DT)
+	var cap := 4.10 / 3.30
+	results.append(TestResult.new(
+		"b2 p6: the scale is clamped like Betaflight's: %.4f at and below 3.30 V/cell, reference = cells x 4.10 V" % cap,
+		absf(VbatSensor.scale(100.0, dead) - cap) < 1.0e-6 and absf(VbatSensor.scale(100.0, at_min) - cap) < 1.0e-6
+			and absf(dead.reference_v - 16.4) < 1.0e-9,
+		"2.0 V/cell %.4f, 3.30 V/cell %.4f, ref %.2f V" % [VbatSensor.scale(100.0, dead), VbatSensor.scale(100.0, at_min), dead.reference_v]))
+
+	# B2/P5: at high throttle with a roll command and compensation on, the roll differential is kept
+	# (scaled by the compensation, as Betaflight scales the whole range), not clipped off the high motors.
+	# MUTATION: the pre-B2 per-motor minf(1, cmd * scale) after the mix keeps 0.12 of a 0.16 split, fails.
+	var plain_hi := MotorMixer.mix(0.9, 0.2, 0.0, 0.0)
+	var comp_hi := MotorMixer.mix(0.9, 0.2, 0.0, 0.0, {}, 1.2)
+	var split_plain: float = (plain_hi["M3"] + plain_hi["M4"]) - (plain_hi["M1"] + plain_hi["M2"])
+	var split_comp: float = (comp_hi["M3"] + comp_hi["M4"]) - (comp_hi["M1"] + comp_hi["M2"])
+	var top := 0.0
+	for n in MotorLayout.MOTOR_NAMES:
+		top = maxf(top, comp_hi[n])
+	results.append(TestResult.new(
+		"b2 p5: at 90% throttle a roll command keeps its full motor differential (x scale) with compensation on",
+		absf(split_plain) > 0.1 and absf(split_comp - 1.2 * split_plain) < 1.0e-9 and top <= 1.0,
+		"split %.4f off, %.4f with scale 1.2 (want %.4f), max motor %.4f" % [split_plain, split_comp, 1.2 * split_plain, top]))
 
 	# ---- never above 100% output ----
 	var rl := RateModeController.new()
 	VbatSensor.set_percent(rl.config, 100.0)
-	var low := VbatSensor.new(16.8, 0.0)
+	var low := VbatSensor.new(4, 0.0)
 	low.update(8.0, DT)   # a 2x scale
 	var worst := 0.0
 	for thr in [0.1, 0.5, 0.9, 1.0]:
@@ -111,7 +144,7 @@ static func run() -> Array:
 		"drift 0%%: %+.3f m, 100%%: %+.3f m" % [drift0, drift100]))
 
 	# ---- the FC reads the filtered sensor, not the truth ----
-	var sensor := VbatSensor.new(16.8, 0.0)
+	var sensor := VbatSensor.new(4, 0.0)
 	sensor.update(16.0, DT)
 	for i in 5:
 		sensor.update(12.0, DT)   # the true voltage collapses; a 0.5 Hz filter barely moves
@@ -119,7 +152,7 @@ static func run() -> Array:
 		"the sensor lags a step in true voltage (filtered, not instantaneous)",
 		sensor.filtered_v > 15.5 and sensor.filtered_v < 16.0,
 		"filtered %.3f V after true fell to 12 V" % sensor.filtered_v))
-	var noisy := VbatSensor.new(16.8, 0.05)
+	var noisy := VbatSensor.new(4, 0.05)
 	var lo := INF
 	var hi := -INF
 	for i in 2000:
@@ -139,8 +172,10 @@ static func run() -> Array:
 		"the core's sensor is fed from the pack: tracks the live voltage but is not it",
 		absf(core.vbat.filtered_v - core.observables.voltage_live_v) < 1.0
 			and core.vbat.filtered_v != core.observables.voltage_live_v
-			and core.vbat.reference_v > core.observables.voltage_live_v,
-		"sensor %.4f V, true %.4f V, ref %.2f V" % [core.vbat.filtered_v, core.observables.voltage_live_v, core.vbat.reference_v]))
+			and core.vbat.cells == int(core.powertrain.battery.cells) and core.vbat.cells > 0
+			and absf(core.vbat.reference_v - core.vbat.cells * VbatSensor.BF_FULL_CELL_V) < 1.0e-9,
+		"sensor %.4f V, true %.4f V, ref %.2f V (%d cells x %.2f V, B2/P6)" % [core.vbat.filtered_v, core.observables.voltage_live_v,
+			core.vbat.reference_v, core.vbat.cells, VbatSensor.BF_FULL_CELL_V]))
 	var main_code := _code_only(FileAccess.get_file_as_string("res://src/scenes/main.gd"))
 	var nav_code := _code_only(FileAccess.get_file_as_string("res://src/autopilot/nav_pilot.gd"))
 	var fc_code := _code_only(FileAccess.get_file_as_string("res://src/fc/flight_controller.gd")

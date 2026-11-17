@@ -226,6 +226,25 @@ static func _wake_ends() -> TestResult:
 		ok and near < mid and mid < 1.0, "factors%s" % detail)
 
 
+## B2/P3: the meander rotates the wake with the mean. Force the meander angle to +40 deg; a probe 15 m downwind of the
+## box centre along the ROTATED mean is sheltered. On the fixed axis that point is 9.6 m to the side, outside the wake.
+## MUTATION: wake_at using the fixed _dir/_cross (the pre-B2 code) reads 1.0 on the rotated probe, fails.
+static func _wake_follows_meander() -> TestResult:
+	var w := _wake_wind(true)
+	w.meander_enabled = true
+	w._m_theta_deg = 40.0
+	w._m_speed = 0.0
+	w._update_basis()
+	var down := w.meandered_steady()
+	down.y = 0.0
+	down = down.normalized()
+	var probe := Vector3(30.0, 2.0, 0.0) + down * 15.0
+	var f: float = w.wake_at(probe, 2.0)[0]
+	var basis_ok := w._idir.distance_to(down) < 1.0e-6
+	return TestResult.new("b2 p3: with the meander at +40 deg the wake lies along the rotated mean (probe factor < 1)",
+		f < 0.8 and basis_ok, "probe factor %.3f, basis matches mean %s" % [f, str(basis_ok)])
+
+
 ## No obstacle, no gust: bit-identical to the pre-R1.6 behaviour.
 static func _no_obstacles_no_change() -> TestResult:
 	var a := _wake_wind(false)
@@ -295,5 +314,6 @@ static func run() -> Array:
 	out.append(_wake_in_lee())
 	out.append(_wake_ends())
 	out.append(_no_obstacles_no_change())
+	out.append(_wake_follows_meander())
 	out.append_array(_hover_turbulence())
 	return out

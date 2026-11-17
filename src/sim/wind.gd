@@ -153,6 +153,10 @@ var _turb := Vector3.ZERO
 # --- Dryden field state ---
 var _dir := Vector3(0, 0, 1)        # unit horizontal vector the air moves TOWARD
 var _cross := Vector3(1, 0, 0)
+# B2/P3: the instantaneous basis. The meander rotates the mean wind, so the frozen-field advection axis, the wake
+# axis and the gust/turbulence output axes rotate with it. Equals _dir/_cross when the meander is off.
+var _idir := Vector3(0, 0, 1)
+var _icross := Vector3(1, 0, 0)
 var _sigma_w_ref := 0.0
 var _len_k := 1.0
 var _bin_v: Array[float] = []       # advection speed per bin
@@ -258,6 +262,18 @@ func _step_meander(dt: float) -> void:
 	_m_theta_deg = a * _m_theta_deg + meander_dir_sigma_deg * sqrt(1.0 - a * a) * _m_rng.randfn()
 	var b := exp(-dt / meander_speed_tau_s)
 	_m_speed = b * _m_speed + meander_speed_sigma * sqrt(1.0 - b * b) * _m_rng.randfn()
+	_update_basis()
+
+
+## B2/P3: rotate the downwind/crosswind basis by the meander angle (same bearing convention as steady_vector).
+func _update_basis() -> void:
+	if not meander_enabled:
+		_idir = _dir
+		_icross = _cross
+		return
+	var r := deg_to_rad(from_deg + _m_theta_deg)
+	_idir = Vector3(-sin(r), 0, cos(r))
+	_icross = Vector3(-_idir.z, 0, _idir.x)
 
 
 func _reset_meander() -> void:
@@ -265,6 +281,7 @@ func _reset_meander() -> void:
 	# Drawn from the stationary distribution, so the wind is already wandering at t = 0.
 	_m_theta_deg = meander_dir_sigma_deg * _m_rng.randfn()
 	_m_speed = meander_speed_sigma * _m_rng.randfn()
+	_update_basis()
 
 
 ## ln(z/z0) / ln(z_ref/z0), with z clamped to [2 z0, 200 m].
@@ -303,6 +320,7 @@ func _setup_dryden() -> void:
 	h2 = h2.normalized()
 	_dir = Vector3(h2.x, 0, h2.y)
 	_cross = Vector3(-_dir.z, 0, _dir.x)
+	_update_basis()
 	_bin_v.clear()
 	_a_u.clear()
 	_tau_vw.clear()
@@ -390,8 +408,8 @@ func _gust_at(height_m: float, along: float) -> Vector3:
 	for g in _gusts:
 		var v := one_minus_cosine(g["amp"], g["len"], u * (_t - g["t0"]) - along)
 		match int(g["axis"]):
-			GustAxis.ALONG: out += _dir * v
-			GustAxis.ACROSS: out += _cross * v
+			GustAxis.ALONG: out += _idir * v
+			GustAxis.ACROSS: out += _icross * v
 			_: out += Vector3(0, v, 0)
 	return out
 
@@ -407,15 +425,15 @@ func wake_at(pos: Vector3, height_m: float) -> Array:
 			continue
 		var c := box.get_center()
 		var rel := pos - c
-		var ext_along := 0.5 * (absf(_dir.x) * box.size.x + absf(_dir.z) * box.size.z)
-		var ext_cross := 0.5 * (absf(_cross.x) * box.size.x + absf(_cross.z) * box.size.z)
-		var x := rel.dot(_dir) - ext_along
-		var y := absf(rel.dot(_cross))
+		var ext_along := 0.5 * (absf(_idir.x) * box.size.x + absf(_idir.z) * box.size.z)
+		var ext_icross := 0.5 * (absf(_icross.x) * box.size.x + absf(_icross.z) * box.size.z)
+		var x := rel.dot(_idir) - ext_along
+		var y := absf(rel.dot(_icross))
 		var length := WAKE_LENGTH_HEIGHTS * hgt
 		if x <= 0.0 or x >= length:
 			continue
 		var edge := WAKE_EDGE_HEIGHTS * hgt
-		var half_w := ext_cross + WAKE_SPREAD * x
+		var half_w := ext_icross + WAKE_SPREAD * x
 		var top := hgt + WAKE_SPREAD * x
 		var sh := (1.0 - x / length) * clampf(1.0 - (y - half_w) / edge, 0.0, 1.0) \
 			* clampf(1.0 - (height_m - top) / edge, 0.0, 1.0)
@@ -465,7 +483,7 @@ func _turbulence_at(height_m: float, along: float, across: float, unit := false)
 			out += w * r
 		else:
 			out += w * Vector3(r.x * sb[2], r.y * sb[2], r.z * sb[3])
-	return _dir * out.x + _cross * out.y + Vector3(0, out.z, 0)
+	return _idir * out.x + _icross * out.y + Vector3(0, out.z, 0)
 
 
 ## Steady plus the last computed turbulence — does not advance anything (the HUD reads this).
@@ -501,8 +519,8 @@ func update_at(dt: float, pos: Vector3, height_m: float) -> Vector3:
 		while _acc >= DT_S:
 			_acc -= DT_S
 			_step_field()
-		var along := pos.dot(_dir)
-		var across := pos.dot(_cross)
+		var along := pos.dot(_idir)
+		var across := pos.dot(_icross)
 		if gustiness_mps > 0.0:
 			turb = _turbulence_at(height_m, along, across)
 		if not _obstacles.is_empty() and steady_mps.length() > 0.05:
@@ -510,7 +528,7 @@ func update_at(dt: float, pos: Vector3, height_m: float) -> Vector3:
 			mean *= float(wk[0])
 			if float(wk[1]) > 0.0:
 				turb += _turbulence_at(height_m, along, across, true) * (float(wk[1]) * mean_speed_at(height_m))
-	turb += _gust_at(height_m, pos.dot(_dir))
+	turb += _gust_at(height_m, pos.dot(_idir))
 	_turb = turb
 	_last = mean + turb
 	return _last

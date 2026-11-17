@@ -77,6 +77,15 @@ static func run() -> Array:
 		"final rate = %.4f rad/s (bound %.2f = measured %.3f x ~1.5 margin)" % [on[1], ON_RESIDUAL_LIMIT_RAD_S, ON_MEASURED_RESIDUAL]
 	))
 
+	# B2/T4: the 0.25 bound above is for the shipped configuration and the 0.15 bound for fluctuation off; both stay.
+	# This pins that production never flies with the fluctuation off: a core built the way the app builds it has it ON.
+	# MUTATION: powertrain.rs default vrs_fluctuation_on: false fails this.
+	var shipped := ReferenceBuild.build_drone_core()
+	results.append(TestResult.new(
+		"b2 t4: the shipped build flies with the vortex-ring fluctuation ON (the off case is a test-only isolation)",
+		shipped.powertrain.vrs_fluctuation_on == true,
+		"vrs_fluctuation_on = %s" % str(shipped.powertrain.vrs_fluctuation_on)))
+
 	# B1: one mutation-proven test per Betaflight mechanism (relax, anti-windup, anti-gravity, FF).
 	results.append_array(TestBfMechanisms.run())
 	return results
