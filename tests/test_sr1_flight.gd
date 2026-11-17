@@ -308,6 +308,10 @@ static func _thrusts_at(b: Build, v_forward: float, loss_override: float = -1.0)
 	for i in 400:
 		core.rigid_body.position_m = Vector3(0, 50, 0)
 		core.rigid_body.velocity_mps = Vector3(0, 0, -v_forward)
+		# Held level too: B1 rotor drag acts at hub height and pitches a free body up in 0.4 s, which tilts the
+		# flow into the disc and changes the very thrusts this compares. The case is about level flight.
+		core.rigid_body.orientation = Quaternion.IDENTITY
+		core.rigid_body.angular_velocity_rad_s = Vector3.ZERO
 		core.step({"M1": 0.5, "M2": 0.5, "M3": 0.5, "M4": 0.5}, 0.001)
 	return core.powertrain.observables.thrust_n
 

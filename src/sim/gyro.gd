@@ -167,14 +167,28 @@ func reset() -> void:
 	# Without this, "the same flight twice" would not be the same flight.
 	_rng.seed = _seed
 
-## Power-up gyro calibration, as every flight controller does on arming: the aircraft is still, so whatever the gyro reads
-## IS its offset, and the firmware subtracts it. It cannot remove all of it (temperature, quantisation, a still aircraft
-## that is not perfectly still), so `CALIBRATION_REMOVES` of the offset goes and the rest stays. A LABELLED ESTIMATE:
-## no datasheet publishes the residue after a still-gyro cal; 0.9 leaves 10 percent of the factory figure.
-const CALIBRATION_REMOVES := 0.9
+## Power-up gyro calibration, as every flight controller does on arming (B1, review P8): the aircraft is still and the
+## motors are off, so the firmware AVERAGES `CALIBRATION_SAMPLES` raw readings and takes that mean as the offset. What it
+## cannot remove is what the average itself carries: the sensor's own white noise over N samples, sigma / sqrt(N). That
+## residue is drawn, not assumed, from a calibration RNG kept apart from the flight's noise stream, so a calibrated flight
+## replays the same noise as an uncalibrated one. Betaflight's default gyro_calibration_duration is 1.25 s; at the
+## 1 kHz sample rate here that is 1250 samples, rounded to 1000.
+const CALIBRATION_SAMPLES := 1000
 
 func calibrate() -> void:
-	trim_rad_s = bias_rad_s * CALIBRATION_REMOVES
+	trim_rad_s = still_average(bias_rad_s, noise_rad_s, _seed ^ 0xCA1B, CALIBRATION_SAMPLES)
+
+## The mean of `n` still readings whose truth is zero: the offset plus the average of n noise draws. Shared by the gyro
+## and the accelerometer, which calibrate the same way.
+static func still_average(bias: Vector3, noise_sigma: float, cal_seed: int, n: int) -> Vector3:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = cal_seed
+	var sum := Vector3.ZERO
+	for _i in n:
+		sum += bias
+		if noise_sigma > 0.0:
+			sum += Vector3(rng.randfn(0.0, noise_sigma), rng.randfn(0.0, noise_sigma), rng.randfn(0.0, noise_sigma))
+	return sum / float(maxi(n, 1))
 
 ## One sensor sample: truth, plus bias, plus vibration, plus noise, through the PT1.
 func _sample(true_rate_rad_s: Vector3, period: float) -> void:

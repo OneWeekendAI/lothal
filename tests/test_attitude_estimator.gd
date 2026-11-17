@@ -116,25 +116,41 @@ static func run() -> Array:
 
 	# Through the real core: the airframe shake that the gyro carries must reach the accelerometer
 	# too. Same build, same seeds; the only difference is the vibration source.
-	var spread: Array = []
+	# B1: the still control is not perfectly constant any more, and should not be: the rate loop flies the
+	# real gyro (bias + noise), so the craft creeps (5 cm/s after 1.2 s) and the rotor H-force reads that
+	# airspeed on the accelerometer (mu v = 0.345 x 0.007 = 0.0025 m/s^2, the -mu*v signal B1 exists for). So
+	# the shake is measured as the tick-by-tick DIFFERENCE between the two otherwise identical runs, which
+	# removes everything but the vibration, and the control must stay an order of magnitude quieter.
+	# Mutation: c.gyro.vibration = null in both runs -> difference spread 0, fails.
+	var traces: Array = []
 	for shake in [true, false]:
 		var c := ReferenceBuild.build_drone_core()
 		c.accel.noise_mps2 = 0.0
 		if not shake:
 			c.gyro.vibration = null
 		c.prime_motors(hover)
-		var lo := 1e9
-		var hi := -1e9
+		var trace := PackedFloat64Array()
 		for i in 1200:
 			c.step(rate_loop.update(Vector3.ZERO, c.gyro.rate_rad_s, hover, DT), DT)
 			if i >= 600:
-				lo = minf(lo, c.accel.reading_mps2.x)
-				hi = maxf(hi, c.accel.reading_mps2.x)
-		spread.append(hi - lo)
+				trace.append(c.accel.reading_mps2.x)
+		traces.append(trace)
+	var diff_lo := 1e9
+	var diff_hi := -1e9
+	var still_lo := 1e9
+	var still_hi := -1e9
+	for k in traces[0].size():
+		var d: float = traces[0][k] - traces[1][k]
+		diff_lo = minf(diff_lo, d)
+		diff_hi = maxf(diff_hi, d)
+		still_lo = minf(still_lo, traces[1][k])
+		still_hi = maxf(still_hi, traces[1][k])
+	var shake_spread := diff_hi - diff_lo
+	var still_spread := still_hi - still_lo
 	results.append(TestResult.new(
 		"the airframe shake reaches the accelerometer through DroneCore",
-		spread[0] > 0.02 and spread[1] < 0.001,
-		"x spread shaken %.3f vs still %.3f m/s^2" % [spread[0], spread[1]]))
+		shake_spread > 0.02 and still_spread < 0.1 * shake_spread,
+		"x spread of shaken-minus-still %.3f vs still alone %.4f m/s^2" % [shake_spread, still_spread]))
 
 	var a1 := Accelerometer.new()
 	var a2 := Accelerometer.new()

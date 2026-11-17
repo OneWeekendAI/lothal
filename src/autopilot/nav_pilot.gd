@@ -45,6 +45,8 @@ const VZ_I_TAU_S := 1.5
 const YAW_TAU_S := 0.5
 const MAX_YAW_RATE_RAD_S := 2.0
 const FF_REFRESH_S := 1.0
+const DRAG_FF_REFRESH_MPS := 0.25       # re-solve the drag feed-forward when the target airspeed moves this much
+const DRAG_FF_MIN_AGE_S := 0.2          # and no more often than this (the trim solve is not free)
 ## Thrust-margin tilt cap (ESTIMATED shape): above THR_SOFT of the commanded collective the allowed tilt fades linearly to zero at
 ## THR_HARD, so attitude control keeps differential headroom. The mapper flipped in 20 mph gusts: at a line-end run-out it leaned
 ## 25 degrees into a 17 m/s headwind, the rotors unloaded, the aircraft sank, the altitude loop pushed the collective to the stops
@@ -85,6 +87,9 @@ var _dir := Vector2(0, -1)
 var _len := 0.0
 var _speed := 5.0
 var _end_speed := 0.0
+var _drag_ff_speed := -1.0               # airspeed the drag feed-forward factor was last solved at, m/s
+var _drag_ff_per_mps := 0.0
+var _drag_ff_age := 1e9             # g tan(trim lean) / airspeed at that speed, 1/s
 var _vel_i := Vector2.ZERO              # world-frame (x, z) acceleration learned against the wind, m/s^2
 
 # vertical goal
@@ -281,7 +286,24 @@ func command(dt: float) -> Dictionary:
 			_vel_i = _vel_i.normalized() * i_max
 	else:
 		_vel_i = Vector2.ZERO
-	var a_cmd := verr / VEL_TAU_S + _vel_i
+	# B1 drag feed-forward: the tilt-acceleration that holds the TARGET velocity against the air, from the build's own
+	# level trim (body drag + rotor H-force), g tan(lean) along the air velocity. Rotor drag made the steady drag at a
+	# hover in wind several times larger than the body term alone, more than the I term's 0.6 a_max could learn in time;
+	# the I term is left to learn only the model's residual. Off with wind_correction (it IS a wind correction).
+	var a_ff := Vector2.ZERO
+	if wind_correction:
+		var w3: Vector3 = e["wind"]
+		var v_air := v_target - Vector2(w3.x, w3.z)
+		var s_air := v_air.length()
+		_drag_ff_age += dt
+		if absf(s_air - _drag_ff_speed) > DRAG_FF_REFRESH_MPS and _drag_ff_age >= DRAG_FF_MIN_AGE_S:
+			_drag_ff_age = 0.0
+			_drag_ff_speed = s_air
+			_drag_ff_per_mps = 0.0
+			if s_air > 0.1:
+				_drag_ff_per_mps = G * tan(float(build.trim_lean(s_air, build.weight_n())["lean_rad"])) / s_air
+		a_ff = v_air * _drag_ff_per_mps
+	var a_cmd := verr / VEL_TAU_S + _vel_i + a_ff
 	if a_cmd.length() > a_max:
 		a_cmd = a_cmd.normalized() * a_max
 

@@ -404,7 +404,12 @@ const FRAME_PLATE_THICKNESS_M := 0.010
 ## Drag area (Cd*A) of the reference 5" build, scaled by frame size. Calibrated so the
 ## reference build's top speed lands inside physics.md §8's real-world 100-130 km/h band;
 ## the previous hard-coded lumped coefficient capped it at ~56 km/h.
-const REFERENCE_DRAG_AREA_M2 := 0.009
+## B1 (2026-11-17): recalibrated from 0.009 (which assumed a 45 degree lean and no rotor drag) so that body drag PLUS the
+## rotors H-force (RotorHForce: BET profile + induced + blade flapping) hold 108.2 km/h at TOP_SPEED_LEAN_DEG = 62. There the rotors carry
+## 3.71 N of in-plane H-force (1.74 N of it horizontal) of 4.97 N total horizontal drag (0.005185 before flapping, with an
+## rpm solve that under-read the unloaded rotor at speed). The sim, flown to terminal speed at 62 deg, agrees (r17).
+## Reproduce with tools/b1_drag_cal.gd.
+const REFERENCE_DRAG_AREA_M2 := 0.002648
 const REFERENCE_ARM_M := 0.110
 ## SR1 directional drag (all ESTIMATED): a shelled body presents 0.4 of an open frame's frontal Cd*A;
 ## the centre stack adds 30 mm of body height over pack + plate; the smallest body box is 40 mm; an arm
@@ -415,8 +420,15 @@ const DRAG_MIN_BODY_M := 0.040
 const DRAG_ARM_WIDTH_M := 0.016
 const DRAG_TOP_CD_RATIO := 1.1
 
-## Top speed is quoted at a sustained 45-degree lean: the lean a speed run actually sits at.
+## Top speed is quoted at a sustained lean of TOP_SPEED_LEAN_DEG, the lean a speed run actually sits at.
 ##
+## B1 (2026-11-17): 62 degrees, a LABELLED ESTIMATE. 5" speed runs are flown at 60-70 degrees of lean (onboard
+## footage and the Betaflight angle limits racers set; no measured source in this repo), and 45 was too shallow:
+## at 45 degrees the whole calibrated drag at 108.2 km/h is only W tan 45 = 3.5 N, less than the rotors' own
+## in-plane drag under the old tuned law. The body Cd*A (REFERENCE_DRAG_AREA_M2) is calibrated at THIS lean,
+## together with the rotors' BET H-force (RotorHForce), to the same 108.2 km/h.
+##
+## History, kept because it records why the lean is a pilot's number and not a computed one:
 ## This constant's ORIGINAL justification has expired and is worth recording, because the obvious
 ## reading of the new physics is the wrong one. It used to say that the geometric maximum lean was
 ## about 85 degrees and that a model with no prop unloading would badly over-predict there — the
@@ -431,7 +443,8 @@ const DRAG_TOP_CD_RATIO := 1.1
 ## PILOT holds, which is a different kind of claim and one the propeller model has nothing to say
 ## about. It stays. What the model adds is a ceiling it can now be checked against, and an honest
 ## thrust cap below.
-const TOP_SPEED_LEAN_RAD := 0.7853982
+const TOP_SPEED_LEAN_DEG := 62.0
+const TOP_SPEED_LEAN_RAD := TOP_SPEED_LEAN_DEG * PI / 180.0
 
 ## Passed as `open_circuit_v` to mean "at the pack's NOMINAL voltage" — the datum every figure on
 ## the stats panel is quoted at, and the one the 11.7:1 and 29% oracles are defined at
@@ -588,6 +601,7 @@ var mass_properties: MassProperties
 ## new surface rather than flying the previous fit's, which would be a silent regression the
 ## Rust-side cache key alone cannot save.
 var _forward_ratios: BemtRatios = null
+var _h_coeffs_cache: Array = []
 
 ## SR1 (PUBLISHED, editable field): fraction of thrust the REAR rotors of an X quadcopter lose to the
 ## front rotors' wake in forward flight, 0.11 at 5-15 m/s and negligible in hover and at 25 m/s
@@ -969,6 +983,7 @@ func _recompute() -> void:
 	# _forward_ratios cleared here even when nothing changed, so the check does not have to know
 	# what changed — a stale surface is what §4.0's third bullet warns against.
 	_forward_ratios = null
+	_h_coeffs_cache = []
 
 	# --- Thrust coefficient, fit from the manufacturer table, then moved to this prop ---
 	# physics.md §4 is explicit that C_T must be fit from published thrust tables rather
@@ -2844,8 +2859,14 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 	var lift_n := load_factor * weight_n()
 	var trim := trim_lean(airspeed_mps, lift_n, side_on)
 	var lean_rad: float = trim["lean_rad"]
-	var v_axial := airspeed_mps * sin(lean_rad)
-	var v_edge := airspeed_mps * cos(lean_rad)
+	# B1: the rotor works in its TIP-PATH PLANE, tilted back from the shaft by the flap angle a1. Flapping is a tilt
+	# of the thrust, not a dissipation: the extra shaft lean it needs is cancelled by the disc tilting back, so the
+	# axial flow the blades see (and hence the power) is V sin(lean - a1). Reading it at the shaft would charge the
+	# flapping H-force as H x V of extra climb power, which is what erased the power bucket.
+	var flow := RotorHForce.tpp_flow(airspeed_mps * sin(lean_rad), airspeed_mps * cos(lean_rad),
+		float(trim.get("flap_tilt_rad", 0.0)))
+	var v_axial := flow.x
+	var v_edge := flow.y
 	var target_n: float = trim["thrust_n"]
 
 	var low := 0.0
@@ -2880,26 +2901,118 @@ func flight_current_at_a(airspeed_mps: float, load_factor: float, throttle_ceili
 ## and the thrust T balances  T sin = D_h,  T cos = W + D_v.  Fixed-point on the lean (it converges in
 ## a few passes: the drag terms are small beside the weight at the leans a mapper flies).
 ## `side_on` flies the same speed with the SIDE area in the frontal role (a crab or a beam wind).
+##
+## B1: the rotors' own in-plane H-force (RotorHForce, blade-element theory) enters the same balance. It acts in the
+## rotor plane against the edgewise airspeed v cos(lean), so it adds h cos(lean) of horizontal drag and h sin(lean) of
+## lift, and it depends on the thrust through the rpm and the inflow, so it rides the same fixed point. This is the
+## same law DroneCore flies, which is what keeps top_speed_kmh() and the flown terminal speed one number.
 func trim_lean(airspeed_mps: float, lift_n: float, side_on: bool = false) -> Dictionary:
 	var az := drag_axes.x if side_on else drag_axes.z
 	var ay := drag_axes.y
 	var v2 := airspeed_mps * airspeed_mps
 	var lean := atan2(az * v2, lift_n)
-	for _i in 30:
+	var thrust := lift_n
+	var h := 0.0
+	var a1 := 0.0
+	for _i in 60:
 		var s := sin(lean)
 		var c := cos(lean)
-		var d_h := v2 * (ay * s * s + az * c * c)
-		var d_v := v2 * (ay - az) * s * c
+		var hf := rotor_h_and_flap(airspeed_mps, lean, thrust)
+		h = hf.x
+		a1 = hf.y
+		var d_h := v2 * (ay * s * s + az * c * c) + h * c
+		var d_v := v2 * (ay - az) * s * c - h * s
 		var next := atan2(d_h, maxf(lift_n + d_v, 1e-6))
-		if absf(next - lean) < 1e-9:
+		var next_t := sqrt(d_h * d_h + (lift_n + d_v) * (lift_n + d_v))
+		if absf(next - lean) < 1e-9 and absf(next_t - thrust) < 1e-7:
 			lean = next
+			thrust = next_t
 			break
 		lean = next
+		thrust = next_t
 	var s2 := sin(lean)
 	var c2 := cos(lean)
-	var d_h2 := v2 * (ay * s2 * s2 + az * c2 * c2)
-	var d_v2 := v2 * (ay - az) * s2 * c2
-	return {"lean_rad": lean, "thrust_n": sqrt(d_h2 * d_h2 + (lift_n + d_v2) * (lift_n + d_v2)), "drag_h_n": d_h2}
+	var d_h2 := v2 * (ay * s2 * s2 + az * c2 * c2) + h * c2
+	var d_v2 := v2 * (ay - az) * s2 * c2 - h * s2
+	return {"lean_rad": lean, "thrust_n": sqrt(d_h2 * d_h2 + (lift_n + d_v2) * (lift_n + d_v2)), "drag_h_n": d_h2,
+		"rotor_h_n": h, "flap_tilt_rad": a1}
+
+
+## B1: (P, I) of RotorHForce for the fitted blade at this build's air density. Same inputs as the core gets.
+func rotor_h_coeffs() -> Vector2:
+	var g := _prop_geometry(propeller)
+	return RotorHForce.coefficients(g.blades, g.diameter_m * 0.5, g.pitch_m, blade_chord(), blade_twist(), air.kgm3())
+
+
+## B1: the whole aircraft's rotor H-force (N, in the rotor plane) in level flight at `airspeed_mps` and `lean_rad`
+## making `thrust_n` in total: each rotor equivalent at its share of the thrust, at the rpm that makes that share at
+## this flow (the BEMT ratio surface), with Glauert inflow. Zero when still.
+func rotor_h_force_n(airspeed_mps: float, lean_rad: float, thrust_n: float) -> float:
+	return rotor_h_and_flap(airspeed_mps, lean_rad, thrust_n).x
+
+
+## B1: (H in N, flap tilt a1 in rad) for the whole aircraft. The rotor's flow is read in its TIP-PATH PLANE, which
+## the flapping tilts back from the shaft by a1 (see `tpp_flow`), and a1 itself depends on that flow's rpm, so three
+## passes settle it (the change after the second is under 0.1 percent). DroneCore does the same with the previous
+## tick's a1, so the analytic and flown numbers stay one law.
+func rotor_h_and_flap(airspeed_mps: float, lean_rad: float, thrust_n: float) -> Vector2:
+	if airspeed_mps <= 0.0 or thrust_n <= 0.0:
+		return Vector2.ZERO
+	if _h_coeffs_cache.is_empty():
+		_h_coeffs_cache = [rotor_h_coeffs()]
+	var coeffs: Vector2 = _h_coeffs_cache[0]
+	if coeffs == Vector2.ZERO:
+		return Vector2.ZERO
+	var n := thrust_rotor_equivalents()
+	var per := thrust_n / n
+	var v_ax := airspeed_mps * sin(lean_rad)
+	var v_e := airspeed_mps * cos(lean_rad)
+	var g := _prop_geometry(propeller)
+	var r: float = g.diameter_m * 0.5
+	var th75 := RotorHForce.theta_75(r, g.pitch_m, blade_twist())
+	var a1 := 0.0
+	var h := 0.0
+	for _p in 3:
+		var flow := RotorHForce.tpp_flow(v_ax, v_e, a1)
+		var rpm := rpm_for_rotor_thrust(per, flow.x, flow.y)
+		var inflow := RotorHForce.inflow_mps(per, v_ax, v_e, air.kgm3(), r)
+		var omega := rpm * TAU / 60.0
+		var flap := RotorHForce.flap_per_mps(per, omega, r, inflow, v_e, th75)
+		a1 = flap * v_e / per
+		h = n * (RotorHForce.per_mps(coeffs, omega, inflow) + flap) * v_e
+	return Vector2(h, a1)
+
+
+## B1: the rpm at which one rotor makes `thrust_n` at this axial/edgewise airspeed (static k_t x the BEMT ratio).
+func rpm_for_rotor_thrust(thrust_n: float, v_axial: float, v_edge: float) -> float:
+	var t1 := PropellerModel.thrust_n(k_t, 1000.0)
+	if t1 <= 0.0 or thrust_n <= 0.0:
+		return 0.0
+	var ratios := forward_ratios()
+	# Bisection, not a fixed point: at speed the ratio is ZERO at the static rpm (the blade is fully unloaded), and a
+	# fixed point stopped there, under-reading the rpm by ~40 percent at 108 km/h. Thrust rises with rpm at a given flow.
+	var low := 1000.0 * sqrt(thrust_n / t1)
+	var high := low
+	for _i in 30:
+		if PropellerModel.thrust_n(k_t, high) * ratios.thrust_ratio(high, v_axial, v_edge) >= thrust_n:
+			break
+		low = high
+		high *= 1.25
+	# And DOWNWARD: in edgewise flow at a low axial inflow the ratio exceeds 1 (translational lift), so the rpm that makes
+	# the thrust is BELOW the static one. Without this bracket the bisection returned the static rpm there (9 percent
+	# high at 15 m/s on the reference build, which under-read the flap tilt a1 ~ 1/(Omega R)).
+	for _i in 30:
+		if PropellerModel.thrust_n(k_t, low) * ratios.thrust_ratio(low, v_axial, v_edge) < thrust_n:
+			break
+		high = low
+		low *= 0.8
+	for _i in 40:
+		var mid := 0.5 * (low + high)
+		if PropellerModel.thrust_n(k_t, mid) * ratios.thrust_ratio(mid, v_axial, v_edge) < thrust_n:
+			low = mid
+		else:
+			high = mid
+	return high
 
 
 ## The current a pack actually sees over a flight: the model's answer at each row of
@@ -3020,7 +3133,8 @@ func top_speed_kmh() -> float:
 
 	# SR1.3: the lean-capped answer, which is an upper bound. At the 45 degree cap the top-area term
 	# cancels exactly (see trim_lean), so only the frontal Cd*A sets it: v = sqrt(W tan(cap) / front).
-	var high := sqrt(weight * tan(TOP_SPEED_LEAN_RAD) / drag_coefficient)
+	# An upper bound: the horizontal drag at any lean is at least the smaller of the top and frontal Cd*A terms.
+	var high := sqrt(weight * tan(TOP_SPEED_LEAN_RAD) / maxf(minf(drag_coefficient, minf(drag_axes.y, drag_axes.z)), 1e-9))
 	var low := 0.0
 	for _i in 40:
 		var mid := (low + high) * 0.5

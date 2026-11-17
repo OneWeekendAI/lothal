@@ -57,6 +57,25 @@ var ground_y_m := 0.0
 var ground_contact_enabled := false
 ## How high the centre of mass sits above the lowest point of the aircraft when it rests, m (Build.rest_height_m).
 var rest_height_m := 0.0
+## B1 ROTOR H-FORCE: the in-plane drag of each rotor in edgewise flow, from blade-element theory (RotorHForce,
+## Leishman / Johnson). Per rotor, H = -(Omega * P + Lambda * I) * v_inplane at that rotor's hub, against the AIR.
+## `h_coeffs` is (P, I) for the fitted blade, set at construction; zero (no planform) means no H-force.
+## `rotor_h_force_enabled` exists so a test can ablate it.
+var h_coeffs := Vector2.ZERO
+var air_density_kgm3 := 1.225
+var rotor_h_force_enabled := true
+## Blade pitch at 0.75 R and the flap-response factor of the flapping H-force (RotorHForce.flap_per_mps); a var so a
+## test can ablate flapping alone.
+var theta_75 := 0.0
+var flap_response := RotorHForce.FLAP_RESPONSE
+## Mean flap tilt a1 (rad) of the rotors, from the state at the START of this tick (the rpm and thrust the last tick or
+## prime_motors left), at the aircraft's air velocity; the powertrain reads its flow in that tilted tip-path plane.
+var flap_tilt_rad := 0.0
+## Ablation switch: false reads the power flow at the SHAFT, charging the flapping H-force as shaft power (the B1 bug).
+var flap_tpp_enabled := true
+var _k_t := 0.0
+## The BEMT ratio surface (cached in Rust, the same table the powertrain holds), for the first-tick thrust estimate.
+var _ratios: BemtRatios
 ## Rotor radius, m (from the propeller), the length scale the ground effect is measured in.
 var prop_radius_m := 0.0635
 ## Height of the rotor plane above the CoM, m. ESTIMATED 0.02 (motors sit just above the plate).
@@ -126,6 +145,13 @@ func _init(p_mass_properties: MassProperties, p_motor_model: MotorModel, p_arm_m
 	arm_m = p_arm_m
 	prop_radius_m = p_prop_radius_m
 	drag_coefficient = p_drag_coefficient
+	h_coeffs = RotorHForce.coefficients(p_blades, p_prop_radius_m, p_prop_pitch_m, p_blade_chord_mm, p_blade_twist,
+		p_air_density_kgm3)
+	air_density_kgm3 = p_air_density_kgm3
+	_k_t = p_k_t
+	_ratios = BemtRatios.for_prop_with_guard(2.0 * p_prop_radius_m, p_prop_pitch_m, p_blades, p_blade_chord_mm,
+		p_guard_closure, p_blade_twist)
+	theta_75 = RotorHForce.theta_75(p_prop_radius_m, p_prop_pitch_m, p_blade_twist)
 	gyro = p_gyro if p_gyro != null else Gyro.new()
 	var used_now: float = p_battery.used_mah
 	p_battery.used_mah = 0.0
@@ -150,6 +176,39 @@ func prime_motors(throttle: float) -> void:
 	_publish(Vector3.ZERO)
 
 ## motor_throttle_cmds = {"M1": 0..1, "M2": 0..1, "M3": 0..1, "M4": 0..1}
+## B1: the rotors' mean flap tilt a1 (RotorHForce.flap_per_mps x v_edge / T) at body air velocity `v_body`, from the
+## current rpm and published thrust. Zero with the H-force off or flapping ablated.
+func _mean_flap_tilt(v_body: Vector3) -> float:
+	if not rotor_h_force_enabled or h_coeffs == Vector2.ZERO or flap_response == 0.0:
+		return 0.0
+	var v_e := Vector2(v_body.x, v_body.z).length()
+	if v_e <= 0.0:
+		return 0.0
+	var omega := 0.0
+	var thrust := 0.0
+	for i in MotorLayout.MOTOR_NAMES.size():
+		omega += powertrain.motor_rpm[i] * TAU / 60.0 * 0.25
+		thrust += powertrain.observables.thrust_n[i] * 0.25
+	if omega <= 1.0:
+		return 0.0
+	var a1 := flap_tilt_rad
+	var passes := 1
+	var rpm := omega * 60.0 / TAU
+	if thrust <= 0.0:
+		# Straight after prime_motors nothing has published a thrust yet: the thrust this rpm makes in the tilted
+		# tip-path plane (the powertrain's own law) stands in, settled with a1 in three passes as Build does.
+		passes = 8
+	for _p in passes:
+		if passes > 1:
+			var flow := RotorHForce.tpp_flow(v_body.y, v_e, a1)
+			thrust = PropellerModel.thrust_n(_k_t, rpm) * _ratios.thrust_ratio(rpm, flow.x, flow.y)
+		if thrust <= 0.0:
+			return 0.0
+		var inflow := RotorHForce.inflow_mps(thrust, v_body.y, v_e, air_density_kgm3, prop_radius_m)
+		a1 = RotorHForce.flap_per_mps(thrust, omega, prop_radius_m, inflow, v_e, theta_75, flap_response) * v_e / thrust
+	return a1
+
+
 func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# The powertrain advances first: the forces below are built from the RPM this produces,
 	# which is the same ordering the single fused loop had. Across the FFI the powertrain's
@@ -181,7 +240,18 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# without itself advancing anything.
 	var wind_mps := wind.update_at(dt, rigid_body.position_m, maxf(rigid_body.position_m.y - ground_y_m, 0.0)) if wind != null else Vector3.ZERO
 	var relative_velocity_mps := rigid_body.velocity_mps - wind_mps
-	powertrain.step_in_flight(cmds, dt, rigid_body.orientation.inverse() * relative_velocity_mps)
+	# B1: the powertrain reads the flow in the rotors' TIP-PATH PLANE, flapped back by last tick's mean a1 (see
+	# RotorHForce.tpp_flow): flapping tilts the thrust and does no work, so it must not reach the shaft power.
+	var v_power := rigid_body.orientation.inverse() * relative_velocity_mps
+	flap_tilt_rad = _mean_flap_tilt(v_power)
+	if flap_tpp_enabled and flap_tilt_rad != 0.0:
+		var e := Vector2(v_power.x, v_power.z)
+		var e_len := e.length()
+		if e_len > 0.0:
+			var tpp := RotorHForce.tpp_flow(v_power.y, e_len, flap_tilt_rad)
+			var dir := e / e_len
+			v_power = Vector3(dir.x * tpp.y, tpp.x, dir.y * tpp.y)
+	powertrain.step_in_flight(cmds, dt, v_power)
 
 	var total_force := Vector3(0, -GRAVITY_MPS2 * mass_properties.total_mass_kg, 0)
 	var total_torque := Vector3.ZERO
@@ -236,6 +306,32 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 			var v_body := rigid_body.orientation.inverse() * relative_velocity_mps
 			var f_body := -speed * Vector3(drag_axes.x * v_body.x, drag_axes.y * v_body.y, drag_axes.z * v_body.z)
 			total_force += rigid_body.orientation * f_body
+
+	# B1 rotor H-force (see RotorHForce): per rotor, from that hub's own air-relative velocity (aircraft velocity
+	# minus wind, plus omega x r), in the rotor plane, applied AT the hub so it also pitches/yaws the aircraft.
+	if rotor_h_force_enabled and h_coeffs != Vector2.ZERO:
+		var v_air_body := rigid_body.orientation.inverse() * relative_velocity_mps
+		var w_body := rigid_body.angular_velocity_rad_s
+		var h_force_body := Vector3.ZERO
+		for i in MotorLayout.MOTOR_NAMES.size():
+			var omega: float = powertrain.motor_rpm[i] * TAU / 60.0
+			if omega <= 1.0:
+				continue
+			var hub := MotorLayout.motor_position(MotorLayout.MOTOR_NAMES[i], arm_m) - mass_properties.com_m
+			hub.y = rotor_above_com_m
+			var v_hub := v_air_body + w_body.cross(hub)
+			var v_plane := Vector3(v_hub.x, 0.0, v_hub.z)
+			if v_plane.length_squared() <= 0.0:
+				continue
+			var t_i: float = powertrain.observables.thrust_n[i] * (1.0 - prop_damage[i]) * ge_gain
+			var inflow := RotorHForce.inflow_mps(t_i, v_hub.y, v_plane.length(), air_density_kgm3, prop_radius_m)
+			var v_e := v_plane.length()
+			var flap_i := RotorHForce.flap_per_mps(t_i, omega, prop_radius_m, inflow, v_e, theta_75, flap_response)
+			var per := RotorHForce.per_mps(h_coeffs, omega, inflow) * (1.0 - prop_damage[i]) + flap_i
+			var h_i := -per * v_plane
+			h_force_body += h_i
+			total_torque += hub.cross(h_i)
+		total_force += rigid_body.orientation * h_force_body
 
 	# Specific force — total force minus gravity — is captured BEFORE integration, while
 	# the force that produced this tick's acceleration is still in hand. Recovering it

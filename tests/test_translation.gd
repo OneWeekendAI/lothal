@@ -141,9 +141,15 @@ static func _holds_altitude_at_published_hover_throttle() -> Array:
 		"altitude drift = %.3f m (field-physics-off control: %.3f m)" % [loss_drift, undrained_drift]
 	))
 
+	# B1: the drain's share is DERIVED, two-sided. The pack's falling rest voltage costs thrust at ~0.07 percent/s
+	# (r17), a deficit growing as dT = W x 0.0007 t; against the descent damping of ~0.36 N per m/s the sink rate is
+	# quasi-steady at dT / 0.36, so the drain sinks about 0.5 x (4.98 x 0.0007 / 0.36) x 10^2 = 0.48 m in 10 s
+	# (measured 0.47 m). The old one-sided 0.5 m bound sat on that value and was met only because, without rotor
+	# drag, the ideal-IMU craft slid 1.6 m sideways and lost more height to it; B1's H-force removed that confound.
+	# Band 0.25-1.0 m: half to twice the derived drain. Mutation: no state-of-charge term -> difference ~0, fails.
 	results.append(TestResult.new(
 		"on a real pack it sinks instead, and the drain is the whole of the difference",
-		drained_drift < -0.5 and drained_drift < loss_drift - 0.5,
+		drained_drift < -0.5 and drained_drift < loss_drift - 0.25 and drained_drift > loss_drift - 1.0,
 		"%.2f m draining (%.1f%% of the pack used) vs %.2f m on a pack that cannot empty" % [
 			drained_drift, draining.observables.capacity_used_fraction * 100.0, loss_drift]
 	))

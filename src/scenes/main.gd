@@ -497,7 +497,7 @@ func _on_build_changed(new_build: Build) -> void:
 	# and needs less than the quoted 29%; a half-used one needs a little more. Left alone from
 	# here: the pack drains as you fly and the aircraft drifts slowly down, which is the
 	# consequence, not a bug.
-	_hover_throttle = build.hover_throttle_for(core.powertrain.battery)
+	_hover_throttle = dynamic_hover_throttle(build, build.hover_throttle_for(core.powertrain.battery), pack_charge)
 	# The gains follow the aircraft. Adopted rather than reconstructed, so the integrator state
 	# holding the aircraft trimmed survives — and adopted HERE, on the one path every part change
 	# lands on, so there is no ordering in which the airframe on screen is one aircraft and the
@@ -524,6 +524,37 @@ func _on_build_changed(new_build: Build) -> void:
 	# A lap time belongs to a build. Swapping a part mid-lap starts the attempt over rather
 	# than letting a 6S pack finish a lap a 4S one started.
 	_restart_course()
+
+## B1 (review P2): the throttle that HOLDS this aircraft up in the powertrain it actually flies. Build's static solve
+## (`hover_throttle_for`) predates the R1.4 ESC dynamics and reads the pack at rest, so it lands 0.3 percent of thrust
+## short, which hands-off is a 2.5 m sink in 15 s and an aircraft in the grass. This settles a throwaway core of the same
+## build, on the same pack state, for half a second at a candidate throttle (ESC response and live sag included), reads
+## the summed thrust, and corrects the throttle on thrust ~ throttle^2. Solved out of ground effect, so in the open it
+## neither climbs nor sinks; near the ground the cushion lifts it, which is the physics, not an error.
+const HOVER_SETTLE_S := 0.5
+const HOVER_SETTLE_DT := 0.001
+
+static func dynamic_hover_throttle(p_build: Build, guess: float, p_pack_charge = null) -> float:
+	var probe: DroneCore = p_build.build_drone_core(FREE_FLIGHT_PHYSICS)
+	var weight := probe.mass_properties.total_mass_kg * DroneCore.GRAVITY_MPS2
+	var thr := guess
+	for _iter in 6:
+		if p_pack_charge != null:
+			p_pack_charge.apply_to(p_build.battery["part_id"], probe.powertrain.battery)
+		probe.prime_motors(thr)
+		var cmds := PackedFloat64Array([thr, thr, thr, thr])
+		for _k in int(HOVER_SETTLE_S / HOVER_SETTLE_DT):
+			probe.powertrain.step(cmds, HOVER_SETTLE_DT)
+		var thrust := 0.0
+		for t in probe.powertrain.observables.thrust_n:
+			thrust += t
+		if thrust <= 0.0:
+			return guess
+		var next := clampf(thr * sqrt(weight / thrust), 0.0, 1.0)
+		if absf(next - thr) < 1e-6:
+			return next
+		thr = next
+	return thr
 
 ## The parts to open on: whatever Lab handed over, falling back to the reference build for a
 ## direct load of main.tscn. Filled per-category so a partial hand-over still yields a complete

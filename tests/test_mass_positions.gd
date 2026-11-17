@@ -251,12 +251,24 @@ static func _nose_heavy_needs_differential_thrust() -> Array:
 	var dt := 1.0 / 1000.0
 	var rc := {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "throttle": hover}
 	var commands := {}
+	# AVERAGED over the settled last second, as the centred control below always was (B1). The commands ripple with the
+	# props' vibration and the R1.5 per-rotor VRS fluctuation (+/-0.03 throttle tick to tick here), so the final tick alone
+	# read anything from 0.0004 to 0.07 of front/rear difference depending on phase; adding rotor drag moved the phase and
+	# the last sample landed at 0.0004. The settled mean is 0.056 with or without rotor drag: the mass offset, not the
+	# phase, is what the check is about. Same bound.
+	var front_sum := 0.0
+	var rear_sum := 0.0
+	var samples := 0
 	for i in 4000:
 		commands = controller.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, dt)
 		core.step(commands, dt)
+		if i >= 3000:
+			front_sum += (float(commands["M2"]) + float(commands["M4"])) * 0.5
+			rear_sum += (float(commands["M1"]) + float(commands["M3"])) * 0.5
+			samples += 1
 
-	var front: float = (float(commands["M2"]) + float(commands["M4"])) * 0.5
-	var rear: float = (float(commands["M1"]) + float(commands["M3"])) * 0.5
+	var front: float = front_sum / float(samples)
+	var rear: float = rear_sum / float(samples)
 	var pitch_rate: float = core.rigid_body.angular_velocity_rad_s.x
 
 	out.append(TestResult.new(

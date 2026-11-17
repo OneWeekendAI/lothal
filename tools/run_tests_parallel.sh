@@ -11,6 +11,12 @@
 ## Only PIDs this script started are ever signalled. No pkill, no killall.
 ## Needs bash 3.2 (macOS): no wait -n, no associative arrays.
 set -uo pipefail
+# macOS: a sleeping Mac freezes every worker mid-suite (a 03:33 run hung overnight). Re-exec once under
+# `caffeinate -i`, which holds off idle sleep for exactly this process's lifetime.
+if [[ "$(uname)" == "Darwin" && -z "${LOTHAL_CAFFEINATED:-}" ]] && command -v caffeinate >/dev/null 2>&1; then
+	export LOTHAL_CAFFEINATED=1
+	exec caffeinate -i "$0" "$@"
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"

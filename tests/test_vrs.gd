@@ -64,6 +64,11 @@ static func fly_descent(build: Build, x: float, forward_mps: float, fluct_on: bo
 	var late_rate := 0.0
 	for i in 1000:
 		var cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, dt)
+		# B1: the forward speed is HELD (the pilot's job). Level and hands-off, the rotor H-force (mu 0.345 /s) bleeds
+		# 3 m/s to ~1.5 m/s in these 2 s, under the 0.5 vh that clears the ring, and the craft re-enters VRS: real
+		# physics, but not the claim here, which is what forward speed does. Only the horizontal velocity is pinned.
+		if forward_mps > 0.0:
+			core.rigid_body.velocity_mps = Vector3(0.0, core.rigid_body.velocity_mps.y, -forward_mps)
 		core.step(cmds, dt)
 		var up: Vector3 = core.rigid_body.orientation * Vector3.UP
 		var tilt := rad_to_deg(up.angle_to(Vector3.UP))

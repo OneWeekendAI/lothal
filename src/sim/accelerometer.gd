@@ -41,13 +41,14 @@ var bias_mps2: Vector3
 ## What a level calibration has taken back out of `bias_mps2` (R1.7); zero until `calibrate()` runs.
 var trim_mps2 := Vector3.ZERO
 
-## The level calibration every flight controller offers and every pilot does once: on a level surface the reading IS the
-## offset, and the firmware subtracts it. `CALIBRATION_REMOVES` is a LABELLED ESTIMATE of how much of it a bench
-## calibration takes back (the header's 5 mg is already described as the residue; this is a second, quick one at power-up).
-const CALIBRATION_REMOVES := 0.9
+## The level calibration every flight controller offers and every pilot does once (B1, review P8): on a level surface,
+## motors off, the firmware averages `CALIBRATION_SAMPLES` readings and subtracts their mean from (0, g, 0). The residue
+## is the average's own noise, sigma / sqrt(N), drawn from a calibration RNG apart from the flight's noise stream.
+## Betaflight's accelerometer calibration averages 400 samples.
+const CALIBRATION_SAMPLES := 400
 
 func calibrate() -> void:
-	trim_mps2 = bias_mps2 * CALIBRATION_REMOVES
+	trim_mps2 = Gyro.still_average(bias_mps2, noise_mps2, _seed ^ 0xCA1B, CALIBRATION_SAMPLES)
 ## The most recent reading (m/s^2, body frame). Held between samples.
 var reading_mps2 := Vector3.ZERO
 
