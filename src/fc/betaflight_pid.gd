@@ -36,10 +36,9 @@ const KFF_PER_BF := 0.013754 / 100.0 * 4.0
 
 ## Betaflight's ITERM_RELAX_SETPOINT_THRESHOLD, 40 deg/s, normalised.
 const RELAX_THRESHOLD := 40.0 / 800.0
-## iterm_relax_cutoff default (BF 4.2+).
-## The reference tune's iterm_relax_cutoff. Betaflight ships 15 Hz and tells you to lower it on
-## slower-responding craft; 2 Hz is the retune's value (rate_mode_controller.gd, BF_ROLL_PITCH).
-const RELAX_CUTOFF_HZ := 2.0
+## iterm_relax_cutoff default (BF 4.2+): 15 Hz, the 5" value. RateTune.relax_cutoff_for picks the
+## per-class value (whoop 25, 7" 10, 8-10" and cinelifters 5; estimates from BF guidance).
+const RELAX_CUTOFF_HZ := 15.0
 ## iterm_windup 85 -> itermWindupPointInv = 1 / (1 - 0.85).
 const WINDUP_POINT := 0.85
 ## iterm_limit 400 of pidsum_limit 500.

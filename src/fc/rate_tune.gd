@@ -166,6 +166,8 @@ var kd := Vector3.ZERO
 ## Betaflight's slider moves F with P and the time is what carries across airframes.
 var kff := Vector3.ZERO
 var derived_kff := Vector3.ZERO
+## Betaflight's iterm_relax_cutoff for this build, in Hz (relax_cutoff_for below).
+var relax_cutoff_hz := BetaflightPid.RELAX_CUTOFF_HZ
 
 ## What the law derived, kept alongside what is in force so a builder who has changed something can
 ## still be told what they changed it FROM. An auto-tune whose baseline disappears the moment you
@@ -221,6 +223,7 @@ static func derive(p_build: Build) -> RateTune:
 	tune.derived_kp.z *= trim
 	tune.derived_ki.z *= trim
 	tune.derived_kff = RateModeController.REFERENCE_KFF * tune.derived_kp / RateModeController.REFERENCE_KP
+	tune.relax_cutoff_hz = relax_cutoff_for(p_build)
 
 	tune._apply()
 	return tune
@@ -241,6 +244,32 @@ static func plant_alpha_for(p_build: Build) -> Vector3:
 		bench.begin(axis, p_build.hover_throttle())
 		out[axis] = bench.peak_alpha_rad_s2
 	return out
+
+
+## iterm_relax_cutoff by class, from Betaflight's tuning guidance (4.2+ release notes and tuning
+## notes: 15 Hz default for 5"; lower it for slower, heavier craft, ~10 for 7", ~5 for 8-10" and
+## cinelifters; whoops and racers can go higher, 20-30). These are ESTIMATES of what a tuner would set,
+## labelled as such: Betaflight publishes the guidance, not a formula. The class comes from the
+## fitted prop's diameter (the thing that sets the motor+prop response time the cutoff tracks) and
+## the frame's catalog type for cinelifters.
+const RELAX_CUTOFF_WHOOP_HZ := 25.0    # estimate, BF guidance 20-30 for whoops/micros (<= 3.5")
+const RELAX_CUTOFF_5IN_HZ := 15.0      # BF default, the 5" class (4-6")
+const RELAX_CUTOFF_7IN_HZ := 10.0      # estimate, BF guidance ~10 for 7"
+const RELAX_CUTOFF_BIG_HZ := 5.0       # estimate, BF guidance ~5 for 8-10" and cinelifters
+
+static func relax_cutoff_for(p_build: Build) -> float:
+	if String(p_build.frame.get("catalog", {}).get("frame_type", "")) == "cinelifter":
+		return RELAX_CUTOFF_BIG_HZ
+	# The frame's class (its max prop) first: the catalog fixtures fly every frame on the reference 5" prop.
+	var d := float(p_build.frame.get("specs", {}).get("max_prop_inches",
+		p_build.propeller.get("specs", {}).get("diameter_inches", 5.0)))
+	if d <= 3.5:
+		return RELAX_CUTOFF_WHOOP_HZ
+	if d < 6.5:
+		return RELAX_CUTOFF_5IN_HZ
+	if d < 8.0:
+		return RELAX_CUTOFF_7IN_HZ
+	return RELAX_CUTOFF_BIG_HZ
 
 
 static func reference_alpha() -> Vector3:

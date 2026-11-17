@@ -167,6 +167,13 @@ static func _step_response(build: Build, axis: int, tune: RateTune,
 	core.powertrain.battery.set_to_nominal_datum()
 	var controller := RateModeController.new()
 	controller.adopt_tune(tune)
+	# B1 (2026-11-17): iterm_relax_cutoff is now a per-CLASS tuner choice (RateTune.relax_cutoff_for:
+	# whoop 25, 5" 15, 7" 10, 8"+ and cinelifters 5 Hz), not part of the gain-scaling law this file
+	# grades. A lower cutoff deliberately holds I longer through a stick move, which changes a 50 deg/s
+	# step's overshoot by design. So the comparison flies every frame at the reference's cutoff and
+	# grades the LAW alone; _relax_cutoff_per_class below checks the per-class values separately.
+	for pid in [controller.pid_roll, controller.pid_pitch, controller.pid_yaw]:
+		pid.relax_cutoff_hz = BetaflightPid.RELAX_CUTOFF_HZ
 
 	var target := deg_to_rad(STEP_DEG_S)
 	var throttle := build.hover_throttle()
@@ -259,6 +266,27 @@ static func _x8_distance_is_its_motor_tau() -> TestResult:
 			ref._tau_s(), detail, worst * 100.0, worst_yaw * 100.0])
 
 
+## The per-class iterm_relax_cutoff (Betaflight guidance, labelled estimates in RateTune).
+static func _relax_cutoff_per_class() -> TestResult:
+	var catalog := PartsCatalog.load_default()
+	var got := {}
+	for build in _frame_builds():
+		got[build.frame["part_id"]] = RateTune.derive(build).relax_cutoff_hz
+	var x8 := Build.from_ids(catalog, COAXIAL_FRAME, ReferenceBuild.MOTOR_ID,
+		ReferenceBuild.PROPELLER_ID, ReferenceBuild.BATTERY_ID, ReferenceBuild.ESC_ID,
+		ReferenceBuild.FC_ID, Build.no_components())
+	var ref_hz := RateTune.derive(ReferenceBuild.build()).relax_cutoff_hz
+	var x8_hz := RateTune.derive(x8).relax_cutoff_hz
+	var ok := is_equal_approx(ref_hz, 15.0) and is_equal_approx(x8_hz, 5.0)
+	for id in got:
+		var hz: float = got[id]
+		if String(id).contains("10in") and not is_equal_approx(hz, 5.0): ok = false
+		if String(id).contains("7in") and not (is_equal_approx(hz, 10.0) or is_equal_approx(hz, 5.0)): ok = false
+		if (String(id).contains("mm_whoop") or String(id).contains("in_whoop")) and not is_equal_approx(hz, 25.0): ok = false
+	return TestResult.new("iterm_relax_cutoff follows Betaflight's per-class guidance (5\" 15, 7\" 10, 8\"+/cinelifter 5, whoop 25 Hz)",
+		ok, "reference %.0f Hz, X8 %.0f Hz, %s" % [ref_hz, x8_hz, got])
+
+
 ## Full stick, then hands off — the end-to-end claim rather than the numbers.
 ##
 ## Angle mode, through FlightController, so the outer loop is in the path too: a scaling law applied
@@ -319,6 +347,7 @@ static func run() -> Array:
 		"worst %.1f%% away — %s" % [after[1] * 100.0, after[2]]))
 
 	results.append(_x8_distance_is_its_motor_tau())
+	results.append(_relax_cutoff_per_class())
 
 	# THE CHECK THAT KEEPS THE TWO ABOVE HONEST. The same comparison on the fixed gains has to come
 	# out FAILING, or the band is wide enough to admit the behaviour this slice exists to replace

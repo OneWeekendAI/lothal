@@ -41,13 +41,18 @@ const MAX_RATE_RAD_S := 13.962634   # 800 deg/s at full stick
 ##   derived scale is 2.39, so the reference D must stay under 0.075 (D35) or the big frames get a
 ##   clipped D and stop responding like the reference (test_catalog_tuning).
 ## - P53 / D35 then left the bounce at -0.127 rad/s with relax at its 15 Hz default (bound 0.15).
-##   iterm_relax_cutoff is Betaflight's knob for exactly this (lower for slower-responding craft, and
-##   this one's 30 ms motors are slow): at 2 Hz I stays frozen ~175 ms after a 360 deg/s stop and the
-##   bounce is -0.079 rad/s. Step: 0.4% overshoot, settled in 59 ms (bound 80).
-## Yaw: P70 (yaw is slew-limited on big steps but not on small ones, where P buys the settling), D0
+##   iterm_relax_cutoff stays at Betaflight's 15 Hz for this 5" reference (owner decision 2026-11-17:
+##   per-class BF guidance, RateTune.relax_cutoff_for). (An earlier 2 Hz gave -0.079 but is not a value
+##   a 5" tuner would set.) At 15 Hz relax only holds I ~25 ms after a 360 deg/s stop, so the pulse at
+##   ~150 ms is met by I; P53 I80 bounced -0.170. A tuner lowers I first (BF's own advice for a
+##   bounce-back after flips): sweep (.test_runs/tp.gd) P/I/D multipliers at D35 (the board cap):
+##   I80 -0.170, I40 -0.150, I32 -0.140, I28 -0.134, I24 -0.126; P56 I32 -0.128 (step 2.2%, 57 ms).
+##   P58+ or D40+ also cut it but D clips on the X8 and P alone made it worse. Then the 65 mm whoop sagged out of its 5% band at 0.6 s on a 50 deg/s step (rolling 30 deg it slides, and rotor H torque grows faster than I32 follows): I32 settles at 600 ms, I37 600, I38 81 ms. Chosen: P56 I38 D35 F120 (flip -0.134).
+##   Integral time 56*0.128/(38*0.978) = 0.19 s, still 65x faster than the pre-B1 15 s.
+## Yaw: P70 (P53 was tried for the catalog yaw settle and broke the 500 deg/s yaw step, 521 ms vs 413; see HANDOVER) (yaw is slew-limited on big steps but not on small ones, where P buys the settling), D0
 ## and F120 as Betaflight's defaults, and I by Betaflight's integral time held against yaw's OWN loop
 ## (YAW_LOOP_SLOWDOWN below).
-const BF_ROLL_PITCH := Vector4(53.0, 80.0, 35.0, 120.0)
+const BF_ROLL_PITCH := Vector4(56.0, 38.0, 35.0, 120.0)
 const BF_YAW_P := 70.0
 const BF_YAW_F := 120.0
 
@@ -55,15 +60,15 @@ const BF_YAW_F := 120.0
 ## installed D gain, and a panel that restated a literal would be a second opinion about the tune.
 const ROLL_PITCH_KD := BetaflightPid.KD_PER_BF * 35.0
 
-const REFERENCE_KP := Vector3(BetaflightPid.KP_PER_BF * 53.0, BetaflightPid.KP_PER_BF * 53.0,
+const REFERENCE_KP := Vector3(BetaflightPid.KP_PER_BF * BF_ROLL_PITCH.x, BetaflightPid.KP_PER_BF * BF_ROLL_PITCH.x,
 	BetaflightPid.KP_PER_BF * BF_YAW_P)
 ## Yaw's closed loop is slower than roll's by alpha_roll*kp_roll / (alpha_yaw*kp_yaw) (the authority
 ## figures documented at pid_yaw below: 448.8 and 57.2 rad/s^2). Betaflight's integral time is set
 ## against a roll/pitch loop; copied onto yaw's slower loop it made a 50 deg/s yaw step overshoot 49%
 ## with a 475 ms tail. Yaw's I keeps roll's Ti/tau instead.
-const YAW_LOOP_SLOWDOWN := (448.8 * 53.0) / (57.2 * BF_YAW_P)
-const REFERENCE_KI := Vector3(BetaflightPid.KI_PER_BF * 80.0, BetaflightPid.KI_PER_BF * 80.0,
-	BetaflightPid.KP_PER_BF * BF_YAW_P / (53.0 / 80.0 * BetaflightPid.KP_PER_BF / BetaflightPid.KI_PER_BF * YAW_LOOP_SLOWDOWN))
+const YAW_LOOP_SLOWDOWN := (448.8 * BF_ROLL_PITCH.x) / (57.2 * BF_YAW_P)
+const REFERENCE_KI := Vector3(BetaflightPid.KI_PER_BF * BF_ROLL_PITCH.y, BetaflightPid.KI_PER_BF * BF_ROLL_PITCH.y,
+	BetaflightPid.KP_PER_BF * BF_YAW_P / (BF_ROLL_PITCH.x / BF_ROLL_PITCH.y * BetaflightPid.KP_PER_BF / BetaflightPid.KI_PER_BF * YAW_LOOP_SLOWDOWN))
 const REFERENCE_KFF := Vector3(BetaflightPid.KFF_PER_BF * 120.0, BetaflightPid.KFF_PER_BF * 120.0,
 	BetaflightPid.KFF_PER_BF * BF_YAW_F)
 const REFERENCE_KD := Vector3(ROLL_PITCH_KD, ROLL_PITCH_KD, 0.0)
@@ -153,6 +158,8 @@ func adopt_tune(p_tune: RateTune) -> void:
 	pid_roll.kff = p_tune.kff.x
 	pid_pitch.kff = p_tune.kff.y
 	pid_yaw.kff = p_tune.kff.z
+	for pid in [pid_roll, pid_pitch, pid_yaw]:
+		pid.relax_cutoff_hz = p_tune.relax_cutoff_hz
 
 
 ## The acro front end: all three sticks ARE rate setpoints, and the outer loop is simply
