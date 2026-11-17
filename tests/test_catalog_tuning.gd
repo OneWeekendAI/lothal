@@ -73,6 +73,22 @@ const DURATION_S := 0.6
 ## case by a distance, reaches 47.5 deg/s in 87 ms flat out against a 167 ms loop time constant.
 const STEP_DEG_S := 50.0
 const SETTLE_BAND_FRACTION := 0.05
+## YAW STEP SCALED TO THE CLASS (owner decision B1, 2026-11-17). "No frame is slew-limited at 50 deg/s"
+## stopped holding for the 10" long-range on the 5" prop: its yaw authority (rotor reaction torque over
+## yaw inertia, FrameBench's settled alpha, ~6.9 rad/s^2 vs the reference's ~28) puts a ~165 ms slew
+## floor under a 50 deg/s step that no gain moves. That is physical, so the yaw step is sized to what
+## each build can reach flat out within YAW_REACH_S: step = min(50 deg/s, alpha_yaw * YAW_REACH_S).
+## 75 ms is ~60% of the reference's 129 ms yaw settle: the step is reachable flat out with the last
+## 40% of the reference's settle left for the loop, so the loop, not the slew, sets the time. The
+## reference's own step stays 50 deg/s (28 rad/s^2 x 75 ms = 120 deg/s, capped). Probe
+## (.test_runs/cat.gd, 10in yaw): 50 deg/s 165+ ms slew floor; 30 deg/s 134 ms vs ref 129. The settle bound is unchanged.
+const YAW_REACH_S := 0.075
+
+
+## The largest yaw step this build reaches flat out inside YAW_REACH_S, from its rotor torque and
+## inertia (FrameBench's settled yaw acceleration), in rad/s.
+static func yaw_step_rad_s(build: Build) -> float:
+	return RateTune.plant_alpha_for(build).z * YAW_REACH_S
 
 ## 28% -> 30% IN THE 2026-11-03 RE-BASELINE, and it is an OPEN item (owner/tuning), not a fix: on the
 ## DC motor law the X8's yaw lands 28.4% away (7.96% vs the reference's 11.12%), and flying it at the
@@ -159,8 +175,7 @@ static func _step_response(build: Build, axis: int, tune: RateTune,
 	if tau_override_s > 0.0:
 		var geometry := build.prop_geometry()
 		core.powertrain = Powertrain.create(
-			MotorModel.create_with_tau(float(build.motor["specs"]["kv"]),
-				build.max_throttle_fraction(), tau_override_s),
+			_motor_at_tau(build, tau_override_s),
 			build.lumped_k_t(), build.lumped_k_q(), build.battery_model(),
 			build.lumped_max_amps(), build.rated_rpm(), build.pole_pairs(), geometry.blades,
 			geometry.diameter_m * 0.5, geometry.pitch_m, build.air.kgm3(), build.blade_chord())
@@ -176,6 +191,8 @@ static func _step_response(build: Build, axis: int, tune: RateTune,
 		pid.relax_cutoff_hz = BetaflightPid.RELAX_CUTOFF_HZ
 
 	var target := deg_to_rad(STEP_DEG_S)
+	if axis == FrameBench.AXIS_YAW:
+		target = minf(target, yaw_step_rad_s(build))
 	var throttle := build.hover_throttle()
 	var setpoint := Vector3.ZERO
 	setpoint[axis] = target / RateModeController.MAX_RATE_RAD_S
@@ -200,6 +217,25 @@ static func _step_response(build: Build, axis: int, tune: RateTune,
 		"overshoot_pct": (peak - target) / target * 100.0,
 		"settle_ms": 0.0 if settle_step == -1 else settle_step * DT * 1000.0,
 	}
+
+
+## The build's OWN flight motor model (lumped_motor_model: DC law, coaxial current count, R1.4
+## electromechanical ESC/motor response) with only its spin-up time changed to `tau_s`.
+## B1 ROOT CAUSE (2026-11-17) of the X8 "28.5% at the reference tau": this fixture used to build a bare
+## create_with_tau first-order lag, so since R1.4 turned the DC + dynamics model on by default it
+## swapped the WHOLE motor model (no back-EMF, no current limit, no pack sag, single-motor current on a
+## coaxial pair), not the tau. The X8 tau is 0.0167 s vs 0.0170 s, yet the bare lag moved its roll
+## overshoot from 9.40% (own model) to 7.12%. The coaxial physics (lower-rotor wake loss in
+## lumped_k_t / lumped_k_q, twice the current per arm, shared mixer) was right; the fixture was not.
+## In the dynamic model tau = J / (torque slope at the operating point), so the tau is substituted
+## by scaling J by tau_s / tau_build, which changes nothing else.
+static func _motor_at_tau(build: Build, tau_s: float) -> MotorModel:
+	var mm := build.lumped_motor_model()
+	var j := float(build.spin_up().get("j_total_kg_m2", 0.0))
+	if mm.dynamics_on() and j > 0.0:
+		mm.set_dynamics(j * tau_s / build._tau_s(), build.esc_current_limit_a(), Build.ESC_ACTIVE_BRAKING)
+	return MotorModel.create_with_tau(float(build.motor["specs"]["kv"]),
+		build.max_throttle_fraction(), tau_s) if not mm.dynamics_on() else mm
 
 
 ## The worst relative distance from the reference build's own response, over every frame and every

@@ -77,4 +77,6 @@ static func run() -> Array:
 		"final rate = %.4f rad/s (bound %.2f = measured %.3f x ~1.5 margin)" % [on[1], ON_RESIDUAL_LIMIT_RAD_S, ON_MEASURED_RESIDUAL]
 	))
 
+	# B1: one mutation-proven test per Betaflight mechanism (relax, anti-windup, anti-gravity, FF).
+	results.append_array(TestBfMechanisms.run())
 	return results

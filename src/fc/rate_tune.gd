@@ -222,6 +222,10 @@ static func derive(p_build: Build) -> RateTune:
 	var trim := float(p_build.frame.get("tuning", {}).get("yaw_pi_trim", 1.0))
 	tune.derived_kp.z *= trim
 	tune.derived_ki.z *= trim
+	# Per-class roll/pitch I trim (owner decision B1, 2026-11-17): class data, not a per-build hack.
+	var i_trim := rp_i_trim_for(p_build)
+	tune.derived_ki.x *= i_trim
+	tune.derived_ki.y *= i_trim
 	tune.derived_kff = RateModeController.REFERENCE_KFF * tune.derived_kp / RateModeController.REFERENCE_KP
 	tune.relax_cutoff_hz = relax_cutoff_for(p_build)
 
@@ -270,6 +274,21 @@ static func relax_cutoff_for(p_build: Build) -> float:
 	if d < 8.0:
 		return RELAX_CUTOFF_7IN_HZ
 	return RELAX_CUTOFF_BIG_HZ
+
+
+## Roll/pitch I multiplier by class (owner decision B1, 2026-11-17). Real whoop tunes run a higher I
+## than the scaled 5" tune (BF whoop presets sit at I ~1.3-1.6x the 5" slider): a 65 mm whoop is light
+## and slides after a bank, and the hub-height rotor H torque that slide raises is a steady torque only
+## I removes. Measured (.test_runs/cat.gd): at x1.0 the 65 mm whoop-lite roll sags out of the 5% band
+## at ~0.55 s (598 ms vs the reference's 101); at x1.5 it settles in 101 ms. LABELLED estimate, in the
+## band real whoop presets use. It breaks the kp/ki invariance ON PURPOSE for this class only.
+const WHOOP_RP_I_TRIM := 1.5
+
+static func is_whoop_class(p_build: Build) -> bool:
+	return relax_cutoff_for(p_build) == RELAX_CUTOFF_WHOOP_HZ
+
+static func rp_i_trim_for(p_build: Build) -> float:
+	return WHOOP_RP_I_TRIM if is_whoop_class(p_build) else 1.0
 
 
 static func reference_alpha() -> Vector3:

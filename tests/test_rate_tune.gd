@@ -124,6 +124,12 @@ static func run() -> Array:
 				continue
 			var ti: float = tune.kp[axis] / tune.ki[axis]
 			var anchor_ti: float = ANCHOR_KP[axis] / ANCHOR_KI[axis]
+			# CLASS-BASED exception (owner decision B1, 2026-11-17): the whoop class runs a
+			# data-declared roll/pitch I trim (RateTune.WHOOP_RP_I_TRIM), as real whoop tunes carry
+			# a higher I than the scaled 5" tune. Its integral time is the anchor's divided by that
+			# class trim, exactly; every other class and yaw still hold the anchor's time unchanged.
+			if axis != FrameBench.AXIS_YAW:
+				anchor_ti /= RateTune.rp_i_trim_for(tune.build)
 			ratio_error = maxf(ratio_error, absf(ti - anchor_ti) / anchor_ti)
 	results.append(TestResult.new(
 		"the integral time constant kp/ki is preserved on every axis of every build",
