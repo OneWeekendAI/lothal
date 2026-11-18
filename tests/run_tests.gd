@@ -22,7 +22,8 @@ const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "tw
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
-	"arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet", "payload", "r17 realism"]
+	"arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet", "payload", "r17 realism",
+	"sim end states", "flight controls", "airframe page", "config page", "control page", "power page", "printed page", "propulsion page", "video page"]
 
 func _init() -> void:
 	var total := 0
@@ -73,6 +74,7 @@ func _init() -> void:
 		return
 
 	var tail_t0 := Time.get_ticks_msec()
+	print("[suite] @tail")  # so tools/run_tests_parallel.py counts the tail's checks as the tail's
 	# The drawn-build open path, for the same reason and under the same Ruling-71 containment: it
 	# needs a shell whose `_ready` has wired the rails, which takes a tree and frames.
 	var disk_returned: Variant = await _call_disk_changes_run()
@@ -494,5 +496,15 @@ func _run_suite(suite_name: String) -> Array:
 		"fit tab": return await TestFitTab.run(self)
 		"print tab": return await TestPrintTab.run(self)
 		"custom tiles": return await TestCustomTiles.run(self)
+		# Found unwired 2026-11-18 (B5 Part A): written, never listed, so never run. Now gated.
+		"sim end states": return TestSimEndStates.run()
+		"flight controls": return TestFlightControls.run()
+		"airframe page": return TestAirframePage.run()
+		"config page": return TestConfigPage.run()
+		"control page": return TestControlPage.run()
+		"power page": return TestPowerPage.run()
+		"printed page": return TestPrintedPage.run()
+		"propulsion page": return TestPropulsionPage.run()
+		"video page": return TestVideoPage.run()
 	push_error("unknown suite: %s" % suite_name)
 	return []

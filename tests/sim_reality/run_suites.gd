@@ -38,7 +38,12 @@ func _init() -> void:
 				bad += 1
 				failed += 1
 				print("  [FAIL] %s: %s (%s)" % [name, r.name, r.detail])
-		print("%-22s %4d checks  %s" % [name, results.size(), "ok" if bad == 0 and results.size() > 0 else "FAILED %d" % bad])
+		if results.is_empty():
+			# A suite that checked nothing has crashed or lost its body; that is a failure, not a pass.
+			failed += 1
+			total += 1
+			print("  [FAIL] %s: suite produced no results" % name)
+		print("%-22s %4d checks  %s" % [name, results.size(), "ok" if bad == 0 and results.size() > 0 else "FAILED %d" % max(bad, 1)])
 	print("TOTAL %d checks, %d failed" % [total, failed])
 	if total == 0:
 		print("[FAIL] no suite matched only=%s prefix=%s - a run that checked nothing is not a pass" % [only, prefix])

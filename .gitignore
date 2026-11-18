@@ -32,3 +32,6 @@ temp_readme
 # Dev-tool screenshot output (tests/capture_*.gd write here)
 out.png
 out.png.import
+
+# Per-workspace check-count ratchet (tools/run_tests_parallel.py), rewritten by every green full run
+tools/suite_check_counts.tsv

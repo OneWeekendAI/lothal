@@ -18,6 +18,7 @@ static func _state(m: Node, id: String) -> Variant:
 		"mode": return m.fc.is_rate_mode()
 		"listener": return m.drone_audio.listener_mode
 		"record": return m._recorder != null
+		"weather": return m.conditions_panel != null and m.conditions_panel.visible
 	return null
 
 
@@ -40,8 +41,8 @@ static func run() -> Array:
 		ids.append(a[0])
 		keys.append(a[3])
 	probe.free()
-	results.append(TestResult.new("the strip covers pause, reset, respawn, view, mode, listener, record",
-		ids == ["pause", "reset", "respawn", "view", "mode", "listener", "record"], str(ids)))
+	results.append(TestResult.new("the strip covers pause, reset, respawn, view, mode, listener, record, weather",
+		ids == ["pause", "reset", "respawn", "view", "mode", "listener", "record", "weather"], str(ids)))
 	results.append(TestResult.new("the old keys stay on their actions (C view, L listener, R record, Space mode)",
 		_key_of("view") == KEY_C and _key_of("listener") == KEY_L and _key_of("record") == KEY_R
 			and _key_of("mode") == KEY_SPACE, ""))
