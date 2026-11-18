@@ -496,9 +496,47 @@ func update(dt: float) -> Vector3:
 	return update_at(dt, Vector3.ZERO, ref_height_m)
 
 
+## B4/E2 LIVE APPLY. A weather edit in flight hands the new field the old one; for `seconds` both advance and the air the
+## aircraft feels is old -> new on a smoothstep, so an edit is never a step impulse (a real front arrives over seconds,
+## not in one millisecond). `crossfade_fraction()` is 0 at the start, 1 once the old field is dropped; -1 when none ran.
+const CROSSFADE_S := 1.5
+var _fade_from: Wind = null
+var _fade_s := 0.0
+var _fade_t := 0.0
+
+
+func crossfade_from(old: Wind, seconds := CROSSFADE_S) -> void:
+	if old == null or old == self or seconds <= 0.0:
+		return
+	# Never chain fades: the old field's own fade is collapsed onto it, so at most two fields ever step.
+	old._fade_from = null
+	_fade_from = old
+	_fade_s = seconds
+	_fade_t = 0.0
+	_last = old._last
+
+
+## 0..1 progress of a crossfade in flight, or -1.0 when none is running (the HUD labels this).
+func crossfade_fraction() -> float:
+	return clampf(_fade_t / _fade_s, 0.0, 1.0) if _fade_from != null else -1.0
+
+
 ## Advances by `dt` and returns the wind at world position `pos` (m) at `height_m` above ground.
 ## Calls with the same seed and the same sequence of (dt, pos, height) return the same vectors.
 func update_at(dt: float, pos: Vector3, height_m: float) -> Vector3:
+	if _fade_from == null:
+		return _update_at_raw(dt, pos, height_m)
+	var old_v := _fade_from.update_at(dt, pos, height_m)
+	var new_v := _update_at_raw(dt, pos, height_m)
+	_fade_t += dt
+	var s := smoothstep(0.0, 1.0, _fade_t / _fade_s)
+	if _fade_t >= _fade_s:
+		_fade_from = null
+	_last = old_v.lerp(new_v, s)
+	return _last
+
+
+func _update_at_raw(dt: float, pos: Vector3, height_m: float) -> Vector3:
 	if model == Model.FIRST_ORDER:
 		var k := FlightLaw.gust_coefficients(dt, gust_tau_s, gustiness_mps)
 		var a: float = k[0]

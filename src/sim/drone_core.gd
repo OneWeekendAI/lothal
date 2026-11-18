@@ -381,6 +381,27 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 ## the four prop tips: the frame's and props' own extents (arm_m, prop_radius_m), not a bounding box.
 ## Each is {"r": Vector3, "radius": float, "motor": int (-1 for the body)}.
 func contact_points() -> Array[Dictionary]:
+	# B4/Q1: cached on the inputs that define it, since this ran (nine dictionaries) every 1 kHz substep.
+	var key := [arm_m, mass_properties.com_m, rotor_above_com_m, prop_radius_m]
+	if key == _contact_key:
+		return _contact_cache
+	_contact_key = key
+	_contact_cache = _build_contact_points()
+	_contact_bound_r = 0.0
+	for point in _contact_cache:
+		_contact_bound_r = maxf(_contact_bound_r, (point["r"] as Vector3).length() + float(point["radius"]))
+	return _contact_cache
+
+
+## The radius of a sphere about the COM holding every contact sphere (set with the contact-point cache).
+var _contact_bound_r := 0.0
+
+
+var _contact_key: Array = []
+var _contact_cache: Array[Dictionary] = []
+
+
+func _build_contact_points() -> Array[Dictionary]:
 	var points: Array[Dictionary] = [{"r": Vector3.ZERO, "radius": CollisionConstants.BODY_RADIUS_M, "motor": -1}]
 	for i in MotorLayout.MOTOR_NAMES.size():
 		var hub := MotorLayout.motor_position(MotorLayout.MOTOR_NAMES[i], arm_m) - mass_properties.com_m
@@ -397,7 +418,11 @@ func contact_points() -> Array[Dictionary]:
 func _resolve_collisions() -> void:
 	last_impact_speed_mps = 0.0
 	var mass := mass_properties.total_mass_kg
-	for point in contact_points():
+	var points := contact_points()
+	# B4/Q1: one query for the whole aircraft when it is clear of everything (exact: see CollisionWorld.clear_of).
+	if collision_world.clear_of(rigid_body.position_m, _contact_bound_r):
+		return
+	for point in points:
 		var r_body: Vector3 = point["r"]
 		var r_world := rigid_body.orientation * r_body
 		var hit := collision_world.contact(rigid_body.position_m + r_world, float(point["radius"]))

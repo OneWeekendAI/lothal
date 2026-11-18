@@ -11,6 +11,10 @@ extends RefCounted
 
 const TICKS := 120
 const BUDGET_MS := 1.0
+## B4/Q1: the tick after the collision broad phase (one bounding-sphere query for the whole aircraft when it is clear,
+## exact gate/obstacle rejections, the CollisionWorld built once per world instead of per frame). Measured headless on an
+## M5: 0.55 ms before, 0.35 after. The review's windowed 0.95 ms included the renderer's contention.
+const B4_BUDGET_MS := 0.45
 
 
 static func run(tree: SceneTree) -> Array:
@@ -32,6 +36,20 @@ static func run(tree: SceneTree) -> Array:
 	var tick_ms := (Time.get_ticks_usec() - t0) / 1000.0 / TICKS
 	results.append(TestResult.new("sim physics tick (FC, rotors, HUD, audio, scoring) stays under 1 ms",
 		tick_ms < BUDGET_MS, "%.3f ms per 120 Hz tick (budget %.1f)" % [tick_ms, BUDGET_MS]))
+	# Mutation: delete the clear_of early return in DroneCore._resolve_collisions -> ~0.45-0.5 ms; HEAD 6673255 was 0.55.
+	results.append(TestResult.new("b4 q1: the sim physics tick stays under %.2f ms" % B4_BUDGET_MS,
+		tick_ms < B4_BUDGET_MS, "%.3f ms per 120 Hz tick" % tick_ms))
+
+	# Deterministic half of the same claim: hovering clear of the ground, gates and obstacles, the whole-aircraft broad
+	# phase answers every substep and no per-point query runs. Mutation: delete the clear_of early return -> 9 points x
+	# 8 substeps x 120 ticks of narrow queries.
+	var cw: CollisionWorld = sim.core.collision_world
+	var q0 := cw.point_queries
+	for i in TICKS:
+		sim._physics_process(1.0 / 120.0)
+	results.append(TestResult.new("b4 q1: an aircraft clear of everything runs no per-point collision query",
+		cw == sim.core.collision_world and cw.point_queries == q0 and sim.core.rigid_body.position_m.y > 1.0,
+		"%d narrow queries in %d ticks at %.1f m" % [cw.point_queries - q0, TICKS, sim.core.rigid_body.position_m.y]))
 
 	var solves_before: int = sim.hud.remaining_solves
 	for i in TICKS:

@@ -6,7 +6,8 @@ extends DsDrawer
 ## standing in the sim had no way to reach it. This is a Design Space drawer (the Parts shelf's box, DsStepper, DsList) over
 ## the SAME objects the Field system edits: the shell's `ConditionsLibrary`, `SiteLibrary` and `WorldLibrary`. Nothing is
 ## staged: Apply writes the selected set, saves both files, and hands the flight a fresh wind and a fresh air (`Main`'s
-## `apply_conditions_edit`), then respawns the aircraft at the start so the next second of flight is in the new air.
+## `apply_conditions_edit`) LIVE: the aircraft keeps flying and the wind blends in over Wind.CROSSFADE_S (B4/E2). Picking a
+## WORLD changes the ground, so that one still respawns at the start, and its section says so.
 ##
 ## FLIGHT IS PAUSED WHILE IT IS OPEN, so typing a number does not also push the sticks.
 
@@ -45,7 +46,7 @@ func _init(p_sim: Node) -> void:
 		if not _filling and i >= 0 and i < _set_ids.size():
 			conditions_chosen.emit(_set_ids[i]))
 	c.add_child(set_list)
-	c.add_child(DsUi.section("World"))
+	c.add_child(DsUi.section("World (switching respawns at the start)"))
 	world_list = DsList.new(true)
 	world_list.name = "Worlds"
 	world_list.item_selected.connect(func(i: int) -> void:
@@ -70,7 +71,7 @@ func _init(p_sim: Node) -> void:
 	note.custom_minimum_size = Vector2(WIDTH - 40.0, 0)
 	c.add_child(note)
 
-	apply_button = DsUi.button("Apply and respawn", false, true)
+	apply_button = DsUi.button("Apply live", false, true)
 	apply_button.name = "Apply"
 	apply_button.focus_mode = Control.FOCUS_NONE
 	apply_button.pressed.connect(func() -> void: apply_requested.emit(edit()))

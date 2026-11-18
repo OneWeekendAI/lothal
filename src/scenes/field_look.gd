@@ -25,6 +25,13 @@ const CHUNK_M := 15.0
 ## Beyond this a chunk is not drawn (it fades over FADE_M first), in metres.
 const GRASS_RANGE_M := 75.0
 const FADE_M := 12.0
+## B4 grass LOD: each chunk is split into PICK_BANDS MultiMeshes by tuft pick (the shader keeps a tuft while
+## pick <= 1 - smoothstep(FADE_START_M, FADE_END_M, d)). Band [lo, hi) is culled once the chunk centre is past
+## band_range_m(lo): every tuft in it is then past the distance the shader would already have collapsed it at, so the
+## picture is unchanged and the far field stops paying vertex work for tufts it drew as nothing.
+const PICK_BANDS := 4
+const FADE_START_M := 22.0
+const FADE_END_M := 78.0
 ## Blade height at scale 1, in metres. ESTIMATE: a flying field's turf, 8-20 cm. B3: was 0.34 (a meadow as tall as a
 ## 5" quad); with the per-blade 0.5-1.4 spread and the per-tuft clump scale the field reads mixed rather than uniform.
 const BLADE_HEIGHT_M := 0.14
@@ -55,8 +62,8 @@ uniform vec3 base_col : source_color = vec3(0.08, 0.17, 0.045);
 uniform vec3 tip_col : source_color = vec3(0.24, 0.38, 0.11);
 uniform vec3 dry_col : source_color = vec3(0.36, 0.34, 0.16);
 // Density and blade height fall to nothing between these two camera distances, so the grass has no edge.
-uniform float fade_start = 22.0;
-uniform float fade_end = 78.0;
+uniform float fade_start = 22.0;   // = FieldLook.FADE_START_M
+uniform float fade_end = 78.0;     // = FieldLook.FADE_END_M
 
 varying float v_tip;
 varying float v_tone;
@@ -71,7 +78,9 @@ void vertex() {
 	// Distance fade: thin out tufts by a per-tuft hash (density) and shrink the survivors (height).
 	float dist = distance(origin, CAMERA_POSITION_WORLD);
 	float keep = 1.0 - smoothstep(fade_start, fade_end, dist);
-	float pick = hash21(origin.xz * 7.31 + 3.7);
+	// B4: the tuft's density pick comes from the CPU (INSTANCE_CUSTOM.r, FieldLook.tuft_pick), so the chunks can be split
+	// into pick bands that are culled whole once the camera is too far for any tuft in the band to survive this test.
+	float pick = INSTANCE_CUSTOM.r;
 	if (pick > keep) {
 		VERTEX = vec3(0.0);
 	} else {
@@ -411,7 +420,8 @@ func _build_grass_chunks() -> void:
 	var buckets := {}
 	for i in tuft_origins.size():
 		var p := tuft_origins[i]
-		var key := Vector2i(floori(p.x / CHUNK_M), floori(p.z / CHUNK_M))
+		var band := mini(int(tuft_pick(i) * PICK_BANDS), PICK_BANDS - 1)
+		var key := Vector3i(floori(p.x / CHUNK_M), floori(p.z / CHUNK_M), band)
 		if not buckets.has(key):
 			buckets[key] = PackedInt32Array()
 		buckets[key].append(i)
@@ -419,6 +429,7 @@ func _build_grass_chunks() -> void:
 		var ids: PackedInt32Array = buckets[key]
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
 		mm.mesh = tuft_mesh()
 		mm.instance_count = ids.size()
 		for j in ids.size():
@@ -426,16 +437,39 @@ func _build_grass_chunks() -> void:
 			var s := 0.75 + 0.8 * _hash(i, 3)
 			var bs := Basis(Vector3.UP, _hash(i, 4) * TAU).scaled(Vector3(1.0, s, 1.0))
 			mm.set_instance_transform(j, Transform3D(bs, tuft_origins[i]))
+			mm.set_instance_custom_data(j, Color(tuft_pick(i), 0.0, 0.0, 0.0))
 		var inst := MultiMeshInstance3D.new()
-		inst.name = "Grass_%d_%d" % [key.x, key.y]
+		inst.name = "Grass_%d_%d_b%d" % [key.x, key.y, key.z]
 		inst.multimesh = mm
 		inst.material_override = grass_material
 		inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		# The shader fades density and height to zero by 78 m; the chunk is culled just past that, invisibly.
-		inst.visibility_range_end = GRASS_RANGE_M + FADE_M
+		inst.visibility_range_end = band_range_m(float(key.z) / PICK_BANDS)
 		# Blades bend up to ~0.3 m; the mesh AABB is the tuft's, so grow it a little for the culler.
 		inst.extra_cull_margin = 1.0
 		add_child(inst)
+
+
+## The density pick of tuft `i`, in [0, 1): a tuft is drawn while pick <= the shader's keep at its distance.
+static func tuft_pick(i: int) -> float:
+	return _hash(i, 31)
+
+
+## The camera-to-chunk-centre distance past which no tuft with pick >= `pick_lo` survives the shader's fade, plus the
+## chunk's half diagonal (a tuft can be that much nearer than its chunk's centre). Band 0 keeps the old whole-field
+## range, GRASS_RANGE_M + FADE_M.
+static func band_range_m(pick_lo: float) -> float:
+	if pick_lo <= 0.0:
+		return GRASS_RANGE_M + FADE_M
+	# keep(d) = 1 - smoothstep(a, b, d) = pick_lo, solved by bisection (keep is monotone in d).
+	var lo := FADE_START_M
+	var hi := FADE_END_M
+	for _k in 40:
+		var mid := 0.5 * (lo + hi)
+		if 1.0 - smoothstep(FADE_START_M, FADE_END_M, mid) > pick_lo:
+			lo = mid
+		else:
+			hi = mid
+	return hi + CHUNK_M * sqrt(2.0) * 0.5 + 1.0
 
 
 func _build_trees() -> void:

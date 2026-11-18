@@ -6,6 +6,17 @@ extends RefCounted
 var terrain: Terrain = null
 var obstacles: Array[Obstacle] = []
 var gates: Array[Dictionary] = []
+## B4/Q1 broad phase: each obstacle's AABB, cached once. A point outside an obstacle's box grown by the contact radius
+## is farther than that radius from the obstacle (the box contains it), so skipping it changes no contact.
+var _boxes: Array[AABB] = []
+## The gates unpacked once from their dictionaries (ring = aperture radius + GATE_TUBE_RADIUS_M).
+var _gate_pos := PackedVector3Array()
+var _gate_n := PackedVector3Array()
+var _gate_ring := PackedFloat64Array()
+## Per-point narrow queries answered so far (tests/test_sim_perf.gd counts that the broad phase skips them in clear air).
+var point_queries := 0
+## Slack on both broad-phase rejections so float rounding can never skip a real contact.
+const BROAD_MARGIN_M := 1.0e-3
 
 func _init(p_terrain: Terrain = null, p_obstacles: Array[Obstacle] = [], p_gates: Array[Dictionary] = []) -> void:
 	terrain = p_terrain
@@ -13,9 +24,44 @@ func _init(p_terrain: Terrain = null, p_obstacles: Array[Obstacle] = [], p_gates
 	gates = p_gates
 
 
+func _cache_gates() -> void:
+	_gate_pos.clear()
+	_gate_n.clear()
+	_gate_ring.clear()
+	for gate in gates:
+		_gate_pos.append(gate["position"])
+		_gate_n.append(gate["normal"])
+		_gate_ring.append(float(gate["radius"]) + CollisionConstants.GATE_TUBE_RADIUS_M)
+
+
+## B4/Q1 whole-aircraft broad phase: true when NO sphere lying inside the sphere (`centre`, `bound_r`) can touch anything,
+## so the per-point queries can be skipped with no change in result. Conservative: ground is only cleared on flat-at-zero
+## terrain (elsewhere this answers false and every point is queried as before).
+func clear_of(centre: Vector3, bound_r: float) -> bool:
+	if terrain != null and not terrain.is_flat_at_zero():
+		return false
+	if centre.y - bound_r <= BROAD_MARGIN_M:
+		return false
+	if _boxes.size() != obstacles.size():
+		_boxes.clear()
+		for o in obstacles:
+			_boxes.append(o.aabb())
+	for box in _boxes:
+		if box.grow(bound_r + BROAD_MARGIN_M).has_point(centre):
+			return false
+	if _gate_pos.size() != gates.size():
+		_cache_gates()
+	var reach := bound_r + CollisionConstants.GATE_TUBE_RADIUS_M + BROAD_MARGIN_M
+	for gi in _gate_pos.size():
+		if (centre - _gate_pos[gi]).length() - _gate_ring[gi] < reach:
+			return false
+	return true
+
+
 ## The deepest overlap of a sphere with the world, or {} when clear. {normal (out of the surface,
 ## unit), depth (m, > 0), surface ("ground" | "obstacle" | "gate")}.
 func contact(centre: Vector3, radius: float) -> Dictionary:
+	point_queries += 1
 	var best := {}
 	var best_depth := 0.0
 
@@ -25,7 +71,14 @@ func contact(centre: Vector3, radius: float) -> Dictionary:
 		best_depth = ground_depth
 		best = {"normal": _ground_normal(centre), "depth": ground_depth, "surface": "ground"}
 
-	for obstacle in obstacles:
+	if _boxes.size() != obstacles.size():
+		_boxes.clear()
+		for o in obstacles:
+			_boxes.append(o.aabb())
+	for oi in obstacles.size():
+		var obstacle := obstacles[oi]
+		if not _boxes[oi].grow(radius + BROAD_MARGIN_M).has_point(centre):
+			continue
 		var d := obstacle._distance_to(centre)
 		if d < radius:
 			var depth := radius - d
@@ -35,12 +88,17 @@ func contact(centre: Vector3, radius: float) -> Dictionary:
 				best_depth = depth
 				best = {"normal": _obstacle_normal(obstacle, centre, d), "depth": depth, "surface": "obstacle"}
 
-	for gate in gates:
-		var gp: Vector3 = gate["position"]
-		var gn: Vector3 = gate["normal"]
+	if _gate_pos.size() != gates.size():
+		_cache_gates()
+	for gi in _gate_pos.size():
+		var gp: Vector3 = _gate_pos[gi]
 		# The ring is a torus: a tube of GATE_TUBE_RADIUS_M around the circle just outside the aperture.
-		var ring_r: float = float(gate["radius"]) + CollisionConstants.GATE_TUBE_RADIUS_M
+		var ring_r: float = _gate_ring[gi]
 		var rel := centre - gp
+		# Broad phase (exact): every point of the tube's centre circle is ring_r from gp, so dist >= |rel| - ring_r.
+		if rel.length() - ring_r >= radius + CollisionConstants.GATE_TUBE_RADIUS_M + BROAD_MARGIN_M:
+			continue
+		var gn: Vector3 = _gate_n[gi]
 		var axial := rel.dot(gn)
 		var radial := rel - gn * axial
 		var rad := radial.length()

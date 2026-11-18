@@ -226,8 +226,13 @@ func adopt_selected_course() -> void:
 	course = course_library.selected()
 	terrain = _course_terrain()
 	obstacles = _course_obstacles()
-	lap_timer = LapTimer.new(_lap_key())
+	_rekey_lap_timer()
 	_rebuild_ground()
+
+
+## A fresh lap timer under the current world's key (the course, its ground and the weather all go into `_lap_key`).
+func _rekey_lap_timer() -> void:
+	lap_timer = LapTimer.new(_lap_key())
 
 
 ## THE KEY A BEST LAP IS FILED UNDER, and the ONE place this scene builds it. Both callers —
@@ -473,6 +478,7 @@ func _on_build_changed(new_build: Build) -> void:
 		_stop_recording()
 	build = new_build
 	core = build.build_drone_core(FREE_FLIGHT_PHYSICS)
+	_air_blend = {}   # a part swap or a respawn flies the new air outright
 	# The build's warnings, which the sim no longer lets anyone author away: shown on the HUD.
 	if hud != null:
 		hud.show_warnings(build)
@@ -684,6 +690,8 @@ var _paused_by_panel := false
 
 ## How far past the edge of the field the aircraft may fly before the range limit brings it back (a real aircraft is lost to
 ## the radio link at a few hundred metres; the ground beyond the drawn field still exists and is collidable, see CollisionWorld).
+## B4/Q4: ESTIMATE, not measured: a game-play bound inside a 25 mW analog link's few-hundred-metre range (no link model
+## here yet, R2.4), chosen so the aircraft is still a visible speck from the start line. Not a physics constant.
 const RANGE_LIMIT_M := 150.0
 
 static func out_of_range(at: Vector3, p_terrain: Terrain) -> bool:
@@ -782,23 +790,116 @@ func apply_world(id: String) -> bool:
 	conditions_library.save(conditions_path)
 	terrain = _course_terrain()
 	obstacles = _course_obstacles()
-	_apply_weather("World: %s" % w.world_name)
+	_apply_weather("World: %s (respawned at the start)" % w.world_name, false)
 	return true
 
 
 ## Rebuilds everything downstream of the weather: the name, the air the aircraft is flown in, the wind, the lap key, the
 ## ground, and the aircraft itself (its thrust and hover throttle depend on the air), then respawns at the start.
-func _apply_weather(note := "") -> void:
+##
+## B4/E2: a WEATHER edit (wind, turbulence, temperature, humidity, elevation) is applied LIVE: the air and the wind are
+## rebuilt, but the aircraft keeps flying — position, velocity, attitude, sensors, rpm and the pack are carried onto the
+## core rebuilt at the new air, and the wind crossfades over Wind.CROSSFADE_S. Only a WORLD switch (`live = false`), which
+## changes the ground under the aircraft, still respawns at the start.
+func _apply_weather(note := "", live := true) -> void:
 	var c := conditions_library.selected()
 	conditions_name = c.conditions_name
+	var old_core := core
+	var old_wind := wind
 	# A twin rebuilt at the new air, not `build.air = ...`: k_t, k_q, drag and the hover throttle are derived when the Build
 	# is constructed, so assigning the field would change what the HUD says and leave the thrust in the old air.
 	build = build.at_air(AirDensity.compose(_course_site(), c))
 	wind = make_wind(c)
 	wind.set_obstacles(obstacles)
-	adopt_selected_course()   # lap key, ground and obstacles, from the one place that builds them
-	_on_build_changed(build)
-	_refresh_conditions_panel(note)
+	if not live or old_core == null:
+		adopt_selected_course()   # lap key, ground and obstacles, from the one place that builds them
+		_on_build_changed(build)
+		_refresh_conditions_panel(note)
+		return
+	wind.crossfade_from(old_wind)
+	_rekey_lap_timer()   # the lap key carries the weather; the ground is unchanged
+	# Not `_on_build_changed`: that path restarts the course (a teleport, fc.reset, wind.reset, a throttle snap). The
+	# parts are the same, so the airframe on screen stays; only the core is rebuilt at the new air.
+	if _recorder != null:
+		_stop_recording()   # a log's header names one air; rows flown in two would be mislabelled
+	core = build.build_drone_core(FREE_FLIGHT_PHYSICS)
+	core.wind = wind
+	build.field_wind_mps = wind.speed_mps
+	build.field_conditions_name = conditions_name
+	if hud != null:
+		hud.show_warnings(build)
+	fc.rate_loop.adopt_tune(pid_tunes.tune_for(build))   # adopted: the integrators holding trim survive
+	fc.rate_loop.config = build.config
+	_carry_flight_state(old_core, core)
+	var old_hover := _hover_throttle
+	_hover_throttle = dynamic_hover_throttle(build, build.hover_throttle_for(core.powertrain.battery), pack_charge)
+	# The stick's centre (the hover throttle) moves with the air, on the same blend, so centred sticks stay level flight.
+	_start_air_blend(old_core, core, old_hover, _hover_throttle)
+	core.collision_world = old_core.collision_world
+	_refresh_conditions_panel(note + "  (live, wind blends over %.1f s)" % Wind.CROSSFADE_S)
+
+
+## B4/E2: the AIR blends with the wind. Every field the Build derives from the air density (thrust and torque constants,
+## drag, rotor H-force, the ESC current cap) is linear in rho, so a linear blend of them IS the aircraft at the blended
+## density: each frame of the 1.5 s fade flies a real, consistent intermediate air rather than a thrust step of the full
+## density change (a 22% thrust drop in one millisecond for +20 C and +1500 m). Same smoothstep as Wind.crossfade_from.
+const AIR_BLEND_CORE := ["drag_coefficient", "drag_axes", "h_coeffs", "air_density_kgm3", "_k_t"]
+const AIR_BLEND_POWERTRAIN := ["k_t", "k_q", "motor_max_amps", "air_density_kgm3", "ambient_c"]
+var _air_blend := {}
+
+
+func _start_air_blend(from: DroneCore, to: DroneCore, hover_from: float, hover_to: float) -> void:
+	var a := {"h": hover_from}
+	var b := {"h": hover_to}
+	for f in AIR_BLEND_CORE:
+		a["c." + f] = from.get(f)
+		b["c." + f] = to.get(f)
+	for f in AIR_BLEND_POWERTRAIN:
+		a["p." + f] = from.powertrain.get(f)
+		b["p." + f] = to.powertrain.get(f)
+	_air_blend = {"from": a, "to": b, "t": 0.0}
+	_step_air_blend(0.0)
+
+
+## Advances the air blend by `dt` and writes the blended fields onto the live core; a no-op once it has finished.
+func _step_air_blend(dt: float) -> void:
+	if _air_blend.is_empty() or core == null:
+		return
+	_air_blend["t"] = float(_air_blend["t"]) + dt
+	var s := smoothstep(0.0, 1.0, float(_air_blend["t"]) / Wind.CROSSFADE_S)
+	for k: String in _air_blend["to"]:
+		if k == "h":
+			_hover_throttle = lerpf(_air_blend["from"][k], _air_blend["to"][k], s)
+			continue
+		var target: Object = core
+		if k.begins_with("p."):
+			target = core.powertrain
+		target.set(k.substr(2), lerp(_air_blend["from"][k], _air_blend["to"][k], s))
+	if s >= 1.0:
+		_air_blend = {}
+
+
+## The flight state that survives a live weather apply: the body's pose and motion, the sensors' filter state, the
+## rotors' speeds, temperatures and cutoff latch, the pack itself, and any prop damage. Everything else on `to` is what
+## the new air derives (k_t, k_q, density, ambient temperature).
+static func _carry_flight_state(from: DroneCore, to: DroneCore) -> void:
+	to.rigid_body = from.rigid_body
+	to.gyro = from.gyro
+	to.accel = from.accel
+	to.vbat = from.vbat
+	to.prop_damage = from.prop_damage
+	to.crashed = from.crashed
+	to.flap_tilt_rad = from.flap_tilt_rad
+	to.last_motor_cmds = from.last_motor_cmds
+	to.ground_y_m = from.ground_y_m
+	var a := from.powertrain
+	var b := to.powertrain
+	b.battery = a.battery
+	for f in ["motor_rpm", "last_voltage_v", "last_current_total_a", "current_supply_v", "cutoff_latched",
+			"cutoff_hold_s", "cutoff_low_s", "last_body_velocity_mps", "winding_c", "bell_c", "last_motor_loss_w",
+			"motor_winding_a", "motor_pack_a"]:
+		b.set(f, a.get(f))
+	b.publish()
 
 
 ## Writes the pack's state back to the shared store. Called on landing, and by DesignApp on the
@@ -934,8 +1035,12 @@ func _physics_process(delta: float) -> void:
 		core.ground_y_m = terrain.height_at(core.rigid_body.position_m.x, core.rigid_body.position_m.z)
 
 	# R1.1: the very terrain, obstacles and gate rings this scene draws are what the aircraft hits.
-	core.collision_world = CollisionWorld.new(terrain, obstacles, course.gates)
+	# B4/Q1: rebuilt only when one of its three inputs is a different object, so its unpacked gates are not redone per frame.
+	var cw := core.collision_world
+	if cw == null or cw.terrain != terrain or cw.obstacles != obstacles or cw.gates != course.gates:
+		core.collision_world = CollisionWorld.new(terrain, obstacles, course.gates)
 
+	_step_air_blend(delta)
 	var substep_dt := delta / SUBSTEPS
 	for i in SUBSTEPS:
 		var motor_cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, substep_dt, core.vbat)

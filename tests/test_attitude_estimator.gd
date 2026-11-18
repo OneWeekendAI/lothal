@@ -48,8 +48,13 @@ static func _code_only(src: String) -> String:
 		lines.append(line if hash_at < 0 else line.substr(0, hash_at))
 	return "\n".join(lines)
 
+## B4/T6: two empty dictionaries (or two of different shapes) are NOT the same output; that passed vacuously before.
 static func _same(a: Dictionary, b: Dictionary) -> bool:
+	if a.is_empty() or a.size() != b.size():
+		return false
 	for k in a:
+		if not b.has(k):
+			return false
 		if not is_equal_approx(float(a[k]), float(b[k])):
 			return false
 	return true
@@ -243,20 +248,10 @@ static func run() -> Array:
 		"final true tilt = %.3f deg" % final_tilt))
 
 	# ---- angle mode no longer reads the true attitude ----
-	var fc_code := _code_only(FileAccess.get_file_as_string("res://src/fc/flight_controller.gd"))
-	var angle_code := _code_only(FileAccess.get_file_as_string("res://src/fc/angle_mode_controller.gd"))
-	results.append(TestResult.new(
-		"source: the flight controller never touches rigid_body or takes an orientation argument",
-		not fc_code.contains("rigid_body") and not fc_code.contains("func update(orientation")
-			and fc_code.contains("estimator.attitude") and not angle_code.contains("rigid_body"),
-		"update() levels against estimator.attitude"))
-	for path in ["res://src/scenes/main.gd", "res://src/autopilot/nav_pilot.gd"]:
-		var code := _code_only(FileAccess.get_file_as_string(path))
-		results.append(TestResult.new(
-			"source: %s hands the controller the accelerometer, not the true orientation" % path.get_file(),
-			code.contains("fc.update(core.accel.reading_mps2") and not code.contains("fc.update(core.rigid_body"),
-			"call site passes core.accel.reading_mps2"))
-
+	# B4/T7: the source-text checks that stood here (fc_code.contains(...), call sites spelled out) broke on a rename and
+	# tested no behaviour. FlightController.update's first two parameters are typed Vector3 sensor readings, so a call
+	# site handing it the true orientation (a Quaternion) does not compile; what the controller DOES with them is the
+	# behavioural pair below, which tells it it is rolled through the accelerometer alone.
 	# Behaviour: the controller is told, by the sensors alone, that it is rolled; truth is never in
 	# the picture. Angle mode must command a correction, and acro must not.
 	var rolled_accel := Quaternion(Vector3(0, 0, 1), deg_to_rad(20.0)).inverse() * Vector3(0, G, 0)
