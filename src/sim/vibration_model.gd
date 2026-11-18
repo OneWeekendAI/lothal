@@ -227,6 +227,13 @@ const BLADE_PASS_EQUIVALENT_KG := 0.00003
 var rpm := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
 
 var imbalance_kg := DEFAULT_IMBALANCE_KG
+## B5: R1.1 prop damage as imbalance. A hit that costs a prop the fraction d of its thrust is taken to have
+## knocked off the fraction d of ONE blade's mass, at DAMAGE_CHIP_RADIUS_FRAC of the radius: an extra 1x
+## imbalance of d * prop_mass / blades * that fraction, per motor (set_damage). ESTIMATE: a chipped tip is
+## the common case; nobody publishes mass-lost-per-thrust-lost.
+const DAMAGE_CHIP_RADIUS_FRAC := 0.8
+var prop_mass_kg := 0.0045
+var damage_imbalance_kg := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
 var blade_pass_kg := BLADE_PASS_EQUIVALENT_KG
 var soft_mount_m := 0.0
 ## Optional per-mount overrides passed through to `SoftMount.compute`. Empty means the
@@ -277,7 +284,16 @@ static func for_build(build: Build) -> VibrationModel:
 	var mount_mass := SoftMount.mount_mass_kg(model.soft_mount_m, model.soft_mount_spec)
 	model.resonance_hz = resonance_hz_for(build.arm_m, model.tip_load_kg + mount_mass)
 	model.imbalance_kg = float(build.assembly_value("prop_imbalance_g")) / 1000.0
+	var pm := float(build.propeller.get("mass_g", 0.0)) / 1000.0
+	if pm > 0.0:
+		model.prop_mass_kg = pm
 	return model
+
+
+## B5: per-motor prop damage (DroneCore.prop_damage, 0..1) into extra 1x imbalance. See DAMAGE_CHIP_RADIUS_FRAC.
+func set_damage(damage: PackedFloat64Array) -> void:
+	for i in mini(4, damage.size()):
+		damage_imbalance_kg[i] = clampf(damage[i], 0.0, 1.0) * prop_mass_kg / maxf(blades, 1.0) * DAMAGE_CHIP_RADIUS_FRAC
 
 
 ## What hangs off the end of one arm: the motor and its prop. Both masses are published, which is
@@ -413,9 +429,22 @@ func angular_rate_at(t_s: float) -> Vector3:
 	# rather than once per harmonic per motor; the forcing loop itself is FlightLaw.vibration_rate.
 	var f_n := mount_hz()
 	var zeta := 0.0 if is_inf(f_n) else SoftMount.damping_ratio_for(soft_mount_spec)
+	var phase0 := _phase.duplicate()
 	var r := FlightLaw.vibration_rate(dt, rpm, _phase, _axis_packed, _yaw_sign,
 		PackedFloat64Array([prop_radius_m, blades, imbalance_kg, blade_pass_kg, resonance_hz,
 			damping_ratio, f_n, zeta]))
+	# A damaged prop's extra 1x line: the law is linear in imbalance mass, so it is the same law again for
+	# that motor alone with only the extra mass, at the same phases (the returned phases are discarded).
+	for i in 4:
+		if damage_imbalance_kg[i] > 0.0:
+			var only := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+			only[i] = rpm[i]
+			var e := FlightLaw.vibration_rate(dt, only, phase0.duplicate(), _axis_packed, _yaw_sign,
+				PackedFloat64Array([prop_radius_m, blades, damage_imbalance_kg[i], 0.0, resonance_hz,
+					damping_ratio, f_n, zeta]))
+			r[0] += e[0]
+			r[1] += e[1]
+			r[2] += e[2]
 	for i in 4:
 		_phase[i] = r[3 + i]
 	return Vector3(r[0], r[1], r[2])
@@ -429,7 +458,7 @@ func angular_rate_at(t_s: float) -> Vector3:
 ## it is exact: a rate A sin(h(theta + phi)) has angle -(A / omega) cos(...), and cos(x) = sin(x + pi/2),
 ## so the angle is -(1 / omega) times the SAME law evaluated with theta advanced by pi / (2h). The law is
 ## FlightLaw.vibration_rate itself (dt = 0, one motor, one harmonic's mass), so there is one forcing law.
-func tone_angles() -> Array[Dictionary]:
+func tone_angles(advance_rad: float = 0.0) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var f_n := mount_hz()
 	var zeta := 0.0 if is_inf(f_n) else SoftMount.damping_ratio_for(soft_mount_spec)
@@ -441,8 +470,8 @@ func tone_angles() -> Array[Dictionary]:
 			var only := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
 			only[i] = rpm[i]
 			var ph := _phase.duplicate()
-			ph[i] += PI / (2.0 * h)
-			var imb := imbalance_kg if h == 1.0 else 0.0
+			ph[i] += PI / (2.0 * h) + advance_rad / h
+			var imb := imbalance_kg + damage_imbalance_kg[i] if h == 1.0 else 0.0
 			var bp := blade_pass_kg if h != 1.0 else 0.0
 			var r := FlightLaw.vibration_rate(0.0, only, ph, _axis_packed, _yaw_sign,
 				PackedFloat64Array([prop_radius_m, blades, imb, bp, resonance_hz, damping_ratio, f_n, zeta]))
@@ -458,6 +487,7 @@ func reset() -> void:
 	_last_t = 0.0
 	for i in 4:
 		_phase[i] = 0.0
+		damage_imbalance_kg[i] = 0.0
 
 
 ## The direction each arm's bending shows up along, in body axes.

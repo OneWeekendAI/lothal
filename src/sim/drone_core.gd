@@ -358,6 +358,7 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# it is a sensor, and this core is the one thing that holds both halves.
 	if gyro.vibration is VibrationModel:
 		gyro.vibration.set_rpm(powertrain.motor_rpm)
+		gyro.vibration.set_damage(prop_damage)
 
 	# Sampled AFTER integration, so the reading the controller picks up at the top of the
 	# next substep is one tick old. That is not an approximation to apologise for — it is

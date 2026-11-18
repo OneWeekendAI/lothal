@@ -98,6 +98,33 @@ func vibration_offset(model: VibrationModel) -> Vector3:
 	return out
 
 
+## B5: the camera's peak shake RATE from the vibration lines (rad/s): each line's angle through the mount times its
+## angular frequency, summed (the lines' worst-case alignment). And the matching peak angle (rad).
+func vibration_peak_rate(model: VibrationModel) -> float:
+	return _peak(model, true)
+
+
+func vibration_peak_angle(model: VibrationModel) -> float:
+	return _peak(model, false)
+
+
+func _peak(model: VibrationModel, rate: bool) -> float:
+	if model == null:
+		return 0.0
+	# Each line's amplitude per axis from two reads a quarter of its cycle apart (sqrt(a0^2 + a1^2)).
+	var now := model.tone_angles()
+	var later := model.tone_angles(PI / 2.0)
+	var out := 0.0
+	for k in now.size():
+		var hz := float(now[k]["hz"])
+		var t := 1.0 if is_inf(natural_hz) else transmissibility_at(hz)
+		var a0: Vector3 = now[k]["angle"]
+		var a1: Vector3 = later[k]["angle"]
+		var amp := Vector3(sqrt(a0.x * a0.x + a1.x * a1.x), sqrt(a0.y * a0.y + a1.y * a1.y), sqrt(a0.z * a0.z + a1.z * a1.z))
+		out += amp.length() * t * (TAU * hz if rate else 1.0)
+	return out
+
+
 ## The camera's angle relative to the frame's rigid pose: the vibration lines through the mount, plus
 ## the mount's lag behind the rigid body. Both are zero for a still, vibration-free frame.
 func offset(model: VibrationModel) -> Vector3:
