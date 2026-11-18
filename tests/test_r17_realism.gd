@@ -182,6 +182,15 @@ static func fly_level_power(lean_deg: float, tpp: bool = true) -> Dictionary:
 	return {"a": cur / maxf(float(n), 1.0), "v": speed, "mu": speed / maxf(rpm * TAU / 60.0 * core.prop_radius_m, 1.0)}
 
 
+## True when a HUD line "Wind  S m/s from D°" reads within 2 m/s and 15 deg of the applied wind (the meander moves it).
+static func _hud_wind_near(text: String, speed: float, from_deg: float) -> bool:
+	var parts := text.replace("°", "").split(" ", false)
+	if parts.size() < 5:
+		return false
+	var d := absf(wrapf(float(parts[4]) - from_deg, -180.0, 180.0))
+	return absf(float(parts[1]) - speed) < 2.0 and d < 15.0
+
+
 static func _spread(a: Array) -> float:
 	if a.is_empty():
 		return 0.0
@@ -254,6 +263,12 @@ static func run() -> Array:
 	panel.temperature_field.value = 35.0
 	panel.elevation_field.value = 1500.0
 	panel.apply_button.pressed.emit()
+	# B3/E5: with the panel still open (flight paused) one frame must refresh the HUD's wind line.
+	# Mutation: drop the hud.render in Main._physics_process's paused branch -> the line keeps the old wind.
+	m2._physics_process(1.0 / 120.0)
+	var open_wind: String = m2.hud._wind_label.text
+	r.append(TestResult.new("b3 e5: the HUD wind readout follows an applied wind while the panel is still open",
+		m2.flight_paused and _hud_wind_near(open_wind, 7.0, 90.0), "paused %s, HUD '%s'" % [m2.flight_paused, open_wind]))
 	m2.toggle_conditions_panel()   # close; flight resumes
 	m2._physics_process(1.0 / 120.0)
 	var saved := ConditionsLibrary.load_from(SCRATCH_COND)

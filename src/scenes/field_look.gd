@@ -25,8 +25,12 @@ const CHUNK_M := 15.0
 ## Beyond this a chunk is not drawn (it fades over FADE_M first), in metres.
 const GRASS_RANGE_M := 75.0
 const FADE_M := 12.0
-## Blade height at scale 1, in metres. ESTIMATE: a mown-meadow 25-40 cm.
-const BLADE_HEIGHT_M := 0.34
+## Blade height at scale 1, in metres. ESTIMATE: a flying field's turf, 8-20 cm. B3: was 0.34 (a meadow as tall as a
+## 5" quad); with the per-blade 0.5-1.4 spread and the per-tuft clump scale the field reads mixed rather than uniform.
+const BLADE_HEIGHT_M := 0.14
+## Tufts per clump, and how far (metres) a tuft sits from its clump's centre. ESTIMATE.
+const CLUMP_TUFTS := 5
+const CLUMP_RADIUS_M := 0.35
 ## Largest tip displacement, as a fraction of the blade height: a blade does not lie flat in a gale. ESTIMATE.
 const MAX_BEND := 0.7
 ## Wind speed at which the bend reaches 63 % of MAX_BEND, in m/s. ESTIMATE.
@@ -71,7 +75,8 @@ void vertex() {
 	if (pick > keep) {
 		VERTEX = vec3(0.0);
 	} else {
-		VERTEX.y *= mix(0.25, 1.0, keep);
+		// Mixed heights: a per-tuft scale (0.6-1.3) so neighbouring tufts are not one height.
+		VERTEX.y *= mix(0.25, 1.0, keep) * (0.6 + 0.7 * hash21(origin.xz * 3.17 + 11.0));
 	}
 	float along = dot(origin.xz, wind_dir);
 	// Gust patches ride the mean wind; a larger gust_mix makes them deeper.
@@ -191,8 +196,12 @@ static func tuft_positions(p_terrain: Terrain) -> PackedVector3Array:
 	var out := PackedVector3Array()
 	out.resize(want)
 	for i in want:
-		var x := c.x + (_hash(i, 1) * 2.0 - 1.0) * half.x
-		var z := c.y + (_hash(i, 2) * 2.0 - 1.0) * half.y
+		# Clumped, not evenly spread: tuft i belongs to clump i / CLUMP_TUFTS and sits within CLUMP_RADIUS_M of it.
+		var k := int(float(i) / CLUMP_TUFTS)
+		var ang := _hash(i, 3) * TAU
+		var rr := CLUMP_RADIUS_M * sqrt(_hash(i, 4))
+		var x := clampf(c.x + (_hash(k, 1) * 2.0 - 1.0) * half.x + cos(ang) * rr, c.x - half.x, c.x + half.x)
+		var z := clampf(c.y + (_hash(k, 2) * 2.0 - 1.0) * half.y + sin(ang) * rr, c.y - half.y, c.y + half.y)
 		out[i] = Vector3(x, terrain.height_at(x, z), z)
 	return out
 
@@ -240,10 +249,10 @@ static func tuft_mesh() -> ArrayMesh:
 		var r := 0.03 + 0.07 * _hash(b, 6)
 		var base := Vector3(cos(ang) * r, 0.0, sin(ang) * r)
 		var tangent := Vector3(-sin(ang), 0.0, cos(ang))
-		var h := BLADE_HEIGHT_M * (0.65 + 0.7 * _hash(b, 7))
-		var w := 0.011 * (0.8 + 0.5 * _hash(b, 8))
-		# Blades lean outward a little so the tuft opens like grass.
-		var lean := Vector3(cos(ang), 0.0, sin(ang)) * (0.05 + 0.08 * _hash(b, 9))
+		var h := BLADE_HEIGHT_M * (0.5 + 0.9 * _hash(b, 7))
+		var w := 0.006 * (0.8 + 0.5 * _hash(b, 8))
+		# Blades lean outward a little so the tuft opens like grass; the lean scales with the blade.
+		var lean := Vector3(cos(ang), 0.0, sin(ang)) * h * (0.15 + 0.25 * _hash(b, 9))
 		var bl := base - tangent * w
 		var br := base + tangent * w
 		var ml := base + lean * 0.5 + Vector3(0.0, h * 0.55, 0.0) - tangent * w * 0.6

@@ -141,7 +141,44 @@ static func run() -> Array:
 	out.append(_sun_and_sky())
 	out.append(_shadows())
 	out.append(_fog_and_tonemap())
+	out.append(_shadows_keep_the_sky())
+	out.append(_turf_scale())
 	return out
+
+
+## B3/E1: inside a shadow the only light is the sky (ambient source SKY, contribution 1, so ambient_light_energy is
+## ignored by the engine and the sky's own radiance is the fill). At energy 1.0 the probe (tests/probe_shadow_ratio.gd)
+## measured a shadow core 0.18 of the lit grass on screen, black; 5.0 measured 0.50 (bar 0.35). Also no whole-frame bloom haze.
+## MUTATION: energy_multiplier back to 1.0, or ambient source to DISABLED, or glow_bloom 0.03 -> caught.
+static func _shadows_keep_the_sky() -> TestResult:
+	var n := _main_nodes()
+	var env: Environment = n["env"]
+	var sky := env.sky.sky_material as PhysicalSkyMaterial
+	var energy := sky.energy_multiplier if sky != null else 0.0
+	var ok := env.ambient_light_source == Environment.AMBIENT_SOURCE_SKY and env.ambient_light_sky_contribution > 0.99 \
+		and energy >= 3.5 and env.glow_bloom == 0.0
+	(n["main"] as Node).free()
+	return TestResult.new("b3 e1: shadows keep the sky's light (sky ambient, sky energy >= 3.5) and there is no bloom haze",
+		ok, "sky energy %.2f, sky contribution %.2f, bloom %.3f" % [energy, env.ambient_light_sky_contribution, env.glow_bloom])
+
+
+## B3 gap 3: turf, not a meadow as tall as a quad. Tallest blade <= 25 cm and tufts gather in clumps (median nearest
+## neighbour well under the even-spread spacing). MUTATION: BLADE_HEIGHT_M 0.34, or CLUMP_TUFTS 1 -> caught.
+static func _turf_scale() -> TestResult:
+	var tall := FieldLook.tuft_mesh().get_aabb().size.y
+	var tufts := FieldLook.tuft_positions(Terrain.flat(60.0, 60.0))
+	var near := PackedFloat32Array()
+	for i in range(0, 400):
+		var best := 1e9
+		for j in range(maxi(0, i - 40), mini(tufts.size(), i + 40)):
+			if j != i:
+				best = minf(best, Vector2(tufts[i].x - tufts[j].x, tufts[i].z - tufts[j].z).length())
+		near.append(best)
+	near.sort()
+	var median := near[near.size() >> 1]
+	var even := 1.0 / sqrt(FieldLook.TUFT_DENSITY)
+	return TestResult.new("b3 grass: blades at most 25 cm and tufts clumped", tall <= 0.25 and tall >= 0.08 and median < 0.4 * even,
+		"tallest %.3f m, median nearest tuft %.3f m vs even spacing %.3f m" % [tall, median, even])
 
 
 static func _field_look() -> FieldLook:
@@ -172,7 +209,8 @@ static func _wind_moves_grass() -> TestResult:
 	look.free()
 	var cap := FieldLook.BLADE_HEIGHT_M * FieldLook.MAX_BEND
 	return TestResult.new("r2.1 grass sway: an 8 m/s wind sways more than a 2 m/s one, and a gale saturates under the bend cap",
-		amp > 0.05 and amp > weak * 1.5 and weak > 0.0 and gale <= cap + 1.0e-9 and gale > 0.99 * cap,
+		# B3: was amp > 0.05 m with 0.34 m blades (0.21 of the bend cap); the same bar scaled to the blade, for 0.14 m turf.
+		amp > 0.21 * cap and amp > weak * 1.5 and weak > 0.0 and gale <= cap + 1.0e-9 and gale > 0.99 * cap,
 		"8 m/s %.4f m, 2 m/s %.4f m, gale %.4f m (cap %.4f)" % [amp, weak, gale, cap])
 
 

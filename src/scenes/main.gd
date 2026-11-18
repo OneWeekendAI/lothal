@@ -918,6 +918,10 @@ func _physics_process(delta: float) -> void:
 	if flight_controls != null:
 		flight_controls.show_state(flight_paused, _recorder != null)
 	if flight_paused:
+		# B3/E5: the HUD still reads the sim while paused, so a wind applied from the open World & weather panel shows at
+		# once instead of when the panel closes. Reading only; nothing steps.
+		if hud != null and core != null:
+			hud.render(core, build, course, lap_timer, fc.is_rate_mode())
 		return
 
 	if Input.get_connected_joypads().is_empty():

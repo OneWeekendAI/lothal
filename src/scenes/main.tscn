@@ -4,6 +4,12 @@
 
 ; R2.1: a physical (Rayleigh + Mie) sky. The sun disc in it is placed by the scene's one DirectionalLight3D
 ; (sky_mode LIGHT_AND_SKY), so the light that casts the shadows and the sun you see are the same direction by construction.
+; B3/E1: the sky is also the only light inside a shadow (ambient source = sky). At energy 1.0 its irradiance was about a
+; tenth of what a clear sky gives next to this 1.9 sun: the core of a gate's shadow measured 0.18 of the lit grass on
+; screen (tests/probe_shadow_ratio.gd), i.e. black. A clear sky at 26 deg sun elevation supplies roughly 20-30% of the
+; horizontal irradiance as diffuse light (ESTIMATE from clear-sky diffuse fractions), which reads near 0.45 on screen after
+; the sRGB curve; energy 5.0 measured 0.50. Raising the sky's own radiance (not a flat fill colour) keeps the shadow blue and directional, and keeps
+; the sky you see and the sky that lights the ground one quantity. Calibrated with the probe, not derived.
 [sub_resource type="PhysicalSkyMaterial" id="PhysicalSkyMaterial_sky"]
 rayleigh_coefficient = 2.0
 mie_coefficient = 0.004
@@ -11,7 +17,7 @@ mie_eccentricity = 0.8
 turbidity = 8.0
 sun_disk_scale = 1.0
 ground_color = Color(0.30, 0.36, 0.24, 1)
-energy_multiplier = 1.0
+energy_multiplier = 5.0
 
 [sub_resource type="Sky" id="Sky_sky"]
 sky_material = SubResource("PhysicalSkyMaterial_sky")
@@ -40,7 +46,8 @@ ssao_power = 1.5
 ssao_detail = 0.4
 glow_enabled = true
 glow_intensity = 0.3
-glow_bloom = 0.03
+; B3: no whole-frame bloom (it laid a haze over every shot); glow stays for the emissive gates only.
+glow_bloom = 0.0
 adjustment_enabled = true
 adjustment_contrast = 1.04
 adjustment_saturation = 1.0

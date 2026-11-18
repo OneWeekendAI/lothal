@@ -43,7 +43,8 @@ const MAX_SOURCE_FOV_DEG := 170.0
 ## ESTIMATES. Corner darkening at the picture corner (fraction of light lost), and the lateral chromatic aberration as a
 ## fraction of radius per unit of corner distortion (red sampled outward, blue inward, by ca * r^2).
 const VIGNETTE_STRENGTH := 0.30
-const CA_PER_DISTORTION := 0.010
+## B3/E4: was 0.010, which drew 4.5 px RGB fringes at the edge of a 1280 px feed; analog micro cameras show a pixel or two.
+const CA_PER_DISTORTION := 0.004
 ## The vignette starts at this radius (half-widths) and is fully on at VIGNETTE_END.
 const VIGNETTE_START := 0.45
 const VIGNETTE_END := 1.25

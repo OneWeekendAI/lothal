@@ -31,7 +31,26 @@ static func run() -> Array:
 	results.append(_every_camera_part_has_a_valid_labelled_lens(catalog))
 	results.append(_the_shader_text_carries_the_mirrors_formula())
 	results.append(_vignette_and_ca_follow_the_distortion())
+	results.append(_ca_fringe_is_at_most_two_pixels(catalog))
 	return results
+
+
+## B3/E4: the colour fringe at the picture's horizontal edge, in output pixels at 1280 wide, for every camera in the
+## catalog. Red is sampled at r(1 + ca r^2) and blue at r(1 - ca r^2), so at the edge (r = 1) each channel is displaced
+## ca * 640 px from green. Analog micro cameras show a pixel or two there, not the 3-4 px the first estimate drew.
+## MUTATION: CA_PER_DISTORTION back to 0.010 -> the 133 deg micro reads > 2 px and this fails.
+static func _ca_fringe_is_at_most_two_pixels(catalog: PartsCatalog) -> TestResult:
+	var worst := 0.0
+	var worst_id := ""
+	for part in catalog.list_category("camera"):
+		var lens := FpvLens.from_part(part)
+		for a in ASPECTS:
+			var px := FpvLens.ca_scale(lens, a) * 640.0
+			if px > worst:
+				worst = px
+				worst_id = str(part.get("id", part.get("name", "?")))
+	return TestResult.new("b3 e4: the lens colour fringe at the picture edge is at most 2 px at 1280 wide",
+		worst <= 2.0 and worst > 0.0, "worst %.2f px (%s)" % [worst, worst_id])
 
 
 ## Independent forward model: the output radius (half-widths) at which a ray `theta` off the axis lands.
