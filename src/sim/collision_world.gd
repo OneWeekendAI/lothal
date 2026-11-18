@@ -150,3 +150,25 @@ func _obstacle_normal(obstacle: Obstacle, p: Vector3, d: float) -> Vector3:
 func _inside_depth(obstacle: Obstacle, p: Vector3) -> float:
 	var box := obstacle.aabb()
 	return maxf(0.0, minf(box.end.y - p.y, minf(minf(p.x - box.position.x, box.end.x - p.x), minf(p.z - box.position.z, box.end.z - p.z))))
+
+
+## R2.4: how many solid things the straight line from `a` to `b` passes through: each obstacle box it crosses, plus
+## one per stretch of terrain it dips under (marched every TERRAIN_STEP_M). Gate rings are open and do not count.
+const TERRAIN_STEP_M := 1.0
+
+func blockers_between(a: Vector3, b: Vector3) -> int:
+	var n := 0
+	for o in obstacles:
+		if o.aabb().intersects_segment(a, b):
+			n += 1
+	if terrain != null:
+		var length := a.distance_to(b)
+		var steps := clampi(int(ceil(length / TERRAIN_STEP_M)), 1, 2000)
+		var under := false
+		for i in range(1, steps):
+			var p := a.lerp(b, float(i) / float(steps))
+			var below := p.y < terrain.height_at(p.x, p.z)
+			if below and not under:
+				n += 1
+			under = below
+	return n

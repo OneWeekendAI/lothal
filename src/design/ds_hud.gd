@@ -28,6 +28,7 @@ var _speed_gauge: ReadoutGauge
 var _speed_label: Label
 var _wind_label: Label
 var _voltage_label: Label
+var _link_label: Label
 var _pack_label: Label
 var _mode_label: Label
 var _current_lap_label: Label
@@ -103,6 +104,9 @@ func _init() -> void:
 	_wind_label = _line(flight, SIZE_BODY, COLOR_OK)
 	_voltage_label = _line(flight, SIZE_BODY, COLOR_OK)
 	_pack_label = _line(flight, SIZE_BODY, COLOR_OK)
+	_link_label = _line(flight, SIZE_BODY, COLOR_OK)
+	_link_label.name = "VideoLink"
+	_link_label.visible = false
 
 	# --- Top right: the race ---
 	var race_panel := _panel()
@@ -266,6 +270,13 @@ func set_recording(active: bool, seconds: float = 0.0, rows: int = 0) -> void:
 
 
 ## One transient message. `warn` draws it amber (crash, empty pack).
+## R2.4: the video link's signal strength line (VideoLink.hud_text); hidden when no camera is fitted.
+func set_link(text: String, quality: float) -> void:
+	_link_label.visible = text != ""
+	_link_label.text = text
+	_link_label.add_theme_color_override("font_color", COLOR_OK if quality > 0.6 else (COLOR_WARN if quality > 0.25 else COLOR_CRITICAL))
+
+
 func say(text: String, warn := false, seconds := 2.5) -> void:
 	toast.say(text, warn, seconds)
 

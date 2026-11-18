@@ -23,7 +23,7 @@ const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "tw
 	"control parts", "control components", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
 	"arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet", "payload", "r17 realism",
-	"sim end states", "flight controls", "airframe page", "config page", "control page", "power page", "printed page", "propulsion page", "video page", "b5 damage shake"]
+	"sim end states", "flight controls", "airframe page", "config page", "control page", "power page", "printed page", "propulsion page", "video page", "b5 damage shake", "video link"]
 
 func _init() -> void:
 	var total := 0
@@ -507,5 +507,6 @@ func _run_suite(suite_name: String) -> Array:
 		"propulsion page": return TestPropulsionPage.run()
 		"video page": return TestVideoPage.run()
 		"b5 damage shake": return TestB5DamageShake.run()
+		"video link": return TestVideoLink.run()
 	push_error("unknown suite: %s" % suite_name)
 	return []

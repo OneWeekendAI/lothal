@@ -59,6 +59,9 @@ var _close_button: Button
 var _camera_name := ""
 ## The fitted camera's lens (FpvLens.from_part), DEFAULT until set_camera_part says otherwise.
 var _lens: Dictionary = FpvLens.DEFAULT.duplicate()
+## R2.4: the camera part's video system, which picks the feed's post-process (VideoLink).
+var link := VideoLink.new()
+var _feed_frame := 0
 var _container: SubViewportContainer
 var _inset_material: ShaderMaterial
 var _screen_material: ShaderMaterial
@@ -228,7 +231,13 @@ func set_camera_name(camera_name: String) -> void:
 func set_camera_part(part: Dictionary) -> void:
 	_camera_name = str(part.get("name", ""))
 	_lens = FpvLens.from_part(part)
+	link.set_part(part)
 	_refresh()
+
+
+## R2.4: the link's geometry this tick (transmitter distance, terrain/obstacle crossings). Returns the quality 0..1.
+func update_link(distance_m: float, blockers: int) -> float:
+	return link.evaluate(distance_m, blockers)
 
 
 ## The lens in force (FpvLens.from_part output).
@@ -259,6 +268,10 @@ func _sync_lens_shader() -> void:
 	var mat := lens_material()
 	for key in params:
 		mat.set_shader_parameter(key, params[key])
+	_feed_frame += 1
+	var vp := link.shader_params(Time.get_ticks_msec() / 1000.0, _feed_frame)
+	for key in vp:
+		mat.set_shader_parameter(key, vp[key])
 	var shown := is_fitted()
 	_container.material = null if (_fpv_is_main or not shown) else _inset_material
 	_post_layer.visible = _fpv_is_main and shown
@@ -312,7 +325,8 @@ func place_lenses(main_camera: Camera3D, chase: Transform3D) -> void:
 
 	if not is_fitted():
 		return
-	fpv_lens.global_transform = world_transform_of(_eye)
+	# R2.4: a digital feed shows the lens as it was `latency` ago (held on a freeze); analog is live.
+	fpv_lens.global_transform = link.shown_pose(Time.get_ticks_msec() / 1000.0, world_transform_of(_eye))
 	_apply_fpv_lens(fpv_lens)
 
 

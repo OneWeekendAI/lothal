@@ -1101,6 +1101,7 @@ func _physics_process(delta: float) -> void:
 	# see turning, what you hear, and what is making thrust are one number (architecture.md).
 	airframe.set_rates_rpm(core.observables.rpm)
 	airframe.set_damage(core.prop_damage)
+	_update_video_link()
 
 	# Audio and the HUD are handed the same published observables and nothing else — the
 	# property architecture.md calls the test of the design. Adding this consumer changed
@@ -1440,3 +1441,22 @@ func _deadzone(value: float) -> float:
 	if absf(value) < STICK_DEADZONE:
 		return 0.0
 	return value
+
+
+## R2.4: the FPV video link from the drone to the pilot at the start line (VideoLink): distance and line of sight
+## through the R1.1 collision world, every LINK_EVERY ticks (an RSSI readout's rate; the march is not free).
+const LINK_EVERY := 4
+var _link_tick := 0
+
+func _update_video_link(force := false) -> void:
+	_link_tick += 1
+	if fpv_view == null or (not force and _link_tick % LINK_EVERY != 1):
+		return
+	var pilot: Vector3 = course.start_position(terrain) + Vector3(0.0, VideoLink.PILOT_ANTENNA_M, 0.0)
+	var at: Vector3 = core.rigid_body.position_m
+	var blockers := 0
+	if core.collision_world != null:
+		blockers = core.collision_world.blockers_between(pilot, at)
+	fpv_view.update_link(pilot.distance_to(at), blockers)
+	if hud != null:
+		hud.set_link(fpv_view.link.hud_text(), fpv_view.link.quality)

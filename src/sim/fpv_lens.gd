@@ -182,6 +182,13 @@ uniform float src_tan = 2.0;
 uniform float aspect = 1.7777778;
 uniform float ca = 0.0;
 uniform float vig = 0.3;
+// R2.4 video link (VideoLink.shader_params): 0 none, 1 analog, 2 digital; vnoise 0 clean .. 1 lost; vblock = block width
+// as a fraction of the picture width (digital compression); vdrop 1 = this frame is a dropout (analog sync loss).
+uniform int vsys = 0;
+uniform float vnoise = 0.0;
+uniform float vblock = 0.0;
+uniform float vdrop = 0.0;
+uniform float vtime = 0.0;
 
 const float MAX_THETA = %f;
 const float VIG_START = %f;
@@ -214,17 +221,44 @@ vec4 fetch_at(sampler2D tex, vec2 uv) {
 
 #define SRC %s
 
+float vhash(vec2 q) { return fract(sin(dot(q, vec2(12.9898, 78.233))) * 43758.5453); }
+
 void fragment() {
-	vec2 p = vec2((UV.x - 0.5) * 2.0, (UV.y - 0.5) * 2.0 / aspect);
+	vec2 uv = UV;
+	float row = floor(UV.y * 240.0);
+	float tick = floor(vtime * 60.0);
+	if (vsys == 2 && vblock > 0.0) {
+		// Compression: the picture is carried in blocks; as the bitrate falls the blocks grow.
+		vec2 b = vec2(vblock, vblock * aspect);
+		uv = (floor(uv / b) + 0.5) * b;
+	}
+	float bleed = 0.0;
+	if (vsys == 1) {
+		// Line jitter: each scan line lands a little off, more as sync weakens.
+		uv.x += (vhash(vec2(row, tick)) - 0.5) * 0.003 * (0.3 + 2.0 * vnoise);
+		// Breakup near the edge: whole lines tear sideways.
+		if (vhash(vec2(row * 0.37, tick + 3.0)) < (vnoise - 0.7) * 1.0) { uv.x += (vhash(vec2(row, tick + 7.0)) - 0.5) * 0.2; }
+		bleed = 0.0012 + 0.006 * vnoise;
+	}
+	vec2 p = vec2((UV.x - 0.5) * 2.0, (UV.y - 0.5) * 2.0 / aspect) + vec2((uv.x - UV.x) * 2.0, (uv.y - UV.y) * 2.0 / aspect);
 	float r = length(p);
 	float r2 = r * r;
 	// Lateral chromatic aberration: red reads slightly further out than green, blue slightly further in.
 	vec3 col;
-	col.r = fetch_at(SRC, src_uv(p * (1.0 + ca * r2))).r;
+	col.r = fetch_at(SRC, src_uv(p * (1.0 + ca * r2) + vec2(bleed * 2.0, 0.0))).r;
 	col.g = fetch_at(SRC, src_uv(p)).g;
-	col.b = fetch_at(SRC, src_uv(p * (1.0 - ca * r2))).b;
+	col.b = fetch_at(SRC, src_uv(p * (1.0 - ca * r2) - vec2(bleed, 0.0))).b;
 	float t = clamp((r - VIG_START) / (VIG_END - VIG_START), 0.0, 1.0);
 	col *= 1.0 - vig * t * t * (3.0 - 2.0 * t);
+	if (vsys == 1) {
+		// Analog snow: grain over the picture, colour washing out, and a frame of pure static on a sync loss.
+		float snow = vhash(floor(UV * vec2(320.0, 240.0)) + vec2(tick * 1.7, tick * 0.3));
+		float lum = dot(col, vec3(0.299, 0.587, 0.114));
+		col = mix(col, vec3(lum), clamp(vnoise * 1.1, 0.0, 1.0));
+		col = mix(col, vec3(snow), clamp(0.05 + 0.6 * vnoise * vnoise, 0.0, 0.9));
+		if (vhash(vec2(row * 0.11, tick + 11.0)) < (vnoise - 0.75) * 1.0) { col = vec3(snow); }
+		if (vdrop > 0.5) { col = vec3(snow * 0.8); }
+	}
 	COLOR = vec4(col, 1.0);
 }
 """ % [decl, MAX_THETA_RAD, VIGNETTE_START, VIGNETTE_END, sampler]
