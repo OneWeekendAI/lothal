@@ -420,6 +420,37 @@ func angular_rate_at(t_s: float) -> Vector3:
 		_phase[i] = r[3 + i]
 	return Vector3(r[0], r[1], r[2])
 
+## R2.3: the airframe's vibration as TONES, for the camera mount. Each motor contributes a 1x
+## (imbalance) and a blade-pass line; for each, `hz` and `angle` — the body-axis rotation (rad) that
+## line holds the frame at RIGHT NOW (the model's own current phase). A READ: no phase advances.
+##
+## Why tones and not the sampled rate: the camera shake is a displacement, the integral of the rate,
+## and integrating 1 kHz samples of a 1450 Hz line integrates the ALIAS (vibration_source.gd). Per tone
+## it is exact: a rate A sin(h(theta + phi)) has angle -(A / omega) cos(...), and cos(x) = sin(x + pi/2),
+## so the angle is -(1 / omega) times the SAME law evaluated with theta advanced by pi / (2h). The law is
+## FlightLaw.vibration_rate itself (dt = 0, one motor, one harmonic's mass), so there is one forcing law.
+func tone_angles() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var f_n := mount_hz()
+	var zeta := 0.0 if is_inf(f_n) else SoftMount.damping_ratio_for(soft_mount_spec)
+	for i in 4:
+		var hz := rpm[i] / 60.0
+		if hz <= 0.0:
+			continue
+		for h: float in [1.0, blades]:
+			var only := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+			only[i] = rpm[i]
+			var ph := _phase.duplicate()
+			ph[i] += PI / (2.0 * h)
+			var imb := imbalance_kg if h == 1.0 else 0.0
+			var bp := blade_pass_kg if h != 1.0 else 0.0
+			var r := FlightLaw.vibration_rate(0.0, only, ph, _axis_packed, _yaw_sign,
+				PackedFloat64Array([prop_radius_m, blades, imb, bp, resonance_hz, damping_ratio, f_n, zeta]))
+			var w := TAU * hz * h
+			out.append({"hz": hz * h, "angle": -Vector3(r[0], r[1], r[2]) / w})
+	return out
+
+
 ## Back to t = 0 with every phase where it started. Gyro.reset() calls this, and without it a
 ## respawn would continue the previous flight's shake — which would break "the same flight twice"
 ## from a place nobody would think to look.

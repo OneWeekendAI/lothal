@@ -85,6 +85,14 @@ var conditions_name := Conditions.STANDARD_NAME
 ## The visible aircraft, generated from `build` rather than authored in main.tscn — see the
 ## comment on the Drone node there, and AirframeModel's header.
 var airframe: SimDroneModel
+## R2.3: the FPV camera's soft mount, driven by the vibration model and the rigid body's rate changes.
+var camera_mount := FpvMount.new()
+## The lens node's own pose on the airframe, before the mount's offset is applied to it each frame.
+var _eye_base := Basis.IDENTITY
+## R2.5b: fragments an R1.1 hit sheds. In the world, not on the drone, so a respawn leaves them where they fell.
+var crash_debris: CrashDebris
+## R2.5b: the impact speed and the velocity before it, of the hardest contact in the last physics frame.
+var last_frame_impact_mps := 0.0
 ## The Design Space's drone class (five_inch, cinewhoop_3, ...) whose model the field draws. Handed
 ## over beside `initial_build` by RoomHost; empty on a direct run, where `SimDroneModel.class_for`
 ## infers it from the build's frame and size.
@@ -524,6 +532,9 @@ func _on_build_changed(new_build: Build) -> void:
 	# Re-pointed on every rebuild, and it has to be: a rebuild frees the old ComponentMesh, so a
 	# lens held across one is a freed node. Handed the airframe's own answer to where its camera is
 	# rather than looking one up here.
+	if airframe.camera_eye() != null:
+		_eye_base = airframe.camera_eye().basis
+	camera_mount.reset()
 	if fpv_view != null:
 		fpv_view.attach(airframe.camera_eye())
 		fpv_view.set_camera_part(build.components.get("camera", {}))
@@ -629,6 +640,7 @@ func _respawn_after_crash() -> void:
 ## already banked would just hand the pilot a second crash).
 func _reset_to(p_position: Vector3, forward: Vector3) -> void:
 	core.repair()
+	camera_mount.reset()
 	core.rigid_body.position_m = p_position
 	core.rigid_body.velocity_mps = Vector3.ZERO
 	core.rigid_body.angular_velocity_rad_s = Vector3.ZERO
@@ -1042,9 +1054,21 @@ func _physics_process(delta: float) -> void:
 
 	_step_air_blend(delta)
 	var substep_dt := delta / SUBSTEPS
+	var damage_before := _damage_sum()
+	var hit_speed := 0.0
+	var hit_velocity := Vector3.ZERO
+	var hit_at := Vector3.ZERO
 	for i in SUBSTEPS:
 		var motor_cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, substep_dt, core.vbat)
+		var v_before := core.rigid_body.velocity_mps
 		core.step(motor_cmds, substep_dt)
+		# The camera hangs off the real frame, so its mount reads the body's true rate (not the FC's sensor).
+		var body_rate := core.rigid_body.angular_velocity_rad_s
+		camera_mount.step_body(body_rate, substep_dt)
+		if core.last_impact_speed_mps > hit_speed:
+			hit_speed = core.last_impact_speed_mps
+			hit_velocity = v_before
+			hit_at = core.rigid_body.position_m
 		# EVERY SUBSTEP, i.e. the full 1 kHz, and inside the loop rather than once per frame.
 		# Sampling at the 120 Hz frame rate instead would be a decimation by 8 that the header
 		# could not report, and it would alias everything above 60 Hz — which is where the frame
@@ -1057,6 +1081,9 @@ func _physics_process(delta: float) -> void:
 	# Score the segment actually flown this frame, BEFORE any crash reset — otherwise a
 	# pass that ends in a clip just past the ring is silently thrown away.
 	_score_gates(delta)
+	last_frame_impact_mps = hit_speed
+	if core.crashed or _damage_sum() > damage_before:
+		shed_debris(hit_at, hit_velocity, hit_speed)
 
 	# A hit past CollisionConstants.CRASH_SPEED_MPS crashes (R1.1); the altitude test stays as the backstop
 	# for a body that tunnelled through the ground in one frame.
@@ -1073,6 +1100,7 @@ func _physics_process(delta: float) -> void:
 	# observables the audio and the HUD read. There is no second place a rotor speed exists: what you
 	# see turning, what you hear, and what is making thrust are one number (architecture.md).
 	airframe.set_rates_rpm(core.observables.rpm)
+	airframe.set_damage(core.prop_damage)
 
 	# Audio and the HUD are handed the same published observables and nothing else — the
 	# property architecture.md calls the test of the design. Adding this consumer changed
@@ -1238,6 +1266,37 @@ static func interpolated_pose(prev: Transform3D, curr: Transform3D, fraction: fl
 	return prev.interpolate_with(curr, clampf(fraction, 0.0, 1.0))
 
 
+func _damage_sum() -> float:
+	var t := 0.0
+	for d in core.prop_damage:
+		t += d
+	return t
+
+
+## R2.5b: a damage event sheds fragments by its kinetic energy (CrashDebris). Returns how many.
+func shed_debris(at: Vector3, velocity_mps: Vector3, impact_speed_mps: float) -> int:
+	if crash_debris == null:
+		crash_debris = CrashDebris.new()
+		crash_debris.name = "CrashDebris"
+		add_child(crash_debris)
+	if terrain != null:
+		crash_debris.ground = terrain.height_at
+	var e := CrashDebris.impact_energy_j(core.mass_properties.total_mass_kg, impact_speed_mps)
+	return crash_debris.shed(at, velocity_mps, e)
+
+
+## R2.3: the lens on its mount. The FPV eye is the airframe's lens rotated by the mount's offset (body axes);
+## the chase camera follows the drone node and never sees it.
+func _apply_camera_mount() -> void:
+	if airframe == null:
+		return
+	var eye := airframe.camera_eye()
+	if eye == null:
+		return
+	var vib: VibrationModel = core.gyro.vibration as VibrationModel if core.gyro != null else null
+	eye.basis = Basis.from_euler(camera_mount.offset(vib)) * _eye_base
+
+
 ## Records this tick's pose. The drawn pose is NOT set here: `_process` sets it, blended.
 func _push_visual(p_position: Vector3, p_orientation: Quaternion) -> void:
 	_vis_prev = _vis_curr
@@ -1258,6 +1317,7 @@ func _process(delta: float) -> void:
 	var fraction := Engine.get_physics_interpolation_fraction() if interpolation_fraction_override < 0.0 \
 		else interpolation_fraction_override
 	drone.transform = interpolated_pose(_vis_prev, _vis_curr, fraction)
+	_apply_camera_mount()
 	if watch_runner == null:
 		_update_camera(delta)
 	_update_wash()

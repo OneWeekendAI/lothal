@@ -32,6 +32,12 @@ const PROXY_PREFIX := "pick_"
 const SMALL_PARTS_RANGE_M := 6.0
 const BLADE_FADED_ALPHA := 0.12
 const BLUR_ALPHA := 0.26
+## R2.5a ESTIMATE: how far a fully chipped prop's swept disc sits off the shaft, m. A chipped blade
+## moves the prop's centre of mass off its axis; the motor bell and arm whirl with it at 1x. 4 mm at full
+## damage is a guess at the visible whirl of a 5" prop that has lost most of one blade.
+const WOBBLE_M_AT_FULL_DAMAGE := 0.004
+## R2.5a: a damaged blade shows stress-whitened plastic at its broken edge; the tint the blades take, by damage.
+const DAMAGE_TINT := Color(0.86, 0.83, 0.76)
 
 var class_id := ""
 ## The instantiated GLB, shifted so the centre of mass is this node's origin.
@@ -48,6 +54,15 @@ var _faded_blade: Dictionary = {}
 var _blade_surface: Dictionary = {}
 var _rate_rad_s: Dictionary = {}
 var _blurred: Dictionary = {}
+## R2.5a: per prop key (motor or motor_lo): the tip disc a chipped prop shows, its materials, its blade colour,
+## the disc's resting centre, and the (blur fraction, damage) last drawn, so a frame redraws only on a change.
+var _tip_discs: Dictionary = {}
+var _disc_mats: Dictionary = {}
+var _tip_mats: Dictionary = {}
+var _blade_color: Dictionary = {}
+var _disc_center: Dictionary = {}
+var _drawn: Dictionary = {}
+var _damage: Dictionary = {}
 var _spin: Dictionary = {}
 var _angle: Dictionary = {}
 var _blades := 2
@@ -110,6 +125,13 @@ func rebuild(build: Build, p_class_id: String, catalog: PartsCatalog, tweaks: As
 	_blade_surface.clear()
 	_rate_rad_s.clear()
 	_blurred.clear()
+	_tip_discs.clear()
+	_disc_mats.clear()
+	_tip_mats.clear()
+	_blade_color.clear()
+	_disc_center.clear()
+	_drawn.clear()
+	_damage.clear()
 	_angle.clear()
 	_eye = null
 	class_id = p_class_id
@@ -236,6 +258,7 @@ func _prepare_prop(motor_name: String, prop: MeshInstance3D) -> void:
 		var c := faded.albedo_color
 		faded.albedo_color = Color(c.r, c.g, c.b, BLADE_FADED_ALPHA)
 		_faded_blade[motor_name] = faded
+		_blade_color[motor_name] = c
 	# The swept disc, unshaded for the reason PropellerMesh gives: a blade passing forty times a
 	# second has no stable surface for a light to fall on.
 	var box := prop.mesh.get_aabb()
@@ -263,6 +286,21 @@ func _prepare_prop(motor_name: String, prop: MeshInstance3D) -> void:
 	disc.visible = false
 	prop.add_child(disc)
 	_blur_discs[motor_name] = disc
+	_disc_mats[motor_name] = disc_mat
+	_disc_center[motor_name] = disc.position
+	# The tip disc: the annulus a chipped blade no longer sweeps, drawn full radius at the coverage the
+	# remaining blades give, under the inner disc. Hidden on a sound prop.
+	var tip := MeshInstance3D.new()
+	tip.name = "TipDisc"
+	tip.mesh = cyl
+	var tip_mat := disc_mat.duplicate() as StandardMaterial3D
+	tip.material_override = tip_mat
+	tip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	tip.position = disc.position
+	tip.visible = false
+	prop.add_child(tip)
+	_tip_discs[motor_name] = tip
+	_tip_mats[motor_name] = tip_mat
 
 
 ## Frame-time budget: the big surfaces cast shadows, the screws, standoffs, wires and antennas do
@@ -316,22 +354,111 @@ func set_all_rates_rpm(rpm: float) -> void:
 
 func _set_rate(motor_name: String, rpm: float) -> void:
 	_rate_rad_s[motor_name] = absf(rpm) / 60.0 * TAU * float(_spin.get(motor_name, 1.0)) * _axis_sign(motor_name)
-	var blurred := absf(rpm) > PropellerMesh.max_discrete_rpm(_blades, PropellerMesh.DESIGN_FPS)
-	# Only on a CHANGE: this runs at 120 Hz per rotor, and a material swap is not free.
-	if blurred == bool(_blurred.get(motor_name, false)):
-		return
-	_blurred[motor_name] = blurred
-	_apply_blur(motor_name, prop_nodes.get(motor_name), blurred)
-	_apply_blur(motor_name + "_lo", _lower_props.get(motor_name), blurred)
+	var f := blur_fraction(rpm, _blades)
+	_blurred[motor_name] = f
+	_redraw(motor_name, prop_nodes.get(motor_name))
+	_redraw(motor_name + "_lo", _lower_props.get(motor_name))
 
 
-func _apply_blur(key: String, prop: MeshInstance3D, blurred: bool) -> void:
+## R2.5a: how far a frame's exposure smears the blades into their disc, 0 (crisp blades) .. 1 (an even disc).
+## The angle a blade sweeps in one frame (rpm, PropellerMesh.DESIGN_FPS) over the gap between blades: at 1 the
+## smear of each blade reaches the next and the swept disc is uniform. A pure function of rpm and blade count.
+static func blur_fraction(rpm: float, blades: int) -> float:
+	var sweep := absf(rpm) / 60.0 * TAU / PropellerMesh.DESIGN_FPS
+	return clampf(sweep / (TAU / float(maxi(blades, 1))), 0.0, 1.0)
+
+
+## R2.5a: the swept disc's opacity at `rpm`: the full disc coverage BLUR_ALPHA, scaled by the blur fraction.
+static func disc_alpha(rpm: float, blades: int) -> float:
+	return BLUR_ALPHA * blur_fraction(rpm, blades)
+
+
+## R2.5a: the radius (fraction of the prop's) out to which every blade still sweeps after losing `damage` of
+## its thrust (R1.1's prop_damage). Thrust goes as r^4 over the blade (dT ~ r^3 dr), and the loss is taken on
+## ONE blade: (1 / N)(1 - rc^4) = damage. Past 1 / N that blade is gone entirely and rc is 0.
+static func chip_radius_fraction(damage: float, blades: int) -> float:
+	return pow(maxf(0.0, 1.0 - float(maxi(blades, 1)) * clampf(damage, 0.0, 1.0)), 0.25)
+
+
+## R2.5a: hands the props R1.1's damage state, MotorLayout.MOTOR_NAMES order (DroneCore.prop_damage).
+func set_damage(damage: PackedFloat64Array) -> void:
+	for i in MotorLayout.MOTOR_NAMES.size():
+		if i >= damage.size():
+			return
+		var n: String = MotorLayout.MOTOR_NAMES[i]
+		if absf(float(_damage.get(n, 0.0)) - damage[i]) < 1e-6:
+			continue
+		_damage[n] = damage[i]
+		_redraw(n, prop_nodes.get(n))
+		_redraw(n + "_lo", _lower_props.get(n))
+
+
+func prop_damage_drawn(motor_name: String) -> float:
+	return float(_damage.get(motor_name, 0.0))
+
+
+## The opacity the motor's (inner) swept disc is drawn at right now, 0 when hidden.
+func disc_alpha_drawn(motor_name: String) -> float:
+	var disc := _blur_discs.get(motor_name) as MeshInstance3D
+	if disc == null or not disc.visible:
+		return 0.0
+	return (_disc_mats[motor_name] as StandardMaterial3D).albedo_color.a
+
+
+## The chipped radius fraction the motor's disc is drawn at (1 = sound).
+func chip_drawn(motor_name: String) -> float:
+	var disc := _blur_discs.get(motor_name) as MeshInstance3D
+	return disc.scale.x if disc != null else 1.0
+
+
+## The disc's off-axis offset, m (the unbalanced whirl), 0 for a sound prop.
+func wobble_drawn(motor_name: String) -> float:
+	var disc := _blur_discs.get(motor_name) as MeshInstance3D
+	if disc == null:
+		return 0.0
+	return (disc.position - (_disc_center[motor_name] as Vector3)).length()
+
+
+## Draws one prop key from its blur fraction and its damage. Material writes only on a visible change.
+func _redraw(key: String, prop: MeshInstance3D) -> void:
 	if prop == null or not _blur_discs.has(key):
 		return
-	(_blur_discs[key] as MeshInstance3D).visible = blurred
+	var motor_name := key.trim_suffix("_lo")
+	var f := float(_blurred.get(motor_name, 0.0))
+	var d := float(_damage.get(motor_name, 0.0))
+	var last: Vector2 = _drawn.get(key, Vector2(-1.0, -1.0))
+	if absf(last.x - f) < 0.005 and absf(last.y - d) < 1e-6:
+		return
+	_drawn[key] = Vector2(f, d)
+	var a := BLUR_ALPHA * f
+	var rc := chip_radius_fraction(d, _blades)
+	var disc := _blur_discs[key] as MeshInstance3D
+	var tip := _tip_discs[key] as MeshInstance3D
+	var center: Vector3 = _disc_center[key]
+	# The unbalanced whirl: the discs sit off the shaft along the prop's own x, so they turn with the prop.
+	var off := Vector3(WOBBLE_M_AT_FULL_DAMAGE * d, 0.0, 0.0)
+	disc.visible = f > 0.0
+	tip.visible = f > 0.0 and d > 0.0
+	var a_in := a
+	if tip.visible:
+		var a_tip := a * float(_blades - 1) / float(_blades)
+		(_tip_mats[key] as StandardMaterial3D).albedo_color.a = a_tip
+		tip.position = center + off
+		# Two stacked discs combine as 1 - (1 - a_in)(1 - a_tip); the inner one makes up the full coverage.
+		a_in = 1.0 - (1.0 - a) / maxf(1.0 - a_tip, 1e-6)
+	(_disc_mats[key] as StandardMaterial3D).albedo_color.a = a_in
+	disc.scale = Vector3(maxf(rc, 0.001), 1.0, maxf(rc, 0.001)) if d > 0.0 else Vector3.ONE
+	disc.position = center + off
 	var idx: int = _blade_surface.get(key, -1)
 	if idx >= 0 and _faded_blade.has(key):
-		prop.set_surface_override_material(idx, _faded_blade[key] if blurred else null)
+		if f <= 0.0 and d <= 0.0:
+			prop.set_surface_override_material(idx, null)
+		else:
+			var mat := _faded_blade[key] as BaseMaterial3D
+			var c: Color = _blade_color[key]
+			var tint := Color(c.r, c.g, c.b).lerp(DAMAGE_TINT, clampf(d * 2.0, 0.0, 1.0))
+			mat.albedo_color = Color(tint.r, tint.g, tint.b, lerpf(c.a, BLADE_FADED_ALPHA, f))
+			prop.set_surface_override_material(idx, mat)
 
 
 ## +1 when the prop mesh's own +Y points up in the body, -1 when the model mounts it flipped, so a
@@ -348,9 +475,12 @@ func rate_rad_s(motor_name: String) -> float:
 	return float(_rate_rad_s.get(motor_name, 0.0))
 
 
+## The disc dominates the blades: past PropellerMesh.max_discrete_rpm (blur fraction 0.5 x its margin), the
+## rpm at which a crisp blade would alias. Below it the blades are the readable picture, faintly smeared.
 func is_blurred(motor_name: String) -> bool:
 	var disc := _blur_discs.get(motor_name) as MeshInstance3D
-	return disc != null and disc.visible
+	return disc != null and disc.visible \
+		and float(_blurred.get(motor_name, 0.0)) > 0.5 * PropellerMesh.ALIASING_MARGIN
 
 
 ## The angle a prop is at about its own axis, rad, wrapped.
