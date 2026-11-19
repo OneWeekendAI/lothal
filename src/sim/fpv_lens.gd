@@ -187,6 +187,8 @@ uniform float vig = 0.3;
 uniform int vsys = 0;
 uniform float vnoise = 0.0;
 uniform float vblock = 0.0;
+// vbmix: share of blocks that show quantisation (VideoLink.block_visibility, from bits per pixel).
+uniform float vbmix = 0.0;
 uniform float vdrop = 0.0;
 uniform float vtime = 0.0;
 
@@ -230,7 +232,8 @@ void fragment() {
 	if (vsys == 2 && vblock > 0.0) {
 		// Compression: the picture is carried in blocks; as the bitrate falls the blocks grow.
 		vec2 b = vec2(vblock, vblock * aspect);
-		uv = (floor(uv / b) + 0.5) * b;
+		vec2 cell = floor(uv / b);
+		if (vhash(cell + vec2(floor(vtime * 4.0) * 0.61, 0.0)) < vbmix) { uv = (cell + 0.5) * b; }
 	}
 	float bleed = 0.0;
 	if (vsys == 1) {

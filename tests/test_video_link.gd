@@ -35,6 +35,25 @@ static func run() -> Array:
 		digital.noise() == 0.0 and digital.quality < q_near and digital.bitrate_mbps() < float(digital.cfg["max_mbps"]),
 		"q %.2f -> %.2f, %.1f Mbps" % [q_near, digital.quality, digital.bitrate_mbps()]))
 
+	# 1b. Compression blocks follow bits per pixel: ~13 Mbps at 1080p60 (~0.1 bpp) is clean; whenever blocks show,
+	# they are codec-sized (<= 16 px of the feed), never a giant grid; and the weakest bitrate still blocks only partly.
+	var bd := VideoLink.new(cams.get("cam_dji_o4_pro", {}))
+	var clean_ok := true
+	var size_ok := true
+	var worst := 0.0
+	var detail_b := ""
+	for i in 400:
+		bd.evaluate(5.0 + 2.0 * i, 0)
+		var fw := float(bd.cfg.get("feed_w", 1920.0))
+		if bd.bitrate_mbps() >= 10.0 and (bd.block_frac() > 0.0 and bd.shader_params(0.0, 0).get("vbmix", 1.0) > 0.0):
+			clean_ok = false
+			detail_b = "blocks at %.1f Mbps (%.1f px) " % [bd.bitrate_mbps(), bd.block_frac() * 1280.0]
+		if bd.block_frac() * fw > 16.0 + 1e-6:
+			size_ok = false
+		worst = maxf(worst, float(bd.shader_params(0.0, 0).get("vbmix", 1.0)))
+	r.append(TestResult.new("r2.4: digital blocking follows bits per pixel (clean at >=10 Mbps 1080p60, blocks <=16 feed px, partial at the floor)",
+		clean_ok and size_ok and worst > 0.0 and worst < 0.6, "%sworst visibility %.2f" % [detail_b, worst]))
+
 	# 2. Line-of-sight blocking raises the noise, through the R1.1 collision world.
 	var terrain := Terrain.flat(400.0, 400.0)
 	var wall := Obstacle.place(Obstacle.BOX, 40.0, 0.0, {"w": 4.0, "h": 10.0, "d": 20.0, "yaw_deg": 0.0}, terrain)

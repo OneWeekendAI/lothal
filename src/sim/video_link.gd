@@ -22,8 +22,16 @@ const PILOT_ANTENNA_M := 1.6
 ## Digital: below this fraction of the window the decoder stalls (freeze), and between it and STUTTER_Q it drops frames.
 const FREEZE_Q := 0.12
 const STUTTER_Q := 0.35
-## Largest compression block at the bottom of the window, as a fraction of picture width (~1/40 = 32 px at 1280).
-const MAX_BLOCK_FRAC := 0.025
+## Compression artefacts follow BITS PER PIXEL, bpp = bitrate / (feed_w * feed_h * feed_fps), not the link margin.
+## ESTIMATE: H.264/H.265 low-latency FPV encoding of fast, detailed motion looks clean at or above ~0.05 bpp (13 Mbps at
+## 1080p60 is ~0.10 bpp, which real DJI feeds show near-clean); visible macroblocking starts below that and is
+## everywhere by ~0.01 bpp (about 1.2 Mbps at 1080p60). Visibility runs log-linearly between the two, because
+## encoder quality (PSNR) tracks log(bitrate). Both thresholds are judgement from published bitrate/quality curves,
+## not a measured DJI figure.
+const BPP_CLEAN := 0.05
+const BPP_BLOCKY := 0.01
+## Codec block size at the FEED's resolution: H.264 macroblocks are 16 px, HEVC coding/transform blocks 8-32; 16 taken.
+const BLOCK_PX := 16.0
 
 ## Used when a camera part carries no `video` block but says analog/digital in its catalog. Labelled estimates.
 const ANALOG_DEFAULT := {
@@ -34,7 +42,7 @@ const ANALOG_DEFAULT := {
 const DIGITAL_DEFAULT := {
 	"system": "digital", "tx_mw": 25.0, "freq_mhz": 5800.0, "tx_gain_dbi": 2.0, "rx_gain_dbi": 2.0,
 	"sensitivity_dbm": -92.0, "fade_window_db": 12.0, "latency_ms": 30.0, "max_mbps": 50.0, "min_mbps": 4.0,
-	"estimated": true,
+	"feed_w": 1920.0, "feed_h": 1080.0, "feed_fps": 60.0, "estimated": true,
 	"source": "ESTIMATE: DJI/Walksnail-class digital link at 25 mW; ~-92 dBm sensitivity, ~12 dB from full bitrate to stall; glass-to-glass latency 25-40 ms published by the makers, 30 ms taken.",
 }
 
@@ -104,8 +112,10 @@ func evaluate(p_distance_m: float, p_blockers: int) -> float:
 func noise() -> float:
 	if system != "analog":
 		return 0.0
-	var n := 1.0 - quality
-	return n * n * (3.0 - 2.0 * n)
+	# FM video above its threshold: picture noise power falls as 1/CNR, i.e. one decade per 10 dB of margin over the
+	# receiver's sensitivity (taken as the FM threshold). ESTIMATE: snow is total at the threshold and ~10% at +10 dB,
+	# so a 25 mW link a few dB above sensitivity is snowy but watchable, as pilots see it.
+	return clampf(pow(10.0, -margin_db / 10.0), 0.0, 1.0)
 
 
 func bitrate_mbps() -> float:
@@ -114,12 +124,28 @@ func bitrate_mbps() -> float:
 	return lerpf(float(cfg["min_mbps"]), float(cfg["max_mbps"]), quality)
 
 
-## Compression block width as a fraction of picture width; 0 at full bitrate.
-func block_frac() -> float:
+## Bits per pixel the encoder has at the current bitrate.
+func bits_per_pixel() -> float:
 	if system != "digital":
 		return 0.0
-	var loss := 1.0 - quality
-	return MAX_BLOCK_FRAC * loss * loss if loss > 0.25 else 0.0
+	var px := float(cfg.get("feed_w", 1920.0)) * float(cfg.get("feed_h", 1080.0)) * float(cfg.get("feed_fps", 60.0))
+	return bitrate_mbps() * 1e6 / maxf(px, 1.0)
+
+
+## How much of the picture shows macroblocks, 0 clean .. 1 everywhere (from bits per pixel; see BPP_CLEAN).
+func block_visibility() -> float:
+	if system != "digital":
+		return 0.0
+	var bpp := maxf(bits_per_pixel(), 1e-9)
+	return clampf(log(BPP_CLEAN / bpp) / log(BPP_CLEAN / BPP_BLOCKY), 0.0, 1.0)
+
+
+## Compression block width as a fraction of picture width (a BLOCK_PX block of the feed); 0 while the picture is clean.
+## Near sensitivity the link loses packets instead, and the feed stutters and freezes (shown_pose), not blocks.
+func block_frac() -> float:
+	if block_visibility() <= 0.0:
+		return 0.0
+	return BLOCK_PX / float(cfg.get("feed_w", 1920.0))
 
 
 func latency_s() -> float:
@@ -166,7 +192,7 @@ func dropout(frame: int) -> bool:
 
 
 func shader_params(t_s: float, frame: int) -> Dictionary:
-	return {"vsys": {"analog": 1, "digital": 2}.get(system, 0), "vnoise": noise(), "vblock": block_frac(),
+	return {"vsys": {"analog": 1, "digital": 2}.get(system, 0), "vnoise": noise(), "vblock": block_frac(), "vbmix": block_visibility(),
 		"vdrop": 1.0 if dropout(frame) else 0.0, "vtime": t_s}
 
 
