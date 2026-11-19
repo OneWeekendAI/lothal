@@ -55,6 +55,13 @@ var ground_y_m := 0.0
 ## neither sinks nor tumbles. THIS IS NOT A THROTTLE GATE: nothing here looks at thrust or mass. The
 ## aircraft stays down because gravity beats the rotors, and rises the instant the rotors beat gravity.
 var ground_contact_enabled := false
+## TURTLE MODE (FlightController.turtle): the ESCs spin every motor BACKWARDS, so each prop pushes along body -Y and
+## its reaction torque flips sign. Set by the scene from the FC each substep.
+var motors_reversed := false
+## ESTIMATE. Thrust a pitched FPV prop makes run backwards, as a fraction of forward thrust at the same rpm: the
+## airfoil meets the air on its trailing edge and its camber works against it. Plausible for a 5" tri-blade; to be
+## replaced by a thrust-stand reading. The powertrain still draws forward-spin current for it (also an estimate).
+const REVERSED_THRUST_FRACTION := 0.5
 ## How high the centre of mass sits above the lowest point of the aircraft when it rests, m (Build.rest_height_m).
 var rest_height_m := 0.0
 ## B1 ROTOR H-FORCE: the in-plane drag of each rotor in edgewise flow, from blade-element theory (RotorHForce,
@@ -257,7 +264,7 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# Resolved once per step rather than per motor, and from the SAME accessor the mixer reads.
 	var spin_map := MotorLayout.spin_map(config)
 	var ge_gain := 1.0
-	if ground_effect_enabled:
+	if ground_effect_enabled and not motors_reversed:
 		ge_gain = ground_effect_gain(rigid_body.position_m.y + rotor_above_com_m - ground_y_m, prop_radius_m)
 
 	for i in MotorLayout.MOTOR_NAMES.size():
@@ -269,6 +276,9 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 		# observables layer sees. A second k_q x omega^2 here would agree with it exactly until
 		# the day one of the two was edited.
 		var reaction_n_m: float = powertrain.observables.reaction_torque_n_m[i]
+		if motors_reversed:
+			thrust_n *= -REVERSED_THRUST_FRACTION
+			reaction_n_m = -reaction_n_m
 
 		total_thrust_body_n += thrust_n * ge_gain
 
@@ -306,7 +316,8 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 
 	# B1 rotor H-force (see RotorHForce): per rotor, from that hub's own air-relative velocity (aircraft velocity
 	# minus wind, plus omega x r), in the rotor plane, applied AT the hub so it also pitches/yaws the aircraft.
-	if rotor_h_force_enabled and h_coeffs != Vector2.ZERO:
+	# Not modelled for a reversed prop (turtle is a ground manoeuvre at near-zero airspeed).
+	if rotor_h_force_enabled and h_coeffs != Vector2.ZERO and not motors_reversed:
 		var v_air_body := rigid_body.orientation.inverse() * relative_velocity_mps
 		var w_body := rigid_body.angular_velocity_rad_s
 		var h_force_body := Vector3.ZERO

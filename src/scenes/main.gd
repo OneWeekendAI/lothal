@@ -1061,6 +1061,7 @@ func _physics_process(delta: float) -> void:
 	for i in SUBSTEPS:
 		var motor_cmds := fc.update(core.accel.reading_mps2, core.gyro.rate_rad_s, rc, substep_dt, core.vbat)
 		var v_before := core.rigid_body.velocity_mps
+		core.motors_reversed = fc.turtle
 		core.step(motor_cmds, substep_dt)
 		# The camera hangs off the real frame, so its mount reads the body's true rate (not the FC's sensor).
 		var body_rate := core.rigid_body.angular_velocity_rad_s
@@ -1111,11 +1112,35 @@ func _physics_process(delta: float) -> void:
 	drone_audio.update(core.observables, _chase_transform.origin)
 
 	hud.render(core, build, course, lap_timer, fc.is_rate_mode())
+	_note_turtled(turtled(core.rigid_body.orientation, core.rigid_body.velocity_mps,
+		core.rigid_body.position_m.y - core.ground_y_m))
 	_note_battery(core.observables.capacity_used_fraction >= 1.0)
 	# Off the recorder's own figures, not off a frame counter here. See DsHud.set_recording.
 	hud.set_recording(_recorder != null,
 		_recorder.duration_s() if _recorder != null else 0.0,
 		_recorder.row_count() if _recorder != null else 0)
+
+## True when the aircraft lies on its back, near the ground and all but still: the state a real quad stays in
+## until turtle mode flips it. Static and pure so a check can call it.
+const TURTLED_MAX_HEIGHT_M := 0.3
+const TURTLED_MAX_SPEED_MPS := 0.3
+static func turtled(orientation: Quaternion, velocity: Vector3, height_m: float) -> bool:
+	return (orientation * Vector3.UP).y < -0.5 and velocity.length() < TURTLED_MAX_SPEED_MPS \
+		and height_m < TURTLED_MAX_HEIGHT_M
+
+## The HUD hint, said once each time the aircraft comes to rest on its back.
+var _turtled_said := false
+
+func _note_turtled(is_turtled: bool) -> void:
+	if is_turtled and not _turtled_said and not fc.turtle:
+		hud.say("Upside down. T for turtle mode, then roll or pitch to flip.", true, 6.0)
+	_turtled_said = is_turtled
+
+## T, and the strip's "Turtle" button: Betaflight's flip-over-after-crash (FlightController.turtle).
+func _toggle_turtle() -> void:
+	fc.toggle_turtle()
+	if hud != null:
+		hud.say("TURTLE MODE: motors reversed. T again to fly." if fc.turtle else "Turtle mode off.", fc.turtle, 3.0)
 
 ## S7 says "Battery empty." once when the pack runs out, and again only after it has been refilled.
 var _battery_empty_said := false

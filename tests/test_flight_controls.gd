@@ -16,6 +16,7 @@ static func _state(m: Node, id: String) -> Variant:
 		"reset", "respawn": return m.core.rigid_body.position_m
 		"view": return [m.fpv_view.visible, m.fpv_view.is_fpv_main()]
 		"mode": return m.fc.is_rate_mode()
+		"turtle": return m.fc.turtle
 		"listener": return m.drone_audio.listener_mode
 		"record": return m._recorder != null
 		"weather": return m.conditions_panel != null and m.conditions_panel.visible
@@ -41,8 +42,8 @@ static func run() -> Array:
 		ids.append(a[0])
 		keys.append(a[3])
 	probe.free()
-	results.append(TestResult.new("the strip covers pause, reset, respawn, view, mode, listener, record, weather",
-		ids == ["pause", "reset", "respawn", "view", "mode", "listener", "record", "weather"], str(ids)))
+	results.append(TestResult.new("the strip covers pause, reset, respawn, view, mode, turtle, listener, record, weather",
+		ids == ["pause", "reset", "respawn", "view", "mode", "turtle", "listener", "record", "weather"], str(ids)))
 	results.append(TestResult.new("the old keys stay on their actions (C view, L listener, R record, Space mode)",
 		_key_of("view") == KEY_C and _key_of("listener") == KEY_L and _key_of("record") == KEY_R
 			and _key_of("mode") == KEY_SPACE, ""))

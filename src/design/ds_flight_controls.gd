@@ -11,6 +11,7 @@ const ACTIONS := [
 	["respawn", "Respawn", "G", KEY_G, "_respawn_after_crash"],
 	["view", "Chase / FPV", "C", KEY_C, "_toggle_fpv"],
 	["mode", "Flight mode", "Space", KEY_SPACE, "_toggle_flight_mode"],
+	["turtle", "Turtle", "T", KEY_T, "_toggle_turtle"],
 	["listener", "Listener", "L", KEY_L, "_toggle_listener"],
 	["record", "Record", "R", KEY_R, "_toggle_recording"],
 	["weather", "Weather", "K", KEY_K, "toggle_conditions_panel"],

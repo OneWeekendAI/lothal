@@ -33,6 +33,8 @@ var estimator := AttitudeEstimator.new()
 ## estimator gets wrong (a tilted horizon in a long turn, under hard acceleration).
 func update(accel_body_mps2: Vector3, gyro_rate_rad_s: Vector3, rc: Dictionary, dt: float, vbat: VbatSensor = null) -> Dictionary:
 	estimator.update(gyro_rate_rad_s, accel_body_mps2, dt)
+	if turtle:
+		return turtle_mix(rc)
 	var setpoint := rate_setpoint(estimator.attitude, rc)
 	return rate_loop.update(setpoint, gyro_rate_rad_s, rc.throttle, dt, vbat)
 
@@ -48,9 +50,51 @@ func toggle_mode() -> void:
 	# about the new one's.
 	rate_loop.reset()   # the estimator is NOT reset: attitude does not change with the mode
 
+## TURTLE MODE (Betaflight "flip over after crash", 4.x mixer.c). A quad resting on its back stays there: its
+## thrust points into the ground, and no stick input can lift it (measured: full roll at 36% throttle leaves it
+## inverted, tests/test_turtle_mode.gd). Real pilots flip it with the props spun BACKWARDS: the ESCs reverse the
+## motors on the side the stick names and nothing else, so that side lifts and the aircraft pivots over the
+## other side's arms. While on, the stabiliser and throttle are bypassed entirely, as in Betaflight.
+var turtle := false
+
+## Betaflight's default crashflip_expo (35): flip power = f*d + (1-f)*d^3 with f = 1 - expo/100.
+const CRASHFLIP_EXPO := 35.0
+
+func toggle_turtle() -> void:
+	turtle = not turtle
+	# The rate loop's history belongs to flight, not to a flip on the ground: re-enter flight clean.
+	rate_loop.reset()
+
+## Motor commands in turtle mode, MotorLayout.MOTOR_NAMES order keys, each in [0, 1]. Only the dominant stick
+## axis acts (Betaflight picks yaw when it dominates, else roll/pitch together); a motor runs when its mixer
+## sign for that input agrees with the stick, and sits at zero otherwise.
+static func turtle_mix(rc: Dictionary, config: Dictionary = {}) -> Dictionary:
+	var roll: float = clampf(float(rc.get("roll", 0.0)), -1.0, 1.0)
+	var pitch: float = clampf(float(rc.get("pitch", 0.0)), -1.0, 1.0)
+	var yaw: float = clampf(float(rc.get("yaw", 0.0)), -1.0, 1.0)
+	var rp := Vector2(roll, pitch).length()
+	var use_yaw := absf(yaw) > rp
+	var d := clampf(absf(yaw) if use_yaw else rp, 0.0, 1.0)
+	var f := 1.0 - CRASHFLIP_EXPO / 100.0
+	var power := f * d + (1.0 - f) * d * d * d
+	var spin := MotorLayout.spin_map(config)
+	var out := {}
+	for name in MotorLayout.MOTOR_NAMES:
+		# The normal mixer's signs: roll right speeds the LEFT motors, pitch forward the REAR ones, yaw by spin.
+		var m_roll := -1.0 if MotorLayout.IS_RIGHT[name] else 1.0
+		var m_pitch := -1.0 if MotorLayout.IS_FRONT[name] else 1.0
+		var drive := 0.0
+		if use_yaw:
+			drive = signf(yaw) * -float(spin[name])
+		else:
+			drive = (roll * m_roll + pitch * m_pitch) / maxf(rp, 1.0e-9)
+		out[name] = power * clampf(drive, 0.0, 1.0) if d > 0.0 else 0.0
+	return out
+
 func is_rate_mode() -> bool:
 	return mode == Mode.ACRO
 
 func reset() -> void:
+	turtle = false
 	rate_loop.reset()
 	estimator.reset()
