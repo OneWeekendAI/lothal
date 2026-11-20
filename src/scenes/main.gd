@@ -1132,6 +1132,10 @@ static func turtled(orientation: Quaternion, velocity: Vector3, height_m: float)
 var _turtled_said := false
 
 func _note_turtled(is_turtled: bool) -> void:
+	# The Turtle button only earns strip space when it is useful: on its back, or while it is on.
+	# A permanent tenth button pushed the strip under the HUD and the FPV inset at 1280 wide.
+	if flight_controls != null:
+		flight_controls.buttons["turtle"].visible = is_turtled or fc.turtle
 	if is_turtled and not _turtled_said and not fc.turtle:
 		hud.say("Upside down. T for turtle mode, then roll or pitch to flip.", true, 6.0)
 	_turtled_said = is_turtled

@@ -37,6 +37,8 @@ func _init() -> void:
 		b.name = String(a[0])
 		# Keys drive the flight; a focused button must not also eat Space.
 		b.focus_mode = Control.FOCUS_NONE
+		# Turtle shows only when it applies (Main._note_turtled); its T key always works.
+		b.visible = a[0] != "turtle"
 		row.add_child(b)
 		buttons[a[0]] = b
 
