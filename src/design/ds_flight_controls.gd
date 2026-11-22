@@ -11,6 +11,7 @@ const ACTIONS := [
 	["respawn", "Respawn", "G", KEY_G, "_respawn_after_crash"],
 	["view", "Chase / FPV", "C", KEY_C, "_toggle_fpv"],
 	["mode", "Flight mode", "Space", KEY_SPACE, "_toggle_flight_mode"],
+	["turtle", "Turtle", "T", KEY_T, "_toggle_turtle"],
 	["listener", "Listener", "L", KEY_L, "_toggle_listener"],
 	["record", "Record", "R", KEY_R, "_toggle_recording"],
 	["weather", "Weather", "K", KEY_K, "toggle_conditions_panel"],
@@ -36,6 +37,8 @@ func _init() -> void:
 		b.name = String(a[0])
 		# Keys drive the flight; a focused button must not also eat Space.
 		b.focus_mode = Control.FOCUS_NONE
+		# Turtle shows only when it applies (Main._note_turtled); its T key always works.
+		b.visible = a[0] != "turtle"
 		row.add_child(b)
 		buttons[a[0]] = b
 
