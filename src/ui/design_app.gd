@@ -783,7 +783,28 @@ func _on_autosave_tick() -> void:
 	if container == null or container.path == "":
 		return
 	_sync_project()
+	_sync_design_space()
 	_save_container()
+
+
+## What the Design Space holds goes into the project: the session is a COPY (`DesignSession.from_project`),
+## so without this an edit made there (a part swap, a frame edit, a tweak) reached the file only through
+## Fly it, and a quit or the autosave dropped it. After `_sync_project`, whose rails are the older
+## copy of the parts. The frame document goes in `Project.airframe` only when the session has one
+## (a drawing of another frame is the Airframe room's and is left alone).
+func _sync_design_space() -> void:
+	if design_space == null or container == null:
+		return
+	var session := design_space.session
+	var project := container.project
+	project.parts = session.selection.duplicate(true)
+	project.assembly = session.tweaks.to_dict()
+	project.config = session.config()
+	project.printing = session.printing()
+	project.payload = session.payload()
+	var doc := session.frame_document()
+	if doc != null:
+		project.airframe = doc.to_dictionary() if not session.frame_edit(rooms.catalog_for_lab()).is_empty() else {}
 
 
 ## Coming back to the window is when an outside edit is most likely to be waiting — the builder was
@@ -841,6 +862,10 @@ func _take_disk_version(keep_ours: bool = false) -> void:
 			return
 	container = opened
 	apply_project(opened.project)
+	# The Design Space holds a copy of the project; left as it was, the next autosave would write that
+	# copy over the outside version this just took (`_sync_design_space`). Rebuilt on the file instead.
+	if design_space != null and away_room == "":
+		show_design_space()
 	_refresh_status()
 	_report_printed_divergence()
 	_say(("Changed outside Lothal — reloaded. Your edits are kept in a copy, %s" % copy.get_file())
@@ -947,9 +972,7 @@ func _sync_design_to_lab() -> bool:
 	var session := design_space.session
 	var project := container.project
 	project.parts = session.selection.duplicate(true)
-	var edit := session.frame_edit(rooms.catalog_for_lab())
-	if not edit.is_empty() and session.frame_document() != null:
-		project.airframe = session.frame_document().to_dictionary()
+	_sync_design_space()
 	# Parts the Lab rails could not select are kept, not dropped: the sim flies the session's own
 	# Build, so they do not stop the flight, but the builder is told which ones.
 	last_sync_missing = apply_project(project)
