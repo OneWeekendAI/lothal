@@ -83,6 +83,15 @@ const DTERM_LPF2_HZ := 150.0
 var _d_lpf1: float = 0.0
 var _d_lpf2: float = 0.0
 
+# The four PT1 coefficients depend only on dt and the relax cutoff, which are constant between ticks.
+var _k_dt := -1.0
+var _k_relax_hz := -1.0
+var _k_relax := 0.0
+var _k_d1 := 0.0
+var _k_d2 := 0.0
+var _k_ff := 0.0
+
+
 func _init(p_kp: float, p_ki: float, p_kd: float, p_kff: float = 0.0, p_relax_axis: bool = true) -> void:
 	kp = p_kp
 	ki = p_ki
@@ -99,7 +108,14 @@ func update(target: float, measured: float, dt: float, mix_range: float = 0.0, k
 	var error := target - measured
 
 	# iterm_relax (setpoint HPF).
-	var k_lpf := _pt1_k(relax_cutoff_hz, dt)
+	if dt != _k_dt or relax_cutoff_hz != _k_relax_hz:
+		_k_dt = dt
+		_k_relax_hz = relax_cutoff_hz
+		_k_relax = _pt1_k(relax_cutoff_hz, dt)
+		_k_d1 = _pt1_k(DTERM_LPF1_HZ, dt)
+		_k_d2 = _pt1_k(DTERM_LPF2_HZ, dt)
+		_k_ff = _pt1_k(FF_SMOOTH_HZ, dt)
+	var k_lpf := _k_relax
 	_setpoint_lpf += k_lpf * (target - _setpoint_lpf)
 	var i_error := error
 	if iterm_relax_enabled and relax_axis:
@@ -118,12 +134,12 @@ func update(target: float, measured: float, dt: float, mix_range: float = 0.0, k
 	if _has_last and dt > 0.0:
 		var d_raw := -(measured - _last_measured) / dt
 		if dterm_filter_enabled:
-			_d_lpf1 += _pt1_k(DTERM_LPF1_HZ, dt) * (d_raw - _d_lpf1)
-			_d_lpf2 += _pt1_k(DTERM_LPF2_HZ, dt) * (_d_lpf1 - _d_lpf2)
+			_d_lpf1 += _k_d1 * (d_raw - _d_lpf1)
+			_d_lpf2 += _k_d2 * (_d_lpf1 - _d_lpf2)
 			d_raw = _d_lpf2
 		d_term = kd * d_raw
 		var sp_rate := (target - _last_setpoint) / dt
-		_ff_lpf += _pt1_k(FF_SMOOTH_HZ, dt) * (sp_rate - _ff_lpf)
+		_ff_lpf += _k_ff * (sp_rate - _ff_lpf)
 		if feedforward_enabled:
 			ff = kff * _ff_lpf
 	_last_measured = measured

@@ -54,6 +54,27 @@ static func spin_map(config: Dictionary = {}) -> Dictionary:
 ## Written here rather than inline at each site because C3 gave the sign a second reader: the
 ## warning quotes the map in words and the marker on the aircraft labels each motor, and two
 ## copies of this sentence could disagree about which way "CW" points while both kept passing.
+## spin_map() as a MOTOR_NAMES-ordered array, kept until the authored `motor_spin` changes. The FC mixer asked for the
+## dictionary version twice per 1 kHz substep; the answer only changes when the config does.
+static var _spin_array_key: Variant = null
+static var _spin_array_cache := PackedFloat64Array([1.0, -1.0, -1.0, 1.0])
+static var _spin_array_valid := false
+
+
+static func spin_array(config: Dictionary = {}) -> PackedFloat64Array:
+	var authored: Variant = config.get("motor_spin", null)
+	if _spin_array_valid and typeof(authored) == typeof(_spin_array_key) and authored == _spin_array_key:
+		return _spin_array_cache
+	var map := spin_map(config)
+	var out := PackedFloat64Array()
+	for name in MOTOR_NAMES:
+		out.append(float(map[name]))
+	_spin_array_key = authored.duplicate(true) if authored is Dictionary else authored
+	_spin_array_cache = out
+	_spin_array_valid = true
+	return out
+
+
 static func direction_name(spin: float) -> String:
 	return "CW" if spin > 0.0 else "CCW"
 

@@ -422,14 +422,36 @@ func set_rpm(motor_rpm: PackedFloat64Array) -> void:
 ## Called once per SENSOR SAMPLE (see vibration_source.gd), so anything here above the sensor's
 ## Nyquist folds down on its own — which is exactly what happens to blade passage at high throttle
 ## on a 1 kHz gyro, and is a real reason firmware runs gyros faster than the loop.
+## mount_hz() and its damping ratio, kept until the pad's inputs change. SoftMount.compute builds a dictionary and
+## this ran once per gyro sample (1 kHz) with the same four inputs every time.
+var _mount_f_n := INF
+var _mount_zeta := 0.0
+var _mount_key_m := NAN
+var _mount_key_tip := NAN
+var _mount_key_spec: Dictionary = {}
+var _mount_valid := false
+
+
+func _refresh_mount_terms() -> void:
+	if _mount_valid and soft_mount_m == _mount_key_m and tip_load_kg == _mount_key_tip \
+			and soft_mount_spec == _mount_key_spec:
+		return
+	_mount_key_m = soft_mount_m
+	_mount_key_tip = tip_load_kg
+	_mount_key_spec = soft_mount_spec.duplicate(true)
+	_mount_f_n = mount_hz()
+	_mount_zeta = 0.0 if is_inf(_mount_f_n) else SoftMount.damping_ratio_for(soft_mount_spec)
+	_mount_valid = true
+
+
 func angular_rate_at(t_s: float) -> Vector3:
 	var dt := t_s - _last_t
 	_last_t = t_s
 	# The pad's two numbers are pure functions of the fitted mount, so they are read once here
 	# rather than once per harmonic per motor; the forcing loop itself is FlightLaw.vibration_rate.
-	var f_n := mount_hz()
-	var zeta := 0.0 if is_inf(f_n) else SoftMount.damping_ratio_for(soft_mount_spec)
-	var phase0 := _phase.duplicate()
+	_refresh_mount_terms()
+	var f_n := _mount_f_n
+	var zeta := _mount_zeta
 	var r := FlightLaw.vibration_rate(dt, rpm, _phase, _axis_packed, _yaw_sign,
 		PackedFloat64Array([prop_radius_m, blades, imbalance_kg, blade_pass_kg, resonance_hz,
 			damping_ratio, f_n, zeta]))
@@ -439,7 +461,7 @@ func angular_rate_at(t_s: float) -> Vector3:
 		if damage_imbalance_kg[i] > 0.0:
 			var only := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
 			only[i] = rpm[i]
-			var e := FlightLaw.vibration_rate(dt, only, phase0.duplicate(), _axis_packed, _yaw_sign,
+			var e := FlightLaw.vibration_rate(dt, only, _phase.duplicate(), _axis_packed, _yaw_sign,
 				PackedFloat64Array([prop_radius_m, blades, damage_imbalance_kg[i], 0.0, resonance_hz,
 					damping_ratio, f_n, zeta]))
 			r[0] += e[0]

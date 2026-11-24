@@ -494,6 +494,7 @@ var frame: Dictionary
 var _frame_edit: Dictionary = {}
 ## throttle_limit_for's memo, amps -> throttle. Cleared wherever what it is solved from changes.
 var _throttle_limits: Dictionary = {}
+var _ceiling_rpm_cache := -1.0
 ## The same memo for the bench form (`throttle_limit_for`), kept apart: a supply limit and a bench
 ## limit asked for the same amps are different numbers.
 var _bench_limits: Dictionary = {}
@@ -947,6 +948,7 @@ func mount_points() -> Array[MountPoint]:
 
 func _recompute() -> void:
 	_throttle_limits.clear()
+	_ceiling_rpm_cache = -1.0
 	_bench_limits.clear()
 	arm_m = float(frame["specs"]["arm_mm"]) / 1000.0
 
@@ -1069,6 +1071,7 @@ func _recompute() -> void:
 	effective_max_amps = float(motor["specs"]["max_amps"]) * (k_q / k_q_at_test_prop)
 	# Every current limit is solved against effective_max_amps; one set before this line is stale.
 	_throttle_limits.clear()
+	_ceiling_rpm_cache = -1.0
 	_bench_limits.clear()
 
 	drag_cda_m2 = _derived_drag_cda_m2()
@@ -2573,6 +2576,14 @@ static func datasheet_reference(m: Dictionary, test_prop: Dictionary) -> Diction
 	out["k_t"] = kt
 	out["rpm"] = rpm
 	return out
+
+
+## The rpm at the build's own throttle ceiling, at the nominal pack: what the flying HUD scales its throttle bar by,
+## every tick. Solved once and kept until the build recomputes (same lifetime as the throttle limits it comes from).
+func throttle_ceiling_rpm() -> float:
+	if _ceiling_rpm_cache < 0.0:
+		_ceiling_rpm_cache = rpm_at_throttle(max_throttle_fraction())
+	return _ceiling_rpm_cache
 
 
 func rpm_at_throttle(throttle: float, open_circuit_v: float = AT_NOMINAL) -> float:

@@ -36,6 +36,10 @@ const SHAKE_MPS2_PER_RAD_S := 2.0
 
 var sample_rate_hz: float
 var cutoff_hz: float
+## FlightLaw.lowpass_alpha(period, cutoff_hz), kept while neither changes.
+var _alpha_period := -1.0
+var _alpha_cutoff_hz := -1.0
+var _alpha := 0.0
 var noise_mps2: float
 var bias_mps2: Vector3
 ## What a level calibration has taken back out of `bias_mps2` (R1.7); zero until `calibrate()` runs.
@@ -77,7 +81,11 @@ func update(true_specific_force_body_mps2: Vector3, gyro_shake_rad_s: Vector3, d
 		if noise_mps2 > 0.0:
 			raw += Vector3(_rng.randfn(0.0, noise_mps2), _rng.randfn(0.0, noise_mps2),
 				_rng.randfn(0.0, noise_mps2))
-		reading_mps2 += (raw - reading_mps2) * FlightLaw.lowpass_alpha(period, cutoff_hz)
+		if period != _alpha_period or cutoff_hz != _alpha_cutoff_hz:
+			_alpha_period = period
+			_alpha_cutoff_hz = cutoff_hz
+			_alpha = FlightLaw.lowpass_alpha(period, cutoff_hz)
+		reading_mps2 += (raw - reading_mps2) * _alpha
 	return reading_mps2
 
 func reset() -> void:

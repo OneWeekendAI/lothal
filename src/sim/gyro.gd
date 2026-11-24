@@ -64,6 +64,10 @@ const DEFAULT_SEED := 0x10FA1
 
 var sample_rate_hz: float
 var cutoff_hz: float
+## FlightLaw.lowpass_alpha(period, cutoff_hz), kept while neither changes (it crossed into Rust once per sample).
+var _alpha_period := -1.0
+var _alpha_cutoff_hz := -1.0
+var _alpha := 0.0
 ## Standard deviation of the per-sample white noise, rad/s, applied independently per axis.
 var noise_rad_s: float
 var bias_rad_s: Vector3
@@ -228,7 +232,11 @@ func _sample(true_rate_rad_s: Vector3, period: float) -> void:
 	# alpha = dt / (RC + dt), RC = 1 / (2*pi*fc). This form has unity DC gain by
 	# construction — a filter that changed the steady-state reading would be a scale error
 	# on every rate the FC ever sees.
-	rate_rad_s += (raw - rate_rad_s) * FlightLaw.lowpass_alpha(period, cutoff_hz)
+	if period != _alpha_period or cutoff_hz != _alpha_cutoff_hz:
+		_alpha_period = period
+		_alpha_cutoff_hz = cutoff_hz
+		_alpha = FlightLaw.lowpass_alpha(period, cutoff_hz)
+	rate_rad_s += (raw - rate_rad_s) * _alpha
 
 ## The standard deviation of the DIFFERENCE between two successive readings, rad/s — the signal a
 ## derivative term is actually differentiating when the aircraft is perfectly still.

@@ -190,13 +190,17 @@ func _mean_flap_tilt(v_body: Vector3) -> float:
 		return 0.0
 	var omega := 0.0
 	var thrust := 0.0
-	for i in MotorLayout.MOTOR_NAMES.size():
-		omega += powertrain.motor_rpm[i] * TAU / 60.0 * 0.25
-		thrust += powertrain.observables.thrust_n[i] * 0.25
+	var rpms := powertrain.motor_rpm
+	var thrusts: PackedFloat32Array = powertrain.observables.thrust_n
+	for i in 4:
+		omega += rpms[i] * TAU / 60.0 * 0.25
+		thrust += thrusts[i] * 0.25
 	if omega <= 1.0:
 		return 0.0
 	var a1 := flap_tilt_rad
 	var passes := 1
+	var area := PI * prop_radius_m * prop_radius_m
+	var k2 := 2.0 * air_density_kgm3 * area
 	var rpm := omega * 60.0 / TAU
 	if thrust <= 0.0:
 		# Straight after prime_motors nothing has published a thrust yet: the thrust this rpm makes in the tilted
@@ -208,9 +212,59 @@ func _mean_flap_tilt(v_body: Vector3) -> float:
 			thrust = PropellerModel.thrust_n(_k_t, rpm) * _ratios.thrust_ratio(rpm, flow.x, flow.y)
 		if thrust <= 0.0:
 			return 0.0
-		var inflow := RotorHForce.inflow_mps(thrust, v_body.y, v_e, air_density_kgm3, prop_radius_m)
-		a1 = RotorHForce.flap_per_mps(thrust, omega, prop_radius_m, inflow, v_e, theta_75, flap_response) * v_e / thrust
+		# RotorHForce.inflow_mps and flap_per_mps written out (the same expressions, in the same order): this runs every
+		# 1 kHz substep, and the two static calls were a measurable share of the tick.
+		var inflow := v_body.y
+		if area > 0.0:
+			var v_i := sqrt(thrust / k2)
+			for _q in RotorHForce.INFLOW_PASSES:
+				var u := sqrt(v_e * v_e + (v_body.y + v_i) * (v_body.y + v_i))
+				v_i = 0.5 * (v_i + thrust / (k2 * maxf(u, 0.5 * v_i)))
+			inflow = v_body.y + v_i
+		var flap := 0.0
+		var tip := omega * prop_radius_m
+		if tip > 1.0:
+			var mu := v_e / tip
+			var tilt_per_mu := maxf(2.0 * flap_response * (4.0 / 3.0 * theta_75 - inflow / tip), 0.0) / maxf(1.0 - 0.5 * mu * mu, 0.5)
+			flap = thrust * tilt_per_mu / tip
+		a1 = flap * v_e / thrust
 	return a1
+
+
+## The per-motor constants step() reads every substep, resolved again only when the layout they come from changes:
+## spin signs (MotorLayout.spin_map), arms from the COM, and the rotor hubs for the H-force.
+var _spins := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+var _arms: Array[Vector3] = []
+var _hubs: Array[Vector3] = []
+var _layout_arm_m := NAN
+var _layout_com := Vector3.ZERO
+var _layout_above := NAN
+var _layout_spin_cfg: Variant = null
+var _layout_ready := false
+
+
+func _refresh_layout() -> void:
+	var cfg_spin: Variant = config.get("motor_spin", null)
+	if _layout_ready and arm_m == _layout_arm_m and mass_properties.com_m == _layout_com \
+			and rotor_above_com_m == _layout_above and typeof(cfg_spin) == typeof(_layout_spin_cfg) \
+			and cfg_spin == _layout_spin_cfg:
+		return
+	_layout_ready = true
+	_layout_arm_m = arm_m
+	_layout_com = mass_properties.com_m
+	_layout_above = rotor_above_com_m
+	_layout_spin_cfg = cfg_spin.duplicate() if cfg_spin is Dictionary else cfg_spin
+	var map := MotorLayout.spin_map(config)
+	_arms = []
+	_hubs = []
+	for i in 4:
+		var name: String = MotorLayout.MOTOR_NAMES[i]
+		_spins[i] = map[name]
+		var arm := MotorLayout.motor_position(name, arm_m) - mass_properties.com_m
+		_arms.append(arm)
+		var hub := arm
+		hub.y = rotor_above_com_m
+		_hubs.append(hub)
 
 
 func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
@@ -246,7 +300,8 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	var relative_velocity_mps := rigid_body.velocity_mps - wind_mps
 	# B1: the powertrain reads the flow in the rotors' TIP-PATH PLANE, flapped back by last tick's mean a1 (see
 	# RotorHForce.tpp_flow): flapping tilts the thrust and does no work, so it must not reach the shaft power.
-	var v_power := rigid_body.orientation.inverse() * relative_velocity_mps
+	var q_inv := rigid_body.orientation.inverse()   # once per step: the orientation does not change until integrate()
+	var v_power := q_inv * relative_velocity_mps
 	flap_tilt_rad = _mean_flap_tilt(v_power)
 	if flap_tpp_enabled and flap_tilt_rad != 0.0:
 		var e := Vector2(v_power.x, v_power.z)
@@ -261,21 +316,25 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	var total_torque := Vector3.ZERO
 	var total_thrust_body_n := 0.0
 
-	# Resolved once per step rather than per motor, and from the SAME accessor the mixer reads.
-	var spin_map := MotorLayout.spin_map(config)
+	# Resolved per layout rather than per step, and from the SAME accessor the mixer reads.
+	_refresh_layout()
+	var spins := _spins
+	var arms := _arms
+	# The powertrain's own observables, not `observables`: a caller may swap `powertrain` after construction.
+	var thrusts_n: PackedFloat32Array = powertrain.observables.thrust_n
+	var reactions_n_m: PackedFloat64Array = powertrain.observables.reaction_torque_n_m
 	var ge_gain := 1.0
 	if ground_effect_enabled and not motors_reversed:
 		ge_gain = ground_effect_gain(rigid_body.position_m.y + rotor_above_com_m - ground_y_m, prop_radius_m)
 
-	for i in MotorLayout.MOTOR_NAMES.size():
-		var name: String = MotorLayout.MOTOR_NAMES[i]
+	for i in 4:
 		# A damaged prop gives only what is left of it (R1.1): the same scaling reaches the torque below.
-		var thrust_n: float = powertrain.observables.thrust_n[i] * (1.0 - prop_damage[i])
+		var thrust_n: float = thrusts_n[i] * (1.0 - prop_damage[i])
 		# Read, not recomputed: the powertrain stepped and published a line above, so this is the
 		# reaction torque of THIS tick's rpm, and it is the same number any consumer reading the
 		# observables layer sees. A second k_q x omega^2 here would agree with it exactly until
 		# the day one of the two was edited.
-		var reaction_n_m: float = powertrain.observables.reaction_torque_n_m[i]
+		var reaction_n_m: float = reactions_n_m[i]
 		if motors_reversed:
 			thrust_n *= -REVERSED_THRUST_FRACTION
 			reaction_n_m = -reaction_n_m
@@ -287,8 +346,9 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 		# against is already computed about it too (MassProperties). MotorLayout owns the cross
 		# product; this loop must not grow a second one, which is the duplication that made the
 		# reference point possible to get wrong in only one of two places.
-		var tau := MotorLayout.thrust_torque(name, thrust_n * ge_gain, arm_m, mass_properties.com_m)
-		var spin: float = spin_map[name]
+		# MotorLayout.thrust_torque(), with the arm (position - COM) resolved once per layout in _refresh_layout.
+		var tau: Vector3 = arms[i].cross(Vector3(0, thrust_n * ge_gain, 0))
+		var spin: float = spins[i]
 		var reaction_about_y := -spin * reaction_n_m   # Newton's third law: opposes the rotor's own spin
 		total_torque += Vector3(tau.x, reaction_about_y, tau.z)
 
@@ -310,7 +370,7 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 			# Directional: the air is resolved into the BODY frame, each body axis has its own area, and
 			# the force is rotated back. A leaned aircraft therefore presents a mix of frontal and top
 			# area, which is the body-angle effect the scalar could not carry.
-			var v_body := rigid_body.orientation.inverse() * relative_velocity_mps
+			var v_body := q_inv * relative_velocity_mps
 			var f_body := -speed * Vector3(drag_axes.x * v_body.x, drag_axes.y * v_body.y, drag_axes.z * v_body.z)
 			total_force += rigid_body.orientation * f_body
 
@@ -318,24 +378,40 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# minus wind, plus omega x r), in the rotor plane, applied AT the hub so it also pitches/yaws the aircraft.
 	# Not modelled for a reversed prop (turtle is a ground manoeuvre at near-zero airspeed).
 	if rotor_h_force_enabled and h_coeffs != Vector2.ZERO and not motors_reversed:
-		var v_air_body := rigid_body.orientation.inverse() * relative_velocity_mps
+		var v_air_body := q_inv * relative_velocity_mps
 		var w_body := rigid_body.angular_velocity_rad_s
 		var h_force_body := Vector3.ZERO
-		for i in MotorLayout.MOTOR_NAMES.size():
-			var omega: float = powertrain.motor_rpm[i] * TAU / 60.0
+		var rpms := powertrain.motor_rpm
+		# RotorHForce.inflow_mps / flap_per_mps / per_mps, written out here: three static calls per rotor per 1 kHz substep
+		# were the largest single cost in the tick. The same expressions in the same order, so the same numbers; the
+		# helpers stay the one definition for every other caller (and tests/test_rotor_h_force.gd checks them).
+		var area := PI * prop_radius_m * prop_radius_m
+		var k2 := 2.0 * air_density_kgm3 * area
+		for i in 4:
+			var omega: float = rpms[i] * TAU / 60.0
 			if omega <= 1.0:
 				continue
-			var hub := MotorLayout.motor_position(MotorLayout.MOTOR_NAMES[i], arm_m) - mass_properties.com_m
-			hub.y = rotor_above_com_m
+			var hub: Vector3 = _hubs[i]
 			var v_hub := v_air_body + w_body.cross(hub)
 			var v_plane := Vector3(v_hub.x, 0.0, v_hub.z)
 			if v_plane.length_squared() <= 0.0:
 				continue
-			var t_i: float = powertrain.observables.thrust_n[i] * (1.0 - prop_damage[i]) * ge_gain
-			var inflow := RotorHForce.inflow_mps(t_i, v_hub.y, v_plane.length(), air_density_kgm3, prop_radius_m)
+			var t_i: float = thrusts_n[i] * (1.0 - prop_damage[i]) * ge_gain
 			var v_e := v_plane.length()
-			var flap_i := RotorHForce.flap_per_mps(t_i, omega, prop_radius_m, inflow, v_e, theta_75, flap_response)
-			var per := RotorHForce.per_mps(h_coeffs, omega, inflow) * (1.0 - prop_damage[i]) + flap_i
+			var inflow := v_hub.y
+			if t_i > 0.0 and area > 0.0:
+				var v_i := sqrt(t_i / k2)
+				for _p in RotorHForce.INFLOW_PASSES:
+					var u := sqrt(v_e * v_e + (v_hub.y + v_i) * (v_hub.y + v_i))
+					v_i = 0.5 * (v_i + t_i / (k2 * maxf(u, 0.5 * v_i)))
+				inflow = v_hub.y + v_i
+			var flap_i := 0.0
+			var tip := omega * prop_radius_m
+			if tip > 1.0 and t_i > 0.0:
+				var mu := v_e / tip
+				var tilt_per_mu := maxf(2.0 * flap_response * (4.0 / 3.0 * theta_75 - inflow / tip), 0.0) / maxf(1.0 - 0.5 * mu * mu, 0.5)
+				flap_i = t_i * tilt_per_mu / tip
+			var per := (omega * h_coeffs.x + inflow * h_coeffs.y) * (1.0 - prop_damage[i]) + flap_i
 			var h_i := -per * v_plane
 			h_force_body += h_i
 			total_torque += hub.cross(h_i)
@@ -346,7 +422,6 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# afterwards from a velocity difference would be a numerical derivative of an
 	# integrated quantity, which is both noisier and one tick late.
 	var specific_force := total_force + Vector3(0, GRAVITY_MPS2 * mass_properties.total_mass_kg, 0)
-	var accel_orientation := rigid_body.orientation   # the body the force acted on, before it moves
 
 	rigid_body.integrate(total_force, total_torque, mass_properties.total_mass_kg, mass_properties.inertia, mass_properties.inertia_inverse, dt)
 	if ground_contact_enabled:
@@ -376,10 +451,10 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 	# what a real loop does, and the delay is part of what the gains are tuned against.
 	gyro.update(rigid_body.angular_velocity_rad_s, dt)
 	vbat.update(powertrain.observables.voltage_live_v, dt)
-	accel.update(accel_orientation.inverse() * (specific_force / mass_properties.total_mass_kg),
+	accel.update(q_inv * (specific_force / mass_properties.total_mass_kg),
 		gyro.last_vibration_rad_s, dt)
 
-	_publish(specific_force)
+	_publish(specific_force, false)
 
 ## Fills the FLIGHT half of the observables layer; the powertrain half is already filled by
 ## Powertrain.publish(). Republishing the powertrain half here is what this split exists to
@@ -394,10 +469,14 @@ func step(motor_throttle_cmds: Dictionary, dt: float) -> void:
 ## Each is {"r": Vector3, "radius": float, "motor": int (-1 for the body)}.
 func contact_points() -> Array[Dictionary]:
 	# B4/Q1: cached on the inputs that define it, since this ran (nine dictionaries) every 1 kHz substep.
-	var key := [arm_m, mass_properties.com_m, rotor_above_com_m, prop_radius_m]
-	if key == _contact_key:
+	if _contact_keyed and arm_m == _contact_key_arm and mass_properties.com_m == _contact_key_com \
+			and rotor_above_com_m == _contact_key_above and prop_radius_m == _contact_key_prop:
 		return _contact_cache
-	_contact_key = key
+	_contact_keyed = true
+	_contact_key_arm = arm_m
+	_contact_key_com = mass_properties.com_m
+	_contact_key_above = rotor_above_com_m
+	_contact_key_prop = prop_radius_m
 	_contact_cache = _build_contact_points()
 	_contact_bound_r = 0.0
 	for point in _contact_cache:
@@ -409,7 +488,11 @@ func contact_points() -> Array[Dictionary]:
 var _contact_bound_r := 0.0
 
 
-var _contact_key: Array = []
+var _contact_keyed := false
+var _contact_key_arm := 0.0
+var _contact_key_com := Vector3.ZERO
+var _contact_key_above := 0.0
+var _contact_key_prop := 0.0
 var _contact_cache: Array[Dictionary] = []
 
 
@@ -469,8 +552,12 @@ func _damage_from_hit(motor: int, speed: float) -> void:
 			prop_damage[i] = minf(1.0, prop_damage[i] + lost * CollisionConstants.BODY_HIT_DAMAGE_SHARE)
 
 
-func _publish(specific_force_n: Vector3) -> void:
-	powertrain.publish()
+## `republish_powertrain` is false from step(): Powertrain.step_in_flight already published that half at its end, from
+## the same stored state, and nothing between there and here changes it, so a second publish is the same 13 writes
+## again. Callers that set powertrain state by hand and then call this (tests/test_observables.gd) keep the default.
+func _publish(specific_force_n: Vector3, republish_powertrain := true) -> void:
+	if republish_powertrain:
+		powertrain.publish()
 
 	observables.weight_n = mass_properties.total_mass_kg * GRAVITY_MPS2
 
