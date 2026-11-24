@@ -802,6 +802,7 @@ func _sync_design_space() -> void:
 	project.config = session.config()
 	project.printing = session.printing()
 	project.payload = session.payload()
+	project.harness = session.harness_overrides.duplicate(true)
 	var doc := session.frame_document()
 	if doc != null:
 		project.airframe = doc.to_dictionary() if not session.frame_edit(rooms.catalog_for_lab()).is_empty() else {}

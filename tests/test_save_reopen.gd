@@ -56,11 +56,14 @@ static func run(tree: SceneTree) -> Array:
 	s1.set_tweaks(tw)
 	out.append(TestResult.new("the edits took (swap, frame, tweak)",
 		swapped and thick.get("ok", false) and s1.tweaks.has_override(AssemblyTweaks.CAMERA_TILT), str(thick)))
+	var hov := {Harness.MAIN_LEAD_AWG: 10.0, Harness.MAIN_LEAD_LENGTH_MM: 85.0}
+	out.append(TestResult.new("the harness override took", s1.set_harness_overrides(hov) and s1.harness_overrides == hov, str(s1.harness_overrides)))
 	var path: String = shell.container.path
 	var want_class := s1.drone_class
 	var want_parts: Dictionary = s1.selection.duplicate(true)
 	var want_doc := JSON.stringify(s1.frame_document().to_dictionary())
 	var want_tweaks := JSON.stringify(s1.tweaks.to_dict())
+	var want_harness := JSON.stringify(s1.harness_overrides)
 	var want_figs := _figures(s1, catalog)
 	var seed_figs := _figures(DesignSession.default_for_class(CLASS_ID), catalog)
 	out.append(TestResult.new("the edited design's figures differ from the class seed", want_figs != seed_figs, want_figs))
@@ -82,8 +85,16 @@ static func run(tree: SceneTree) -> Array:
 	out.append(TestResult.new("frame document identical",
 		s2.frame_document() != null and JSON.stringify(s2.frame_document().to_dictionary()) == want_doc, ""))
 	out.append(TestResult.new("tweaks identical", JSON.stringify(s2.tweaks.to_dict()) == want_tweaks, JSON.stringify(s2.tweaks.to_dict())))
+	out.append(TestResult.new("harness overrides identical", JSON.stringify(s2.harness_overrides) == want_harness, JSON.stringify(s2.harness_overrides)))
 	var got_figs := _figures(s2, catalog)
 	out.append(TestResult.new("readout figures bit-identical", got_figs == want_figs, got_figs + " vs " + want_figs))
+	# an older file with no harness block still loads, with no overrides
+	var old := Project.from_dict(boot.container.project.to_dict())
+	var od := old.to_dict()
+	(od["decisions"] as Dictionary).erase("harness")
+	var legacy := Project.from_dict(od)
+	out.append(TestResult.new("a project file without the harness field loads with none",
+		DesignSession.from_project(legacy).harness_overrides.is_empty(), str((legacy.to_dict()["decisions"] as Dictionary).get("harness"))))
 	boot.get_parent().remove_child(boot)
 	boot.free()
 

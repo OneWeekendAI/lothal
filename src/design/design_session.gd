@@ -51,6 +51,7 @@ static func from_project(project: Project) -> DesignSession:
 	session.drone_class = project.drone_class
 	session.selection = project.parts.duplicate(true)
 	session.tweaks = AssemblyTweaks.from_dict(project.assembly)
+	session.harness_overrides = project.harness.duplicate(true)
 	session._load_frame_document()
 	session._adopt_saved_frame()
 	return session
