@@ -28,7 +28,7 @@ const DASH := "—"
 const NEAR := Vector3(0.0, 0.02, 0.0)
 ## category -> GLB node names it mounts on, as the TEST knows the model (not PartSnap's table).
 const NODES := {"battery": ["battery"], "camera": ["camera"], "flight_controller": ["stack"],
-	"esc": ["stack"], "receiver": ["stack"], "vtx": ["antennas"], "antenna": ["antennas"]}
+	"esc": ["stack"], "receiver": ["stack"], "buzzer": ["stack"], "vtx": ["antennas"], "antenna": ["antennas"]}
 
 
 static func run() -> Array:
@@ -383,7 +383,7 @@ static func _test_shelf_lists(catalog: PartsCatalog, home: Dictionary) -> TestRe
 	var s := _fresh()
 	var bad: Array = []
 	var cats: Array = s.shelf(catalog).map(func(r): return String(r["category"]))
-	for cat in ["battery", "motor", "propeller", "guard", "flight_controller", "esc", "receiver", "camera", "vtx", "antenna"]:
+	for cat in ["battery", "motor", "propeller", "guard", "flight_controller", "esc", "receiver", "buzzer", "camera", "vtx", "antenna"]:
 		var want: Array = []
 		for p in catalog.list_category(cat):
 			if String(p["part_id"]) != String(home.get(cat, "")):

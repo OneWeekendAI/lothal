@@ -2322,7 +2322,7 @@ func open_custom_part_form(category: String) -> bool:
 			var f := CustomFcDialog.new()
 			f.fc_saved.connect(func(_id: String): _custom_saved())
 			form = f
-		"camera", "vtx", "receiver", "antenna":
+		"camera", "vtx", "receiver", "antenna", "buzzer":
 			var c := CustomComponentDialog.new(category)
 			c.component_saved.connect(func(_id: String): _custom_saved())
 			form = c

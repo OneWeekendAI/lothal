@@ -15,7 +15,7 @@ const SCRATCH := "user://test_pack_designer_parts.json"
 const CHARGE := "user://test_pack_designer_charge.json"
 
 ## Named buttons of the Design Space, shelf open on batteries, before the pack designer existed.
-const BEFORE_NAMES := ["Back", "Cat_antenna", "Cat_battery", "Cat_camera", "Cat_esc",
+const BEFORE_NAMES := ["Back", "Cat_antenna", "Cat_battery", "Cat_buzzer", "Cat_camera", "Cat_esc",
 	"Cat_flight_controller", "Cat_guard", "Cat_motor", "Cat_propeller", "Cat_receiver", "Cat_vtx",
 	"Chip_cells_n1", "Chip_cells_n2", "Chip_cells_n3", "Chip_cells_n4", "Chip_cells_n5",
 	"Chip_cells_n6", "Chip_cells_n7", "Chip_cells_n8", "Home", "IdentityChip", "LabelsToggle", "MenuButton", "ShelfHeader", "mark_auw_g", "mark_flight_time_min",

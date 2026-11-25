@@ -50,6 +50,14 @@ static func run(tree: SceneTree) -> Array:
 		if mid != String(s1.selection["motor"]) and s1.swap(catalog, "motor", mid)["ok"]:
 			swapped = true
 			break
+	# a buzzer is an optional part with no drawn node: it must ride the file like any other part
+	var buzz_ids: Array = catalog.list_category("buzzer").map(func(x): return String(x["part_id"]))
+	var buzz_id: String = buzz_ids[0] if not buzz_ids.is_empty() else ""
+	var buzz_base := s1.build(catalog).all_up_weight_g()
+	var buzz_ok: bool = buzz_id != "" and s1.swap(catalog, "buzzer", buzz_id)["ok"]
+	var buzz_delta := s1.build(catalog).all_up_weight_g() - buzz_base
+	out.append(TestResult.new("a buzzer was fitted and weighed (AUW up by its mass)",
+		buzz_ok and absf(buzz_delta - float(catalog.get_part(buzz_id)["mass_g"])) < 1e-6, "%s %s" % [buzz_id, buzz_delta]))
 	var thick: Dictionary = s1.set_plate_thickness(s1.plate_of_mesh("frame_plate_top"), 2.5)
 	var tw := AssemblyTweaks.from_dict(s1.tweaks.to_dict())
 	tw.set_mm(AssemblyTweaks.CAMERA_TILT, 40.0)
@@ -82,6 +90,7 @@ static func run(tree: SceneTree) -> Array:
 	var s2: DesignSession = ds.session if ds != null else DesignSession.default_for_class(CLASS_ID)
 	out.append(TestResult.new("drone class identical", s2.drone_class == want_class, s2.drone_class))
 	out.append(TestResult.new("parts identical", s2.selection == want_parts, str(s2.selection)))
+	out.append(TestResult.new("the fitted buzzer is still fitted after reopen", String(s2.selection.get("buzzer", "")) == buzz_id and buzz_id != "", String(s2.selection.get("buzzer", ""))))
 	out.append(TestResult.new("frame document identical",
 		s2.frame_document() != null and JSON.stringify(s2.frame_document().to_dictionary()) == want_doc, ""))
 	out.append(TestResult.new("tweaks identical", JSON.stringify(s2.tweaks.to_dict()) == want_tweaks, JSON.stringify(s2.tweaks.to_dict())))

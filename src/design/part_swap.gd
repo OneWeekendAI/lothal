@@ -20,13 +20,13 @@ const SLOTS := {
 	"battery": ["battery"],
 	"motor": ["motor"],
 	"prop": ["propeller", "guard"],
-	"stack": ["flight_controller", "esc", "receiver"],
+	"stack": ["flight_controller", "esc", "receiver", "buzzer"],
 	"camera": ["camera"],
 	"antennas": ["vtx", "antenna"],
 }
 const CATEGORY_NAMES := {"battery": "Battery", "motor": "Motors", "propeller": "Props",
 	"guard": "Prop guards", "flight_controller": "Flight controller", "esc": "ESC",
-	"receiver": "Receiver", "camera": "Camera", "vtx": "Video transmitter", "antenna": "Antenna"}
+	"receiver": "Receiver", "buzzer": "Buzzer", "camera": "Camera", "vtx": "Video transmitter", "antenna": "Antenna"}
 ## The IMPOSSIBLE warnings that make a build not a build. Any other warning is shown, not refused.
 const HARD_IDS := [&"motor_mount", &"prop_clearance", &"stack_mount", &"fc_stack_mount"]
 const READOUT_KEYS := ["auw_g", "thrust_to_weight", "hover_throttle", "flight_time_min", "top_speed_kmh"]
