@@ -41,6 +41,7 @@ const TABS := {
 	"flight_controller": [SHEET, BOARD, TUNE, RATES, PORTS, FAILSAFE, CONFIGSHEET],
 	"esc": [SHEET, BENCH, HARNESS],
 	"receiver": [SHEET, LINK],
+	"buzzer": [SHEET, LINK],
 	"camera": [SHEET, UPTILT, PAYLOAD, PRINT],
 	"vtx": [SHEET, PAYLOAD],
 	"antenna": [SHEET, LINK, PRINT],
@@ -48,7 +49,7 @@ const TABS := {
 
 
 ## The categories the Parts drawer opens a sheet for (the shelf's ten, and the frame).
-const SHELF_CATEGORIES_WITH_SHEET := ["frame", "battery", "motor", "propeller", "guard", "flight_controller", "esc", "receiver", "camera", "vtx", "antenna"]
+const SHELF_CATEGORIES_WITH_SHEET := ["frame", "battery", "motor", "propeller", "guard", "flight_controller", "esc", "receiver", "buzzer", "camera", "vtx", "antenna"]
 
 
 ## The tabs of `category`'s sheet ([{id, label}]); empty for a category without one.

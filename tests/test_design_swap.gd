@@ -125,7 +125,7 @@ static func _test_slots_cover_categories(ds: DesignSpace) -> Array:
 		results.append(TestResult.new("the 5\" has a pick address for the %s slot" % slot,
 			ds.picks.addresses().any(func(a): return PartSwap.slot_of(String(a)) == slot), ""))
 	var want := ["battery", "motor", "propeller", "flight_controller", "esc", "camera", "vtx",
-		"antenna", "receiver", "guard"]
+		"antenna", "receiver", "buzzer", "guard"]
 	var missing := want.filter(func(c): return not cats.has(c))
 	results.append(TestResult.new("every swappable category (PLAN Section 3's list) has a picker",
 		missing.is_empty(), str(missing)))
@@ -346,9 +346,9 @@ static func _test_picker_beside_part(ds: DesignSpace, catalog: PartsCatalog) -> 
 	var cats := {}
 	for x in ds.shelf.rows:
 		cats[x["category"]] = true
-	results.append(TestResult.new("the stack opens flight controllers, ESCs and receivers, and collapses the battery",
-		ds.shelf.expanded == {"flight_controller": true, "esc": true, "receiver": true}
-		and cats.has("flight_controller") and cats.has("esc") and cats.has("receiver") and not cats.has("battery"),
+	results.append(TestResult.new("the stack opens flight controllers, ESCs, receivers and buzzers, and collapses the battery",
+		ds.shelf.expanded == {"flight_controller": true, "esc": true, "receiver": true, "buzzer": true}
+		and cats.has("flight_controller") and cats.has("esc") and cats.has("receiver") and cats.has("buzzer") and not cats.has("battery"),
 		str(ds.shelf.expanded)))
 	ds.select("frame/plate/top")
 	results.append(TestResult.new("selecting a frame region stops swapping (no slot, no fitted mark)",

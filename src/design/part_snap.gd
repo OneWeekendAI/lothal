@@ -34,19 +34,19 @@ const REF_SPAN_M := 0.277
 const LOWER := "_lo"
 const CORNERS := ["FL", "FR", "BL", "BR"]
 ## Catalog category -> the drawn nodes (GLB mesh names) it can be mounted on. Receiver and guard have
-## no node of their own: the receiver rides the stack, a guard rings the props.
+## no node of their own: the receiver and the buzzer ride the stack, a guard rings the props.
 const MOUNTS_BY_CATEGORY := {
 	"battery": ["battery"],
 	"motor": ["motor_FL", "motor_FR", "motor_BL", "motor_BR"],
 	"propeller": ["prop_FL", "prop_FR", "prop_BL", "prop_BR"],
 	"guard": ["prop_FL", "prop_FR", "prop_BL", "prop_BR"],
-	"flight_controller": ["stack"], "esc": ["stack"], "receiver": ["stack"],
+	"flight_controller": ["stack"], "esc": ["stack"], "receiver": ["stack"], "buzzer": ["stack"],
 	"camera": ["camera"],
 	"vtx": ["antennas"], "antenna": ["antennas"],
 }
 ## The shelf's categories, in shelf order (PartSwap.SLOTS order, flattened).
 const SHELF_CATEGORIES := ["battery", "motor", "propeller", "guard", "flight_controller", "esc",
-	"receiver", "camera", "vtx", "antenna"]
+	"receiver", "buzzer", "camera", "vtx", "antenna"]
 ## Mount address -> the category "remove" takes off it (the drawn part on that mount).
 const PRIMARY_CATEGORY := {"battery": "battery", "motor": "motor", "prop": "propeller",
 	"stack": "flight_controller", "camera": "camera", "antennas": "antenna"}

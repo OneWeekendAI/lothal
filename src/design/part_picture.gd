@@ -112,6 +112,12 @@ func _draw() -> void:
 			draw_circle(Vector2(c.x - 6, c.y - 20), 2.0, ink)
 			_fill_rect(Rect2(c.x - 20, c.y + 26, 40, 4), ft, fc, false)
 			draw_rect(Rect2(c.x - 20, c.y + 26, 40, 4), ink * Color(1, 1, 1, 0.6), false, hl)
+		"buzzer":
+			_fill_rect(Rect2(c.x - 12, c.y - 12, 24, 24), ft, fc, false)
+			draw_arc(c, 12.0, 0.0, TAU, 20, ink, w)
+			draw_circle(c, 2.0, ink)
+			for i in 2:
+				draw_arc(c, 17.0 + 5.0 * i, -0.6, 0.6, 8, ink * Color(1, 1, 1, 0.6), hl)
 		_:  # receiver, and anything uncatalogued
 			_fill_rect(Rect2(c.x - 17, c.y - 7, 34, 14), ft, fc, false)
 			draw_rect(Rect2(c.x - 18, c.y - 8, 36, 16), ink, false, w)
