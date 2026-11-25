@@ -81,6 +81,9 @@ var airframe: Dictionary = {}
 ## project written before this block existed: nothing is added to the aircraft the day it appears. `to_build`
 ## hangs it under the belly (Build.set_payload_part).
 var payload: Dictionary = {}
+## Sparse. The authored harness (`Harness.overrides()`): connector, capacitor, lead gauges and lengths.
+## Absent means the frame's own harness, which is every file saved before this block existed.
+var harness: Dictionary = {}
 
 ## Named versions (⌘S), newest last. Each is {version_id, label, saved_at, decisions}.
 var versions: Array = []
@@ -161,6 +164,7 @@ static func from_dict(document: Dictionary, ladder: Array = ProjectSchema.MIGRAT
 	project.config = project._read_block(decisions as Dictionary, "config")
 	project.airframe = project._read_block(decisions as Dictionary, "airframe")
 	project.payload = project._read_block(decisions as Dictionary, "payload")
+	project.harness = project._read_block(decisions as Dictionary, "harness")
 
 	project.versions = _array_or(doc, "versions")
 	project.print_records = _array_or(doc, "prints")
@@ -225,6 +229,7 @@ func to_dict() -> Dictionary:
 	decisions["config"] = config.duplicate(true)
 	decisions["airframe"] = airframe.duplicate(true)
 	decisions["payload"] = payload.duplicate(true)
+	decisions["harness"] = harness.duplicate(true)
 
 	var out: Dictionary = (_unknown.get("", {}) as Dictionary).duplicate(true)
 	out["schema"] = ProjectSchema.current_version()
@@ -291,6 +296,7 @@ func restore_version(version_id: String) -> bool:
 		config = _read_block(decisions as Dictionary, "config")
 		airframe = _read_block(decisions as Dictionary, "airframe")
 		payload = _read_block(decisions as Dictionary, "payload")
+		harness = _read_block(decisions as Dictionary, "harness")
 		touch()
 		return true
 	return false

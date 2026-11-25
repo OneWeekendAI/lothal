@@ -59,10 +59,7 @@ const MIX_GAIN := 0.2   # fraction of throttle range given to attitude authority
 ## that commands a yaw and the model that produces its torque cannot be allowed to hold two
 ## different opinions about which way a motor turns.
 static func mix(throttle: float, roll_cmd: float, pitch_cmd: float, yaw_cmd: float, config: Dictionary = {}, vbat_scale: float = 1.0) -> Dictionary:
-	var spin := MotorLayout.spin_map(config)
-	var spins := PackedFloat64Array()
-	for name in MotorLayout.MOTOR_NAMES:
-		spins.append(float(spin[name]))
+	var spins := MotorLayout.spin_array(config)
 	# Battery-voltage compensation (R1.3), computed by the FC from its MEASURED voltage (VbatSensor).
 	# B2/P5: Betaflight scales the whole output range, so the scale goes on the collective AND the
 	# attitude commands BEFORE the desaturation below; a full motor then lowers the collective and the
@@ -71,7 +68,4 @@ static func mix(throttle: float, roll_cmd: float, pitch_cmd: float, yaw_cmd: flo
 	var k := vbat_scale
 	# The three steps described above run in the native core (FlightLaw.mix).
 	var cmds := FlightLaw.mix(throttle * k, roll_cmd * k, pitch_cmd * k, yaw_cmd * k, spins)
-	var out := {}
-	for i in MotorLayout.MOTOR_NAMES.size():
-		out[MotorLayout.MOTOR_NAMES[i]] = cmds[i]
-	return out
+	return {"M1": cmds[0], "M2": cmds[1], "M3": cmds[2], "M4": cmds[3]}

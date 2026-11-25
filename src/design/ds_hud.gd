@@ -190,13 +190,20 @@ func show_warnings(build: Build) -> void:
 	_warnings_panel.visible = not lines.is_empty()
 
 
+var _voltage_color_shown := Color(0, 0, 0, 0)
+var _pack_color_shown := Color(0, 0, 0, 0)
+
+
 ## Called every frame with the live simulation state.
 func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, rate_mode: bool) -> void:
 	_flight_panel.visible = true
 	_race_panel.visible = timer.running or timer.best_lap_s > 0.0 or _record_label.visible
 	var obs := core.observables
 	var throttle_fraction := _average_throttle_fraction(obs, build)
-	_throttle_bar.value = throttle_fraction * 100.0
+	# Only touched when they move: a Range/Label/theme override each notify and re-layout, which at 120 Hz was
+	# most of this function's cost for numbers that mostly do not change tick to tick.
+	if _throttle_bar.value != throttle_fraction * 100.0:
+		_throttle_bar.value = throttle_fraction * 100.0
 	_throttle_label.text = "%.0f %%" % (throttle_fraction * 100.0)
 
 	var kmh := obs.airspeed_mps * 3.6
@@ -212,13 +219,18 @@ func render(core: DroneCore, build: Build, course: GateCourse, timer: LapTimer, 
 		_wind_label.text = "Wind  none"
 
 	_voltage_label.text = "%.2f V  ·  %.0f A" % [obs.voltage_live_v, obs.current_total_a]
-	_voltage_label.add_theme_color_override("font_color", _voltage_color(obs, build))
+	var voltage_color := _voltage_color(obs, build)
+	if voltage_color != _voltage_color_shown:
+		_voltage_color_shown = voltage_color
+		_voltage_label.add_theme_color_override("font_color", voltage_color)
 
 	var remaining := 1.0 - obs.capacity_used_fraction
 	var minutes := _remaining_minutes(core, build)
 	_pack_label.text = "%.0f %%  ·  %s" % [remaining * 100.0, _format_minutes(minutes)]
-	_pack_label.add_theme_color_override("font_color",
-		COLOR_CRITICAL if minutes <= 0.0 else (COLOR_WARN if remaining < 0.2 else COLOR_OK))
+	var pack_color := COLOR_CRITICAL if minutes <= 0.0 else (COLOR_WARN if remaining < 0.2 else COLOR_OK)
+	if pack_color != _pack_color_shown:
+		_pack_color_shown = pack_color
+		_pack_label.add_theme_color_override("font_color", pack_color)
 	_speed_gauge.set_warn(minutes <= 0.0 or remaining < 0.2)
 
 	_mode_label.text = "Full manual (acro)" if rate_mode else "Self-levelling"
@@ -290,7 +302,7 @@ func set_idle(idle: bool) -> void:
 ## Mean RPM against the ceiling this pack and prop can reach, not the stick: in angle mode the
 ## controller moves the motors away from the commanded throttle constantly.
 func _average_throttle_fraction(obs: Observables, build: Build) -> float:
-	var ceiling := build.rpm_at_throttle(build.max_throttle_fraction())
+	var ceiling := build.throttle_ceiling_rpm()
 	if ceiling <= 0.0:
 		return 0.0
 	return clampf(obs.mean_rpm() / ceiling, 0.0, 1.0)

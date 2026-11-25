@@ -136,6 +136,8 @@ var _ag_lpf1 := 0.0
 var _ag_lpf2 := 0.0
 ## Last tick's motor-mix range for the iterm_windup attenuation (0..1, 1 = saturated).
 var _mix_range := 0.0
+var _ag_k_dt := -1.0
+var _ag_k := 0.0
 
 ## The tune in force, or null for the hand tune above.
 ##
@@ -203,23 +205,23 @@ func update(setpoint_normalized: Vector3, gyro_rate_rad_s: Vector3, throttle: fl
 	var yaw_cmd := pid_yaw.update(setpoint_normalized.z, measured.z, dt, _mix_range, boost)
 	_mix_range = mix_range(roll_cmd, pitch_cmd, yaw_cmd, config)
 
-	var vbat_scale := VbatSensor.scale(VbatSensor.percent(config), vbat)
+	var vbat_percent := VbatSensor.percent(config)
+	var vbat_scale := 1.0 if vbat_percent <= 0.0 else VbatSensor.scale(vbat_percent, vbat)
 	return MotorMixer.mix(throttle, roll_cmd, pitch_cmd, yaw_cmd, config, vbat_scale)
 
 ## The motor-mix range Betaflight's iterm_windup reads: the spread of the per-motor deltas
 ## (MotorMixer's MIX_GAIN times the axis commands), and, because the sim clamps each axis at its
 ## output_limit (pidsum_limit) before the mixer, an axis pinned at that clamp counts as saturated too.
 static func mix_range(r: float, p: float, y: float, p_config: Dictionary = {}) -> float:
-	var spin := MotorLayout.spin_map(p_config)
-	var front := [false, true, false, true]
-	var right := [true, true, false, false]
-	var lo := INF
-	var hi := -INF
-	for i in 4:
-		var d: float = MotorMixer.MIX_GAIN * ((p if front[i] else -p) + (-r if right[i] else r)
-			+ y * float(spin[MotorLayout.MOTOR_NAMES[i]]))
-		lo = minf(lo, d)
-		hi = maxf(hi, d)
+	var spin := MotorLayout.spin_array(p_config)
+	# The four motors' mixer outputs, unrolled from the front/right table below (M1 rear-right, M2 front-right,
+	# M3 rear-left, M4 front-left): this ran at 1 kHz and the loop's two table reads per motor were most of its cost.
+	var d0: float = MotorMixer.MIX_GAIN * (-p + -r + y * spin[0])
+	var d1: float = MotorMixer.MIX_GAIN * (p + -r + y * spin[1])
+	var d2: float = MotorMixer.MIX_GAIN * (-p + r + y * spin[2])
+	var d3: float = MotorMixer.MIX_GAIN * (p + r + y * spin[3])
+	var lo := minf(minf(minf(minf(INF, d0), d1), d2), d3)
+	var hi := maxf(maxf(maxf(maxf(-INF, d0), d1), d2), d3)
 	var axis_sat := maxf(absf(r), maxf(absf(p), absf(y)))
 	return maxf(hi - lo, axis_sat)
 
@@ -229,7 +231,10 @@ func _anti_gravity(throttle: float, dt: float) -> float:
 		return 0.0
 	var deriv := absf(throttle - _ag_last_throttle) / dt
 	_ag_last_throttle = throttle
-	var k := BetaflightPid._pt1_k(ANTI_GRAVITY_CUTOFF_HZ * 1.553774, dt)   # PT2 stage cutoff
+	if dt != _ag_k_dt:
+		_ag_k_dt = dt
+		_ag_k = BetaflightPid._pt1_k(ANTI_GRAVITY_CUTOFF_HZ * 1.553774, dt)   # PT2 stage cutoff
+	var k := _ag_k
 	_ag_lpf1 += k * (deriv - _ag_lpf1)
 	_ag_lpf2 += k * (_ag_lpf1 - _ag_lpf2)
 	if not anti_gravity_enabled:

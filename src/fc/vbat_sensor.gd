@@ -36,6 +36,10 @@ const BF_MIN_CELL_V := 3.30
 
 var noise_v: float
 var cutoff_hz: float
+## FlightLaw.lowpass_alpha(dt, cutoff_hz), kept while neither changes.
+var _alpha_dt := -1.0
+var _alpha_cutoff_hz := -1.0
+var _alpha := 0.0
 ## What the FC reads. 0.0 until the first sample, which seeds the filter (a real board also
 ## starts from its first conversion, not from zero).
 var filtered_v := 0.0
@@ -68,7 +72,11 @@ func update(true_voltage_v: float, dt: float) -> float:
 	if filtered_v <= 0.0:
 		filtered_v = raw
 	else:
-		filtered_v += (raw - filtered_v) * FlightLaw.lowpass_alpha(dt, cutoff_hz)
+		if dt != _alpha_dt or cutoff_hz != _alpha_cutoff_hz:
+			_alpha_dt = dt
+			_alpha_cutoff_hz = cutoff_hz
+			_alpha = FlightLaw.lowpass_alpha(dt, cutoff_hz)
+		filtered_v += (raw - filtered_v) * _alpha
 	return filtered_v
 
 func reset() -> void:

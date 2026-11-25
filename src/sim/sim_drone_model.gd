@@ -124,6 +124,7 @@ func rebuild(build: Build, p_class_id: String, catalog: PartsCatalog, tweaks: As
 	_faded_blade.clear()
 	_blade_surface.clear()
 	_rate_rad_s.clear()
+	_axis_signs.clear()
 	_blurred.clear()
 	_tip_discs.clear()
 	_disc_mats.clear()
@@ -243,6 +244,7 @@ func _plain_label_if_swapped(now: Dictionary) -> void:
 ## are prepared once so a frame at speed allocates nothing.
 func _prepare_prop(motor_name: String, prop: MeshInstance3D) -> void:
 	var base_xf := prop.transform
+	_axis_signs.clear()
 	prop.set_meta("base_basis", base_xf.basis)
 	var blade_idx := -1
 	var blade_mat: BaseMaterial3D = null
@@ -356,8 +358,25 @@ func _set_rate(motor_name: String, rpm: float) -> void:
 	_rate_rad_s[motor_name] = absf(rpm) / 60.0 * TAU * float(_spin.get(motor_name, 1.0)) * _axis_sign(motor_name)
 	var f := blur_fraction(rpm, _blades)
 	_blurred[motor_name] = f
+	# Both redraws return at once when the blur and damage they last drew are within tolerance, which is nearly every
+	# tick of a steady hover; saying so here skips the string join and four lookups they cost to find that out.
+	var d := float(_damage.get(motor_name, 0.0))
+	var lo_key := _lo_key(motor_name)
+	var last: Vector2 = _drawn.get(motor_name, Vector2(-1.0, -1.0))
+	var last_lo: Vector2 = _drawn.get(lo_key, Vector2(-1.0, -1.0))
+	if absf(last.x - f) < 0.005 and absf(last.y - d) < 1e-6 and absf(last_lo.x - f) < 0.005 and absf(last_lo.y - d) < 1e-6:
+		return
 	_redraw(motor_name, prop_nodes.get(motor_name))
-	_redraw(motor_name + "_lo", _lower_props.get(motor_name))
+	_redraw(lo_key, _lower_props.get(motor_name))
+
+
+static var _lo_keys := {}
+
+
+static func _lo_key(motor_name: String) -> String:
+	if not _lo_keys.has(motor_name):
+		_lo_keys[motor_name] = motor_name + "_lo"
+	return _lo_keys[motor_name]
 
 
 ## R2.5a: how far a frame's exposure smears the blades into their disc, 0 (crisp blades) .. 1 (an even disc).
@@ -464,11 +483,20 @@ func _redraw(key: String, prop: MeshInstance3D) -> void:
 ## +1 when the prop mesh's own +Y points up in the body, -1 when the model mounts it flipped, so a
 ## positive spin is a positive turn about the BODY's +Y either way.
 func _axis_sign(motor_name: String) -> float:
+	if _axis_signs.has(motor_name):
+		return _axis_signs[motor_name]
 	var prop := prop_nodes.get(motor_name) as MeshInstance3D
 	if prop == null:
 		return 1.0
 	var base: Basis = prop.get_meta("base_basis", Basis.IDENTITY)
-	return 1.0 if (base * Vector3.UP).y >= 0.0 else -1.0
+	var axis := 1.0 if (base * Vector3.UP).y >= 0.0 else -1.0
+	_axis_signs[motor_name] = axis
+	return axis
+
+
+## _axis_sign() per motor. It only changes when a prop's base_basis meta does, and `_prepare_prop` is the one place that
+## sets it (and `rebuild` the one that drops the props), so both clear this.
+var _axis_signs: Dictionary = {}
 
 
 func rate_rad_s(motor_name: String) -> float:

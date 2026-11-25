@@ -50,8 +50,27 @@ static func from_project(project: Project) -> DesignSession:
 	session._project = Project.from_dict(project.to_dict())
 	session.drone_class = project.drone_class
 	session.selection = project.parts.duplicate(true)
+	session.tweaks = AssemblyTweaks.from_dict(project.assembly)
+	session.harness_overrides = project.harness.duplicate(true)
 	session._load_frame_document()
+	session._adopt_saved_frame()
 	return session
+
+
+## A project the Design Space saved holds its edited frame document in `Project.airframe` (the shell's
+## `_sync_design_space`). When that document is the class's own frame (same id) it is the session's
+## editable document again, with the GLB's baseline; `_project.airframe` is cleared so `build` applies the
+## edit once (`frame_edit`), not twice. A drawing of any other frame stays the Airframe room's.
+func _adopt_saved_frame() -> void:
+	if _frame_doc == null or _project.airframe.is_empty():
+		return
+	if String(_project.airframe.get("id", "")) != _frame_doc.id:
+		return
+	var saved := AirframeDocument.from_dictionary(_project.airframe)
+	if saved.plates.is_empty():
+		return
+	_frame_doc = saved
+	_project.airframe = {}
 
 
 ## A project that already flies a drawn frame (Project.airframe) keeps it, so the GLB's document is
@@ -59,13 +78,20 @@ static func from_project(project: Project) -> DesignSession:
 func _load_frame_document() -> void:
 	_frame_doc = null
 	_frame_baseline = {}
-	if not FRAME_DOCUMENTS.has(drone_class) or not _project.airframe.is_empty():
+	if not FRAME_DOCUMENTS.has(drone_class):
+		return
+	# A drawing of ANOTHER frame (the Airframe room's) keeps the document out; `_adopt_saved_frame` takes the rest.
+	if not _project.airframe.is_empty() and String(_project.airframe.get("id", "")) != _class_frame_id():
 		return
 	var doc := AirframeDocument.load_from(String(FRAME_DOCUMENTS[drone_class]))
 	if doc.plates.is_empty() or doc.id == "":
 		return
 	_frame_doc = doc
 	_frame_baseline = FittedFrame.drawn(doc)
+
+
+func _class_frame_id() -> String:
+	return AirframeDocument.load_from(String(FRAME_DOCUMENTS[drone_class])).id
 
 
 ## The default drone of a class: what a new project of that class opens on. Null for a

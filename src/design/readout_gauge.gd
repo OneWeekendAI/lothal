@@ -48,11 +48,16 @@ func _init(key_: String = "") -> void:
 
 
 func set_value(value: Variant) -> void:
-	fill = fraction(key, value)
+	var new_fill := fraction(key, value)
+	if new_fill == fill:
+		return
+	fill = new_fill
 	queue_redraw()
 
 
 func set_warn(on: bool) -> void:
+	if on == warn:
+		return
 	warn = on
 	queue_redraw()
 

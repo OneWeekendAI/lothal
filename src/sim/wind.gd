@@ -549,7 +549,9 @@ func _update_at_raw(dt: float, pos: Vector3, height_m: float) -> Vector3:
 		_last = steady_mps + _gust
 		return _last
 	_step_meander(dt)
-	var mean := mean_at(height_m)
+	# Calm air with no meander: the mean is the zero vector times a finite profile factor, so the two logs behind
+	# profile_factor are skipped (this ran at 1 kHz on the default, windless course).
+	var mean := Vector3.ZERO if (not meander_enabled and steady_mps == Vector3.ZERO) else mean_at(height_m)
 	_t += dt
 	var turb := Vector3.ZERO
 	if _field_needed():
