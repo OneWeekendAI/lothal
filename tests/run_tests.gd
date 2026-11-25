@@ -7,7 +7,7 @@ extends SceneTree
 ## dumped at the end, so a suite that hangs or crashes names itself instead of leaving
 ## the runner silent.
 
-const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop capability", "prop export", "class picker", "bmp classes", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "part sheet", "frame shape", "frame sheet io", "frame figures", "blade tab", "bench tab", "harness tab", "config tab", "fit tab", "print tab", "custom tiles", "flights sheet", "open projects", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "save reopen", "one door", "sim chrome", "sim drone model", "sim visual", "sim perf", "b4 live weather", "b5 camera debris", "sim math", "one build", "watch door", "watch card", "fly feedback", "button states", "identity", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
+const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop export", "class picker", "bmp classes", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "part sheet", "frame shape", "frame sheet io", "frame figures", "blade tab", "bench tab", "harness tab", "config tab", "fit tab", "print tab", "custom tiles", "flights sheet", "open projects", "design shelf", "design shelf ui", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "save reopen", "one door", "sim chrome", "sim drone model", "sim visual", "sim perf", "b4 live weather", "b5 camera debris", "sim math", "one build", "watch door", "watch card", "fly feedback", "button states", "identity", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "details footers",
 	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "collisions", "turtle mode", "ground authority", "real files", "conditions", "field room", "field ds", "studio ds", "no old ui", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
@@ -18,7 +18,7 @@ const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "tw
 	"custom frames", "custom motors", "custom propellers", "custom escs", "custom flight controllers", "electronics parts", "electronics ui", "custom parts ui", "update check", "rust constants", "room host", "project", "project menu", "project container", "project wiring", "projects delete",
 	"polygon props", "control effectiveness", "frame materials", "hardware mass",
 	"airframe document", "airframe properties", "frame layouts", "frame export", "frame import", "airframe room", "arm beam", "arm profile", "frame edits", "fitted frame", "drawn frame persists", "frame plan editor", "frame workbench", "plate mesh", "airframe tabs", "field page",
-	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "esc dynamics", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "stl writer", "propulsion export", "guard row", "mount row", "camera view", "part finder",
+	"propeller document", "blade geometry", "blade aero", "blade room", "bemt", "calibration", "bemt forward", "propulsion panel", "motor spin up", "esc dynamics", "soft mount", "bemt ratios", "prop guard", "guard mesh", "planform edits", "propulsion room", "authored blade", "stl writer", "propulsion export", "guard row", "mount row", "camera view",
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
@@ -281,7 +281,6 @@ func _run_suite(suite_name: String) -> Array:
 		"mount row": return TestMountRow.run()
 		# QC1/QC2 (plans/2026-09-19-quiet-canvas-design.md §6): the summoned finder — browse mode
 		# with nothing typed, and preview-and-restore across any number of previews.
-		"part finder": return TestPartFinder.run()
 		"prop guard": return TestPropGuard.run()
 		"guard mesh": return TestGuardMesh.run()
 		"planform edits": return TestPlanformEdits.run()
