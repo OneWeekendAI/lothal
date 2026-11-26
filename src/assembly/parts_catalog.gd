@@ -167,6 +167,9 @@ static func load_with_custom(path: String = CustomParts.SAVE_PATH) -> PartsCatal
 	# changes no aircraft, the reference build included.
 	catalog._merge_custom(path, CustomGps.load_from(path))
 	catalog._merge_custom(path, CustomBuzzers.load_from(path))
+	# Item 7: the prop guards a builder entered. Nothing cross-references them (the ring is sized to
+	# whatever prop it is fitted to), so they merge last with the other leaf categories.
+	catalog._merge_custom(path, CustomGuards.load_from(path))
 	return catalog
 
 
