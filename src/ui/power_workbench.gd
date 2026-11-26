@@ -96,6 +96,7 @@ var history := HarnessHistory.new()
 var schematic: HarnessSchematic
 var inspector: HarnessInspector
 var pack_view: PackView
+var straps: HarnessStraps
 
 var _undo_button: Button
 var _redo_button: Button
@@ -142,7 +143,14 @@ func _init() -> void:
 	inspector = HarnessInspector.new()
 	inspector.value_edited.connect(_on_value_edited)
 	inspector.default_restored.connect(_on_default_restored)
-	body.add_child(inspector)
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+	body.add_child(right)
+	right.add_child(inspector)
+	straps = HarnessStraps.new()
+	straps.value_edited.connect(_on_value_edited)
+	straps.default_restored.connect(_on_default_restored)
+	right.add_child(straps)
 
 	_status = Label.new()
 	DsUi.quiet(_status)
@@ -258,6 +266,7 @@ func _refresh() -> void:
 	schematic.show_harness(build, warnings)
 	refresh_pack()
 	_render_selection()
+	straps.show_build(build)
 	_refresh_toolbar()
 	_status.text = "Harness %.1f g — %s" % [build.harness.total_mass_g(build),
 		"no warnings on the current path" if warnings.is_empty()

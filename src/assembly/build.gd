@@ -78,7 +78,8 @@ const ELECTRONICS_BUDGET_G := 55.0
 ## since come out of the lump carries the difference honestly in its own box.
 ##
 ## It used to hold camera, VTX, antenna, receiver and wiring; LTHL-11 took the first four out and
-## PW2 took the wiring, the connector and the capacitor. What is left is `Harness.REMAINDER_MASS_G`.
+## PW2 took the wiring, the connector and the capacitor. What is left is the sundries estimate
+## (`Harness.SUNDRIES_G`) and, until a strap is chosen, the default strap.
 const ELECTRONICS_SIZE_M := Vector3(0.030, 0.015, 0.030)
 
 ## The FC/ESC stack's share of that budget, straight off parts.md's published breakdown of the
@@ -1448,12 +1449,21 @@ func mass_parts() -> Array:
 			stack_position + Vector3(0.0, StackMesh.esc_centre_height_m(), 0.0),
 			InertiaPrimitives.box(harness_cap_kg, cap_size), "Capacitor"))
 
-	# What is genuinely everywhere: straps, tape, solder and heat-shrink, at the origin. The
-	# honest remainder rather than the entry that got forgotten, and — unlike the 14 g it replaces —
-	# AUTHORED at what those things weigh instead of being whatever a budget had left over.
-	var remainder_kg := Harness.REMAINDER_MASS_G / 1000.0
-	parts.append(PartMass.new(remainder_kg, Vector3.ZERO,
-		InertiaPrimitives.box(remainder_kg, ELECTRONICS_SIZE_M), "Harness remainder"))
+	# The battery straps, once the builder has chosen them: at the pack, which is where a strap is. The
+	# box is the pack's own (a strap wraps it); a hollow loop would differ by a rounding error at 2-5 g.
+	# Until a strap is chosen the default strap rides in the origin lump below, unchanged.
+	var strap_kg := harness.strap_pack_mass_g(self) / 1000.0
+	if strap_kg > 0.0:
+		parts.append(PartMass.new(strap_kg, battery_position,
+			InertiaPrimitives.box(strap_kg, battery_size_m()), "Battery straps"))
+
+	# What is genuinely everywhere: the sundries (solder, heat-shrink, tape, zip ties), at the origin,
+	# an explicit labelled estimate; plus the default strap while the builder has not chosen one. With
+	# the defaults this is the 5 g it always was, one entry, so every golden is bit-identical.
+	var remainder_kg := harness.origin_mass_g(self) / 1000.0
+	if remainder_kg > 0.0:
+		parts.append(PartMass.new(remainder_kg, Vector3.ZERO,
+			InertiaPrimitives.box(remainder_kg, ELECTRONICS_SIZE_M), "Harness remainder"))
 
 	# Prop guards, one ring at each motor — the P10a `as_part_mass` finally has a caller
 	# (§3.4 shipped in P10b). PartMass carries the guard's mass at the motor's plan position

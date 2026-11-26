@@ -53,11 +53,23 @@ const MAIN_LEAD_LENGTH_MM := "main_lead_length_mm"
 ## three phases and all three run the length of the arm.
 const MOTOR_LEAD_AWG := "motor_lead_awg"
 const MOTOR_LEAD_LENGTH_MM := "motor_lead_length_mm"
+## The battery strap's type: a part id from straps.json, or "" for none. THE FIRST HALF OF WHAT THE
+## FLAT 5 G "REMAINDER" USED TO BE — see `REMAINDER_MASS_G`.
+const STRAP := "strap_id"
+## How many of that strap hold the pack: 1 or 2 (`STRAP_COUNT_MIN`/`MAX`). Read clamped, stored raw.
+const STRAP_COUNT := "strap_count"
+## The solder, heat-shrink, tape and zip ties: grams, an explicit labelled ESTIMATE (see
+## `SUNDRIES_DEFAULT_G`), the other half of the old remainder.
+const SUNDRIES_G := "sundries_mass_g"
 
 ## The part ids, held apart from the numbers because they are resolved through the catalog and
 ## clamped by nothing, where a gauge is checked against WireGauge's table.
-const ID_KEYS := [CONNECTOR, CAPACITOR]
-const NUMBER_KEYS := [MAIN_LEAD_AWG, MAIN_LEAD_LENGTH_MM, MOTOR_LEAD_AWG, MOTOR_LEAD_LENGTH_MM]
+const ID_KEYS := [CONNECTOR, CAPACITOR, STRAP]
+const NUMBER_KEYS := [MAIN_LEAD_AWG, MAIN_LEAD_LENGTH_MM, MOTOR_LEAD_AWG, MOTOR_LEAD_LENGTH_MM,
+	STRAP_COUNT, SUNDRIES_G]
+
+const STRAP_COUNT_MIN := 1
+const STRAP_COUNT_MAX := 2
 
 ## Conductors in each run. NOT authored per build and not a field: a DC supply is two wires and a
 ## three-phase motor is three, on every aircraft that has ever been built. Putting them in the
@@ -139,16 +151,36 @@ const MOTOR_LEAD_ROUTING_ALLOWANCE_MM := 30.0
 static func motor_supplied_lead_mm(build: Build) -> float:
 	return float(_class_row(build)[4])
 
-## Straps, tape, solder and heat-shrink: what is left of the harness once the connector, the two
-## wire runs and the capacitor are real objects with real positions.
+## WHAT THE FLAT 5 G WAS, AND WHAT IT IS NOW.
 ##
-## FLAT, and flat for the reason `Build.wiring_mass_g()` used to give for the 14 g lump it
-## replaces: harness sundries scale with something — how many things are soldered to how many
-## other things — and Lothal has measured that on exactly zero aircraft. A flat remainder is wrong
-## in a way that is stated and bounded. 5 g is a battery strap and a few centimetres of shrink on
-## a 5"; it is ROUGH, and unlike its predecessor it is AUTHORED rather than being whatever a budget
-## had left, which is the honest difference PW2 bought.
+## Until item 5 this was one constant, 5 g at the origin, and `Build.mass_parts()` called it "straps,
+## tape, solder and heat-shrink". git history (b4b1282, PW2) says it is what PW2 had left once the
+## connector, the two wire runs and the capacitor became objects: it was authored as "a battery strap
+## and a few centimetres of shrink on a 5-inch". It is NOT wire. Every conductor is already weighed by
+## `main_lead_mass_g` and `motor_lead_mass_g` (gauge x length), so deriving any of it from the wire
+## model would count that copper twice. It is two different things:
+##
+##   - the BATTERY STRAP, a real part with a real size, a catalog row (straps.json), a count of 1 or 2
+##     and a position (the pack);
+##   - the SUNDRIES, solder, heat-shrink, tape and zip ties, which nobody publishes and which scale with
+##     nothing Lothal measures. Kept as one labelled ESTIMATE in grams (`SUNDRIES_G`), at the origin
+##     where something that is everywhere belongs, and shown in the Harness tab as "est.".
+##
+## The two defaults (1 x `DEFAULT_STRAP_ID`, 2.5 g, plus `SUNDRIES_DEFAULT_G`, 2.5 g) sum to this
+## constant, which is asserted by tests/test_straps_harness.gd against the catalog, so the split
+## cannot drift off the 5 g every saved design was weighed with.
 const REMAINDER_MASS_G := 5.0
+
+## The strap a design carries when the builder has not chosen one: a common 5" size, 2.5 g, half the
+## old remainder. See straps.json for how rough its mass is.
+const DEFAULT_STRAP_ID := "strap_20x250_kevlar"
+
+## The estimate for solder, shrink, tape and zip ties: the other half of the old 5 g. ROUGH, labelled
+## "est." wherever it is shown, editable. Not derivable from anything on the build.
+const SUNDRIES_DEFAULT_G := 2.5
+
+## The ceiling on the sundries box. A sanity bound on a typed number; Lothal stores what it is given.
+const SUNDRIES_MAX_G := 20.0
 
 ## What of a connector pair the AIRCRAFT carries: one half of it. See `connector_mass_g` for the
 ## double-count this prevents. Exactly a half rather than a measured split — the two halves of an
@@ -169,7 +201,7 @@ const CAPACITOR_ROWS := [
 var _overrides: Dictionary = {}
 
 
-## What the parts imply, for every one of the six. Nothing here is authored per build: the two
+## What the parts imply, for every one of the nine. Nothing here is authored per build: the two
 ## wire rows come off the frame's own `max_prop_inches`, the motor lead length off the arm, the
 ## connector off the PACK'S OWN `catalog.connector` — which is the join connectors.json's schema
 ## block exists to keep spelled one way — and the capacitor off the pack's cell count.
@@ -185,6 +217,9 @@ static func defaults(build: Build) -> Dictionary:
 		# that is derived from a MEASURED number — the frame publishes its arm — rather than from a
 		# class band.
 		MOTOR_LEAD_LENGTH_MM: build.arm_m * 1000.0 + MOTOR_LEAD_ROUTING_ALLOWANCE_MM,
+		STRAP: DEFAULT_STRAP_ID,
+		STRAP_COUNT: STRAP_COUNT_MIN,
+		SUNDRIES_G: SUNDRIES_DEFAULT_G,
 	}
 
 
@@ -300,7 +335,47 @@ func capacitor_mass_g(build: Build) -> float:
 func total_mass_g(build: Build) -> float:
 	return connector_mass_g(build) + main_lead_mass_g(build) \
 		+ build.motor_count() * motor_lead_mass_g(build) \
-		+ capacitor_mass_g(build) + REMAINDER_MASS_G
+		+ capacitor_mass_g(build) + (strap_mass_g(build) + sundries_mass_g(build))
+
+
+## The straps the builder has chosen, or the default's mass when none has been. See `strap_mass_g`.
+##
+## A strap type of "" is a real choice (a velcro-only build, a printed clip) and weighs nothing; the
+## count is read clamped to 1..2 so a hand-edited file cannot weigh nine straps.
+func strap_row(build: Build) -> Dictionary:
+	return _row_for(build, STRAP)
+
+
+func strap_count(build: Build) -> int:
+	return clampi(roundi(float(value(STRAP_COUNT, build))), STRAP_COUNT_MIN, STRAP_COUNT_MAX)
+
+
+## The straps' total mass: one strap's catalog mass x the count. Zero with no strap fitted.
+func strap_mass_g(build: Build) -> float:
+	return float(strap_row(build).get("mass_g", 0.0)) * strap_count(build)
+
+
+## The estimate for solder, shrink, tape and zip ties. Floored at zero: a negative box is a typo.
+func sundries_mass_g(build: Build) -> float:
+	return maxf(float(value(SUNDRIES_G, build)), 0.0)
+
+
+## Whether the builder has chosen the straps (a type or a count). While not, the default strap is
+## carried WITH the sundries as the one lump at the origin that every saved design was weighed with,
+## so a design that never touched this keeps its weight AND its centre of mass to the last bit.
+## Choosing a strap, even the default one, moves its mass to the pack, where a strap is.
+func straps_authored() -> bool:
+	return has_override(STRAP) or has_override(STRAP_COUNT)
+
+
+## What is carried at the pack: the straps, once chosen.
+func strap_pack_mass_g(build: Build) -> float:
+	return strap_mass_g(build) if straps_authored() else 0.0
+
+
+## What is carried at the origin: the sundries, plus the default strap while no strap is chosen.
+func origin_mass_g(build: Build) -> float:
+	return sundries_mass_g(build) + (0.0 if straps_authored() else strap_mass_g(build))
 
 
 ## The capacitor's can as a box in body axes: the diameter across X and Z, the height up Y, because
