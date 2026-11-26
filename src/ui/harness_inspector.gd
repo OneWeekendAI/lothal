@@ -68,12 +68,19 @@ var _length_spin: SpinBox
 var _length_note: Label
 var _facts: Label
 var _prompt: Label
+var _cap_row: HBoxContainer
+var _cap_picker: OptionButton
+var _cap_note: Label
+## Part id behind each picker item, index for index ("" is None).
+var _cap_ids: Array[String] = []
 
 ## Which of `Harness`'s keys the two controls are currently pointed at, or "" while nothing
 ## editable is selected. Held so a signal handler knows what it is editing without the row having
 ## to carry a copy of the key in its own metadata.
 var _awg_key := ""
 var _length_key := ""
+## `Harness.CAPACITOR` while the capacitor is selected, "" otherwise — the same job as the two above.
+var _cap_key := ""
 
 
 func _init() -> void:
@@ -104,6 +111,10 @@ func _init() -> void:
 	add_child(_length_row)
 	_length_note = _note()
 
+	_cap_row = _build_cap_row()
+	add_child(_cap_row)
+	_cap_note = _note()
+
 	_facts = Label.new()
 	DsUi.quiet(_facts, LothalTheme.FONT_SIZE_BODY)
 	_facts.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -111,6 +122,27 @@ func _init() -> void:
 	add_child(_facts)
 
 	show_nothing()
+
+
+func _build_cap_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+
+	var caption := Label.new()
+	caption.text = "Part"
+	caption.custom_minimum_size = Vector2(56, 0)
+	row.add_child(caption)
+
+	# A PICKER OVER THE CATALOG, "None" first. Item ids are indices into `_cap_ids`, because an
+	# OptionButton item id is an int and a part id is a string.
+	_cap_picker = OptionButton.new()
+	_cap_picker.name = "CapacitorPicker"
+	_cap_picker.custom_minimum_size = Vector2(150, 0)
+	_cap_picker.item_selected.connect(_on_cap_selected)
+	row.add_child(_cap_picker)
+
+	row.add_child(_default_button(func() -> void: default_restored.emit(_cap_key)))
+	return row
 
 
 func _build_gauge_row() -> HBoxContainer:
@@ -185,6 +217,9 @@ func _note() -> Label:
 func show_nothing() -> void:
 	_awg_key = ""
 	_length_key = ""
+	_cap_key = ""
+	_cap_row.visible = false
+	_cap_note.visible = false
 	_title.text = "Harness"
 	_subtitle.text = ""
 	_prompt.text = ("Click a wire in the schematic to change its gauge or its length. Every "
@@ -197,26 +232,59 @@ func show_nothing() -> void:
 	_facts.text = ""
 
 
-## The capacitor. A part, not a segment (§2.1) — so it gets a description and no controls, and the
-## panel says WHY rather than showing two greyed boxes that look like a bug.
+## The capacitor. A part, not a segment (§2.1) — so no gauge and no length, but it IS choosable: None,
+## or any row of capacitors.json. The picker emits `value_edited(capacitor_id, part_id)`; None is the
+## empty string, which `Harness` reads as "nothing fitted" (the same state the §3.4 rule warns about).
 func show_capacitor(build: Build) -> void:
 	_awg_key = ""
 	_length_key = ""
+	_cap_key = Harness.CAPACITOR
 	var row := build.harness.capacitor_row(build)
 	_title.text = "Capacitor"
 	_subtitle.text = String(row.get("name", "none fitted"))
-	_prompt.text = ("A capacitor is a part, not a segment: it has no gauge and no length. It is "
-		+ "chosen on the rule in the warning list below, and it stands across the ESC's input pads "
-		+ "where it is drawn.")
+	_prompt.text = ("A capacitor is a part, not a segment: it has no gauge and no length. Pick one "
+		+ "or none; it stands across the ESC's input pads where it is drawn. The warning list says "
+		+ "when none is fitted on a pack that wants one, or when its voltage rating is below the "
+		+ "pack's full charge.")
 	_prompt.visible = true
 	_gauge_row.visible = false
 	_gauge_note.visible = false
 	_length_row.visible = false
 	_length_note.visible = false
+	_cap_row.visible = true
+	_cap_note.visible = true
+
+	_cap_picker.clear()
+	_cap_ids.clear()
+	_cap_picker.add_item("None")
+	_cap_ids.append("")
+	var fitted := String(build.harness.value(Harness.CAPACITOR, build))
+	var selected := 0
+	if build.catalog != null:
+		for part in build.catalog.list_category("capacitor"):
+			var id := String(part.get("part_id", ""))
+			_cap_picker.add_item("%s  %.1f g" % [part.get("name", id), float(part.get("mass_g", 0.0))])
+			_cap_ids.append(id)
+			if id == fitted:
+				selected = _cap_ids.size() - 1
+	# `select` does not emit, so rendering a state is not an edit (see show_segment).
+	_cap_picker.select(selected)
+	var default_id := String(Harness.defaults(build)[Harness.CAPACITOR])
+	var default_row: Dictionary = build.catalog.get_part(default_id) if build.catalog != null \
+		and default_id != "" else {}
+	_cap_note.text = _provenance(build.harness, Harness.CAPACITOR,
+		String(default_row.get("name", "no capacitor")))
+
 	var specs: Dictionary = row.get("specs", {})
-	_facts.text = "" if row.is_empty() else "%.0f uF, %.0f V, ESR %.0f mOhm, %.1f g" % [
+	if row.is_empty():
+		_facts.text = ""
+		return
+	_facts.text = ("%.0f uF, %.0f V, ESR %.0f mOhm, %.1f g, %.1f x %.1f mm can.\n"
+		+ "ESR is shown and not modelled: Lothal computes no ripple current.\nSource: %s") % [
 		float(specs.get("capacitance_uf", 0.0)), float(specs.get("voltage_v", 0.0)),
-		float(specs.get("esr_ohm", 0.0)) * 1000.0, float(row.get("mass_g", 0.0))]
+		float(specs.get("esr_ohm", 0.0)) * 1000.0, float(row.get("mass_g", 0.0)),
+		float(specs.get("diameter_mm", 0.0)), float(specs.get("height_mm", 0.0)),
+		String(row.get("source", ""))]
 
 
 ## A wire segment: what it is, what it carries, and the two boxes.
@@ -238,6 +306,9 @@ func show_segment(build: Build, segment: Dictionary) -> void:
 	_gauge_note.visible = true
 	_length_row.visible = true
 	_length_note.visible = true
+	_cap_key = ""
+	_cap_row.visible = false
+	_cap_note.visible = false
 
 	var awg := int(segment["awg"])
 	# `set_pressed_no_signal`'s reason, in the two shapes this panel has: rendering a state must not
@@ -268,6 +339,12 @@ func show_segment(build: Build, segment: Dictionary) -> void:
 static func _provenance(harness: Harness, key: String, default_text: String) -> String:
 	return "authored — the parts imply %s" % default_text if harness.has_override(key) \
 		else "from the parts (%s)" % default_text
+
+
+func _on_cap_selected(index: int) -> void:
+	if _cap_key == "" or index < 0 or index >= _cap_ids.size():
+		return
+	value_edited.emit(_cap_key, _cap_ids[index])
 
 
 func _on_gauge_selected(index: int) -> void:

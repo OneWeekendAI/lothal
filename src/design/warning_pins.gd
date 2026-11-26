@@ -72,6 +72,7 @@ const TABLE := {
 	&"cannot_hover": {"tag": "Cannot hover", "num": "%.1f:1 in air", "of": "reachable_twr",
 		"readout": "thrust_to_weight", "mark_of": "reachable_twr", "mark": "%.1f in air"},
 	&"connector_rating": {"tag": "Plug overloaded", "num": "%.0f A", "of": "sustained_a", "readout": ""},
+	&"capacitor_voltage": {"tag": "Capacitor under-rated", "num": "%.0f V", "of": "rated_v", "readout": ""},
 	&"connector_mismatch": {"tag": "Plug does not mate", "readout": ""},
 	&"harness_ampacity": {"tag": "Wire overloaded", "num": "%.0f A", "of": "segment_current_a", "readout": ""},
 	&"no_receiver": {"tag": "No receiver", "readout": ""},

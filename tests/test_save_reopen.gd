@@ -73,8 +73,15 @@ static func run(tree: SceneTree) -> Array:
 	s1.set_tweaks(tw)
 	out.append(TestResult.new("the edits took (swap, frame, tweak)",
 		swapped and thick.get("ok", false) and s1.tweaks.has_override(AssemblyTweaks.CAMERA_TILT), str(thick)))
-	var hov := {Harness.MAIN_LEAD_AWG: 10.0, Harness.MAIN_LEAD_LENGTH_MM: 85.0}
+	var cap_id := "cap_680uf_35v"
+	var cap_default_auw := s1.build(catalog).all_up_weight_g()
+	var hov := {Harness.MAIN_LEAD_AWG: 12.0, Harness.MAIN_LEAD_LENGTH_MM: 85.0, Harness.CAPACITOR: cap_id}
 	out.append(TestResult.new("the harness override took", s1.set_harness_overrides(hov) and s1.harness_overrides == hov, str(s1.harness_overrides)))
+	var cap_b1 := s1.build(catalog)
+	out.append(TestResult.new("the chosen capacitor is the one weighed on the edited design",
+		String(cap_b1.harness.capacitor_row(cap_b1).get("part_id", "")) == cap_id
+		and absf(cap_b1.harness.capacitor_mass_g(cap_b1) - float(catalog.get_part(cap_id)["mass_g"])) < 1e-9
+		and cap_default_auw != cap_b1.all_up_weight_g(), "%.4f -> %.4f g" % [cap_default_auw, cap_b1.all_up_weight_g()]))
 	# a payload slid 20 mm toward the tail: the fore-aft seat rides the file and moves the centre of mass
 	var pay_set := s1.set_payload({"kind": "payload_custom", "mass_g": 200.0, "size_mm": [60.0, 50.0, 40.0], "fore_mm": -20.0})
 	var pay_b1 := s1.build(catalog)
@@ -130,6 +137,10 @@ static func run(tree: SceneTree) -> Array:
 	out.append(TestResult.new("frame document identical",
 		s2.frame_document() != null and JSON.stringify(s2.frame_document().to_dictionary()) == want_doc, ""))
 	out.append(TestResult.new("tweaks identical", JSON.stringify(s2.tweaks.to_dict()) == want_tweaks, JSON.stringify(s2.tweaks.to_dict())))
+	var cap_b2 := s2.build(catalog)
+	out.append(TestResult.new("the chosen capacitor is still fitted after reopen, weighed identically",
+		cap_b2 != null and String(cap_b2.harness.capacitor_row(cap_b2).get("part_id", "")) == cap_id
+		and cap_b2.all_up_weight_g() == s1.build(catalog).all_up_weight_g(), cap_id))
 	out.append(TestResult.new("harness overrides identical", JSON.stringify(s2.harness_overrides) == want_harness, JSON.stringify(s2.harness_overrides)))
 	var got_figs := _figures(s2, catalog)
 	out.append(TestResult.new("readout figures bit-identical", got_figs == want_figs, got_figs + " vs " + want_figs))
@@ -140,6 +151,13 @@ static func run(tree: SceneTree) -> Array:
 	var legacy := Project.from_dict(od)
 	out.append(TestResult.new("a project file without the harness field loads with none",
 		DesignSession.from_project(legacy).harness_overrides.is_empty(), str((legacy.to_dict()["decisions"] as Dictionary).get("harness"))))
+	# an older harness block with no capacitor key opens with today's default part for the pack
+	var od3 := Project.from_dict(boot.container.project.to_dict()).to_dict()
+	((od3["decisions"] as Dictionary)["harness"] as Dictionary).erase(Harness.CAPACITOR)
+	var legacy3 := DesignSession.from_project(Project.from_dict(od3)).build(catalog)
+	out.append(TestResult.new("a harness block without a capacitor key opens with the pack's default capacitor",
+		legacy3 != null and String(legacy3.harness.capacitor_row(legacy3).get("part_id", "")) == String(Harness.defaults(legacy3)[Harness.CAPACITOR])
+		and String(Harness.defaults(legacy3)[Harness.CAPACITOR]) != "", ""))
 	# an older file whose payload block has no fore key opens at the default seat, on the thrust centroid
 	var od2 := Project.from_dict(boot.container.project.to_dict()).to_dict()
 	var pay_block: Dictionary = (od2["decisions"] as Dictionary)["payload"]
