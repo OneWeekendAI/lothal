@@ -41,6 +41,7 @@ const DESIGN_TILES := {
 	"camera": ["AddCamera", "New camera", "Enter a camera the catalog does not stock"],
 	"vtx": ["AddVtx", "New VTX", "Enter a video transmitter the catalog does not stock"],
 	"receiver": ["AddReceiver", "New receiver", "Enter a receiver the catalog does not stock"],
+	"gps": ["AddGps", "New GPS", "Enter a GPS module the catalog does not stock"],
 	"buzzer": ["AddBuzzer", "New buzzer", "Enter a buzzer the catalog does not stock"],
 	"antenna": ["AddAntenna", "New antenna", "Enter an antenna the catalog does not stock"],
 }

@@ -9,7 +9,7 @@ extends Control
 ## The frame sheet shows the whole room (frame, arm guard); the others show their own part.
 
 ## Sheet category -> the printed row it is the page of ("" = every row).
-const PART_OF := {"frame": "", "camera": "camera_mount", "antenna": "antenna_mount", "battery": "battery_pad", "guard": "prop_guard"}
+const PART_OF := {"frame": "", "camera": "camera_mount", "antenna": "antenna_mount", "battery": "battery_pad", "guard": "prop_guard", "gps": "gps_mast"}
 
 var ds: DesignSpace
 var sheet: PartSheet

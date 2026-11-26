@@ -13,9 +13,11 @@ extends RefCounted
 ##   stack     StackMesh.size_m of the flight controller's pattern, across the plate
 ##   camera    Build.component_size_of, about the camera's own centre
 ##   antennas  Build.component_size_of of the antenna, about its root
+##   gps       Build.component_size_of, about the node's origin (only the 7" long-range model draws one)
 ## A part that is "not fitted" is hidden. Receiver and guard have no drawn node on the 5".
+## The drawn GPS is a picture: where it is WEIGHED is Build's gps_mount seat (the top plate, plus the mast).
 
-const NODES := ["battery", "camera", "stack", "antennas",
+const NODES := ["battery", "camera", "stack", "antennas", "gps",
 	"motor_FL", "motor_FR", "motor_BL", "motor_BR", "prop_FL", "prop_FR", "prop_BL", "prop_BR",
 	"motor_FL_lo", "motor_FR_lo", "motor_BL_lo", "motor_BR_lo",
 	"prop_FL_lo", "prop_FR_lo", "prop_BL_lo", "prop_BR_lo"]
@@ -91,7 +93,7 @@ static func size_of(category: String, part: Dictionary) -> Vector3:
 		"flight_controller":
 			var sz := StackMesh.size_m(String(part.get("mounting", {}).get("pattern", "")))
 			return Vector3(sz.x, 1.0, sz.z)
-		"camera", "antenna":
+		"camera", "antenna", "gps":
 			if not s.has("length_mm"):
 				return Vector3.ZERO
 			return Build.component_size_of(part)
