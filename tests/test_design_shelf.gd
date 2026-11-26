@@ -122,10 +122,16 @@ static func _direct(catalog: PartsCatalog, sel: Dictionary) -> Build:
 	var comps := {}
 	for c in Build.OPTIONAL_COMPONENTS:
 		comps[c] = String(sel.get(c, ""))
-	return Build.from_ids(catalog, String(sel["frame"]), String(sel["motor"]),
+	var b := Build.from_ids(catalog, String(sel["frame"]), String(sel["motor"]),
 		String(sel["propeller"]), String(sel["battery"]), String(sel["esc"]),
 		String(sel["flight_controller"]), comps, null, String(sel.get("guard", "")), {},
 		String(sel.get("mount", "")))
+	# A fitted soft mount is a pad once the assembly carries its thickness (the Design Space resolves it at the
+	# part's own nominal thickness); a mount id alone leaves the pad at zero.
+	var mount_id := String(sel.get("mount", ""))
+	if b != null and mount_id != "":
+		b.set_assembly({"soft_mount_m": float(catalog.get_part(mount_id)["specs"]["thickness_mm"]) / 1000.0})
+	return b
 
 
 static func _hard(b: Build) -> Array:
@@ -383,7 +389,7 @@ static func _test_shelf_lists(catalog: PartsCatalog, home: Dictionary) -> TestRe
 	var s := _fresh()
 	var bad: Array = []
 	var cats: Array = s.shelf(catalog).map(func(r): return String(r["category"]))
-	for cat in ["battery", "motor", "propeller", "guard", "flight_controller", "esc", "receiver", "buzzer", "gps", "camera", "vtx", "antenna"]:
+	for cat in ["battery", "motor", "mount", "propeller", "guard", "flight_controller", "esc", "receiver", "buzzer", "gps", "camera", "vtx", "antenna"]:
 		var want: Array = []
 		for p in catalog.list_category(cat):
 			if String(p["part_id"]) != String(home.get(cat, "")):

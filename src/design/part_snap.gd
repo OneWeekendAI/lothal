@@ -39,6 +39,8 @@ const CORNERS := ["FL", "FR", "BL", "BR"]
 const MOUNTS_BY_CATEGORY := {
 	"battery": ["battery"],
 	"motor": ["motor_FL", "motor_FR", "motor_BL", "motor_BR"],
+	# The soft mount is one SET of grommets per motor, so it goes on the same four mounts the motor does.
+	"mount": ["motor_FL", "motor_FR", "motor_BL", "motor_BR"],
 	"propeller": ["prop_FL", "prop_FR", "prop_BL", "prop_BR"],
 	"guard": ["prop_FL", "prop_FR", "prop_BL", "prop_BR"],
 	"flight_controller": ["stack"], "esc": ["stack"], "receiver": ["stack"], "buzzer": ["stack"], "gps": ["stack"],
@@ -46,7 +48,7 @@ const MOUNTS_BY_CATEGORY := {
 	"vtx": ["antennas"], "antenna": ["antennas"],
 }
 ## The shelf's categories, in shelf order (PartSwap.SLOTS order, flattened).
-const SHELF_CATEGORIES := ["battery", "motor", "propeller", "guard", "flight_controller", "esc",
+const SHELF_CATEGORIES := ["battery", "motor", "mount", "propeller", "guard", "flight_controller", "esc",
 	"receiver", "buzzer", "gps", "camera", "vtx", "antenna"]
 ## Mount address -> the category "remove" takes off it (the drawn part on that mount).
 const PRIMARY_CATEGORY := {"battery": "battery", "motor": "motor", "prop": "propeller",

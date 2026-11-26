@@ -89,6 +89,12 @@ func _draw() -> void:
 			draw_line(Vector2(c.x + 18, c.y + 22), Vector2(c.x + 18, c.y + 27), ink, w)
 		"flight_controller":
 			_board(c, 36.0, false)
+		"mount":
+			# A grommet seen end on: the rubber ring (filled to its hardness) round the screw's hole.
+			if not code.is_empty() and ft > 0.0:
+				draw_arc(c, 15.0, -PI * 0.5, -PI * 0.5 + TAU * ft, 32, fc, 6.0)
+			draw_arc(c, 18.0, 0.0, TAU, 32, ink, w)
+			draw_arc(c, 8.0, 0.0, TAU, 24, ink, w)
 		"guard":
 			if not code.is_empty() and ft > 0.0:
 				draw_arc(c, 19.5, -PI * 0.5, -PI * 0.5 + TAU * ft, 32, fc, 4.0)

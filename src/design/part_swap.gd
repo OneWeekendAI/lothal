@@ -18,14 +18,14 @@ extends RefCounted
 ## The receiver has no drawn mesh of its own and lives beside the stack; a guard wraps the props.
 const SLOTS := {
 	"battery": ["battery"],
-	"motor": ["motor"],
+	"motor": ["motor", "mount"],
 	"prop": ["propeller", "guard"],
 	"stack": ["flight_controller", "esc", "receiver", "buzzer", "gps"],
 	"camera": ["camera"],
 	"antennas": ["vtx", "antenna"],
 }
 const CATEGORY_NAMES := {"battery": "Battery", "motor": "Motors", "propeller": "Props",
-	"guard": "Prop guards", "flight_controller": "Flight controller", "esc": "ESC",
+	"mount": "Soft mounts", "guard": "Prop guards", "flight_controller": "Flight controller", "esc": "ESC",
 	"receiver": "Receiver", "buzzer": "Buzzer", "gps": "GPS", "camera": "Camera", "vtx": "Video transmitter", "antenna": "Antenna"}
 ## The IMPOSSIBLE warnings that make a build not a build. Any other warning is shown, not refused.
 const HARD_IDS := [&"motor_mount", &"prop_clearance", &"stack_mount", &"fc_stack_mount"]
@@ -158,6 +158,10 @@ static func deciding_numbers(part: Dictionary, category: String) -> Array:
 			return [String(part.get("mounting", {}).get("pattern", "")), g]
 		"guard":
 			return [String(s.get("kind", "")).replace("_", " "), g]
+		"mount":
+			# Hardness and grommet count decide the pad's stiffness; its mass (milligrams) does not.
+			return [String((part.get("catalog", {}) as Dictionary).get("shore_class", "")) + " Shore",
+				"%d per motor" % int(s.get("grommets_per_motor", 0))]
 	if category == "gps" and s.has("length_mm"):
 		# The mast is what moves the centre of mass, so it is a deciding number beside the box.
 		var mast := float(s.get("mast_height_mm", 0.0))

@@ -282,6 +282,9 @@ func _render_selection() -> void:
 	if id == HarnessSchematic.CAPACITOR_ID:
 		inspector.show_capacitor(build)
 		return
+	if id == HarnessSchematic.CONNECTOR_ID:
+		inspector.show_connector(build)
+		return
 	for segment in HarnessChecks.segments(build):
 		if String(segment["id"]) == id:
 			inspector.show_segment(build, segment)

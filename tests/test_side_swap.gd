@@ -223,10 +223,11 @@ static func _test_scroll_to_fitted(ds: DesignSpace) -> Array:
 	# on one still swaps; only ClassFit holds them back from the default view).
 	ds.shelf.set_show_misfits("motor", true)
 	for r in ds.shelf.rows:
-		if (r["ok"] or String(r["reason"]).begins_with("Tested on")) and (far.is_empty() or float(r["y"]) > float(far["y"])):
+		# Motor cards only: the Soft mounts group sits below them in the same panel.
+		if String(r["category"]) == "motor" and (r["ok"] or String(r["reason"]).begins_with("Tested on")) and (far.is_empty() or float(r["y"]) > float(far["y"])):
 			far = r
 	ds.click_card("motor", String(far["id"]))
-	var fitted: Array = ds.shelf.rows.filter(func(r): return r["fitted"])
+	var fitted: Array = ds.shelf.rows.filter(func(r): return r["fitted"] and String(r["category"]) == "motor")
 	var y: float = float(fitted[0]["y"]) if fitted.size() == 1 else -1.0
 	out.append(TestResult.new("with a far card fitted, the panel's scroll goal is its position less a little of the heading",
 		fitted.size() == 1 and y + PartsShelf.CARD_H > PartsShelf.MAX_LIST_H and is_equal_approx(ds.shelf.scroll_target, y - 56.0),
@@ -234,13 +235,13 @@ static func _test_scroll_to_fitted(ds: DesignSpace) -> Array:
 	var first: Dictionary = ds.shelf.rows[0]
 	ds.select("")
 	ds.select("part/motor/FL")
-	var again: Array = ds.shelf.rows.filter(func(r): return r["fitted"])
+	var again: Array = ds.shelf.rows.filter(func(r): return r["fitted"] and String(r["category"]) == "motor")
 	out.append(TestResult.new("selecting the part again scrolls to it again (not left where it was)",
 		again.size() == 1 and is_equal_approx(ds.shelf.scroll_target, float(again[0]["y"]) - 56.0)
 		and float(again[0]["y"]) > float(first["y"]), "target %.0f" % ds.shelf.scroll_target))
 	# A fitted card already in view: the list stays at the top, so the category's head shows.
 	ds.click_card("motor", String(first["id"]))
-	var near: Array = ds.shelf.rows.filter(func(r): return r["fitted"])
+	var near: Array = ds.shelf.rows.filter(func(r): return r["fitted"] and String(r["category"]) == "motor")
 	out.append(TestResult.new("a fitted card that is already in view leaves the list at the top, head and chips showing",
 		near.size() == 1 and float(near[0]["y"]) + PartsShelf.CARD_H <= PartsShelf.MAX_LIST_H and ds.shelf.scroll_target == 0.0,
 		"y %.0f target %.0f" % [float(near[0]["y"]), ds.shelf.scroll_target]))
