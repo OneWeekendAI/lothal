@@ -73,8 +73,7 @@ const ENTRIES := [
 		"id": "export_build_sheet",
 		"label": "Export build sheet…",
 		"key": KEY_NONE,
-		"waiting_on": "Waits on the build sheet itself — designed in "
-			+ "2026-08-17-build-sheet-design.md, not built.",
+		"waiting_on": "",
 	},
 	{
 		"id": "export_printed",

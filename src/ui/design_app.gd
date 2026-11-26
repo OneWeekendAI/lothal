@@ -39,6 +39,7 @@ var _design_space_layer: CanvasLayer
 var settings: AppSettings
 var _autosave: Timer
 var _open_dialog: FileDialog
+var _sheet_dialog: FileDialog
 var _field: FieldSystem
 ## The Setup pages (the lab's sheets in a Design Space frame) and the layer they ride on.
 ## What the last status message said; a message also shows as a toast.
@@ -92,6 +93,12 @@ func _ready() -> void:
 	_open_dialog.current_dir = ProjectSettings.globalize_path(ProjectLibrary.DIR)
 	_open_dialog.file_selected.connect(open_project)
 	add_child(_open_dialog)
+	_sheet_dialog = FileDialog.new()
+	_sheet_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	_sheet_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_sheet_dialog.filters = PackedStringArray(["*.%s ; Build sheet" % DesignBuildSheet.EXTENSION])
+	_sheet_dialog.file_selected.connect(export_build_sheet)
+	add_child(_sheet_dialog)
 
 	# THE APP OPENS ON THE PROJECTS SCREEN, only when it is the running scene: an app a test
 	# constructs is not, and keeps the resume-or-adopt behaviour every suite is written against.
@@ -331,6 +338,17 @@ func export_printed_parts() -> Dictionary:
 	return result
 
 
+## Writes the Design Space's build sheet to `path` (the Save dialog's choice). False, said out loud, when there is
+## no design open or the file cannot be written.
+func export_build_sheet(path: String) -> bool:
+	if container == null or design_space == null:
+		return false
+	var ok := DesignBuildSheet.write(design_space.session, rooms.catalog_for_lab(), container.project.name,
+		path, Time.get_date_string_from_system())
+	_say("Wrote %s" % path if ok else "NOT EXPORTED — the build sheet could not be written to %s" % path, not ok)
+	return ok
+
+
 ## Says what happened, and says it the way `StlWriter` said it. A refusal names the part and the
 ## reason — "the surface is not closed", "the solid is inside out" — rather than "export failed",
 ## because the first is something a builder can report and the second is not.
@@ -412,6 +430,10 @@ func _on_project_action(action_id: String) -> void:
 			_open_dialog.popup_centered_ratio(0.6)
 		"export_printed":
 			export_printed_parts()
+		"export_build_sheet":
+			_sheet_dialog.current_dir = ProjectSettings.globalize_path(ProjectLibrary.DIR)
+			_sheet_dialog.current_file = DesignBuildSheet.default_name(container.project.name)
+			_sheet_dialog.popup_centered_ratio(0.6)
 		"reveal":
 			OS.shell_show_in_file_manager(ProjectSettings.globalize_path(
 				container.path if container.path != "" else ProjectLibrary.DIR))

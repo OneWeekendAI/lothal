@@ -132,7 +132,7 @@ static func _test_which_entries_are_live() -> Array:
 			and ProjectMenu.is_live("rename")
 			and ProjectMenu.is_live("reveal")
 			and ProjectMenu.is_live("delete")
-			and not ProjectMenu.is_live("export_build_sheet")
+			and ProjectMenu.is_live("export_build_sheet")
 			and ProjectMenu.is_live("export_printed"),
 		"new=%s open=%s duplicate=%s reveal=%s delete=%s sheet=%s printed=%s" % [
 			ProjectMenu.is_live("new"), ProjectMenu.is_live("open"),
