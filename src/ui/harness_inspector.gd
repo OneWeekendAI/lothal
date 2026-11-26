@@ -71,6 +71,11 @@ var _prompt: Label
 var _cap_row: HBoxContainer
 var _cap_picker: OptionButton
 var _cap_note: Label
+var _conn_row: HBoxContainer
+var _conn_picker: OptionButton
+var _conn_note: Label
+## Part id behind each connector picker item, index for index ("" is None).
+var _conn_ids: Array[String] = []
 ## Part id behind each picker item, index for index ("" is None).
 var _cap_ids: Array[String] = []
 
@@ -81,6 +86,8 @@ var _awg_key := ""
 var _length_key := ""
 ## `Harness.CAPACITOR` while the capacitor is selected, "" otherwise — the same job as the two above.
 var _cap_key := ""
+## `Harness.CONNECTOR` while the plug is selected, "" otherwise.
+var _conn_key := ""
 
 
 func _init() -> void:
@@ -115,6 +122,10 @@ func _init() -> void:
 	add_child(_cap_row)
 	_cap_note = _note()
 
+	_conn_row = _build_conn_row()
+	add_child(_conn_row)
+	_conn_note = _note()
+
 	_facts = Label.new()
 	DsUi.quiet(_facts, LothalTheme.FONT_SIZE_BODY)
 	_facts.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -142,6 +153,25 @@ func _build_cap_row() -> HBoxContainer:
 	row.add_child(_cap_picker)
 
 	row.add_child(_default_button(func() -> void: default_restored.emit(_cap_key)))
+	return row
+
+
+func _build_conn_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", LothalTheme.SPACE_2)
+
+	var caption := Label.new()
+	caption.text = "Part"
+	caption.custom_minimum_size = Vector2(56, 0)
+	row.add_child(caption)
+
+	_conn_picker = OptionButton.new()
+	_conn_picker.name = "ConnectorPicker"
+	_conn_picker.custom_minimum_size = Vector2(150, 0)
+	_conn_picker.item_selected.connect(_on_conn_selected)
+	row.add_child(_conn_picker)
+
+	row.add_child(_default_button(func() -> void: default_restored.emit(_conn_key)))
 	return row
 
 
@@ -220,6 +250,9 @@ func show_nothing() -> void:
 	_cap_key = ""
 	_cap_row.visible = false
 	_cap_note.visible = false
+	_conn_key = ""
+	_conn_row.visible = false
+	_conn_note.visible = false
 	_title.text = "Harness"
 	_subtitle.text = ""
 	_prompt.text = ("Click a wire in the schematic to change its gauge or its length. Every "
@@ -238,6 +271,9 @@ func show_nothing() -> void:
 func show_capacitor(build: Build) -> void:
 	_awg_key = ""
 	_length_key = ""
+	_conn_key = ""
+	_conn_row.visible = false
+	_conn_note.visible = false
 	_cap_key = Harness.CAPACITOR
 	var row := build.harness.capacitor_row(build)
 	_title.text = "Capacitor"
@@ -287,6 +323,67 @@ func show_capacitor(build: Build) -> void:
 		String(row.get("source", ""))]
 
 
+## The plug the pack connects through. A part, not a segment: no gauge, no length, but choosable --
+## None, or any row of connectors.json. The picker emits `value_edited(connector_id, part_id)`; None is
+## the empty string (no plug fitted: no plug mass, and the plug checks stay silent). The rating warning
+## and the "does not mate" warning are the existing ones in HarnessChecks, read off whatever is chosen.
+func show_connector(build: Build) -> void:
+	_awg_key = ""
+	_length_key = ""
+	_cap_key = ""
+	_cap_row.visible = false
+	_cap_note.visible = false
+	_conn_key = Harness.CONNECTOR
+	var row := build.harness.connector_row(build)
+	_title.text = "Connector"
+	_subtitle.text = String(row.get("name", "none fitted"))
+	_prompt.text = ("The plug between the pack and the aircraft. Pick one or none; it is weighed at the "
+		+ "pack, and the warning list says when its continuous rating is below the current this build "
+		+ "draws, or when it does not mate with the pack's own plug.")
+	_prompt.visible = true
+	_gauge_row.visible = false
+	_gauge_note.visible = false
+	_length_row.visible = false
+	_length_note.visible = false
+	_conn_row.visible = true
+	_conn_note.visible = true
+
+	_conn_picker.clear()
+	_conn_ids.clear()
+	_conn_picker.add_item("None")
+	_conn_ids.append("")
+	var fitted := String(build.harness.value(Harness.CONNECTOR, build))
+	var selected := 0
+	if build.catalog != null:
+		for part in build.catalog.list_category("connector"):
+			var id := String(part.get("part_id", ""))
+			_conn_picker.add_item("%s  %.1f g  %.0f A" % [part.get("name", id),
+				float(part.get("mass_g", 0.0)), float((part.get("specs", {}) as Dictionary).get("continuous_a", 0.0))])
+			_conn_ids.append(id)
+			if id == fitted:
+				selected = _conn_ids.size() - 1
+	_conn_picker.select(selected)
+	var default_id := String(Harness.defaults(build)[Harness.CONNECTOR])
+	var default_row: Dictionary = build.catalog.get_part(default_id) if build.catalog != null \
+		and default_id != "" else {}
+	_conn_note.text = _provenance(build.harness, Harness.CONNECTOR,
+		String(default_row.get("name", "no plug")))
+
+	if row.is_empty():
+		_facts.text = ""
+		return
+	var specs: Dictionary = row.get("specs", {})
+	var reading := HarnessChecks.draw(build)
+	_facts.text = ("%.0f A continuous (burst %.0f A is shown, never used as a limit), pair %.1f g with "
+		+ "half carried on the aircraft, contact %.2f mOhm (class-typical).\nThis build draws %.1f A "
+		+ "sustained and peaks at %.0f A. Family %s; the pack terminates in %s.\nSource: %s") % [
+		float(specs.get("continuous_a", 0.0)), float(specs.get("burst_a", 0.0)), float(row.get("mass_g", 0.0)),
+		float(specs.get("contact_resistance_ohm", 0.0)) * 1000.0,
+		float(reading["sustained_a"]), float(reading["peak_a"]),
+		String((row.get("catalog", {}) as Dictionary).get("family", "")),
+		HarnessChecks.pack_connector_family(build), String(row.get("source", ""))]
+
+
 ## A wire segment: what it is, what it carries, and the two boxes.
 ##
 ## `segment` is one entry of `HarnessChecks.segments` — the SAME list the ampacity check walks and
@@ -309,6 +406,9 @@ func show_segment(build: Build, segment: Dictionary) -> void:
 	_cap_key = ""
 	_cap_row.visible = false
 	_cap_note.visible = false
+	_conn_key = ""
+	_conn_row.visible = false
+	_conn_note.visible = false
 
 	var awg := int(segment["awg"])
 	# `set_pressed_no_signal`'s reason, in the two shapes this panel has: rendering a state must not
@@ -339,6 +439,12 @@ func show_segment(build: Build, segment: Dictionary) -> void:
 static func _provenance(harness: Harness, key: String, default_text: String) -> String:
 	return "authored — the parts imply %s" % default_text if harness.has_override(key) \
 		else "from the parts (%s)" % default_text
+
+
+func _on_conn_selected(index: int) -> void:
+	if _conn_key == "" or index < 0 or index >= _conn_ids.size():
+		return
+	value_edited.emit(_conn_key, _conn_ids[index])
 
 
 func _on_cap_selected(index: int) -> void:

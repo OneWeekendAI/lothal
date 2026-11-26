@@ -69,10 +69,16 @@ static func _direct(catalog: PartsCatalog, sel: Dictionary) -> Build:
 	var comps := {}
 	for c in Build.OPTIONAL_COMPONENTS:
 		comps[c] = String(sel.get(c, ""))
-	return Build.from_ids(catalog, String(sel["frame"]), String(sel["motor"]),
+	var b := Build.from_ids(catalog, String(sel["frame"]), String(sel["motor"]),
 		String(sel["propeller"]), String(sel["battery"]), String(sel["esc"]),
 		String(sel["flight_controller"]), comps, null, String(sel.get("guard", "")), {},
 		String(sel.get("mount", "")))
+	# A fitted soft mount is a pad once the assembly carries its thickness (the Design Space resolves it at the
+	# part's own nominal thickness); a mount id alone leaves the pad at zero.
+	var mount_id := String(sel.get("mount", ""))
+	if b != null and mount_id != "":
+		b.set_assembly({"soft_mount_m": float(catalog.get_part(mount_id)["specs"]["thickness_mm"]) / 1000.0})
+	return b
 
 
 static func _labels(ds: DesignSpace) -> Dictionary:
@@ -125,7 +131,7 @@ static func _test_slots_cover_categories(ds: DesignSpace) -> Array:
 		results.append(TestResult.new("the 5\" has a pick address for the %s slot" % slot,
 			ds.picks.addresses().any(func(a): return PartSwap.slot_of(String(a)) == slot), ""))
 	var want := ["battery", "motor", "propeller", "flight_controller", "esc", "camera", "vtx",
-		"antenna", "receiver", "buzzer", "gps", "guard"]
+		"antenna", "receiver", "buzzer", "gps", "guard", "mount"]
 	var missing := want.filter(func(c): return not cats.has(c))
 	results.append(TestResult.new("every swappable category (PLAN Section 3's list) has a picker",
 		missing.is_empty(), str(missing)))

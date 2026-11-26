@@ -133,6 +133,14 @@ func build(catalog: PartsCatalog) -> Build:
 		if not tweaks.is_default():
 			b.set_assembly(tweaks.resolved_m(b))
 			reweigh = false
+		elif not b.mount.is_empty():
+			# A fitted soft mount is a pad only once the assembly carries its thickness: `Build.mount` alone
+			# leaves `soft_mount_m` at 0 (no pad: no mass, `mount_tier` "no_mount"), so a grommet chosen on a
+			# design with no other tweak would change nothing. Only the pad is resolved, at the fitted part's
+			# own nominal thickness (AssemblyTweaks' default for it), so every other assembly value stays as
+			# a design with no mount builds it. No mount fitted leaves this whole branch unrun.
+			b.set_assembly({"soft_mount_m": tweaks.value_mm(AssemblyTweaks.SOFT_MOUNT, b) / 1000.0})
+			reweigh = false
 		if not _project.printing.is_empty():
 			b.set_printing(_project.printing.duplicate(true))
 			reweigh = false

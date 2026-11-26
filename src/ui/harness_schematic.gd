@@ -68,6 +68,9 @@ signal selection_changed(id: String)
 ## The capacitor's id in the selection vocabulary. Not a segment id: `HarnessChecks.segments` will
 ## never return it, which is exactly the distinction §2.1 draws.
 const CAPACITOR_ID := "capacitor"
+## The plug's id in the same vocabulary (its box has always been called "connector"). Not a segment
+## either.
+const CONNECTOR_ID := "connector"
 
 ## The pack and the board as fixed boxes in millimetres. THESE ARE ICONS AND THEY SAY SO: a pack's
 ## real footprint is in `batteries.json` and the board's is 30x30 or 20x20, but neither is the
@@ -229,7 +232,7 @@ func geometry() -> Dictionary:
 	var boxes: Array = [
 		{"id": "pack", "rect": _to_px(pack_rect, px_per_mm, origin), "color": LothalTheme.TEXT_MUTED,
 			"label": "PACK"},
-		{"id": "connector", "rect": _to_px(
+		{"id": CONNECTOR_ID, "rect": _to_px(
 			Rect2(pack_rect.end.x, -PACK_BOX_MM.y * 0.25, CONNECTOR_MM, PACK_BOX_MM.y * 0.5),
 			px_per_mm, origin), "color": LothalTheme.TEXT_MAIN, "label": ""},
 		{"id": "esc", "rect": _to_px(esc_rect, px_per_mm, origin), "color": LothalTheme.TEXT_MUTED,
@@ -334,10 +337,14 @@ func _gui_input(event: InputEvent) -> void:
 ## has no window: driving this is how `tests/test_power_room.gd` selects a segment, which is the
 ## same path `_gui_input` takes rather than a parallel one.
 ##
-## Wires win over boxes: the capacitor's can overlaps the board it stands on, and the thing a
+## The plug's box wins over the wire that starts at its edge; wires win over the capacitor's can: the capacitor's can overlaps the board it stands on, and the thing a
 ## builder is pointing at when they click a wire is the wire.
 func id_at(point: Vector2) -> String:
 	var geometry_now := geometry()
+	# The plug's box first: the main lead starts at its edge, and inside the box the thing pointed at is the plug.
+	for box in geometry_now["boxes"]:
+		if String(box["id"]) == CONNECTOR_ID and (box["rect"] as Rect2).has_point(point):
+			return CONNECTOR_ID
 	for wire in geometry_now["wires"]:
 		var reach := maxf(float(wire["stroke_px"]) * 0.5, MIN_HIT_PX)
 		var nearest := Geometry2D.get_closest_point_to_segment(

@@ -38,6 +38,7 @@ const TABS := {
 	"motor": [SHEET, BENCH, SPIN],
 	"propeller": [SHEET, BLADE],
 	"guard": [SHEET, PRINT],
+	"mount": [SHEET],
 	"flight_controller": [SHEET, BOARD, TUNE, RATES, PORTS, FAILSAFE, CONFIGSHEET],
 	"esc": [SHEET, BENCH, HARNESS],
 	"receiver": [SHEET, LINK],
@@ -50,7 +51,7 @@ const TABS := {
 
 
 ## The categories the Parts drawer opens a sheet for (the shelf's ten, and the frame).
-const SHELF_CATEGORIES_WITH_SHEET := ["frame", "battery", "motor", "propeller", "guard", "flight_controller", "esc", "receiver", "buzzer", "gps", "camera", "vtx", "antenna"]
+const SHELF_CATEGORIES_WITH_SHEET := ["frame", "battery", "motor", "mount", "propeller", "guard", "flight_controller", "esc", "receiver", "buzzer", "gps", "camera", "vtx", "antenna"]
 
 
 ## The tabs of `category`'s sheet ([{id, label}]); empty for a category without one.
@@ -116,6 +117,16 @@ static func _facts_tab(category: String, ds: DesignSpace) -> Control:
 	var part: Dictionary = ds._catalog.get_part(part_id)
 	var rows: Array = [["Part", String(part.get("name", part_id))],
 		["Mass", "%.1f g" % float(part.get("mass_g", 0.0))] if part.has("mass_g") else ["", ""]]
+	if category == "mount":
+		# A grommet set weighs milligrams, so the one-decimal mass above would read 0.0 g. The rows are the
+		# Lab's own mount sheet (MotorDetails.mount_row_text): hardness, area and count are what the vibration
+		# model reads, the frequency is its answer on THIS build, and damping is the labelled band (no vendor
+		# publishes one, so the catalog carries none and nothing is fed to the model).
+		var b := ds.session.build(ds._catalog)
+		rows[1] = ["Mass", "%.4f g per motor (set of %d)" % [float(part.get("mass_g", 0.0)),
+			int((part.get("specs", {}) as Dictionary).get("grommets_per_motor", 0))]] if part.has("mass_g") else ["", ""]
+		for r in MotorDetails.MOUNT_ROWS:
+			rows.append([String(r["label"]), MotorDetails.mount_row_text(String(r["key"]), part, b)])
 	var source := String(part.get("source", ""))
 	if source != "":
 		rows.append(["Source", source])

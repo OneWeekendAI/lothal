@@ -43,6 +43,8 @@ static func spec_of(category: String) -> Dictionary:
 			return {"key": "gyro_sample_rate_hz", "kind": "fill", "log": false, "label": "gyro rate", "colour": VIOLET}
 		"guard":
 			return {"key": "", "kind": "fill", "log": false, "label": "mass", "colour": SAND}
+		"mount":
+			return {"key": "shore_a", "kind": "fill", "log": false, "label": "hardness", "colour": SAND}
 	return {"key": "", "kind": "fill", "log": false, "label": "mass", "colour": TEAL}
 
 

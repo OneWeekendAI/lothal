@@ -22,6 +22,8 @@ static func key_spec(part: Dictionary, category: String) -> String:
 		"flight_controller":
 			var pat := String(part.get("mounting", {}).get("pattern", ""))
 			return "%s mm" % pat if pat != "" else ""
+		"mount":
+			return "Shore %dA" % int(round(float(s.get("shore_a", 0)))) if s.has("shore_a") else ""
 		"guard":
 			var kind := String(s.get("kind", "")).replace("_", " ")
 			var od := float(s.get("outer_radius_mm", 0)) * 2.0
