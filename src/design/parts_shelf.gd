@@ -36,6 +36,7 @@ const DESIGN_TILES := {
 	"battery": ["AddPack", "New pack", "Design your own battery pack"],
 	"motor": ["AddMotor", "Design your own", "Design your own motor"],
 	"propeller": ["AddProp", "New prop", "Design your own prop"],
+	"guard": ["AddGuard", "New guard", "Enter a prop guard the catalog does not stock"],
 	"esc": ["AddEsc", "New ESC", "Enter an ESC the catalog does not stock"],
 	"flight_controller": ["AddFc", "New board", "Enter a flight controller the catalog does not stock"],
 	"camera": ["AddCamera", "New camera", "Enter a camera the catalog does not stock"],

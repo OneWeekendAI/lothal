@@ -2325,6 +2325,11 @@ func open_custom_part_form(category: String) -> bool:
 			var f := CustomFcDialog.new()
 			f.fc_saved.connect(func(_id: String): _custom_saved())
 			form = f
+		"guard":
+			# Validated against the prop on THIS drone's bench, by PropGuard's own clearance check.
+			var g := CustomGuardDialog.new(bench_build())
+			g.guard_saved.connect(func(_id: String): _custom_saved())
+			form = g
 		"camera", "vtx", "receiver", "antenna", "buzzer", "gps":
 			var c := CustomComponentDialog.new(category)
 			c.component_saved.connect(func(_id: String): _custom_saved())
