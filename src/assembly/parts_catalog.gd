@@ -45,6 +45,9 @@ const CATEGORY_FILES := {
 	# compares two strings that never match and passes on every build forever.
 	"connector": "res://data/parts/connectors.json",
 	"capacitor": "res://data/parts/capacitors.json",
+	# The battery strap: what the harness's old flat 5 g "remainder" mostly was. A builder picks the
+	# type and count in the Harness tab; see Harness.STRAP.
+	"strap": "res://data/parts/straps.json",
 	# C1 (plans/2026-09-12-control-room-design.md §2.3, §2.4). The two things on the aircraft that
 	# TALK BACK — one to the flight controller, one to the person walking through long grass looking
 	# for it — and Control's membership rule (§1) is what puts them here rather than under Video

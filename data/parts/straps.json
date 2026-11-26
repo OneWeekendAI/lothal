@@ -1,0 +1,50 @@
+{
+  "_schema": "The battery strap — the one thing that holds the pack to the frame, and the largest single item in what Harness used to call its 'remainder'. Same two tiers as every catalog file: `specs` is physics-bearing (width_mm and length_mm are the strap's published size, mass_g is the weight of ONE strap with its buckle) and `catalog` is browsing metadata only. EVERY ROW IS CLASS-TYPICAL AND NONE IS A WEIGHED PRODUCT, and each `source` says so: battery straps are sold in 15x200, 20x250 and 25x300 mm sizes in nylon, Kevlar and rubberised versions, and vendors publish width and length but rarely mass. The masses below are ESTIMATES from size and material, rounded to half a gram, NOT weighed and NOT sourced from a vendor: treat each as a starting point to overwrite with your own scale reading. WHAT IS NOT HERE: the glue-on rubber pad that goes under the pack (that is the printed battery pad, src/print/battery_pad.gd) and the zip ties, solder, tape and heat-shrink (the 'sundries' estimate on Harness, an explicit labelled number rather than parts). Entries are ordered by size then mass. The default row (strap_20x250_kevlar, 2.5 g) is chosen because 20 x 250 mm is the common 5\" size and because 1 strap + 2.5 g of sundries is exactly the 5 g that Harness.REMAINDER_MASS_G has always carried, so a design's weight is unchanged by the split.",
+  "parts": [
+    {
+      "part_id": "strap_15x200_nylon",
+      "name": "15 x 200 mm nylon strap",
+      "category": "strap",
+      "mass_g": 1.5,
+      "specs": { "width_mm": 15.0, "length_mm": 200.0 },
+      "catalog": { "material": "nylon webbing, plastic buckle", "typical_use": "2-3\" and light 3.5\" packs" },
+      "source": "class-typical 15 x 200 mm nylon strap with a plastic buckle, not a specific product. Size is the common vendor listing; mass is ROUGH (unpublished by vendors, estimated from the size and material)."
+    },
+    {
+      "part_id": "strap_20x250_nylon",
+      "name": "20 x 250 mm nylon strap",
+      "category": "strap",
+      "mass_g": 2.0,
+      "specs": { "width_mm": 20.0, "length_mm": 250.0 },
+      "catalog": { "material": "nylon webbing, plastic buckle", "typical_use": "5\" 4S-6S packs" },
+      "source": "class-typical 20 x 250 mm nylon strap with a plastic buckle, not a specific product. Size is the common vendor listing; mass is ROUGH (unpublished by vendors, estimated from the size and material)."
+    },
+    {
+      "part_id": "strap_20x250_kevlar",
+      "name": "20 x 250 mm Kevlar strap",
+      "category": "strap",
+      "mass_g": 2.5,
+      "specs": { "width_mm": 20.0, "length_mm": 250.0 },
+      "catalog": { "material": "Kevlar-woven, metal buckle", "typical_use": "5\" 4S-6S packs" },
+      "source": "class-typical 20 x 250 mm Kevlar-woven strap with a metal buckle, not a specific product. Size is the common vendor listing; mass is ROUGH (unpublished by vendors, estimated from the size and material). This is the default (see _schema)."
+    },
+    {
+      "part_id": "strap_20x250_rubber",
+      "name": "20 x 250 mm rubberised strap",
+      "category": "strap",
+      "mass_g": 3.5,
+      "specs": { "width_mm": 20.0, "length_mm": 250.0 },
+      "catalog": { "material": "silicone-backed nylon, metal buckle", "typical_use": "5\" packs that slip on a smooth plate" },
+      "source": "class-typical 20 x 250 mm nylon strap with a silicone anti-slip backing and a metal buckle, not a specific product. Size is the common vendor listing; mass is ROUGH (unpublished by vendors, estimated from the size and material)."
+    },
+    {
+      "part_id": "strap_25x300_rubber",
+      "name": "25 x 300 mm rubberised strap",
+      "category": "strap",
+      "mass_g": 5.0,
+      "specs": { "width_mm": 25.0, "length_mm": 300.0 },
+      "catalog": { "material": "silicone-backed nylon, metal buckle", "typical_use": "7-10\" and cinelifter packs" },
+      "source": "class-typical 25 x 300 mm nylon strap with a silicone anti-slip backing and a metal buckle, not a specific product. Size is the common vendor listing; mass is ROUGH (unpublished by vendors, estimated from the size and material)."
+    }
+  ]
+}
