@@ -44,6 +44,10 @@ const FRAME_DOCUMENTS := {
 	"six_inch": "res://assets/models/classes/six_inch_frame.json",
 	"seven_lr": "res://assets/models/classes/seven_lr_frame.json",
 }
+## Extra frame id -> document path, empty in the shipped game: every class has ONE document (its own frame), so
+## no other catalog frame can be drawn truthfully yet (FrameSwap). A test registers a second one here.
+static var extra_documents: Dictionary = {}
+static var _doc_ids: Dictionary = {}
 ## The frame as edited, or null when this drone has no editable frame drawing.
 var _frame_doc: AirframeDocument
 ## `FittedFrame.drawn` of the document as loaded: the baseline every edit is measured against.
@@ -88,13 +92,43 @@ func _load_frame_document() -> void:
 	if not FRAME_DOCUMENTS.has(drone_class):
 		return
 	# A drawing of ANOTHER frame (the Airframe room's) keeps the document out; `_adopt_saved_frame` takes the rest.
-	if not _project.airframe.is_empty() and String(_project.airframe.get("id", "")) != _class_frame_id():
+	if not _project.airframe.is_empty() and String(_project.airframe.get("id", "")) != String(selection.get("frame", _class_frame_id())) \
+			and String(_project.airframe.get("id", "")) != _class_frame_id():
 		return
-	var doc := AirframeDocument.load_from(String(FRAME_DOCUMENTS[drone_class]))
+	# The drawing of the frame that is FITTED when one exists (a swapped-in frame), else the class's own.
+	var path := frame_document_path(String(selection.get("frame", "")))
+	if path == "":
+		path = String(FRAME_DOCUMENTS[drone_class])
+	var doc := AirframeDocument.load_from(path)
 	if doc.plates.is_empty() or doc.id == "":
 		return
 	_frame_doc = doc
 	_frame_baseline = FittedFrame.drawn(doc)
+
+
+## The document path that draws frame `frame_id`, "" when no frame document describes it.
+static func frame_document_path(frame_id: String) -> String:
+	if frame_id == "":
+		return ""
+	var paths: Array = FRAME_DOCUMENTS.values()
+	paths.append_array(extra_documents.values())
+	for path in paths:
+		if not _doc_ids.has(path):
+			_doc_ids[path] = AirframeDocument.load_from(String(path)).id
+		if _doc_ids[path] == frame_id:
+			return String(path)
+	return ""
+
+
+## The baseline a frame's edits are measured against: the drawing the Design Space opens on when one ships
+## for that frame (`frame_document_path`), else the document generated from its catalogue entry. The
+## two differ (a shipped drawing is not the generated one), so every reader of a SAVED edit (this session,
+## `Project.to_build`, the Lab) must take the same one or save and reopen weigh a different frame.
+static func frame_baseline(frame: Dictionary) -> Dictionary:
+	var path := frame_document_path(String(frame.get("part_id", "")))
+	if path == "":
+		return FittedFrame.baseline(frame)
+	return FittedFrame.drawn(AirframeDocument.load_from(path))
 
 
 func _class_frame_id() -> String:
@@ -207,6 +241,25 @@ func swap(catalog: PartsCatalog, category: String, part_id: String) -> Dictionar
 		return verdict
 	_push_undo()
 	selection[category] = part_id
+	_changed()
+	return verdict
+
+
+## Swaps the frame for the catalog frame `frame_id`, drawn from ITS document (never the old frame's plates
+## under a new name). Refused as `swap` refuses (HARD_IDS), and when no document draws that frame. One undo
+## step restores the selection AND the document that was on screen (edits included). The verdict carries
+## `dropped_edits`: whether the frame being left had edits, which the swap discards.
+func swap_frame(catalog: PartsCatalog, frame_id: String) -> Dictionary:
+	if frame_document_path(frame_id) == "":
+		return FrameTools.refuse("That frame has no drawing yet, so it cannot be shown truthfully.")
+	var verdict := PartSwap.judge(self, catalog, "frame", frame_id, false)
+	verdict["dropped_edits"] = false
+	if not verdict["ok"] or String(selection.get("frame", "")) == frame_id:
+		return verdict
+	verdict["dropped_edits"] = not frame_edit(catalog).is_empty()
+	_push_undo()
+	selection["frame"] = frame_id
+	_load_frame_document()
 	_changed()
 	return verdict
 
@@ -372,6 +425,9 @@ func restore_state(p_selection: Dictionary, frame_dict: Dictionary, p_harness :=
 	harness_overrides = (p_harness as Dictionary).duplicate(true)
 	tweaks = AssemblyTweaks.from_dict(p_tweaks)
 	if not frame_dict.is_empty() and _frame_doc != null:
+		if String(frame_dict.get("id", "")) != _frame_doc.id and frame_document_path(String(frame_dict.get("id", ""))) != "":
+			# A saved swap: the baseline is the swapped-in frame's own drawing, not the class's.
+			_frame_baseline = FittedFrame.drawn(AirframeDocument.load_from(frame_document_path(String(frame_dict.get("id", "")))))
 		_frame_doc = AirframeDocument.from_dictionary(frame_dict)
 	_undo.clear()
 	_redo.clear()
@@ -470,7 +526,7 @@ func set_tweaks(p_tweaks: AssemblyTweaks, push_undo := true) -> bool:
 func _snapshot() -> Dictionary:
 	return {"payload": _project.payload.duplicate(true), "printing": _project.printing.duplicate(true), "config": _project.config.duplicate(true), "harness": harness_overrides.duplicate(true), "tweaks": tweaks.to_dict(),
 		"selection": selection.duplicate(true),
-		"document": _frame_doc.to_dictionary() if _frame_doc != null else {}}
+		"document": _frame_doc.to_dictionary() if _frame_doc != null else {}, "baseline": _frame_baseline.duplicate(true)}
 
 
 func _restore(entry: Dictionary) -> void:
@@ -482,6 +538,7 @@ func _restore(entry: Dictionary) -> void:
 	tweaks = AssemblyTweaks.from_dict(entry.get("tweaks", {}))
 	var doc: Dictionary = entry["document"]
 	_frame_doc = AirframeDocument.from_dictionary(doc) if not doc.is_empty() else null
+	_frame_baseline = (entry.get("baseline", _frame_baseline) as Dictionary).duplicate(true)
 
 
 func _changed() -> void:

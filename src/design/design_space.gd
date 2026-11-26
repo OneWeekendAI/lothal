@@ -278,6 +278,7 @@ func _after_change() -> void:
 	_clicked_battery = ""
 	clear_preview()
 	refresh()
+	_sync_frame_baseline()
 	regenerate_frame()
 	apply_look()
 	refresh_payload_model()
@@ -2000,6 +2001,24 @@ func plate_regenerated(index: int) -> bool:
 ## Redraws every EDITED plate from the document (FrameView: split, clip, extrude, same material) with
 ## fresh pick proxies for its cuts; an unedited plate gets the GLB's mesh and proxies back. The pick
 ## shapes follow in `rebuild_picks` (apply_look), so a drilled hole is pickable at once.
+## A frame swap (or its undo) puts another frame's document on the session: that frame's own drawing becomes
+## the "as drawn" baseline, so it is shown whole and is not read as edits to the frame that was fitted.
+func _sync_frame_baseline() -> void:
+	var doc := session.frame_document()
+	if doc == null or _frame_orig == null or _doc_root == null or _frame_orig.id == doc.id:
+		return
+	var path := DesignSession.frame_document_path(doc.id)
+	if path == "":
+		return
+	_frame_orig = AirframeDocument.load_from(path)
+	if hardware_root != null and is_instance_valid(hardware_root):
+		if hardware_root.get_parent() != null:
+			hardware_root.get_parent().remove_child(hardware_root)
+		hardware_root.free()
+	hardware_root = null
+	_generate_frame(_doc_root, _frame_orig)
+
+
 func regenerate_frame() -> void:
 	var doc := session.frame_document()
 	if doc == null or _frame_orig == null or _doc_root == null:
@@ -2194,6 +2213,7 @@ func _build_shelf() -> void:
 	shelf.prop_designer_requested.connect(open_prop_designer)
 	shelf.custom_part_requested.connect(open_custom_part_form)
 	shelf.card_menu_requested.connect(open_card_menu)
+	shelf.frame_chosen.connect(choose_frame)
 	add_child(shelf)
 
 	_ghost_mat = StandardMaterial3D.new()
@@ -2590,6 +2610,7 @@ func _value_ranges() -> Dictionary:
 ## its categories also list the fitted part, so a swap can be seen against it and put back.
 func _shelf_groups() -> Array:
 	var groups := session.shelf(_catalog)
+	groups.push_front(_frame_group())
 	var fitted := _fitted_now()
 	for g in groups:
 		var cat := String(g["category"])
@@ -2603,6 +2624,62 @@ func _shelf_groups() -> Array:
 			"numbers": PartSwap.deciding_numbers(part, cat),
 			"caption": PartCaption.for_card(part, cat, String(part.get("name", id))), "part": part})
 	return groups
+
+
+## The shelf's Frame group: the fitted frame (marked), then the frames FrameSwap offers for this class, or its
+## why_not line when there are none. Nothing unofferable is ever a card.
+func _frame_group() -> Dictionary:
+	var parts: Array = []
+	var fitted_id := String(session.selection.get("frame", ""))
+	var cur := _catalog.get_part(fitted_id)
+	if not cur.is_empty():
+		parts.append(_frame_card(cur, fitted_id, true))
+	for o in FrameSwap.offerings(session, _catalog):
+		parts.append(_frame_card(_catalog.get_part(String(o["id"])), String(o["id"]), false))
+	return {"category": "frame", "name": "Frame", "parts": parts, "note": FrameSwap.why_not(session, _catalog)}
+
+
+func _frame_card(part: Dictionary, id: String, is_fitted: bool) -> Dictionary:
+	return {"id": id, "name": String(part.get("name", id)), "numbers": PartSwap.deciding_numbers(part, "frame"),
+		"caption": PartCaption.for_card(part, "frame", String(part.get("name", id))), "part": part, "fitted": is_fitted}
+
+
+var frame_confirm: ConfirmationDialog
+var _pending_frame := ""
+
+
+## A frame card was chosen. A frame not on offer is refused (nothing changes). With edits on the fitted frame
+## a confirm dialog asks first (Cancel changes nothing); otherwise it swaps at once. {} while asking.
+func choose_frame(frame_id: String) -> Dictionary:
+	var offered := false
+	for o in FrameSwap.offerings(session, _catalog):
+		offered = offered or String(o["id"]) == frame_id
+	if not offered:
+		return FrameTools.refuse("That frame is not on offer for this drone.")
+	if not FrameSwap.drops_edits(session, _catalog):
+		return _swap_frame_now(frame_id)
+	_pending_frame = frame_id
+	if frame_confirm == null or not is_instance_valid(frame_confirm):
+		frame_confirm = ConfirmationDialog.new()
+		frame_confirm.name = "FrameSwapConfirm"
+		frame_confirm.ok_button_text = "Swap frame"
+		frame_confirm.cancel_button_text = "Cancel"
+		frame_confirm.confirmed.connect(func(): _swap_frame_now(_pending_frame))
+		frame_confirm.canceled.connect(func(): _pending_frame = "")
+		add_child(frame_confirm)
+	var name_now := String(_catalog.get_part(String(session.selection.get("frame", ""))).get("name", "the frame"))
+	frame_confirm.dialog_text = "Swapping the frame drops your edits to %s. Undo brings them back." % name_now
+	if frame_confirm.is_inside_tree():
+		frame_confirm.popup_centered()
+	return {}
+
+
+func _swap_frame_now(frame_id: String) -> Dictionary:
+	var v := session.swap_frame(_catalog, frame_id)
+	_pending_frame = ""
+	if v["ok"]:
+		_after_change()
+	return v
 
 
 ## A part picked up off the shelf; the drag follows the pointer until it is released.

@@ -33,6 +33,11 @@ static func verdict(class_id: String, category: String, part_id: String, catalog
 	var props: Vector2 = c.get("prop_in", Vector2.ZERO)
 	var specs: Dictionary = part.get("specs", {})
 	match category:
+		"frame":
+			# The prop size the frame is built for must be the class's: a 10" frame is not a 5" drone's frame.
+			var m := float(specs.get("max_prop_inches", 0.0))
+			if props != Vector2.ZERO and m > 0.0 and (m < props.x - PROP_SLACK_IN or m > props.y + PROP_SLACK_IN):
+				return {"fits": false, "reason": "Built for %s\" props; this class flies %s props." % [_trim(m), props_text(props)]}
 		"battery":
 			var n := int(specs.get("cells", 0))
 			if cells != Vector2i.ZERO and n > 0 and (n < cells.x or n > cells.y):
