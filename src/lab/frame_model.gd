@@ -172,14 +172,14 @@ func rebuild_document(
 ## Standoff height when nobody has chosen one. Forwards to MountLayout, which decides it — asking
 ## a frame about its own standoffs is a reasonable thing to do, and these accessors stay so that
 ## every existing caller keeps asking the question where it makes sense to ask it.
-static func default_plate_gap_m() -> float:
-	return MountLayout.default_plate_gap_m()
+static func default_plate_gap_m(frame: Dictionary = {}) -> float:
+	return MountLayout.default_plate_gap_m(frame)
 
 
 ## The shortest standoff that still leaves two plates: one plate thickness. Below that the gap is
 ## thinner than the parts either side of it and the stack reads as a single slab.
-static func min_plate_gap_m() -> float:
-	return MountLayout.min_plate_gap_m()
+static func min_plate_gap_m(frame: Dictionary = {}) -> float:
+	return MountLayout.min_plate_gap_m(frame)
 
 
 ## Height of the top plate's UPPER face above the airframe's origin — the surface anything strapped
@@ -451,8 +451,8 @@ func _build_placeholder_body(
 		add_child(arm)
 
 	var side: float = arm_m * CENTRE_PLATE_TO_ARM_RATIO
-	var thickness: float = Build.FRAME_PLATE_THICKNESS_M
-	var gap: float = plate_gap_m if plate_gap_m >= 0.0 else default_plate_gap_m()
+	var thickness: float = MountLayout.plate_thickness_m(frame)
+	var gap: float = plate_gap_m if plate_gap_m >= 0.0 else default_plate_gap_m(frame)
 	plate_side_m = side
 
 	for entry in [["PlateTop", gap * 0.5], ["PlateBottom", -gap * 0.5]]:

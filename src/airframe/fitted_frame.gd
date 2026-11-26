@@ -88,13 +88,38 @@ static func edit_of(frame: Dictionary, document: AirframeDocument, p_baseline: D
 	var specs: Dictionary = frame.get("specs", {})
 	# A frame nobody weighed (published 0) flies as drawn; one somebody weighed keeps the scale.
 	var mass := published + delta_g if published > 0.0 else float(now["mass_g"])
+	var edit_specs: Dictionary = {}
+	# The centre plates' stock, but only when the designer MOVED it from what the frame was generated
+	# with: an untouched drawing says nothing the catalogue did not, and the catalogue stays the source.
+	var drawn_t := centre_plate_thickness_mm(document)
+	var base_t := centre_plate_thickness_mm(AirframeDocument.from_catalog_frame(frame))
+	if drawn_t > 0.0 and absf(drawn_t - base_t) > 1.0e-9:
+		edit_specs["plate_thickness_mm"] = drawn_t
 	return {
 		"part_id": str(frame.get("part_id", "")),
 		"mass_g": maxf(mass, MIN_FLOWN_MASS_G),
 		"arm_mm": float(specs.get("arm_mm", now["arm_mm"])) + delta_arm,
 		"published_mass_g": published,
 		"drawn_delta_g": delta_g,
+		"specs": edit_specs,
 	}
+
+
+## The stock the drawing's centre plates (bottom and top) are cut from, mm: the thinnest, because the
+## stack sandwich is only as tall as the thinnest plate that clamps it. 0 when the drawing has no
+## such plate, which Build reads as "the frame states nothing" and answers with its labelled typical.
+static func centre_plate_thickness_mm(document: AirframeDocument) -> float:
+	if document == null:
+		return 0.0
+	var thinnest := INF
+	for plate in document.plates:
+		var role := str(plate.get("role", ""))
+		if role != AirframeDocument.ROLE_BOTTOM and role != AirframeDocument.ROLE_TOP:
+			continue
+		var t := AirframeDocument.plate_thickness_mm(plate)
+		if t > 0.0:
+			thinnest = minf(thinnest, t)
+	return 0.0 if thinnest == INF else thinnest
 
 
 ## The frame the physics reads: `frame` with the edit's mass and arm, marked so every caller can
@@ -197,6 +222,9 @@ static func _replacement_edit(frame: Dictionary, document: AirframeDocument,
 			"max_prop_inches": max_prop_inches(document),
 			"motor_mount": motor_mount_of(document),
 			"stack_mount": stack_mount_of(document),
+			# 0 when the drawing has no centre plate: stated as "nothing", so the fitted catalogue
+			# frame's thickness is not inherited by a frame it does not describe.
+			"plate_thickness_mm": centre_plate_thickness_mm(document),
 		},
 		# And its own browsing block. Left as the fitted frame's, a 3" PA12 drawing was described as
 		# "5\"" and "carbon fibre 3K" by the Frame and Arms rows and drawn in carbon. The material is

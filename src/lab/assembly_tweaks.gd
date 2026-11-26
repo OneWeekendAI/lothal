@@ -226,9 +226,9 @@ static func limits(build: Build) -> Dictionary:
 				MotorMesh.max_soft_mount_m(build.motor) * 1000.0),
 		},
 		PLATE_GAP: {
-			"min": FrameModel.min_plate_gap_m() * 1000.0,
+			"min": FrameModel.min_plate_gap_m(build.frame) * 1000.0,
 			"max": FrameModel.max_plate_gap_m(build.arm_m) * 1000.0,
-			"default": FrameModel.default_plate_gap_m() * 1000.0,
+			"default": FrameModel.default_plate_gap_m(build.frame) * 1000.0,
 		},
 		BATTERY_OFFSET: {
 			"min": -battery_travel_mm(build),

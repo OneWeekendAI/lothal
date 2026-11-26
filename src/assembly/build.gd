@@ -400,6 +400,8 @@ static func stack_mounting(pattern: String = STACK_MOUNT_PATTERN) -> Dictionary:
 ## The frame's centre plate, as a box, derived from arm length rather than authored — a
 ## body dimension is not in parts.md's spec-field table, so it does not belong in the JSON.
 const FRAME_PLATE_TO_ARM_RATIO := 1.364   # 110 mm arm -> 150 mm plate
+## TYPICAL centre-plate thickness, used ONLY when the fitted frame states none (no document stock,
+## no catalogue `plate_thickness_mm`). Never read it directly: ask `plate_thickness_m()`.
 const FRAME_PLATE_THICKNESS_M := 0.010
 
 ## Drag area (Cd*A) of the reference 5" build, scaled by frame size. Calibrated so the
@@ -941,6 +943,12 @@ func assembly_value(key: String) -> Variant:
 	return assembly.get(key, DEFAULT_ASSEMBLY[key])
 
 
+## The frame's centre-plate thickness in metres: the fitted frame's own (a drawn document's, else the
+## catalogue's `plate_thickness_mm`), else FRAME_PLATE_THICKNESS_M as a labelled typical.
+func plate_thickness_m() -> float:
+	return MountLayout.plate_thickness_m(frame)
+
+
 ## The frame's mount table at the standoff height currently fitted. Both the mass model below and
 ## Lab's drawing resolve mounts through MountLayout; this is Build's way in.
 func mount_points() -> Array[MountPoint]:
@@ -1101,7 +1109,7 @@ func drag_projected_areas_m2() -> Vector3:
 	var motor_d := float(motor["specs"]["stator_diameter_mm"]) / 1000.0 * 1.15
 	var motor_h := float(motor["specs"]["stator_height_mm"]) / 1000.0 * 1.6
 	var arm_t := float(frame["specs"].get("arm_thickness_mm", 4.0)) / 1000.0
-	var body_h := pack.y + FRAME_PLATE_THICKNESS_M + DRAG_STACK_HEIGHT_M
+	var body_h := pack.y + plate_thickness_m() + DRAG_STACK_HEIGHT_M
 	var body_w := maxf(pack.x, DRAG_MIN_BODY_M)
 	var body_l := maxf(pack.z, DRAG_MIN_BODY_M)
 	var arm_run := arm_m * 0.7071
@@ -1250,7 +1258,7 @@ func mass_parts() -> Array:
 	# arms, and belongs in the slice whose subject is arms.
 	var frame_mass_kg := float(frame["mass_g"]) / 1000.0
 	var plate := arm_m * FRAME_PLATE_TO_ARM_RATIO
-	var frame_size := Vector3(plate, FRAME_PLATE_THICKNESS_M, plate)
+	var frame_size := Vector3(plate, plate_thickness_m(), plate)
 	parts.append(PartMass.new(frame_mass_kg, Vector3.ZERO,
 		InertiaPrimitives.box(frame_mass_kg, frame_size), "Frame"))
 
@@ -2125,7 +2133,7 @@ func body_boxes() -> Array:
 	var boxes: Array = []
 	var mounts := mount_points()
 	var side := MountLayout.centre_plate_side_m(arm_m)
-	var t := FRAME_PLATE_THICKNESS_M
+	var t := plate_thickness_m()
 	var stack := MountLayout.by_id(mounts, "stack")
 	var top := MountLayout.by_id(mounts, "strap_top")
 	var plate_size := Vector3(side, t, side)

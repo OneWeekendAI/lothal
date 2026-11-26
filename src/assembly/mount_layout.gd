@@ -49,14 +49,22 @@ const MIN_STRAP_SLOT_M := 0.010
 
 ## Standoff height when nobody has chosen one: the ratio above, applied to the plate thickness
 ## Build already derives.
-static func default_plate_gap_m() -> float:
-	return Build.FRAME_PLATE_THICKNESS_M * PLATE_STACK_GAP_TO_THICKNESS_RATIO
+static func default_plate_gap_m(frame: Dictionary = {}) -> float:
+	return plate_thickness_m(frame) * PLATE_STACK_GAP_TO_THICKNESS_RATIO
+
+
+## The frame's centre-plate stock in metres. SOURCE ORDER: the frame as fitted (a drawn document's
+## measured thickness reaches `specs` through FittedFrame), then the catalogue's `plate_thickness_mm`,
+## then Build.FRAME_PLATE_THICKNESS_M — a labelled TYPICAL, used only when the frame states nothing.
+static func plate_thickness_m(frame: Dictionary = {}) -> float:
+	var stated := float(frame.get("specs", {}).get("plate_thickness_mm", 0.0))
+	return stated / 1000.0 if stated > 0.0 else Build.FRAME_PLATE_THICKNESS_M
 
 
 ## The shortest standoff that still leaves two plates: one plate thickness. Below that the gap is
 ## thinner than the parts either side of it and the stack reads as a single slab.
-static func min_plate_gap_m() -> float:
-	return Build.FRAME_PLATE_THICKNESS_M
+static func min_plate_gap_m(frame: Dictionary = {}) -> float:
+	return plate_thickness_m(frame)
 
 
 static func max_plate_gap_m(arm_m: float) -> float:
@@ -90,10 +98,10 @@ static func centre_plate_side_m(arm_m: float) -> float:
 static func for_frame(frame: Dictionary, plate_gap_m: float) -> Array[MountPoint]:
 	var arm_m: float = float(frame.get("specs", {}).get("arm_mm", 0.0)) / 1000.0
 	var side := centre_plate_side_m(arm_m)
-	var thickness: float = Build.FRAME_PLATE_THICKNESS_M
+	var thickness: float = plate_thickness_m(frame)
 	var gap: float = plate_gap_m
 	if gap < 0.0:
-		gap = default_plate_gap_m()
+		gap = default_plate_gap_m(frame)
 
 	var span := Vector2(side, side)
 	var reach := reach_m(arm_m)
