@@ -2161,7 +2161,26 @@ func payload_attach_m() -> Vector3:
 	if payload_part.is_empty():
 		return Vector3.ZERO
 	var c := thrust_centroid_xz_m()
-	return Vector3(c.x, lowest_body_y_m(), c.y)
+	return Vector3(c.x, lowest_body_y_m(), c.y - payload_fore_m())
+
+
+## How far the payload may slide fore or aft of the thrust centroid, metres: the box stays within the front-to-rear
+## motor span of THIS frame (the front motor's |z| is the half-span, MotorLayout.motor_position on this arm), so
+## the half-length of the box is taken off it. ZERO with no payload, and zero for a box as long as the span.
+func payload_fore_limit_m() -> float:
+	if payload_part.is_empty():
+		return 0.0
+	var half_span := absf(MotorLayout.motor_position("M2", arm_m).z)
+	return maxf(0.0, half_span - PayloadPart.size_m(payload_part).z * 0.5)
+
+
+## The payload's fore-aft slide actually applied, metres, positive toward the nose (-Z): the saved figure held
+## to the frame's limit, so a payload saved on a long frame and fitted to a short one cannot hang off the end.
+func payload_fore_m() -> float:
+	if payload_part.is_empty():
+		return 0.0
+	var lim := payload_fore_limit_m()
+	return clampf(float(payload_part.get("fore_mm", 0.0)) / 1000.0, -lim, lim)
 
 
 ## The payload box's centre: the attach point, then the mount's gap, then half the box's height further

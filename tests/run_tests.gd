@@ -22,7 +22,7 @@ const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "tw
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
-	"arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet", "payload", "r17 realism",
+	"arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet", "payload", "payload position", "r17 realism",
 	"sim end states", "flight controls", "airframe page", "config page", "control page", "power page", "printed page", "propulsion page", "video page", "b5 damage shake", "video link"]
 
 func _init() -> void:
@@ -400,6 +400,8 @@ func _run_suite(suite_name: String) -> Array:
 		"camera tilt": return TestCameraTilt.run()
 		# The payload part: placement on every frame and class, mass into physics, persistence, the lift line
 		"payload": return TestPayload.run() + TestPayload.design_space(PartsCatalog.load_default()) + await TestPayload.sim_path(self)
+		# The payload's fore-aft seat: slider, CG and inertia by hand, the flown core, the drawn box, persistence
+		"payload position": return TestPayloadPosition.run()
 		# V4 (plans/2026-09-13-video-room-design.md §3): VideoPlausibility.
 		"video warnings": return TestVideoWarnings.run()
 		# V5: Video's Camera panel, driven on a real shell.

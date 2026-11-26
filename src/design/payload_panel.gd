@@ -14,7 +14,9 @@ var ds: DesignSpace
 var kind_option: OptionButton
 var mass_stepper: DsStepper
 var dim_fields: Array = []       ## LineEdit x3: length, width, height (mm)
+var fore_slider: DsSlider        ## fore-aft seat along the frame's centreline, mm, + toward the nose
 var note_label: Label
+var _fore_dragging := false
 var lift_label: Label
 var _detail: VBoxContainer
 var _syncing := false
@@ -85,6 +87,19 @@ func _init(p_ds: DesignSpace) -> void:
 		dim_fields.append(e)
 	_detail.add_child(row)
 
+	# Where it hangs along the centreline. The range is the frame's own (Build.payload_fore_limit_m), set in refresh().
+	fore_slider = DsSlider.new("Fore-aft position", " mm", -1.0, 1.0, 1.0)
+	fore_slider.name = "PayloadFore"
+	fore_slider.tag_label.get_parent().visible = false
+	fore_slider.slider.drag_started.connect(func() -> void: _fore_dragging = true)
+	fore_slider.slider.drag_ended.connect(func(_changed: bool) -> void:
+		_fore_dragging = false
+		_on_edit())
+	fore_slider.value_changed.connect(func(_v: float) -> void:
+		if not _fore_dragging:
+			_on_edit())
+	_detail.add_child(fore_slider)
+
 	# No note row: the 720 px window has no room for one beside the lift line. What it would say, and the kind's
 	# source note, ride on the picker's tooltip.
 	note_label = DsUi.label("")
@@ -113,8 +128,14 @@ func refresh() -> void:
 		var edited := bool(spec["mass_edited"]) or bool(spec["size_edited"])
 		note_label.text = "Your figures." if edited else "Approximate, type your own."
 		kind_option.tooltip_text = "%s\n%s" % [note_label.text, String(spec["source"])]
-	_syncing = false
 	var b := ds.session.build(ds._catalog)
+	if not spec.is_empty() and b != null:
+		var lim_mm := floorf(b.payload_fore_limit_m() * 1000.0 + 1e-6)
+		fore_slider.slider.min_value = -lim_mm
+		fore_slider.slider.max_value = lim_mm
+		fore_slider.slider.editable = lim_mm > 0.0
+		fore_slider.value = clampf(float(spec["fore_mm"]), -lim_mm, lim_mm)
+	_syncing = false
 	var verdict := LiftVerdict.of(b)
 	lift_label.text = String(verdict["text"])
 	lift_label.visible = lift_label.text != ""
@@ -140,4 +161,5 @@ func _on_edit() -> void:
 	for e in dim_fields:
 		var t := (e as LineEdit).text
 		dims.append(clampf(float(t) if t.is_valid_float() else 0.0, PayloadPart.MIN_DIM_MM, PayloadPart.MAX_DIM_MM))
-	ds.session.set_payload(PayloadPart.to_saved(kind, mass_stepper.value, dims[0], dims[1], dims[2]))
+	ds.session.set_payload(PayloadPart.to_saved(kind, mass_stepper.value, dims[0], dims[1], dims[2],
+		roundf(fore_slider.value)))

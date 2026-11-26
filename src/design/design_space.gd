@@ -1106,7 +1106,7 @@ func _build_stage() -> void:
 
 ## Draws the payload under the drone and raises the drone so it stands on it. The box hangs from the lowest
 ## point of the drawn model, on the mean of the four motors in plan (the thrust centroid), which is the
-## same rule Build.payload_centre_m weighs it by. No payload: the drone is put back and the node removed.
+## same rule Build.payload_centre_m weighs it by, slid fore or aft by Build.payload_fore_m. No payload: the drone is put back and the node removed.
 func refresh_payload_model() -> void:
 	if _doc_root == null:
 		return
@@ -1135,7 +1135,10 @@ func refresh_payload_model() -> void:
 			n += 1
 	var centre := sum / float(n) if n > 0 else Vector2.ZERO
 	_payload_node = PayloadMesh.build(spec)
-	_payload_node.position = Vector3(centre.x, drop, centre.y)
+	# Slid along the centreline by the builder's fore-aft figure, as Build holds it to the frame (nose is -Z).
+	var b := session.build(_catalog)
+	var fore_m := b.payload_fore_m() if b != null else 0.0
+	_payload_node.position = Vector3(centre.x, drop, centre.y - fore_m)
 	_stage.add_child(_payload_node)
 
 
