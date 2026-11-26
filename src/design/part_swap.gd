@@ -20,13 +20,13 @@ const SLOTS := {
 	"battery": ["battery"],
 	"motor": ["motor"],
 	"prop": ["propeller", "guard"],
-	"stack": ["flight_controller", "esc", "receiver", "buzzer"],
+	"stack": ["flight_controller", "esc", "receiver", "buzzer", "gps"],
 	"camera": ["camera"],
 	"antennas": ["vtx", "antenna"],
 }
 const CATEGORY_NAMES := {"battery": "Battery", "motor": "Motors", "propeller": "Props",
 	"guard": "Prop guards", "flight_controller": "Flight controller", "esc": "ESC",
-	"receiver": "Receiver", "buzzer": "Buzzer", "camera": "Camera", "vtx": "Video transmitter", "antenna": "Antenna"}
+	"receiver": "Receiver", "buzzer": "Buzzer", "gps": "GPS", "camera": "Camera", "vtx": "Video transmitter", "antenna": "Antenna"}
 ## The IMPOSSIBLE warnings that make a build not a build. Any other warning is shown, not refused.
 const HARD_IDS := [&"motor_mount", &"prop_clearance", &"stack_mount", &"fc_stack_mount"]
 const READOUT_KEYS := ["auw_g", "thrust_to_weight", "hover_throttle", "flight_time_min", "top_speed_kmh"]
@@ -158,6 +158,11 @@ static func deciding_numbers(part: Dictionary, category: String) -> Array:
 			return [String(part.get("mounting", {}).get("pattern", "")), g]
 		"guard":
 			return [String(s.get("kind", "")).replace("_", " "), g]
+	if category == "gps" and s.has("length_mm"):
+		# The mast is what moves the centre of mass, so it is a deciding number beside the box.
+		var mast := float(s.get("mast_height_mm", 0.0))
+		return ["%s x %s mm" % [_trim(float(s["length_mm"])), _trim(float(s.get("width_mm", 0)))],
+			"%s mm mast" % _trim(mast) if mast > 0.0 else "flat", g]
 	if s.has("length_mm"):
 		return ["%s x %s x %s mm" % [_trim(float(s["length_mm"])), _trim(float(s.get("width_mm", 0))),
 			_trim(float(s.get("height_mm", 0)))], g]

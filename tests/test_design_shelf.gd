@@ -28,7 +28,7 @@ const DASH := "—"
 const NEAR := Vector3(0.0, 0.02, 0.0)
 ## category -> GLB node names it mounts on, as the TEST knows the model (not PartSnap's table).
 const NODES := {"battery": ["battery"], "camera": ["camera"], "flight_controller": ["stack"],
-	"esc": ["stack"], "receiver": ["stack"], "buzzer": ["stack"], "vtx": ["antennas"], "antenna": ["antennas"]}
+	"esc": ["stack"], "receiver": ["stack"], "buzzer": ["stack"], "gps": ["stack"], "vtx": ["antennas"], "antenna": ["antennas"]}
 
 
 static func run() -> Array:
@@ -234,12 +234,12 @@ static func _test_wrong_pattern(catalog: PartsCatalog, map: Dictionary, boxes: D
 
 
 static func _test_no_mount(catalog: PartsCatalog, map: Dictionary, boxes: Dictionary, home: Dictionary) -> TestResult:
-	var gps: Array = catalog.list_category("gps")
+	var gps: Array = catalog.list_category("capacitor")
 	var s := _fresh()
 	var v := s.drop(catalog, String(gps[0]["part_id"]) if not gps.is_empty() else "", _at(boxes, "stack"), map)
 	var ok: bool = not gps.is_empty() and v["kind"] == "refused" and String(v["reason"]) != "" \
 		and v["mount"] == "" and s.selection == home and not s.can_undo()
-	return TestResult.new("a GPS (no GPS mount on the 5\") dropped on the drone is refused with a reason",
+	return TestResult.new("a capacitor (no mount, not a shelf category) dropped on the drone is refused with a reason",
 		ok, "%s '%s'" % [v["kind"], v["reason"]])
 
 
@@ -383,7 +383,7 @@ static func _test_shelf_lists(catalog: PartsCatalog, home: Dictionary) -> TestRe
 	var s := _fresh()
 	var bad: Array = []
 	var cats: Array = s.shelf(catalog).map(func(r): return String(r["category"]))
-	for cat in ["battery", "motor", "propeller", "guard", "flight_controller", "esc", "receiver", "buzzer", "camera", "vtx", "antenna"]:
+	for cat in ["battery", "motor", "propeller", "guard", "flight_controller", "esc", "receiver", "buzzer", "gps", "camera", "vtx", "antenna"]:
 		var want: Array = []
 		for p in catalog.list_category(cat):
 			if String(p["part_id"]) != String(home.get(cat, "")):

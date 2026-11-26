@@ -118,6 +118,12 @@ func _draw() -> void:
 			draw_circle(c, 2.0, ink)
 			for i in 2:
 				draw_arc(c, 17.0 + 5.0 * i, -0.6, 0.6, 8, ink * Color(1, 1, 1, 0.6), hl)
+		"gps":
+			_fill_rect(Rect2(c.x - 14, c.y - 6, 28, 18), ft, fc, false)
+			draw_rect(Rect2(c.x - 15, c.y - 7, 30, 20), ink, false, w)
+			draw_line(Vector2(c.x, c.y - 7), Vector2(c.x, c.y - 17), ink, w)
+			for i in 2:
+				draw_arc(Vector2(c.x, c.y - 17), 5.0 + 5.0 * i, PI + 0.5, TAU - 0.5, 8, ink * Color(1, 1, 1, 0.6), hl)
 		_:  # receiver, and anything uncatalogued
 			_fill_rect(Rect2(c.x - 17, c.y - 7, 34, 14), ft, fc, false)
 			draw_rect(Rect2(c.x - 18, c.y - 8, 36, 16), ink, false, w)

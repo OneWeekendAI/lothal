@@ -58,9 +58,18 @@ static func run(tree: SceneTree) -> Array:
 	var buzz_delta := s1.build(catalog).all_up_weight_g() - buzz_base
 	out.append(TestResult.new("a buzzer was fitted and weighed (AUW up by its mass)",
 		buzz_ok and absf(buzz_delta - float(catalog.get_part(buzz_id)["mass_g"])) < 1e-6, "%s %s" % [buzz_id, buzz_delta]))
+	# a GPS is an optional part with no drawn node: it rides the file too, and the mast the builder set
+	# (a tweak) and the centre of mass it produces must both come back
+	var gps_id := "gps_masted_compact"
+	var gps_base := s1.build(catalog).all_up_weight_g()
+	var gps_ok: bool = s1.swap(catalog, "gps", gps_id)["ok"]
+	var gps_delta := s1.build(catalog).all_up_weight_g() - gps_base
+	out.append(TestResult.new("a GPS was fitted and weighed (AUW up by its mass)",
+		gps_ok and absf(gps_delta - float(catalog.get_part(gps_id)["mass_g"])) < 1e-6, "%s %s" % [gps_id, gps_delta]))
 	var thick: Dictionary = s1.set_plate_thickness(s1.plate_of_mesh("frame_plate_top"), 2.5)
 	var tw := AssemblyTweaks.from_dict(s1.tweaks.to_dict())
 	tw.set_mm(AssemblyTweaks.CAMERA_TILT, 40.0)
+	tw.set_mm(AssemblyTweaks.MAST_HEIGHT, 30.0)
 	s1.set_tweaks(tw)
 	out.append(TestResult.new("the edits took (swap, frame, tweak)",
 		swapped and thick.get("ok", false) and s1.tweaks.has_override(AssemblyTweaks.CAMERA_TILT), str(thick)))
@@ -73,6 +82,8 @@ static func run(tree: SceneTree) -> Array:
 	var want_tweaks := JSON.stringify(s1.tweaks.to_dict())
 	var want_harness := JSON.stringify(s1.harness_overrides)
 	var want_figs := _figures(s1, catalog)
+	var want_com := var_to_str(s1.build(catalog).mass_properties.com_m)
+	var want_gps_y := s1.build(catalog).component_centre_m("gps").y
 	var seed_figs := _figures(DesignSession.default_for_class(CLASS_ID), catalog)
 	out.append(TestResult.new("the edited design's figures differ from the class seed", want_figs != seed_figs, want_figs))
 	shell._on_autosave_tick()  # the real timer handler (and the "projects" action's save)
@@ -91,6 +102,11 @@ static func run(tree: SceneTree) -> Array:
 	out.append(TestResult.new("drone class identical", s2.drone_class == want_class, s2.drone_class))
 	out.append(TestResult.new("parts identical", s2.selection == want_parts, str(s2.selection)))
 	out.append(TestResult.new("the fitted buzzer is still fitted after reopen", String(s2.selection.get("buzzer", "")) == buzz_id and buzz_id != "", String(s2.selection.get("buzzer", ""))))
+	out.append(TestResult.new("the fitted GPS is still fitted after reopen", String(s2.selection.get("gps", "")) == gps_id, String(s2.selection.get("gps", ""))))
+	var b2 := s2.build(catalog)
+	out.append(TestResult.new("the reopened GPS sits at the 30 mm mast the builder set, centre of mass bit-identical",
+		b2 != null and var_to_str(b2.mass_properties.com_m) == want_com and absf(b2.component_centre_m("gps").y - want_gps_y) < 1e-9
+		and absf(b2.rise_m_for(b2.components["gps"]) - 0.030) < 1e-9, want_com))
 	out.append(TestResult.new("frame document identical",
 		s2.frame_document() != null and JSON.stringify(s2.frame_document().to_dictionary()) == want_doc, ""))
 	out.append(TestResult.new("tweaks identical", JSON.stringify(s2.tweaks.to_dict()) == want_tweaks, JSON.stringify(s2.tweaks.to_dict())))
