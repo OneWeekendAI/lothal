@@ -8,7 +8,7 @@ extends RefCounted
 ##
 ## THE FRAME DOCUMENT (Section 4) is the frame on screen, not a generated preset: the 5" GLB's own
 ## plates, written by tools/blender/build_drone.py as `FRAME_DOCUMENTS[class]`. A class without one
-## (every class but the 5" for now) has `frame_document() == null` and every frame op refuses. The
+## (tiny_whoop, cinewhoop_3, cinelifter, mapper, x_class: moulded, ducted or tube frames) has `frame_document() == null` and every frame op refuses. The
 ## edit flies through `FittedFrame.edit_of` against the document as loaded, so the flown frame is
 ## the catalog's weighed mass plus what the edits removed or added.
 ##
@@ -36,7 +36,14 @@ var _redo: Array = []
 
 ## Class -> the frame document its GLB was built with (Section 4). The document's id is the class's
 ## frame part id, so an edit is an EDIT of that frame and not a replacement.
-const FRAME_DOCUMENTS := {"five_inch": "res://assets/models/classes/five_inch_frame.json"}
+const FRAME_DOCUMENTS := {
+	"toothpick": "res://assets/models/classes/toothpick_frame.json",
+	"sub250_35": "res://assets/models/classes/sub250_35_frame.json",
+	"four_inch": "res://assets/models/classes/four_inch_frame.json",
+	"five_inch": "res://assets/models/classes/five_inch_frame.json",
+	"six_inch": "res://assets/models/classes/six_inch_frame.json",
+	"seven_lr": "res://assets/models/classes/seven_lr_frame.json",
+}
 ## The frame as edited, or null when this drone has no editable frame drawing.
 var _frame_doc: AirframeDocument
 ## `FittedFrame.drawn` of the document as loaded: the baseline every edit is measured against.
