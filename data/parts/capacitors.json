@@ -74,6 +74,24 @@
       "source": "class-typical 10 x 12.5 mm low-ESR aluminium electrolytic, not a specific product. Sits just BELOW the 470-1000 uF the §3.4 rule asks for on 6S, deliberately: the rule has to have something to be unsatisfied by, or a check that never fires is a check that has never been shown to work. ESR and mass are ROUGH."
     },
     {
+      "part_id": "cap_470uf_25v",
+      "name": "470 uF 25 V low-ESR",
+      "category": "capacitor",
+      "mass_g": 2.8,
+      "specs": {
+        "capacitance_uf": 470.0,
+        "voltage_v": 25.0,
+        "esr_ohm": 0.040,
+        "diameter_mm": 10.0,
+        "height_mm": 12.5
+      },
+      "catalog": {
+        "cell_range": "2-4S",
+        "dielectric": "aluminium electrolytic"
+      },
+      "source": "class-typical 10 x 12.5 mm low-ESR aluminium electrolytic, not a specific product. The common 4S fit: a 4S pack comes off the charger at 16.8 V, which a 25 V can clears with margin, and it is NOT a 6S part (25.2 V full charge is over its rating). ESR and mass are ROUGH."
+    },
+    {
       "part_id": "cap_470uf_35v",
       "name": "470 uF 35 V low-ESR",
       "category": "capacitor",
@@ -90,6 +108,42 @@
         "dielectric": "aluminium electrolytic"
       },
       "source": "class-typical 10 x 16 mm low-ESR aluminium electrolytic, not a specific product. The bottom of the §3.4 rule's band and the most commonly fitted cap on a 6S 5-inch. ESR and mass are ROUGH."
+    },
+    {
+      "part_id": "cap_470uf_50v",
+      "name": "470 uF 50 V low-ESR",
+      "category": "capacitor",
+      "mass_g": 5.5,
+      "specs": {
+        "capacitance_uf": 470.0,
+        "voltage_v": 50.0,
+        "esr_ohm": 0.045,
+        "diameter_mm": 12.5,
+        "height_mm": 16.0
+      },
+      "catalog": {
+        "cell_range": "4-8S",
+        "dielectric": "aluminium electrolytic"
+      },
+      "source": "class-typical 12.5 x 16 mm low-ESR aluminium electrolytic, not a specific product. Fitted by builders who want voltage headroom on 6S: 50 V clears a 6S pack's 25.2 V full charge by a wide margin, at the cost of a bigger, heavier can than the 35 V part of the same capacitance. ESR and mass are ROUGH."
+    },
+    {
+      "part_id": "cap_680uf_35v",
+      "name": "680 uF 35 V low-ESR",
+      "category": "capacitor",
+      "mass_g": 4.8,
+      "specs": {
+        "capacitance_uf": 680.0,
+        "voltage_v": 35.0,
+        "esr_ohm": 0.030,
+        "diameter_mm": 12.5,
+        "height_mm": 16.0
+      },
+      "catalog": {
+        "cell_range": "4-6S",
+        "dielectric": "aluminium electrolytic"
+      },
+      "source": "class-typical 12.5 x 16 mm low-ESR aluminium electrolytic, not a specific product. Between the 470 and 1000 uF 35 V parts that 6S builds usually choose from. ESR and mass are ROUGH."
     },
     {
       "part_id": "cap_1000uf_35v",

@@ -187,6 +187,7 @@ static func warnings_for(build: Build) -> Array[BuildWarning]:
 	out.append_array(_voltage_drop(build, reading))
 	out.append_array(_connector(build, reading))
 	out.append_array(_capacitor_rule(build, reading))
+	out.append_array(_capacitor_voltage(build))
 	return out
 
 
@@ -344,6 +345,31 @@ static func _capacitor_rule(build: Build, reading: Dictionary) -> Array[BuildWar
 		out.append(BuildWarning.limiting(&"capacitor_rule", message, values))
 	else:
 		out.append(BuildWarning.characteristic(&"capacitor_rule", message, values))
+	return out
+
+
+## A fitted capacitor whose voltage rating is below what the pack reads when full. A hard floor, not
+## a workshop preference: an electrolytic run above its rated voltage fails (capacitors.json says so
+## beside each part), and a pack charges to cells x the chemistry's maximum cell voltage
+## (`BatteryModel.max_cell_v`: 4.2 V, 4.35 V for LiPo HV). So a 25 V can on a 6S (25.2 V) or a 35 V
+## can on a 9S is a real fault. `LIMITING`, never `IMPOSSIBLE`: Lothal warns, it does not block.
+## Silent with no capacitor fitted (the rule above speaks to that) and with no pack.
+static func _capacitor_voltage(build: Build) -> Array[BuildWarning]:
+	var out: Array[BuildWarning] = []
+	var row := build.harness.capacitor_row(build)
+	var cells := pack_cells(build)
+	if row.is_empty() or cells <= 0:
+		return out
+	var chemistry := String((build.battery.get("specs", {}) as Dictionary).get("chemistry", "LiPo"))
+	var full_v := float(cells) * BatteryModel.max_cell_v(chemistry)
+	var rated_v := float((row.get("specs", {}) as Dictionary).get("voltage_v", 0.0))
+	if rated_v <= 0.0 or rated_v >= full_v:
+		return out
+	out.append(BuildWarning.limiting(&"capacitor_voltage",
+		"The %s is rated %.0f V and this %dS %s pack charges to %.1f V. A capacitor run above its rated voltage fails; fit one rated above %.1f V." % [
+			row.get("name", "capacitor"), rated_v, cells, chemistry, full_v, full_v],
+		{"capacitor": String(row.get("part_id", "")), "rated_v": rated_v, "pack_full_v": full_v,
+			"cells": cells}))
 	return out
 
 

@@ -126,6 +126,7 @@ const TABLE := {
 	&"connector_rating": [HARNESS, "{connector_rating}"],
 	&"connector_mismatch": [HARNESS, "{connector_mismatch}"],
 	&"capacitor_rule": [HARNESS, "capacitor advised"],
+	&"capacitor_voltage": [HARNESS, "capacitor under-rated"],
 	# Control
 	&"fc_stack_mount": [FC, "{stack_mount}"],
 	&"fc_mass_budget": [FC, "{fc_mass}"],

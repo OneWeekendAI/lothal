@@ -126,12 +126,21 @@ func build(catalog: PartsCatalog) -> Build:
 		if not edit.is_empty():
 			b.set_frame_edit(edit)
 	if b != null:
+		var reweigh := false
 		if not harness_overrides.is_empty():
 			b.harness = Harness.from_overrides(harness_overrides)
+			reweigh = true
 		if not tweaks.is_default():
 			b.set_assembly(tweaks.resolved_m(b))
+			reweigh = false
 		if not _project.printing.is_empty():
 			b.set_printing(_project.printing.duplicate(true))
+			reweigh = false
+		# Assigning the harness does not re-weigh the aircraft, so a build with authored harness values
+		# and nothing else to recompute would carry the DEFAULT harness's mass in its AUW and centre of
+		# mass (found choosing a capacitor: the part changed, the weight did not).
+		if reweigh:
+			b.set_assembly(b.assembly)
 	return b
 
 

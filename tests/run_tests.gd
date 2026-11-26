@@ -7,7 +7,7 @@ extends SceneTree
 ## dumped at the end, so a suite that hangs or crashes names itself instead of leaving
 ## the runner silent.
 
-const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop export", "class picker", "bmp classes", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "part sheet", "frame shape", "frame sheet io", "frame figures", "blade tab", "bench tab", "harness tab", "config tab", "fit tab", "print tab", "custom tiles", "flights sheet", "open projects", "design shelf", "design shelf ui", "design buzzer", "design gps", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "save reopen", "one door", "sim chrome", "sim drone model", "sim visual", "sim perf", "b4 live weather", "b5 camera debris", "sim math", "one build", "watch door", "watch card", "fly feedback", "button states", "identity", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
+const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "twist flies", "prop tunnel", "prop balance", "prop structure", "prop export", "class picker", "bmp classes", "design space", "design picking", "design swap", "side swap", "part colour", "frame edits design", "frame edits ui", "part sheet", "frame shape", "frame sheet io", "frame figures", "blade tab", "bench tab", "harness tab", "config tab", "fit tab", "print tab", "custom tiles", "flights sheet", "open projects", "design shelf", "design shelf ui", "design buzzer", "design gps", "capacitor choice", "part filter", "frame gen", "frame look", "callouts", "warning pins", "callout look", "label toggle", "design file", "design file ui", "save reopen", "one door", "sim chrome", "sim drone model", "sim visual", "sim perf", "b4 live weather", "b5 camera debris", "sim math", "one build", "watch door", "watch card", "fly feedback", "button states", "identity", "coaxial build", "mass properties", "mass positions", "hover", "torque signs", "torque reference", "hover stability",
 	"rate step response", "rate mode release", "translation", "parts system", "details footers",
 	"gate course", "site", "fingerprint survival", "terrain", "terrain mesh", "obstacles", "collisions", "turtle mode", "ground authority", "real files", "conditions", "field room", "field ds", "studio ds", "no old ui", "course library", "course warnings", "hud", "keyboard throttle", "observables", "rotor synth",
 	"frame model", "mount points", "stack mesh", "battery mount", "motor mesh", "propeller mesh", "airframe", "mounting",
@@ -464,6 +464,7 @@ func _run_suite(suite_name: String) -> Array:
 		"design shelf ui": return TestDesignShelfUi.run()
 		"design buzzer": return TestDesignBuzzer.run()
 		"design gps": return TestDesignGps.run()
+		"capacitor choice": return await TestCapacitorChoice.run(self)
 		"part filter": return TestPartFilter.run()
 		"frame gen": return TestFrameGen.run()
 		"callouts": return TestCallouts.run()
