@@ -30,6 +30,8 @@ signal prop_designer_requested
 signal custom_part_requested(category: String)
 ## A saved motor's or prop's card was right-clicked: its context menu (edit in the designer, delete).
 signal card_menu_requested(category: String, part_id: String)
+## A frame card (other than the fitted one) was pressed: the caller swaps the frame (after asking, when it has edits).
+signal frame_chosen(frame_id: String)
 
 ## The categories that end in a design tile, and what each tile says: [node name, caption, tooltip].
 const DESIGN_TILES := {
@@ -51,7 +53,10 @@ const INK := Color(0.93, 0.93, 0.93)
 const INK_MUTED := Color(0.58, 0.58, 0.58)
 const INK_FAINT := Color(0.34, 0.34, 0.34)
 const WIDTH := 240.0
-const MAX_LIST_H := 470.0
+## The ceiling on the list's height; the room under the shelf's header (list_cap) lowers it on a short window.
+const MAX_LIST_H := 640.0
+## What the Design Space keeps clear under the shelf: the labels eye and Home sit bottom-left.
+const BOTTOM_KEEP := 104.0
 ## Cards: three to a row in WIDTH (less the scrollbar); headers and notes take a whole row.
 const CARD_W := 68.0
 const CARD_H := 108.0
@@ -220,6 +225,14 @@ func _rebuild() -> void:
 		h += head.get_combined_minimum_size().y + GAP
 		if not is_open:
 			continue
+		if cat == "frame":
+			# The frame is swapped by a press, never dragged: the fitted frame, then what FrameSwap offers, or why not.
+			for k in parts.size():
+				_add_row(cat, parts[k], {"ok": true, "reason": "", "rank": 0.0}, h + floorf(k / float(COLUMNS)) * (CARD_H + GAP))
+			h += _card_rows(parts.size())
+			if String(g.get("note", "")) != "":
+				h += _add_note(String(g["note"]))
+			continue
 		var verdicts: Dictionary = judge.call(cat) if judge.is_valid() else {}
 		var entries: Array = []
 		for p in parts:
@@ -259,18 +272,41 @@ func _rebuild() -> void:
 				_add_design_tile(cat)
 			h += _card_rows(misfits.size() + (1 if has_tile else 0))
 	_content_h = h
-	scroll.custom_minimum_size.y = minf(h, MAX_LIST_H)
-	scroll.scroll_vertical = mini(scroll.scroll_vertical, maxi(int(h - MAX_LIST_H), 0))
+	var cap := list_cap()
+	scroll.custom_minimum_size.y = minf(h, cap)
+	scroll.scroll_vertical = mini(scroll.scroll_vertical, maxi(int(h - cap), 0))
 	for r in rows:
 		if bool(r["fitted"]):
 			# A card already in view leaves the list at the top (the category's head and chips stay
 			# showing); a farther one comes up with a little of the way to it above.
 			var y := float(r["y"])
-			scroll_target = 0.0 if y + CARD_H <= MAX_LIST_H else y - 56.0
+			scroll_target = 0.0 if y + CARD_H <= cap else y - 56.0
 			_scroll_pending = true
 			break
 	_apply_scroll()
 	_update_cue()
+
+
+## The list's tallest: the room between the shelf's header and what sits bottom-left (the cue's row
+## and the gaps counted), never past MAX_LIST_H.
+func list_cap() -> float:
+	var p := get_parent() as Control
+	if p == null or p.size.y <= 0.0:
+		return MAX_LIST_H
+	var used := offset_top + header.get_combined_minimum_size().y + more_cue.get_combined_minimum_size().y \
+		+ 2.0 * float(get_theme_constant("separation")) + BOTTOM_KEEP
+	return clampf(p.size.y - used, 160.0, MAX_LIST_H)
+
+
+func _enter_tree() -> void:
+	var p := get_parent() as Control
+	if p != null and not p.resized.is_connected(_on_parent_resized):
+		p.resized.connect(_on_parent_resized)
+
+
+func _on_parent_resized() -> void:
+	if open:
+		_rebuild()
 
 
 ## Scrolls to the fitted card once the list has the range for it (called again as the bar's range
@@ -415,13 +451,19 @@ func _add_row(cat: String, part: Dictionary, v: Dictionary, y: float = 0.0) -> v
 	var ink: Color = INK if v["ok"] else INK_FAINT
 	var id := String(part["id"])
 	var is_fitted := swap_cats.has(cat) and fitted.has(cat) and String(fitted[cat]) == id
+	if cat == "frame":
+		is_fitted = bool(part.get("fitted", false))
 	var b := _flat_button("", LothalTheme.FONT_SIZE_SMALL, ink)
 	b.name = "Part_" + id if id != "" else "Part_none_" + cat
 	b.custom_minimum_size = Vector2(CARD_W, CARD_H)
 	b.mouse_default_cursor_shape = Control.CURSOR_DRAG if id != "" else Control.CURSOR_POINTING_HAND
 	b.tooltip_text = String(part["name"]) if v["ok"] else String(v["reason"])
-	if id != "":
+	if id != "" and cat != "frame":
 		b.button_down.connect(func(): drag_started.emit(id))
+	if cat == "frame":
+		if not is_fitted:
+			b.pressed.connect(func(): frame_chosen.emit(id))
+		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if not is_fitted else Control.CURSOR_ARROW
 	if cat == "propeller" and PartsCatalog.is_custom(id):
 		b.gui_input.connect(func(e: InputEvent):
 			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_RIGHT:
@@ -430,7 +472,7 @@ func _add_row(cat: String, part: Dictionary, v: Dictionary, y: float = 0.0) -> v
 		b.gui_input.connect(func(e: InputEvent):
 			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_RIGHT:
 				card_menu_requested.emit(cat, id))
-	elif swap_cats.has(cat):
+	elif cat != "frame" and swap_cats.has(cat):
 		b.pressed.connect(func(): card_clicked.emit(cat, id))
 	if swap_cats.has(cat):
 		b.mouse_entered.connect(func(): card_hovered.emit(cat, id))

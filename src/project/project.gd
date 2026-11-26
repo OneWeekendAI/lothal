@@ -353,7 +353,7 @@ func to_build(catalog: PartsCatalog, missing: Array = []) -> Build:
 		var drawn := airframe_document()
 		if drawn != null:
 			var frame := catalog.get_part(String(parts["frame"]))
-			build.set_frame_edit(FittedFrame.edit_of(frame, drawn, FittedFrame.baseline(frame)))
+			build.set_frame_edit(FittedFrame.edit_of(frame, drawn, DesignSession.frame_baseline(frame)))
 		# Last, so it hangs under the belly of the frame as flown. A payload is not a catalog part, so it
 		# is set rather than passed to `from_ids`; none of it exists when the block is empty.
 		if not payload.is_empty():

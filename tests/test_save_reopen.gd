@@ -172,6 +172,44 @@ static func run(tree: SceneTree) -> Array:
 	held.restore()
 	_clean()
 	ProjectLibrary.root = saved_root
+	out.append_array(_test_frame_classes(catalog))
+	return out
+
+
+## An edited frame of the 3.5-inch and 4-inch classes (and each class's swapped-in other frame) weighs the
+## same after save and reopen as in the session: the edit is measured against the SAME baseline document.
+## The save is the shell's own (`_sync_design_space`: parts + document when the frame is edited, to a
+## project dictionary and back), the reopen `DesignSession.from_project`.
+static func _test_frame_classes(catalog: PartsCatalog) -> Array:
+	var out: Array = []
+	var cases := [["sub250_35", ""], ["four_inch", ""], ["sub250_35", "frame_4in_freestyle"], ["four_inch", "frame_35in_freestyle"], ["five_inch", ""]]
+	for c in cases:
+		var cls: String = c[0]
+		var swap_to: String = c[1]
+		var label := "%s%s" % [cls, " swapped to " + swap_to if swap_to != "" else ""]
+		var s := DesignSession.default_for_class(cls)
+		if swap_to != "":
+			s.swap_frame(catalog, swap_to)
+		var plate := s.plate_of_mesh("frame_arm_FL")
+		var tip := AirframeDocument.point_of(s.frame_document().plates[plate]["tip_point"])
+		var dr := {}
+		for f in [0.95, 0.9, 0.7, 0.6, 0.5, 0.4, 0.3, 0.97]:   # the first spot clear of the pockets
+			dr = s.drill(plate, tip * f, 3.0)
+			if bool(dr.get("ok", false)):
+				break
+		var drilled: bool = bool(dr.get("ok", false))
+		var auw := s.build(catalog).all_up_weight_g()
+		var p := DroneClass.starting_project(cls, "t")
+		p.parts = s.selection.duplicate(true)
+		p.airframe = s.frame_document().to_dictionary() if not s.frame_edit(catalog).is_empty() else {}
+		var back := DesignSession.from_project(Project.from_dict(p.to_dict()))
+		var auw2 := back.build(catalog).all_up_weight_g()
+		var flown := Project.from_dict(p.to_dict()).to_build(catalog)
+		var auw3 := flown.all_up_weight_g() if flown != null else -1.0
+		out.append(TestResult.new("%s: the saved project weighs the same through Project.to_build (sim, list): %s vs %s g" % [label, auw3, auw],
+			flown != null and auw3 == auw, "%s vs %s" % [auw3, auw]))
+		out.append(TestResult.new("%s: a drilled, saved and reopened frame weighs bit-identically (%s vs %s g)" % [label, auw, auw2],
+			drilled and not s.frame_edit(catalog).is_empty() and auw == auw2, "%s vs %s %s" % [auw, auw2, dr]))
 	return out
 
 
