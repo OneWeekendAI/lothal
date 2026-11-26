@@ -75,6 +75,22 @@ static func run(tree: SceneTree) -> Array:
 		swapped and thick.get("ok", false) and s1.tweaks.has_override(AssemblyTweaks.CAMERA_TILT), str(thick)))
 	var hov := {Harness.MAIN_LEAD_AWG: 10.0, Harness.MAIN_LEAD_LENGTH_MM: 85.0}
 	out.append(TestResult.new("the harness override took", s1.set_harness_overrides(hov) and s1.harness_overrides == hov, str(s1.harness_overrides)))
+	# a payload slid 20 mm toward the tail: the fore-aft seat rides the file and moves the centre of mass
+	var pay_set := s1.set_payload({"kind": "payload_custom", "mass_g": 200.0, "size_mm": [60.0, 50.0, 40.0], "fore_mm": -20.0})
+	var pay_b1 := s1.build(catalog)
+	out.append(TestResult.new("a payload was fitted 20 mm aft of the thrust centroid",
+		pay_set and absf(pay_b1.payload_fore_m() + 0.020) < 1e-9 and pay_b1.payload_centre_m().z > pay_b1.thrust_centroid_xz_m().y, str(s1.payload())))
+	# by hand: the same payload re-seated on the centroid has its CG d*m/M further forward (nose is -Z)
+	var pay_c := s1.payload().duplicate()
+	pay_c.erase("fore_mm")
+	var pay_centred := ReferenceBuild.build()
+	pay_centred.set_payload_part(pay_c)
+	var pay_aft := ReferenceBuild.build()
+	pay_aft.set_payload_part(s1.payload())
+	var pay_shift := pay_aft.mass_properties.com_m.z - pay_centred.mass_properties.com_m.z
+	out.append(TestResult.new("sliding it 20 mm aft moves the CG by +m*d/M (%.4f mm)" % (0.200 * 0.020 / pay_aft.mass_properties.total_mass_kg * 1000.0),
+		absf(pay_shift - 0.200 * 0.020 / pay_aft.mass_properties.total_mass_kg) < 5e-8, str(pay_shift)))
+	var want_payload := JSON.stringify(s1.payload())
 	var path: String = shell.container.path
 	var want_class := s1.drone_class
 	var want_parts: Dictionary = s1.selection.duplicate(true)
@@ -107,6 +123,10 @@ static func run(tree: SceneTree) -> Array:
 	out.append(TestResult.new("the reopened GPS sits at the 30 mm mast the builder set, centre of mass bit-identical",
 		b2 != null and var_to_str(b2.mass_properties.com_m) == want_com and absf(b2.component_centre_m("gps").y - want_gps_y) < 1e-9
 		and absf(b2.rise_m_for(b2.components["gps"]) - 0.030) < 1e-9, want_com))
+	out.append(TestResult.new("the payload and its 20 mm aft seat are identical after reopen",
+		JSON.stringify(s2.payload()) == want_payload and s2.payload().get("fore_mm", null) == -20.0, JSON.stringify(s2.payload())))
+	out.append(TestResult.new("the reopened payload still hangs 20 mm aft of the thrust centroid",
+		b2 != null and absf(b2.payload_fore_m() + 0.020) < 1e-9 and absf(b2.payload_centre_m().z - b2.thrust_centroid_xz_m().y - 0.020) < 1e-7, ""))
 	out.append(TestResult.new("frame document identical",
 		s2.frame_document() != null and JSON.stringify(s2.frame_document().to_dictionary()) == want_doc, ""))
 	out.append(TestResult.new("tweaks identical", JSON.stringify(s2.tweaks.to_dict()) == want_tweaks, JSON.stringify(s2.tweaks.to_dict())))
@@ -120,6 +140,14 @@ static func run(tree: SceneTree) -> Array:
 	var legacy := Project.from_dict(od)
 	out.append(TestResult.new("a project file without the harness field loads with none",
 		DesignSession.from_project(legacy).harness_overrides.is_empty(), str((legacy.to_dict()["decisions"] as Dictionary).get("harness"))))
+	# an older file whose payload block has no fore key opens at the default seat, on the thrust centroid
+	var od2 := Project.from_dict(boot.container.project.to_dict()).to_dict()
+	var pay_block: Dictionary = (od2["decisions"] as Dictionary)["payload"]
+	pay_block.erase("fore_mm")
+	var legacy2 := DesignSession.from_project(Project.from_dict(od2)).build(catalog)
+	out.append(TestResult.new("a payload block without the fore key loads at the default seat (centroid, shift 0)",
+		legacy2 != null and not legacy2.payload_part.is_empty() and legacy2.payload_fore_m() == 0.0
+		and legacy2.payload_attach_m().z == legacy2.thrust_centroid_xz_m().y, str(pay_block)))
 	boot.get_parent().remove_child(boot)
 	boot.free()
 

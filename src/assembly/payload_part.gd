@@ -6,6 +6,9 @@ extends RefCounted
 ## entry of data/parts/payloads.json; `mass_g` and `size_mm` ([length, width, height]) are the builder's
 ## own numbers and, when present, win over the entry's. Absent means "whatever the kind says", so a
 ## catalog entry that is corrected later follows the design rather than freezing at an old figure.
+## `fore_mm` (optional) slides the box along the frame's centreline from its default seat on the thrust centroid:
+## POSITIVE TOWARD THE NOSE (-Z), negative toward the tail; absent is 0, the centroid seat every file made before
+## this key existed hangs from.
 ## An EMPTY dictionary is no payload, and that is every project written before this existed.
 ##
 ## THIS CLASS KNOWS WHAT A PAYLOAD IS AND NOTHING ABOUT WHERE IT GOES. The place comes from the
@@ -24,6 +27,9 @@ const CUSTOM := "payload_custom"
 const MAX_MASS_G := 20000.0
 const MIN_DIM_MM := 5.0
 const MAX_DIM_MM := 1000.0
+## Sanity bound on the SAVED fore-aft figure, mm. The place it may really take is the frame's (Build.payload_fore_limit_m),
+## which this class cannot know; this only keeps a typo or a corrupt file from storing a kilometre.
+const MAX_FORE_MM := 2000.0
 
 ## How far the hung box stands below the underside it hangs from, by mount type, metres. A hook is a
 ## strap and a hook; a gimbal needs its dampers and a swing; a plate is a bolted slab. Guesses,
@@ -75,7 +81,7 @@ static func resolve(saved: Dictionary) -> Dictionary:
 		"width_mm": float(specs.get("width_mm", 60.0)),
 		"height_mm": float(specs.get("height_mm", 60.0)),
 		"mount": String((entry.get("mounting", {}) as Dictionary).get("attachment", "plate")),
-		"mass_edited": false, "size_edited": false,
+		"mass_edited": false, "size_edited": false, "fore_mm": 0.0,
 		"source": String(entry.get("source", "")),
 	}
 	var mass: Variant = saved.get("mass_g", null)
@@ -92,11 +98,15 @@ static func resolve(saved: Dictionary) -> Dictionary:
 			out["width_mm"] = clampf(float(size[1]), MIN_DIM_MM, MAX_DIM_MM)
 			out["height_mm"] = clampf(float(size[2]), MIN_DIM_MM, MAX_DIM_MM)
 			out["size_edited"] = true
+	var fore: Variant = saved.get("fore_mm", null)
+	if fore is float or fore is int:
+		out["fore_mm"] = clampf(float(fore), -MAX_FORE_MM, MAX_FORE_MM)
 	return out
 
 
-## The saved form of a choice: only what differs from the kind's own figures is written.
-static func to_saved(kind: String, mass_g: float, length_mm: float, width_mm: float, height_mm: float) -> Dictionary:
+## The saved form of a choice: only what differs from the kind's own figures is written. `fore_mm` is written
+## only when it is not zero, so a payload on the default seat saves exactly as it did before the key existed.
+static func to_saved(kind: String, mass_g: float, length_mm: float, width_mm: float, height_mm: float, fore_mm := 0.0) -> Dictionary:
 	if kind == NONE:
 		return {}
 	var base := resolve({"kind": kind})
@@ -108,6 +118,8 @@ static func to_saved(kind: String, mass_g: float, length_mm: float, width_mm: fl
 	if not (is_equal_approx(length_mm, float(base["length_mm"])) and is_equal_approx(width_mm, float(base["width_mm"]))
 			and is_equal_approx(height_mm, float(base["height_mm"]))):
 		out["size_mm"] = [length_mm, width_mm, height_mm]
+	if not is_zero_approx(fore_mm):
+		out["fore_mm"] = fore_mm
 	return out
 
 
