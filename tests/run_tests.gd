@@ -22,7 +22,7 @@ const SUITES := ["prop page fit", "prop capability", "prop pin", "prop gap", "tw
 	"wire gauge", "power parts", "harness", "harness checks", "power room",
 	"control parts", "control components", "component registration", "control persistence", "control warnings", "custom control components", "config motors", "config ports", "config failsafe", "config arming", "config rates", "config sheet",
 	"camera tilt", "video warnings", "video panel",
-	"arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet", "payload", "payload position", "r17 realism",
+	"arm guard", "camera mount", "antenna mount", "printed export", "printed divergence", "fabrication", "gps mast", "battery pad", "straps pads", "stack mount", "ready to cut", "arm strength", "stl bodies", "printed infill", "printed drawn", "camera cage", "build sheet", "design build sheet", "payload", "payload position", "r17 realism",
 	"sim end states", "flight controls", "airframe page", "config page", "control page", "power page", "printed page", "propulsion page", "video page", "b5 damage shake", "video link"]
 
 func _init() -> void:
@@ -262,6 +262,7 @@ func _run_suite(suite_name: String) -> Array:
 		"camera cage": return TestCameraCage.run()
 		# Airframe gaps G6: the build sheet (parts, hardware, assembly order) and the cutting-cost range.
 		"build sheet": return TestBuildSheet.run()
+		"design build sheet": return TestDesignBuildSheet.run()
 		"authored blade": return TestAuthoredBlade.run()
 		"propeller document": return TestPropellerDocument.run()
 		"blade geometry": return TestBladeGeometry.run()
