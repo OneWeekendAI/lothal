@@ -284,10 +284,10 @@ static func _test_tool_row(catalog: PartsCatalog) -> Array:
 	ds.tool_row.free_size.value_changed.emit(4.5)
 	out.append(TestResult.new("the free diameter sets the drill", is_equal_approx(ds.drill_d_mm, 4.5), "%f" % ds.drill_d_mm))
 	ds.free()
-	var four := _ds(catalog, "four_inch") if DroneClass.is_available("four_inch") else null
+	var four := _ds(catalog, "cinewhoop_3") if DroneClass.is_available("cinewhoop_3") else null
 	if four != null:
 		four.select("frame/body" if four.picks.addresses().has("frame/body") else String(four.picks.addresses().filter(func(a): return String(a).begins_with("frame/"))[0]))
-		out.append(TestResult.new("the 4\" (no frame document) shows no tool row on a frame selection", not four.frame_tools_shown(), four.selected))
+		out.append(TestResult.new("the 3\" cinewhoop (no frame document) shows no tool row on a frame selection", not four.frame_tools_shown(), four.selected))
 		four.free()
 	return out
 

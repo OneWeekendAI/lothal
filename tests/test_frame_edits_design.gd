@@ -364,9 +364,9 @@ static func _test_thickness_and_width(catalog: PartsCatalog) -> Array:
 
 static func _test_other_classes(catalog: PartsCatalog) -> Array:
 	var out: Array = []
-	var s := DesignSession.default_for_class("four_inch")
+	var s := DesignSession.default_for_class("cinewhoop_3")
 	var v := s.drill(0, Vector2.ZERO, HOLE_MM)
-	out.append(TestResult.new("the 4\" has no frame document and its drill is refused with a reason",
+	out.append(TestResult.new("the 3\" cinewhoop has no frame document and its drill is refused with a reason",
 		s.frame_document() == null and not v["ok"] and String(v["reason"]) != "" and not s.can_undo(), "%s" % v))
 	var f := _session()
 	var other := ""

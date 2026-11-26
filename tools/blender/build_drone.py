@@ -58,7 +58,7 @@ CFGS = {
                        batt=dict(seed="battery_1s_300", w_trim=0.0015, cells="1S", mah="300", col=(0.85, 0.30, 0.05)),
                        zmin=0.0, frame_col="whoop", batt_dy=-0.008),
     "toothpick": dict(wb=0.110, prop_d=0.063, blades=3, motor=(0.0135, 0.0100), frame="open", kb=0.60, zk=0.45,
-                      arm_k=0.42, arm_t=0.0025, cam=0.62,
+                      arm_k=0.42, arm_t=0.0025, cam=0.62, frame_part="frame_25in_whoop",
                       batt=dict(seed="battery_2s_450", cells="2S", mah="450", col=(0.10, 0.45, 0.80)),
                       zmin=0.0, batt_dy=-0.007),
     "cinewhoop_3": dict(wb=0.160, prop_d=0.0762, blades=3, motor=(0.0172, 0.0155), frame="open", kb=0.70,
@@ -66,11 +66,11 @@ CFGS = {
                         batt=dict(seed="battery_4s_650", cells="4S", mah="650", col=(0.85, 0.10, 0.10)),
                         zmin=-0.004),
     "sub250_35": dict(wb=0.155, prop_d=0.0889, blades=3, motor=(0.0185, 0.0185), frame="open", kb=0.84,
-                      arm_k=0.8, arm_t=0.0040, cam=0.9,
+                      arm_k=0.8, arm_t=0.0040, cam=0.9, frame_part="frame_35in_freestyle",
                       batt=dict(seed="battery_4s_650", cells="4S", mah="650", col=(0.95, 0.75, 0.10)),
                       zmin=0.0),
     "four_inch": dict(wb=0.175, prop_d=0.1016, blades=3, motor=(0.0215, 0.0170), frame="open", kb=0.92, zk=0.88,
-                      arm_k=0.9, arm_t=0.0040, cam=1.0,
+                      arm_k=0.9, arm_t=0.0040, cam=1.0, frame_part="frame_4in_freestyle",
                       batt=dict(seed="battery_4s_1300", cells="4S", mah="1300", col=(0.15, 0.55, 0.30)),
                       zmin=0.0),
     "five_inch": dict(wb=0.220, prop_d=0.127, blades=3, motor=(0.028, 0.0200), frame="open", kb=1.0,
@@ -78,11 +78,11 @@ CFGS = {
                       batt=dict(seed="battery_4s_1500", cells="4S", mah="1500", col=(0.92, 0.38, 0.08)),
                       zmin=0.0),
     "six_inch": dict(wb=0.250, prop_d=0.1524, blades=3, motor=(0.0305, 0.0230), frame="open", kb=1.08,
-                     arm_k=1.1, arm_t=0.0060, cam=1.05,
+                     arm_k=1.1, arm_t=0.0060, cam=1.05, frame_part="frame_6in_long_range",
                      batt=dict(seed="battery_6s_1300", cells="6S", mah="1300", col=(0.10, 0.45, 0.80)),
                      zmin=0.0),
     "seven_lr": dict(wb=0.290, prop_d=0.1778, blades=2, motor=(0.0335, 0.0250), frame="open", kb=1.15,
-                     arm_k=1.2, arm_t=0.0060, cam=1.05, gps=True,
+                     arm_k=1.2, arm_t=0.0060, cam=1.05, gps=True, frame_part="frame_7in_long_range",
                      batt=dict(seed="battery_6s_1300", cells="6S", mah="1300", col=(0.12, 0.30, 0.65)),
                      zmin=0.0),
     # The cinelifter is the iFlight Taurus X8 V3 the class seeds (src/design/drone_class.gd): coaxial X8,
@@ -1020,7 +1020,9 @@ def build_body_plates(b, C, root=None):
 # pick proxy's own name where one exists (pick_hole_arm_FL_2), else what occupies it (motor_bore_FL,
 # motor_bolt_FL_1, standoff_3). The TPU tail mount is left out: it is not a carbon plate.
 FRAME_DOC = None
-FRAME_DOC_CLASSES = ("five_inch",)
+# Plain open plate frames only. Left out on purpose: tiny_whoop (moulded whoop frame), cinewhoop_3 (the duct
+# carries the motor, the arm is a ring cut with no mount) and the tube classes (cinelifter, x_class).
+FRAME_DOC_CLASSES = ("toothpick", "sub250_35", "four_inch", "five_inch", "six_inch", "seven_lr")
 
 
 def _area2(pts):
@@ -1083,7 +1085,7 @@ def _proxy_names(owner, cuts, skip, fixed):
 def frame_doc_start():
     global FRAME_DOC
     FRAME_DOC = {"schema": 1, "id": CFG.get("frame_part", ""), "name": CLASS_ID + " open frame (as drawn in Blender)",
-                 "author": "tools/blender/build_drone.py", "revision": "five_inch.glb",
+                 "author": "tools/blender/build_drone.py", "revision": CLASS_ID + ".glb",
                  "material_id": "carbon_3k_twill_0_90", "published_mass_g": 0.0,
                  "cutting_bit_mm": 1.5875, "plates": [], "pads": [], "motors": [], "hardware": [],
                  "straps": [], "payload_mounts": []}

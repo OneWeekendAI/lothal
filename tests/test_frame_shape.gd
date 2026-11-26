@@ -39,7 +39,7 @@ static func run() -> Array:
 		not shape.seam_live and not shape.flush() and ds.session.frame_document().plates.size() == flown, ""))
 	ds.free()
 
-	var four := DesignSpace.new(DesignSession.default_for_class("four_inch"), catalog)
+	var four := DesignSpace.new(DesignSession.default_for_class("cinewhoop_3"), catalog)
 	four.size = Vector2(1280, 720)
 	out.append(TestResult.new("a class with no frame drawing still gets the room, as a workbench",
 		four.open_part_sheet("frame", "shape") and not (four.part_sheet.tab("shape") as FrameShapeTab).seam_live
