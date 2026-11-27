@@ -10,6 +10,9 @@ extends DesignerShell
 ## The root safety factor stays off this column: it reads pessimistic on real props, so the Structure
 ## tab shows it neutrally, for comparing designs, with no warning.
 
+## Where the design RPM starts, as a fraction of the motor's rated (unloaded) speed: a hover-ish point a
+## quad that lifts itself twice over would hold. A propeller has no throttle or pack, so the builder owns this answer.
+const DESIGN_RPM_FRACTION := 0.65
 const LEFT_W := 300.0
 const RIGHT_W := 440.0
 const FIGURE_ROWS := ["thrust", "power", "mass", "cg", "inertia", "tip_speed", "tip_mach", "blade_pass", "mount"]
@@ -156,7 +159,7 @@ func _start_from(build: Build, fallback_class: String = FALLBACK_CLASS) -> void:
 		drone_parts = {"frame": String(parts["frame"]), "battery": String(parts["battery"])}
 	_take_prop(prop)
 	rpm = Fitting.rated_rpm(float(motor["specs"]["kv"]), float(motor["thrust_test"]["voltage_v"])) \
-		* PropulsionWorkbench.DESIGN_RPM_FRACTION
+		* DESIGN_RPM_FRACTION
 
 
 ## Starts a NEW prop from this record: no id to overwrite, and no vendor's weight to claim.

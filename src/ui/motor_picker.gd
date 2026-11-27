@@ -20,14 +20,8 @@ var _delete_button: Button
 func _init(p_catalog: PartsCatalog) -> void:
 	super(p_catalog, "motor", "MOTORS", "motor", FILTER_KEYS)
 
-	# The authoring entry point, on the motor rail for the same reason the frame one is on the
-	# frame rail (PartPicker's header, on parallel surfaces): a second place to browse motors from
-	# is a second thing that can disagree about what a motor is.
+	# Delete only: motors are authored in the Motor designer (the New-motor button lived here).
 	var buttons := HBoxContainer.new()
-	var new_button := Button.new()
-	new_button.text = "New custom motor…"
-	new_button.pressed.connect(_open_dialog)
-	buttons.add_child(new_button)
 	_delete_button = Button.new()
 	_delete_button.text = "Delete"
 	_delete_button.pressed.connect(_delete_selected)
@@ -41,15 +35,6 @@ func _init(p_catalog: PartsCatalog) -> void:
 ## motor, so the rail does not reflow every time the selection moves.
 func _refresh_delete_button() -> void:
 	_delete_button.disabled = not PartsCatalog.is_custom(str(selected_part().get("part_id", "")))
-
-
-func _open_dialog() -> void:
-	var dialog := CustomMotorDialog.new()
-	dialog.motor_saved.connect(func(_part_id: String) -> void:
-		dialog.queue_free()
-		custom_motors_changed.emit())
-	add_child(dialog)
-	dialog.popup_centered()
 
 
 func _delete_selected() -> void:

@@ -30,7 +30,6 @@ static func run() -> Array:
 	results.append(_test_unknown_fields_survive_a_round_trip())
 	results.append(_test_a_custom_motor_is_selectable_and_flyable())
 	results.append(_test_custom_browsing_buckets_are_the_catalogs_own())
-	results.append(_test_the_dialog_saves_a_motor_and_refuses_a_bad_one())
 	return results
 
 
@@ -692,49 +691,3 @@ static func _test_custom_browsing_buckets_are_the_catalogs_own() -> TestResult:
 			stator, kv_class, stator_buckets.keys(), kv_buckets.keys()])
 
 
-## The authoring surface, driven through its public methods rather than by synthesising input
-## events — the same way the frames suite drives its dialog. What is under test is that the
-## dialog goes through CustomMotors rather than writing a record of its own shape, and that a
-## refusal comes back to the builder instead of being swallowed.
-static func _test_the_dialog_saves_a_motor_and_refuses_a_bad_one() -> TestResult:
-	var previous := ""
-	if FileAccess.file_exists(CustomMotors.SAVE_PATH):
-		previous = FileAccess.get_file_as_string(CustomMotors.SAVE_PATH)
-	_wipe(CustomMotors.SAVE_PATH)
-
-	var dialog := CustomMotorDialog.new()
-	dialog.set_fields("Shed 2810 1100KV", 62.0, 28.0, 10.0, 1100.0, 2400.0, 45.0, 14, "16x16",
-		"prop_8x45x3", 22.2, "manufacturer thrust table, 8x4.5x3 at 22.2 V")
-	var accepted := dialog.submit()
-	var on_disk: bool = not CustomMotors.load_from(CustomMotors.SAVE_PATH) \
-		.get_motor("custom_shed_2810_1100kv").is_empty()
-
-	# The two refusals a builder can actually produce from this form: no provenance, and a test
-	# prop that is not a prop. Both must come back as words, and neither may reach the file.
-	dialog.set_fields("No Source", 62.0, 28.0, 10.0, 1100.0, 2400.0, 45.0, 14, "16x16",
-		"prop_8x45x3", 22.2, "  ")
-	var no_source := dialog.submit()
-	dialog.set_fields("No Prop", 62.0, 28.0, 10.0, 1100.0, 2400.0, 45.0, 14, "16x16",
-		"prop_nonsense", 22.2, "off the product page")
-	var no_prop := dialog.submit()
-	var count := CustomMotors.load_from(CustomMotors.SAVE_PATH).motors().size()
-	dialog.free()
-
-	_restore(CustomMotors.SAVE_PATH, previous)
-
-	# Not just THAT each was refused, but that it was refused for the field actually left broken —
-	# a refusal for the wrong reason is a passing test hiding a broken rule.
-	var names_source := false
-	for problem in no_source:
-		if problem.contains("source"):
-			names_source = true
-	var names_prop := false
-	for problem in no_prop:
-		if problem.contains("prop_nonsense"):
-			names_prop = true
-
-	return TestResult.new(
-		"the dialog saves a good motor and hands back words for the two it must refuse",
-		accepted.is_empty() and on_disk and names_source and names_prop and count == 1,
-		"accepted=%s, on disk=%s, refusals %d (names source=%s) / %d (names the bad prop=%s), %d motors in the file" % [
-			accepted, on_disk, no_source.size(), names_source, no_prop.size(), names_prop, count])

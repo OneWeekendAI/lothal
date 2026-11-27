@@ -174,7 +174,8 @@ static func _test_every_authoring_rail_offers_a_way_in() -> TestResult:
 		for text in texts:
 			if text.begins_with("New custom"):
 				has_new = true
-		if not has_new or not texts.has("Delete"):
+		# Motors are authored in the Motor designer; the rail keeps only Delete.
+		if (not has_new and category != "motor") or not texts.has("Delete"):
 			missing.append("%s (new=%s, delete=%s)" % [category, has_new, texts.has("Delete")])
 
 	_free_rails(rails)
@@ -377,11 +378,6 @@ static func _test_the_save_button_does_not_close_a_dialog_on_a_refusal() -> Test
 			var d := CustomFrameDialog.new()
 			d.set_fields("Bad Frame", 118.0, 0.0, 5.0, "16x16", "30.5x30.5", "carbon fibre", "scale")
 			return d,
-		"motor": func() -> AcceptDialog:
-			var d := CustomMotorDialog.new()
-			d.set_fields("Bad Motor", 30.9, 22.0, 6.0, 2400.0, 1650.0, 40.0, 14, "16x16",
-				CATALOG_PROP_ID, 14.0, "")
-			return d,
 		"propeller": func() -> AcceptDialog:
 			var d := CustomPropellerDialog.new()
 			d.set_fields("Bad Prop", 4.5, 5.0, 4.3, 3, "polycarbonate", "")
@@ -402,11 +398,6 @@ static func _test_the_save_button_does_not_close_a_dialog_on_a_refusal() -> Test
 		"frame": func() -> AcceptDialog:
 			var d := CustomFrameDialog.new()
 			d.set_fields("Good Frame", 118.0, 105.0, 5.0, "16x16", "30.5x30.5", "carbon fibre", "scale")
-			return d,
-		"motor": func() -> AcceptDialog:
-			var d := CustomMotorDialog.new()
-			d.set_fields("Good Motor", 30.9, 22.0, 6.0, 2400.0, 1650.0, 40.0, 14, "16x16",
-				CATALOG_PROP_ID, 14.0, "spec sheet")
 			return d,
 		"propeller": func() -> AcceptDialog:
 			var d := CustomPropellerDialog.new()
