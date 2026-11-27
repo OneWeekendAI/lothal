@@ -1477,7 +1477,7 @@ static func _test_mount_details(catalog: PartsCatalog, mats: FrameMaterials) -> 
 
 static func _test_opens_at_rated_rpm(catalog: PartsCatalog, mats: FrameMaterials) -> Array:
 	var d := _designer(catalog, mats)
-	var want := Fitting.rated_rpm(float(d.motor["specs"]["kv"]), float(d.motor["thrust_test"]["voltage_v"])) * PropulsionWorkbench.DESIGN_RPM_FRACTION
+	var want := Fitting.rated_rpm(float(d.motor["specs"]["kv"]), float(d.motor["thrust_test"]["voltage_v"])) * PropDesigner.DESIGN_RPM_FRACTION
 	var out: Array = [_t("rpm: opens on the rated rpm at the design fraction", is_equal_approx(d.rpm, want), "%f %f" % [d.rpm, want])]
 	d.free()
 	return out

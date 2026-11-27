@@ -55,9 +55,6 @@ static func run() -> Array:
 	results.append(_test_the_whole_model_moves_together_on_one_edit())
 	results.append(_test_publishing_round_trips())
 	results.append(_test_republishing_invalidates_the_builds_ratio_surface())
-	results.append(_test_a_new_blade_starts_from_the_arch_and_says_it_is_one())
-	results.append(_test_the_new_blade_form_refuses_and_stays_up())
-	results.append(_test_the_room_says_which_shape_the_aircraft_flies())
 	results.append(_test_a_blade_published_next_door_is_flyable_on_the_next_trip_out())
 	held.restore()
 	results.append(TestResult.new(
@@ -395,7 +392,7 @@ static func _test_republishing_invalidates_the_builds_ratio_surface() -> TestRes
 
 	# The same blade, narrowed and published again. The part_id is derived from the name and the
 	# name did not change, so this REPLACES the record the build is flying rather than adding a
-	# second propeller — the same thing `PropulsionWorkbench._on_publish` does to the store.
+	# second propeller — the same thing the Prop designer's publish does to the store.
 	catalog.by_id[part_id] = CustomPropellers.record_from_document(
 		_scaled_document(0.55), materials, "authored")
 	build.refit_from(catalog)
@@ -417,169 +414,9 @@ static func _test_republishing_invalidates_the_builds_ratio_surface() -> TestRes
 # §3.2 — a blade from nothing, which is not a blade with nothing in it
 # ---------------------------------------------------------------------------
 
-## "New blade…" produces a document with the GENERATED ARCH for its diameter and blade count,
-## flagged as an assumption — not an empty planform.
-##
-## That is §3.2's decision and it is deliberately the less obvious one. A blade with no chord
-## distribution has no area, no mass, no thrust and no drawable shape, so the planform canvas, the
-## section view and the mount profile would each grow an empty state whose whole working life is the
-## five seconds before the first drag. What "from nothing" means instead is NOT TIED TO A PRODUCT:
-## no part number, no vendor mass, nothing inherited that the builder has to notice and override.
-## So the check asserts both halves — that there IS a planform, and that there is no product.
-##
-## Mutation that turns this red: have `PlanformEdits.new_blade` return an empty chord — the blank
-## planform §3.2 rejects. Red on the arch clause. Mutating `published_mass_g` to carry the seeding
-## blade's figure instead reds the second half.
-static func _test_a_new_blade_starts_from_the_arch_and_says_it_is_one() -> TestResult:
-	# Driven through the dialog rather than through `PlanformEdits.new_blade` directly, because the
-	# inch conversion and the material mapping are the dialog's own and a check that called the
-	# factory would assert nothing about either.
-	#
-	# The document is caught in a DICTIONARY rather than assigned to a local from inside the
-	# lambda: a GDScript lambda captures its enclosing locals BY VALUE, so the assignment would
-	# land on a copy and this check would read `null` forever while the code worked.
-	var caught := {}
-	var dialog := NewBladeDialog.new()
-	dialog.set_fields("My 5 inch", 5.0, 4.3, 3, "carbon-filled nylon")
-	dialog.blade_created.connect(func(document: PropellerDocument) -> void:
-		caught["document"] = document)
-	var problems := dialog.submit()
-	dialog.free()
-
-	var created: PropellerDocument = caught.get("document", null)
-	var has_document: bool = created != null
-	var arch_ok := false
-	var geometry_ok := false
-	var no_product := false
-	if has_document:
-		arch_ok = created.chord == PropellerDocument.generate_chord(created.diameter_mm,
-			created.blades) and created.chord.size() > 2 and created.chord_is_assumed
-		geometry_ok = absf(created.diameter_mm - 5.0 * PropellerDocument.INCH_TO_MM) < 1e-9 \
-			and absf(created.pitch_mm - 4.3 * PropellerDocument.INCH_TO_MM) < 1e-9 \
-			and created.blades == 3 and created.material_id == "carbon_filled_nylon"
-		no_product = created.published_mass_g == 0.0 and created.author == "" \
-			and created.id.begins_with("blade_") and created.name == "My 5 inch"
-	return TestResult.new(
-		"a new blade starts from the generated arch, says the chord is assumed, and inherits no product",
-		problems.is_empty() and has_document and arch_ok and geometry_ok and no_product,
-		"problems %d, document %s, arch %s, geometry %s, no product %s" % [
-			problems.size(), str(has_document), str(arch_ok), str(geometry_ok), str(no_product)])
-
-
-## The form refuses what leaves no document, and — the half that actually cost this project a bug —
-## it is still ON SCREEN when it does.
-##
-## `AcceptDialog` hides itself the moment OK is pressed, before `confirmed` reaches any handler, so
-## a refused form vanished exactly as an accepted one does. `test_custom_parts_ui.gd` found that on
-## four dialogs; this is the fifth. Asserted through the OK BUTTON rather than through `submit()`,
-## because `submit()` alone cannot see it, and on `visible`, which is the thing the builder is
-## looking at.
-##
-## Mutation that turns this red: drop the `show()` from `_on_confirmed`. Red on `stayed_up` while
-## the refusal itself still reads correctly, which is the point.
-static func _test_the_new_blade_form_refuses_and_stays_up() -> TestResult:
-	var faults: Array[String] = []
-	# Three refusals, one per absence that leaves no document to draw.
-	var bad := {
-		"no name": ["", 5.0, 4.3],
-		"no diameter": ["Nameless width", 0.0, 4.3],
-		"no pitch": ["No twist", 5.0, 0.0],
-	}
-	for label in bad:
-		var fields: Array = bad[label]
-		var dialog := NewBladeDialog.new()
-		dialog.set_fields(str(fields[0]), float(fields[1]), float(fields[2]), 3, "polycarbonate")
-		dialog.get_ok_button().pressed.emit()
-		var refused: bool = not dialog.problems().is_empty()
-		var stayed_up: bool = dialog.visible
-		dialog.free()
-		if not refused:
-			faults.append("%s was accepted" % label)
-		if not stayed_up:
-			faults.append("%s closed the form" % label)
-
-	var good := NewBladeDialog.new()
-	good.set_fields("A fine blade", 5.0, 4.3, 3, "polycarbonate")
-	good.get_ok_button().pressed.emit()
-	if not good.problems().is_empty():
-		faults.append("a complete form was refused")
-	if good.visible:
-		faults.append("a complete form stayed open")
-	good.free()
-
-	return TestResult.new(
-		"the new-blade form refuses a blade with no name, diameter or pitch and stays on screen",
-		faults.is_empty(),
-		"faults: %s" % ("none" if faults.is_empty() else ", ".join(faults)))
-
-
 # ---------------------------------------------------------------------------
 # §2.1 — the snapshot says so out loud, or it is the §0 defect in miniature
 # ---------------------------------------------------------------------------
-
-## The room's status line, driven through a REAL publish.
-##
-## §2.1's chosen trade-off is that publishing takes a snapshot: a later drag in the room does not
-## reach the aircraft until the builder publishes again. That is honest for a store whose other
-## records are things a builder bought, and it is also the behaviour most likely to be experienced
-## as a bug — a builder edits, flies, sees nothing change, and concludes the feature is broken. The
-## status line is the whole mitigation, so a line that was wired but never asserted was the
-## mitigation being taken on trust.
-##
-## THIS CHECK WRITES THE DEVELOPER'S OWN `user://custom_parts.json`, and there is no way around it:
-## `_on_publish` reads and writes the real store, and a fixture that pointed it somewhere else would
-## be testing a different function. So the file is captured BEFORE anything is published, restored
-## after, and the restoration is VERIFIED — because a save/restore written after the fact preserves
-## the pollution rather than removing it, and a restore nobody checked is a restore that can fail
-## silently. The comparison parses the JSON rather than reading lines: a record's inline blade block
-## spans many lines, so a line-oriented check would report a file as unchanged while a whole
-## propeller had appeared inside it.
-##
-## Three claims, and the third is the one with no other home. Published: the aircraft flies THIS
-## blade. Edited without republishing: the aircraft still flies the PUBLISHED shape. Opened on a
-## different blade: the snapshot is gone, so the room cannot compare the blade on screen against a
-## different blade's published shape and report on an aircraft that is flying neither.
-##
-## Mutations that turn this red: writing the record through on every edit (red on the second claim,
-## which is §2.1's chosen posture turning into the rejected one); dropping `_published = {}` from
-## `set_document` (red on the third).
-static func _test_the_room_says_which_shape_the_aircraft_flies() -> TestResult:
-	var captured := _capture_custom_parts()
-	var room := PropulsionWorkbench.new(PartsCatalog.load_default())
-	var authored := _scaled_document(1.0)
-	authored.name = "Status line fixture blade"
-	room.set_document(authored)
-	room._on_publish()
-	var published_line := room._status.text
-	var snapshot_taken: bool = not room._published.is_empty()
-
-	# One edit, no republish — the exact sequence a builder mistakes for a broken feature.
-	var narrowed := room.document.chord.duplicate()
-	for i in range(1, narrowed.size(), 2):
-		narrowed[i] = narrowed[i] * 0.8
-	room.document.chord = narrowed
-	room._refresh()
-	var edited_line := room._status.text
-
-	# A different blade. Nothing in this room has been published about it.
-	room.set_document(_scaled_document(0.6))
-	var cleared: bool = room._published.is_empty()
-	var no_stale_claim: bool = not room._status.text.contains("publish")
-	room.free()
-
-	# Put the builder's file back exactly as it was found, and say whether that worked.
-	var restored := _restore_custom_parts(captured)
-
-	var says_flying: bool = published_line.contains("this is the blade your aircraft flies")
-	var says_stale: bool = edited_line.contains("Edited since publishing") \
-		and edited_line.contains("still flies the published shape")
-	return TestResult.new(
-		"the room says whether the aircraft flies this blade, an older one, or nothing it published",
-		snapshot_taken and says_flying and says_stale and cleared and no_stale_claim and restored,
-		"snapshot %s, published \"%s\", edited \"%s\", cleared %s, no stale claim %s, user file restored %s" % [
-			str(snapshot_taken), published_line, edited_line, str(cleared),
-			str(no_stale_claim), str(restored)])
-
 
 # ---------------------------------------------------------------------------
 # §7b's fourth bullet, which turned out to be wrong — and is pinned so it stays wrong

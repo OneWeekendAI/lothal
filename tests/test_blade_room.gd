@@ -44,17 +44,7 @@ static func run() -> Array:
 	results.append(_test_the_radius_axis_runs_the_same_way_as_the_planform())
 	results.append(_test_a_refusal_draws_no_curve())
 	results.append(_test_the_shaded_bands_match_the_stalled_radii())
-	results.append(_test_re_pitching_moves_the_angle_of_attack_and_the_efficiency())
-	results.append(_test_an_authored_twist_refuses_a_re_pitch())
-	results.append(_test_a_re_pitch_is_one_undo_step())
-	results.append(_test_opening_a_blade_does_not_push_an_undo_step())
 	return results
-
-
-static func _room() -> PropulsionWorkbench:
-	var room := PropulsionWorkbench.new(PartsCatalog.load_default())
-	room.size = Vector2(1200.0, 700.0)
-	return room
 
 
 static func _panel(verdict: Dictionary, radius_m: float) -> BladeAeroPanel:
@@ -283,98 +273,3 @@ static func _test_the_shaded_bands_match_the_stalled_radii() -> TestResult:
 # 5. Pitch, the room's other editable property
 # ---------------------------------------------------------------------------
 
-## Re-pitching the open blade moves the angle of attack at every station and the hover efficiency
-## with it — the whole point of the control existing.
-##
-## Both are asserted because either alone is satisfiable by a write that goes nowhere: α could move
-## while the panel reads a stale verdict, and g/W could move for any number of reasons if the
-## document were being re-derived from the catalog rather than edited.
-##
-## Direction, not just magnitude: MORE pitch is more blade angle, so α must RISE. A check on
-## `!= previous` would pass an implementation that had the conversion inverted.
-##
-## MUTATION that turns this red: drop the `INCH_TO_MM` conversion in `_on_pitch_changed` and pass
-## the spinner's value straight through as millimetres. Every figure still moves when the control
-## moves — in the right direction, even — and a 4.3" blade quietly becomes a 4.3 mm one.
-static func _test_re_pitching_moves_the_angle_of_attack_and_the_efficiency() -> TestResult:
-	var room := _room()
-	var before := BladeAero.analyse(room.document, TEST_RPM)
-	var before_alpha := BladeAero.alpha_deg(before["stations"], 20)
-	var before_g_w: float = before["grams_per_watt"]
-
-	var accepted := room.set_pitch_mm(room.document.pitch_mm * 1.5)
-	var after := BladeAero.analyse(room.document, TEST_RPM)
-	var after_alpha := BladeAero.alpha_deg(after["stations"], 20)
-	var after_g_w: float = after["grams_per_watt"]
-	room.free()
-	return TestResult.new(
-		"re-pitching the blade raises the angle of attack and moves hover efficiency",
-		accepted and after_alpha > before_alpha + 0.5 and not is_equal_approx(before_g_w, after_g_w),
-		"alpha %.2f deg -> %.2f deg, %.1f g/W -> %.1f g/W"
-			% [before_alpha, after_alpha, before_g_w, after_g_w])
-
-
-## A blade whose twist is AUTHORED refuses the re-pitch, and its pitch is left alone.
-##
-## `beta_rad` reads the twist table in that mode and never looks at `pitch_mm`, so a write would
-## change the file and change nothing else — no angle, no thrust, no figure in the panel. The check
-## is on the REFUSAL and on the document being untouched, which are two different failures: a
-## method that returned false and wrote anyway would pass a check on the return value alone.
-##
-## MUTATION that turns this red: drop the `twist_mode` clause from `set_pitch_mm`. Every geometric
-## blade behaves identically, so nothing else in this suite or in test_propulsion_room.gd notices.
-static func _test_an_authored_twist_refuses_a_re_pitch() -> TestResult:
-	var room := _room()
-	room.document.twist_mode = PropellerDocument.TWIST_MODE_AUTHORED
-	room.document.twist = PackedFloat64Array([0.1, 0.3, 1.0, 0.05])
-	var was := room.document.pitch_mm
-	var accepted := room.set_pitch_mm(was * 1.5)
-	var now := room.document.pitch_mm
-	room.free()
-	return TestResult.new(
-		"an authored twist refuses a re-pitch and keeps the pitch it had",
-		not accepted and now == was,
-		"accepted %s, pitch %.2f mm (was %.2f mm)" % [str(accepted), now, was])
-
-
-## One re-pitch is one undo step, and undoing it restores the pitch exactly.
-##
-## MUTATION that turns this red: record the history step AFTER the write in `set_pitch_mm`. The
-## undo stack still has one entry, the button still lights up — and undoing lands on the pitch that
-## was just set, so the edit cannot be taken back at all.
-static func _test_a_re_pitch_is_one_undo_step() -> TestResult:
-	var room := _room()
-	var was := room.document.pitch_mm
-	var depth_before := room.history.depth()
-	room.set_pitch_mm(was * 1.4)
-	var depth_after := room.history.depth()
-	room.undo()
-	var restored: bool = is_equal_approx(room.document.pitch_mm, was)
-	var one_step: bool = depth_after == depth_before + 1
-	room.free()
-	return TestResult.new(
-		"a re-pitch is one undo step, and undoing it restores the pitch",
-		one_step and restored,
-		"depth %d -> %d, restored %s" % [depth_before, depth_after, str(restored)])
-
-
-## Opening a blade — and undoing onto one — does not push a history step of its own.
-##
-## This is the `set_value_no_signal` check. A `Range` assigned normally emits `value_changed`, which
-## would reach `set_pitch_mm`, which records an undo step: so opening a preset would push a step,
-## and every UNDO would push one onto the stack it was walking back through, making the second
-## Ctrl-Z undo the first one's own bookkeeping.
-##
-## MUTATION that turns this red: assign `_pitch_spin.value` instead of calling
-## `set_value_no_signal` in `_sync_pitch_control`.
-static func _test_opening_a_blade_does_not_push_an_undo_step() -> TestResult:
-	var room := _room()
-	var after_open := room.history.depth()
-	room.open_preset("prop_7x4x3")
-	var after_second := room.history.depth()
-	var can_undo_nothing := not room.history.can_undo()
-	room.free()
-	return TestResult.new(
-		"opening a blade pushes no undo step of its own",
-		after_open == 0 and after_second == 0 and can_undo_nothing,
-		"depth %d after opening, %d after opening another" % [after_open, after_second])

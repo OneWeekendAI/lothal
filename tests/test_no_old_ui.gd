@@ -13,7 +13,9 @@ const BANNED_TOKENS := ["glass_box", "ReadoutLabel", "MutedLabel", "TitleLabel",
 	"GlassShell", "class_name Dock", "RoomMenu", "AppShell",
 	# M15: the Rooms group and the Setup pages are retired; these may not come back.
 	"DsSetup", "DesignFileBar.ROOMS", "const ROOMS", "room_pressed", "signal room_requested", "func open_room", "func open_setup",
-	"\"Room_\"", "func show_bench", "func show_esc_bench", "func show_frame_bench", "func show_studio"]
+	"\"Room_\"", "func show_bench", "func show_esc_bench", "func show_frame_bench", "func show_studio",
+	# Item 15: editors that were built but unreachable; the Motor / Prop designers replaced them.
+	"class_name PropulsionWorkbench", "class_name NewBladeDialog", "class_name PropellerShelf", "class_name CustomMotorDialog"]
 ## Deleted by R9 (the swap). Allowed ONLY while R9 is open.
 const PENDING_R9 := []
 ## Files that may use a banned token: none.
@@ -110,8 +112,6 @@ static func _runtime(tree: SceneTree) -> Dictionary:
 		"projects screen": ProjectsScreen.new(),
 		"project menu": ProjectMenu.new(),
 		"update notice": UpdateNotice.new(LothalVersion.MANIFEST_URL),
-		"new blade dialog": NewBladeDialog.new(),
-		"custom motor dialog": CustomMotorDialog.new(),
 		"custom esc dialog": CustomEscDialog.new(),
 		"custom fc dialog": CustomFcDialog.new(),
 		"custom frame dialog": CustomFrameDialog.new(),
