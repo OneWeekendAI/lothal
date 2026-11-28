@@ -93,7 +93,28 @@ var topside_m := 0.0
 ## Which way this propeller turns, as a sign on rotation about +Y. Set by whoever assembles the
 ## aircraft, from MotorLayout.SPIN — the same table the yaw torque is computed from, so the picture
 ## and the physics cannot disagree about which way a rotor goes. Not read from anywhere in here.
-var spin := 1.0
+var spin := 1.0:
+	set(value):
+		var flipped := signf(value) != signf(spin)
+		spin = value
+		# A prop already built the other way round is the wrong hand: re-draw it mirrored.
+		if flipped and _last_prop_valid:
+			rebuild(_last_prop, _last_doc_arg)
+var _last_prop: Dictionary = {}
+var _last_doc_arg: PropellerDocument = null
+var _last_prop_valid := false
+
+## Bore RADIUS in metres (the hole through the hub for the motor shaft / M5 bolt).
+var bore_radius_m := 0.0
+
+## Bore DIAMETER in mm: the spec's `bore_mm` if the catalog gives one, else 1.5 mm (1.5 mm shaft) for
+## props of 3.0 in or smaller and 5.0 mm (M5 shaft) for larger ones.
+static func bore_mm_for(prop: Dictionary) -> float:
+	var specs: Dictionary = prop.get("specs", {})
+	if specs.has("bore_mm"):
+		return float(specs["bore_mm"])
+	var diameter_in := float(specs.get("diameter_inches", 5.0))
+	return 1.5 if diameter_in <= 3.0 else 5.0
 
 ## The frame rate the aliasing threshold is designed for. Sixty is a floor rather than a
 ## measurement: at a higher frame rate the switch to the blur disc happens earlier than it strictly
@@ -131,6 +152,9 @@ func rebuild(prop: Dictionary, doc: PropellerDocument = null) -> void:
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
+	_last_prop = prop
+	_last_doc_arg = doc
+	_last_prop_valid = true
 
 	var specs: Dictionary = prop.get("specs", {})
 	var diameter_m: float = float(specs.get("diameter_inches", 5.0)) * INCH_M
@@ -159,12 +183,8 @@ func rebuild(prop: Dictionary, doc: PropellerDocument = null) -> void:
 
 	var hub := MeshInstance3D.new()
 	hub.name = "Hub"
-	var hub_mesh := CylinderMesh.new()
-	hub_mesh.top_radius = hub_radius
-	hub_mesh.bottom_radius = hub_radius
-	hub_mesh.height = stack_height_m
-	hub_mesh.radial_segments = 16
-	hub_mesh.rings = 1
+	bore_radius_m = bore_mm_for(prop) * 0.0005
+	var hub_mesh := _build_hub_mesh(hub_radius, bore_radius_m, stack_height_m)
 	hub.mesh = hub_mesh
 	hub.material_override = material
 	add_child(hub)
@@ -314,9 +334,49 @@ static func shade_at(table: PackedFloat64Array, r_frac: float) -> float:
 	return table[table.size() - 1]
 
 
+## The hub as a tube: outer wall, bore wall facing the axis, and closed top and bottom rings.
+static func _build_hub_mesh(outer: float, inner: float, height: float) -> ArrayMesh:
+	const SEG := 16
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var h := height * 0.5
+	# Vertex layout per segment i: 4 verts (outer top, outer bottom, inner top, inner bottom).
+	for i in SEG:
+		var a := TAU * float(i) / float(SEG)
+		var c := cos(a)
+		var s := sin(a)
+		tool.add_vertex(Vector3(outer * c, h, outer * s))
+		tool.add_vertex(Vector3(outer * c, -h, outer * s))
+		tool.add_vertex(Vector3(inner * c, h, inner * s))
+		tool.add_vertex(Vector3(inner * c, -h, inner * s))
+	for i in SEG:
+		var j := (i + 1) % SEG
+		var o := i * 4
+		var n := j * 4
+		# Outer wall (normal +radial). Verified outward by the signed-volume check in the tests.
+		for t in [[o, n, o + 1], [n, n + 1, o + 1]]:
+			for k in t: tool.add_index(k)
+		# Bore wall, the opposite winding (normal toward the axis).
+		for t in [[o + 2, o + 3, n + 2], [n + 2, o + 3, n + 3]]:
+			for k in t: tool.add_index(k)
+		# Top ring (normal +Y).
+		for t in [[o, o + 2, n], [n, o + 2, n + 2]]:
+			for k in t: tool.add_index(k)
+		# Bottom ring (normal -Y).
+		for t in [[o + 1, n + 1, o + 3], [n + 1, n + 3, o + 3]]:
+			for k in t: tool.add_index(k)
+	tool.generate_normals()
+	return tool.commit()
+
+
 func _build_blade_mesh(hub_radius: float) -> ArrayMesh:
 	var tool := SurfaceTool.new()
 	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Handedness: a prop turning the other way is the MIRROR image (tangential axis Z negated), not
+	# the same blade spun backwards. Mirroring reverses every triangle's winding, so the index
+	# order is flipped below to keep faces outward.
+	var mirrored := spin < 0.0
+	var zs := -1.0 if mirrored else 1.0
 
 	for i in STATIONS:
 		var span := float(i) / float(STATIONS - 1)
@@ -332,28 +392,32 @@ func _build_blade_mesh(hub_radius: float) -> ArrayMesh:
 		if not station_shade.is_empty():
 			tool.set_color(Color.from_hsv(0.0, 0.0, shade_at(station_shade, r_frac)))
 		for corner in _doc.section_corners_mm(r_frac):
-			tool.add_vertex(centre + Vector3(0.0, corner.y, corner.x) * 0.001)
+			tool.add_vertex(centre + Vector3(0.0, corner.y, corner.x * zs) * 0.001)
 
+	var tris := PackedInt32Array()
 	for i in STATIONS - 1:
 		var base := i * 4
 		for f in 4:
 			var a := base + f
 			var b := base + (f + 1) % 4
-			tool.add_index(a)
-			tool.add_index(b)
-			tool.add_index(a + 4)
-			tool.add_index(b)
-			tool.add_index(b + 4)
-			tool.add_index(a + 4)
+			tris.append_array([a, b, a + 4, b, b + 4, a + 4])
 
 	# Root and tip caps, wound opposite ways so both face outward.
 	var tip := (STATIONS - 1) * 4
 	for triangle in [[0, 2, 1], [0, 3, 2]]:
-		for index in triangle:
-			tool.add_index(index)
+		tris.append_array(triangle)
 	for triangle in [[tip, tip + 1, tip + 2], [tip, tip + 2, tip + 3]]:
-		for index in triangle:
-			tool.add_index(index)
+		tris.append_array(triangle)
+
+	for t in range(0, tris.size(), 3):
+		if mirrored:
+			tool.add_index(tris[t])
+			tool.add_index(tris[t + 2])
+			tool.add_index(tris[t + 1])
+		else:
+			tool.add_index(tris[t])
+			tool.add_index(tris[t + 1])
+			tool.add_index(tris[t + 2])
 
 	tool.generate_normals()
 	return tool.commit()

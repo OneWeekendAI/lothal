@@ -51,6 +51,10 @@ HAVE=$("$GODOT" --version 2>/dev/null | head -1)
   exit 1
 }
 
+# Licence ledger: every file under assets/ needs a row in ASSETS.txt (fails the build otherwise).
+echo "==> checking the asset licence ledger"
+python3 -I tools/check_assets.py || { echo "error: asset ledger check failed (see ASSETS.txt)" >&2; exit 1; }
+
 # Native core: build the Rust GDExtension universal, BEFORE the suite runs — the suite
 # tests the classes the dylib provides, and running it first would test the GDScript
 # that is being replaced. The lipo'd universal dylib lands in build/, which the export

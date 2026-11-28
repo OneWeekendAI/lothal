@@ -207,6 +207,8 @@ func rebuild(build: Build, tweaks: AssemblyTweaks = null, document: AirframeDocu
 		# stack height, the same way the motor reports its own seat height.
 		var propeller := PropellerMesh.new()
 		propeller.name = "Propeller_%s" % motor_name
+		# Spin BEFORE rebuild: a reversed rotor's blade is the mirror image, decided at build time.
+		propeller.spin = float(spin_map[motor_name])
 		propeller.rebuild(build.propeller)
 
 		var motor := MotorMesh.new()

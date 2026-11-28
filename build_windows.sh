@@ -55,6 +55,10 @@ if [ "${SKIP_TESTS:-0}" != "1" ]; then
   "$GODOT" --headless --script res://tests/run_tests.gd
 fi
 
+# Licence ledger: every file under assets/ needs a row in ASSETS.txt (fails the build otherwise).
+echo "==> checking the asset licence ledger"
+python3 -I tools/check_assets.py || { echo "error: asset ledger check failed (see ASSETS.txt)" >&2; exit 1; }
+
 echo "==> exporting $OUT"
 rm -rf build/windows
 mkdir -p build/windows

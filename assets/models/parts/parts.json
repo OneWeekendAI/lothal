@@ -1,0 +1,75 @@
+{
+  "units": "metres in the file; measured_mm is in Godot axes (x right, y up, z back)",
+  "parts": {
+    "motor": {
+      "file": "motor.glb",
+      "measured_mm": {
+        "x": 28.0,
+        "y": 16.0,
+        "z": 28.0
+      },
+      "triangles": 2440,
+      "texture_max_px": 0
+    },
+    "stack": {
+      "file": "stack.glb",
+      "measured_mm": {
+        "x": 36.0,
+        "y": 12.0,
+        "z": 36.0
+      },
+      "triangles": 2104,
+      "texture_max_px": 0
+    },
+    "battery": {
+      "file": "battery.glb",
+      "measured_mm": {
+        "x": 35.0,
+        "y": 37.0,
+        "z": 75.0
+      },
+      "triangles": 1012,
+      "texture_max_px": 0
+    },
+    "camera": {
+      "file": "camera.glb",
+      "measured_mm": {
+        "x": 19.0,
+        "y": 19.0,
+        "z": 19.0
+      },
+      "triangles": 920,
+      "texture_max_px": 0
+    },
+    "vtx": {
+      "file": "vtx.glb",
+      "measured_mm": {
+        "x": 30.0,
+        "y": 6.0,
+        "z": 30.0
+      },
+      "triangles": 840,
+      "texture_max_px": 0
+    },
+    "antenna": {
+      "file": "antenna.glb",
+      "measured_mm": {
+        "x": 22.0,
+        "y": 95.0,
+        "z": 22.0
+      },
+      "triangles": 1088,
+      "texture_max_px": 0
+    },
+    "receiver": {
+      "file": "receiver.glb",
+      "measured_mm": {
+        "x": 14.0,
+        "y": 3.0,
+        "z": 11.0
+      },
+      "triangles": 280,
+      "texture_max_px": 0
+    }
+  }
+}
